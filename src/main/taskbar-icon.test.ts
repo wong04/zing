@@ -14,5 +14,6 @@ describe('taskbar theme', () => {
 		expect(TILE_FOR_TASKBAR.dark).toBe('frosted')
 		expect(TILE_FOR_TASKBAR.light).toBe('dark-rim')
 	})
-	it('reads this PC’s taskbar theme', async () => expect(['light', 'dark']).toContain(await readTaskbarTheme()))
+	// Starts reg.exe, which can be slow to launch on a busy CI runner.
+	it('reads this PC’s taskbar theme', async () => expect(['light', 'dark']).toContain(await readTaskbarTheme()), 30_000)
 })
