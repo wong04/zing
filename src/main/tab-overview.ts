@@ -1,3 +1,4 @@
+import { isViewLive, loadUnlessGone } from './web-contents'
 import { WebContentsView, type BrowserWindow, type Rectangle, type WebContents } from 'electron'
 import type { OverviewState, TabList } from '@shared/ipc'
 import type { TabId } from '@shared/model'
@@ -80,7 +81,7 @@ export class TabOverview {
 		await Promise.all([...this.#leaving, this.#captureActive()])
 		const view = await this.#ensure()
 		// Closed again while the pictures were being taken.
-		if (!this.#open) return
+		if (!this.#open || !isViewLive(this.options.window, view)) return
 		view.setBounds(this.#bounds())
 		this.#push()
 		this.options.window.contentView.addChildView(view)
@@ -180,7 +181,7 @@ export class TabOverview {
 		this.options.window.contentView.addChildView(view)
 		this.options.onContentsCreated(view.webContents)
 		this.#view = view
-		await this.options.load(view.webContents)
+		await loadUnlessGone(view.webContents, this.options.load)
 		return view
 	}
 }

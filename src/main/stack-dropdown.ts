@@ -1,3 +1,4 @@
+import { isViewLive, loadUnlessGone } from './web-contents'
 import { WebContentsView, type BrowserWindow, type WebContents } from 'electron'
 import type { Stack } from '@shared/browser/tabOrganizer'
 import { CHROME_LAYOUT, type DragPresenceSource, type StackDropdownState, type TabList } from '@shared/ipc'
@@ -122,6 +123,7 @@ export class StackDropdown {
 		const members = this.options.members(key)
 		if (!members) return
 		const view = await this.#ensure()
+		if (!isViewLive(this.options.window, view)) return
 		this.#key = key
 		this.#anchorX = anchorX
 		this.#openedByDrag = byDrag
@@ -167,7 +169,7 @@ export class StackDropdown {
 		this.options.window.contentView.addChildView(view)
 		this.options.onContentsCreated(view.webContents)
 		this.#view = view
-		await this.options.load(view.webContents)
+		await loadUnlessGone(view.webContents, this.options.load)
 		return view
 	}
 }

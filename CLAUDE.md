@@ -9,3 +9,6 @@ Windows-only Chromium browser (Electron + TypeScript + React, electron-vite, npm
 - Privacy model: keeps nothing by default. Anything that stores data (restore tabs, persistent profile, vault, import, future sync) is opt-in and flips the Settings privacy banner to a warning.
 - No AI features.
 - Weekly `upstream` issues list new Krackn commits; port or skip each, then update `reference/KRACKN_SHA`.
+- **Parallel agents: read `AGENTS.md` before launching any.** One worktree per agent (`scripts/agent-worktree.sh`), shared contracts landed first, integrate one branch at a time, full suite after each merge. It lists the Phase 3 failures and the rule that prevents each.
+- After any `await` on a view or page, use `src/main/web-contents.ts` (`isViewLive`, `loadUnlessGone`, `runInPage`). Page position only from `ZingWindow.chromeInsets()`. Optional features never fail startup.
+- e2e runs fail on any main-process error (`src/main/test-hooks.ts`); don't add handlers that hide errors from it.

@@ -26,6 +26,7 @@ import { TabOrdering } from './tab-ordering'
 import { TabService } from './tab-service'
 import { TabLifecycle, appClock } from './tab-lifecycle'
 import { takePendingRestore } from './session-restore'
+import { loadUnlessGone } from './web-contents'
 import { chromeInsets, VERTICAL_TABS, type ChromeInsets } from '@shared/layout/chrome'
 import { SIDEBAR_COLUMN_WIDTH } from '@shared/shell/shellState'
 
@@ -227,7 +228,7 @@ export class ZingWindow {
 		const restored = takePendingRestore()
 		if (restored.length > 0) this.tabs.restore(restored)
 		else this.tabs.open(this.#homepageUrl())
-		void loadChrome(this.window.webContents)
+		void loadUnlessGone(this.window.webContents, loadChrome)
 	}
 
 	/** True for the oldest open window; the session-restore code saves only from this one. */

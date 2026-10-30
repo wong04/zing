@@ -24,6 +24,7 @@ import { DebouncedJsonWriter, loadSettingsFile } from './settings-file'
 import { claimSingleInstance } from './single-instance'
 import { registerStartPageScheme, StartPage } from './start-page'
 import { TaskbarIcon } from './taskbar-icon'
+import { recordMainErrorsForTests } from './test-hooks'
 import { WindowManager, installQuitConfirmation } from './windows'
 
 // Before app ready: the zing: scheme must be declared standard before any page loads it.
@@ -143,6 +144,7 @@ function fail(error: unknown): void {
 	app.exit(1)
 }
 
+recordMainErrorsForTests()
 app.setAppUserModelId('app.zing.browser')
 if (claimSingleInstance(linkInbox, () => windows?.mostRecent()?.reveal())) app.whenReady().then(start).catch(fail)
 else app.quit()

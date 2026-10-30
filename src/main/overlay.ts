@@ -1,3 +1,4 @@
+import { isViewLive, loadUnlessGone } from './web-contents'
 import { WebContentsView, type BrowserWindow, type Rectangle, type WebContents } from 'electron'
 import type { Notice } from '@shared/ipc'
 
@@ -34,7 +35,10 @@ export class OverlayLayer {
 	}
 
 	async showNotice(text: string): Promise<void> {
+		// A page can fail to load as its window closes; there is nowhere to show that.
+		if (this.options.window.isDestroyed()) return
 		const view = await this.#ensure()
+		if (!isViewLive(this.options.window, view)) return
 		const notice: Notice = { id: this.#nextNoticeId++, text }
 		view.setBounds(this.#noticeBounds())
 		view.webContents.send('overlay:notice', notice)
@@ -46,7 +50,7 @@ export class OverlayLayer {
 
 	hide(): void {
 		clearTimeout(this.#hideTimer)
-		if (!this.#view) return
+		if (!this.#view || !isViewLive(this.options.window, this.#view)) return
 		this.#view.setVisible(false)
 		this.#view.webContents.send('overlay:notice', null)
 	}
@@ -93,7 +97,7 @@ export class OverlayLayer {
 		this.options.window.contentView.addChildView(view)
 		this.options.onContentsCreated(view.webContents)
 		this.#view = view
-		await this.options.load(view.webContents)
+		await loadUnlessGone(view.webContents, this.options.load)
 		return view
 	}
 }
