@@ -81,7 +81,11 @@ describe('concurrency', () => {
 		const started = Date.now()
 		const results = await Promise.allSettled(
 			Array.from({ length: 12 }, (_, i) =>
-				relayFetch(i % 2 === 0 ? 'https://example.com' : 'https://news.ycombinator.com', {
+				// Krackn alternated with news.ycombinator.com, but Hacker News answers
+				// a burst from GitHub's runners with HTTP 503 (measured: all six of
+				// its fetches, none of example.com's). The point is two distinct
+				// hosts resolved and pinned concurrently, not HN's rate limit.
+				relayFetch(i % 2 === 0 ? 'https://example.com' : 'https://example.org', {
 					signal: neverCancelled,
 					enabled: new Set([RelayStrategy.dohPinned]),
 				}),
