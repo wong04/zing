@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C7: Curved (monochrome)</title>
+	<defs>
+		<clipPath id="s7m-u"><path clip-rule="evenodd" d="M-2000,-2000 H3000 V3000 H-2000 Z M198.4,1148.4 a950,950 0 1,0 1900,0 a950,950 0 1,0 -1900,0 Z"/></clipPath>
+		<clipPath id="s7m-l"><path d="M298.4,1148.4 a850,850 0 1,0 1700,0 a850,850 0 1,0 -1700,0 Z"/></clipPath>
+	</defs>
+	<g transform="translate(-28.3 28.3)"><circle cx="512" cy="512" r="436" fill="currentColor" clip-path="url(#s7m-u)"/></g>
+	<g transform="translate(28.3 -28.3)"><circle cx="512" cy="512" r="436" fill="currentColor" clip-path="url(#s7m-l)"/></g>
+</svg>

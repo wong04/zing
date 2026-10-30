@@ -1,0 +1,71 @@
+/*
+ * Krackn's palette (App/Theme.swift + App/Accent.swift), Yellow accent: the
+ * reference beige, byte for byte. --control, --raised and --accent-ink are the
+ * derived roles Accent.swift computes (PaletteTokens.control / raised /
+ * accentInk), evaluated for Yellow. Other accents come from the generator port.
+ * Names match the start-page CSS Krackn already emitted (StartPage.themeCSS).
+ */
+
+@font-face {
+	font-family: 'Inter';
+	src: url('../assets/Inter.ttf') format('truetype');
+	font-weight: 100 900;
+	font-display: block;
+}
+
+:root {
+	color-scheme: light dark;
+
+	--bg: #f7f2e9;
+	--surface: #fffdf8;
+	--tint: #efe6d6;
+	--well: #ebe1cf;
+	--border: #decfb6;
+	--outline: #2a2420;
+	--accent: #d9b872;
+	--on-accent: #2a2118;
+	--selection: #e6d3ac;
+	--text: #241f19;
+	--muted: #6e6355;
+	--control: #f4eee1;
+	--raised: #fffdf8;
+	--accent-ink: #635538;
+
+	/* Status colours stay fixed across accents: a "danger" that turns green with the theme would be dangerous. */
+	--positive: #4f7a3f;
+	--caution: #a86a2e;
+	--danger: #a33a2e;
+
+	/* Hairlines, not outlines: everything structural uses this one token. */
+	--separator: color-mix(in srgb, var(--outline) 13%, transparent);
+	--elevation: 0 1px 6px rgb(0 0 0 / 0.05);
+	--elevation-strong: 0 3px 10px rgb(0 0 0 / 0.1);
+
+	--card-radius: 12px;
+	--control-radius: 8px;
+
+	--font: 'Inter', 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #1a1714;
+		--surface: #241f1a;
+		--tint: #201b16;
+		--well: #2c251e;
+		--border: #3a322a;
+		--outline: #cdbfa6;
+		--accent: #c9a45e;
+		--on-accent: #1a1410;
+		--selection: #3d3325;
+		--text: #f0e7d8;
+		--muted: #a69884;
+		--control: #2c251e;
+		--raised: #453e36;
+		--accent-ink: #c9a45e;
+
+		--positive: #8fbf7a;
+		--caution: #d9a05b;
+		--danger: #e08070;
+	}
+}

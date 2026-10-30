@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C2: Bold shift</title>
+	<defs>
+		<linearGradient id="s2-a" x1="226.3" y1="226.3" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#FFC23D"/>
+			<stop offset="1" stop-color="#FF8A1F"/>
+		</linearGradient>
+		<linearGradient id="s2-b" x1="512" y1="512" x2="797.7" y2="797.7" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#E3207A"/>
+			<stop offset="1" stop-color="#9C1FB5"/>
+		</linearGradient>
+		<clipPath id="s2-u"><polygon points="2588.1,-1654.6 -1654.6,2588.1 -3775.9,466.7 466.7,-3775.9"/></clipPath>
+		<clipPath id="s2-l"><polygon points="2678.6,-1564.1 -1564.1,2678.6 557.3,4799.9 4799.9,557.3"/></clipPath>
+	</defs>
+	<g transform="translate(-67.9 67.9)"><circle cx="512" cy="512" r="404" fill="url(#s2-a)" clip-path="url(#s2-u)"/></g>
+	<g transform="translate(67.9 -67.9)"><circle cx="512" cy="512" r="404" fill="url(#s2-b)" clip-path="url(#s2-l)"/></g>
+</svg>

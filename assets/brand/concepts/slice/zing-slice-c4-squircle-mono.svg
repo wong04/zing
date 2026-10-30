@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C4: Squircle (monochrome)</title>
+	<defs>
+		<clipPath id="s4m-u"><polygon points="2598,-1644.7 -1644.7,2598 -3766,476.6 476.6,-3766"/></clipPath>
+		<clipPath id="s4m-l"><polygon points="2668.7,-1574 -1574,2668.7 547.4,4790 4790,547.4"/></clipPath>
+	</defs>
+	<g transform="translate(-28.3 28.3)"><path d="M512,120 C825.6,120 904,198.39999999999998 904,512 C904,825.6 825.6,904 512,904 C198.39999999999998,904 120,825.6 120,512 C120,198.39999999999998 198.39999999999998,120 512,120 Z" fill="currentColor" clip-path="url(#s4m-u)"/></g>
+	<g transform="translate(28.3 -28.3)"><path d="M512,120 C825.6,120 904,198.39999999999998 904,512 C904,825.6 825.6,904 512,904 C198.39999999999998,904 120,825.6 120,512 C120,198.39999999999998 198.39999999999998,120 512,120 Z" fill="currentColor" clip-path="url(#s4m-l)"/></g>
+</svg>

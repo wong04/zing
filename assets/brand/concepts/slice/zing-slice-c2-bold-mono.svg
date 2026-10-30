@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C2: Bold shift (monochrome)</title>
+	<defs>
+		<clipPath id="s2m-u"><polygon points="2588.1,-1654.6 -1654.6,2588.1 -3775.9,466.7 466.7,-3775.9"/></clipPath>
+		<clipPath id="s2m-l"><polygon points="2678.6,-1564.1 -1564.1,2678.6 557.3,4799.9 4799.9,557.3"/></clipPath>
+	</defs>
+	<g transform="translate(-67.9 67.9)"><circle cx="512" cy="512" r="404" fill="currentColor" clip-path="url(#s2m-u)"/></g>
+	<g transform="translate(67.9 -67.9)"><circle cx="512" cy="512" r="404" fill="currentColor" clip-path="url(#s2m-l)"/></g>
+</svg>

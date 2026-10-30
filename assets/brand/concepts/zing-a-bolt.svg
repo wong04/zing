@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing concept A: Bolt</title>
+	<defs>
+		<linearGradient id="a-tile" x1="96" y1="96" x2="928" y2="928" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#6B4BFF"/>
+			<stop offset="1" stop-color="#2E1A9E"/>
+		</linearGradient>
+		<linearGradient id="a-bolt" x1="512" y1="152" x2="512" y2="880" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#FFE14D"/>
+			<stop offset="1" stop-color="#FF8A1F"/>
+		</linearGradient>
+	</defs>
+	<rect x="48" y="48" width="928" height="928" rx="216" fill="url(#a-tile)"/>
+	<polygon points="512,152 288,584 472,584 392,880 736,408 571,408 704,152" fill="url(#a-bolt)" stroke="url(#a-bolt)" stroke-width="40" stroke-linejoin="round"/>
+</svg>

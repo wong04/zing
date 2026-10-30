@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing concept D: Ribbon (monochrome)</title>
+	<g fill="currentColor" stroke="currentColor" stroke-width="32" stroke-linejoin="round">
+		<polygon points="144,144 880,144 880,312 144,312"/>
+		<polygon points="144,712 880,712 880,880 144,880"/>
+		<polygon points="664,144 880,144 360,880 144,880"/>
+	</g>
+</svg>

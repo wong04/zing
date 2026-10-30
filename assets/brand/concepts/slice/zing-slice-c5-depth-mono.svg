@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C5: Depth (monochrome)</title>
+	<defs>
+		<clipPath id="s5m-u"><polygon points="2598,-1644.7 -1644.7,2598 -3766,476.6 476.6,-3766"/></clipPath>
+		<clipPath id="s5m-l"><polygon points="2668.7,-1574 -1574,2668.7 547.4,4790 4790,547.4"/></clipPath>
+	</defs>
+	<g transform="translate(-31.1 31.1)"><circle cx="512" cy="512" r="436" fill="currentColor" clip-path="url(#s5m-u)"/></g>
+	<g transform="translate(31.1 -31.1)"><circle cx="512" cy="512" r="436" fill="currentColor" clip-path="url(#s5m-l)"/></g>
+</svg>

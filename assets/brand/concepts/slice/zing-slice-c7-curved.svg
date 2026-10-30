@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C7: Curved</title>
+	<defs>
+		<linearGradient id="s7-a" x1="203.7" y1="203.7" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#FFC23D"/>
+			<stop offset="1" stop-color="#FF8A1F"/>
+		</linearGradient>
+		<linearGradient id="s7-b" x1="512" y1="512" x2="820.3" y2="820.3" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#E3207A"/>
+			<stop offset="1" stop-color="#9C1FB5"/>
+		</linearGradient>
+		<clipPath id="s7-u"><path clip-rule="evenodd" d="M-2000,-2000 H3000 V3000 H-2000 Z M198.4,1148.4 a950,950 0 1,0 1900,0 a950,950 0 1,0 -1900,0 Z"/></clipPath>
+		<clipPath id="s7-l"><path d="M298.4,1148.4 a850,850 0 1,0 1700,0 a850,850 0 1,0 -1700,0 Z"/></clipPath>
+	</defs>
+	<g transform="translate(-28.3 28.3)"><circle cx="512" cy="512" r="436" fill="url(#s7-a)" clip-path="url(#s7-u)"/></g>
+	<g transform="translate(28.3 -28.3)"><circle cx="512" cy="512" r="436" fill="url(#s7-b)" clip-path="url(#s7-l)"/></g>
+</svg>

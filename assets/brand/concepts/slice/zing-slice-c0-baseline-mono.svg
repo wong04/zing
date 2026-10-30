@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C0: Baseline (monochrome)</title>
+	<defs>
+		<clipPath id="cm-upper"><polygon points="0,0 952,0 0,952"/></clipPath>
+		<clipPath id="cm-lower"><polygon points="1024,72 1024,1024 72,1024"/></clipPath>
+	</defs>
+	<g transform="translate(-36 36)"><circle cx="512" cy="512" r="440" fill="currentColor" clip-path="url(#cm-upper)"/></g>
+	<g transform="translate(36 -36)"><circle cx="512" cy="512" r="440" fill="currentColor" clip-path="url(#cm-lower)"/></g>
+</svg>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing C3 dark rim</title>
+	<defs><linearGradient id="t" x1="96" y1="96" x2="928" y2="928" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2C3150"/><stop offset="1" stop-color="#14151F"/></linearGradient><linearGradient id="a" x1="288.6" y1="288.6" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FF4F7B"/><stop offset="1" stop-color="#FF9A3D"/></linearGradient><linearGradient id="b" x1="512" y1="512" x2="735.4" y2="735.4" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7A4DFF"/><stop offset="1" stop-color="#2FA8FF"/></linearGradient><clipPath id="u"><polygon points="2585.2,-1657.4 -1657.4,2585.2 -3778.7,463.9 463.9,-3778.7"/></clipPath><clipPath id="l"><polygon points="2681.4,-1561.2 -1561.2,2681.4 560.1,4802.7 4802.7,560.1"/></clipPath></defs>
+	<rect x="48" y="48" width="928" height="928" rx="216" fill="url(#t)"/><rect x="61" y="61" width="902" height="902" rx="203" fill="none" stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="26"/>
+	<g transform="translate(-28.3 28.3)"><circle cx="512" cy="512" r="316" fill="url(#a)" clip-path="url(#u)"/></g><g transform="translate(28.3 -28.3)"><circle cx="512" cy="512" r="316" fill="url(#b)" clip-path="url(#l)"/></g>
+</svg>
