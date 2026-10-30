@@ -1,0 +1,94 @@
+.float-panel {
+	position: fixed;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border: 1px solid var(--separator);
+	border-radius: 12px;
+	background: var(--bg);
+	/* Two shadows, as a window draws them: a wide soft one for depth, a tight one for the edge. */
+	box-shadow:
+		0 14px 28px rgb(0 0 0 / 0.12),
+		0 0 1.5px rgb(0 0 0 / 0.2);
+}
+
+.float-panel[hidden] {
+	display: none;
+}
+
+.float-panel.front {
+	box-shadow:
+		0 14px 28px rgb(0 0 0 / 0.22),
+		0 0 1.5px rgb(0 0 0 / 0.2);
+}
+
+.float-panel.dragging {
+	transform: scale(1.008);
+}
+
+.float-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: none;
+	height: 34px;
+	padding: 0 8px 0 12px;
+	border-bottom: 1px solid var(--separator);
+	background: color-mix(in srgb, var(--tint) 50%, var(--surface));
+	touch-action: none;
+}
+
+.float-title-icon {
+	display: grid;
+	color: var(--muted);
+}
+
+.float-panel.front .float-title-icon {
+	color: var(--accent-ink);
+}
+
+.float-title-text {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	color: var(--muted);
+	font-size: 12.5px;
+	font-weight: 500;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.float-panel.front .float-title-text {
+	color: var(--text);
+}
+
+.float-controls {
+	display: flex;
+	gap: 4px;
+}
+
+.float-controls button {
+	display: grid;
+	place-items: center;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--muted);
+}
+
+.float-controls button:hover {
+	background: var(--control);
+	color: var(--text);
+}
+
+.float-controls button:focus-visible {
+	outline: 2px solid var(--accent-ink);
+}
+
+.float-body {
+	flex: 1;
+	min-height: 0;
+}

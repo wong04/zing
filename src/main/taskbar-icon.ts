@@ -29,7 +29,7 @@ export function parseSystemUsesLightTheme(output: string): TaskbarTheme {
 }
 
 export async function readTaskbarTheme(): Promise<TaskbarTheme> {
-	const result = await runProcess('reg.exe', ['query', PERSONALIZE_KEY, '/v', 'SystemUsesLightTheme'], { timeoutMs: 5000 })
+	const result = await runProcess('reg.exe', ['query', PERSONALIZE_KEY, '/v', 'SystemUsesLightTheme'], { timeoutMs: 20_000 })
 	// Windows versions before the light taskbar (pre-1903) don't have the
 	// value at all, and their taskbar is always dark.
 	if (result.exitCode !== 0 && /unable to find/i.test(result.stderr)) return 'dark'
@@ -57,7 +57,7 @@ export class TaskbarIcon {
 
 	constructor() {
 		this.#images = { frosted: loadIcon('frosted'), 'dark-rim': loadIcon('dark-rim') }
-		const recheck = () => void this.refresh()
+		const recheck = () => void this.refreshReporting()
 		nativeTheme.on('updated', recheck)
 		systemPreferences.on('color-changed', recheck)
 	}
@@ -67,8 +67,19 @@ export class TaskbarIcon {
 		window.setIcon(this.#images[this.#tile])
 		// A cheap backstop for theme changes the events above don't report
 		// while Zing's own theme setting overrides nativeTheme.
-		window.on('focus', () => void this.refresh())
+		window.on('focus', () => void this.refreshReporting())
 		window.once('closed', () => this.#windows.delete(window))
+	}
+
+	// The icon is cosmetic: a slow or failed registry read must never take the
+	// browser down (a busy PC made reg.exe miss a 5 s deadline at startup). The
+	// failure is reported and the current icon stays until the next check.
+	async refreshReporting(): Promise<void> {
+		try {
+			await this.refresh()
+		} catch (error) {
+			console.error('Taskbar icon not updated:', error)
+		}
 	}
 
 	async refresh(): Promise<void> {

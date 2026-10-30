@@ -1,8 +1,12 @@
 import type { CSSProperties } from 'react'
 import { CHROME_LAYOUT } from '@shared/ipc'
 import { TabStrip } from './chrome/TabStrip'
+import { LibraryChrome } from './library/LibraryChrome'
 import { Toolbar } from './chrome/Toolbar'
 import { useTabsState } from './chrome/useTabsState'
+import { useAccentTheme } from './settings/useAccentTheme'
+import { useSettings } from './settings/useSettings'
+import { Sidebar } from './sidebar/Sidebar'
 
 // Heights come from the shared layout contract so main places the page view exactly under them.
 const layout = {
@@ -14,10 +18,20 @@ const layout = {
 export function App() {
 	const state = useTabsState()
 	const active = state?.tabs.find((t) => t.id === state.activeId)
+	const pinned = useSettings()?.settings.sidebarPinned ?? true
+	useAccentTheme()
 	return (
-		<div className="chrome" style={layout}>
-			<TabStrip tabs={state?.tabs ?? []} activeId={state?.activeId} />
-			<Toolbar tab={active} />
+		<div className="shell">
+			{pinned ? (
+				<div className="sidebar-slot">
+					<Sidebar variant="pinned" />
+				</div>
+			) : null}
+			<div className="chrome" style={layout}>
+				<TabStrip state={state} />
+				<Toolbar tab={active} />
+				<LibraryChrome />
+			</div>
 		</div>
 	)
 }

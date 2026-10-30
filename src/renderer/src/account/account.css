@@ -1,0 +1,144 @@
+.auth {
+	position: fixed;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	background: var(--bg);
+	overflow: auto;
+}
+
+.auth-drag {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 30px;
+	-webkit-app-region: drag;
+}
+
+.auth-card {
+	display: flex;
+	flex-direction: column;
+	gap: 11px;
+	width: 400px;
+	max-width: calc(100vw - 32px);
+	margin: 40px 0;
+	padding: 30px;
+	user-select: text;
+}
+
+.auth-header {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+	text-align: center;
+}
+
+.auth-header h1 {
+	margin: 0;
+	font-size: 22px;
+	font-weight: 600;
+}
+
+.auth-header p {
+	margin: 0;
+	color: var(--muted);
+	font-size: 12.5px;
+}
+
+.auth-mark {
+	display: grid;
+	place-items: center;
+	width: 52px;
+	height: 52px;
+	border-radius: 14px;
+	background: var(--accent);
+	color: var(--on-accent);
+	font-size: 26px;
+	font-weight: 700;
+}
+
+.auth-who {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding-bottom: 4px;
+}
+
+.auth-who span:last-child {
+	display: flex;
+	flex-direction: column;
+}
+
+.auth-who small,
+.account-head-text small {
+	color: var(--muted);
+	font-size: 11px;
+}
+
+.auth-links {
+	display: flex;
+	justify-content: center;
+	gap: 14px;
+}
+
+.auth-fine {
+	margin: 0;
+	color: var(--muted);
+	font-size: 10.5px;
+	text-align: center;
+}
+
+.avatar {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 34px;
+	height: 34px;
+	border: 1px solid var(--separator);
+	border-radius: 50%;
+	background: var(--accent);
+	color: var(--on-accent);
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.avatar.large {
+	width: 44px;
+	height: 44px;
+	font-size: 15px;
+}
+
+.account-head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding-bottom: 10px;
+}
+
+.account-head-text {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.account-head-text strong {
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.account-edit {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding-bottom: 10px;
+}
+
+.account-edit-actions,
+.row-actions {
+	display: flex;
+	gap: 6px;
+}

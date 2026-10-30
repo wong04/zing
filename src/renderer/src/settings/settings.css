@@ -1,0 +1,320 @@
+/*
+ * The Settings sheet (Krackn SettingsSheet). The backdrop is a dim scrim:
+ * CSS can't blur other native views, so the page behind is dimmed, not blurred,
+ * unless main supplies a snapshot (see .sheet-snapshot).
+ */
+
+.sheet-backdrop {
+	position: fixed;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	background: rgb(0 0 0 / 0);
+	transition: background-color 0.22s ease-out;
+}
+
+.sheet-backdrop.shown {
+	background: rgb(0 0 0 / 0.32);
+}
+
+.sheet-dismiss {
+	position: absolute;
+	inset: 0;
+}
+
+.sheet {
+	position: relative;
+	display: flex;
+	width: min(860px, calc(100vw - 80px));
+	height: min(640px, calc(100vh - 70px));
+	overflow: hidden;
+	border: 1px solid var(--separator);
+	border-radius: 16px;
+	background: var(--bg);
+	box-shadow:
+		0 18px 40px rgb(0 0 0 / 0.28),
+		0 1px 2px rgb(0 0 0 / 0.08);
+	opacity: 0;
+	transform: translateY(10px) scale(0.965);
+	transition:
+		opacity 0.22s ease-out,
+		transform 0.22s ease-out;
+	outline: none;
+	user-select: none;
+}
+
+.sheet-backdrop.shown .sheet {
+	opacity: 1;
+	transform: none;
+}
+
+.sheet-nav {
+	display: flex;
+	flex: none;
+	flex-direction: column;
+	gap: 1px;
+	width: 204px;
+	padding: 0 10px;
+	border-right: 1px solid var(--separator);
+	background: color-mix(in srgb, var(--tint) 60%, transparent);
+}
+
+.sheet-nav-title {
+	padding: 22px 10px 8px;
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.nav-row {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	height: 30px;
+	padding: 0 9px;
+	border: 0;
+	border-radius: var(--control-radius);
+	background: transparent;
+	color: var(--text);
+	font-size: 13px;
+	text-align: left;
+}
+
+.nav-row svg {
+	color: var(--muted);
+}
+
+.nav-row:hover {
+	background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.nav-row.selected {
+	background: color-mix(in srgb, var(--selection) 85%, transparent);
+}
+
+.nav-row.selected svg {
+	color: var(--accent-ink);
+}
+
+.nav-row:focus-visible {
+	outline: 2px solid var(--accent-ink);
+	outline-offset: -2px;
+}
+
+.sheet-content {
+	flex: 1;
+	min-width: 0;
+	height: 100%;
+}
+
+.sheet-content .fading-scroll-body {
+	max-height: none;
+}
+
+.sheet-content-inner {
+	padding: 26px 32px 32px;
+	animation: pane-in 0.18s ease-out;
+}
+
+.sheet-content-inner h2 {
+	margin: 0 0 14px;
+	font-size: 20px;
+	font-weight: 600;
+	letter-spacing: -0.3px;
+}
+
+@keyframes pane-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+}
+
+.sheet-close {
+	position: absolute;
+	top: 12px;
+	right: 12px;
+}
+
+.setting-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 24px;
+	min-height: 44px;
+	padding: 11px 0;
+	border-bottom: 1px solid var(--separator);
+}
+
+.setting-row-text {
+	min-width: 0;
+}
+
+.setting-row-title {
+	font-size: 13px;
+}
+
+.setting-row-detail {
+	margin-top: 2px;
+	color: var(--muted);
+	font-size: 11.5px;
+}
+
+.setting-row-detail.warning {
+	color: var(--caution);
+}
+
+.control-slider {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: 260px;
+}
+
+.control-slider .pill-slider {
+	flex: 1;
+}
+
+.row-value {
+	min-width: 26px;
+	color: var(--muted);
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}
+
+.swatches {
+	display: flex;
+	gap: 9px;
+}
+
+.swatch {
+	display: grid;
+	place-items: center;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: 1.5px solid transparent;
+	border-radius: 50%;
+	background: transparent;
+}
+
+.swatch span {
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.1);
+}
+
+.swatch.selected {
+	border-color: var(--muted);
+}
+
+.swatch:focus-visible {
+	outline: 2px solid var(--accent-ink);
+	outline-offset: 1px;
+}
+
+.privacy-banner {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 8px;
+	padding: 14px;
+	border-radius: var(--card-radius);
+	background: color-mix(in srgb, var(--control) 60%, transparent);
+}
+
+.privacy-banner.ok svg {
+	color: var(--positive);
+}
+
+.privacy-banner.warn svg {
+	color: var(--caution);
+}
+
+.privacy-headline {
+	font-size: 13.5px;
+	font-weight: 500;
+}
+
+.privacy-detail {
+	color: var(--muted);
+	font-size: 11.5px;
+}
+
+.shortcut-list {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.shortcut-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 6px 0;
+	border-bottom: 1px solid var(--separator);
+}
+
+.shortcut-text {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.shortcut-text small {
+	overflow: hidden;
+	color: var(--muted);
+	font-size: 11px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.shortcut-add {
+	display: grid;
+	grid-template-columns: 1fr 1.4fr auto;
+	gap: 8px;
+	margin: 12px 0 8px;
+}
+
+.about-head {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding-bottom: 14px;
+}
+
+.auth-mark.small {
+	width: 44px;
+	height: 44px;
+	font-size: 22px;
+	border-radius: 12px;
+	display: grid;
+	place-items: center;
+	background: var(--accent);
+	color: var(--on-accent);
+	font-weight: 700;
+}
+
+.about-name {
+	font-size: 17px;
+	font-weight: 600;
+}
+
+.about-version {
+	color: var(--muted);
+	font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sheet,
+	.sheet-backdrop,
+	.sheet-content-inner {
+		transition: none;
+		animation: none;
+	}
+}

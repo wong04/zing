@@ -4,6 +4,7 @@ import type { TabView } from '@shared/ipc'
 import { zing } from '../api'
 import { AddressBar } from './AddressBar'
 import { BackIcon, ForwardIcon, MoreIcon, ReloadIcon, StopIcon } from './icons'
+import { HistoryButton } from './HistoryButton'
 import { commandTooltip } from './tooltip'
 
 function CommandButton({ command, disabled, children }: { command: CommandId; disabled?: boolean; children: ReactNode }) {
@@ -31,12 +32,12 @@ export function Toolbar({ tab }: { tab: TabView | undefined }) {
 	const loading = tab?.loading ?? false
 	return (
 		<div className="toolbar">
-			<CommandButton command="history.back" disabled={!tab?.canGoBack}>
+			<HistoryButton command="history.back" direction="back" disabled={!tab?.canGoBack}>
 				<BackIcon />
-			</CommandButton>
-			<CommandButton command="history.forward" disabled={!tab?.canGoForward}>
+			</HistoryButton>
+			<HistoryButton command="history.forward" direction="forward" disabled={!tab?.canGoForward}>
 				<ForwardIcon />
-			</CommandButton>
+			</HistoryButton>
 			{loading ? (
 				<CommandButton command="page.stop">
 					<StopIcon />

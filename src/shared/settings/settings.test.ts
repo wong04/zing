@@ -39,7 +39,7 @@ const KRACKN_KEYS = [
 describe('settings schema', () => {
 	it('has all 30 Krackn keys plus Zing tabBarPosition', () => {
 		expect(KRACKN_KEYS).toHaveLength(30)
-		expect([...SETTING_KEYS].sort()).toEqual([...KRACKN_KEYS, 'tabBarPosition'].sort())
+		expect([...SETTING_KEYS].sort()).toEqual([...KRACKN_KEYS, 'tabBarPosition', 'sleepingTabs'].sort())
 	})
 
 	it('gives every key a default its own validator accepts, readable through the typed accessor', () => {

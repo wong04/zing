@@ -11,6 +11,11 @@ const SEARCH_URLS: Record<Settings['searchEngine'], string> = {
 	startpage: 'https://www.startpage.com/sp/search?q=',
 }
 
+/** The engine's search endpoint without the query, for a form that adds `?q=` itself. */
+export function searchFormAction(engine: Settings['searchEngine']): string {
+	return SEARCH_URLS[engine].replace(/\?q=$/, '')
+}
+
 /** Typed text to the URL to load: a place to go (tracker-free) or a search on the chosen engine. Undefined for blank input. */
 export function resolveAddress(input: string, engine: Settings['searchEngine']): string | undefined {
 	const result = classify(input)

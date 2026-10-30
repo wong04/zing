@@ -1,14 +1,20 @@
+import { startPageScheme } from '@shared/browser/startPage'
 import { NEW_TAB_TITLE, NEW_TAB_URL } from '@shared/model'
 import type { TabView } from '@shared/ipc'
 
+/** The start page's URL comes back from Chromium with a trailing slash. */
+function isStartPageUrl(url: string): boolean {
+	return url.startsWith(`${startPageScheme}://home`)
+}
+
 export function tabTitle(tab: TabView): string {
-	if (tab.url === NEW_TAB_URL) return NEW_TAB_TITLE
+	if (tab.url === NEW_TAB_URL || isStartPageUrl(tab.url)) return NEW_TAB_TITLE
 	return tab.title || tab.url
 }
 
 /** The address bar shows nothing for a blank tab, so typing starts clean. */
 export function addressText(url: string | undefined): string {
-	if (url === undefined || url === NEW_TAB_URL) return ''
+	if (url === undefined || url === NEW_TAB_URL || isStartPageUrl(url)) return ''
 	return url
 }
 

@@ -1,0 +1,229 @@
+/*
+ * Tab strip layout and the stack dropdown. Loaded after base.css, so the
+ * width rules here replace its flexible chips: chip widths now come from
+ * `tabBarLayout` and are set inline, which is what lets a drag compute exact
+ * frames.
+ */
+
+.tab-room {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex: 1 1 auto;
+	min-width: 0;
+	height: 100%;
+}
+
+.tabs {
+	flex: 0 1 auto;
+	gap: 2px;
+}
+
+.tab {
+	flex: none;
+	min-width: 0;
+	max-width: none;
+	touch-action: none;
+	will-change: transform;
+}
+
+.tab.icon-only {
+	justify-content: center;
+	gap: 2px;
+	padding: 0 2px;
+}
+
+.tab.pinned {
+	padding: 0;
+	justify-content: center;
+}
+
+.tab.dragging {
+	position: relative;
+	z-index: 2;
+	background: var(--surface);
+	color: var(--text);
+	box-shadow: var(--elevation-strong);
+}
+
+/* Neighbours slide aside while a chip is held. Off otherwise, so a drop never animates twice. */
+.tabs[data-dragging] .tab:not(.dragging) {
+	transition: transform 150ms ease-out;
+}
+
+.tab-divider {
+	flex: none;
+	height: 16px;
+	margin-left: 3px;
+	border-left: 1px solid var(--separator);
+}
+
+/* The close button only shows on the tab you are on or are pointing at. */
+.tab .tab-close {
+	opacity: 0;
+	pointer-events: none;
+}
+
+.tab:hover .tab-close,
+.tab.active:not(.icon-only) .tab-close {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.tab.icon-only:not(:hover) .tab-close {
+	display: none;
+}
+
+.stack-count {
+	flex: none;
+	min-width: 16px;
+	height: 16px;
+	padding: 0 4px;
+	border-radius: 8px;
+	background: var(--well);
+	color: var(--muted);
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 16px;
+	text-align: center;
+}
+
+.tab.stack {
+	padding: 0 6px 0 6px;
+}
+
+.tab.stack.open {
+	background: var(--tint);
+}
+
+/* The dropdown lives in its own overlay view, which starts under the tab strip. */
+.stack-backdrop {
+	position: fixed;
+	inset: 0;
+}
+
+.stack-panel {
+	position: absolute;
+	padding: 5px;
+	border-radius: 12px;
+	background: var(--raised);
+	border: 1px solid var(--border);
+	box-shadow: var(--elevation-strong);
+	outline: none;
+	animation: stack-in 120ms ease-out;
+}
+
+@keyframes stack-in {
+	from {
+		opacity: 0;
+		transform: translateY(-4px) scale(0.98);
+	}
+}
+
+.stack-header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	padding: 6px 10px 4px;
+}
+
+.stack-name {
+	font-weight: 600;
+}
+
+.stack-total {
+	color: var(--muted);
+	font-size: 11px;
+}
+
+.stack-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	overflow-y: auto;
+	scrollbar-width: none;
+}
+
+.stack-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: none;
+	height: 30px;
+	padding: 0 6px 0 8px;
+	border-radius: 8px;
+	touch-action: none;
+}
+
+.stack-row.highlighted {
+	background: var(--tint);
+}
+
+.stack-row.current {
+	background: var(--selection);
+}
+
+.stack-row.dragging {
+	position: relative;
+	z-index: 1;
+	box-shadow: var(--elevation);
+}
+
+.stack-row-text {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+	line-height: 1.15;
+}
+
+.stack-row-title,
+.stack-row-host {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.stack-row-host {
+	color: var(--muted);
+	font-size: 10px;
+}
+
+.stack-rule {
+	height: 1px;
+	margin: 3px 6px;
+	background: var(--separator);
+}
+
+.stack-action {
+	display: block;
+	width: 100%;
+	height: 28px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 8px;
+	background: none;
+	color: var(--muted);
+	text-align: left;
+}
+
+.stack-action:hover {
+	background: var(--tint);
+	color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.stack-panel {
+		animation: none;
+	}
+
+	.tabs[data-dragging] .tab:not(.dragging) {
+		transition: none;
+	}
+}
+
+/* A sleeping tab has no renderer; it wakes when selected. */
+.tab.sleeping:not(.active) .tab-icon,
+.tab.sleeping:not(.active) .tab-title {
+	opacity: 0.5;
+}

@@ -2,13 +2,23 @@ import type { BrowserWindow, WebContents } from 'electron'
 import { getCommand, type CommandId } from '@shared/commands'
 import type { CommandOutcome } from '@shared/ipc'
 import { NEW_TAB_URL, zoomInFactor, zoomOutFactor, type TabId } from '@shared/model'
+import { startPageURL } from '@shared/browser/startPage'
+import type { LibraryController } from './library-controller'
+import type { PageFeatures } from './page-actions'
+import type { ShellController } from './shell'
+import type { TabOverview } from './tab-overview'
 import type { TabService } from './tab-service'
 
 export interface CommandContext {
 	readonly tabs: TabService
+	readonly features: PageFeatures
+	readonly shell: ShellController
+	readonly library: LibraryController
+	readonly overview: TabOverview
 	readonly window: BrowserWindow
 	readonly homepage: () => string
 	readonly focusAddress: () => void
+	readonly newWindow: () => void
 }
 
 type Status = 'done' | 'not-applicable'
@@ -34,8 +44,25 @@ function selectTab(n: number): Handler {
  * and shortcuts show them) but answer "not implemented yet" out loud.
  */
 const HANDLERS: Partial<Record<CommandId, Handler>> = {
+	'app.settings': (ctx) => {
+		ctx.shell.openSettings()
+		return 'done'
+	},
+	'view.sidebar': (ctx) => {
+		ctx.shell.toggleSidebar()
+		return 'done'
+	},
+	'library.addFavourite': (ctx) => ctx.library.addFavourite(),
+	'library.addReadingList': (ctx) => ctx.library.addReadingList(),
+	'library.bookmarks': (ctx) => ctx.library.togglePanel('bookmarks'),
+	'library.readingList': (ctx) => ctx.library.togglePanel('readingList'),
+	'view.favouritesBar': (ctx) => ctx.library.toggleFavouritesBar(),
+	'tabs.overview': (ctx) => {
+		void ctx.overview.toggle()
+		return 'done'
+	},
 	'tab.new': (ctx) => {
-		ctx.tabs.open(NEW_TAB_URL)
+		ctx.tabs.open(startPageURL)
 		ctx.focusAddress()
 		return 'done'
 	},
@@ -47,6 +74,10 @@ const HANDLERS: Partial<Record<CommandId, Handler>> = {
 		const id = ctx.tabs.activeId
 		if (id === undefined) return 'not-applicable'
 		ctx.tabs.close(id)
+		return 'done'
+	},
+	'window.new': (ctx) => {
+		ctx.newWindow()
 		return 'done'
 	},
 	'window.close': (ctx) => {
@@ -96,6 +127,41 @@ const HANDLERS: Partial<Record<CommandId, Handler>> = {
 	'page.actualSize': (ctx) =>
 		onActivePage(ctx, (c) => {
 			c.setZoomFactor(1)
+			return 'done'
+		}),
+	'page.find': (ctx) =>
+		onActivePage(ctx, () => {
+			ctx.features.find()
+			return 'done'
+		}),
+	'page.findNext': (ctx) =>
+		onActivePage(ctx, () => {
+			ctx.features.findStep('next')
+			return 'done'
+		}),
+	'page.findPrevious': (ctx) =>
+		onActivePage(ctx, () => {
+			ctx.features.findStep('previous')
+			return 'done'
+		}),
+	'page.reader': (ctx) =>
+		onActivePage(ctx, (c) => {
+			ctx.features.showReader(c)
+			return 'done'
+		}),
+	'page.textBigger': (ctx) =>
+		onActivePage(ctx, (c) => {
+			ctx.features.textBigger(c)
+			return 'done'
+		}),
+	'page.textSmaller': (ctx) =>
+		onActivePage(ctx, (c) => {
+			ctx.features.textSmaller(c)
+			return 'done'
+		}),
+	'page.print': (ctx) =>
+		onActivePage(ctx, (c) => {
+			ctx.features.print(c)
 			return 'done'
 		}),
 	'tab.next': (ctx) => activateIfAny(ctx, ctx.tabs.nextId()),

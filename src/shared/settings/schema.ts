@@ -1,3 +1,5 @@
+import { DEFAULT_SLEEPING_TABS, isSleepSettings } from '../session/sleepSettings'
+
 /**
  * Every persisted preference, with an explicit default, in one table. Port of
  * Krackn's AppSettings.swift. A missing key always reads as its default here,
@@ -110,6 +112,8 @@ export const SETTINGS_SCHEMA = {
 	tabDropdowns: flag(false),
 	/** Zing: where the tab strip sits. */
 	tabBarPosition: oneOf(TAB_BAR_POSITIONS, 'top'),
+	/** Zing: discard idle tabs' renderers to save memory; the record and URL stay. */
+	sleepingTabs: { default: DEFAULT_SLEEPING_TABS, accepts: isSleepSettings },
 } as const
 
 type Schema = typeof SETTINGS_SCHEMA

@@ -1,0 +1,193 @@
+/*
+ * Pinned, the sidebar is the chrome's left column (204 px: the 196 px pane plus
+ * an 8 px inset, SIDEBAR_COLUMN_WIDTH), and main places the page view to its
+ * right. Floating, the same pane is drawn over the page by the surface view.
+ */
+
+.shell {
+	display: flex;
+	height: 100%;
+}
+
+.shell > .chrome {
+	flex: 1;
+	min-width: 0;
+}
+
+.sidebar-slot {
+	flex: none;
+	width: 204px;
+	padding: 8px 0 8px 8px;
+}
+
+.sidebar {
+	display: flex;
+	flex-direction: column;
+	width: 196px;
+	height: 100%;
+	border: 1px solid var(--separator);
+	border-radius: 12px;
+	background: color-mix(in srgb, var(--surface) 70%, transparent);
+	overflow: hidden;
+}
+
+.sidebar.floating {
+	position: fixed;
+	top: 8px;
+	bottom: 8px;
+	left: 8px;
+	height: auto;
+	background: color-mix(in srgb, var(--surface) 55%, transparent);
+	backdrop-filter: blur(24px) saturate(1.4);
+	box-shadow: var(--elevation-strong);
+	animation: side-in 0.18s ease-out;
+}
+
+@keyframes side-in {
+	from {
+		opacity: 0;
+		transform: translateX(-16px);
+	}
+}
+
+.sidebar-header {
+	display: flex;
+	align-items: center;
+	height: 32px;
+	margin-top: 2px;
+	padding-right: 6px;
+}
+
+.sidebar-drag {
+	flex: 1;
+	height: 100%;
+	-webkit-app-region: drag;
+}
+
+.side-icon-button {
+	display: grid;
+	place-items: center;
+	width: 28px;
+	height: 24px;
+	padding: 0;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--muted);
+}
+
+.side-icon-button:hover {
+	background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.sidebar-brand {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 14px 10px;
+	font-size: 13.5px;
+	font-weight: 600;
+}
+
+.sidebar-mark {
+	display: grid;
+	place-items: center;
+	width: 18px;
+	height: 18px;
+	border-radius: 5px;
+	background: var(--accent);
+	color: var(--on-accent);
+	font-size: 11px;
+	font-weight: 700;
+}
+
+.sidebar-scroll {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 1px;
+	padding: 0 8px;
+	overflow-y: auto;
+	scrollbar-width: none;
+}
+
+.sidebar-foot {
+	padding: 6px 8px 8px;
+}
+
+.side-heading {
+	margin: 0;
+	padding: 14px 10px 4px;
+	color: color-mix(in srgb, var(--muted) 85%, transparent);
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.side-row {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	flex: none;
+	height: 30px;
+	padding: 0 9px;
+	border: 0;
+	border-radius: var(--control-radius);
+	background: transparent;
+	color: var(--text);
+	font-size: 13px;
+	text-align: left;
+	touch-action: none;
+}
+
+.side-row:hover {
+	background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.side-row.selected {
+	background: color-mix(in srgb, var(--selection) 85%, transparent);
+}
+
+.side-row.selected .side-row-icon {
+	color: var(--accent-ink);
+}
+
+/* Armed: the row lifts off, the cue that letting go elsewhere pops it out into a window. */
+.side-row.armed {
+	transform: scale(0.97);
+	outline: 1.5px solid var(--accent);
+	box-shadow: 0 6px 14px rgb(0 0 0 / 0.18);
+	transition: transform 0.12s ease-out;
+}
+
+.side-row:focus-visible,
+.side-icon-button:focus-visible {
+	outline: 2px solid var(--accent-ink);
+	outline-offset: -2px;
+}
+
+.side-row-icon {
+	display: grid;
+	flex: none;
+	width: 20px;
+	place-items: center;
+	color: var(--muted);
+}
+
+.side-row-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.side-row-trailing {
+	display: grid;
+	color: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sidebar.floating {
+		animation: none;
+	}
+}
