@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing concept D: Ribbon</title>
+	<defs>
+		<linearGradient id="d-top" x1="128" y1="0" x2="896" y2="0" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#FFC43D"/>
+			<stop offset="1" stop-color="#FF6A3D"/>
+		</linearGradient>
+		<linearGradient id="d-diag" x1="880" y1="144" x2="144" y2="880" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#E8336B"/>
+			<stop offset="1" stop-color="#9B2FD6"/>
+		</linearGradient>
+		<linearGradient id="d-bottom" x1="128" y1="0" x2="896" y2="0" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#6A4CFF"/>
+			<stop offset="1" stop-color="#22B8F0"/>
+		</linearGradient>
+	</defs>
+	<g stroke-width="32" stroke-linejoin="round">
+		<polygon points="144,144 880,144 880,312 144,312" fill="url(#d-top)" stroke="url(#d-top)"/>
+		<polygon points="144,712 880,712 880,880 144,880" fill="url(#d-bottom)" stroke="url(#d-bottom)"/>
+		<polygon points="664,144 880,144 360,880 144,880" fill="url(#d-diag)" stroke="url(#d-diag)"/>
+	</g>
+</svg>

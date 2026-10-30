@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing C3 Violet to midnight gradient (monochrome)</title>
+	<defs>
+		<clipPath id="u"><polygon points="2585.2,-1657.4 -1657.4,2585.2 -3778.7,463.9 463.9,-3778.7"/></clipPath>
+		<clipPath id="l"><polygon points="2681.4,-1561.2 -1561.2,2681.4 560.1,4802.7 4802.7,560.1"/></clipPath>
+		<mask id="knock" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+			<rect x="48" y="48" width="928" height="928" rx="216" fill="#fff"/>
+			<g transform="translate(-28.3 28.3)"><circle cx="512" cy="512" r="316" fill="#000" clip-path="url(#u)"/></g>
+			<g transform="translate(28.3 -28.3)"><circle cx="512" cy="512" r="316" fill="#000" clip-path="url(#l)"/></g>
+		</mask>
+	</defs>
+	<rect x="0" y="0" width="1024" height="1024" fill="currentColor" mask="url(#knock)"/>
+</svg>

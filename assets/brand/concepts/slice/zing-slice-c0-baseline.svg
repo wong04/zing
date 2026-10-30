@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C0: Baseline</title>
+	<defs>
+		<linearGradient id="c-warm" x1="160" y1="160" x2="560" y2="560" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#FF4F7B"/>
+			<stop offset="1" stop-color="#FF9A3D"/>
+		</linearGradient>
+		<linearGradient id="c-cool" x1="464" y1="464" x2="864" y2="864" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#7A4DFF"/>
+			<stop offset="1" stop-color="#2FA8FF"/>
+		</linearGradient>
+		<clipPath id="c-upper"><polygon points="0,0 952,0 0,952"/></clipPath>
+		<clipPath id="c-lower"><polygon points="1024,72 1024,1024 72,1024"/></clipPath>
+	</defs>
+	<g transform="translate(-36 36)"><circle cx="512" cy="512" r="440" fill="url(#c-warm)" clip-path="url(#c-upper)"/></g>
+	<g transform="translate(36 -36)"><circle cx="512" cy="512" r="440" fill="url(#c-cool)" clip-path="url(#c-lower)"/></g>
+</svg>

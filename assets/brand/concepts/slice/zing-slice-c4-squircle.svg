@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C4: Squircle</title>
+	<defs>
+		<linearGradient id="s4-a" x1="234.8" y1="234.8" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#B6E83E"/>
+			<stop offset="1" stop-color="#5FD068"/>
+		</linearGradient>
+		<linearGradient id="s4-b" x1="512" y1="512" x2="789.2" y2="789.2" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#12B3A8"/>
+			<stop offset="1" stop-color="#0B7A99"/>
+		</linearGradient>
+		<clipPath id="s4-u"><polygon points="2598,-1644.7 -1644.7,2598 -3766,476.6 476.6,-3766"/></clipPath>
+		<clipPath id="s4-l"><polygon points="2668.7,-1574 -1574,2668.7 547.4,4790 4790,547.4"/></clipPath>
+	</defs>
+	<g transform="translate(-28.3 28.3)"><path d="M512,120 C825.6,120 904,198.39999999999998 904,512 C904,825.6 825.6,904 512,904 C198.39999999999998,904 120,825.6 120,512 C120,198.39999999999998 198.39999999999998,120 512,120 Z" fill="url(#s4-a)" clip-path="url(#s4-u)"/></g>
+	<g transform="translate(28.3 -28.3)"><path d="M512,120 C825.6,120 904,198.39999999999998 904,512 C904,825.6 825.6,904 512,904 C198.39999999999998,904 120,825.6 120,512 C120,198.39999999999998 198.39999999999998,120 512,120 Z" fill="url(#s4-b)" clip-path="url(#s4-l)"/></g>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing concept B: Panes (monochrome)</title>
+	<g fill="currentColor">
+		<rect x="128" y="128" width="768" height="192" rx="64"/>
+		<rect x="128" y="416" width="336" height="480" rx="64"/>
+		<rect x="560" y="416" width="336" height="480" rx="64"/>
+	</g>
+</svg>

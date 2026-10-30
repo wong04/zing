@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C1: Steep</title>
+	<defs>
+		<linearGradient id="s1-a" x1="123.5" y1="305.4" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#FF4F7B"/>
+			<stop offset="1" stop-color="#FF9A3D"/>
+		</linearGradient>
+		<linearGradient id="s1-b" x1="512" y1="512" x2="900.5" y2="718.6" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#7A4DFF"/>
+			<stop offset="1" stop-color="#2FA8FF"/>
+		</linearGradient>
+		<clipPath id="s1-u"><polygon points="1876.3,-2160.3 -940.6,3137.4 -3589.4,1729 -772.6,-3568.7"/></clipPath>
+		<clipPath id="s1-l"><polygon points="1964.6,-2113.4 -852.3,3184.3 1796.6,4592.7 4613.4,-705"/></clipPath>
+	</defs>
+	<g transform="translate(-22.5 42.4)"><circle cx="512" cy="512" r="440" fill="url(#s1-a)" clip-path="url(#s1-u)"/></g>
+	<g transform="translate(22.5 -42.4)"><circle cx="512" cy="512" r="440" fill="url(#s1-b)" clip-path="url(#s1-l)"/></g>
+</svg>

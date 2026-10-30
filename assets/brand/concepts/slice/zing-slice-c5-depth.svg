@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C5: Depth</title>
+	<defs>
+		<radialGradient id="s5-a" cx="272.2" cy="250.4" r="545" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#2FD4E8"/>
+			<stop offset="1" stop-color="#1FA3F0"/>
+		</radialGradient>
+		<radialGradient id="s5-b" cx="490.2" cy="468.4" r="545" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#3D6BFF"/>
+			<stop offset="1" stop-color="#2A3FC9"/>
+		</radialGradient>
+		<clipPath id="s5-u"><polygon points="2598,-1644.7 -1644.7,2598 -3766,476.6 476.6,-3766"/></clipPath>
+		<clipPath id="s5-l"><polygon points="2668.7,-1574 -1574,2668.7 547.4,4790 4790,547.4"/></clipPath>
+	</defs>
+	<g transform="translate(-31.1 31.1)"><circle cx="512" cy="512" r="436" fill="url(#s5-a)" clip-path="url(#s5-u)"/></g>
+	<g transform="translate(31.1 -31.1)"><circle cx="512" cy="512" r="436" fill="url(#s5-b)" clip-path="url(#s5-l)"/></g>
+</svg>

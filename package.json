@@ -1,0 +1,38 @@
+{
+	"name": "zing",
+	"productName": "Zing",
+	"version": "0.0.1",
+	"description": "A privacy-first Chromium browser for Windows.",
+	"license": "MIT",
+	"private": true,
+	"main": "out/main/index.js",
+	"scripts": {
+		"dev": "electron-vite dev",
+		"build": "electron-vite build",
+		"start": "electron-vite preview",
+		"typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+		"lint": "eslint .",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@types/node": "^26.6.6",
+		"@types/react": "^19.3.0",
+		"@types/react-dom": "^19.3.0",
+		"@vitejs/plugin-react": "^6.1.2",
+		"electron": "^45.1.0",
+		"electron-vite": "^6.0.0",
+		"eslint": "^10.13.0",
+		"eslint-plugin-react-hooks": "^7.1.1",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.72.1",
+		"vite": "^8.3.5",
+		"vitest": "^5.0.5"
+	},
+	"dependencies": {
+		"react": "^19.3.1",
+		"react-dom": "^19.3.1"
+	},
+	"type": "module"
+}

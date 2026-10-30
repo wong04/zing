@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C6: Uneven</title>
+	<defs>
+		<linearGradient id="s6-a" x1="264.5" y1="264.5" x2="575.6" y2="575.6" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#FF4F7B"/>
+			<stop offset="1" stop-color="#FF9A3D"/>
+		</linearGradient>
+		<linearGradient id="s6-b" x1="575.6" y1="575.6" x2="886.8" y2="886.8" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#7A4DFF"/>
+			<stop offset="1" stop-color="#2FA8FF"/>
+		</linearGradient>
+		<clipPath id="s6-u"><polygon points="2661.6,-1581 -1581,2661.6 -3702.4,540.3 540.3,-3702.4"/></clipPath>
+		<clipPath id="s6-l"><polygon points="2732.3,-1510.3 -1510.3,2732.3 611,4853.6 4853.6,611"/></clipPath>
+	</defs>
+	<g transform="translate(-31.1 31.1)"><circle cx="512" cy="512" r="440" fill="url(#s6-a)" clip-path="url(#s6-u)"/></g>
+	<g transform="translate(31.1 -31.1)"><circle cx="512" cy="512" r="440" fill="url(#s6-b)" clip-path="url(#s6-l)"/></g>
+</svg>

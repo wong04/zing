@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing concept B: Panes</title>
+	<defs>
+		<linearGradient id="b-tile" x1="96" y1="96" x2="928" y2="928" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#262A3F"/>
+			<stop offset="1" stop-color="#151724"/>
+		</linearGradient>
+	</defs>
+	<rect x="48" y="48" width="928" height="928" rx="216" fill="url(#b-tile)"/>
+	<rect x="192" y="192" width="640" height="160" rx="56" fill="#FF5A5F"/>
+	<rect x="192" y="432" width="280" height="400" rx="56" fill="#FFB627"/>
+	<rect x="552" y="432" width="280" height="400" rx="56" fill="#22C3A6"/>
+</svg>

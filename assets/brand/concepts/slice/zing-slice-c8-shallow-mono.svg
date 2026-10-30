@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C8: Shallow (monochrome)</title>
+	<defs>
+		<clipPath id="s8m-u"><polygon points="3137.4,-940.6 -2160.3,1876.3 -3568.7,-772.6 1729,-3589.4"/></clipPath>
+		<clipPath id="s8m-l"><polygon points="3184.3,-852.3 -2113.4,1964.6 -705,4613.4 4592.7,1796.6"/></clipPath>
+	</defs>
+	<g transform="translate(-42.4 22.5)"><circle cx="512" cy="512" r="440" fill="currentColor" clip-path="url(#s8m-u)"/></g>
+	<g transform="translate(42.4 -22.5)"><circle cx="512" cy="512" r="440" fill="currentColor" clip-path="url(#s8m-l)"/></g>
+</svg>

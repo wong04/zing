@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C8: Shallow</title>
+	<defs>
+		<linearGradient id="s8-a" x1="305.4" y1="123.5" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#2FD4E8"/>
+			<stop offset="1" stop-color="#1FA3F0"/>
+		</linearGradient>
+		<linearGradient id="s8-b" x1="512" y1="512" x2="718.6" y2="900.5" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#3D6BFF"/>
+			<stop offset="1" stop-color="#2A3FC9"/>
+		</linearGradient>
+		<clipPath id="s8-u"><polygon points="3137.4,-940.6 -2160.3,1876.3 -3568.7,-772.6 1729,-3589.4"/></clipPath>
+		<clipPath id="s8-l"><polygon points="3184.3,-852.3 -2113.4,1964.6 -705,4613.4 4592.7,1796.6"/></clipPath>
+	</defs>
+	<g transform="translate(-42.4 22.5)"><circle cx="512" cy="512" r="440" fill="url(#s8-a)" clip-path="url(#s8-u)"/></g>
+	<g transform="translate(42.4 -22.5)"><circle cx="512" cy="512" r="440" fill="url(#s8-b)" clip-path="url(#s8-l)"/></g>
+</svg>

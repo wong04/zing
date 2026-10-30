@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Zing Slice C1: Steep (monochrome)</title>
+	<defs>
+		<clipPath id="s1m-u"><polygon points="1876.3,-2160.3 -940.6,3137.4 -3589.4,1729 -772.6,-3568.7"/></clipPath>
+		<clipPath id="s1m-l"><polygon points="1964.6,-2113.4 -852.3,3184.3 1796.6,4592.7 4613.4,-705"/></clipPath>
+	</defs>
+	<g transform="translate(-22.5 42.4)"><circle cx="512" cy="512" r="440" fill="currentColor" clip-path="url(#s1m-u)"/></g>
+	<g transform="translate(22.5 -42.4)"><circle cx="512" cy="512" r="440" fill="currentColor" clip-path="url(#s1m-l)"/></g>
+</svg>
