@@ -1,0 +1,234 @@
+.chrome {
+	position: relative;
+}
+
+.tab-favicon {
+	width: 16px;
+	height: 16px;
+	border-radius: 3px;
+	object-fit: contain;
+}
+
+.favourites-bar {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	height: 28px;
+	flex: none;
+	padding: 0 8px;
+	overflow: hidden;
+	background: var(--surface);
+	border-bottom: 1px solid var(--separator);
+}
+
+.fav-hint {
+	color: var(--muted);
+	font-size: 12px;
+	padding: 0 4px;
+}
+
+.fav-chip {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	height: 22px;
+	max-width: 160px;
+	min-width: 0;
+	padding: 0 8px 0 5px;
+	border: 0;
+	border-radius: 6px;
+	background: none;
+	color: var(--text);
+	font-size: 12px;
+	flex: 0 1 auto;
+	position: relative;
+}
+
+.fav-chip:hover {
+	background: var(--well);
+}
+
+.fav-chip:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+
+.fav-chip.drop-before::before,
+.fav-chip.drop-after::after {
+	content: '';
+	position: absolute;
+	top: 2px;
+	bottom: 2px;
+	width: 2px;
+	background: var(--accent);
+}
+
+.fav-chip.drop-before::before {
+	left: -2px;
+}
+
+.fav-chip.drop-after::after {
+	right: -2px;
+}
+
+.fav-glyph {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 14px;
+	height: 14px;
+	border-radius: 3px;
+	background: var(--selection);
+	color: var(--accent-ink);
+	font-size: 9px;
+	font-weight: 700;
+}
+
+.fav-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.library-panel {
+	position: absolute;
+	bottom: 0;
+	display: flex;
+	flex-direction: column;
+	background: var(--surface);
+	border-right: 1px solid var(--separator);
+	z-index: 1;
+}
+
+.library-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px;
+	gap: 8px;
+}
+
+.library-tabs {
+	display: flex;
+	gap: 2px;
+	padding: 2px;
+	border-radius: var(--control-radius);
+	background: var(--control);
+}
+
+.library-tabs button {
+	border: 0;
+	background: none;
+	padding: 3px 10px;
+	border-radius: 6px;
+	color: var(--muted);
+}
+
+.library-tabs button[aria-selected='true'] {
+	background: var(--raised);
+	color: var(--text);
+	box-shadow: var(--elevation);
+}
+
+.library-actions {
+	padding: 0 8px 6px;
+}
+
+.library-actions button {
+	border: 1px solid var(--separator);
+	background: var(--control);
+	border-radius: var(--control-radius);
+	padding: 3px 10px;
+}
+
+.library-list {
+	flex: 1;
+	overflow-y: auto;
+	padding: 0 4px 8px;
+	outline: none;
+}
+
+.library-list:focus-visible {
+	box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.library-empty {
+	color: var(--muted);
+	padding: 8px;
+}
+
+.library-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 28px;
+	padding-right: 4px;
+	border-radius: 6px;
+}
+
+.library-row:hover {
+	background: var(--tint);
+}
+
+.library-row.selected {
+	background: var(--selection);
+}
+
+.library-row.focused {
+	outline: 1px solid var(--accent);
+	outline-offset: -1px;
+}
+
+.library-row.read .library-title {
+	color: var(--muted);
+}
+
+.library-glyph {
+	flex: none;
+	width: 14px;
+	text-align: center;
+	color: var(--muted);
+}
+
+.library-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.library-rename {
+	flex: 1;
+	min-width: 0;
+	height: 22px;
+	user-select: text;
+	border: 1px solid var(--accent);
+	border-radius: 4px;
+	background: var(--raised);
+	padding: 0 4px;
+}
+
+.library-row-actions {
+	display: none;
+	gap: 2px;
+}
+
+.library-row:hover .library-row-actions,
+.library-row.focused .library-row-actions {
+	display: flex;
+}
+
+.library-row-actions button {
+	border: 0;
+	background: none;
+	width: 20px;
+	height: 20px;
+	border-radius: 4px;
+	color: var(--muted);
+}
+
+.library-row-actions button:hover {
+	background: var(--well);
+	color: var(--text);
+}

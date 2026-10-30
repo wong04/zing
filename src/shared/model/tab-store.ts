@@ -78,6 +78,19 @@ export class TabStore {
 		return record
 	}
 
+	/** A tab brought back from a saved session: a record only, placed by its pinned state. */
+	addRestored(content: Pick<TabRecord, 'url' | 'title' | 'pinned'>): TabRecord {
+		const record = { ...createTabRecord(content.url, this.now()), title: content.title, pinned: content.pinned }
+		this.#tabs.splice(record.pinned ? this.pinnedCount : this.#tabs.length, 0, record)
+		return record
+	}
+
+	/** Marks a tab as just used, e.g. the moment it stops being the active one. */
+	touch(id: TabId): void {
+		const index = this.#indexOf(id)
+		this.#tabs[index] = { ...this.#tabs[index]!, lastActiveAt: this.now() }
+	}
+
 	activate(id: TabId): TabRecord {
 		const index = this.#indexOf(id)
 		const now = this.now()

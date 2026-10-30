@@ -1,0 +1,150 @@
+/* Cards drawn in the page-UI view: find bar, downloads, permission prompt. Tokens only, no literal colours. */
+
+.pageui {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 0 8px 8px 0;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.pageui-card {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px;
+	border-radius: var(--card-radius);
+	background: var(--raised);
+	border: 1px solid var(--border);
+	box-shadow: var(--elevation-strong);
+	color: var(--text);
+}
+
+.pageui-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.pageui-title {
+	flex: 1;
+	min-width: 0;
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pageui-input {
+	flex: 1;
+	min-width: 0;
+	height: 28px;
+	padding: 0 8px;
+	border-radius: var(--control-radius);
+	border: 1px solid var(--border);
+	background: var(--control);
+	user-select: text;
+}
+
+.pageui-input:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 0;
+}
+
+.pageui-count {
+	min-width: 64px;
+	text-align: right;
+	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.pageui-button {
+	height: 28px;
+	padding: 0 10px;
+	border: 1px solid var(--border);
+	border-radius: var(--control-radius);
+	background: var(--control);
+	cursor: pointer;
+}
+
+.pageui-button:hover:not(:disabled) {
+	background: var(--selection);
+}
+
+.pageui-button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.pageui-button.primary {
+	background: var(--accent);
+	color: var(--on-accent);
+	border-color: transparent;
+}
+
+.pageui-button.icon {
+	width: 28px;
+	padding: 0;
+}
+
+.pageui-button:focus-visible {
+	outline: 2px solid var(--outline);
+	outline-offset: 1px;
+}
+
+.download {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding-top: 8px;
+	border-top: 1px solid var(--separator);
+}
+
+.download-name {
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.download-status {
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.download-status.failed {
+	color: var(--danger);
+}
+
+.download-bar {
+	height: 4px;
+	border-radius: 2px;
+	background: var(--well);
+	overflow: hidden;
+}
+
+.download-bar > span {
+	display: block;
+	height: 100%;
+	background: var(--accent);
+}
+
+.download-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	max-height: 280px;
+	overflow-y: auto;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+@media (forced-colors: active) {
+	.pageui-card,
+	.pageui-button,
+	.pageui-input {
+		border-color: CanvasText;
+	}
+}

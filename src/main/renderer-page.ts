@@ -17,3 +17,19 @@ export function loadChrome(contents: WebContents): Promise<void> {
 export function loadOverlay(contents: WebContents): Promise<void> {
 	return loadRendererPage(contents, 'overlay')
 }
+
+export function loadPageUi(contents: WebContents): Promise<void> {
+	return loadRendererPage(contents, 'pageui')
+}
+
+export function loadSurface(contents: WebContents): Promise<void> {
+	return loadRendererPage(contents, 'surface')
+}
+
+export function loadTabOverview(contents: WebContents): Promise<void> {
+	return loadRendererPage(contents, 'overlay-overview')
+}
+
+export function loadStackDropdown(contents: WebContents): Promise<void> {
+	return loadRendererPage(contents, 'overlay-stack')
+}

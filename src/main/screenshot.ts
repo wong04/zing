@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { app, desktopCapturer, nativeTheme, screen } from 'electron'
+import type { CommandId } from '@shared/commands'
 import type { ZingWindow } from './zing-window'
 
 const SETTLE_MS = 2500
@@ -26,6 +27,8 @@ export function captureScreenshotOnLoad(target: ZingWindow): void {
 			target.tabs.activate(firstId)
 			target.navigate(firstId, first)
 		}
+		// ZING_SCREENSHOT_COMMANDS (comma-separated command ids, e.g. app.settings) runs before the capture.
+		for (const id of (process.env['ZING_SCREENSHOT_COMMANDS'] ?? '').split(',').filter(Boolean)) target.run(id as CommandId)
 		setTimeout(() => void capture(target, path), SETTLE_MS)
 	})
 }
