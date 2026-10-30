@@ -38,10 +38,8 @@ export interface ShellOptions {
 	readonly notify: (text: string) => void
 	/** The page view's rectangle changed (the sidebar was pinned or unpinned). */
 	readonly relayout: () => void
-	/** Where the page starts below the chrome; it moves down when the Favourites bar shows. */
-	readonly top: () => number
-	/** Width of anything else docked left of the page (the bookmarks panel). */
-	readonly leftInset: () => number
+	/** The page view's rectangle, owned by the window: it knows the tab bar position, Favourites bar and docked panels. */
+	readonly pageArea: () => Rect
 	readonly clock?: () => number
 }
 
@@ -108,10 +106,7 @@ export class ShellController {
 
 	/** Where the page view sits, in whole DIPs. */
 	pageRect(): Rect {
-		const content = this.#o.window.getContentBounds()
-		const left = this.pinnedWidth + this.#o.leftInset()
-		const top = this.#o.top()
-		return { x: left, y: top, width: Math.max(0, content.width - left), height: Math.max(0, content.height - top) }
+		return this.#o.pageArea()
 	}
 
 	state(): ShellState {
