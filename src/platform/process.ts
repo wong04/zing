@@ -83,6 +83,7 @@ async function isFile(path: string): Promise<boolean> {
 
 export interface RunOptions {
 	cwd?: string
+	env?: NodeJS.ProcessEnv
 	onLine?: (line: string) => void
 	signal?: AbortSignal
 	timeoutMs?: number
@@ -97,7 +98,7 @@ export function runProcess(executable: string, args: readonly string[], options:
 			reject(new ProcessCancelledError(`${executable} was cancelled before it started`))
 			return
 		}
-		const child = spawn(executable, args, { cwd: options.cwd, windowsHide: true, shell: false })
+		const child = spawn(executable, args, { cwd: options.cwd, env: options.env, windowsHide: true, shell: false })
 		const out: Buffer[] = []
 		const err: Buffer[] = []
 		const lines = new LineSplitter()

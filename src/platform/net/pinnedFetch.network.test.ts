@@ -15,6 +15,10 @@ import { pinnedFetch } from './pinnedFetch'
 import { systemResolve } from './probes'
 import { relayFetch } from './relayFetch'
 
+function describeFailure(reason: unknown): string {
+	return reason instanceof Error ? `${reason.name}: ${reason.message.replace(/\s+/g, ' ')}` : String(reason)
+}
+
 const requestTimeoutMs = 30_000
 const testTimeoutMs = 90_000
 const neverCancelled = new AbortController().signal
@@ -83,9 +87,9 @@ describe('concurrency', () => {
 				}),
 			),
 		)
-		const ok = results.filter((result) => result.status === 'fulfilled').length
 		console.info(`parallel batch took ${Math.round((Date.now() - started) / 1000)}s`)
-		expect(ok).toBe(12)
+		const failures = results.flatMap((result, i) => (result.status === 'rejected' ? [`#${i}: ${describeFailure(result.reason)}`] : []))
+		expect(failures).toEqual([])
 	}, testTimeoutMs)
 })
 

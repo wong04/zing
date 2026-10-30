@@ -17,8 +17,17 @@ export function encodeCommand(script: string): string {
 	return Buffer.from(script, 'utf16le').toString('base64')
 }
 
+// A PSModulePath inherited from PowerShell 7 (a pwsh terminal, GitHub's
+// runners) lists 7's modules first, and Windows PowerShell 5.1 then fails to
+// autoload its own built-ins such as Get-AuthenticodeSignature. Without the
+// variable, 5.1 rebuilds its default module path.
+export function windowsPowerShellEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	return Object.fromEntries(Object.entries(env).filter(([key]) => key.toLowerCase() !== 'psmodulepath'))
+}
+
 export async function runPowerShell(script: string, timeoutMs = 30_000): Promise<string> {
-	const result = await runProcess('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodeCommand(script)], { timeoutMs })
+	const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodeCommand(script)]
+	const result = await runProcess('powershell.exe', args, { timeoutMs, env: windowsPowerShellEnv(process.env) })
 	if (result.exitCode !== 0) throw new PowerShellError(`PowerShell exited ${result.exitCode}: ${result.stderr.trim()}`, result)
 	return result.stdout
 }
