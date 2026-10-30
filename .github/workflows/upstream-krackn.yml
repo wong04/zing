@@ -1,0 +1,42 @@
+name: upstream-krackn
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open or update the port-or-skip issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          base=$(tr -d '[:space:]' < reference/KRACKN_SHA)
+          head=$(gh api repos/yityler/Krackn/commits/main --jq .sha)
+          if [ "$base" = "$head" ]; then
+            echo "Krackn unchanged since $base"
+            exit 0
+          fi
+          {
+            echo "New commits in [yityler/Krackn](https://github.com/yityler/Krackn/compare/$base...$head) since the baseline \`${base:0:7}\`."
+            echo
+            echo "Port each one to Zing or note why it's skipped, then set \`reference/KRACKN_SHA\` to \`$head\` and close this issue."
+            echo
+            gh api "repos/yityler/Krackn/compare/$base...$head" \
+              --jq '.commits[] | "- [ ] [`\(.sha[0:7])`](\(.html_url)) \(.commit.message | split("\n")[0])"'
+          } > body.md
+          title="Upstream Krackn: port or skip commits up to ${head:0:7}"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label upstream --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --title "$title" --body-file body.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --label upstream --body-file body.md
+          fi

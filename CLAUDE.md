@@ -1,0 +1,11 @@
+# Zing
+
+Windows-only Chromium browser (Electron + TypeScript + React, electron-vite, npm), a remake of Krackn (macOS, SwiftUI/WebKit).
+
+- **Plan:** `docs/PLAN.md`. **Feature tracking:** `PARITY.md`, one GitHub issue per row (`[ID] title`).
+- **`reference/krackn/` is read-only** Swift source at the baseline commit. Its own `CLAUDE.md` describes the *Swift app* (bundle.sh, `/Applications`, AppKit gotchas), not Zing. Read it for behaviour and hard-won gotchas, never edit it.
+- When porting Krackn logic, port its tests from `reference/krackn/Tests/` with it; the Swift assertions are the spec.
+- Close a parity issue only with evidence: a test, or light + dark screenshots for UI.
+- Privacy model: keeps nothing by default. Anything that stores data (restore tabs, persistent profile, vault, import, future sync) is opt-in and flips the Settings privacy banner to a warning.
+- No AI features.
+- Weekly `upstream` issues list new Krackn commits; port or skip each, then update `reference/KRACKN_SHA`.
