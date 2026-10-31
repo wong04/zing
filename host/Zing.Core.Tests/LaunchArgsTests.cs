@@ -5,13 +5,13 @@ namespace Zing.Core.Tests;
 
 public sealed class LaunchArgsTests
 {
-	public static TheoryData<string> Names() => [.. Vectors.Load("src/main/launch-args.vectors.json").EnumerateArray().Select(v => v.GetProperty("name").GetString()!)];
+	public static TheoryData<string> Names() => [.. Vectors.Load("host/Zing.Core.Tests/vectors/launch-args.vectors.json").EnumerateArray().Select(v => v.GetProperty("name").GetString()!)];
 
 	[Theory]
 	[MemberData(nameof(Names))]
 	public void Launch_urls_match_the_typescript(string name)
 	{
-		var vector = Vectors.Load("src/main/launch-args.vectors.json").EnumerateArray().Single(v => v.GetProperty("name").GetString() == name);
+		var vector = Vectors.Load("host/Zing.Core.Tests/vectors/launch-args.vectors.json").EnumerateArray().Single(v => v.GetProperty("name").GetString() == name);
 		var argv = vector.GetProperty("argv").EnumerateArray().Select(a => a.GetString()!);
 		Assert.Equal(vector.GetProperty("urls").EnumerateArray().Select(u => u.GetString()!), LaunchArgs.Urls(argv));
 	}

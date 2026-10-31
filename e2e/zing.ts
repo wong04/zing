@@ -1,84 +1,136 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { createServer } from 'node:net'
+import type { AddressInfo } from 'node:net'
+import { closeSync, existsSync, openSync, readFileSync } from 'node:fs'
+import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { ElectronBlocker } from '@ghostery/adblocker-electron'
+import { chromium, expect, type Browser, type Page } from '@playwright/test'
 
-// Playwright lists every webContents as a window, including tab pages and the
-// overlay, so the chrome renderer is found by its URL rather than by order.
-export function isChrome(page: Page): boolean {
-	return URL.canParse(page.url()) && /\/renderer\/index\.html#chrome$/.test(page.url())
-}
+const ROOT = join(import.meta.dirname, '..')
+export const HOST_EXE = join(ROOT, 'host', 'Zing.Host', 'bin', 'Release', 'net9.0-windows10.0.22621.0', 'win-x64', 'Zing.exe')
+const CHROME_URL = 'https://app.zing/index.html#chrome'
 
-const CACHE_FILE = 'adblock-engine.bin'
-
-export interface LaunchOptions {
-	/** Extra command-line arguments after the app path, e.g. a URL or a Chromium switch. */
-	readonly args?: readonly string[]
-	/** Reuse a profile folder (needed to start a second instance of the same app). */
-	readonly userDataDir?: string
-	/** Written to settings.json before launch, e.g. `{ confirmQuit: true }`. */
-	readonly settings?: Readonly<Record<string, unknown>>
-	/** Extra environment variables for the app, e.g. `ZING_TEST_CLOCK: '1'` to drive timers. */
-	readonly env?: Readonly<Record<string, string>>
-	/** Network filter rules the ad blocker starts with. Defaults to none. */
-	readonly filters?: string
+export class HostProcessError extends Error {
+	override name = 'HostProcessError'
 }
 
 export interface Launched {
-	readonly app: ElectronApplication
+	readonly browser: Browser
 	readonly chrome: Page
+	/** Where this run kept settings and the library; pass it to the next launch to test a relaunch. */
 	readonly userDataDir: string
+	/** Starts Zing again on the same profile, as a link click from another app would, and resolves with its exit code. */
+	launchAgain(args: readonly string[]): Promise<number | null>
+	close(): Promise<void>
+}
+
+export interface LaunchOptions {
+	readonly env?: Readonly<Record<string, string>>
+	readonly userDataDir?: string
+	readonly args?: readonly string[]
 }
 
 /**
- * Seeds a fresh engine cache, so the blocker neither waits for nor needs the
- * network: its cache is under a day old, which skips the background refresh.
+ * A port nothing listens on now. A fixed counter restarted at the same number in a fresh worker
+ * after a crash, and the next test attached to the crashed run's host, which was still running.
  */
-async function seedBlocklist(userDataDir: string, filters: string): Promise<void> {
-	await mkdir(userDataDir, { recursive: true })
-	const engine = ElectronBlocker.parse(filters, { loadCosmeticFilters: false, loadNetworkFilters: true })
-	await writeFile(join(userDataDir, CACHE_FILE), engine.serialize())
-}
-
-/** Written by src/main/test-hooks.ts when ZING_E2E=1. */
-const MAIN_ERRORS_FILE = 'main-errors.log'
-
-export class MainProcessError extends Error {
-	override name = 'MainProcessError'
-}
-
-/** Throws if the app recorded any uncaught main-process error in this profile. */
-export function assertNoMainErrors(userDataDir: string): void {
-	const file = join(userDataDir, MAIN_ERRORS_FILE)
-	if (!existsSync(file)) return
-	throw new MainProcessError(`Zing's main process threw during this test:\n\n${readFileSync(file, 'utf8')}`)
+async function freePort(): Promise<string> {
+	const probe = createServer()
+	await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve))
+	const { port } = probe.address() as AddressInfo
+	await new Promise<void>((resolve) => probe.close(() => resolve()))
+	return String(port)
 }
 
 /**
- * Every test ends with `app.close()`, so the check rides on it: no test can
- * pass while the main process threw behind its back.
+ * Starts Zing's WebView2 host off-screen (ZING_E2E) and attaches over CDP.
+ * `close()` fails the test if the host recorded any unhandled error, the
+ * WebView2 counterpart of e2e/zing.ts's main-process guard.
  */
-function failOnMainErrors(app: ElectronApplication, userDataDir: string): void {
-	const close = app.close.bind(app)
-	app.close = async () => {
-		await close()
-		assertNoMainErrors(userDataDir)
+export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOptions = {}): Promise<Launched> {
+	if (!existsSync(HOST_EXE)) throw new HostProcessError(`No host build at ${HOST_EXE}: run npm run build:host`)
+	const port = await freePort()
+	const errors = join(await mkdtemp(join(tmpdir(), 'zing-host-e2e-')), 'errors.log')
+	// Never the user's real profile: every run gets its own folder unless a test relaunches into one.
+	const userData = userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-host-data-')))
+	const hostEnv = {
+		...process.env,
+		ZING_E2E: '1',
+		ZING_CDP_PORT: port,
+		ZING_ERRORS_FILE: errors,
+		ZING_RENDERER_DIR: join(ROOT, 'out', 'renderer'),
+		ZING_USER_DATA: userData,
+		ZING_DOWNLOADS_DIR: join(userData, 'downloads'),
+		ZING_SKIP_ACCOUNT_GATE: '1',
+		...env,
+	}
+	const host: ChildProcess = spawn(HOST_EXE, [...args], { env: hostEnv, stdio: 'ignore' })
+	await expect
+		.poll(async () => (await fetch(`http://127.0.0.1:${port}/json/version`).catch(() => undefined))?.ok ?? false, { timeout: 30_000 })
+		.toBe(true)
+	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
+	const chrome = await pageWhere(browser, (p) => p.url() === CHROME_URL)
+	await chrome.waitForLoadState('domcontentloaded')
+	return {
+		browser,
+		chrome,
+		userDataDir: userData,
+		launchAgain: (again) =>
+			new Promise((resolve, reject) => {
+				const second = spawn(HOST_EXE, [...again], { env: hostEnv, stdio: 'ignore' })
+				second.once('error', reject)
+				second.once('exit', (code) => resolve(code))
+			}),
+		close: async () => {
+			// Quit as a person would, by closing every window, so pending writes are flushed.
+			const exited = new Promise<void>((resolve) => host.once('exit', () => resolve()))
+			const chromes = pages(browser).filter((p) => p.url() === CHROME_URL)
+			// One window at a time, as a person closes them. A window that closes takes its renderer
+			// with it, so the evaluate may never answer; the page's close event is the answer.
+			for (const page of chromes) {
+				const gone = new Promise<void>((resolve) => page.once('close', () => resolve()))
+				void page.evaluate(() => (globalThis as unknown as { zing: { runCommand(id: string): Promise<unknown> } }).zing.runCommand('window.close')).catch(() => undefined)
+				await Promise.race([gone, exited, new Promise((resolve) => setTimeout(resolve, 5_000))])
+			}
+			const quit = await Promise.race([exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15_000))])
+			// An exited host has already dropped the DevTools connection; closing it again crashed the
+			// Playwright worker (0xC0000409) about once per full run.
+			if (browser.isConnected()) await browser.close()
+			if (!quit) host.kill()
+			await engineReleased(userData)
+			if (existsSync(errors)) throw new HostProcessError(`The host recorded errors during this test:\n\n${readFileSync(errors, 'utf8')}`)
+			if (!quit) throw new HostProcessError('Zing did not quit within 15 s of its last window closing')
+		},
 	}
 }
 
-export async function launchZing(options: LaunchOptions = {}): Promise<Launched> {
-	const userDataDir = options.userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-e2e-')))
-	if (!existsSync(join(userDataDir, CACHE_FILE))) await seedBlocklist(userDataDir, options.filters ?? '')
-	if (options.settings) await writeFile(join(userDataDir, 'settings.json'), JSON.stringify(options.settings))
-	const app = await electron.launch({
-		args: ['.', `--user-data-dir=${userDataDir}`, ...(options.args ?? [])],
-		env: { ...(process.env as Record<string, string>), ZING_SKIP_ACCOUNT_GATE: '1', ZING_E2E: '1', ...options.env },
-	})
-	failOnMainErrors(app, userDataDir)
-	const existing = app.windows().find(isChrome)
-	const chrome = existing ?? (await app.waitForEvent('window', { predicate: isChrome }))
-	await chrome.waitForLoadState('domcontentloaded')
-	return { app, chrome, userDataDir }
+/**
+ * The engine's processes outlive Zing.exe for a moment and keep the profile locked; a test that
+ * reads the profile after close() (a relaunch, a scan for secrets) must wait for them.
+ */
+async function engineReleased(userData: string): Promise<void> {
+	const lockfile = join(userData, 'WebView2', 'EBWebView', 'lockfile')
+	const deadline = Date.now() + 15_000
+	for (;;) {
+		try {
+			closeSync(openSync(lockfile, 'r+'))
+			return
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code
+			if (code === 'ENOENT') return
+			if (code !== 'EBUSY' && code !== 'EPERM') throw error
+			if (Date.now() > deadline) throw new HostProcessError(`The WebView2 engine still holds ${lockfile} 15 s after Zing quit`)
+			await new Promise((resolve) => setTimeout(resolve, 100))
+		}
+	}
+}
+
+export function pages(browser: Browser): Page[] {
+	return browser.contexts().flatMap((context) => context.pages())
+}
+
+export async function pageWhere(browser: Browser, match: (page: Page) => boolean): Promise<Page> {
+	await expect.poll(() => pages(browser).some(match), { timeout: 40_000 }).toBe(true)
+	return pages(browser).find(match)!
 }

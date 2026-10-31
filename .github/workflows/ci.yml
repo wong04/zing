@@ -23,5 +23,3 @@ jobs:
       - run: npm test
       - run: npm run test:host
       - run: npm run test:e2e
-      - run: npm run build:host
-      - run: npx playwright test -c playwright.webview2.config.ts

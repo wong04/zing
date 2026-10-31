@@ -36,7 +36,7 @@ WebKit-only internals with no Chromium equivalent: `WebKitTuning.swift` (private
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| S1 | Electron + TS + React skeleton with Zing identity | new | - | [#2](https://github.com/wong04/zing/issues/2) | Open |
+| S1 | App skeleton with Zing identity (Electron, then the WinUI 3 + WebView2 host from Phase W) | new | - | [#2](https://github.com/wong04/zing/issues/2) | Open |
 | S2 | Frameless window chrome for Windows 11 | parity | App/Components.swift (WindowChrome, WindowDragArea) | [#3](https://github.com/wong04/zing/issues/3) | Open |
 | S3 | Overlay layer for UI drawn over the page | parity | Features/Browser/WebViewHost.swift (shielded) | [#4](https://github.com/wong04/zing/issues/4) | Open |
 | S4 | Tab record model decoupled from webContents | new | Features/Browser/TabOrganizer.swift (TabSnapshot) | [#5](https://github.com/wong04/zing/issues/5) | Open |
@@ -190,7 +190,7 @@ WebKit-only internals with no Chromium equivalent: `WebKitTuning.swift` (private
 | P4 | winget manifest | infra | - | [#108](https://github.com/wong04/zing/issues/108) | Open |
 | P5 | Credits and third-party notices | infra | - | [#109](https://github.com/wong04/zing/issues/109) | Open |
 | P6 | Web-compat smoke tests in CI | infra | - | [#110](https://github.com/wong04/zing/issues/110) | Open |
-| P7 | Renovate for Electron security releases | infra | - | [#111](https://github.com/wong04/zing/issues/111) | Open |
+| P7 | Dependency updates (Windows App SDK, .NET, npm); Chromium security fixes now come with the Evergreen WebView2 runtime | infra | - | [#111](https://github.com/wong04/zing/issues/111) | Open |
 
 ## M9 Parity audit
 

@@ -108,7 +108,7 @@ public sealed class AccountTests : IDisposable
 	public static TheoryData<string, string, string, AccountErrorCode> SignUpRejections()
 	{
 		var data = new TheoryData<string, string, string, AccountErrorCode>();
-		foreach (var c in Vectors.Load("src/main/account.vectors.json").GetProperty("signUpRejections").EnumerateArray())
+		foreach (var c in Vectors.Load("host/Zing.Core.Tests/vectors/account.vectors.json").GetProperty("signUpRejections").EnumerateArray())
 		{
 			var code = c.GetProperty("code").GetString()!;
 			var parsed = Enum.GetValues<AccountErrorCode>().Single(e => e.Wire() == code);
@@ -128,7 +128,7 @@ public sealed class AccountTests : IDisposable
 	public static TheoryData<string, string, string, string> VerifierVectors()
 	{
 		var data = new TheoryData<string, string, string, string>();
-		foreach (var c in Vectors.Load("src/main/account.vectors.json").GetProperty("verifier").EnumerateArray())
+		foreach (var c in Vectors.Load("host/Zing.Core.Tests/vectors/account.vectors.json").GetProperty("verifier").EnumerateArray())
 			data.Add(c.GetProperty("name").GetString()!, c.GetProperty("password").GetString()!, c.GetProperty("saltHex").GetString()!, c.GetProperty("expectedHex").GetString()!);
 		return data;
 	}

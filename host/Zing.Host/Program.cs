@@ -60,7 +60,7 @@ public sealed class ZingApp : Application
 	protected override void OnLaunched(LaunchActivatedEventArgs args)
 	{
 		_services = OpenServices();
-		_environment = CreateEnvironmentAsync();
+		_environment = CreateEnvironmentAsync(Flag("acceleratedCanvas"));
 		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => (Primary?.Api?.Tabs.Records ?? [], Primary?.Api?.Tabs.ActiveId), new SystemScheduler());
 		_onQuit.Add(_session.Flush);
 		if (Flag("restoreTabs")) _pendingRestore = Session.Load(AppPaths.Session);
@@ -158,10 +158,11 @@ public sealed class ZingApp : Application
 
 	private bool Flag(string key) => Services.Settings.Get(key)?.GetValue<bool>() ?? throw new InvalidDataException($"Setting {key} is missing");
 
-	private static async Task<CoreWebView2Environment> CreateEnvironmentAsync()
+	/// <param name="acceleratedCanvas">The acceleratedCanvas setting; like Electron's, it applies from the next launch.</param>
+	private static async Task<CoreWebView2Environment> CreateEnvironmentAsync(bool acceleratedCanvas)
 	{
 		var options = new CoreWebView2EnvironmentOptions();
-		options.AdditionalBrowserArguments = TestHooks.BrowserArguments();
+		options.AdditionalBrowserArguments = string.Join(" ", new[] { TestHooks.BrowserArguments(), acceleratedCanvas ? "" : "--disable-accelerated-2d-canvas" }.Where(a => a.Length > 0));
 		// zing://home parses with a host, as Electron's standard scheme did. The getter hands back a copy, so assign the whole list.
 		options.CustomSchemeRegistrations = new List<CoreWebView2CustomSchemeRegistration> { new(StartPage.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true } };
 		// The engine's own data; an e2e run keeps it in its scratch profile, so a relaunch finds it and nothing is left in AppData.

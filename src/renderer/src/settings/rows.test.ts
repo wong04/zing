@@ -6,7 +6,9 @@ import { boundKeys, CATEGORIES, PANES, isVisible } from './rows'
 describe('settings rows', () => {
 	it('binds every setting in the schema to a control', () => {
 		const bound = boundKeys()
-		expect(SETTING_KEYS.filter((k) => !bound.has(k))).toEqual([])
+		// Kept so older settings files still load; WebView2 always presents Edge's own user agent.
+		const retired = new Set(['defaultUserAgent'])
+		expect(SETTING_KEYS.filter((k) => !bound.has(k) && !retired.has(k))).toEqual([])
 	})
 
 	it('has a pane for every category and no extras', () => {

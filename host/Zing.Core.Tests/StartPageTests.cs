@@ -9,7 +9,7 @@ namespace Zing.Core.Tests;
 /// </summary>
 public sealed class StartPageTests
 {
-	private const string VectorsPath = "src/shared/browser/startPage.vectors.json";
+	private const string VectorsPath = "host/Zing.Core.Tests/vectors/startPage.vectors.json";
 
 	private static readonly Lazy<JsonElement> Root = new(() => Vectors.Load(VectorsPath));
 

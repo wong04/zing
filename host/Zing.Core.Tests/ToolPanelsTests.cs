@@ -5,7 +5,7 @@ namespace Zing.Core.Tests;
 
 public sealed class ToolPanelsTests
 {
-	private const string VectorsPath = "src/main/panels.vectors.json";
+	private const string VectorsPath = "host/Zing.Core.Tests/vectors/panels.vectors.json";
 
 	public static TheoryData<string> ScenarioNames() => Names("scenarios");
 

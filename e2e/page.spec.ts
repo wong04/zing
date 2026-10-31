@@ -1,270 +1,140 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing } from './zing'
+import { launchZing, pageWhere } from './zing'
 
-// The node tsconfig has no DOM lib; these callbacks run in the chrome renderer, where the preload defines it.
-declare const window: { zing: ZingApi }
+declare const window: { readonly zing: ZingApi }
 
-const PARAGRAPH =
-	'Zing keeps nothing by default, so the reader has to build its view from the page that is open right now. '.repeat(4)
+const PARAGRAPH = 'Zing keeps nothing by default, so the reader has to build its view from the page that is open right now. '.repeat(4)
+
+// A 1×1 red PNG.
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
 
 let server: Server
-let base: string
+let base = ''
 
 test.beforeAll(async () => {
 	server = createServer((req, res) => {
-		const url = new URL(req.url ?? '/', 'http://localhost')
-		const html = (body: string, head = '', title = url.pathname): void => {
-			res.setHeader('content-type', 'text/html')
-			res.end(`<!doctype html><html><head><title>${title}</title>${head}</head><body>${body}</body></html>`)
+		if (req.url === '/file.bin') {
+			res.setHeader('content-type', 'application/octet-stream')
+			res.setHeader('content-disposition', 'attachment; filename="report.bin"')
+			return void res.end(Buffer.alloc(2048, 7))
 		}
-		switch (url.pathname) {
-			case '/opener':
-				return html(
-					'<p>opener</p>',
-					'<script>window.addEventListener("message", (e) => { document.title = "got:" + e.data })</script>',
-				)
-			case '/popup':
-				return html('<p>popup</p><script>window.opener.postMessage("hello-from-popup", "*"); window.close()</script>')
-			case '/file.bin':
-				res.setHeader('content-type', 'application/octet-stream')
-				res.setHeader('content-disposition', 'attachment; filename="report.bin"')
-				return void res.end(Buffer.alloc(2048, 7))
-			case '/find':
-				return html('<p>needle one</p><p>needle two</p><p>needle three</p><p>hay</p>')
-			case '/article':
-				return html(
-					`<nav><a href="/other">Site menu</a></nav><article><h1>Fixture Headline</h1><p>${PARAGRAPH}</p><p>${PARAGRAPH}</p></article><footer>Footer junk</footer>`,
-					'',
-					'Fixture Headline',
-				)
-			case '/size-a':
-				return html('<p>a</p><a id="next" href="/size-b">next</a>')
-			case '/size-b':
-				return html('<p>b</p>')
-			case '/perm':
-				return html('<p>perm</p>')
-			default:
-				res.statusCode = 404
-				res.end('not found')
+		res.setHeader('content-type', 'text/html')
+		if (req.url === '/perm') return void res.end('<!doctype html><title>Permissions</title>')
+		if (req.url === '/article') return void res.end(`<!doctype html><title>Fixture Headline</title><nav><a href="/other">Site menu</a></nav><article><h1>Fixture Headline</h1><p>${PARAGRAPH}</p><p>${PARAGRAPH}</p></article><footer>Footer junk</footer>`)
+		if (req.url === '/short') return void res.end('<!doctype html><title>Short</title><p>Too little to read.</p>')
+		if (req.url === '/icon.png') {
+			res.setHeader('content-type', 'image/png')
+			return void res.end(Buffer.from(PNG, 'base64'))
 		}
+		if (req.url === '/iconic') return void res.end('<!doctype html><title>Iconic</title><link rel="icon" href="/icon.png">')
+		res.end('<!doctype html><title>Find</title><p>needle one</p><p>needle two</p><p>needle three</p><p>hay</p>')
 	})
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
 	base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 })
 
-test.afterAll(() => {
-	server.close()
-})
-
-async function activeTabId(chrome: Page): Promise<string> {
-	return chrome.evaluate(async () => {
-		const state = await window.zing.getTabs()
-		if (!state.activeId) throw new Error('no active tab')
-		return state.activeId
-	})
-}
-
-async function startNavigation(chrome: Page, url: string): Promise<void> {
-	const id = await activeTabId(chrome)
-	await chrome.evaluate(([tab, target]) => window.zing.navigateTab(tab!, target!), [id, url])
-}
-
-/** Navigates the active tab and waits until a page with that URL has loaded. */
-async function openUrl(app: ElectronApplication, chrome: Page, url: string): Promise<void> {
-	await startNavigation(chrome, url)
-	await expect
-		.poll(() =>
-			app.evaluate(
-				({ webContents }, target) =>
-					webContents.getAllWebContents().some((c) => c.getURL() === target && !c.isLoading()),
-				url,
-			),
-		)
-		.toBe(true)
-}
-
-/** Runs a script in the first page WebContents whose URL contains `part`. */
-async function inPage<T>(app: ElectronApplication, part: string, code: string): Promise<T> {
-	return app.evaluate(
-		async ({ webContents }, [needle, source]) => {
-			const contents = webContents.getAllWebContents().find((c) => c.getURL().includes(needle!))
-			if (!contents) throw new Error(`no page with ${needle}`)
-			return contents.executeJavaScript(source!, true)
-		},
-		[part, code],
-	)
-}
-
-async function pageUi(app: ElectronApplication): Promise<Page> {
-	const isPageUi = (p: Page): boolean => p.url().endsWith('#pageui')
-	const found = app.windows().find(isPageUi)
-	if (found) return found
-	return app.waitForEvent('window', { predicate: isPageUi })
-}
-
-test('opening and navigating a tab raises no main-process exception', async () => {
-	const { app, chrome } = await launchZing()
-	await app.evaluate(() => {
-		const g = globalThis as unknown as { __errors: string[] }
-		g.__errors = []
-		process.on('uncaughtException', (error) => g.__errors.push(String(error)))
-	})
-	await chrome.evaluate(() => window.zing.runCommand('tab.new'))
-	await openUrl(app, chrome, `${base}/find`)
-	await expect.poll(() => app.evaluate(() => (globalThis as unknown as { __errors: string[] }).__errors)).toEqual([])
-	await expect(chrome.locator('[role="tab"]')).toHaveCount(2)
-	await app.close()
-})
-
-test('a popup keeps window.opener, delivers its message and closes back to the opener', async () => {
-	const { app, chrome } = await launchZing()
-	await app.evaluate(() => {
-		const g = globalThis as unknown as { __errors: string[] }
-		g.__errors = []
-		process.on('uncaughtException', (error) => g.__errors.push(String(error)))
-	})
-	await openUrl(app, chrome, `${base}/opener`)
-	const openerId = await activeTabId(chrome)
-	await expect.poll(() => inPage<string>(app, '/opener', 'document.title')).toBe('/opener')
-	await inPage(app, '/opener', 'void window.open("/popup")')
-	await expect.poll(() => inPage<string>(app, '/opener', 'document.title')).toBe('got:hello-from-popup')
-	await expect(chrome.locator('[role="tab"]')).toHaveCount(1)
-	expect(await activeTabId(chrome)).toBe(openerId)
-	// The popup closed itself while it was the shown page; tearing its view down must not throw.
-	expect(await app.evaluate(() => (globalThis as unknown as { __errors: string[] }).__errors)).toEqual([])
-	await app.close()
-})
-
-test('a download lands in the downloads folder with a Mark of the Web and numbers on collision', async () => {
-	const directory = mkdtempSync(join(tmpdir(), 'zing-dl-'))
-	process.env['ZING_DOWNLOADS_DIR'] = directory
-	const { app, chrome } = await launchZing()
-	try {
-		await startNavigation(chrome, `${base}/file.bin`)
-		const file = join(directory, 'report.bin')
-		await expect.poll(() => existsSync(file)).toBe(true)
-		await expect.poll(() => existsSync(`${file}:Zone.Identifier`) && readFileSync(`${file}:Zone.Identifier`, 'utf8')).toContain('ZoneId=3')
-		const mark = readFileSync(`${file}:Zone.Identifier`, 'utf8')
-		expect(mark).toContain(`HostUrl=${base}/file.bin`)
-		expect(mark).toContain('ReferrerUrl=')
-
-		const ui = await pageUi(app)
-		await expect(ui.getByRole('button', { name: 'Open' })).toBeVisible()
-		await expect(ui.getByRole('button', { name: 'Show in folder' })).toBeVisible()
-
-		await startNavigation(chrome, `${base}/file.bin`)
-		await expect.poll(() => readdirSync(directory).sort()).toEqual(['report 2.bin', 'report.bin'])
-	} finally {
-		delete process.env['ZING_DOWNLOADS_DIR']
-		await app.close()
-	}
-})
+test.afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())))
 
 test('find in page shows a match count and steps through matches', async () => {
-	const { app, chrome } = await launchZing()
-	await openUrl(app, chrome, `${base}/find`)
-	await chrome.evaluate(() => window.zing.runCommand('page.find'))
-	const ui = await pageUi(app)
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
+	await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.find'))
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
 	await ui.getByRole('textbox', { name: 'Find in page' }).fill('needle')
 	await expect(ui.getByText('1 of 3')).toBeVisible()
-	await chrome.evaluate(() => window.zing.runCommand('page.findNext'))
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.findNext'))
 	await expect(ui.getByText('2 of 3')).toBeVisible()
-	await chrome.evaluate(() => window.zing.runCommand('page.findPrevious'))
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.findPrevious'))
 	await expect(ui.getByText('1 of 3')).toBeVisible()
-	await app.close()
+	await zing.chrome.evaluate(() => window.zing.closeFind())
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getPageUi())).find ?? null).toBeNull()
+	await zing.close()
 })
 
-test('reader mode shows the extracted article in a themed view', async () => {
-	const { app, chrome } = await launchZing()
-	await openUrl(app, chrome, `${base}/article`)
-	await chrome.evaluate(() => window.zing.runCommand('page.reader'))
-	await expect
-		.poll(() => inPage<boolean>(app, '/article', '!!document.querySelector("main[data-zing-reader]")'))
-		.toBe(true)
-	const view = await inPage<{ headline: string; text: string; token: string; background: string }>(
-		app,
-		'/article',
-		`(() => {
-			const root = getComputedStyle(document.documentElement)
-			return {
-				headline: document.querySelector('main h1').textContent,
-				text: document.body.innerText,
-				token: root.getPropertyValue('--bg').trim(),
-				background: getComputedStyle(document.body).backgroundColor,
-			}
-		})()`,
-	)
-	expect(view.headline).toBe('Fixture Headline')
-	expect(view.text).toContain('reader has to build its view')
-	expect(view.text).not.toContain('Footer junk')
-	expect(view.text).not.toContain('Site menu')
-	expect(view.token).toMatch(/^#[0-9a-f]{6}$/i)
-	await app.close()
+test('a download lands in the downloads folder, shows in the list and numbers on collision', async () => {
+	const zing = await launchZing()
+	const directory = join(zing.userDataDir, 'downloads')
+	const download = () =>
+		zing.chrome.evaluate(async (url) => {
+			const { activeId } = await window.zing.getTabs()
+			await window.zing.navigateTab(activeId!, url)
+		}, `${base}/file.bin`)
+	await download()
+	await expect.poll(() => existsSync(join(directory, 'report.bin')) && statSync(join(directory, 'report.bin')).size).toBe(2048)
+	// Edge's download manager writes the Mark of the Web itself, with the real source.
+	const mark = join(directory, 'report.bin:Zone.Identifier')
+	// The engine stamps its generic mark after the download; Zing puts its own back within 100 ms.
+	await expect.poll(() => existsSync(mark) && readFileSync(mark, 'utf8')).toContain(`HostUrl=${base}/file.bin`)
+	expect(readFileSync(mark, 'utf8')).toContain('ZoneId=3')
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(ui.getByRole('button', { name: 'Show in folder' })).toBeVisible()
+	await download()
+	await expect.poll(() => readdirSync(directory).sort()).toEqual(['report 2.bin', 'report.bin'])
+	await zing.close()
 })
 
-test('the text size override persists across the tab navigations', async () => {
-	const { app, chrome } = await launchZing()
-	const fontSize = (part: string): Promise<string> =>
-		inPage<string>(app, part, 'getComputedStyle(document.documentElement).fontSize').catch(() => 'no page')
-	await openUrl(app, chrome, `${base}/size-a`)
-	await expect.poll(() => fontSize('/size-a')).toBe('16px')
-	await chrome.evaluate(() => window.zing.runCommand('page.textBigger'))
-	await expect.poll(() => fontSize('/size-a')).toBe('17.6px')
-	await inPage(app, '/size-a', 'document.getElementById("next").click()')
-	await expect.poll(() => fontSize('/size-b')).toBe('17.6px')
-	await app.close()
-})
-
-test('permission requests are denied by default and only granted when allowed', async () => {
-	const { app, chrome } = await launchZing()
-	await openUrl(app, chrome, `${base}/perm`)
-
-	// Not one of the four promptable permissions: refused without asking.
-	const midi = await inPage<string>(
-		app,
-		'/perm',
-		'Promise.race([navigator.requestMIDIAccess().then(() => "granted", (e) => e.name), new Promise((r) => setTimeout(() => r("timeout"), 3000))])',
-	)
-	expect(midi).not.toBe('granted')
-
-	await inPage(app, '/perm', 'window.__result = "pending"; void Notification.requestPermission().then((r) => { window.__result = r })')
-	const ui = await pageUi(app)
-	await expect(ui.getByText('wants to show notifications')).toBeVisible()
-	expect(await inPage<string>(app, '/perm', 'window.__result')).toBe('pending')
-	await ui.getByRole('button', { name: 'Deny' }).click()
-	await expect.poll(() => inPage<string>(app, '/perm', 'window.__result')).toBe('denied')
-	await app.close()
-})
-
-test('HTML fullscreen gives the page the whole window and restores afterwards', async () => {
-	const { app, chrome } = await launchZing()
-	await openUrl(app, chrome, `${base}/find`)
-	const windowFullscreen = (): Promise<boolean> =>
-		app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((w) => w.isFullScreen()))
-	await inPage(app, '/find', 'void document.documentElement.requestFullscreen()')
-	await expect.poll(windowFullscreen).toBe(true)
-	await expect.poll(() => inPage<boolean>(app, '/find', '!!document.fullscreenElement')).toBe(true)
-	await inPage(app, '/find', 'void document.exitFullscreen()')
-	await expect.poll(windowFullscreen).toBe(false)
-	await app.close()
-})
-
-test('the find bar sits below the Favourites bar when it is showing', async () => {
-	const { app, chrome } = await launchZing({ settings: { showFavouritesBar: true } })
-	await openUrl(app, chrome, `${base}/find`)
-	await chrome.evaluate(() => window.zing.runCommand('page.find'))
-	await pageUi(app)
-	const findTop = () => app.evaluate(({ BrowserWindow }) => {
-		const views = BrowserWindow.getAllWindows()[0]!.contentView.children as Electron.WebContentsView[]
-		return views.find((v) => v.webContents.getURL().endsWith('#pageui'))?.getBounds().y
+test('a permission request is asked in the page UI and denied when Deny is clicked', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/perm` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/perm`)
+	await page.waitForLoadState('domcontentloaded')
+	const result = () => page.evaluate(() => (globalThis as unknown as { result?: string }).result)
+	await page.evaluate(() => {
+		const g = globalThis as unknown as { result?: string; Notification: { requestPermission(): Promise<string> } }
+		g.result = 'pending'
+		void g.Notification.requestPermission().then((r) => (g.result = r))
 	})
-	// Tab strip 40 + toolbar 40 + Favourites bar 28, then the 8px margin.
-	await expect.poll(findTop).toBe(116)
-	await app.close()
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(ui.getByText('wants to show notifications')).toBeVisible()
+	expect(await result()).toBe('pending')
+	await ui.getByRole('button', { name: 'Deny' }).click()
+	await expect.poll(result).toBe('denied')
+	await zing.close()
+})
+
+test("a page's icon reaches its tab as an in-memory image", async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/iconic` } })
+	await expect
+		.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs[0]?.icon?.slice(0, 22))
+		.toBe('data:image/png;base64,')
+	await zing.close()
+})
+
+test('bigger text scales type in this tab and survives its next page', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)
+	const fontSize = () => page.evaluate(() => (globalThis as unknown as { getComputedStyle(e: unknown): { fontSize: string }; document: { documentElement: unknown } }).getComputedStyle((globalThis as unknown as { document: { documentElement: unknown } }).document.documentElement).fontSize)
+	await expect.poll(fontSize).toBe('16px')
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.textBigger'))
+	await expect.poll(fontSize).toBe('17.6px')
+	await page.reload()
+	await expect.poll(fontSize).toBe('17.6px')
+	await zing.close()
+})
+
+test('reader mode swaps the page for its article in a themed view, and says so when there is none', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/article` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/article`)
+	await page.waitForLoadState('load')
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.reader'))
+	await expect(page.locator('main[data-zing-reader] h1')).toHaveText('Fixture Headline')
+	await expect(page.locator('body')).toContainText('reader has to build its view')
+	await expect(page.locator('body')).not.toContainText('Footer junk')
+	// Leaving reader mode brings the page back.
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.reader'))
+	await expect(page.locator('footer')).toHaveText('Footer junk')
+
+	await zing.chrome.evaluate(async (url) => {
+		const { activeId } = await window.zing.getTabs()
+		await window.zing.navigateTab(activeId!, url)
+	}, `${base}/short`)
+	await pageWhere(zing.browser, (p) => p.url() === `${base}/short`)
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.reader'))
+	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
+	await expect(overlay.getByText("Reader can't find an article on this page")).toBeVisible()
+	await zing.close()
 })

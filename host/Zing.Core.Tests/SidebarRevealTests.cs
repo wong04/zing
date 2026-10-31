@@ -5,7 +5,7 @@ namespace Zing.Core.Tests;
 
 public sealed class SidebarRevealTests
 {
-	private const string VectorsPath = "src/main/sidebar.vectors.json";
+	private const string VectorsPath = "host/Zing.Core.Tests/vectors/sidebar.vectors.json";
 
 	public static TheoryData<string> CaseNames()
 	{
