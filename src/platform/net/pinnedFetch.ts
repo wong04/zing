@@ -19,6 +19,8 @@ export interface PinnedFetchOptions {
 	readonly timeoutMs?: number
 	/** Where addresses come from; DoH unless a test supplies another. */
 	readonly resolve?: AddressResolver
+	/** Sent on every hop, on top of the defaults (a Zing user agent, HTML Accept, no compression). */
+	readonly headers?: Readonly<Record<string, string>>
 }
 
 export interface PinnedFetchResult extends FetchResult {
@@ -37,6 +39,9 @@ function pinnedLookup(address: string): net.LookupFunction {
 		callback(null, address, family)
 	}
 }
+
+/** Chromium's own limit on a response's headers. */
+const CHROMIUM_MAX_HEADER_BYTES = 256 * 1024
 
 export type AddressResolver = (host: string, signal: AbortSignal) => Promise<string[]>
 
@@ -62,6 +67,7 @@ function requestOnce(
 	signal: AbortSignal,
 	timeoutMs: number,
 	resolve: AddressResolver,
+	headers: Readonly<Record<string, string>>,
 ): Promise<PinnedResponse> {
 	return new Promise((done, reject) => {
 		const deadline = startDeadline(signal, timeoutMs)
@@ -75,6 +81,9 @@ function requestOnce(
 				path: (url.pathname === '' ? '/' : url.pathname) + url.search,
 				method: 'GET',
 				lookup: pinnedLookup(address),
+				// Node's default 16 KiB rejected cloudflare.com ("Header overflow");
+				// a real page has to load here just as it does in the browser.
+				maxHeaderSize: CHROMIUM_MAX_HEADER_BYTES,
 				agent: false,
 				signal: deadline.signal,
 				headers: {
@@ -82,6 +91,7 @@ function requestOnce(
 					Accept: 'text/html,application/xhtml+xml,*/*',
 					'Accept-Encoding': 'identity',
 					Connection: 'close',
+					...headers,
 				},
 			}, (response) => {
 				const chunks: Buffer[] = []
@@ -113,7 +123,7 @@ export async function pinnedFetch(
 	options: PinnedFetchOptions = {},
 ): Promise<PinnedFetchResult> {
 	throwIfCancelled(signal)
-	const { timeoutMs = pinnedTimeoutMs, resolve = dohResolve } = options
-	const result = await followRedirects(url, (hop) => requestOnce(hop, signal, timeoutMs, resolve))
+	const { timeoutMs = pinnedTimeoutMs, resolve = dohResolve, headers = {} } = options
+	const result = await followRedirects(url, (hop) => requestOnce(hop, signal, timeoutMs, resolve, headers))
 	return { ...result, contentType: result.response.headers['content-type'] }
 }
