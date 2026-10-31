@@ -1,0 +1,68 @@
+{
+	"cases": [
+		{
+			"host": "docs.google.com",
+			"want": "google.com"
+		},
+		{
+			"host": "google.com",
+			"want": "google.com"
+		},
+		{
+			"host": "a.b.c.example.com",
+			"want": "example.com"
+		},
+		{
+			"host": "news.bbc.co.uk",
+			"want": "bbc.co.uk"
+		},
+		{
+			"host": "bbc.co.uk",
+			"want": "bbc.co.uk"
+		},
+		{
+			"host": "shop.example.com.au",
+			"want": "example.com.au"
+		},
+		{
+			"host": "localhost",
+			"want": "localhost"
+		},
+		{
+			"host": "MAIL.Google.COM",
+			"want": "google.com"
+		},
+		{
+			"host": "www.youtube.com.",
+			"want": "youtube.com"
+		},
+		{
+			"host": "m.youtube.com",
+			"want": "youtube.com"
+		},
+		{
+			"host": "en.wikipedia.org",
+			"want": "wikipedia.org"
+		},
+		{
+			"host": "forums.example.co.jp",
+			"want": "example.co.jp"
+		},
+		{
+			"host": "www.example.com.hk",
+			"want": "example.com.hk"
+		},
+		{
+			"host": "192.168.1.10",
+			"want": "192.168.1.10"
+		},
+		{
+			"host": "10.0.0.1",
+			"want": "10.0.0.1"
+		},
+		{
+			"host": "::1",
+			"want": "::1"
+		}
+	]
+}

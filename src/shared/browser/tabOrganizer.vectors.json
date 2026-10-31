@@ -1,0 +1,1251 @@
+{
+	"comment": "Shared by tabOrganizer.test.ts and TabOrganizerTests.cs. A tab spec is {id, domain, ...} (title = id) or {url} (id = title = url, site and group derived from the address).",
+	"base": 1700000000000,
+	"fixtures": {
+		"mixed": [
+			{
+				"id": "gmail",
+				"domain": "google.com",
+				"createdMinutesAgo": 50
+			},
+			{
+				"id": "bbc",
+				"domain": "bbc.co.uk",
+				"createdMinutesAgo": 40
+			},
+			{
+				"id": "docs",
+				"domain": "google.com",
+				"createdMinutesAgo": 30
+			},
+			{
+				"id": "apple",
+				"domain": "apple.com",
+				"createdMinutesAgo": 20
+			},
+			{
+				"id": "drive",
+				"domain": "google.com",
+				"createdMinutesAgo": 10
+			}
+		],
+		"withPins": [
+			{
+				"id": "loose1",
+				"domain": "z.com",
+				"createdMinutesAgo": 10
+			},
+			{
+				"id": "pin1",
+				"domain": "m.com",
+				"createdMinutesAgo": 50,
+				"pinned": true
+			},
+			{
+				"id": "pin2",
+				"domain": "n.com",
+				"createdMinutesAgo": 40,
+				"pinned": true
+			},
+			{
+				"id": "loose2",
+				"domain": "a.com",
+				"createdMinutesAgo": 20
+			}
+		],
+		"strip": [
+			{
+				"id": "p1",
+				"domain": "a.com",
+				"pinned": true
+			},
+			{
+				"id": "p2",
+				"domain": "b.com",
+				"pinned": true
+			},
+			{
+				"id": "l1",
+				"domain": "c.com"
+			},
+			{
+				"id": "l2",
+				"domain": "d.com"
+			},
+			{
+				"id": "l3",
+				"domain": "e.com"
+			}
+		],
+		"wstrip": [
+			{
+				"id": "pin",
+				"domain": "z.com",
+				"pinned": true
+			},
+			{
+				"id": "g1",
+				"domain": "google.com"
+			},
+			{
+				"id": "b1",
+				"domain": "bbc.co.uk"
+			},
+			{
+				"id": "g2",
+				"domain": "google.com"
+			},
+			{
+				"id": "g3",
+				"domain": "google.com"
+			}
+		],
+		"google": [
+			{
+				"url": "https://docs.google.com/document/d/1"
+			},
+			{
+				"url": "https://gemini.google.com/app"
+			},
+			{
+				"url": "https://docs.google.com/presentation/d/1"
+			},
+			{
+				"url": "https://docs.google.com/document/d/2"
+			},
+			{
+				"url": "https://www.google.com/search?q=a"
+			},
+			{
+				"url": "https://github.com/x"
+			}
+		],
+		"byUse": [
+			{
+				"id": "a",
+				"domain": "a.com",
+				"accessedMinutesAgo": 30
+			},
+			{
+				"id": "b",
+				"domain": "b.com",
+				"accessedMinutesAgo": 5
+			},
+			{
+				"id": "c",
+				"domain": "c.com",
+				"accessedMinutesAgo": 60
+			}
+		],
+		"cased": [
+			{
+				"id": "zebra",
+				"domain": "z.com"
+			},
+			{
+				"id": "Álvaro",
+				"domain": "a.com"
+			},
+			{
+				"id": "apple",
+				"domain": "b.com"
+			}
+		],
+		"withBlank": [
+			{
+				"id": "real",
+				"domain": "x.com"
+			},
+			{
+				"id": "blank1",
+				"domain": ""
+			},
+			{
+				"id": "other",
+				"domain": "y.com"
+			},
+			{
+				"id": "blank2",
+				"domain": ""
+			}
+		],
+		"loose3": [
+			{
+				"id": "a",
+				"domain": "a.com"
+			},
+			{
+				"id": "b",
+				"domain": "b.com"
+			},
+			{
+				"id": "c",
+				"domain": "c.com"
+			}
+		],
+		"pinnedThenMixed": [
+			{
+				"id": "pin",
+				"domain": "z.com",
+				"pinned": true
+			},
+			{
+				"id": "gmail",
+				"domain": "google.com",
+				"createdMinutesAgo": 50
+			},
+			{
+				"id": "bbc",
+				"domain": "bbc.co.uk",
+				"createdMinutesAgo": 40
+			},
+			{
+				"id": "docs",
+				"domain": "google.com",
+				"createdMinutesAgo": 30
+			},
+			{
+				"id": "apple",
+				"domain": "apple.com",
+				"createdMinutesAgo": 20
+			},
+			{
+				"id": "drive",
+				"domain": "google.com",
+				"createdMinutesAgo": 10
+			}
+		]
+	},
+	"cases": [
+		{
+			"name": "manual leaves order alone",
+			"op": "order",
+			"tabs": "mixed",
+			"organization": "manual",
+			"want": [
+				"gmail",
+				"bbc",
+				"docs",
+				"apple",
+				"drive"
+			]
+		},
+		{
+			"name": "by domain clumps same site (sites keep first-appearance order, so a new site never shuffles open tabs)",
+			"op": "order",
+			"tabs": "mixed",
+			"organization": "domain",
+			"want": [
+				"gmail",
+				"docs",
+				"drive",
+				"bbc",
+				"apple"
+			]
+		},
+		{
+			"name": "alphabetical",
+			"op": "order",
+			"tabs": "mixed",
+			"organization": "alphabetical",
+			"want": [
+				"apple",
+				"bbc",
+				"docs",
+				"drive",
+				"gmail"
+			]
+		},
+		{
+			"name": "newest first (createdMinutesAgo counts backwards, so drive is newest)",
+			"op": "order",
+			"tabs": "mixed",
+			"organization": "newest",
+			"want": [
+				"drive",
+				"apple",
+				"docs",
+				"bbc",
+				"gmail"
+			]
+		},
+		{
+			"name": "recently used",
+			"op": "order",
+			"tabs": "byUse",
+			"organization": "recentlyUsed",
+			"want": [
+				"b",
+				"a",
+				"c"
+			]
+		},
+		{
+			"name": "alphabetical ignores case and accents",
+			"op": "order",
+			"tabs": "cased",
+			"organization": "alphabetical",
+			"want": [
+				"Álvaro",
+				"apple",
+				"zebra"
+			]
+		},
+		{
+			"name": "pinned stay first under alphabetical",
+			"op": "order",
+			"tabs": "withPins",
+			"organization": "alphabetical",
+			"want": [
+				"pin1",
+				"pin2",
+				"loose1",
+				"loose2"
+			]
+		},
+		{
+			"name": "pinned stay first under domain",
+			"op": "order",
+			"tabs": "withPins",
+			"organization": "domain",
+			"want": [
+				"pin1",
+				"pin2",
+				"loose1",
+				"loose2"
+			]
+		},
+		{
+			"name": "pinned are exempt from sorting (pin1 was created before pin2)",
+			"op": "order",
+			"tabs": "withPins",
+			"organization": "newest",
+			"want": [
+				"pin1",
+				"pin2",
+				"loose1",
+				"loose2"
+			]
+		},
+		{
+			"name": "empty domains form their own group",
+			"op": "order",
+			"tabs": "withBlank",
+			"organization": "domain",
+			"want": [
+				"real",
+				"blank1",
+				"blank2",
+				"other"
+			]
+		},
+		{
+			"name": "one stack per site",
+			"op": "stacks",
+			"tabs": "mixed",
+			"project": "count",
+			"want": 3
+		},
+		{
+			"name": "sites in the order they first appeared",
+			"op": "stacks",
+			"tabs": "mixed",
+			"project": "domain",
+			"want": [
+				"google.com",
+				"bbc.co.uk",
+				"apple.com"
+			]
+		},
+		{
+			"name": "a site's pages keep their order inside its stack",
+			"op": "stacks",
+			"tabs": "mixed",
+			"project": "firstIds",
+			"want": [
+				"gmail",
+				"docs",
+				"drive"
+			]
+		},
+		{
+			"name": "Newest + Dropdown: the site with the newest page comes first",
+			"op": "orderedStacks",
+			"tabs": "mixed",
+			"organization": "newest",
+			"project": "firstDomain",
+			"want": "google.com"
+		},
+		{
+			"name": "A-Z + Dropdown: sites sort by name",
+			"op": "stacksByName",
+			"tabs": "mixed",
+			"project": "domain",
+			"want": [
+				"apple.com",
+				"bbc.co.uk",
+				"google.com"
+			]
+		},
+		{
+			"name": "A-Z keeps new tabs after the sites",
+			"op": "stacksByName",
+			"tabs": "mixed",
+			"append": [
+				{
+					"id": "blank",
+					"domain": ""
+				}
+			],
+			"project": "lastDomain",
+			"want": ""
+		},
+		{
+			"name": "blank new tabs are each their own stack",
+			"op": "stacks",
+			"tabs": "mixed",
+			"append": [
+				{
+					"id": "new1",
+					"domain": ""
+				},
+				{
+					"id": "new2",
+					"domain": ""
+				}
+			],
+			"project": "count",
+			"want": 5
+		},
+		{
+			"name": "pinned tabs aren't stacked",
+			"op": "stacks",
+			"tabs": "mixed",
+			"prepend": [
+				{
+					"id": "pin",
+					"domain": "google.com",
+					"pinned": true
+				}
+			],
+			"project": "firstIdsLength",
+			"want": 3
+		},
+		{
+			"name": "stacks: Docs x2, Gemini, Slides, Google, GitHub",
+			"op": "stacks",
+			"tabs": "google",
+			"project": "nameCount",
+			"want": [
+				"Google Docs 2",
+				"Gemini 1",
+				"Google Slides 1",
+				"Google 1",
+				"github.com 1"
+			]
+		},
+		{
+			"name": "A-Z sorts by the name shown",
+			"op": "stacksByName",
+			"tabs": "google",
+			"project": "name",
+			"want": [
+				"Gemini",
+				"github.com",
+				"Google",
+				"Google Docs",
+				"Google Slides"
+			]
+		},
+		{
+			"name": "stack JSON shape: a site stack and a new tab",
+			"op": "stacks",
+			"tabs": [
+				{
+					"id": "a",
+					"domain": "a.com"
+				},
+				{
+					"id": "n",
+					"domain": ""
+				}
+			],
+			"project": "full",
+			"want": [
+				{
+					"domain": "a.com",
+					"ids": [
+						"a"
+					],
+					"name": "a.com",
+					"key": "a.com"
+				},
+				{
+					"domain": "",
+					"ids": [
+						"n"
+					],
+					"name": "",
+					"key": "n"
+				}
+			]
+		},
+		{
+			"name": "stack dragged right takes all its pages along",
+			"op": "movingStack",
+			"groups": [
+				[
+					"a1",
+					"a2"
+				],
+				[
+					"b1"
+				],
+				[
+					"c1",
+					"c2",
+					"c3"
+				]
+			],
+			"from": 0,
+			"to": 2,
+			"want": [
+				"b1",
+				"c1",
+				"c2",
+				"c3",
+				"a1",
+				"a2"
+			]
+		},
+		{
+			"name": "stack dragged left",
+			"op": "movingStack",
+			"groups": [
+				[
+					"a1",
+					"a2"
+				],
+				[
+					"b1"
+				],
+				[
+					"c1",
+					"c2",
+					"c3"
+				]
+			],
+			"from": 2,
+			"to": 0,
+			"want": [
+				"c1",
+				"c2",
+				"c3",
+				"a1",
+				"a2",
+				"b1"
+			]
+		},
+		{
+			"name": "out-of-range move changes nothing",
+			"op": "movingStack",
+			"groups": [
+				[
+					"a1",
+					"a2"
+				],
+				[
+					"b1"
+				],
+				[
+					"c1",
+					"c2",
+					"c3"
+				]
+			],
+			"from": 0,
+			"to": 9,
+			"want": [
+				"a1",
+				"a2",
+				"b1",
+				"c1",
+				"c2",
+				"c3"
+			]
+		},
+		{
+			"name": "page dragged to the bottom of its list",
+			"op": "moving",
+			"id": "c1",
+			"ids": [
+				"c1",
+				"c2",
+				"c3"
+			],
+			"index": 2,
+			"want": [
+				"c2",
+				"c3",
+				"c1"
+			]
+		},
+		{
+			"name": "page dragged to the top",
+			"op": "moving",
+			"id": "c3",
+			"ids": [
+				"c1",
+				"c2",
+				"c3"
+			],
+			"index": 0,
+			"want": [
+				"c3",
+				"c1",
+				"c2"
+			]
+		},
+		{
+			"name": "past the end clamps to the end",
+			"op": "moving",
+			"id": "c1",
+			"ids": [
+				"c1",
+				"c2",
+				"c3"
+			],
+			"index": 99,
+			"want": [
+				"c2",
+				"c3",
+				"c1"
+			]
+		},
+		{
+			"name": "an id not in the list changes nothing",
+			"op": "moving",
+			"id": "a1",
+			"ids": [
+				"c1",
+				"c2",
+				"c3"
+			],
+			"index": 0,
+			"want": [
+				"c1",
+				"c2",
+				"c3"
+			]
+		},
+		{
+			"name": "freeze: makes the A-Z dropdown order the manual order, pinned first",
+			"op": "freeze",
+			"tabs": "pinnedThenMixed",
+			"organization": "alphabetical",
+			"want": [
+				"pin",
+				"apple",
+				"bbc",
+				"gmail",
+				"docs",
+				"drive"
+			]
+		},
+		{
+			"name": "freeze: groups a manual strip by site, as the dropdowns show it",
+			"op": "freeze",
+			"tabs": "mixed",
+			"organization": "manual",
+			"want": [
+				"gmail",
+				"docs",
+				"drive",
+				"bbc",
+				"apple"
+			]
+		},
+		{
+			"name": "arrange refuses an arrangement that loses a tab",
+			"op": "arrange",
+			"tabs": "mixed",
+			"groups": [
+				[
+					"gmail"
+				]
+			],
+			"want": {
+				"throws": "TabArrangementError"
+			}
+		},
+		{
+			"name": "arrange refuses a tab that is not open",
+			"op": "arrange",
+			"tabs": "loose3",
+			"groups": [
+				[
+					"a",
+					"b",
+					"c",
+					"zzz"
+				]
+			],
+			"want": {
+				"throws": "TabArrangementError"
+			}
+		},
+		{
+			"name": "arrange refuses a tab listed twice",
+			"op": "arrange",
+			"tabs": "loose3",
+			"groups": [
+				[
+					"a",
+					"b"
+				],
+				[
+					"b",
+					"c"
+				]
+			],
+			"want": {
+				"throws": "TabArrangementError"
+			}
+		},
+		{
+			"name": "arrange refuses a pinned tab",
+			"op": "arrange",
+			"tabs": "strip",
+			"groups": [
+				[
+					"p1",
+					"l1",
+					"l2",
+					"l3"
+				],
+				[
+					"p2"
+				]
+			],
+			"want": {
+				"throws": "TabArrangementError"
+			}
+		},
+		{
+			"name": "arrange puts pinned tabs first",
+			"op": "arrange",
+			"tabs": "strip",
+			"groups": [
+				[
+					"l3",
+					"l1"
+				],
+				[
+					"l2"
+				]
+			],
+			"want": [
+				"p1",
+				"p2",
+				"l3",
+				"l1",
+				"l2"
+			]
+		},
+		{
+			"name": "moveTab: an unpinned tab moves among the unpinned (right)",
+			"op": "moveTab",
+			"tabs": "strip",
+			"from": 2,
+			"to": 4,
+			"want": [
+				"p1",
+				"p2",
+				"l2",
+				"l3",
+				"l1"
+			]
+		},
+		{
+			"name": "moveTab: an unpinned tab moves among the unpinned (left)",
+			"op": "moveTab",
+			"tabs": "strip",
+			"from": 4,
+			"to": 2,
+			"want": [
+				"p1",
+				"p2",
+				"l3",
+				"l1",
+				"l2"
+			]
+		},
+		{
+			"name": "moveTab: a pinned tab moves among the pinned",
+			"op": "moveTab",
+			"tabs": "strip",
+			"from": 0,
+			"to": 1,
+			"want": [
+				"p2",
+				"p1",
+				"l1",
+				"l2",
+				"l3"
+			]
+		},
+		{
+			"name": "moveTab: an unpinned tab dropped in the pinned run stops at its edge",
+			"op": "moveTab",
+			"tabs": "strip",
+			"from": 4,
+			"to": 0,
+			"want": [
+				"p1",
+				"p2",
+				"l3",
+				"l1",
+				"l2"
+			]
+		},
+		{
+			"name": "moveTab: a pinned tab dropped among the unpinned stops at the end of the pinned run",
+			"op": "moveTab",
+			"tabs": "strip",
+			"from": 0,
+			"to": 4,
+			"want": [
+				"p2",
+				"p1",
+				"l1",
+				"l2",
+				"l3"
+			]
+		},
+		{
+			"name": "moveTab: a move clamped back onto itself changes nothing (unpinned)",
+			"op": "moveTab",
+			"tabs": "strip",
+			"from": 2,
+			"to": 0,
+			"want": [
+				"p1",
+				"p2",
+				"l1",
+				"l2",
+				"l3"
+			]
+		},
+		{
+			"name": "moveTab: a move clamped back onto itself changes nothing (pinned)",
+			"op": "moveTab",
+			"tabs": "strip",
+			"from": 1,
+			"to": 3,
+			"want": [
+				"p1",
+				"p2",
+				"l1",
+				"l2",
+				"l3"
+			]
+		},
+		{
+			"name": "moveTab: the same slot changes nothing",
+			"op": "moveTab",
+			"tabs": "strip",
+			"from": 3,
+			"to": 3,
+			"want": [
+				"p1",
+				"p2",
+				"l1",
+				"l2",
+				"l3"
+			]
+		},
+		{
+			"name": "moveTab: an index off the strip changes nothing (from)",
+			"op": "moveTab",
+			"tabs": "strip",
+			"from": 9,
+			"to": 0,
+			"want": [
+				"p1",
+				"p2",
+				"l1",
+				"l2",
+				"l3"
+			]
+		},
+		{
+			"name": "moveTab: an index off the strip changes nothing (to)",
+			"op": "moveTab",
+			"tabs": "strip",
+			"from": 2,
+			"to": -1,
+			"want": [
+				"p1",
+				"p2",
+				"l1",
+				"l2",
+				"l3"
+			]
+		},
+		{
+			"name": "moveTab: with nothing pinned, any slot is fair",
+			"op": "moveTab",
+			"tabs": "loose3",
+			"from": 2,
+			"to": 0,
+			"want": [
+				"c",
+				"a",
+				"b"
+			]
+		},
+		{
+			"name": "moveWithin: the pages swap among the slots the stack already holds",
+			"op": "moveWithin",
+			"tabs": "wstrip",
+			"id": "g3",
+			"stackIds": [
+				"g1",
+				"g2",
+				"g3"
+			],
+			"index": 0,
+			"want": [
+				"pin",
+				"g3",
+				"b1",
+				"g1",
+				"g2"
+			]
+		},
+		{
+			"name": "moveWithin: to the bottom of the list",
+			"op": "moveWithin",
+			"tabs": "wstrip",
+			"id": "g1",
+			"stackIds": [
+				"g1",
+				"g2",
+				"g3"
+			],
+			"index": 2,
+			"want": [
+				"pin",
+				"g2",
+				"b1",
+				"g3",
+				"g1"
+			]
+		},
+		{
+			"name": "moveWithin: past the end clamps to the end",
+			"op": "moveWithin",
+			"tabs": "wstrip",
+			"id": "g1",
+			"stackIds": [
+				"g1",
+				"g2",
+				"g3"
+			],
+			"index": 99,
+			"want": [
+				"pin",
+				"g2",
+				"b1",
+				"g3",
+				"g1"
+			]
+		},
+		{
+			"name": "moveWithin: the stack order comes from the strip, not the list passed in",
+			"op": "moveWithin",
+			"tabs": "wstrip",
+			"id": "g3",
+			"stackIds": [
+				"g3",
+				"g2",
+				"g1"
+			],
+			"index": 0,
+			"want": [
+				"pin",
+				"g3",
+				"b1",
+				"g1",
+				"g2"
+			]
+		},
+		{
+			"name": "moveWithin: a page not in the stack changes nothing",
+			"op": "moveWithin",
+			"tabs": "wstrip",
+			"id": "b1",
+			"stackIds": [
+				"g1",
+				"g2",
+				"g3"
+			],
+			"index": 0,
+			"want": [
+				"pin",
+				"g1",
+				"b1",
+				"g2",
+				"g3"
+			]
+		},
+		{
+			"name": "https://docs.google.com/document/d/abc/edit -> Google Docs",
+			"op": "siteGroup",
+			"url": "https://docs.google.com/document/d/abc/edit",
+			"want": {
+				"name": "Google Docs"
+			}
+		},
+		{
+			"name": "https://docs.google.com/document/u/0/ -> Google Docs",
+			"op": "siteGroup",
+			"url": "https://docs.google.com/document/u/0/",
+			"want": {
+				"name": "Google Docs"
+			}
+		},
+		{
+			"name": "https://docs.google.com/spreadsheets/d/abc/edit -> Google Sheets",
+			"op": "siteGroup",
+			"url": "https://docs.google.com/spreadsheets/d/abc/edit",
+			"want": {
+				"name": "Google Sheets"
+			}
+		},
+		{
+			"name": "https://docs.google.com/presentation/d/abc/edit -> Google Slides",
+			"op": "siteGroup",
+			"url": "https://docs.google.com/presentation/d/abc/edit",
+			"want": {
+				"name": "Google Slides"
+			}
+		},
+		{
+			"name": "https://docs.google.com/forms/d/abc/viewform -> Google Forms",
+			"op": "siteGroup",
+			"url": "https://docs.google.com/forms/d/abc/viewform",
+			"want": {
+				"name": "Google Forms"
+			}
+		},
+		{
+			"name": "https://gemini.google.com/app/123 -> Gemini",
+			"op": "siteGroup",
+			"url": "https://gemini.google.com/app/123",
+			"want": {
+				"name": "Gemini"
+			}
+		},
+		{
+			"name": "https://mail.google.com/mail/u/0/#inbox -> Gmail",
+			"op": "siteGroup",
+			"url": "https://mail.google.com/mail/u/0/#inbox",
+			"want": {
+				"name": "Gmail"
+			}
+		},
+		{
+			"name": "https://drive.google.com/drive/my-drive -> Google Drive",
+			"op": "siteGroup",
+			"url": "https://drive.google.com/drive/my-drive",
+			"want": {
+				"name": "Google Drive"
+			}
+		},
+		{
+			"name": "https://www.google.com/search?q=krackn -> Google",
+			"op": "siteGroup",
+			"url": "https://www.google.com/search?q=krackn",
+			"want": {
+				"name": "Google"
+			}
+		},
+		{
+			"name": "https://www.google.com/url?q=https://example.com -> Google",
+			"op": "siteGroup",
+			"url": "https://www.google.com/url?q=https://example.com",
+			"want": {
+				"name": "Google"
+			}
+		},
+		{
+			"name": "https://www.google.com/maps/place/x -> Google Maps",
+			"op": "siteGroup",
+			"url": "https://www.google.com/maps/place/x",
+			"want": {
+				"name": "Google Maps"
+			}
+		},
+		{
+			"name": "https://www.google.co.uk/search?q=x -> Google",
+			"op": "siteGroup",
+			"url": "https://www.google.co.uk/search?q=x",
+			"want": {
+				"name": "Google"
+			}
+		},
+		{
+			"name": "https://accounts.google.com/signin -> Google Account",
+			"op": "siteGroup",
+			"url": "https://accounts.google.com/signin",
+			"want": {
+				"name": "Google Account"
+			}
+		},
+		{
+			"name": "https://unknownthing.google.com/ -> unknownthing.google.com",
+			"op": "siteGroup",
+			"url": "https://unknownthing.google.com/",
+			"want": {
+				"name": "unknownthing.google.com"
+			}
+		},
+		{
+			"name": "https://en.wikipedia.org/wiki/Kraken -> wikipedia.org",
+			"op": "siteGroup",
+			"url": "https://en.wikipedia.org/wiki/Kraken",
+			"want": {
+				"name": "wikipedia.org"
+			}
+		},
+		{
+			"name": "https://github.com/apple/swift -> github.com",
+			"op": "siteGroup",
+			"url": "https://github.com/apple/swift",
+			"want": {
+				"name": "github.com"
+			}
+		},
+		{
+			"name": "https://www.youtube.com/watch?v=1 -> youtube.com",
+			"op": "siteGroup",
+			"url": "https://www.youtube.com/watch?v=1",
+			"want": {
+				"name": "youtube.com"
+			}
+		},
+		{
+			"name": "https://google.xyz/ -> google.xyz",
+			"op": "siteGroup",
+			"url": "https://google.xyz/",
+			"want": {
+				"name": "google.xyz"
+			}
+		},
+		{
+			"name": "https://google.com.evil.com/ -> evil.com",
+			"op": "siteGroup",
+			"url": "https://google.com.evil.com/",
+			"want": {
+				"name": "evil.com"
+			}
+		},
+		{
+			"name": "siteGroup keys: docs editor, google search, maps, product, plain site",
+			"op": "siteGroupKeys",
+			"urls": [
+				"https://docs.google.com/document/d/a",
+				"https://docs.google.com/",
+				"https://www.google.com/search?q=a",
+				"https://www.google.com/maps/place/x",
+				"https://gemini.google.com/app",
+				"https://en.wikipedia.org/"
+			],
+			"want": [
+				"docs.google.com/document",
+				"docs.google.com/",
+				"google.com",
+				"google.com/maps",
+				"gemini.google.com",
+				"wikipedia.org"
+			]
+		},
+		{
+			"name": "two Docs share a dropdown",
+			"op": "sameKey",
+			"urls": [
+				"https://docs.google.com/document/d/a",
+				"https://docs.google.com/document/d/b"
+			],
+			"want": true
+		},
+		{
+			"name": "a Doc and a Sheet don't",
+			"op": "sameKey",
+			"urls": [
+				"https://docs.google.com/document/d/a",
+				"https://docs.google.com/spreadsheets/d/a"
+			],
+			"want": false
+		},
+		{
+			"name": "two Wikipedia languages still share one",
+			"op": "sameKey",
+			"urls": [
+				"https://en.wikipedia.org/",
+				"https://de.wikipedia.org/"
+			],
+			"want": true
+		},
+		{
+			"name": "Gmail and Docs have different groups",
+			"op": "sameKey",
+			"urls": [
+				"https://mail.google.com/",
+				"https://docs.google.com/document/d/1"
+			],
+			"want": false
+		}
+	],
+	"snapshotOf": [
+		{
+			"name": "a blank tab has no site",
+			"url": "about:blank",
+			"active": false,
+			"want": {
+				"domain": "",
+				"group": "",
+				"isActive": false
+			}
+		},
+		{
+			"name": "subdomains group under the registrable domain",
+			"url": "https://docs.example.co.uk/x",
+			"active": true,
+			"want": {
+				"domain": "example.co.uk",
+				"group": "example.co.uk",
+				"isActive": true
+			}
+		},
+		{
+			"name": "Google Docs is named",
+			"url": "https://docs.google.com/document/d/1",
+			"active": false,
+			"want": {
+				"domain": "google.com",
+				"groupName": "Google Docs"
+			}
+		},
+		{
+			"name": "an unparseable address has no site",
+			"url": "not a url",
+			"active": false,
+			"want": {
+				"domain": "",
+				"group": ""
+			}
+		}
+	]
+}
