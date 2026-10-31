@@ -1,8 +1,12 @@
+import { scryptSync } from 'node:crypto'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AccountError, AccountFileError, AccountStore, type SecretCipher } from './account'
+import vectors from './account.vectors.json'
+
+// The cases live in account.vectors.json, which the C# port's tests read too.
 
 const MARK = Buffer.from('SEALED:')
 
@@ -78,10 +82,17 @@ describe('AccountStore', () => {
 		expect(store(dir).state()).toMatchObject({ hasAccount: true, signedIn: false, requirePasswordOnLaunch: true })
 	})
 
-	it('rejects short passwords, blank fields and a second account', () => {
+	it.each(vectors.signUpRejections)('rejects sign-up: $name', ({ username, password, code }) => {
+		expect(codeOf(() => store(tempDir()).signUp(username, '', '', password))).toBe(code)
+	})
+
+	// The C# port must read an Electron-made account, so it has to derive the same bytes.
+	it.each(vectors.verifier)('derives the same scrypt check: $name', ({ password, saltHex, expectedHex }) => {
+		expect(scryptSync(password, Buffer.from(saltHex, 'hex'), 32).toString('hex')).toBe(expectedHex)
+	})
+
+	it('rejects a second account', () => {
 		const s = store(tempDir())
-		expect(codeOf(() => s.signUp('jdoe', '', '', 'short'))).toBe('weak-password')
-		expect(codeOf(() => s.signUp('  ', '', '', 'longenough1'))).toBe('empty-field')
 		s.signUp('jdoe', '', '', 'longenough1')
 		expect(codeOf(() => s.signUp('other', '', '', 'longenough1'))).toBe('account-exists')
 	})

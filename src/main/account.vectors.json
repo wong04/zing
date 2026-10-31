@@ -1,0 +1,48 @@
+{
+	"signUpRejections": [
+		{
+			"name": "short password",
+			"username": "jdoe",
+			"password": "short",
+			"code": "weak-password"
+		},
+		{
+			"name": "seven characters is still short",
+			"username": "jdoe",
+			"password": "1234567",
+			"code": "weak-password"
+		},
+		{
+			"name": "blank username",
+			"username": "  ",
+			"password": "longenough1",
+			"code": "empty-field"
+		},
+		{
+			"name": "empty password",
+			"username": "jdoe",
+			"password": "",
+			"code": "empty-field"
+		}
+	],
+	"verifier": [
+		{
+			"name": "ascii password",
+			"password": "correct horse",
+			"saltHex": "01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3da",
+			"expectedHex": "f91f3d9d819c0800c45fcd0d901afe6396852b790c8b19317922084589b4f5e3"
+		},
+		{
+			"name": "non-ascii password",
+			"password": "pässwörd-日本語-😀",
+			"saltHex": "010c17222d38434e59646f7a85909ba6b1bcc7d2dde8f3fe09141f2a35404b56",
+			"expectedHex": "ac2ea053c30ffa3d8603b6c62e5f7199043a28abc529f3828c88b7de44d93111"
+		},
+		{
+			"name": "long password",
+			"password": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+			"saltHex": "0104070a0d101316191c1f2225282b2e3134373a3d404346494c4f5255585b5e",
+			"expectedHex": "43efbdc539c1faf5ee820da6542d0a1fcdee0857d5b428fd9f3acf65fd61e10d"
+		}
+	]
+}
