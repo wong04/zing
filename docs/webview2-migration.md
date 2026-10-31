@@ -292,3 +292,21 @@ The last two items are ported and tested but not yet wired into the host (W3b).
 **Open:**
 - **Dropdown clicks:** DevTools mouse input never reaches the `#overlay-stack` view, while it does reach the chrome and `#pageui`. The dropdown test therefore drives its rows with DOM pointer events, so real clicks on dropdown rows need a hand check.
 - **Still to do in W3:** reader mode, the history menu, the default-browser prompt, the taskbar icon, `persistentProfile`, and the toolbox (still "not implemented", as in Electron).
+
+## W3e (2026-10-31): reader, history menu, persistent profile, taskbar icon. W3 is complete
+
+- **Reader mode:**
+  - Readability runs inside the page, in an isolated world opened through DevTools (`Page.createIsolatedWorld` and `Runtime.evaluate`), so page scripts can't see or tamper with it.
+  - The TS lives in `src/shared/browser/readerPage.ts`, shared with Electron's extractor through `readerArticle.ts`. `npm run gen:reader` (part of `npm run build:host`) bundles it into `host/Zing.Host/Assets/reader.js` with its stylesheet.
+  - Toggling reader mode off again reloads the page.
+- **History menu:** read through `Page.getNavigationHistory` (WebView2 has no history list), with entries chosen through `Page.navigateToHistoryEntry`. Items come from the ported `HistoryMenu`.
+- **`persistentProfile`:**
+  - It's read at launch. When on, pages use a normal on-disk profile (`zing`) and nothing is purged; when off, they use the in-memory `zing-private` profile.
+  - Zing's own UI views now use an in-memory profile too (`zing-chrome`), as Electron's partition did.
+  - e2e runs keep the engine's data in their scratch profile.
+- **Taskbar icon:** the C3 tile that contrasts with the Windows taskbar theme (registry `SystemUsesLightTheme`), following `UISettings.ColorValuesChanged`. The .exe carries the frosted tile.
+- **Default browser:** `default-browser:open-settings` opens Windows' Default apps page. Registering Zing as a browser candidate is installer work (Phase 8, Velopack).
+- **Every command in the registry now has a handler.** A host test checks that none answers "not implemented".
+- **Harness:** the Playwright worker crashed with `0xC0000409` about once per full run, always right after a test closed its Zing. The harness no longer closes a DevTools connection that the exited host had already dropped.
+
+**W3 result:** every Phase 0–3 feature of the Electron build runs on the WebView2 host. There are 958 host tests and 36 WebView2 e2e tests. Still to check by hand: real mouse clicks on the stack dropdown's rows.

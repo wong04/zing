@@ -68,8 +68,9 @@ test('a download lands in the downloads folder, shows in the list and numbers on
 	await expect.poll(() => existsSync(join(directory, 'report.bin')) && statSync(join(directory, 'report.bin')).size).toBe(2048)
 	// Edge's download manager writes the Mark of the Web itself, with the real source.
 	const mark = join(directory, 'report.bin:Zone.Identifier')
-	await expect.poll(() => existsSync(mark) && readFileSync(mark, 'utf8')).toContain('ZoneId=3')
-	expect(readFileSync(mark, 'utf8')).toContain(`HostUrl=${base}/file.bin`)
+	// The engine stamps its generic mark after the download; Zing puts its own back within 100 ms.
+	await expect.poll(() => existsSync(mark) && readFileSync(mark, 'utf8')).toContain(`HostUrl=${base}/file.bin`)
+	expect(readFileSync(mark, 'utf8')).toContain('ZoneId=3')
 	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
 	await expect(ui.getByRole('button', { name: 'Show in folder' })).toBeVisible()
 	await download()

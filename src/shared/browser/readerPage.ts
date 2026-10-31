@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 // Reader mode inside the page (WebView2 host): Readability runs on a copy of the live
 // document, and the article replaces it. The host runs this in an isolated world, so
 // page scripts can neither see nor tamper with the work.

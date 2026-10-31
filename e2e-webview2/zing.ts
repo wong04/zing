@@ -94,7 +94,9 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 				await Promise.race([gone, exited, new Promise((resolve) => setTimeout(resolve, 5_000))])
 			}
 			const quit = await Promise.race([exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15_000))])
-			await browser.close().catch(() => undefined)
+			// An exited host has already dropped the DevTools connection; closing it again crashed the
+			// Playwright worker (0xC0000409) about once per full run.
+			if (browser.isConnected()) await browser.close()
 			if (!quit) host.kill()
 			if (existsSync(errors)) throw new HostProcessError(`The host recorded errors during this test:\n\n${readFileSync(errors, 'utf8')}`)
 			if (!quit) throw new HostProcessError('Zing did not quit within 15 s of its last window closing')

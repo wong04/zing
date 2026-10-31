@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 // Bundled by `npm run gen:reader` into host/Zing.Host/Assets/reader.js, which the WebView2 host
 // evaluates in an isolated world of the page before calling __zingReader(css).
 import { showReader } from '../src/shared/browser/readerPage'
