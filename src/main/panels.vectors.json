@@ -1,0 +1,172 @@
+{
+	"comment": "Rects are [x, y, width, height]; points are [x, y]. scenarios: a fresh store, then steps. open (content id, at, as = a name for the new panel, want = status, throws = notTearable) ; minimize/close/restore/focus/beginDrag (panel = a name given by as, or id for a raw id; restore has want; close may have throws = unknownPanel); endDrag (panel, origin, or originFromFrame = {panel, dx, dy}). checks: all, visible (counts), isFull, dragging, front (name), minimized ({name: bool}), frame ({panel, x, y}), wholePixels (name), disjointVisible. clamp: ClampOrigin cases. surface: surfaceRegion cases (want null = hidden).",
+	"scenarios": [
+		{
+			"name": "shows at most three panels and refuses the fourth",
+			"area": [204, 80, 1000, 700],
+			"steps": [
+				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" },
+				{ "op": "open", "content": "tool:JWT Decoder", "at": [700, 400], "as": "b", "want": "opened" },
+				{ "op": "open", "content": "tool:JSON / YAML", "at": [700, 400], "as": "c", "want": "opened" },
+				{ "op": "open", "content": "tool:Regex Tester", "at": [700, 400], "want": "full" }
+			],
+			"checks": { "isFull": true, "all": 3 }
+		},
+		{
+			"name": "opens an already open panel by focusing it, not by adding another",
+			"area": [204, 80, 1000, 700],
+			"steps": [
+				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" },
+				{ "op": "open", "content": "tool:JWT Decoder", "at": [700, 400], "as": "b", "want": "opened" },
+				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "want": "focused" }
+			],
+			"checks": { "all": 2, "front": "a" }
+		},
+		{
+			"name": "minimizing frees a slot, and restoring into a full window is refused",
+			"area": [204, 80, 1000, 700],
+			"steps": [
+				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" },
+				{ "op": "open", "content": "tool:JWT Decoder", "at": [700, 400], "as": "b", "want": "opened" },
+				{ "op": "open", "content": "tool:JSON / YAML", "at": [700, 400], "as": "c", "want": "opened" },
+				{ "op": "minimize", "panel": "a" },
+				{ "op": "open", "content": "tool:Regex Tester", "at": [700, 400], "as": "d", "want": "opened" },
+				{ "op": "restore", "panel": "a", "want": "full" }
+			],
+			"checks": { "isFull": true, "minimized": { "a": true } }
+		},
+		{
+			"name": "a freed slot leaves the window not full",
+			"area": [204, 80, 1000, 700],
+			"steps": [
+				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" },
+				{ "op": "open", "content": "tool:JWT Decoder", "at": [700, 400], "as": "b", "want": "opened" },
+				{ "op": "open", "content": "tool:JSON / YAML", "at": [700, 400], "as": "c", "want": "opened" },
+				{ "op": "minimize", "panel": "a" }
+			],
+			"checks": { "isFull": false, "visible": 2, "all": 3, "front": "c" }
+		},
+		{
+			"name": "opening a minimized panel restores it",
+			"area": [204, 80, 1000, 700],
+			"steps": [
+				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" },
+				{ "op": "minimize", "panel": "a" },
+				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "want": "restored" }
+			],
+			"checks": { "visible": 1 }
+		},
+		{
+			"name": "keeps visible panels apart after a release, moving the others",
+			"area": [204, 80, 1500, 900],
+			"steps": [
+				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" },
+				{ "op": "open", "content": "tool:JWT Decoder", "at": [700, 400], "as": "b", "want": "opened" },
+				{ "op": "beginDrag", "panel": "b" },
+				{ "op": "endDrag", "panel": "b", "originFromFrame": { "panel": "a", "dx": 10, "dy": 10 } }
+			],
+			"checks": { "disjointVisible": true, "dragging": false }
+		},
+		{
+			"name": "puts the released panel exactly where it was dropped when there is room",
+			"area": [204, 80, 1000, 700],
+			"steps": [
+				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" },
+				{ "op": "endDrag", "panel": "a", "origin": [300, 120] }
+			],
+			"checks": { "frame": { "panel": "a", "x": 300, "y": 120 } }
+		},
+		{
+			"name": "refuses panels the browser must keep to itself",
+			"area": [204, 80, 1000, 700],
+			"steps": [{ "op": "open", "content": "section:Browser", "at": [700, 400], "throws": "notTearable" }],
+			"checks": { "all": 0 }
+		},
+		{
+			"name": "throws for an id that names no panel",
+			"area": [204, 80, 1000, 700],
+			"steps": [{ "op": "close", "id": "nope", "throws": "unknownPanel" }],
+			"checks": { "all": 0 }
+		},
+		{
+			"name": "hands out whole-pixel frames",
+			"area": [204, 80, 1000, 700],
+			"steps": [{ "op": "open", "content": "tool:Hashes", "at": [700.4, 400.7], "as": "a", "want": "opened" }],
+			"checks": { "wholePixels": "a" }
+		},
+		{
+			"name": "a panel opens at its preferred size, centred under the cursor",
+			"area": [204, 80, 1000, 700],
+			"steps": [{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" }],
+			"checks": { "frame": { "panel": "a", "x": 440, "y": 382, "width": 520, "height": 580 } }
+		},
+		{
+			"name": "closing the front panel hands the front to the one beneath",
+			"area": [204, 80, 1500, 900],
+			"steps": [
+				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" },
+				{ "op": "open", "content": "tool:JWT Decoder", "at": [700, 400], "as": "b", "want": "opened" },
+				{ "op": "close", "panel": "b" }
+			],
+			"checks": { "all": 1, "front": "a" }
+		}
+	],
+	"clamp": [
+		{
+			"name": "keeps a grabbable strip of the panel inside the area (top left)",
+			"point": [-9000, -9000],
+			"size": [400, 300],
+			"area": [204, 80, 1000, 700],
+			"want": [-136, 86]
+		},
+		{
+			"name": "keeps a grabbable strip of the panel inside the area (bottom right)",
+			"point": [9000, 9000],
+			"size": [400, 300],
+			"area": [204, 80, 1000, 700],
+			"want": [1144, 740]
+		}
+	],
+	"surface": [
+		{
+			"name": "is hidden when nothing is shown",
+			"input": { "content": [1280, 780], "page": [204, 80, 1000, 700], "gated": false, "settingsOpen": false, "sidebarRevealed": false, "panelFrames": [], "dragging": false },
+			"want": null
+		},
+		{
+			"name": "covers the whole window for the settings sheet",
+			"input": { "content": [1280, 780], "page": [204, 80, 1000, 700], "gated": false, "settingsOpen": true, "sidebarRevealed": false, "panelFrames": [], "dragging": false },
+			"want": [0, 0, 1280, 780]
+		},
+		{
+			"name": "covers the whole window for the account gate",
+			"input": { "content": [1280, 780], "page": [204, 80, 1000, 700], "gated": true, "settingsOpen": false, "sidebarRevealed": false, "panelFrames": [], "dragging": false },
+			"want": [0, 0, 1280, 780]
+		},
+		{
+			"name": "hugs a panel plus its shadow rather than the page",
+			"input": { "content": [1280, 780], "page": [204, 80, 1000, 700], "gated": false, "settingsOpen": false, "sidebarRevealed": false, "panelFrames": [[400, 200, 300, 200]], "dragging": false },
+			"want": [368, 168, 364, 264]
+		},
+		{
+			"name": "covers the page while dragging so the pointer stays inside",
+			"input": { "content": [1280, 780], "page": [204, 80, 1000, 700], "gated": false, "settingsOpen": false, "sidebarRevealed": false, "panelFrames": [[400, 200, 300, 200]], "dragging": true },
+			"want": [204, 80, 1000, 700]
+		},
+		{
+			"name": "includes the sidebar strip while it is revealed, and stays inside the window",
+			"input": { "content": [1280, 780], "page": [204, 80, 1000, 700], "gated": false, "settingsOpen": false, "sidebarRevealed": true, "panelFrames": [], "dragging": false },
+			"want": [0, 0, 204, 780]
+		},
+		{
+			"name": "the union of the sidebar and a panel is clipped to the window",
+			"input": { "content": [1280, 780], "page": [204, 80, 1000, 700], "gated": false, "settingsOpen": false, "sidebarRevealed": true, "panelFrames": [[1200, 700, 300, 200]], "dragging": false },
+			"want": [0, 0, 1280, 780]
+		},
+		{
+			"name": "a panel wholly outside the window leaves nothing to show",
+			"input": { "content": [1280, 780], "page": [204, 80, 1000, 700], "gated": false, "settingsOpen": false, "sidebarRevealed": false, "panelFrames": [[2000, 100, 300, 200]], "dragging": false },
+			"want": null
+		}
+	]
+}

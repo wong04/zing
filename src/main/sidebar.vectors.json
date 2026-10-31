@@ -1,0 +1,66 @@
+{
+	"comment": "The reveal starts enabled. Steps: update (x, now, y defaults to 300, inWindow defaults to true), setEnabled (value), peek (now). A step's revealed checks EdgeReveal.revealed after it; changes checks every onChange value so far.",
+	"cases": [
+		{
+			"name": "reveals only after a short dwell at the left edge",
+			"steps": [
+				{ "op": "update", "x": 2, "now": 0, "revealed": false },
+				{ "op": "update", "x": 2, "now": 40, "revealed": false },
+				{ "op": "update", "x": 2, "now": 80, "revealed": true }
+			]
+		},
+		{
+			"name": "ignores a sweep past the edge that does not dwell",
+			"steps": [
+				{ "op": "update", "x": 2, "now": 0 },
+				{ "op": "update", "x": 300, "now": 30 },
+				{ "op": "update", "x": 2, "now": 60 },
+				{ "op": "update", "x": 2, "now": 100, "revealed": false }
+			]
+		},
+		{
+			"name": "ignores the very top row, where the window controls live",
+			"steps": [
+				{ "op": "update", "x": 2, "now": 0, "y": 0 },
+				{ "op": "update", "x": 2, "now": 200, "y": 0, "revealed": false }
+			]
+		},
+		{
+			"name": "puts the sidebar away once the cursor moves clear of it",
+			"steps": [
+				{ "op": "update", "x": 2, "now": 0 },
+				{ "op": "update", "x": 2, "now": 100 },
+				{ "op": "update", "x": 150, "now": 200, "revealed": true },
+				{ "op": "update", "x": 400, "now": 300, "revealed": false }
+			]
+		},
+		{
+			"name": "puts it away when the cursor leaves the window",
+			"steps": [
+				{ "op": "update", "x": 2, "now": 0 },
+				{ "op": "update", "x": 2, "now": 100, "revealed": true },
+				{ "op": "update", "x": -50, "now": 200, "y": 300, "inWindow": false, "revealed": false }
+			]
+		},
+		{
+			"name": "does nothing while disabled, and disabling hides it at once",
+			"steps": [
+				{ "op": "setEnabled", "value": false },
+				{ "op": "update", "x": 2, "now": 0 },
+				{ "op": "update", "x": 2, "now": 100, "changes": [] },
+				{ "op": "setEnabled", "value": true },
+				{ "op": "update", "x": 2, "now": 200 },
+				{ "op": "update", "x": 2, "now": 300, "revealed": true },
+				{ "op": "setEnabled", "value": false, "revealed": false, "changes": [true, false] }
+			]
+		},
+		{
+			"name": "a peek holds the sidebar out for a moment even with the cursor elsewhere",
+			"steps": [
+				{ "op": "peek", "now": 1000, "revealed": true },
+				{ "op": "update", "x": 900, "now": 1500, "revealed": true },
+				{ "op": "update", "x": 900, "now": 2500, "revealed": false }
+			]
+		}
+	]
+}
