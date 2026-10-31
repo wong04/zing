@@ -80,6 +80,12 @@ public sealed class FakeWindowHost : IWindowHost
 	public List<IReadOnlyList<MenuItem>> Menus { get; } = [];
 	public void ShowMenu(IReadOnlyList<MenuItem> items, double x, double y) => Menus.Add(items);
 
+	public ContentSize ContentSize { get; set; } = new(1280, 820);
+	public Point ContentOrigin => new(0, 0);
+	public Point? Cursor { get; set; }
+	public List<Rect?> SurfaceRegions { get; } = [];
+	public void SurfaceRegionChanged(Rect? region) => SurfaceRegions.Add(region);
+
 	public List<StackDropdownState?> Dropdowns { get; } = [];
 	public void StackDropdownChanged(StackDropdownState? state) => Dropdowns.Add(state);
 
@@ -146,4 +152,10 @@ public sealed class TickingClock : IClock
 	{
 		public void Dispose() { }
 	}
+}
+
+/// <summary>A signed-in guest account in a scratch folder, so window tests start past the gate.</summary>
+public static class Accounts
+{
+	public static AccountStore Guest() => new(Directory.CreateTempSubdirectory("zing-account-").FullName, new FakeCipher(), startAsGuest: true);
 }

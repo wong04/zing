@@ -139,7 +139,10 @@ public sealed class ZingApp : Application
 		}, Now, () => Guid.NewGuid().ToString());
 		_onQuit.Add(() => libraryWriter?.Flush());
 		var siteData = new SiteDataKeeper(new WebViewSitePurger(AnyLivePage, () => _windows.Count > 0), (domain, error) => TestHooks.Record($"purge {domain}", error));
-		return new AppServices(settings, library, Address.FromDefaults(), clock, siteData);
+		// Test runs skip the gate unless a test is about the gate; a real launch never does.
+		var skipGate = TestHooks.IsEndToEndRun && System.Environment.GetEnvironmentVariable("ZING_SKIP_ACCOUNT_GATE") == "1";
+		var account = new AccountStore(Path.Combine(AppPaths.UserData, "account"), new DpapiCipher(), skipGate);
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData);
 	}
 
 	private CoreWebView2? AnyLivePage() => _windows.Select(w => w.AnyLivePage()).FirstOrDefault(core => core is not null);

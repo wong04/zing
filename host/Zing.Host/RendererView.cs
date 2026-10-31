@@ -133,5 +133,3 @@ public sealed class ViewGoneException(string hash) : Exception($"Zing's #{hash} 
 
 public sealed class RendererLoadException(string hash, string status) : Exception($"Zing's #{hash} view failed to load: {status}");
 
-/// <summary>A rectangle in DIPs (Windows.Foundation.Rect without the WinRT dependency in Core-facing code).</summary>
-public readonly record struct Rect(double X, double Y, double Width, double Height);
