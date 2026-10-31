@@ -1,14 +1,12 @@
 // Ported from reference/krackn/Tests/library/main.swift (25 checks).
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
 	collect,
 	emptyLibrary,
 	FAVOURITES_ID,
 	favourites,
 	find,
-	folder,
 	groupIntoFolder,
-	isFolder,
 	link,
 	move,
 	readingItem,
@@ -17,8 +15,11 @@ import {
 	urls,
 	visibleRows,
 	withFavourites,
-	type BookmarkFolder,
+	type BookmarkNode,
+	type BrowserLibrary,
+	type ReadingItem,
 } from './library'
+import vectors from './library.vectors.json'
 import { ClosedStack, nextTab, previousTab, tabForShortcut } from './tabNavigation'
 
 describe('tab shortcuts', () => {
@@ -43,76 +44,80 @@ describe('reopen closed tabs: newest first, bounded', () => {
 	})
 })
 
-describe('bookmarks', () => {
-	let lib = emptyLibrary()
-	it('a fresh library has a Favourites folder', () => expect(lib.bookmarks[0]?.id).toBe(FAVOURITES_ID))
-	lib = withFavourites(lib, [link('Apple', 'https://apple.com'), link('Wiki', 'https://wikipedia.org')])
-	it('favourites live inside that folder', () => expect((lib.bookmarks[0] as BookmarkFolder).children).toHaveLength(2))
-	const docs = folder('Docs', [link('MDN', 'https://developer.mozilla.org'), folder('Inner', [link('Swift', 'https://swift.org')])])
-	lib = { ...lib, bookmarks: [...lib.bookmarks, docs] }
+interface Case {
+	name: string
+	[key: string]: unknown
+}
 
-	it("the Favourites folder can't be deleted", () => {
-		expect(remove(new Set([FAVOURITES_ID]), lib.bookmarks)[0]?.id).toBe(FAVOURITES_ID)
-	})
+const tree = vectors.tree.bookmarks as BookmarkNode[]
+const nodesOf = (c: Case) => (c['nodes'] ?? tree) as BookmarkNode[]
+const set = (value: unknown) => new Set(value as string[])
 
-	const mdn = docs.children[0]!
-	const noMdn = remove(new Set([mdn.id]), lib.bookmarks)
-	it('removes at any depth', () => expect(find(mdn.id, noMdn)).toBeUndefined())
-	it('leaves siblings alone', () => expect(find(docs.children[1]!.id, noMdn)).toBeDefined())
-
-	it('rename trims', () => expect(find(mdn.id, rename(mdn.id, '  Mozilla  ', lib.bookmarks))?.title).toBe('Mozilla'))
-	it('blank rename is ignored', () => expect(find(mdn.id, rename(mdn.id, '  ', lib.bookmarks))?.title).toBe('MDN'))
-
-	it('Ctrl-click a folder opens every link inside, nested too', () => {
-		expect(urls(docs)).toEqual(['https://developer.mozilla.org', 'https://swift.org'])
-	})
-
-	const fav = favourites(lib)
-	const grouped = groupIntoFolder(new Set([fav[0]!.id, fav[1]!.id]), 'New Folder', lib.bookmarks)
-	const newFolder = grouped.folderId ? find(grouped.folderId, grouped.nodes) : undefined
-	it('New Folder wraps the selection', () => {
-		expect(newFolder && isFolder(newFolder) ? newFolder.children.length : 0).toBe(2)
-	})
-	it('the folder lands where the first item was', () => {
-		expect((grouped.nodes[0] as BookmarkFolder).children[0]?.id).toBe(grouped.folderId)
-	})
-	it("the items aren't duplicated", () => expect(collect(new Set([fav[0]!.id]), grouped.nodes)).toHaveLength(1))
-
-	describe("keyboard navigation follows what's visible", () => {
-		it('collapsed: only top-level rows', () => expect(visibleRows(lib.bookmarks, new Set())).toHaveLength(lib.bookmarks.length))
-		const open = visibleRows(lib.bookmarks, new Set([FAVOURITES_ID, docs.id]))
-		it('open folders add their children in order', () => {
-			expect(open.map((row) => row.node.title)).toEqual(['Favourites', 'Apple', 'Wiki', 'Docs', 'MDN', 'Inner'])
-		})
-		it('children are indented one level', () => {
-			expect(open[1]?.depth).toBe(1)
-			expect(open[0]?.depth).toBe(0)
-		})
-	})
-
-	it('the library round-trips through JSON', () => {
-		const withReading = { ...lib, readingList: [readingItem('Article', 'https://example.com/a')] }
-		expect(JSON.parse(JSON.stringify(withReading))).toEqual(withReading)
-	})
+// The functions that mint ids or stamp times get a fixed id and clock, so results compare exactly.
+let nextId = 0
+beforeEach(() => {
+	nextId = 0
+	vi.spyOn(crypto, 'randomUUID').mockImplementation(() => `id-${++nextId}` as ReturnType<typeof crypto.randomUUID>)
+	vi.useFakeTimers({ now: 1_000 })
+})
+afterEach(() => {
+	vi.useRealTimers()
+	vi.restoreAllMocks()
 })
 
-describe('reordering', () => {
-	it('move right', () => expect(move(['a', 'b', 'c'], 0, 2)).toEqual(['b', 'a', 'c']))
-	it('move to the end', () => expect(move(['a', 'b', 'c'], 0, 3)).toEqual(['b', 'c', 'a']))
-	it('out of range is a no-op', () => expect(move(['a', 'b'], 5, 0)).toEqual(['a', 'b']))
+describe('library vectors', () => {
+	it('a fresh library has a Favourites folder', () => {
+		vi.setSystemTime(vectors.emptyLibrary.now)
+		expect(emptyLibrary()).toEqual(vectors.emptyLibrary.expected)
+		expect(emptyLibrary().bookmarks[0]?.id).toBe(FAVOURITES_ID)
+	})
+	it.each(vectors.withFavourites)('withFavourites: $name', (c) => {
+		vi.setSystemTime(c.now)
+		expect(withFavourites(c.library as BrowserLibrary, c.children as BookmarkNode[])).toEqual(c.expected)
+	})
+	it.each(vectors.favourites)('favourites: $name', (c) => {
+		expect(favourites(c.library as BrowserLibrary).map((n) => n.id)).toEqual(c.expected)
+	})
+	it.each(vectors.remove)('remove: $name', (c) => expect(remove(set(c.ids), tree)).toEqual(c.expected))
+	it.each(vectors.rename)('rename: $name', (c) => {
+		expect(rename(c.id, c.title, nodesOf(c as Case), c.now)).toEqual(c.expected)
+	})
+	it.each(vectors.find)('find: $name', (c) => expect(find(c.id, tree)?.title ?? null).toBe(c.expected))
+	it.each(vectors.collect)('collect: $name', (c) => expect(collect(set(c.ids), tree).map((n) => n.id)).toEqual(c.expected))
+	it.each(vectors.urls)('urls: $name', (c) => {
+		const nodes = nodesOf(c as Case)
+		expect(urls(find(c.id, nodes)!)).toEqual(c.expected)
+	})
+	it.each(vectors.groupIntoFolder)('groupIntoFolder: $name', (c) => {
+		vi.setSystemTime(c.now)
+		vi.spyOn(crypto, 'randomUUID').mockImplementation(() => c.newId as ReturnType<typeof crypto.randomUUID>)
+		const grouped = groupIntoFolder(set(c.ids), c.title, tree)
+		expect({ folderId: grouped.folderId ?? null, nodes: grouped.nodes }).toEqual(c.expected)
+	})
+	it.each(vectors.visibleRows)('visibleRows: $name', (c) => {
+		const rows = visibleRows(tree, set(c.expanded)).map((r) => ({ title: r.node.title, depth: r.depth }))
+		expect(rows).toEqual(c.expected)
+	})
+	it.each(vectors.move)('move: $name', (c) => {
+		const before = [...c.list]
+		expect(move(c.list, c.from, c.to)).toEqual(c.expected)
+		expect(c.list).toEqual(before)
+	})
+	it('the library round-trips through JSON', () => {
+		const library = vectors.serialised.library
+		expect(JSON.parse(JSON.stringify(library))).toEqual(library)
+	})
 })
 
 describe('sync-ready records (new in Zing)', () => {
 	it('every node carries a UUID and updatedAt', () => {
+		vi.restoreAllMocks()
 		const node = link('A', 'https://a.example', 42)
 		expect(node.id).toMatch(/^[0-9a-f-]{36}$/)
 		expect(node.updatedAt).toBe(42)
 	})
-	it('rename bumps updatedAt on the renamed node only', () => {
-		const a = link('A', 'https://a.example', 1)
-		const b = link('B', 'https://b.example', 1)
-		const out = rename(a.id, 'A2', [a, b], 99)
-		expect(out[0]?.updatedAt).toBe(99)
-		expect(out[1]?.updatedAt).toBe(1)
+	it('a reading item starts unread and stamps added', () => {
+		const item: ReadingItem = readingItem('Article', 'https://example.com/a', 7)
+		expect(item).toMatchObject({ added: 7, isRead: false, updatedAt: 7 })
 	})
 })
