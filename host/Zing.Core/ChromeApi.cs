@@ -141,7 +141,7 @@ public sealed class ChromeApi : IDisposable
 			host.Push("account:state", state);
 			Shell.AccountChanged(state.SignedIn);
 		}));
-		Lifecycle = new TabLifecycle(new LifecycleTabs(Tabs), app.Settings, app.Clock, host.Scheduler, error => host.Report("tab lifecycle", error));
+		Lifecycle = new TabLifecycle(new LifecycleTabs(Tabs, Overview), app.Settings, app.Clock, host.Scheduler, error => host.Report("tab lifecycle", error));
 		Tabs.Woke += (id, page) =>
 		{
 			if (Lifecycle.Woke(id) is { } y) page.RunWhenLoaded($"window.scrollTo(0, {y.ToString(System.Globalization.CultureInfo.InvariantCulture)})");
@@ -565,7 +565,7 @@ public sealed class ChromeApi : IDisposable
 }
 
 /// <summary>What sleeping tabs and auto-close need from a window's tabs.</summary>
-internal sealed class LifecycleTabs(TabService tabs) : ILifecycleTabs
+internal sealed class LifecycleTabs(TabService tabs, TabOverview overview) : ILifecycleTabs
 {
 	public string? ActiveId => tabs.ActiveId;
 	public IReadOnlyList<TabRecord> Records => tabs.Records;
@@ -585,7 +585,8 @@ internal sealed class LifecycleTabs(TabService tabs) : ILifecycleTabs
 		}
 	}
 
-	public Task<string?> CaptureThumbnailAsync(string id) => tabs.PageOf(id)?.CaptureAsync() ?? Task.FromResult<string?>(null);
+	// A hidden page never finishes a capture; the overview pictured it as it left the screen.
+	public Task<string?> CaptureThumbnailAsync(string id) => Task.FromResult(overview.Thumbnail(id));
 
 	public void Sleep(string id) => tabs.Sleep(id);
 	public void Close(string id) => tabs.Close(id);

@@ -261,3 +261,34 @@ The last two items are ported and tested but not yet wired into the host (W3b).
   - WebView2 picks and fetches the icon itself (`FaviconChanged`, `GetFaviconAsync`). The tab keeps it as a PNG data URL in memory only, and keeps it while asleep.
   - The C# port of Electron's favicon chooser was removed, because the engine does that job. The TS module and its vectors stay until W4.
 - **Checks:** the WebView2 e2e suite is 27 tests. One run saw the Playwright worker process itself crash (`0xC0000409`); it didn't repeat in 20 runs of that spec.
+
+## W3d (2026-10-31): account gate, settings sheet and panels, stack dropdown, overview, text size, print
+
+**Ported to `Zing.Core`:**
+- `AccountStore`, with the TS's scrypt implemented in C# and checked against node and RFC 7914, and DPAPI in place of `safeStorage`.
+  - An account made by the Electron build keeps its profile, but its verifier was sealed by Chromium's os_crypt rather than raw DPAPI. So the user is asked to reset their password once (`needsPasswordReset`).
+- `ShellModel`, `ToolPanels`, `SidebarReveal`, `PanelLayout` and `DropRouter`.
+- `StackDropdown`, `TabOverview` with `ThumbnailCache`, and `TextSize`.
+
+**Host:**
+- The #surface view is placed wherever the shell model's surface region says:
+  - the whole window for the account gate and the settings sheet
+  - the revealed sidebar plus visible tool panels otherwise
+  - hidden when nothing floats
+- The account gate covers the window until sign-in, and blocks commands meanwhile.
+- `CoveringLayer` hosts `#overlay-stack` (below the tab strip) and `#overlay-overview` (over the page).
+- The overview pictures each page with `CapturePreviewAsync` as it leaves the screen and when the overview opens. Sleeping tabs reuse that picture, because a hidden WebView2 never finishes a capture.
+- Text size is a style override re-applied on every `DOMContentLoaded`. Print uses Edge's in-page preview.
+- Zoom: WinUI's WebView2 has no zoom API, but the engine zooms on Ctrl+Plus, Ctrl+Minus and Ctrl+0 itself. So the zoom commands answer "not applicable" and let the keys through; the zoom menu items do nothing for now.
+- The cursor for sidebar reveal comes from `GetCursorPos` and is never read in e2e runs.
+
+**Checks:** 33 WebView2 e2e tests, adding:
+- the settings sheet surviving a relaunch
+- the account gate storing no plaintext secret and remembering the user
+- arrangements and the stack dropdown
+- the tab overview
+- text size
+
+**Open:**
+- **Dropdown clicks:** DevTools mouse input never reaches the `#overlay-stack` view, while it does reach the chrome and `#pageui`. The dropdown test therefore drives its rows with DOM pointer events, so real clicks on dropdown rows need a hand check.
+- **Still to do in W3:** reader mode, the history menu, the default-browser prompt, the taskbar icon, `persistentProfile`, and the toolbox (still "not implemented", as in Electron).
