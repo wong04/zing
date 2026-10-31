@@ -100,7 +100,11 @@ test('a recent tool tears off into a panel and the fourth panel is refused', asy
 	const surface = await surfaceOf(app)
 	await expect(surface.getByTestId('float-panel')).toHaveCount(1)
 
-	const open = (content: string) => chrome.evaluate((c) => (globalThis as unknown as PageGlobal).zing.openPanel(c, { x: 800, y: 400 }), content)
+	// openPanel takes screen coordinates. Test windows sit far off-screen, so a
+	// fixed screen point lands outside the window; aim inside it instead.
+	const content = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getContentBounds())
+	const at = { x: content.x + 800, y: content.y + 400 }
+	const open = (panel: string) => chrome.evaluate(([c, point]) => (globalThis as unknown as PageGlobal).zing.openPanel(c, point), [panel, at] as const)
 	expect((await open('tool:JWT Decoder')).status).toBe('opened')
 	expect((await open('tool:Regex Tester')).status).toBe('opened')
 	expect(await open('tool:Base64')).toEqual({ status: 'full' })
