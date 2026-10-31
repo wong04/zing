@@ -97,13 +97,23 @@ public sealed class ZoneFile(string path) : IMarkStore
 /// Clears a site from the in-memory profile through any live page of the
 /// profile (W0 proved this): DevTools' Storage.clearDataForOrigin per origin,
 /// then every cookie of the registrable domain, which a per-origin clear misses.
-/// With no page left open the app is quitting, and the in-memory profile goes with it.
+/// Closing a window's last tab leaves no live page for a moment, until the fresh tab starts,
+/// so this waits for one. If none comes, every window has closed: Zing is quitting, and the
+/// in-memory profile, with all its data, goes with the process.
 /// </summary>
-public sealed class WebViewSitePurger(Func<CoreWebView2?> anyLivePage) : ISitePurger
+public sealed class WebViewSitePurger(Func<CoreWebView2?> anyLivePage, Func<bool> anyWindowOpen) : ISitePurger
 {
+	private static readonly TimeSpan Poll = TimeSpan.FromMilliseconds(50);
+
 	public async Task PurgeAsync(SiteToPurge site)
 	{
-		if (anyLivePage() is not { } core) return;
+		var core = anyLivePage();
+		while (core is null && anyWindowOpen())
+		{
+			await Task.Delay(Poll);
+			core = anyLivePage();
+		}
+		if (core is null) return;
 		foreach (var origin in site.Origins)
 		{
 			var request = System.Text.Json.JsonSerializer.Serialize(new { origin, storageTypes = "all" });

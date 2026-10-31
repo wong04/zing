@@ -138,7 +138,7 @@ public sealed class ZingApp : Application
 			return snapshot => libraryWriter.Write(snapshot);
 		}, Now, () => Guid.NewGuid().ToString());
 		_onQuit.Add(() => libraryWriter?.Flush());
-		var siteData = new SiteDataKeeper(new WebViewSitePurger(AnyLivePage), (domain, error) => TestHooks.Record($"purge {domain}", error));
+		var siteData = new SiteDataKeeper(new WebViewSitePurger(AnyLivePage, () => _windows.Count > 0), (domain, error) => TestHooks.Record($"purge {domain}", error));
 		return new AppServices(settings, library, Address.FromDefaults(), clock, siteData);
 	}
 
