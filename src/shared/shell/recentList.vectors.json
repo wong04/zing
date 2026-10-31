@@ -1,0 +1,23 @@
+{
+	"comment": "Each step applies touch or remove to the running list, then checks it. touch uses the default capacity of 3.",
+	"cases": [
+		{
+			"name": "most recent first, no duplicates, capped at three",
+			"steps": [
+				{ "op": "touch", "id": "a", "want": ["a"] },
+				{ "op": "touch", "id": "b", "want": ["b", "a"] },
+				{ "op": "touch", "id": "c", "want": ["c", "b", "a"] },
+				{ "op": "touch", "id": "d", "want": ["d", "c", "b"] },
+				{ "op": "touch", "id": "b", "want": ["b", "d", "c"] },
+				{ "op": "remove", "id": "d", "want": ["b", "c"] }
+			]
+		},
+		{
+			"name": "removing something absent changes nothing",
+			"steps": [
+				{ "op": "touch", "id": "a", "want": ["a"] },
+				{ "op": "remove", "id": "z", "want": ["a"] }
+			]
+		}
+	]
+}
