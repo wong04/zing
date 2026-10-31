@@ -6,15 +6,33 @@ import { launchZing, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
-/** Every file under a folder, so a test can prove a secret is nowhere on disk. */
+/**
+ * Every file under a folder, so a test can prove a secret is nowhere on disk. The engine may
+ * still be deleting its temp files as Zing exits; a file that is gone holds nothing.
+ */
 function filesUnder(dir: string): string[] {
 	return readdirSync(dir).flatMap((name) => {
 		const path = join(dir, name)
-		return statSync(path).isDirectory() ? filesUnder(path) : [path]
+		try {
+			return statSync(path).isDirectory() ? filesUnder(path) : [path]
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+			throw error
+		}
 	})
 }
 
-const isSurface = (url: string) => url.endsWith('#surface')
+/** A file's bytes, or none when the engine deleted it after it was listed. */
+function contentsOf(file: string): Buffer {
+	try {
+		return readFileSync(file)
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return Buffer.alloc(0)
+		throw error
+	}
+}
+
+const isSurface =(url: string) => url.endsWith('#surface')
 
 test('Settings opens over the window, a changed toggle survives a relaunch, and Close puts it away', async () => {
 	const first = await launchZing()
@@ -52,7 +70,7 @@ test('the account gate covers the window, stores no plaintext secret on disk, an
 	const secret = Buffer.from(password)
 	const files = filesUnder(first.userDataDir)
 	expect(files.some((f) => f.endsWith('account.verifier'))).toBe(true)
-	for (const file of files) expect(readFileSync(file).includes(secret), file).toBe(false)
+	for (const file of files) expect(contentsOf(file).includes(secret), file).toBe(false)
 
 	const second = await launchZing({ userDataDir: first.userDataDir, env: { ZING_SKIP_ACCOUNT_GATE: '' } })
 	expect(await second.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: true, signedIn: true })

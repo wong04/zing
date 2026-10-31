@@ -136,11 +136,14 @@ test('pinning the sidebar narrows the page from the left', async () => {
 	await zing.close()
 })
 
-test('a command that is not ported yet shows a notice', async () => {
+test('an address Zing cannot open is refused with a notice', async () => {
 	const zing = await launchZing()
-	await run(zing.chrome, 'page.reader')
+	await zing.chrome.evaluate(async () => {
+		const { activeId } = await window.zing.getTabs()
+		await window.zing.navigateTab(activeId!, 'ftp://example.com/file')
+	})
 	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
-	await expect(overlay.getByText(/isn't implemented yet/)).toBeVisible()
+	await expect(overlay.getByText("Zing can't open ftp://example.com/file")).toBeVisible()
 	await zing.close()
 })
 

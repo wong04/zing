@@ -34,7 +34,11 @@ public sealed class RendererView
 		var renderer = new RendererView(bridge, hash);
 		if (transparent) renderer.View.DefaultBackgroundColor = Microsoft.UI.Colors.Transparent;
 		parent.Children.Add(renderer.View);
-		await renderer.View.EnsureCoreWebView2Async(environment);
+		// Zing's own UI keeps nothing either, as Electron's zing-chrome partition did: no cache, no storage, no autofill on disk.
+		var options = environment.CreateCoreWebView2ControllerOptions();
+		options.IsInPrivateModeEnabled = true;
+		options.ProfileName = "zing-chrome";
+		await renderer.View.EnsureCoreWebView2Async(environment, options);
 		// The window may have closed while the engine started; that is an expected outcome, not a crash.
 		var core = renderer.View.CoreWebView2 ?? throw new ViewGoneException(hash);
 		core.Settings.IsNonClientRegionSupportEnabled = hash == "chrome";

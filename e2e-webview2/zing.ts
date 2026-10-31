@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
 import type { AddressInfo } from 'node:net'
-import { existsSync, readFileSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -94,11 +94,35 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 				await Promise.race([gone, exited, new Promise((resolve) => setTimeout(resolve, 5_000))])
 			}
 			const quit = await Promise.race([exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15_000))])
-			await browser.close().catch(() => undefined)
+			// An exited host has already dropped the DevTools connection; closing it again crashed the
+			// Playwright worker (0xC0000409) about once per full run.
+			if (browser.isConnected()) await browser.close()
 			if (!quit) host.kill()
+			await engineReleased(userData)
 			if (existsSync(errors)) throw new HostProcessError(`The host recorded errors during this test:\n\n${readFileSync(errors, 'utf8')}`)
 			if (!quit) throw new HostProcessError('Zing did not quit within 15 s of its last window closing')
 		},
+	}
+}
+
+/**
+ * The engine's processes outlive Zing.exe for a moment and keep the profile locked; a test that
+ * reads the profile after close() (a relaunch, a scan for secrets) must wait for them.
+ */
+async function engineReleased(userData: string): Promise<void> {
+	const lockfile = join(userData, 'WebView2', 'EBWebView', 'lockfile')
+	const deadline = Date.now() + 15_000
+	for (;;) {
+		try {
+			closeSync(openSync(lockfile, 'r+'))
+			return
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code
+			if (code === 'ENOENT') return
+			if (code !== 'EBUSY' && code !== 'EPERM') throw error
+			if (Date.now() > deadline) throw new HostProcessError(`The WebView2 engine still holds ${lockfile} 15 s after Zing quit`)
+			await new Promise((resolve) => setTimeout(resolve, 100))
+		}
 	}
 }
 

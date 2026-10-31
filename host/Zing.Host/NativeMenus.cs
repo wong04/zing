@@ -40,6 +40,7 @@ public sealed class WindowsShell : IShellActions
 	public void OpenExternal(string url)
 	{
 		if (TestHooks.IsEndToEndRun) throw new InvalidOperationException($"e2e runs must not open {url} in another app");
+		// Windows' own pages (ms-settings:) as well as web links.
 		_ = Windows.System.Launcher.LaunchUriAsync(new Uri(url));
 	}
 }

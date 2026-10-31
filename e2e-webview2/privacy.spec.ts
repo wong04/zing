@@ -68,3 +68,39 @@ test('a site keeps nothing once its last tab closes', async () => {
 		.toBe(JSON.stringify({ ls: null, cookie: '' }))
 	await zing.close()
 })
+
+test('the browsing profile is in memory unless persistentProfile is on, which keeps sign-ins across a relaunch', async () => {
+	const keptAfterRelaunch = async (persistent: boolean): Promise<string | null> => {
+		const first = await launchZing()
+		await first.chrome.evaluate((on) => window.zing.setSetting('persistentProfile', on), persistent)
+		await first.close()
+		// The profile is chosen at launch.
+		const second = await launchZing({ userDataDir: first.userDataDir })
+		const tab = (await second.chrome.evaluate(() => window.zing.getTabs())).activeId!
+		await openIn(second.chrome, tab, '/set')
+		await expect.poll(() => titleOf(second.chrome, tab)).toBe('set:v:k=v')
+		await second.close()
+		const third = await launchZing({ userDataDir: first.userDataDir })
+		const again = (await third.chrome.evaluate(() => window.zing.getTabs())).activeId!
+		await openIn(third.chrome, again, '/read')
+		await expect.poll(async () => (await titleOf(third.chrome, again))?.startsWith('{')).toBe(true)
+		// localStorage, not the cookie: Chromium drops session cookies on restart even in a kept profile.
+		const seen = JSON.parse((await titleOf(third.chrome, again))!) as { ls: string | null }
+		await third.close()
+		return seen.ls
+	}
+	expect(await keptAfterRelaunch(false)).toBeNull()
+	expect(await keptAfterRelaunch(true)).toBe('v')
+})
+
+test('the Back button menu reads the page history without errors', async () => {
+	const zing = await launchZing()
+	const tab = (await zing.chrome.evaluate(() => window.zing.getTabs())).activeId!
+	await openIn(zing.chrome, tab, '/read?one')
+	await expect.poll(() => titleOf(zing.chrome, tab)).toContain('"ls"')
+	await openIn(zing.chrome, tab, '/read?two')
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs[0]?.canGoBack).toBe(true)
+	// Opens a native menu; close() fails the test if the host recorded any error reading the history.
+	await zing.chrome.evaluate(() => window.zing.openHistoryMenu('back', { x: 20, y: 60 }))
+	await zing.close()
+})

@@ -11,24 +11,31 @@ namespace Zing.Host;
 /// </summary>
 public sealed class WebView2Page : IPage
 {
-	private const string ProfileName = "zing-private";
 
 	private readonly IPageEvents _events;
 	private readonly Func<string, StartPageResponse> _serveStartPage;
 	private readonly Func<string> _theme;
 	private readonly IPageFeatureHost _features;
+	private readonly bool _persistent;
 	private readonly List<Action<CoreWebView2>> _queued = [];
 	private CoreWebView2? _core;
 	private string? _findTerm;
 	private int _textSize = Zing.Core.TextSize.Default;
 
-	public WebView2Page(WebView2 view, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, Func<string> theme, IPageFeatureHost features)
+	private static readonly Lazy<(string Script, string Css)> Reader = new(() =>
+	{
+		var dir = Path.Combine(AppContext.BaseDirectory, "Assets");
+		return (File.ReadAllText(Path.Combine(dir, "reader.js")), File.ReadAllText(Path.Combine(dir, "reader.css")));
+	});
+
+	public WebView2Page(WebView2 view, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, Func<string> theme, IPageFeatureHost features, bool persistent)
 	{
 		View = view;
 		_events = events;
 		_serveStartPage = serveStartPage;
 		_theme = theme;
 		_features = features;
+		_persistent = persistent;
 		Ready = StartAsync(environment);
 		_ = Ready.ContinueWith(t => TestHooks.Record("page", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
 	}
@@ -100,6 +107,44 @@ public sealed class WebView2Page : IPage
 	/// <summary>Edge's own print preview, inside the page.</summary>
 	public void Print() => Run(core => core.ShowPrintUI(CoreWebView2PrintDialogKind.Browser));
 
+	public bool InReader { get; private set; }
+
+	/// <summary>
+	/// Runs the reader bundle in an isolated world of the page (as Electron did), so page
+	/// scripts can neither see nor tamper with it; the DOM it swaps in is the page's own.
+	/// </summary>
+	public async Task<string?> ShowReaderAsync()
+	{
+		if (!IsOpen || _core is null) return "Reader isn't available for this page";
+		var (script, css) = Reader.Value;
+		using var tree = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}"));
+		var frameId = tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("id").GetString();
+		using var world = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Page.createIsolatedWorld", System.Text.Json.JsonSerializer.Serialize(new { frameId, worldName = "zing-reader" })));
+		var contextId = world.RootElement.GetProperty("executionContextId").GetInt32();
+		var expression = $"{script}\n;__zingReader({System.Text.Json.JsonSerializer.Serialize(css)})";
+		using var evaluated = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Runtime.evaluate", System.Text.Json.JsonSerializer.Serialize(new { expression, contextId, returnByValue = true })));
+		if (evaluated.RootElement.TryGetProperty("exceptionDetails", out var failure)) throw new ReaderScriptException(failure.GetRawText());
+		using var outcome = System.Text.Json.JsonDocument.Parse(evaluated.RootElement.GetProperty("result").GetProperty("value").GetString()!);
+		if (!outcome.RootElement.GetProperty("ok").GetBoolean()) return outcome.RootElement.GetProperty("reason").GetString();
+		InReader = true;
+		return null;
+	}
+
+	/// <summary>WebView2 exposes no history list; DevTools' Page.getNavigationHistory does.</summary>
+	public async Task<PageHistory> HistoryAsync()
+	{
+		if (!IsOpen || _core is null) return new PageHistory([], 0);
+		using var history = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Page.getNavigationHistory", "{}"));
+		var root = history.RootElement;
+		var entries = root.GetProperty("entries").EnumerateArray()
+			.Select(e => new HistoryEntry(e.GetProperty("id").GetInt32(), e.GetProperty("url").GetString()!, e.GetProperty("title").GetString() ?? ""))
+			.ToList();
+		return new PageHistory(entries, root.GetProperty("currentIndex").GetInt32());
+	}
+
+	public void GoToHistoryEntry(int entryId) =>
+		Run(core => _ = core.CallDevToolsProtocolMethodAsync("Page.navigateToHistoryEntry", System.Text.Json.JsonSerializer.Serialize(new { entryId })));
+
 	public bool IsAudible => _core?.IsDocumentPlayingAudio ?? false;
 
 	public async Task<System.Text.Json.JsonElement> EvaluateAsync(string script)
@@ -152,9 +197,9 @@ public sealed class WebView2Page : IPage
 	private async Task StartAsync(CoreWebView2Environment environment)
 	{
 		var options = environment.CreateCoreWebView2ControllerOptions();
-		// Keeps nothing: an in-memory profile, as Electron's non-persistent partition was.
-		options.IsInPrivateModeEnabled = true;
-		options.ProfileName = ProfileName;
+		// Keeps nothing by default: an in-memory profile, as Electron's non-persistent partition was.
+		options.IsInPrivateModeEnabled = !_persistent;
+		options.ProfileName = _persistent ? "zing" : "zing-private";
 		await View.EnsureCoreWebView2Async(environment, options);
 		if (!IsOpen) return;
 		_core = View.CoreWebView2;
@@ -184,6 +229,7 @@ public sealed class WebView2Page : IPage
 			}
 			// NavigationStarting is only raised for new documents; in-page navigations keep their grants.
 			_features.Left(this);
+			InReader = false;
 			IsLoading = true;
 			_events.StateChanged();
 		};
@@ -275,3 +321,5 @@ public sealed class WebView2Page : IPage
 		}
 	}
 }
+
+public sealed class ReaderScriptException(string details) : Exception($"The reader script failed in the page: {details}");

@@ -87,12 +87,11 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
-	public async Task Commands_not_ported_yet_say_so_out_loud_with_their_label()
+	public async Task Every_command_in_the_registry_has_a_handler()
 	{
-		var outcome = Value(await Invoke("command:run", "page.reader"));
-		Assert.Equal("not-implemented", outcome.GetProperty("status").GetString());
-		Assert.Equal("Show Reader", outcome.GetProperty("label").GetString());
-		Assert.Equal(["Show Reader isn't implemented yet"], _host.Notices);
+		foreach (var command in Commands.All.Where(c => c.Id != "window.close"))
+			Assert.NotEqual("not-implemented", Value(await Invoke("command:run", command.Id)).GetProperty("status").GetString());
+		Assert.Equal(nameof(UnknownCommandException), ErrorName(await Invoke("command:run", "no.such.command")));
 	}
 
 	[Fact]
@@ -101,6 +100,18 @@ public sealed class ChromeApiTests : IDisposable
 		Value(await Invoke("command:run", "page.textBigger"));
 		Assert.Equal(110, ActivePage.TextSize);
 		Assert.Equal("not-applicable", Value(await Invoke("command:run", "page.zoomIn")).GetProperty("status").GetString());
+	}
+
+	[Fact]
+	public async Task Reader_says_why_a_page_has_no_article_and_a_second_toggle_reloads()
+	{
+		ActivePage.ReaderRefusal = "Reader can't find an article on this page";
+		Value(await Invoke("command:run", "page.reader"));
+		Assert.Equal(["Reader can't find an article on this page"], _host.Notices);
+		ActivePage.ReaderRefusal = null;
+		Value(await Invoke("command:run", "page.reader"));
+		Value(await Invoke("command:run", "page.reader"));
+		Assert.Equal("reload", ActivePage.Calls[^1]);
 	}
 
 	[Fact]

@@ -167,6 +167,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("stack:close", _ => Do(Stacks.Close));
 		bridge.Register("stack:current", _ => Stacks.Current);
 		bridge.Register("stack:drag-presence", args => Do(() => Stacks.DragPresence(Text(args, 0), Bool(args, 1))));
+		bridge.Register("chrome:history-menu", args => HistoryMenuAsync(Text(args, 0), args));
 		bridge.Register("chrome:strip-menu", args => Do(() => Menu(Menus.Strip(Ordering), args, 0)));
 		bridge.Register("chrome:stack-menu", args => Do(() => Menu(Menus.Stack(Tabs, Ordering, Text(args, 0), host.Shell), args, 1)));
 		bridge.Register("tabs:pin", args => Do(() => Tabs.Pin(Text(args, 0))));
@@ -328,6 +329,7 @@ public sealed class ChromeApi : IDisposable
 			"page.reload" => Act(page is not null, () => page!.Reload()),
 			"page.find" => Act(page is not null, Find.Open),
 			"page.print" => Act(page is not null, () => page!.Print()),
+			"page.reader" => Act(page is not null, () => ToggleReader(page!)),
 			"tabs.overview" => Act(true, () => _host.Background(Overview.ToggleAsync(), "tab overview")),
 			"page.textBigger" => Act(page is not null, () => page!.TextSize = TextSize.Bigger(page.TextSize)),
 			"page.textSmaller" => Act(page is not null, () => page!.TextSize = TextSize.Smaller(page.TextSize)),
@@ -338,6 +340,32 @@ public sealed class ChromeApi : IDisposable
 			"page.stop" => Act(page is { IsLoading: true }, () => page!.Stop()),
 			_ => new NotImplemented(Commands.Get(command).Label),
 		};
+	}
+
+	/// <summary>Leaving reader mode reloads the page, which brings the original document back.</summary>
+	private void ToggleReader(IPage page)
+	{
+		if (page.InReader)
+		{
+			page.Reload();
+			return;
+		}
+		_host.Background(ShowReaderAsync(page), "reader");
+	}
+
+	private async Task ShowReaderAsync(IPage page)
+	{
+		if (await page.ShowReaderAsync() is { } reason) _host.Notify(reason);
+	}
+
+	private async Task<object?> HistoryMenuAsync(string direction, JsonElement[] args)
+	{
+		if (Tabs.ActivePage is not { } page) return null;
+		var history = await page.HistoryAsync();
+		var items = HistoryMenu.Items(history.Entries, history.ActiveIndex, direction);
+		var id = history.Entries;
+		Menu([.. items.Select(item => new MenuItem(item.Label, () => page.GoToHistoryEntry(id[item.Index].Id)))], args, 1);
+		return null;
 	}
 
 	private void NewTab()

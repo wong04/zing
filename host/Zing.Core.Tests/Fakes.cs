@@ -36,6 +36,16 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public void Print() => Calls.Add("print");
 	public string? Picture { get; set; } = "data:image/jpeg;base64,AA==";
 	public Task<string?> CaptureAsync() => Task.FromResult(Picture);
+	public string? ReaderRefusal { get; set; }
+	public bool InReader { get; private set; }
+	public PageHistory History { get; set; } = new([], 0);
+	public Task<PageHistory> HistoryAsync() => Task.FromResult(History);
+	public void GoToHistoryEntry(int entryId) => Calls.Add($"history {entryId}");
+	public Task<string?> ShowReaderAsync()
+	{
+		InReader = ReaderRefusal is null;
+		return Task.FromResult(ReaderRefusal);
+	}
 	public void Close() => Closed = true;
 }
 

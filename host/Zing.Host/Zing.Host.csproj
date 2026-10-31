@@ -14,10 +14,18 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 		<DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+		<ApplicationIcon>..\..\build\icons\icon.ico</ApplicationIcon>
 	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
 		<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+	</ItemGroup>
+	<ItemGroup>
+		<!-- Built from TypeScript by `npm run gen:reader` (part of `npm run build:host`). -->
+		<Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
+		<!-- The taskbar tiles (C3 logo), shared with the Electron build until W4. -->
+		<Content Include="..\..\build\icons\icon.ico" Link="Assets\icon.ico" CopyToOutputDirectory="PreserveNewest" />
+		<Content Include="..\..\build\icons-dark-tile\icon.ico" Link="Assets\icon-dark-tile.ico" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Zing.Core\Zing.Core.csproj" />
