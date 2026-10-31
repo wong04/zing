@@ -19,7 +19,7 @@ public sealed class StackLayer(Panel parent, CoreWebView2Environment environment
 	{
 		_open = state is not null;
 		if (_ready is null && !_open) return;
-		_ = ShowAsync().ContinueWith(t => TestHooks.Record("stack dropdown", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+		TestHooks.Background(ShowAsync(), "stack dropdown");
 	}
 
 	public void Layout()
