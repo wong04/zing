@@ -276,3 +276,29 @@ public sealed class DownloadList(string directory, IDownloadHost host, PageUiSto
 	private void Update(int id, Func<DownloadEntry, DownloadEntry> change) =>
 		_entries = [.. _entries.Select(e => e.Id == id ? change(e) : e)];
 }
+
+/// <summary>The Zone.Identifier stream's text (parseZoneIdentifier / formatZoneIdentifier in security.ts).</summary>
+public static class ZoneIdentifier
+{
+	public const int InternetZone = 3;
+
+	public static ZoneMark? Parse(string text)
+	{
+		var values = new Dictionary<string, string>(StringComparer.Ordinal);
+		foreach (var line in text.Split('\n'))
+		{
+			var at = line.IndexOf('=');
+			if (at > 0) values[line[..at].Trim().ToLowerInvariant()] = line[(at + 1)..].Trim();
+		}
+		if (!values.TryGetValue("zoneid", out var zone) || zone.Length == 0 || !zone.All(char.IsAsciiDigit)) return null;
+		return new ZoneMark(int.Parse(zone, CultureInfo.InvariantCulture), values.GetValueOrDefault("hosturl"), values.GetValueOrDefault("referrerurl"));
+	}
+
+	public static string Format(ZoneMark mark)
+	{
+		List<string> lines = ["[ZoneTransfer]", $"ZoneId={mark.ZoneId}"];
+		if (!string.IsNullOrEmpty(mark.ReferrerUrl)) lines.Add($"ReferrerUrl={mark.ReferrerUrl}");
+		if (!string.IsNullOrEmpty(mark.HostUrl)) lines.Add($"HostUrl={mark.HostUrl}");
+		return string.Join("\r\n", lines) + "\r\n";
+	}
+}

@@ -11,7 +11,7 @@ namespace Zing.Host;
 /// active tab's page above it, then the settings surface and the notice layer.
 /// Later children of the root grid paint above earlier ones.
 /// </summary>
-public sealed class MainWindow : Window, IWindowHost, IPageHost
+public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHost
 {
 	private readonly ZingApp _app;
 	private readonly Grid _root = new();
@@ -20,6 +20,8 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 	private RendererView? _chrome;
 	private RendererView? _surface;
 	private NoticeLayer? _notices;
+	private PageUiLayer? _pageUi;
+	private readonly WindowsDownloads _downloads = new();
 	private CoreWebView2Environment? _environment;
 	private WebView2Page? _shown;
 	private bool _closed;
@@ -66,6 +68,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 		// The chrome view joins the grid at once, under every page; its API must be registered before it loads and asks for state.
 		var chrome = RendererView.CreateAsync(_root, _environment, _bridge, "chrome", transparent: false);
 		_notices = new NoticeLayer(_root, _environment, _bridge, ContentRect, DispatcherQueue);
+		_pageUi = new PageUiLayer(_root, _environment, _bridge, ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
 		_bridge.Register("chrome:titlebar-colors", (JsonElement[] args) =>
 		{
 			AppWindow.TitleBar.ButtonForegroundColor = ParseColor(args[0].GetProperty("symbolColor").GetString()!);
@@ -93,7 +96,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 		// Pages go just above the chrome renderer, under every layer.
 		_root.Children.Insert(Math.Min(1, _root.Children.Count), view);
 		var settings = _app.Services.Settings;
-		return new WebView2Page(view, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), () => settings.Get("theme")!.GetValue<string>());
+		return new WebView2Page(view, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), () => settings.Get("theme")!.GetValue<string>(), this);
 	}
 
 	public void Show(IPage page)
@@ -141,6 +144,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 	{
 		if (_shown is not null) PlacePage(_shown);
 		_notices?.Layout();
+		_pageUi?.Layout();
 		if (Api is null) return;
 		if (Api.SettingsOpen) _ = ShowSurfaceAsync().ContinueWith(t => TestHooks.Record("surface", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
 		else if (_surface is not null) _surface.Visible = false;
@@ -159,6 +163,80 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 	public void FocusChrome() => _chrome?.View.Focus(FocusState.Programmatic);
 
 	public void FocusSurface() => _surface?.View.Focus(FocusState.Programmatic);
+
+	public void PageUiChanged(PageUiState state) => _pageUi?.Changed(state);
+
+	public string DownloadsDirectory { get; } = WindowsDownloads.Directory();
+
+	public IDownloadHost DownloadHost => _downloads;
+
+	// MARK: IPageFeatureHost
+
+	public void DownloadStarting(WebView2Page page, CoreWebView2DownloadStartingEventArgs e)
+	{
+		if (Api is null) return;
+		var operation = e.DownloadOperation;
+		var name = Path.GetFileName(e.ResultFilePath);
+		var started = Api.Downloads.Start(name, Math.Max(0L, (long)operation.TotalBytesToReceive));
+		e.ResultFilePath = started.Path;
+		// Zing's downloads list replaces Edge's download bubble.
+		e.Handled = true;
+		_downloads.Track(started.Id, operation);
+		var lastPublish = DateTime.MinValue;
+		operation.BytesReceivedChanged += (_, _) =>
+		{
+			Api.Downloads.Progress(started.Id, operation.BytesReceived, Math.Max(0L, (long)operation.TotalBytesToReceive));
+			if (DateTime.UtcNow - lastPublish < TimeSpan.FromMilliseconds(250)) return;
+			lastPublish = DateTime.UtcNow;
+			Api.Downloads.Publish();
+		};
+		operation.StateChanged += (_, _) =>
+		{
+			var outcome = operation.State switch
+			{
+				CoreWebView2DownloadState.Completed => DownloadOutcome.Completed,
+				CoreWebView2DownloadState.Interrupted when operation.InterruptReason == CoreWebView2DownloadInterruptReason.UserCanceled => DownloadOutcome.Cancelled,
+				CoreWebView2DownloadState.Interrupted => DownloadOutcome.Interrupted,
+				_ => (DownloadOutcome?)null,
+			};
+			if (outcome is not { } done) return;
+			_downloads.Forget(started.Id);
+			Api.Downloads.Done(started.Id, done, operation.BytesReceived);
+			if (done == DownloadOutcome.Completed) _ = MarkAsync(started, operation.Uri, page.Url);
+		};
+	}
+
+	/// <summary>
+	/// Without this stream SmartScreen and Office never treat the file as downloaded. The engine
+	/// stamps a generic about:internet mark; Zing's carries the real HostUrl and ReferrerUrl and is
+	/// held against the engine's (holdMark.ts).
+	/// </summary>
+	private async Task MarkAsync(StartedDownload started, string hostUrl, string referrer)
+	{
+		try
+		{
+			// A download started from Zing's own start page has no web referrer.
+			var ours = new ZoneMark(ZoneIdentifier.InternetZone, hostUrl, referrer.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? referrer : null);
+			await MarkOfTheWeb.HoldAsync(new ZoneFile(started.Path), ours, windowMs: 10_000, pollMs: 100, ms => Task.Delay(ms));
+		}
+		catch (IOException error)
+		{
+			Api?.Downloads.MarkFailed(started.Id, error.Message);
+		}
+	}
+
+	public void PermissionRequested(WebView2Page page, CoreWebView2PermissionRequestedEventArgs e)
+	{
+		if (Api is null) return;
+		var (permission, details) = PermissionDeferral.Describe(e);
+		Api.Permissions.Request(page, page.Url, permission, details, new PermissionDeferral(e, e.GetDeferral()));
+	}
+
+	public void Left(WebView2Page page) => Api?.Permissions.DropFor(page);
+
+	public void SetPageUiHeight(int height) => _pageUi?.SetHeight(height);
+
+	public void FocusPageUi() => _pageUi?.Focus();
 
 	public IShellActions Shell { get; } = new WindowsShell();
 
@@ -218,6 +296,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 		_themeSubscription?.Dispose();
 		Api?.Dispose();
 		_notices?.Destroy();
+		_pageUi?.Destroy();
 		foreach (var renderer in _renderers) renderer.Close();
 		_app.Closed(this);
 	}

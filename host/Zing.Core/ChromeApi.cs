@@ -18,6 +18,14 @@ public interface IWindowHost
 	void FocusSurface();
 	/// <summary>Shows a native menu at a point of the window content, in DIPs.</summary>
 	void ShowMenu(IReadOnlyList<MenuItem> items, double x, double y);
+	/// <summary>The find bar, downloads and permission prompts changed; show, size or hide their layer.</summary>
+	void PageUiChanged(PageUiState state);
+	/// <summary>The page UI renderer measured what it shows.</summary>
+	void SetPageUiHeight(int height);
+	void FocusPageUi();
+	/// <summary>Where downloads are saved, and the file actions on them.</summary>
+	string DownloadsDirectory { get; }
+	IDownloadHost DownloadHost { get; }
 	/// <summary>Runs delayed work on the window's UI thread.</summary>
 	IScheduler Scheduler { get; }
 	IShellActions Shell { get; }
@@ -40,6 +48,8 @@ public sealed class ChromeApi : IDisposable
 
 	private readonly AppServices _app;
 	private readonly IWindowHost _host;
+
+	internal IWindowHost Host => _host;
 	private readonly string _appVersion;
 	private readonly List<IDisposable> _subscriptions = [];
 	private readonly Action _unsubscribeLibrary;
@@ -51,6 +61,14 @@ public sealed class ChromeApi : IDisposable
 
 	public TabOrdering Ordering { get; }
 
+	public PageUiStore PageUi { get; } = new();
+
+	public FindController Find { get; }
+
+	public DownloadList Downloads { get; }
+
+	public PermissionBroker Permissions { get; }
+
 	/// <summary>Fires after any change to this window's tabs, e.g. so the primary window's session can be saved.</summary>
 	public event Action? TabsChanged;
 
@@ -61,6 +79,15 @@ public sealed class ChromeApi : IDisposable
 		_appVersion = appVersion;
 		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, (tab, description) => host.Notify($"Couldn't load {tab.Url} ({description})"), InterceptNavigation);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
+		Find = new FindController(PageUi, new FindHost(this));
+		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
+		Permissions = new PermissionBroker(PageUi);
+		Tabs.FindResult += (page, matches, active) => Find.OnResult(page, matches, active);
+		PageUi.Changed += state =>
+		{
+			host.Push("pageui:state", state);
+			host.PageUiChanged(state);
+		};
 
 		bridge.Register("tabs:get", _ => State());
 		bridge.Register("tabs:activate", args => Do(() => Tabs.Activate(Text(args, 0))));
@@ -93,6 +120,18 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Text(args, 0), host.Shell), args, 1)));
 		bridge.Register("library:folder-menu", args => Do(() => Menu(Menus.LibraryFolder(app.Library, Text(args, 0), id => OpenLibraryItem(id, "current"), OpenAll), args, 1)));
 		bridge.Register("library:item-menu", args => Do(() => Menu(Menus.LibraryItem(app.Library, Text(args, 0), OpenLibraryItem, OpenAll), args, 1)));
+		bridge.Register("pageui:get", _ => PageUi.State);
+		bridge.Register("pageui:height", args => Do(() => host.SetPageUiHeight(Int(args, 0))));
+		bridge.Register("find:update", args => Do(() => Find.Update(Text(args, 0))));
+		bridge.Register("find:step", args => Do(() => Find.Step(FindDirections.Parse(Text(args, 0)))));
+		bridge.Register("find:close", _ => Do(Find.Close));
+		bridge.Register("downloads:open", args => Do(() => Downloads.Open(Int(args, 0))));
+		bridge.Register("downloads:show", args => Do(() => Downloads.Show(Int(args, 0))));
+		bridge.Register("downloads:cancel", args => Do(() => Downloads.Cancel(Int(args, 0))));
+		bridge.Register("downloads:clear", _ => Do(Downloads.Clear));
+		bridge.Register("downloads:dismiss", _ => Do(Downloads.Dismiss));
+		bridge.Register("permission:allow", args => Do(() => Permissions.Answer(Int(args, 0), true)));
+		bridge.Register("permission:deny", args => Do(() => Permissions.Answer(Int(args, 0), false)));
 		bridge.Register("toolpanel:get", _ => new { panels = Array.Empty<object>(), dragging = false });
 
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
@@ -183,6 +222,9 @@ public sealed class ChromeApi : IDisposable
 			"history.forward" => Act(page is { CanGoForward: true }, () => page!.GoForward()),
 			"history.home" => Act(Tabs.ActiveId is not null, () => Tabs.Navigate(Tabs.ActiveId!, HomepageUrl())),
 			"page.reload" => Act(page is not null, () => page!.Reload()),
+			"page.find" => Act(page is not null, Find.Open),
+			"page.findNext" => Act(page is not null, () => Find.Step(FindDirection.Next)),
+			"page.findPrevious" => Act(page is not null, () => Find.Step(FindDirection.Previous)),
 			"page.stop" => Act(page is { IsLoading: true }, () => page!.Stop()),
 			_ => new NotImplemented(Commands.Get(command).Label),
 		};
@@ -378,6 +420,7 @@ public sealed class ChromeApi : IDisposable
 	private void OnTabsChanged()
 	{
 		Ordering?.ScheduleReorganize();
+		Find?.ActiveChanged();
 		_host.Push("tabs:state", State());
 		TabsChanged?.Invoke();
 	}
@@ -419,6 +462,17 @@ public sealed class ChromeApi : IDisposable
 		var arg = Arg(args, index);
 		return arg.ValueKind == JsonValueKind.Number && arg.TryGetInt32(out var value) ? value : throw new ArgumentException($"Argument {index} must be an integer");
 	}
+}
+
+/// <summary>The find bar's view of the window: pages are this window's tabs' pages.</summary>
+internal sealed class FindHost(ChromeApi api) : IFindHost
+{
+	public object? ActivePage => api.Tabs.ActivePage;
+	public bool IsAlive(object page) => api.Tabs.Records.Any(r => ReferenceEquals(api.Tabs.PageOf(r.Id), page));
+	public void Search(object page, string query, FindDirection direction, FindMode mode) => ((IPage)page).Find(query, direction, mode);
+	public void ClearSelection(object page) => ((IPage)page).StopFind();
+	public void FocusPanel() => api.Host.FocusPageUi();
+	public void FocusPage(object page) => ((IPage)page).Focus();
 }
 
 public sealed class UnknownCommandException(string command) : Exception($"Unknown command {command}");

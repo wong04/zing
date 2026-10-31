@@ -229,3 +229,16 @@ The last two items are ported and tested but not yet wired into the host (W3b).
 **Open:**
 - When two windows are closed within milliseconds of each other over CDP, the second window's bridge message was sometimes never received by the host. The harness now closes windows one at a time. Check this again with real input before W4.
 - Keyboard shortcuts are covered by unit tests only, because CDP key events go straight to the renderer and skip the WebView2 accelerator path.
+
+## W3b (2026-10-31): find, downloads, permission prompts
+
+- **Page UI layer:** `PageUiLayer`, the `#pageui` renderer root at the page's top-right. It is sized from `pageui:height` and hidden when empty.
+- **Find in page:** WebView2's `CoreWebView2.Find`, with Edge's own find dialog suppressed. `FindController` comes from the port; `ActiveMatchIndex` is already 1-based.
+- **Downloads:**
+  - `DownloadStarting` saves to the `DownloadList`'s free name and replaces Edge's download bubble with Zing's list (`e.Handled`).
+  - Progress is published at most every 250 ms.
+  - Open and Show in folder throw in e2e runs.
+- **Mark of the Web:** the engine writes only a generic `HostUrl=about:internet`. Zing writes its own mark (the real HostUrl, plus the referrer when it's a web page) and holds it for 10 s (`MarkOfTheWeb.HoldAsync`, `ZoneFile`).
+- **Permissions:** `PermissionRequested` maps WebView2 kinds to Electron's names and is decided by `PermissionBroker`. Grants are dropped on every new document and on close.
+- **Checks:** `e2e-webview2/page.spec.ts` covers find (1 of 3, next, previous, close), a download landing with its mark and numbered on collision, and a notification prompt denied from the page UI.
+- **Open:** in one full run, `a changed setting … survives a relaunch` failed once, and it then passed about 60 times in a row. The error text wasn't kept; from now on e2e logs are saved in full so a repeat can be diagnosed.

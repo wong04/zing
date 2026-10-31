@@ -26,6 +26,8 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public void Stop() => Calls.Add("stop");
 	public void Focus() => Calls.Add("focus");
 	public void Run(string script) => Calls.Add("run");
+	public void Find(string query, FindDirection direction, FindMode mode) => Calls.Add($"find {query} {direction} {mode}");
+	public void StopFind() => Calls.Add("stop find");
 	public void Close() => Closed = true;
 }
 
@@ -72,11 +74,27 @@ public sealed class FakeWindowHost : IWindowHost
 	public List<IReadOnlyList<MenuItem>> Menus { get; } = [];
 	public void ShowMenu(IReadOnlyList<MenuItem> items, double x, double y) => Menus.Add(items);
 
+	public List<PageUiState> PageUiStates { get; } = [];
+	public void PageUiChanged(PageUiState state) => PageUiStates.Add(state);
+	public void SetPageUiHeight(int height) { }
+	public void FocusPageUi() { }
+
+	public string DownloadsDirectory => Path.GetTempPath();
+	public IDownloadHost DownloadHost { get; } = new FakeDownloads();
+
 	public ManualScheduler FakeScheduler { get; } = new();
 	public IScheduler Scheduler => FakeScheduler;
 
 	public FakeShell FakeShell { get; } = new();
 	public IShellActions Shell => FakeShell;
+}
+
+public sealed class FakeDownloads : IDownloadHost
+{
+	public bool FileExists(string path) => false;
+	public string? OpenFile(string path) => null;
+	public void ShowInFolder(string path) { }
+	public void Cancel(int id) { }
 }
 
 public sealed class FakeShell : IShellActions
