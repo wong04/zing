@@ -1,0 +1,2548 @@
+{
+	"tree": {
+		"bookmarks": [
+			{
+				"id": "fab00000-0000-4000-8000-000000000001",
+				"title": "Favourites",
+				"children": [
+					{
+						"id": "apple",
+						"title": "Apple",
+						"url": "https://apple.com",
+						"updatedAt": 1
+					},
+					{
+						"id": "wiki",
+						"title": "Wiki",
+						"url": "https://wikipedia.org",
+						"updatedAt": 1
+					}
+				],
+				"updatedAt": 1
+			},
+			{
+				"id": "docs",
+				"title": "Docs",
+				"children": [
+					{
+						"id": "mdn",
+						"title": "MDN",
+						"url": "https://developer.mozilla.org",
+						"updatedAt": 1
+					},
+					{
+						"id": "inner",
+						"title": "Inner",
+						"children": [
+							{
+								"id": "swift",
+								"title": "Swift",
+								"url": "https://swift.org",
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				],
+				"updatedAt": 1
+			}
+		],
+		"readingList": []
+	},
+	"emptyLibrary": {
+		"now": 5,
+		"expected": {
+			"bookmarks": [
+				{
+					"id": "fab00000-0000-4000-8000-000000000001",
+					"title": "Favourites",
+					"children": [],
+					"updatedAt": 5
+				}
+			],
+			"readingList": []
+		}
+	},
+	"withFavourites": [
+		{
+			"name": "favourites live inside that folder",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 5
+					}
+				],
+				"readingList": []
+			},
+			"children": [
+				{
+					"id": "a",
+					"title": "Apple",
+					"url": "https://apple.com",
+					"updatedAt": 7
+				},
+				{
+					"id": "w",
+					"title": "Wiki",
+					"url": "https://wikipedia.org",
+					"updatedAt": 7
+				}
+			],
+			"now": 9,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "a",
+								"title": "Apple",
+								"url": "https://apple.com",
+								"updatedAt": 7
+							},
+							{
+								"id": "w",
+								"title": "Wiki",
+								"url": "https://wikipedia.org",
+								"updatedAt": 7
+							}
+						],
+						"updatedAt": 5
+					}
+				],
+				"readingList": []
+			}
+		},
+		{
+			"name": "a missing Favourites folder is created first",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "docs",
+						"title": "Docs",
+						"children": [
+							{
+								"id": "mdn",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org",
+								"updatedAt": 1
+							},
+							{
+								"id": "inner",
+								"title": "Inner",
+								"children": [
+									{
+										"id": "swift",
+										"title": "Swift",
+										"url": "https://swift.org",
+										"updatedAt": 1
+									}
+								],
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"children": [],
+			"now": 9,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 9
+					},
+					{
+						"id": "docs",
+						"title": "Docs",
+						"children": [
+							{
+								"id": "mdn",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org",
+								"updatedAt": 1
+							},
+							{
+								"id": "inner",
+								"title": "Inner",
+								"children": [
+									{
+										"id": "swift",
+										"title": "Swift",
+										"url": "https://swift.org",
+										"updatedAt": 1
+									}
+								],
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			}
+		}
+	],
+	"favourites": [
+		{
+			"name": "the children of the Favourites folder",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "apple",
+								"title": "Apple",
+								"url": "https://apple.com",
+								"updatedAt": 1
+							},
+							{
+								"id": "wiki",
+								"title": "Wiki",
+								"url": "https://wikipedia.org",
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					},
+					{
+						"id": "docs",
+						"title": "Docs",
+						"children": [
+							{
+								"id": "mdn",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org",
+								"updatedAt": 1
+							},
+							{
+								"id": "inner",
+								"title": "Inner",
+								"children": [
+									{
+										"id": "swift",
+										"title": "Swift",
+										"url": "https://swift.org",
+										"updatedAt": 1
+									}
+								],
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"expected": [
+				"apple",
+				"wiki"
+			]
+		},
+		{
+			"name": "none when the folder is missing",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "docs",
+						"title": "Docs",
+						"children": [
+							{
+								"id": "mdn",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org",
+								"updatedAt": 1
+							},
+							{
+								"id": "inner",
+								"title": "Inner",
+								"children": [
+									{
+										"id": "swift",
+										"title": "Swift",
+										"url": "https://swift.org",
+										"updatedAt": 1
+									}
+								],
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"expected": []
+		}
+	],
+	"remove": [
+		{
+			"name": "the Favourites folder can't be deleted",
+			"ids": [
+				"fab00000-0000-4000-8000-000000000001"
+			],
+			"expected": [
+				{
+					"id": "fab00000-0000-4000-8000-000000000001",
+					"title": "Favourites",
+					"children": [
+						{
+							"id": "apple",
+							"title": "Apple",
+							"url": "https://apple.com",
+							"updatedAt": 1
+						},
+						{
+							"id": "wiki",
+							"title": "Wiki",
+							"url": "https://wikipedia.org",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				},
+				{
+					"id": "docs",
+					"title": "Docs",
+					"children": [
+						{
+							"id": "mdn",
+							"title": "MDN",
+							"url": "https://developer.mozilla.org",
+							"updatedAt": 1
+						},
+						{
+							"id": "inner",
+							"title": "Inner",
+							"children": [
+								{
+									"id": "swift",
+									"title": "Swift",
+									"url": "https://swift.org",
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				}
+			]
+		},
+		{
+			"name": "removes at any depth",
+			"ids": [
+				"swift"
+			],
+			"expected": [
+				{
+					"id": "fab00000-0000-4000-8000-000000000001",
+					"title": "Favourites",
+					"children": [
+						{
+							"id": "apple",
+							"title": "Apple",
+							"url": "https://apple.com",
+							"updatedAt": 1
+						},
+						{
+							"id": "wiki",
+							"title": "Wiki",
+							"url": "https://wikipedia.org",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				},
+				{
+					"id": "docs",
+					"title": "Docs",
+					"children": [
+						{
+							"id": "mdn",
+							"title": "MDN",
+							"url": "https://developer.mozilla.org",
+							"updatedAt": 1
+						},
+						{
+							"id": "inner",
+							"title": "Inner",
+							"children": [],
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				}
+			]
+		},
+		{
+			"name": "removing a folder takes its contents",
+			"ids": [
+				"inner"
+			],
+			"expected": [
+				{
+					"id": "fab00000-0000-4000-8000-000000000001",
+					"title": "Favourites",
+					"children": [
+						{
+							"id": "apple",
+							"title": "Apple",
+							"url": "https://apple.com",
+							"updatedAt": 1
+						},
+						{
+							"id": "wiki",
+							"title": "Wiki",
+							"url": "https://wikipedia.org",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				},
+				{
+					"id": "docs",
+					"title": "Docs",
+					"children": [
+						{
+							"id": "mdn",
+							"title": "MDN",
+							"url": "https://developer.mozilla.org",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				}
+			]
+		},
+		{
+			"name": "leaves siblings alone",
+			"ids": [
+				"mdn"
+			],
+			"expected": [
+				{
+					"id": "fab00000-0000-4000-8000-000000000001",
+					"title": "Favourites",
+					"children": [
+						{
+							"id": "apple",
+							"title": "Apple",
+							"url": "https://apple.com",
+							"updatedAt": 1
+						},
+						{
+							"id": "wiki",
+							"title": "Wiki",
+							"url": "https://wikipedia.org",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				},
+				{
+					"id": "docs",
+					"title": "Docs",
+					"children": [
+						{
+							"id": "inner",
+							"title": "Inner",
+							"children": [
+								{
+									"id": "swift",
+									"title": "Swift",
+									"url": "https://swift.org",
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				}
+			]
+		},
+		{
+			"name": "unknown ids change nothing",
+			"ids": [
+				"nope"
+			],
+			"expected": [
+				{
+					"id": "fab00000-0000-4000-8000-000000000001",
+					"title": "Favourites",
+					"children": [
+						{
+							"id": "apple",
+							"title": "Apple",
+							"url": "https://apple.com",
+							"updatedAt": 1
+						},
+						{
+							"id": "wiki",
+							"title": "Wiki",
+							"url": "https://wikipedia.org",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				},
+				{
+					"id": "docs",
+					"title": "Docs",
+					"children": [
+						{
+							"id": "mdn",
+							"title": "MDN",
+							"url": "https://developer.mozilla.org",
+							"updatedAt": 1
+						},
+						{
+							"id": "inner",
+							"title": "Inner",
+							"children": [
+								{
+									"id": "swift",
+									"title": "Swift",
+									"url": "https://swift.org",
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				}
+			]
+		}
+	],
+	"rename": [
+		{
+			"name": "trims",
+			"id": "mdn",
+			"title": "  Mozilla  ",
+			"now": 99,
+			"expected": [
+				{
+					"id": "fab00000-0000-4000-8000-000000000001",
+					"title": "Favourites",
+					"children": [
+						{
+							"id": "apple",
+							"title": "Apple",
+							"url": "https://apple.com",
+							"updatedAt": 1
+						},
+						{
+							"id": "wiki",
+							"title": "Wiki",
+							"url": "https://wikipedia.org",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				},
+				{
+					"id": "docs",
+					"title": "Docs",
+					"children": [
+						{
+							"id": "mdn",
+							"title": "Mozilla",
+							"url": "https://developer.mozilla.org",
+							"updatedAt": 99
+						},
+						{
+							"id": "inner",
+							"title": "Inner",
+							"children": [
+								{
+									"id": "swift",
+									"title": "Swift",
+									"url": "https://swift.org",
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				}
+			]
+		},
+		{
+			"name": "a blank title is ignored",
+			"id": "mdn",
+			"title": "  ",
+			"now": 99,
+			"expected": [
+				{
+					"id": "fab00000-0000-4000-8000-000000000001",
+					"title": "Favourites",
+					"children": [
+						{
+							"id": "apple",
+							"title": "Apple",
+							"url": "https://apple.com",
+							"updatedAt": 1
+						},
+						{
+							"id": "wiki",
+							"title": "Wiki",
+							"url": "https://wikipedia.org",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				},
+				{
+					"id": "docs",
+					"title": "Docs",
+					"children": [
+						{
+							"id": "mdn",
+							"title": "MDN",
+							"url": "https://developer.mozilla.org",
+							"updatedAt": 1
+						},
+						{
+							"id": "inner",
+							"title": "Inner",
+							"children": [
+								{
+									"id": "swift",
+									"title": "Swift",
+									"url": "https://swift.org",
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				}
+			]
+		},
+		{
+			"name": "renames a folder",
+			"id": "inner",
+			"title": "Deep",
+			"now": 99,
+			"expected": [
+				{
+					"id": "fab00000-0000-4000-8000-000000000001",
+					"title": "Favourites",
+					"children": [
+						{
+							"id": "apple",
+							"title": "Apple",
+							"url": "https://apple.com",
+							"updatedAt": 1
+						},
+						{
+							"id": "wiki",
+							"title": "Wiki",
+							"url": "https://wikipedia.org",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				},
+				{
+					"id": "docs",
+					"title": "Docs",
+					"children": [
+						{
+							"id": "mdn",
+							"title": "MDN",
+							"url": "https://developer.mozilla.org",
+							"updatedAt": 1
+						},
+						{
+							"id": "inner",
+							"title": "Deep",
+							"children": [
+								{
+									"id": "swift",
+									"title": "Swift",
+									"url": "https://swift.org",
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 99
+						}
+					],
+					"updatedAt": 1
+				}
+			]
+		},
+		{
+			"name": "bumps updatedAt on the renamed node only",
+			"nodes": [
+				{
+					"id": "a",
+					"title": "A",
+					"url": "https://a.example",
+					"updatedAt": 1
+				},
+				{
+					"id": "b",
+					"title": "B",
+					"url": "https://b.example",
+					"updatedAt": 1
+				}
+			],
+			"id": "a",
+			"title": "A2",
+			"now": 99,
+			"expected": [
+				{
+					"id": "a",
+					"title": "A2",
+					"url": "https://a.example",
+					"updatedAt": 99
+				},
+				{
+					"id": "b",
+					"title": "B",
+					"url": "https://b.example",
+					"updatedAt": 1
+				}
+			]
+		}
+	],
+	"find": [
+		{
+			"name": "finds a deep link",
+			"id": "swift",
+			"expected": "Swift"
+		},
+		{
+			"name": "finds a folder",
+			"id": "inner",
+			"expected": "Inner"
+		},
+		{
+			"name": "unknown id",
+			"id": "nope",
+			"expected": null
+		}
+	],
+	"collect": [
+		{
+			"name": "depth-first in tree order",
+			"ids": [
+				"swift",
+				"apple"
+			],
+			"expected": [
+				"apple",
+				"swift"
+			]
+		},
+		{
+			"name": "a selected folder is taken whole, not descended",
+			"ids": [
+				"docs",
+				"mdn"
+			],
+			"expected": [
+				"docs"
+			]
+		},
+		{
+			"name": "none",
+			"ids": [
+				"nope"
+			],
+			"expected": []
+		}
+	],
+	"urls": [
+		{
+			"name": "Ctrl-click a folder opens every link inside, nested too",
+			"id": "docs",
+			"expected": [
+				"https://developer.mozilla.org",
+				"https://swift.org"
+			]
+		},
+		{
+			"name": "a link is its own url",
+			"id": "apple",
+			"expected": [
+				"https://apple.com"
+			]
+		},
+		{
+			"name": "a folder without links",
+			"nodes": [
+				{
+					"id": "e",
+					"title": "E",
+					"children": [],
+					"updatedAt": 1
+				}
+			],
+			"id": "e",
+			"expected": []
+		}
+	],
+	"groupIntoFolder": [
+		{
+			"name": "wraps the selection where the first item was",
+			"ids": [
+				"apple",
+				"wiki"
+			],
+			"title": "New Folder",
+			"newId": "new-folder",
+			"now": 50,
+			"expected": {
+				"folderId": "new-folder",
+				"nodes": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "new-folder",
+								"title": "New Folder",
+								"children": [
+									{
+										"id": "apple",
+										"title": "Apple",
+										"url": "https://apple.com",
+										"updatedAt": 1
+									},
+									{
+										"id": "wiki",
+										"title": "Wiki",
+										"url": "https://wikipedia.org",
+										"updatedAt": 1
+									}
+								],
+								"updatedAt": 50
+							}
+						],
+						"updatedAt": 1
+					},
+					{
+						"id": "docs",
+						"title": "Docs",
+						"children": [
+							{
+								"id": "mdn",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org",
+								"updatedAt": 1
+							},
+							{
+								"id": "inner",
+								"title": "Inner",
+								"children": [
+									{
+										"id": "swift",
+										"title": "Swift",
+										"url": "https://swift.org",
+										"updatedAt": 1
+									}
+								],
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				]
+			}
+		},
+		{
+			"name": "nothing selected changes nothing",
+			"ids": [],
+			"title": "New Folder",
+			"newId": "new-folder",
+			"now": 50,
+			"expected": {
+				"folderId": null,
+				"nodes": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "apple",
+								"title": "Apple",
+								"url": "https://apple.com",
+								"updatedAt": 1
+							},
+							{
+								"id": "wiki",
+								"title": "Wiki",
+								"url": "https://wikipedia.org",
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					},
+					{
+						"id": "docs",
+						"title": "Docs",
+						"children": [
+							{
+								"id": "mdn",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org",
+								"updatedAt": 1
+							},
+							{
+								"id": "inner",
+								"title": "Inner",
+								"children": [
+									{
+										"id": "swift",
+										"title": "Swift",
+										"url": "https://swift.org",
+										"updatedAt": 1
+									}
+								],
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				]
+			}
+		},
+		{
+			"name": "unknown ids change nothing",
+			"ids": [
+				"nope"
+			],
+			"title": "New Folder",
+			"newId": "new-folder",
+			"now": 50,
+			"expected": {
+				"folderId": null,
+				"nodes": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "apple",
+								"title": "Apple",
+								"url": "https://apple.com",
+								"updatedAt": 1
+							},
+							{
+								"id": "wiki",
+								"title": "Wiki",
+								"url": "https://wikipedia.org",
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					},
+					{
+						"id": "docs",
+						"title": "Docs",
+						"children": [
+							{
+								"id": "mdn",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org",
+								"updatedAt": 1
+							},
+							{
+								"id": "inner",
+								"title": "Inner",
+								"children": [
+									{
+										"id": "swift",
+										"title": "Swift",
+										"url": "https://swift.org",
+										"updatedAt": 1
+									}
+								],
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				]
+			}
+		},
+		{
+			"name": "the Favourites folder is never grouped",
+			"ids": [
+				"fab00000-0000-4000-8000-000000000001"
+			],
+			"title": "New Folder",
+			"newId": "new-folder",
+			"now": 50,
+			"expected": {
+				"folderId": null,
+				"nodes": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "apple",
+								"title": "Apple",
+								"url": "https://apple.com",
+								"updatedAt": 1
+							},
+							{
+								"id": "wiki",
+								"title": "Wiki",
+								"url": "https://wikipedia.org",
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					},
+					{
+						"id": "docs",
+						"title": "Docs",
+						"children": [
+							{
+								"id": "mdn",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org",
+								"updatedAt": 1
+							},
+							{
+								"id": "inner",
+								"title": "Inner",
+								"children": [
+									{
+										"id": "swift",
+										"title": "Swift",
+										"url": "https://swift.org",
+										"updatedAt": 1
+									}
+								],
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				]
+			}
+		},
+		{
+			"name": "items from different folders are gathered into the first one parent",
+			"ids": [
+				"wiki",
+				"swift"
+			],
+			"title": "Mix",
+			"newId": "mix",
+			"now": 50,
+			"expected": {
+				"folderId": "mix",
+				"nodes": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "apple",
+								"title": "Apple",
+								"url": "https://apple.com",
+								"updatedAt": 1
+							},
+							{
+								"id": "mix",
+								"title": "Mix",
+								"children": [
+									{
+										"id": "wiki",
+										"title": "Wiki",
+										"url": "https://wikipedia.org",
+										"updatedAt": 1
+									},
+									{
+										"id": "swift",
+										"title": "Swift",
+										"url": "https://swift.org",
+										"updatedAt": 1
+									}
+								],
+								"updatedAt": 50
+							}
+						],
+						"updatedAt": 1
+					},
+					{
+						"id": "docs",
+						"title": "Docs",
+						"children": [
+							{
+								"id": "mdn",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org",
+								"updatedAt": 1
+							},
+							{
+								"id": "inner",
+								"title": "Inner",
+								"children": [],
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				]
+			}
+		}
+	],
+	"visibleRows": [
+		{
+			"name": "collapsed: only top-level rows",
+			"expanded": [],
+			"expected": [
+				{
+					"title": "Favourites",
+					"depth": 0
+				},
+				{
+					"title": "Docs",
+					"depth": 0
+				}
+			]
+		},
+		{
+			"name": "open folders add their children in order, indented one level",
+			"expanded": [
+				"fab00000-0000-4000-8000-000000000001",
+				"docs"
+			],
+			"expected": [
+				{
+					"title": "Favourites",
+					"depth": 0
+				},
+				{
+					"title": "Apple",
+					"depth": 1
+				},
+				{
+					"title": "Wiki",
+					"depth": 1
+				},
+				{
+					"title": "Docs",
+					"depth": 0
+				},
+				{
+					"title": "MDN",
+					"depth": 1
+				},
+				{
+					"title": "Inner",
+					"depth": 1
+				}
+			]
+		},
+		{
+			"name": "nested folders open independently",
+			"expanded": [
+				"docs",
+				"inner"
+			],
+			"expected": [
+				{
+					"title": "Favourites",
+					"depth": 0
+				},
+				{
+					"title": "Docs",
+					"depth": 0
+				},
+				{
+					"title": "MDN",
+					"depth": 1
+				},
+				{
+					"title": "Inner",
+					"depth": 1
+				},
+				{
+					"title": "Swift",
+					"depth": 2
+				}
+			]
+		}
+	],
+	"move": [
+		{
+			"name": "move right",
+			"list": [
+				"a",
+				"b",
+				"c"
+			],
+			"from": 0,
+			"to": 2,
+			"expected": [
+				"b",
+				"a",
+				"c"
+			]
+		},
+		{
+			"name": "move to the end",
+			"list": [
+				"a",
+				"b",
+				"c"
+			],
+			"from": 0,
+			"to": 3,
+			"expected": [
+				"b",
+				"c",
+				"a"
+			]
+		},
+		{
+			"name": "move left",
+			"list": [
+				"a",
+				"b",
+				"c"
+			],
+			"from": 2,
+			"to": 0,
+			"expected": [
+				"c",
+				"a",
+				"b"
+			]
+		},
+		{
+			"name": "out of range is a no-op",
+			"list": [
+				"a",
+				"b"
+			],
+			"from": 5,
+			"to": 0,
+			"expected": [
+				"a",
+				"b"
+			]
+		},
+		{
+			"name": "a negative index is a no-op",
+			"list": [
+				"a",
+				"b"
+			],
+			"from": -1,
+			"to": 1,
+			"expected": [
+				"a",
+				"b"
+			]
+		},
+		{
+			"name": "to past the end is a no-op",
+			"list": [
+				"a",
+				"b"
+			],
+			"from": 0,
+			"to": 3,
+			"expected": [
+				"a",
+				"b"
+			]
+		},
+		{
+			"name": "to the same place is a no-op",
+			"list": [
+				"a",
+				"b",
+				"c"
+			],
+			"from": 1,
+			"to": 1,
+			"expected": [
+				"a",
+				"b",
+				"c"
+			]
+		},
+		{
+			"name": "to just after itself is a no-op",
+			"list": [
+				"a",
+				"b",
+				"c"
+			],
+			"from": 1,
+			"to": 2,
+			"expected": [
+				"a",
+				"b",
+				"c"
+			]
+		}
+	],
+	"moveNode": [
+		{
+			"name": "moves within a nested folder only",
+			"nodes": [
+				{
+					"id": "f",
+					"title": "F",
+					"children": [
+						{
+							"id": "1",
+							"title": "1",
+							"url": "https://1.test",
+							"updatedAt": 1
+						},
+						{
+							"id": "2",
+							"title": "2",
+							"url": "https://2.test",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				},
+				{
+					"id": "top",
+					"title": "top",
+					"url": "https://t.test",
+					"updatedAt": 1
+				}
+			],
+			"id": "1",
+			"to": 2,
+			"expected": [
+				{
+					"id": "f",
+					"title": "F",
+					"children": [
+						{
+							"id": "2",
+							"title": "2",
+							"url": "https://2.test",
+							"updatedAt": 1
+						},
+						{
+							"id": "1",
+							"title": "1",
+							"url": "https://1.test",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				},
+				{
+					"id": "top",
+					"title": "top",
+					"url": "https://t.test",
+					"updatedAt": 1
+				}
+			]
+		},
+		{
+			"name": "moves a top-level node",
+			"nodes": [
+				{
+					"id": "a",
+					"title": "a",
+					"url": "https://a.test",
+					"updatedAt": 1
+				},
+				{
+					"id": "b",
+					"title": "b",
+					"url": "https://b.test",
+					"updatedAt": 1
+				},
+				{
+					"id": "c",
+					"title": "c",
+					"url": "https://c.test",
+					"updatedAt": 1
+				}
+			],
+			"id": "a",
+			"to": 3,
+			"expected": [
+				{
+					"id": "b",
+					"title": "b",
+					"url": "https://b.test",
+					"updatedAt": 1
+				},
+				{
+					"id": "c",
+					"title": "c",
+					"url": "https://c.test",
+					"updatedAt": 1
+				},
+				{
+					"id": "a",
+					"title": "a",
+					"url": "https://a.test",
+					"updatedAt": 1
+				}
+			]
+		},
+		{
+			"name": "answers nothing for an unknown id",
+			"nodes": [],
+			"id": "nope",
+			"to": 0,
+			"expected": null
+		}
+	],
+	"parseLibrary": {
+		"now": 3,
+		"valid": [
+			{
+				"name": "a full library parses to itself",
+				"input": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [
+								{
+									"id": "apple",
+									"title": "Apple",
+									"url": "https://apple.com",
+									"updatedAt": 1
+								},
+								{
+									"id": "wiki",
+									"title": "Wiki",
+									"url": "https://wikipedia.org",
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						},
+						{
+							"id": "docs",
+							"title": "Docs",
+							"children": [
+								{
+									"id": "mdn",
+									"title": "MDN",
+									"url": "https://developer.mozilla.org",
+									"updatedAt": 1
+								},
+								{
+									"id": "inner",
+									"title": "Inner",
+									"children": [
+										{
+											"id": "swift",
+											"title": "Swift",
+											"url": "https://swift.org",
+											"updatedAt": 1
+										}
+									],
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"readingList": [
+						{
+							"id": "r",
+							"title": "Article",
+							"url": "https://example.com/a",
+							"added": 4,
+							"isRead": true,
+							"updatedAt": 5
+						}
+					]
+				},
+				"expected": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [
+								{
+									"id": "apple",
+									"title": "Apple",
+									"url": "https://apple.com",
+									"updatedAt": 1
+								},
+								{
+									"id": "wiki",
+									"title": "Wiki",
+									"url": "https://wikipedia.org",
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						},
+						{
+							"id": "docs",
+							"title": "Docs",
+							"children": [
+								{
+									"id": "mdn",
+									"title": "MDN",
+									"url": "https://developer.mozilla.org",
+									"updatedAt": 1
+								},
+								{
+									"id": "inner",
+									"title": "Inner",
+									"children": [
+										{
+											"id": "swift",
+											"title": "Swift",
+											"url": "https://swift.org",
+											"updatedAt": 1
+										}
+									],
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"readingList": [
+						{
+							"id": "r",
+							"title": "Article",
+							"url": "https://example.com/a",
+							"added": 4,
+							"isRead": true,
+							"updatedAt": 5
+						}
+					]
+				}
+			},
+			{
+				"name": "restores a Favourites folder the file lacks",
+				"input": {
+					"bookmarks": [],
+					"readingList": []
+				},
+				"expected": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [],
+							"updatedAt": 3
+						}
+					],
+					"readingList": []
+				}
+			},
+			{
+				"name": "puts the restored Favourites folder first",
+				"input": {
+					"bookmarks": [
+						{
+							"id": "docs",
+							"title": "Docs",
+							"children": [
+								{
+									"id": "mdn",
+									"title": "MDN",
+									"url": "https://developer.mozilla.org",
+									"updatedAt": 1
+								},
+								{
+									"id": "inner",
+									"title": "Inner",
+									"children": [
+										{
+											"id": "swift",
+											"title": "Swift",
+											"url": "https://swift.org",
+											"updatedAt": 1
+										}
+									],
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				},
+				"expected": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [],
+							"updatedAt": 3
+						},
+						{
+							"id": "docs",
+							"title": "Docs",
+							"children": [
+								{
+									"id": "mdn",
+									"title": "MDN",
+									"url": "https://developer.mozilla.org",
+									"updatedAt": 1
+								},
+								{
+									"id": "inner",
+									"title": "Inner",
+									"children": [
+										{
+											"id": "swift",
+											"title": "Swift",
+											"url": "https://swift.org",
+											"updatedAt": 1
+										}
+									],
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				}
+			}
+		],
+		"invalid": [
+			{
+				"name": "a node with a numeric id",
+				"input": {
+					"bookmarks": [
+						{
+							"id": 1
+						}
+					],
+					"readingList": []
+				}
+			},
+			{
+				"name": "a link with no url",
+				"input": {
+					"bookmarks": [
+						{
+							"id": "a",
+							"title": "A",
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				}
+			},
+			{
+				"name": "children that are not a list",
+				"input": {
+					"bookmarks": [
+						{
+							"id": "a",
+							"title": "A",
+							"updatedAt": 1,
+							"children": "x"
+						}
+					],
+					"readingList": []
+				}
+			},
+			{
+				"name": "a bad nested child",
+				"input": {
+					"bookmarks": [
+						{
+							"id": "a",
+							"title": "A",
+							"updatedAt": 1,
+							"children": [
+								{
+									"id": 2
+								}
+							]
+						}
+					],
+					"readingList": []
+				}
+			},
+			{
+				"name": "a reading item without isRead",
+				"input": {
+					"bookmarks": [],
+					"readingList": [
+						{
+							"id": "r",
+							"title": "R",
+							"url": "u",
+							"added": 1,
+							"updatedAt": 1
+						}
+					]
+				}
+			},
+			{
+				"name": "bookmarks missing",
+				"input": {
+					"readingList": []
+				}
+			},
+			{
+				"name": "readingList not a list",
+				"input": {
+					"bookmarks": [],
+					"readingList": "x"
+				}
+			},
+			{
+				"name": "not an object",
+				"input": []
+			}
+		]
+	},
+	"parseLibraryAction": {
+		"valid": [
+			{
+				"input": {
+					"type": "move",
+					"id": "x",
+					"to": 2
+				},
+				"expected": {
+					"type": "move",
+					"id": "x",
+					"to": 2
+				}
+			},
+			{
+				"input": {
+					"type": "remove",
+					"ids": [
+						"a"
+					]
+				},
+				"expected": {
+					"type": "remove",
+					"ids": [
+						"a"
+					]
+				}
+			},
+			{
+				"input": {
+					"type": "rename",
+					"id": "a",
+					"title": "T"
+				},
+				"expected": {
+					"type": "rename",
+					"id": "a",
+					"title": "T"
+				}
+			},
+			{
+				"input": {
+					"type": "newFolder",
+					"ids": []
+				},
+				"expected": {
+					"type": "newFolder",
+					"ids": []
+				}
+			},
+			{
+				"input": {
+					"type": "setRead",
+					"id": "a",
+					"read": false
+				},
+				"expected": {
+					"type": "setRead",
+					"id": "a",
+					"read": false
+				}
+			}
+		],
+		"invalid": [
+			null,
+			{
+				"type": "drop"
+			},
+			{
+				"type": "move",
+				"id": "x",
+				"to": 1.5
+			},
+			{
+				"type": "remove",
+				"ids": [
+					1
+				]
+			},
+			{
+				"type": "setRead",
+				"id": "a"
+			},
+			{
+				"type": "rename",
+				"id": "a"
+			},
+			{
+				"type": "newFolder"
+			},
+			{}
+		]
+	},
+	"store": [
+		{
+			"name": "adds a favourite once per address",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "addFavourite",
+					"title": "A",
+					"url": "https://a.test/",
+					"expect": "added"
+				},
+				{
+					"op": "addFavourite",
+					"title": "A again",
+					"url": "https://a.test/",
+					"expect": "exists"
+				}
+			],
+			"saves": 1,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "id-1",
+								"title": "A",
+								"url": "https://a.test/",
+								"updatedAt": 1000
+							}
+						],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": []
+			}
+		},
+		{
+			"name": "puts the newest reading list item first and ignores duplicates",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "addReading",
+					"title": "One",
+					"url": "https://1.test/",
+					"expect": "added"
+				},
+				{
+					"op": "addReading",
+					"title": "Two",
+					"url": "https://2.test/",
+					"expect": "added"
+				},
+				{
+					"op": "addReading",
+					"title": "Two",
+					"url": "https://2.test/",
+					"expect": "exists"
+				}
+			],
+			"saves": 2,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": [
+					{
+						"id": "id-2",
+						"title": "Two",
+						"url": "https://2.test/",
+						"added": 1000,
+						"isRead": false,
+						"updatedAt": 1000
+					},
+					{
+						"id": "id-1",
+						"title": "One",
+						"url": "https://1.test/",
+						"added": 1000,
+						"isRead": false,
+						"updatedAt": 1000
+					}
+				]
+			}
+		},
+		{
+			"name": "marks read and unread",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "addReading",
+					"title": "One",
+					"url": "https://1.test/",
+					"expect": "added"
+				},
+				{
+					"op": "at",
+					"now": 2000
+				},
+				{
+					"op": "apply",
+					"action": {
+						"type": "setRead",
+						"id": "id-1",
+						"read": true
+					},
+					"expect": null
+				}
+			],
+			"saves": 2,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": [
+					{
+						"id": "id-1",
+						"title": "One",
+						"url": "https://1.test/",
+						"added": 1000,
+						"isRead": true,
+						"updatedAt": 2000
+					}
+				]
+			}
+		},
+		{
+			"name": "setRead on an unknown id still saves but changes nothing",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "apply",
+					"action": {
+						"type": "setRead",
+						"id": "nope",
+						"read": true
+					},
+					"expect": null
+				}
+			],
+			"saves": 1,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": []
+			}
+		},
+		{
+			"name": "renames, trimming and refusing blank titles",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "addFavourite",
+					"title": "A",
+					"url": "https://a.test/",
+					"expect": "added"
+				},
+				{
+					"op": "at",
+					"now": 2000
+				},
+				{
+					"op": "apply",
+					"action": {
+						"type": "rename",
+						"id": "id-1",
+						"title": "  B  "
+					},
+					"expect": null
+				},
+				{
+					"op": "at",
+					"now": 3000
+				},
+				{
+					"op": "apply",
+					"action": {
+						"type": "rename",
+						"id": "id-1",
+						"title": "   "
+					},
+					"expect": null
+				}
+			],
+			"saves": 3,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "id-1",
+								"title": "B",
+								"url": "https://a.test/",
+								"updatedAt": 2000
+							}
+						],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": []
+			}
+		},
+		{
+			"name": "removes bookmarks and reading items but never the Favourites folder",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "addFavourite",
+					"title": "A",
+					"url": "https://a.test/",
+					"expect": "added"
+				},
+				{
+					"op": "addReading",
+					"title": "R",
+					"url": "https://r.test/",
+					"expect": "added"
+				},
+				{
+					"op": "apply",
+					"action": {
+						"type": "remove",
+						"ids": [
+							"id-1",
+							"id-2",
+							"fab00000-0000-4000-8000-000000000001"
+						]
+					},
+					"expect": null
+				}
+			],
+			"saves": 3,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": []
+			}
+		},
+		{
+			"name": "groups a selection into a new folder and returns its id",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "addFavourite",
+					"title": "A",
+					"url": "https://a.test/",
+					"expect": "added"
+				},
+				{
+					"op": "addFavourite",
+					"title": "B",
+					"url": "https://b.test/",
+					"expect": "added"
+				},
+				{
+					"op": "apply",
+					"action": {
+						"type": "newFolder",
+						"ids": [
+							"id-1",
+							"id-2"
+						]
+					},
+					"expect": "id-3"
+				}
+			],
+			"saves": 3,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "id-3",
+								"title": "New Folder",
+								"children": [
+									{
+										"id": "id-1",
+										"title": "A",
+										"url": "https://a.test/",
+										"updatedAt": 1000
+									},
+									{
+										"id": "id-2",
+										"title": "B",
+										"url": "https://b.test/",
+										"updatedAt": 1000
+									}
+								],
+								"updatedAt": 1000
+							}
+						],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": []
+			}
+		},
+		{
+			"name": "adds an empty folder when nothing is selected",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "apply",
+					"action": {
+						"type": "newFolder",
+						"ids": []
+					},
+					"expect": "id-1"
+				}
+			],
+			"saves": 1,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					},
+					{
+						"id": "id-1",
+						"title": "New Folder",
+						"children": [],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": []
+			}
+		},
+		{
+			"name": "adds an empty folder when the selection matches nothing",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "apply",
+					"action": {
+						"type": "newFolder",
+						"ids": [
+							"nope"
+						]
+					},
+					"expect": "id-1"
+				}
+			],
+			"saves": 1,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					},
+					{
+						"id": "id-1",
+						"title": "New Folder",
+						"children": [],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": []
+			}
+		},
+		{
+			"name": "reorders favourites and reading items",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "addFavourite",
+					"title": "A",
+					"url": "https://A.test/",
+					"expect": "added"
+				},
+				{
+					"op": "addFavourite",
+					"title": "B",
+					"url": "https://B.test/",
+					"expect": "added"
+				},
+				{
+					"op": "addFavourite",
+					"title": "C",
+					"url": "https://C.test/",
+					"expect": "added"
+				},
+				{
+					"op": "apply",
+					"action": {
+						"type": "move",
+						"id": "id-1",
+						"to": 3
+					},
+					"expect": null
+				},
+				{
+					"op": "addReading",
+					"title": "X",
+					"url": "https://X.test/",
+					"expect": "added"
+				},
+				{
+					"op": "addReading",
+					"title": "Y",
+					"url": "https://Y.test/",
+					"expect": "added"
+				},
+				{
+					"op": "apply",
+					"action": {
+						"type": "move",
+						"id": "id-5",
+						"to": 2
+					},
+					"expect": null
+				}
+			],
+			"saves": 7,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "id-2",
+								"title": "B",
+								"url": "https://B.test/",
+								"updatedAt": 1000
+							},
+							{
+								"id": "id-3",
+								"title": "C",
+								"url": "https://C.test/",
+								"updatedAt": 1000
+							},
+							{
+								"id": "id-1",
+								"title": "A",
+								"url": "https://A.test/",
+								"updatedAt": 1000
+							}
+						],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": [
+					{
+						"id": "id-4",
+						"title": "X",
+						"url": "https://X.test/",
+						"added": 1000,
+						"isRead": false,
+						"updatedAt": 1000
+					},
+					{
+						"id": "id-5",
+						"title": "Y",
+						"url": "https://Y.test/",
+						"added": 1000,
+						"isRead": false,
+						"updatedAt": 1000
+					}
+				]
+			}
+		},
+		{
+			"name": "moving an unknown id does nothing and saves nothing",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "apply",
+					"action": {
+						"type": "move",
+						"id": "nope",
+						"to": 0
+					},
+					"expect": null
+				}
+			],
+			"saves": 0,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": []
+			}
+		},
+		{
+			"name": "finds links to open, and every link in a folder",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "addFavourite",
+					"title": "A",
+					"url": "https://a.test/",
+					"expect": "added"
+				},
+				{
+					"op": "addFavourite",
+					"title": "B",
+					"url": "https://b.test/",
+					"expect": "added"
+				},
+				{
+					"op": "apply",
+					"action": {
+						"type": "newFolder",
+						"ids": [
+							"id-1",
+							"id-2"
+						]
+					},
+					"expect": "id-3"
+				},
+				{
+					"op": "urlsOf",
+					"id": "id-3",
+					"expect": [
+						"https://a.test/",
+						"https://b.test/"
+					]
+				},
+				{
+					"op": "urlsOf",
+					"id": "nope",
+					"expect": []
+				},
+				{
+					"op": "urlOf",
+					"id": "id-1",
+					"expect": "https://a.test/"
+				},
+				{
+					"op": "urlOf",
+					"id": "id-3",
+					"expect": null
+				},
+				{
+					"op": "urlOf",
+					"id": "nope",
+					"expect": null
+				},
+				{
+					"op": "isFolderNode",
+					"id": "id-3",
+					"expect": true
+				},
+				{
+					"op": "isFolderNode",
+					"id": "id-1",
+					"expect": false
+				},
+				{
+					"op": "childrenOf",
+					"id": "id-3",
+					"expect": [
+						"id-1",
+						"id-2"
+					]
+				},
+				{
+					"op": "childrenOf",
+					"id": "id-1",
+					"expect": []
+				}
+			],
+			"saves": 3,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "id-3",
+								"title": "New Folder",
+								"children": [
+									{
+										"id": "id-1",
+										"title": "A",
+										"url": "https://a.test/",
+										"updatedAt": 1000
+									},
+									{
+										"id": "id-2",
+										"title": "B",
+										"url": "https://b.test/",
+										"updatedAt": 1000
+									}
+								],
+								"updatedAt": 1000
+							}
+						],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": []
+			}
+		},
+		{
+			"name": "urlOf also answers for a reading list item",
+			"now": 1000,
+			"steps": [
+				{
+					"op": "addReading",
+					"title": "R",
+					"url": "https://r.test/",
+					"expect": "added"
+				},
+				{
+					"op": "urlOf",
+					"id": "id-1",
+					"expect": "https://r.test/"
+				}
+			],
+			"saves": 1,
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					}
+				],
+				"readingList": [
+					{
+						"id": "id-1",
+						"title": "R",
+						"url": "https://r.test/",
+						"added": 1000,
+						"isRead": false,
+						"updatedAt": 1000
+					}
+				]
+			}
+		}
+	],
+	"serialised": {
+		"note": "The exact JSON a library serialises to: field order and shape as the TS types.",
+		"library": {
+			"bookmarks": [
+				{
+					"id": "fab00000-0000-4000-8000-000000000001",
+					"title": "Favourites",
+					"children": [
+						{
+							"id": "apple",
+							"title": "Apple",
+							"url": "https://apple.com",
+							"updatedAt": 1
+						},
+						{
+							"id": "wiki",
+							"title": "Wiki",
+							"url": "https://wikipedia.org",
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				},
+				{
+					"id": "docs",
+					"title": "Docs",
+					"children": [
+						{
+							"id": "mdn",
+							"title": "MDN",
+							"url": "https://developer.mozilla.org",
+							"updatedAt": 1
+						},
+						{
+							"id": "inner",
+							"title": "Inner",
+							"children": [
+								{
+									"id": "swift",
+									"title": "Swift",
+									"url": "https://swift.org",
+									"updatedAt": 1
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"updatedAt": 1
+				}
+			],
+			"readingList": [
+				{
+					"id": "r",
+					"title": "Article",
+					"url": "https://example.com/a",
+					"added": 4,
+					"isRead": false,
+					"updatedAt": 4
+				}
+			]
+		}
+	}
+}

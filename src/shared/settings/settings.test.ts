@@ -1,45 +1,15 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { DEFAULT_SETTINGS, SETTING_KEYS, SETTINGS_SCHEMA, acceptsValue, type Settings } from './schema'
+import { DEFAULT_SETTINGS, SETTING_KEYS, SETTINGS_SCHEMA, acceptsValue, type SettingKey, type Settings } from './schema'
+import vectors from './settings.vectors.json'
 import { InvalidSettingError, SettingsStore, UnknownSettingError, changedSettings, parseSettings } from './store'
 
 // The `static let` names in AppSettings.Key, reference/krackn/Sources/Krackn/App/AppSettings.swift.
-const KRACKN_KEYS = [
-	'theme',
-	'accent',
-	'homepage',
-	'startShortcuts',
-	'searchEngine',
-	'blockTrackers',
-	'confirmQuit',
-	'defaultQuality',
-	'preserveOriginals',
-	'dohProvider',
-	'tabOrganization',
-	'autoCloseEnabled',
-	'autoCloseRule',
-	'autoCloseCustomHours',
-	'autoCloseAtTimeEnabled',
-	'autoCloseHour',
-	'autoCloseMinute',
-	'persistentProfile',
-	'defaultUserAgent',
-	'acceleratedCanvas',
-	'restoreTabs',
-	'securityRealtime',
-	'securityDownloadScan',
-	'securityDomainBlocking',
-	'securitySignatureCheck',
-	'sidebarPinned',
-	'recentFeatures',
-	'showFavouritesBar',
-	'passwordAutofill',
-	'tabDropdowns',
-]
+const KRACKN_KEYS = vectors.kracknKeys
 
 describe('settings schema', () => {
 	it('has all 30 Krackn keys plus Zing tabBarPosition', () => {
 		expect(KRACKN_KEYS).toHaveLength(30)
-		expect([...SETTING_KEYS].sort()).toEqual([...KRACKN_KEYS, 'tabBarPosition', 'sleepingTabs'].sort())
+		expect([...SETTING_KEYS].sort()).toEqual([...KRACKN_KEYS, ...vectors.zingKeys].sort())
 	})
 
 	it('gives every key a default its own validator accepts, readable through the typed accessor', () => {
@@ -62,53 +32,32 @@ describe('settings schema', () => {
 	})
 
 	it('keeps Krackn defaults, protective switches on and data-keeping switches off', () => {
-		expect(DEFAULT_SETTINGS).toMatchObject({
-			theme: 'system',
-			accent: 'yellow',
-			searchEngine: 'google',
-			homepage: '',
-			startShortcuts: null,
-			blockTrackers: true,
-			preserveOriginals: true,
-			defaultQuality: 80,
-			dohProvider: 'cloudflare',
-			tabOrganization: 'manual',
-			autoCloseRule: 'day',
-			autoCloseCustomHours: 12,
-			autoCloseHour: 3,
-			autoCloseMinute: 0,
-			acceleratedCanvas: true,
-			securityRealtime: true,
-			securityDownloadScan: true,
-			securityDomainBlocking: true,
-			securitySignatureCheck: true,
-			sidebarPinned: true,
-			showFavouritesBar: true,
-			passwordAutofill: true,
-			persistentProfile: false,
-			restoreTabs: false,
-			confirmQuit: false,
-			tabDropdowns: false,
-			tabBarPosition: 'top',
-		} satisfies Partial<Settings>)
+		expect(DEFAULT_SETTINGS).toMatchObject(vectors.defaultsSubset as Partial<Settings>)
 	})
 })
 
+const ERRORS = { InvalidSetting: InvalidSettingError, UnknownSetting: UnknownSettingError }
+
 describe('parseSettings', () => {
-	it('reads an absent key as its default, never as false', () => {
-		const parsed = parseSettings({ confirmQuit: true })
-		expect(parsed.confirmQuit).toBe(true)
-		expect(parsed.preserveOriginals).toBe(true)
-		expect(parsed.blockTrackers).toBe(true)
-	})
+	for (const { name, input, expectSubset } of vectors.parseAccepted) {
+		it(name, () => {
+			expect(parseSettings(input)).toMatchObject(expectSubset)
+		})
+	}
 
 	it('rejects invalid values and unknown keys instead of replacing them', () => {
-		expect(() => parseSettings({ defaultQuality: 400 })).toThrow(InvalidSettingError)
-		expect(() => parseSettings({ autoCloseHour: 3.5 })).toThrow(InvalidSettingError)
-		expect(() => parseSettings({ tabBarPosition: 'bottom' })).toThrow(InvalidSettingError)
-		expect(() => parseSettings({ history: true })).toThrow(UnknownSettingError)
-		expect(() => parseSettings([])).toThrow(InvalidSettingError)
+		for (const { input, error } of vectors.parseRejected) {
+			expect(() => parseSettings(input), JSON.stringify(input)).toThrow(ERRORS[error as keyof typeof ERRORS])
+		}
 	})
+})
+
+describe('acceptsValue', () => {
+	for (const { key, value, ok } of vectors.accepts) {
+		it(`${key} ${ok ? 'accepts' : 'rejects'} ${JSON.stringify(value)}`, () => {
+			expect(acceptsValue(key as SettingKey, value)).toBe(ok)
+		})
+	}
 })
 
 describe('SettingsStore', () => {
@@ -119,13 +68,17 @@ describe('SettingsStore', () => {
 		store.set('tabBarPosition', 'left')
 		expect(store.get('tabBarPosition')).toBe('left')
 		expect(seen).toEqual(['tabBarPosition'])
-		expect(() => store.set('defaultQuality', 5)).toThrow(InvalidSettingError)
-		expect(store.get('defaultQuality')).toBe(80)
+		for (const { key, value, unchanged } of vectors.storeRejects) {
+			expect(() => store.set(key as SettingKey, value as never)).toThrow(InvalidSettingError)
+			expect(store.get(key as SettingKey)).toBe(unchanged)
+		}
 	})
 
 	it('persists only what differs from the defaults', () => {
-		const store = new SettingsStore()
-		store.set('restoreTabs', true)
-		expect(changedSettings(store.snapshot())).toEqual({ restoreTabs: true })
+		for (const { set, changed } of vectors.changed) {
+			const store = new SettingsStore()
+			for (const [key, value] of Object.entries(set)) store.set(key as SettingKey, value as never)
+			expect(changedSettings(store.snapshot())).toEqual(changed)
+		}
 	})
 })

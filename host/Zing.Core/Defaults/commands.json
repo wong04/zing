@@ -1,0 +1,162 @@
+[
+	{
+		"id": "tab.new",
+		"label": "New Tab"
+	},
+	{
+		"id": "window.new",
+		"label": "New Window"
+	},
+	{
+		"id": "location.open",
+		"label": "Open Location…"
+	},
+	{
+		"id": "tab.close",
+		"label": "Close Tab"
+	},
+	{
+		"id": "window.close",
+		"label": "Close Window"
+	},
+	{
+		"id": "tab.reopenClosed",
+		"label": "Reopen Last Closed Tab"
+	},
+	{
+		"id": "page.find",
+		"label": "Find…"
+	},
+	{
+		"id": "page.findNext",
+		"label": "Find Next"
+	},
+	{
+		"id": "page.findPrevious",
+		"label": "Find Previous"
+	},
+	{
+		"id": "page.reload",
+		"label": "Reload Page"
+	},
+	{
+		"id": "page.stop",
+		"label": "Stop"
+	},
+	{
+		"id": "history.back",
+		"label": "Back"
+	},
+	{
+		"id": "history.forward",
+		"label": "Forward"
+	},
+	{
+		"id": "history.home",
+		"label": "Home"
+	},
+	{
+		"id": "page.zoomIn",
+		"label": "Zoom In"
+	},
+	{
+		"id": "page.zoomOut",
+		"label": "Zoom Out"
+	},
+	{
+		"id": "page.actualSize",
+		"label": "Actual Size"
+	},
+	{
+		"id": "page.textBigger",
+		"label": "Make Text Bigger"
+	},
+	{
+		"id": "page.textSmaller",
+		"label": "Make Text Smaller"
+	},
+	{
+		"id": "page.print",
+		"label": "Print…"
+	},
+	{
+		"id": "page.reader",
+		"label": "Show Reader"
+	},
+	{
+		"id": "tabs.overview",
+		"label": "Show Tab Overview"
+	},
+	{
+		"id": "tab.next",
+		"label": "Show Next Tab"
+	},
+	{
+		"id": "tab.previous",
+		"label": "Show Previous Tab"
+	},
+	{
+		"id": "tab.select1",
+		"label": "Show Tab 1"
+	},
+	{
+		"id": "tab.select2",
+		"label": "Show Tab 2"
+	},
+	{
+		"id": "tab.select3",
+		"label": "Show Tab 3"
+	},
+	{
+		"id": "tab.select4",
+		"label": "Show Tab 4"
+	},
+	{
+		"id": "tab.select5",
+		"label": "Show Tab 5"
+	},
+	{
+		"id": "tab.select6",
+		"label": "Show Tab 6"
+	},
+	{
+		"id": "tab.select7",
+		"label": "Show Tab 7"
+	},
+	{
+		"id": "tab.select8",
+		"label": "Show Tab 8"
+	},
+	{
+		"id": "tab.select9",
+		"label": "Show Last Tab"
+	},
+	{
+		"id": "library.bookmarks",
+		"label": "Show Bookmarks"
+	},
+	{
+		"id": "library.readingList",
+		"label": "Show Reading List"
+	},
+	{
+		"id": "library.addFavourite",
+		"label": "Add to Favourites"
+	},
+	{
+		"id": "library.addReadingList",
+		"label": "Add to Reading List"
+	},
+	{
+		"id": "view.favouritesBar",
+		"label": "Toggle Favourites Bar"
+	},
+	{
+		"id": "view.sidebar",
+		"label": "Toggle Sidebar"
+	},
+	{
+		"id": "app.settings",
+		"label": "Settings…"
+	}
+]

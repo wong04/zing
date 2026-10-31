@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- Host logic with no UI dependency, so it is unit-tested without a window. -->
+	<PropertyGroup>
+		<TargetFramework>net9.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+	</PropertyGroup>
+	<ItemGroup>
+		<!-- Generated from the TypeScript sources by `npm run gen:host-defaults`. -->
+		<None Include="Defaults\*.json" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+</Project>

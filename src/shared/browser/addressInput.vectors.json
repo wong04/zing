@@ -1,0 +1,26 @@
+{
+	"urls": [
+		["apple.com", "https://apple.com"],
+		["docs.google.com", "https://docs.google.com"],
+		["apple.com/iphone", "https://apple.com/iphone"],
+		["bbc.co.uk", "https://bbc.co.uk"],
+		["purdue.edu/admissions?x=1", "https://purdue.edu/admissions?x=1"],
+		["github.io", "https://github.io"],
+		["  Apple.com  ", "https://Apple.com"],
+		["https://example.com/a%20b", "https://example.com/a%20b"],
+		["http://neverssl.com", "http://neverssl.com"],
+		["localhost:3000", "http://localhost:3000"],
+		["192.168.1.1", "http://192.168.1.1"],
+		["myserver.lan:8080/status", "https://myserver.lan:8080/status"],
+		["about:blank", "about:blank"]
+	],
+	"searches": ["node.js", "index.html", "file.txt", "what is apple.com", "hello", "2+2", "swift.version", "c++ tutorial"],
+	"blank": ["   "],
+	"resolve": [
+		{ "name": "goes to a real address and adds https", "input": "docs.google.com", "engine": "google", "expected": "https://docs.google.com" },
+		{ "name": "searches for node.js rather than visiting it", "input": "node.js", "engine": "duckduckgo", "expected": "https://duckduckgo.com/?q=node.js" },
+		{ "name": "strips tracking parameters from addresses", "input": "https://example.com/a?utm_source=x&id=1", "engine": "google", "expected": "https://example.com/a?id=1" },
+		{ "name": "blank input resolves to nothing", "input": "   ", "engine": "google", "expected": null },
+		{ "name": "search text is encoded like encodeURIComponent", "input": "what's (new)! a&b=c é", "engine": "google", "expected": "https://www.google.com/search?q=what's%20(new)!%20a%26b%3Dc%20%C3%A9" }
+	]
+}

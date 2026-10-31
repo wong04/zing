@@ -1,0 +1,154 @@
+{
+	"theme": {
+		"type": "enum",
+		"values": [
+			"system",
+			"light",
+			"dark"
+		]
+	},
+	"accent": {
+		"type": "enum",
+		"values": [
+			"yellow",
+			"green",
+			"blue",
+			"magenta",
+			"purple",
+			"red",
+			"mono"
+		]
+	},
+	"homepage": {
+		"type": "text"
+	},
+	"startShortcuts": {
+		"type": "startShortcuts"
+	},
+	"searchEngine": {
+		"type": "enum",
+		"values": [
+			"google",
+			"duckduckgo",
+			"bing",
+			"brave",
+			"kagi",
+			"startpage"
+		]
+	},
+	"blockTrackers": {
+		"type": "flag"
+	},
+	"confirmQuit": {
+		"type": "flag"
+	},
+	"defaultQuality": {
+		"type": "integer",
+		"min": 10,
+		"max": 100
+	},
+	"preserveOriginals": {
+		"type": "flag"
+	},
+	"dohProvider": {
+		"type": "enum",
+		"values": [
+			"cloudflare",
+			"cloudflare-security",
+			"google",
+			"quad9"
+		]
+	},
+	"tabOrganization": {
+		"type": "enum",
+		"values": [
+			"manual",
+			"domain",
+			"alphabetical",
+			"recentlyUsed",
+			"newest"
+		]
+	},
+	"autoCloseEnabled": {
+		"type": "flag"
+	},
+	"autoCloseRule": {
+		"type": "enum",
+		"values": [
+			"hour",
+			"day",
+			"week",
+			"custom"
+		]
+	},
+	"autoCloseCustomHours": {
+		"type": "number",
+		"min": 0.25,
+		"max": 8760
+	},
+	"autoCloseAtTimeEnabled": {
+		"type": "flag"
+	},
+	"autoCloseHour": {
+		"type": "integer",
+		"min": 0,
+		"max": 23
+	},
+	"autoCloseMinute": {
+		"type": "integer",
+		"min": 0,
+		"max": 59
+	},
+	"persistentProfile": {
+		"type": "flag"
+	},
+	"defaultUserAgent": {
+		"type": "flag"
+	},
+	"acceleratedCanvas": {
+		"type": "flag"
+	},
+	"restoreTabs": {
+		"type": "flag"
+	},
+	"securityRealtime": {
+		"type": "flag"
+	},
+	"securityDownloadScan": {
+		"type": "flag"
+	},
+	"securityDomainBlocking": {
+		"type": "flag"
+	},
+	"securitySignatureCheck": {
+		"type": "flag"
+	},
+	"sidebarPinned": {
+		"type": "flag"
+	},
+	"recentFeatures": {
+		"type": "textList"
+	},
+	"showFavouritesBar": {
+		"type": "flag"
+	},
+	"passwordAutofill": {
+		"type": "flag"
+	},
+	"tabDropdowns": {
+		"type": "flag"
+	},
+	"tabBarPosition": {
+		"type": "enum",
+		"values": [
+			"top",
+			"left",
+			"right"
+		]
+	},
+	"sleepingTabs": {
+		"type": "sleep",
+		"min": 1,
+		"max": 10080
+	}
+}

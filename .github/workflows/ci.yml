@@ -14,8 +14,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:host
       - run: npm run test:e2e
+      - run: npm run build:host
+      - run: npx playwright test -c playwright.webview2.config.ts

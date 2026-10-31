@@ -1,0 +1,57 @@
+{
+	"kracknKeys": ["theme", "accent", "homepage", "startShortcuts", "searchEngine", "blockTrackers", "confirmQuit", "defaultQuality", "preserveOriginals", "dohProvider", "tabOrganization", "autoCloseEnabled", "autoCloseRule", "autoCloseCustomHours", "autoCloseAtTimeEnabled", "autoCloseHour", "autoCloseMinute", "persistentProfile", "defaultUserAgent", "acceleratedCanvas", "restoreTabs", "securityRealtime", "securityDownloadScan", "securityDomainBlocking", "securitySignatureCheck", "sidebarPinned", "recentFeatures", "showFavouritesBar", "passwordAutofill", "tabDropdowns"],
+	"zingKeys": ["tabBarPosition", "sleepingTabs"],
+	"defaultsSubset": {
+		"theme": "system", "accent": "yellow", "searchEngine": "google", "homepage": "", "startShortcuts": null,
+		"blockTrackers": true, "preserveOriginals": true, "defaultQuality": 80, "dohProvider": "cloudflare",
+		"tabOrganization": "manual", "autoCloseRule": "day", "autoCloseCustomHours": 12, "autoCloseHour": 3, "autoCloseMinute": 0,
+		"acceleratedCanvas": true, "securityRealtime": true, "securityDownloadScan": true, "securityDomainBlocking": true,
+		"securitySignatureCheck": true, "sidebarPinned": true, "showFavouritesBar": true, "passwordAutofill": true,
+		"persistentProfile": false, "restoreTabs": false, "confirmQuit": false, "tabDropdowns": false, "tabBarPosition": "top"
+	},
+	"parseAccepted": [
+		{ "name": "absent keys read as defaults", "input": { "confirmQuit": true }, "expectSubset": { "confirmQuit": true, "preserveOriginals": true, "blockTrackers": true } }
+	],
+	"parseRejected": [
+		{ "input": { "defaultQuality": 400 }, "error": "InvalidSetting" },
+		{ "input": { "autoCloseHour": 3.5 }, "error": "InvalidSetting" },
+		{ "input": { "tabBarPosition": "bottom" }, "error": "InvalidSetting" },
+		{ "input": { "history": true }, "error": "UnknownSetting" },
+		{ "input": [], "error": "InvalidSetting" }
+	],
+	"accepts": [
+		{ "key": "defaultQuality", "value": 10, "ok": true },
+		{ "key": "defaultQuality", "value": 100, "ok": true },
+		{ "key": "defaultQuality", "value": 9, "ok": false },
+		{ "key": "defaultQuality", "value": 80.0, "ok": true },
+		{ "key": "defaultQuality", "value": 80.5, "ok": false },
+		{ "key": "autoCloseCustomHours", "value": 0.25, "ok": true },
+		{ "key": "autoCloseCustomHours", "value": 0.24, "ok": false },
+		{ "key": "autoCloseCustomHours", "value": 8760, "ok": true },
+		{ "key": "autoCloseCustomHours", "value": 8761, "ok": false },
+		{ "key": "theme", "value": "dark", "ok": true },
+		{ "key": "theme", "value": "Dark", "ok": false },
+		{ "key": "theme", "value": 1, "ok": false },
+		{ "key": "blockTrackers", "value": "true", "ok": false },
+		{ "key": "homepage", "value": "", "ok": true },
+		{ "key": "homepage", "value": null, "ok": false },
+		{ "key": "recentFeatures", "value": ["a"], "ok": true },
+		{ "key": "recentFeatures", "value": [1], "ok": false },
+		{ "key": "startShortcuts", "value": null, "ok": true },
+		{ "key": "startShortcuts", "value": [{ "title": "t", "url": "u" }], "ok": true },
+		{ "key": "startShortcuts", "value": [{ "title": "t" }], "ok": false },
+		{ "key": "sleepingTabs", "value": { "enabled": true, "afterMinutes": 1, "sleepPinned": false }, "ok": true },
+		{ "key": "sleepingTabs", "value": { "enabled": true, "afterMinutes": 0, "sleepPinned": false }, "ok": false },
+		{ "key": "sleepingTabs", "value": { "enabled": true, "afterMinutes": 10081, "sleepPinned": false }, "ok": false },
+		{ "key": "sleepingTabs", "value": { "enabled": true, "afterMinutes": 30 }, "ok": false },
+		{ "key": "sleepingTabs", "value": { "enabled": true, "afterMinutes": 30, "sleepPinned": false, "x": 1 }, "ok": false }
+	],
+	"storeRejects": [
+		{ "key": "defaultQuality", "value": 5, "unchanged": 80 }
+	],
+	"changed": [
+		{ "set": { "restoreTabs": true }, "changed": { "restoreTabs": true } },
+		{ "set": {}, "changed": {} },
+		{ "set": { "blockTrackers": true }, "changed": {} }
+	]
+}

@@ -1,15 +1,7 @@
 import type { Settings } from '@shared/settings'
 import { classify } from '@shared/browser/addressInput'
 import { stripTrackers } from '@shared/browser/linkCleaner'
-
-const SEARCH_URLS: Record<Settings['searchEngine'], string> = {
-	google: 'https://www.google.com/search?q=',
-	duckduckgo: 'https://duckduckgo.com/?q=',
-	bing: 'https://www.bing.com/search?q=',
-	brave: 'https://search.brave.com/search?q=',
-	kagi: 'https://kagi.com/search?q=',
-	startpage: 'https://www.startpage.com/sp/search?q=',
-}
+import { SEARCH_URLS } from '@shared/browser/searchEngines'
 
 /** The engine's search endpoint without the query, for a form that adds `?q=` itself. */
 export function searchFormAction(engine: Settings['searchEngine']): string {

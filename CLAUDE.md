@@ -1,6 +1,6 @@
 # Zing
 
-Windows-only Chromium browser (Electron + TypeScript + React, electron-vite, npm), a remake of Krackn (macOS, SwiftUI/WebKit).
+Windows-only browser, a remake of Krackn (macOS, SwiftUI/WebKit). **Moving from Electron to WebView2 (C# WinUI 3 host + the existing React UI and TS logic): see `docs/webview2-migration.md`.**
 
 - **Plan:** `docs/PLAN.md`. **Feature tracking:** `PARITY.md`, one GitHub issue per row (`[ID] title`).
 - **`reference/krackn/` is read-only** Swift source at the baseline commit. Its own `CLAUDE.md` describes the *Swift app* (bundle.sh, `/Applications`, AppKit gotchas), not Zing. Read it for behaviour and hard-won gotchas, never edit it.

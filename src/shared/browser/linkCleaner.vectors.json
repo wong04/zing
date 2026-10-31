@@ -1,0 +1,27 @@
+{
+	"clean": [
+		{ "name": "cleaner keeps real params and strips trackers", "input": "https://x.com/a?utm_source=n&id=7&fbclid=z", "url": "https://x.com/a?id=7", "removed": ["utm_source", "fbclid"] },
+		{ "name": "cleaner on clean url", "input": "https://x.com/a", "url": "https://x.com/a", "removed": [] },
+		{ "name": "cleaner no query", "input": "example.com", "url": "https://example.com", "removed": [] },
+		{ "name": "cleaner all-tracker drops query", "input": "https://x.com/a?utm_source=n", "url": "https://x.com/a", "removed": ["utm_source"] },
+		{ "name": "any utm_ parameter is a tracker", "input": "https://x.com/?utm_whatever=1&q=2", "url": "https://x.com/?q=2", "removed": ["utm_whatever"] },
+		{ "name": "names are case-sensitive, as listed", "input": "https://x.com/?ICID=1&icid=2", "url": "https://x.com/?icid=2", "removed": ["ICID"] },
+		{ "name": "percent-encoded tracker names are still caught", "input": "https://x.com/?utm%5Fsource=1&q=2", "url": "https://x.com/?q=2", "removed": ["utm_source"] },
+		{ "name": "the fragment survives", "input": "https://x.com/a?gclid=1#top", "url": "https://x.com/a#top", "removed": ["gclid"] },
+		{ "name": "a ? inside the fragment is not a query", "input": "https://x.com/a#x?utm_source=1", "url": "https://x.com/a#x?utm_source=1", "removed": [] },
+		{ "name": "kept parameters are left exactly as written", "input": "https://x.com/?q=a%20b+c&fbclid=z&x=%E2%9C%93", "url": "https://x.com/?q=a%20b+c&x=%E2%9C%93", "removed": ["fbclid"] },
+		{ "name": "pasted links lose their wrapping", "input": "  <https://x.com/?si=abc>  ", "url": "https://x.com/", "removed": ["si"] },
+		{ "name": "a malformed escape is compared as written", "input": "https://x.com/?%E0%A4%A=1&ref=2", "url": "https://x.com/?%E0%A4%A=1", "removed": ["ref"] }
+	],
+	"invalid": [
+		{ "name": "cleaner bad input", "input": "" },
+		{ "name": "a link without a host is refused", "input": "file:///etc/passwd" }
+	],
+	"strip": [
+		{ "name": "removes trackers from https addresses", "input": "https://x.com/a?utm_source=n&id=7", "expected": "https://x.com/a?id=7" },
+		{ "name": "removes trackers from upper-case HTTP", "input": "HTTP://x.com/?fbclid=1", "expected": "HTTP://x.com/" },
+		{ "name": "leaves a clean address as it is", "input": "https://x.com/a?id=7", "expected": "https://x.com/a?id=7" },
+		{ "name": "leaves other schemes alone", "input": "file:///C:/a.html?utm_source=n", "expected": "file:///C:/a.html?utm_source=n" },
+		{ "name": "a quote at the end of a navigation is part of the address", "input": "https://x.com/?utm_source=a&q='hi'", "expected": "https://x.com/?q='hi'" }
+	]
+}
