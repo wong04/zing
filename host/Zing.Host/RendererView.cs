@@ -35,7 +35,8 @@ public sealed class RendererView
 		if (transparent) renderer.View.DefaultBackgroundColor = Microsoft.UI.Colors.Transparent;
 		parent.Children.Add(renderer.View);
 		await renderer.View.EnsureCoreWebView2Async(environment);
-		var core = renderer.View.CoreWebView2;
+		// The window may have closed while the engine started; that is an expected outcome, not a crash.
+		var core = renderer.View.CoreWebView2 ?? throw new ViewGoneException(hash);
 		core.Settings.IsNonClientRegionSupportEnabled = hash == "chrome";
 		core.Settings.AreDefaultContextMenusEnabled = false;
 		core.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
@@ -91,6 +92,7 @@ public sealed class RendererView
 			TestHooks.Record("bridge", new UnauthorizedAccessException($"Message from {e.Source} refused in #{_hash}"));
 			return;
 		}
+		if (TestHooks.TryHandle(e.WebMessageAsJson)) return;
 		try
 		{
 			var reply = await _bridge.HandleAsync(e.WebMessageAsJson);
@@ -125,6 +127,9 @@ public sealed class RendererView
 	private static string RequireIndex(string folder) =>
 		File.Exists(Path.Combine(folder, "index.html")) ? folder : throw new DirectoryNotFoundException($"{folder} has no index.html");
 }
+
+/// <summary>A Zing view's window closed before the view finished starting.</summary>
+public sealed class ViewGoneException(string hash) : Exception($"Zing's #{hash} view went with its window");
 
 public sealed class RendererLoadException(string hash, string status) : Exception($"Zing's #{hash} view failed to load: {status}");
 

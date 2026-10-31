@@ -8,6 +8,9 @@ import { launchZing, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
+// A 1×1 red PNG.
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
+
 let server: Server
 let base = ''
 
@@ -20,6 +23,11 @@ test.beforeAll(async () => {
 		}
 		res.setHeader('content-type', 'text/html')
 		if (req.url === '/perm') return void res.end('<!doctype html><title>Permissions</title>')
+		if (req.url === '/icon.png') {
+			res.setHeader('content-type', 'image/png')
+			return void res.end(Buffer.from(PNG, 'base64'))
+		}
+		if (req.url === '/iconic') return void res.end('<!doctype html><title>Iconic</title><link rel="icon" href="/icon.png">')
 		res.end('<!doctype html><title>Find</title><p>needle one</p><p>needle two</p><p>needle three</p><p>hay</p>')
 	})
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -80,5 +88,13 @@ test('a permission request is asked in the page UI and denied when Deny is click
 	expect(await result()).toBe('pending')
 	await ui.getByRole('button', { name: 'Deny' }).click()
 	await expect.poll(result).toBe('denied')
+	await zing.close()
+})
+
+test("a page's icon reaches its tab as an in-memory image", async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/iconic` } })
+	await expect
+		.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs[0]?.icon?.slice(0, 22))
+		.toBe('data:image/png;base64,')
 	await zing.close()
 })

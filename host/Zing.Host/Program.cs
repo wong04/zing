@@ -13,7 +13,13 @@ public static class Program
 		TestHooks.RecordUnhandledErrors();
 		ComWrappersSupport.InitializeComWrappers();
 		if (SingleInstance.RedirectedToRunningZing()) return;
-		Application.Start(_ => new ZingApp());
+		Application.Start(start =>
+		{
+			// What the XAML-generated Main does: without it every await on the UI thread
+			// resumes on the thread pool, where WinUI and WebView2 calls fail (RPC_E_WRONG_THREAD).
+			SynchronizationContext.SetSynchronizationContext(new Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread()));
+			_ = new ZingApp();
+		});
 	}
 }
 
@@ -118,7 +124,8 @@ public sealed class ZingApp : Application
 
 	private AppServices OpenServices()
 	{
-		static long Now() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+		var clock = TestHooks.Clock;
+		long Now() => clock.Now();
 		var settings = new SettingsStore(JsonFiles.LoadSettingsFile(AppPaths.Settings));
 		var settingsWriter = new DebouncedJsonWriter(AppPaths.Settings, TimeSpan.FromMilliseconds(500), new SystemScheduler());
 		settings.Subscribe((s, _) => settingsWriter.Write(Settings.Changed(s)));
@@ -131,8 +138,11 @@ public sealed class ZingApp : Application
 			return snapshot => libraryWriter.Write(snapshot);
 		}, Now, () => Guid.NewGuid().ToString());
 		_onQuit.Add(() => libraryWriter?.Flush());
-		return new AppServices(settings, library, Address.FromDefaults(), Now);
+		var siteData = new SiteDataKeeper(new WebViewSitePurger(AnyLivePage, () => _windows.Count > 0), (domain, error) => TestHooks.Record($"purge {domain}", error));
+		return new AppServices(settings, library, Address.FromDefaults(), clock, siteData);
 	}
+
+	private CoreWebView2? AnyLivePage() => _windows.Select(w => w.AnyLivePage()).FirstOrDefault(core => core is not null);
 
 	private bool Flag(string key) => Services.Settings.Get(key)?.GetValue<bool>() ?? throw new InvalidDataException($"Setting {key} is missing");
 

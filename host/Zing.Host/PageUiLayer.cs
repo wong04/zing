@@ -24,7 +24,7 @@ public sealed class PageUiLayer(Panel parent, CoreWebView2Environment environmen
 		_state = state;
 		// Nothing to show and no view yet: don't pay for a renderer.
 		if (_ready is null && !state.HasVisiblePageUi) return;
-		_ = ShowAsync().ContinueWith(t => TestHooks.Record("pageui", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+		TestHooks.Background(ShowAsync(), "pageui");
 	}
 
 	public void SetHeight(int height)

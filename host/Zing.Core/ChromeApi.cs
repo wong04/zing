@@ -23,6 +23,8 @@ public interface IWindowHost
 	/// <summary>The page UI renderer measured what it shows.</summary>
 	void SetPageUiHeight(int height);
 	void FocusPageUi();
+	/// <summary>A background job failed with no caller to throw to.</summary>
+	void Report(string what, Exception error);
 	/// <summary>Where downloads are saved, and the file actions on them.</summary>
 	string DownloadsDirectory { get; }
 	IDownloadHost DownloadHost { get; }
@@ -32,7 +34,11 @@ public interface IWindowHost
 }
 
 /// <summary>What every window shares: one settings store, one library, one address rule.</summary>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, Func<long> Now);
+/// <param name="Clock">The app's clock; an e2e run swaps in an <see cref="OffsetClock"/> it can move forward.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, SiteDataKeeper? SiteData = null)
+{
+	public long Now() => Clock.Now();
+}
 
 /// <summary>
 /// One window's answers to its renderer views' bridge calls, and the window's
@@ -69,6 +75,8 @@ public sealed class ChromeApi : IDisposable
 
 	public PermissionBroker Permissions { get; }
 
+	public TabLifecycle Lifecycle { get; }
+
 	/// <summary>Fires after any change to this window's tabs, e.g. so the primary window's session can be saved.</summary>
 	public event Action? TabsChanged;
 
@@ -77,11 +85,16 @@ public sealed class ChromeApi : IDisposable
 		_app = app;
 		_host = host;
 		_appVersion = appVersion;
-		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, (tab, description) => host.Notify($"Couldn't load {tab.Url} ({description})"), InterceptNavigation);
+		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, (tab, description) => host.Notify($"Couldn't load {tab.Url} ({description})"), InterceptNavigation, app.SiteData);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
 		Permissions = new PermissionBroker(PageUi);
+		Lifecycle = new TabLifecycle(new LifecycleTabs(Tabs), app.Settings, app.Clock, host.Scheduler, error => host.Report("tab lifecycle", error));
+		Tabs.Woke += (id, page) =>
+		{
+			if (Lifecycle.Woke(id) is { } y) page.RunWhenLoaded($"window.scrollTo(0, {y.ToString(System.Globalization.CultureInfo.InvariantCulture)})");
+		};
 		Tabs.FindResult += (page, matches, active) => Find.OnResult(page, matches, active);
 		PageUi.Changed += state =>
 		{
@@ -187,6 +200,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		foreach (var subscription in _subscriptions) subscription.Dispose();
 		Ordering.Dispose();
+		Lifecycle.Dispose();
 		_unsubscribeLibrary();
 		Tabs.Destroy();
 	}
@@ -421,6 +435,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		Ordering?.ScheduleReorganize();
 		Find?.ActiveChanged();
+		Lifecycle?.Reschedule();
 		_host.Push("tabs:state", State());
 		TabsChanged?.Invoke();
 	}
@@ -462,6 +477,34 @@ public sealed class ChromeApi : IDisposable
 		var arg = Arg(args, index);
 		return arg.ValueKind == JsonValueKind.Number && arg.TryGetInt32(out var value) ? value : throw new ArgumentException($"Argument {index} must be an integer");
 	}
+}
+
+/// <summary>What sleeping tabs and auto-close need from a window's tabs.</summary>
+internal sealed class LifecycleTabs(TabService tabs) : ILifecycleTabs
+{
+	public string? ActiveId => tabs.ActiveId;
+	public IReadOnlyList<TabRecord> Records => tabs.Records;
+	public bool HasPage(string id) => tabs.HasPage(id);
+	public bool IsAudible(string id) => tabs.PageOf(id)?.IsAudible ?? false;
+
+	public async Task<PageProbe> ProbeAsync(string id)
+	{
+		var page = tabs.PageOf(id) ?? throw new PageUnavailableException(id);
+		try
+		{
+			return PageProbe.Parse(await page.EvaluateAsync(PageProbe.Source));
+		}
+		catch (Exception error) when (error is not PageProbeException)
+		{
+			throw new PageUnavailableException(id, error);
+		}
+	}
+
+	// The tab overview that shows thumbnails isn't ported yet (W3d); a sleeping tab may have none, as in Electron.
+	public Task<string?> CaptureThumbnailAsync(string id) => Task.FromResult<string?>(null);
+
+	public void Sleep(string id) => tabs.Sleep(id);
+	public void Close(string id) => tabs.Close(id);
 }
 
 /// <summary>The find bar's view of the window: pages are this window's tabs' pages.</summary>

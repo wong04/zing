@@ -153,3 +153,50 @@ public sealed class TabServiceTests
 		Assert.Equal(["https://down.example: ERR_CONNECTION_REFUSED"], _failures);
 	}
 }
+
+public sealed class TabSleepServiceTests
+{
+	private readonly FakePageHost _host = new();
+	private readonly TabService _tabs;
+	private readonly List<string> _woke = [];
+
+	public TabSleepServiceTests()
+	{
+		_tabs = new TabService(new TabStore(Deterministic.Clock(), Deterministic.Ids()), _host, "about:blank", () => { }, (_, _) => { });
+		_tabs.Woke += (id, _) => _woke.Add(id);
+	}
+
+	[Fact]
+	public void A_sleeping_tab_drops_its_page_keeps_its_record_and_wakes_at_its_url()
+	{
+		var background = _tabs.Open("https://a.example/");
+		_tabs.Open("https://b.example/");
+		var page = (FakePage)_tabs.PageOf(background.Id)!;
+		_tabs.Sleep(background.Id);
+		Assert.True(page.Closed);
+		Assert.False(_tabs.HasPage(background.Id));
+		Assert.True(_tabs.State("manual", false).Tabs.Single(t => t.Id == background.Id).Sleeping);
+
+		_tabs.Activate(background.Id);
+		Assert.Equal([background.Id], _woke);
+		Assert.Equal("navigate https://a.example/", ((FakePage)_tabs.PageOf(background.Id)!).Calls[0]);
+		Assert.False(_tabs.IsSleeping(background.Id));
+	}
+
+	[Fact]
+	public void A_tab_keeps_its_icon_while_asleep_and_loses_it_when_closed()
+	{
+		var background = _tabs.Open("https://a.example/");
+		_tabs.Open("https://b.example/");
+		((FakePage)_tabs.PageOf(background.Id)!).Events.IconChanged("data:image/png;base64,AA==");
+		_tabs.Sleep(background.Id);
+		Assert.Equal("data:image/png;base64,AA==", _tabs.State("manual", false).Tabs.Single(t => t.Id == background.Id).Icon);
+	}
+
+	[Fact]
+	public void The_active_tab_cannot_sleep()
+	{
+		var tab = _tabs.Open("https://a.example/");
+		Assert.Throws<ActiveTabSleepException>(() => _tabs.Sleep(tab.Id));
+	}
+}

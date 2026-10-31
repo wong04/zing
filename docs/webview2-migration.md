@@ -242,3 +242,22 @@ The last two items are ported and tested but not yet wired into the host (W3b).
 - **Permissions:** `PermissionRequested` maps WebView2 kinds to Electron's names and is decided by `PermissionBroker`. Grants are dropped on every new document and on close.
 - **Checks:** `e2e-webview2/page.spec.ts` covers find (1 of 3, next, previous, close), a download landing with its mark and numbered on collision, and a notification prompt denied from the page UI.
 - **Open:** in one full run, `a changed setting … survives a relaunch` failed once, and it then passed about 60 times in a row. The error text wasn't kept; from now on e2e logs are saved in full so a repeat can be diagnosed.
+
+## W3c (2026-10-31): per-site purge, sleeping tabs, favicons, UI thread
+
+- **The UI thread fix (the important one).** The custom `Main` never installed WinUI's `DispatcherQueueSynchronizationContext`, which the XAML-generated `Main` sets up. Every `await` on the UI thread therefore resumed on the thread pool, where WinUI and WebView2 calls fail with `RPC_E_WRONG_THREAD`. That caused notices sometimes failing from a background thread. It may also explain the lost close message when two windows closed together and the one-off settings-relaunch failure noted in W3a and W3b. `Program.Main` now installs the context.
+- **Per-site purge:**
+  - `SiteUsage` and `SiteDataKeeper` are in `Zing.Core`, shared by every window.
+  - The host's `WebViewSitePurger` clears each origin with DevTools' `Storage.clearDataForOrigin` and deletes the registrable domain's cookies, through any live page.
+  - It runs after the tab's page has closed.
+  - Covered by `e2e-webview2/privacy.spec.ts`: a site keeps its data while any tab uses it and has nothing once its last tab closes.
+- **Sleeping tabs and auto-close:**
+  - `TabService.Sleep` drops the page and keeps the record. `TabLifecycle` (ported) decides, probing the page for unsaved input and checking whether it's playing audio.
+  - A woken tab gets its scroll back once it has loaded.
+  - With `ZING_TEST_CLOCK=1`, an e2e run can move the app clock with a `{kind: "test", action: "advance-clock"}` message, which only an e2e host accepts.
+  - Thumbnails come with the tab overview.
+  - Covered by `e2e-webview2/lifecycle.spec.ts`.
+- **Favicons:**
+  - WebView2 picks and fetches the icon itself (`FaviconChanged`, `GetFaviconAsync`). The tab keeps it as a PNG data URL in memory only, and keeps it while asleep.
+  - The C# port of Electron's favicon chooser was removed, because the engine does that job. The TS module and its vectors stay until W4.
+- **Checks:** the WebView2 e2e suite is 27 tests. One run saw the Playwright worker process itself crash (`0xC0000409`); it didn't repeat in 20 runs of that spec.

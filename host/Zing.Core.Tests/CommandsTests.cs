@@ -11,7 +11,7 @@ public sealed class CommandsTests : IDisposable
 	public CommandsTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(new Bridge(), new AppServices(_settings, library, Address.FromDefaults(), Deterministic.Clock()), _host, "test");
+		_api = new ChromeApi(new Bridge(), new AppServices(_settings, library, Address.FromDefaults(), new TickingClock()), _host, "test");
 		_api.Start([], "https://example.com/");
 	}
 
@@ -77,7 +77,7 @@ public sealed class FindTests : IDisposable
 	public FindTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(new Bridge(), new AppServices(new SettingsStore(), library, Address.FromDefaults(), Deterministic.Clock()), _host, "test");
+		_api = new ChromeApi(new Bridge(), new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock()), _host, "test");
 		_api.Start([], "https://example.com/");
 	}
 

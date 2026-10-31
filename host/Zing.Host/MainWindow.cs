@@ -53,6 +53,10 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 
 	public IPageHost Pages => this;
 
+	/// <summary>A started page of this window, for profile-wide work such as purging a site.</summary>
+	public CoreWebView2? AnyLivePage() =>
+		Api?.Tabs.Records.Select(r => Api.Tabs.PageOf(r.Id)).OfType<WebView2Page>().FirstOrDefault(p => p.IsOpen && p.IsStarted)?.Core;
+
 	private void Place()
 	{
 		AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
@@ -129,10 +133,16 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		else DispatcherQueue.TryEnqueue(Send);
 	}
 
+	/// <summary>Any thread may report something; the notice is drawn on the window's own.</summary>
 	public void Notify(string text)
 	{
+		if (!DispatcherQueue.HasThreadAccess)
+		{
+			DispatcherQueue.TryEnqueue(() => Notify(text));
+			return;
+		}
 		if (_notices is null || _closed) return;
-		_ = _notices.ShowAsync(text).ContinueWith(t => TestHooks.Record("notice", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+		TestHooks.Background(_notices.ShowAsync(text), "notice");
 	}
 
 	public void NewWindow() => _app.NewWindow();
@@ -146,7 +156,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		_notices?.Layout();
 		_pageUi?.Layout();
 		if (Api is null) return;
-		if (Api.SettingsOpen) _ = ShowSurfaceAsync().ContinueWith(t => TestHooks.Record("surface", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+		if (Api.SettingsOpen) TestHooks.Background(ShowSurfaceAsync(), "surface");
 		else if (_surface is not null) _surface.Visible = false;
 	}
 
@@ -237,6 +247,8 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	public void SetPageUiHeight(int height) => _pageUi?.SetHeight(height);
 
 	public void FocusPageUi() => _pageUi?.Focus();
+
+	public void Report(string what, Exception error) => TestHooks.Record(what, error);
 
 	public IShellActions Shell { get; } = new WindowsShell();
 
