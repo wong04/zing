@@ -17,6 +17,9 @@ public interface IPage
 	void Close();
 	/// <summary>Runs a script of Zing's own in the page, e.g. restyling the start page.</summary>
 	void Run(string script);
+	/// <summary>Finds in the page; results come back through <see cref="IPageEvents.FindResult"/>.</summary>
+	void Find(string query, FindDirection direction, FindMode mode);
+	void StopFind();
 }
 
 /// <summary>What happens to a page's navigation.</summary>
@@ -40,6 +43,8 @@ public interface IPageEvents
 	/// <summary>Loading or history changed.</summary>
 	void StateChanged();
 	void LoadFailed(string description);
+	/// <summary>How many matches the last find has, and which one (1-based) is current.</summary>
+	void FindResult(int matches, int activeOrdinal);
 	/// <summary>The page closed itself (window.close()).</summary>
 	void Closed();
 	/// <summary>The page opened a window; the returned page must be the one handed to the engine, so window.opener works.</summary>
@@ -69,6 +74,9 @@ public sealed class TabService
 	private readonly Action _changed;
 	private readonly Action<TabRecord, string> _loadFailed;
 	private readonly Func<string, string, NavigationDecision?> _intercept;
+
+	/// <summary>A page reported find results; the window's find bar decides whether they are for it.</summary>
+	public event Action<IPage, int, int>? FindResult;
 	private readonly Dictionary<string, IPage> _pages = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, string> _openers = new(StringComparer.Ordinal);
 
@@ -285,6 +293,11 @@ public sealed class TabService
 		}
 
 		public void StateChanged() => service._changed();
+
+		public void FindResult(int matches, int activeOrdinal)
+		{
+			if (service._pages.TryGetValue(id, out var page)) service.FindResult?.Invoke(page, matches, activeOrdinal);
+		}
 
 		public void LoadFailed(string description)
 		{

@@ -68,3 +68,44 @@ public sealed class CommandsTests : IDisposable
 		Assert.Contains(Menus.Tab(_api.Tabs, id, _host.Shell), m => m.Label == "Unpin Tab");
 	}
 }
+
+public sealed class FindTests : IDisposable
+{
+	private readonly FakeWindowHost _host = new();
+	private readonly ChromeApi _api;
+
+	public FindTests()
+	{
+		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+		_api = new ChromeApi(new Bridge(), new AppServices(new SettingsStore(), library, Address.FromDefaults(), Deterministic.Clock()), _host, "test");
+		_api.Start([], "https://example.com/");
+	}
+
+	public void Dispose() => _api.Dispose();
+
+	private FakePage Page => (FakePage)_api.Tabs.ActivePage!;
+
+	[Fact]
+	public void Find_opens_the_bar_searches_the_page_and_shows_its_results()
+	{
+		_api.Run("page.find");
+		Assert.NotNull(_host.PageUiStates[^1].Find);
+		_api.Find.Update("zing");
+		Assert.Equal("find zing Next Restart", Page.Calls[^1]);
+		Page.Events.FindResult(3, 1);
+		Assert.Equal(new FindState("zing", 1, 3), _api.PageUi.State.Find);
+		_api.Run("page.findNext");
+		Assert.Equal("find zing Next Continue", Page.Calls[^1]);
+	}
+
+	[Fact]
+	public void Switching_tabs_closes_the_bar_and_clears_the_old_page()
+	{
+		_api.Run("page.find");
+		_api.Find.Update("zing");
+		var old = Page;
+		_api.Run("tab.new");
+		Assert.Null(_api.PageUi.State.Find);
+		Assert.Equal("stop find", old.Calls[^1]);
+	}
+}

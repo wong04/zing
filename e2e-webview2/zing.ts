@@ -49,6 +49,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		ZING_ERRORS_FILE: errors,
 		ZING_RENDERER_DIR: join(ROOT, 'out', 'renderer'),
 		ZING_USER_DATA: userData,
+		ZING_DOWNLOADS_DIR: join(userData, 'downloads'),
 		...env,
 	}
 	const host: ChildProcess = spawn(HOST_EXE, [...args], { env: hostEnv, stdio: 'ignore' })

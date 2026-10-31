@@ -286,3 +286,21 @@ public sealed class DownloadsTests
 		Assert.Equal("Saved, but couldn't mark it as downloaded (access denied)", ui.State.Downloads[0].Error);
 	}
 }
+
+public sealed class ZoneIdentifierTests
+{
+	[Fact]
+	public void A_mark_round_trips_in_the_windows_format()
+	{
+		var mark = new ZoneMark(3, "https://example.com/file.bin", "https://example.com/");
+		Assert.Equal("[ZoneTransfer]\r\nZoneId=3\r\nReferrerUrl=https://example.com/\r\nHostUrl=https://example.com/file.bin\r\n", ZoneIdentifier.Format(mark));
+		Assert.Equal(mark, ZoneIdentifier.Parse(ZoneIdentifier.Format(mark)));
+	}
+
+	[Fact]
+	public void The_engines_generic_mark_parses_and_a_broken_one_does_not()
+	{
+		Assert.Equal(new ZoneMark(3, "about:internet"), ZoneIdentifier.Parse("[ZoneTransfer]\nZoneId=3\nHostUrl=about:internet "));
+		Assert.Null(ZoneIdentifier.Parse("[ZoneTransfer]\nZoneId=three"));
+	}
+}
