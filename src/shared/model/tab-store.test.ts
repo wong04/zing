@@ -1,131 +1,121 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { NEW_TAB_URL } from './tab'
 import { TabStore, UnknownTabError } from './tab-store'
 import { zoomInFactor, zoomOutFactor } from './zoom'
+
+interface Op {
+	readonly op: string
+	readonly id?: string
+	readonly anchor?: string
+	readonly url?: string
+	readonly title?: string
+	readonly pinned?: boolean
+	readonly index?: number
+	readonly n?: number
+	readonly patch?: { url?: string; title?: string; faviconUrl?: string }
+	readonly returns?: string | null
+	readonly returnsUrl?: string
+	readonly throws?: string
+}
+
+interface Case {
+	readonly name: string
+	readonly ops: readonly Op[]
+	readonly expect: {
+		readonly urls?: readonly string[]
+		readonly pinned?: readonly string[]
+		readonly activeId?: string | null
+		readonly canReopen?: boolean
+		readonly records?: Record<string, Record<string, unknown>>
+	}
+}
+
+const { cases } = JSON.parse(readFileSync(new URL('./tab-store.vectors.json', import.meta.url), 'utf8')) as { cases: Case[] }
 
 function clockFrom(start: number): () => number {
 	let t = start
 	return () => t++
 }
 
-function storeWith(...urls: string[]): TabStore {
+function run(c: Case): void {
 	const store = new TabStore(clockFrom(1000))
-	for (const url of urls) store.add(url)
-	return store
+	const ids = new Map<string, string>() // vector id (t1, t2...) -> real id
+	const names = new Map<string, string>() // real id -> vector id
+	const real = (id: string): string => ids.get(id) ?? id
+	const register = (record: { id: string }): string => {
+		const name = `t${ids.size + 1}`
+		ids.set(name, record.id)
+		names.set(record.id, name)
+		return name
+	}
+	const name = (id: string | undefined): string | null => (id === undefined ? null : (names.get(id) ?? id))
+	for (const o of c.ops) {
+		const perform = (): string | null => {
+			switch (o.op) {
+				case 'add':
+					return register(store.add(o.url!))
+				case 'addAfter':
+					return register(store.addAfter(real(o.anchor!), o.url!))
+				case 'addRestored':
+					return register(store.addRestored({ url: o.url!, title: o.title!, pinned: o.pinned! }))
+				case 'activate':
+					return name(store.activate(real(o.id!)).id)
+				case 'touch':
+					store.touch(real(o.id!))
+					return null
+				case 'update':
+					return name(store.update(real(o.id!), o.patch!).id)
+				case 'close':
+					return name(store.close(real(o.id!)).nextActiveId)
+				case 'reopenClosed': {
+					const record = store.reopenClosed()
+					if (!record) return null
+					if (o.returnsUrl !== undefined) expect(record.url).toBe(o.returnsUrl)
+					return register(record)
+				}
+				case 'move':
+					store.move(real(o.id!), o.index!)
+					return null
+				case 'pin':
+					store.pin(real(o.id!))
+					return null
+				case 'unpin':
+					store.unpin(real(o.id!))
+					return null
+				case 'nextId':
+					return name(store.nextId())
+				case 'previousId':
+					return name(store.previousId())
+				case 'idForShortcut':
+					return name(store.idForShortcut(o.n!))
+				default:
+					throw new Error(`Unknown op ${o.op}`)
+			}
+		}
+		if (o.throws) {
+			expect(perform, `${c.name}: ${o.op}`).toThrow(UnknownTabError)
+			continue
+		}
+		const result = perform()
+		if (o.returns !== undefined) expect(result, `${c.name}: ${o.op}`).toBe(o.returns)
+	}
+	const e = c.expect
+	if (e.urls) expect(store.tabs.map((t) => t.url)).toEqual(e.urls)
+	if (e.pinned) expect(store.tabs.filter((t) => t.pinned).map((t) => t.url)).toEqual(e.pinned)
+	if (e.activeId !== undefined) expect(name(store.activeId)).toBe(e.activeId)
+	if (e.canReopen !== undefined) expect(store.canReopen).toBe(e.canReopen)
+	for (const [id, fields] of Object.entries(e.records ?? {})) expect(store.get(real(id))).toMatchObject(fields)
 }
 
-const urls = (store: TabStore): string[] => store.tabs.map((t) => t.url)
+describe('TabStore (shared vectors)', () => {
+	it.each(cases.map((c) => [c.name, c] as const))('%s', (_name, c) => run(c))
+})
 
-describe('TabStore', () => {
-	it('creates records with stable UUIDs and timestamps, without activating', () => {
-		const store = storeWith('https://a.test')
-		const [tab] = store.tabs
-		expect(tab?.id).toMatch(/^[0-9a-f-]{36}$/)
-		expect(tab).toMatchObject({ pinned: false, createdAt: 1000, updatedAt: 1000, lastActiveAt: 1000 })
-		expect(store.activeId).toBeUndefined()
-	})
-
-	it('activating stamps lastActiveAt but not updatedAt', () => {
-		const store = storeWith('https://a.test')
-		const id = store.tabs[0]!.id
-		const active = store.activate(id)
-		expect(store.activeId).toBe(id)
-		expect(active.lastActiveAt).toBeGreaterThan(active.updatedAt)
-	})
-
-	it('update bumps updatedAt only when something changed', () => {
-		const store = storeWith('https://a.test')
-		const id = store.tabs[0]!.id
-		const before = store.get(id)
-		expect(store.update(id, { url: 'https://a.test' })).toBe(before)
-		const after = store.update(id, { title: 'A' })
-		expect(after.title).toBe('A')
-		expect(after.updatedAt).toBeGreaterThan(before.updatedAt)
-	})
-
-	it('closing the active tab activates the tab that slides into its slot', () => {
-		const store = storeWith('https://a.test', 'https://b.test', 'https://c.test')
-		const [, b, c] = store.tabs
-		store.activate(b!.id)
-		expect(store.close(b!.id).nextActiveId).toBe(c!.id)
-		expect(store.activeId).toBe(c!.id)
-	})
-
-	it('closing the last active tab activates the new last tab', () => {
-		const store = storeWith('https://a.test', 'https://b.test')
-		const [a, b] = store.tabs
-		store.activate(b!.id)
-		store.close(b!.id)
-		expect(store.activeId).toBe(a!.id)
-	})
-
-	it('closing every tab leaves the store empty with nothing active', () => {
-		const store = storeWith('https://a.test')
-		const id = store.tabs[0]!.id
-		store.activate(id)
-		expect(store.close(id).nextActiveId).toBeUndefined()
-		expect(store.tabs).toHaveLength(0)
-		expect(store.activeId).toBeUndefined()
-	})
-
-	it('reopens closed web pages newest first, but not blank tabs', () => {
-		const store = storeWith('https://a.test', NEW_TAB_URL, 'https://c.test')
-		for (const t of [...store.tabs]) store.close(t.id)
-		expect(store.reopenClosed()?.url).toBe('https://c.test')
-		expect(store.reopenClosed()?.url).toBe('https://a.test')
-		expect(store.reopenClosed()).toBeUndefined()
-		expect(store.canReopen).toBe(false)
-	})
-
-	it('a reopened tab gets a fresh id', () => {
-		const store = storeWith('https://a.test')
-		const old = store.tabs[0]!
-		store.close(old.id)
-		expect(store.reopenClosed()?.id).not.toBe(old.id)
-	})
-
-	it('pinning moves a tab to the end of the pinned run; unpinning to the start of the rest', () => {
-		const store = storeWith('https://a.test', 'https://b.test', 'https://c.test')
-		const [a, b, c] = store.tabs
-		store.pin(c!.id)
-		store.pin(b!.id)
-		expect(urls(store)).toEqual(['https://c.test', 'https://b.test', 'https://a.test'])
-		store.unpin(c!.id)
-		expect(urls(store)).toEqual(['https://b.test', 'https://c.test', 'https://a.test'])
-		expect(store.get(a!.id).pinned).toBe(false)
-	})
-
-	it('moves stay within their section', () => {
-		const store = storeWith('https://a.test', 'https://b.test', 'https://c.test')
-		const [a, , c] = store.tabs
-		store.pin(a!.id)
-		store.move(c!.id, 0)
-		expect(urls(store)).toEqual(['https://a.test', 'https://c.test', 'https://b.test'])
-		store.move(a!.id, 2)
-		expect(urls(store)[0]).toBe('https://a.test')
-	})
-
-	it('a popup lands right after its opener', () => {
-		const store = storeWith('https://a.test', 'https://b.test')
-		const opener = store.tabs[0]!
-		store.addAfter(opener.id, 'https://popup.test')
-		expect(urls(store)).toEqual(['https://a.test', 'https://popup.test', 'https://b.test'])
-	})
-
-	it('next, previous and Ctrl+N resolve through the active tab', () => {
-		const store = storeWith('https://a.test', 'https://b.test', 'https://c.test')
-		const [a, b, c] = store.tabs
-		store.activate(c!.id)
-		expect(store.nextId()).toBe(a!.id)
-		expect(store.previousId()).toBe(b!.id)
-		expect(store.idForShortcut(9)).toBe(c!.id)
-		expect(store.idForShortcut(4)).toBeUndefined()
-	})
-
-	it('raises UnknownTabError for an id it does not hold', () => {
-		const store = storeWith()
-		expect(() => store.activate('nope')).toThrow(UnknownTabError)
-		expect(() => store.close('nope')).toThrow(UnknownTabError)
+describe('TabStore ids', () => {
+	it('creates records with stable UUIDs', () => {
+		const store = new TabStore(clockFrom(1000))
+		store.add('https://a.test')
+		expect(store.tabs[0]?.id).toMatch(/^[0-9a-f-]{36}$/)
 	})
 })
 

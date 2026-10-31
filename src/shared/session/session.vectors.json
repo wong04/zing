@@ -1,0 +1,184 @@
+{
+	"description": "Cases for the session codec (session.ts) and the pure parts of session-restore.ts.",
+	"restorableUrls": {
+		"yes": [
+			"http://a.com",
+			"https://a.com/x?y=1"
+		],
+		"no": [
+			"zing://home",
+			"about:blank",
+			"file:///etc/passwd",
+			"not a url",
+			""
+		]
+	},
+	"prepare": [
+		{
+			"name": "respects the cap and keeps every pinned tab through it",
+			"generate": {
+				"loose": 60,
+				"pinned": 5,
+				"pinnedLast": true
+			},
+			"expectLength": 40,
+			"expectPinned": 5
+		},
+		{
+			"name": "leaves order alone under the cap",
+			"tabs": [
+				{
+					"url": "https://b.com",
+					"title": "t",
+					"pinned": false,
+					"active": false
+				},
+				{
+					"url": "https://a.com",
+					"title": "t",
+					"pinned": false,
+					"active": false
+				}
+			],
+			"expect": [
+				{
+					"url": "https://b.com",
+					"title": "t",
+					"pinned": false,
+					"active": false
+				},
+				{
+					"url": "https://a.com",
+					"title": "t",
+					"pinned": false,
+					"active": false
+				}
+			]
+		}
+	],
+	"roundTrip": {
+		"tabs": [
+			{
+				"url": "https://a.com",
+				"title": "t",
+				"pinned": true,
+				"active": false
+			},
+			{
+				"url": "https://b.com",
+				"title": "t",
+				"pinned": false,
+				"active": true
+			},
+			{
+				"url": "zing://home",
+				"title": "t",
+				"pinned": false,
+				"active": false
+			}
+		],
+		"expect": [
+			{
+				"url": "https://a.com",
+				"title": "t",
+				"pinned": true,
+				"active": false
+			},
+			{
+				"url": "https://b.com",
+				"title": "t",
+				"pinned": false,
+				"active": true
+			}
+		]
+	},
+	"decode": [
+		{
+			"name": "garbage",
+			"text": "{{{not json",
+			"expect": []
+		},
+		{
+			"name": "empty",
+			"text": "",
+			"expect": []
+		},
+		{
+			"name": "not an array",
+			"text": "{\"url\":\"https://a.com\"}",
+			"expect": []
+		},
+		{
+			"name": "drops malformed entries but keeps valid ones",
+			"text": "[{\"url\": \"https://a.com\"}, 7, {\"url\": \"https://ok.com\", \"title\": \"t\", \"pinned\": false, \"active\": false}]",
+			"expect": [
+				{
+					"url": "https://ok.com",
+					"title": "t",
+					"pinned": false,
+					"active": false
+				}
+			]
+		},
+		{
+			"name": "drops unrestorable urls",
+			"text": "[{\"url\": \"zing://home\", \"title\": \"t\", \"pinned\": false, \"active\": false}, {\"url\": \"https://ok.com\", \"title\": \"t\", \"pinned\": false, \"active\": false}]",
+			"expect": [
+				{
+					"url": "https://ok.com",
+					"title": "t",
+					"pinned": false,
+					"active": false
+				}
+			]
+		},
+		{
+			"name": "wrong field types are malformed",
+			"text": "[{\"url\": \"https://a.com\", \"title\": \"t\", \"pinned\": \"yes\", \"active\": false}]",
+			"expect": []
+		}
+	],
+	"toSessionTabs": {
+		"records": [
+			{
+				"id": "a",
+				"url": "https://a.test/",
+				"title": "a",
+				"pinned": true
+			},
+			{
+				"id": "b",
+				"url": "https://b.test/",
+				"title": "b",
+				"pinned": false
+			},
+			{
+				"id": "c",
+				"url": "about:blank",
+				"title": "c",
+				"pinned": false
+			}
+		],
+		"activeId": "b",
+		"expect": [
+			{
+				"url": "https://a.test/",
+				"title": "a",
+				"pinned": true,
+				"active": false
+			},
+			{
+				"url": "https://b.test/",
+				"title": "b",
+				"pinned": false,
+				"active": true
+			},
+			{
+				"url": "about:blank",
+				"title": "c",
+				"pinned": false,
+				"active": false
+			}
+		]
+	}
+}

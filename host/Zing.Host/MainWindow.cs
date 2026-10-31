@@ -63,7 +63,8 @@ public sealed class MainWindow : Window
 			return (object?)null;
 		});
 
-		var first = _tabs.Open(Environment.GetEnvironmentVariable("ZING_START_URL") ?? "about:blank");
+		var first = _tabs.Add(Environment.GetEnvironmentVariable("ZING_START_URL") ?? "about:blank");
+		_tabs.Activate(first.Id);
 		await AddPageAsync(first.Id, first.Url);
 		chrome.Navigate($"https://{AppHost}/index.html#chrome");
 	}
@@ -95,8 +96,7 @@ public sealed class MainWindow : Window
 	private void PageChanged(string id)
 	{
 		var page = _pages[id];
-		_tabs.Update(id, url: page.Url, title: page.Title);
-		_tabs.SetPage(id, new PageState(page.IsLoading, page.CanGoBack, page.CanGoForward));
+		_tabs.Update(id, new TabContentPatch(Url: page.Url, Title: string.IsNullOrWhiteSpace(page.Title) ? TabStore.NewTabTitle : page.Title));
 		_api?.TabsChanged();
 	}
 

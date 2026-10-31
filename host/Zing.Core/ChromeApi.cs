@@ -53,7 +53,13 @@ public sealed class ChromeApi
 		bridge.Register("toolpanel:get", _ => new { panels = Array.Empty<object>(), dragging = false });
 	}
 
-	public TabsState Snapshot() => _tabs.Snapshot(Setting("tabOrganization"), _settings["tabDropdowns"]!.GetValue<bool>());
+	public TabsState Snapshot() => _tabs.Snapshot(Setting("tabOrganization"), _settings["tabDropdowns"]!.GetValue<bool>(), PageStateOf);
+
+	private PageState PageStateOf(string id)
+	{
+		var page = _pageFor(id);
+		return new PageState(page.IsLoading, page.CanGoBack, page.CanGoForward);
+	}
 
 	/// <summary>Called whenever a tab's page reports a change; the chrome redraws from the pushed state.</summary>
 	public void TabsChanged() => _push("tabs:state", Snapshot());

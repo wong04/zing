@@ -1,0 +1,186 @@
+{
+	"description": "Operation sequences for TabStore. Ids are t1, t2... in creation order; the clock starts at 1000 and ticks once per read. Each op may carry `returns` (id of the tab it returned, or the close result's nextActiveId, or null), `returnsUrl`, or `throws` (UnknownTab). `expect` is checked after the last op.",
+	"cases": [
+		{
+			"name": "adding creates a record with timestamps and does not activate",
+			"ops": [{ "op": "add", "url": "https://a.test", "returns": "t1" }],
+			"expect": {
+				"activeId": null,
+				"records": { "t1": { "pinned": false, "createdAt": 1000, "updatedAt": 1000, "lastActiveAt": 1000, "title": "New Tab" } }
+			}
+		},
+		{
+			"name": "activating stamps lastActiveAt but not updatedAt",
+			"ops": [{ "op": "add", "url": "https://a.test" }, { "op": "activate", "id": "t1" }],
+			"expect": { "activeId": "t1", "records": { "t1": { "updatedAt": 1000, "lastActiveAt": 1001 } } }
+		},
+		{
+			"name": "update changes nothing and stamps nothing when no value differs",
+			"ops": [{ "op": "add", "url": "https://a.test" }, { "op": "update", "id": "t1", "patch": { "url": "https://a.test" } }],
+			"expect": { "records": { "t1": { "url": "https://a.test", "updatedAt": 1000 } } }
+		},
+		{
+			"name": "update bumps updatedAt when something changed",
+			"ops": [{ "op": "add", "url": "https://a.test" }, { "op": "update", "id": "t1", "patch": { "title": "A" } }],
+			"expect": { "records": { "t1": { "title": "A", "updatedAt": 1001, "createdAt": 1000 } } }
+		},
+		{
+			"name": "closing the active tab activates the tab that slides into its slot",
+			"ops": [
+				{ "op": "add", "url": "https://a.test" },
+				{ "op": "add", "url": "https://b.test" },
+				{ "op": "add", "url": "https://c.test" },
+				{ "op": "activate", "id": "t2" },
+				{ "op": "close", "id": "t2", "returns": "t3" }
+			],
+			"expect": { "activeId": "t3", "urls": ["https://a.test", "https://c.test"] }
+		},
+		{
+			"name": "closing the last active tab activates the new last tab",
+			"ops": [{ "op": "add", "url": "https://a.test" }, { "op": "add", "url": "https://b.test" }, { "op": "activate", "id": "t2" }, { "op": "close", "id": "t2", "returns": "t1" }],
+			"expect": { "activeId": "t1" }
+		},
+		{
+			"name": "closing an inactive tab leaves the active one alone",
+			"ops": [{ "op": "add", "url": "https://a.test" }, { "op": "add", "url": "https://b.test" }, { "op": "activate", "id": "t2" }, { "op": "close", "id": "t1", "returns": null }],
+			"expect": { "activeId": "t2", "urls": ["https://b.test"] }
+		},
+		{
+			"name": "closing every tab leaves the store empty with nothing active",
+			"ops": [{ "op": "add", "url": "https://a.test" }, { "op": "activate", "id": "t1" }, { "op": "close", "id": "t1", "returns": null }],
+			"expect": { "activeId": null, "urls": [] }
+		},
+		{
+			"name": "reopens closed web pages newest first, but not blank tabs",
+			"ops": [
+				{ "op": "add", "url": "https://a.test" },
+				{ "op": "add", "url": "about:blank" },
+				{ "op": "add", "url": "https://c.test" },
+				{ "op": "close", "id": "t1" },
+				{ "op": "close", "id": "t2" },
+				{ "op": "close", "id": "t3" },
+				{ "op": "reopenClosed", "returnsUrl": "https://c.test" },
+				{ "op": "reopenClosed", "returnsUrl": "https://a.test" },
+				{ "op": "reopenClosed", "returns": null }
+			],
+			"expect": { "canReopen": false, "urls": ["https://c.test", "https://a.test"] }
+		},
+		{
+			"name": "a reopened tab gets a fresh id",
+			"ops": [{ "op": "add", "url": "https://a.test" }, { "op": "close", "id": "t1" }, { "op": "reopenClosed", "returns": "t2" }],
+			"expect": { "urls": ["https://a.test"], "canReopen": false }
+		},
+		{
+			"name": "a reopened pinned tab goes back into the pinned run",
+			"ops": [
+				{ "op": "add", "url": "https://a.test" },
+				{ "op": "add", "url": "https://b.test" },
+				{ "op": "pin", "id": "t1" },
+				{ "op": "close", "id": "t1" },
+				{ "op": "reopenClosed", "returns": "t3" }
+			],
+			"expect": { "urls": ["https://a.test", "https://b.test"], "pinned": ["https://a.test"] }
+		},
+		{
+			"name": "pinning moves a tab to the end of the pinned run; unpinning to the start of the rest",
+			"ops": [
+				{ "op": "add", "url": "https://a.test" },
+				{ "op": "add", "url": "https://b.test" },
+				{ "op": "add", "url": "https://c.test" },
+				{ "op": "pin", "id": "t3" },
+				{ "op": "pin", "id": "t2" },
+				{ "op": "unpin", "id": "t3" }
+			],
+			"expect": { "urls": ["https://b.test", "https://c.test", "https://a.test"], "pinned": ["https://b.test"] }
+		},
+		{
+			"name": "moves stay within their section",
+			"ops": [
+				{ "op": "add", "url": "https://a.test" },
+				{ "op": "add", "url": "https://b.test" },
+				{ "op": "add", "url": "https://c.test" },
+				{ "op": "pin", "id": "t1" },
+				{ "op": "move", "id": "t3", "index": 0 },
+				{ "op": "move", "id": "t1", "index": 2 }
+			],
+			"expect": { "urls": ["https://a.test", "https://c.test", "https://b.test"], "pinned": ["https://a.test"] }
+		},
+		{
+			"name": "a popup lands right after its opener",
+			"ops": [{ "op": "add", "url": "https://a.test" }, { "op": "add", "url": "https://b.test" }, { "op": "addAfter", "anchor": "t1", "url": "https://popup.test" }],
+			"expect": { "urls": ["https://a.test", "https://popup.test", "https://b.test"] }
+		},
+		{
+			"name": "a popup never lands inside the pinned run",
+			"ops": [
+				{ "op": "add", "url": "https://a.test" },
+				{ "op": "add", "url": "https://b.test" },
+				{ "op": "pin", "id": "t1" },
+				{ "op": "pin", "id": "t2" },
+				{ "op": "add", "url": "https://c.test" },
+				{ "op": "addAfter", "anchor": "t1", "url": "https://popup.test" }
+			],
+			"expect": { "urls": ["https://a.test", "https://b.test", "https://popup.test", "https://c.test"] }
+		},
+		{
+			"name": "restored tabs are placed by their pinned state",
+			"ops": [
+				{ "op": "addRestored", "url": "https://a.test", "title": "A", "pinned": false },
+				{ "op": "addRestored", "url": "https://b.test", "title": "B", "pinned": true },
+				{ "op": "addRestored", "url": "https://c.test", "title": "C", "pinned": true }
+			],
+			"expect": {
+				"urls": ["https://b.test", "https://c.test", "https://a.test"],
+				"pinned": ["https://b.test", "https://c.test"],
+				"records": { "t2": { "title": "B", "pinned": true } },
+				"activeId": null
+			}
+		},
+		{
+			"name": "touch stamps lastActiveAt only",
+			"ops": [{ "op": "add", "url": "https://a.test" }, { "op": "touch", "id": "t1" }],
+			"expect": { "records": { "t1": { "lastActiveAt": 1001, "updatedAt": 1000 } } }
+		},
+		{
+			"name": "next, previous and Ctrl+N resolve through the active tab",
+			"ops": [
+				{ "op": "add", "url": "https://a.test" },
+				{ "op": "add", "url": "https://b.test" },
+				{ "op": "add", "url": "https://c.test" },
+				{ "op": "activate", "id": "t3" },
+				{ "op": "nextId", "returns": "t1" },
+				{ "op": "previousId", "returns": "t2" },
+				{ "op": "idForShortcut", "n": 9, "returns": "t3" },
+				{ "op": "idForShortcut", "n": 2, "returns": "t2" },
+				{ "op": "idForShortcut", "n": 4, "returns": null }
+			],
+			"expect": {}
+		},
+		{
+			"name": "next and previous with nothing active start from the ends",
+			"ops": [
+				{ "op": "add", "url": "https://a.test" },
+				{ "op": "add", "url": "https://b.test" },
+				{ "op": "nextId", "returns": "t1" },
+				{ "op": "previousId", "returns": "t1" }
+			],
+			"expect": {}
+		},
+		{
+			"name": "navigation on an empty store finds nothing",
+			"ops": [{ "op": "nextId", "returns": null }, { "op": "previousId", "returns": null }, { "op": "idForShortcut", "n": 9, "returns": null }],
+			"expect": {}
+		},
+		{
+			"name": "an unknown id is an error, not a no-op",
+			"ops": [
+				{ "op": "activate", "id": "nope", "throws": "UnknownTab" },
+				{ "op": "close", "id": "nope", "throws": "UnknownTab" },
+				{ "op": "update", "id": "nope", "patch": { "title": "x" }, "throws": "UnknownTab" },
+				{ "op": "pin", "id": "nope", "throws": "UnknownTab" },
+				{ "op": "addAfter", "anchor": "nope", "url": "https://a.test", "throws": "UnknownTab" }
+			],
+			"expect": { "urls": [] }
+		}
+	]
+}
