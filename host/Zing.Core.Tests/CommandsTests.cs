@@ -159,3 +159,21 @@ public sealed class StackDropdownTests : IDisposable
 		Assert.Null(_api.Stacks.OpenKey);
 	}
 }
+
+public sealed class AccountGateTests
+{
+	[Fact]
+	public async Task Skip_for_now_takes_the_gate_off_the_window()
+	{
+		var host = new FakeWindowHost();
+		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-account-").FullName, new FakeCipher());
+		var bridge = new Bridge();
+		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), account), host, "test");
+		api.Start([], "about:blank");
+		Assert.NotNull(host.SurfaceRegions[^1]);
+		await bridge.HandleAsync(System.Text.Json.JsonSerializer.Serialize(new { kind = "invoke", id = 1, channel = "account:continue-as-guest", args = Array.Empty<object>() }));
+		Assert.False(api.Shell.Gated);
+		Assert.Null(host.SurfaceRegions[^1]);
+	}
+}
