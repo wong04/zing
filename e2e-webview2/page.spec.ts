@@ -8,6 +8,8 @@ import { launchZing, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
+const PARAGRAPH = 'Zing keeps nothing by default, so the reader has to build its view from the page that is open right now. '.repeat(4)
+
 // A 1×1 red PNG.
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
 
@@ -23,6 +25,8 @@ test.beforeAll(async () => {
 		}
 		res.setHeader('content-type', 'text/html')
 		if (req.url === '/perm') return void res.end('<!doctype html><title>Permissions</title>')
+		if (req.url === '/article') return void res.end(`<!doctype html><title>Fixture Headline</title><nav><a href="/other">Site menu</a></nav><article><h1>Fixture Headline</h1><p>${PARAGRAPH}</p><p>${PARAGRAPH}</p></article><footer>Footer junk</footer>`)
+		if (req.url === '/short') return void res.end('<!doctype html><title>Short</title><p>Too little to read.</p>')
 		if (req.url === '/icon.png') {
 			res.setHeader('content-type', 'image/png')
 			return void res.end(Buffer.from(PNG, 'base64'))
@@ -108,5 +112,28 @@ test('bigger text scales type in this tab and survives its next page', async () 
 	await expect.poll(fontSize).toBe('17.6px')
 	await page.reload()
 	await expect.poll(fontSize).toBe('17.6px')
+	await zing.close()
+})
+
+test('reader mode swaps the page for its article in a themed view, and says so when there is none', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/article` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/article`)
+	await page.waitForLoadState('load')
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.reader'))
+	await expect(page.locator('main[data-zing-reader] h1')).toHaveText('Fixture Headline')
+	await expect(page.locator('body')).toContainText('reader has to build its view')
+	await expect(page.locator('body')).not.toContainText('Footer junk')
+	// Leaving reader mode brings the page back.
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.reader'))
+	await expect(page.locator('footer')).toHaveText('Footer junk')
+
+	await zing.chrome.evaluate(async (url) => {
+		const { activeId } = await window.zing.getTabs()
+		await window.zing.navigateTab(activeId!, url)
+	}, `${base}/short`)
+	await pageWhere(zing.browser, (p) => p.url() === `${base}/short`)
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.reader'))
+	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
+	await expect(overlay.getByText("Reader can't find an article on this page")).toBeVisible()
 	await zing.close()
 })

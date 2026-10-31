@@ -30,6 +30,12 @@ public interface IPage
 	void Print();
 	/// <summary>A JPEG data URL of what the page shows now, or null when there is nothing to show.</summary>
 	Task<string?> CaptureAsync();
+	/// <summary>Swaps the document for its article; returns why not when the page has none. A new document leaves reader mode.</summary>
+	Task<string?> ShowReaderAsync();
+	bool InReader { get; }
+	/// <summary>The tab's session history, oldest first.</summary>
+	Task<PageHistory> HistoryAsync();
+	void GoToHistoryEntry(int entryId);
 	void StopFind();
 }
 

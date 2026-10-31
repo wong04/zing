@@ -33,6 +33,7 @@ public sealed class ZingApp : Application
 	private readonly List<MainWindow> _windows = [];
 	private readonly List<Action> _onQuit = [];
 	private readonly LinkInbox _links = new();
+	private TaskbarIcon? _taskbar;
 	private MainWindow? _mostRecent;
 	private AppServices? _services;
 	private SessionSaver? _session;
@@ -53,6 +54,9 @@ public sealed class ZingApp : Application
 	/// <summary>The oldest open window. The only one that saves the session, so two windows never overwrite each other.</summary>
 	public MainWindow? Primary => _windows.FirstOrDefault();
 
+	/// <summary>Browsing data on disk (opt-in) instead of in memory; chosen at launch, so a change applies on the next one.</summary>
+	public bool PersistentProfile { get; private set; }
+
 	protected override void OnLaunched(LaunchActivatedEventArgs args)
 	{
 		_services = OpenServices();
@@ -63,6 +67,7 @@ public sealed class ZingApp : Application
 		else Session.Discard(AppPaths.Session);
 		foreach (var url in LaunchArgs.Urls(System.Environment.GetCommandLineArgs().Skip(1))) _links.Push(url);
 		SingleInstance.Listen(OnSecondLaunch);
+		_taskbar = new TaskbarIcon(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
 		NewWindow();
 	}
 
@@ -96,6 +101,7 @@ public sealed class ZingApp : Application
 	{
 		var window = new MainWindow(this);
 		_windows.Add(window);
+		_taskbar?.Add(window.AppWindow);
 		window.Start();
 		window.Activate();
 		return window;
@@ -117,6 +123,7 @@ public sealed class ZingApp : Application
 	public void Closed(MainWindow window)
 	{
 		_windows.Remove(window);
+		_taskbar?.Remove(window.AppWindow);
 		if (_windows.Count > 0) return;
 		foreach (var flush in _onQuit) flush();
 		Exit();
@@ -138,7 +145,9 @@ public sealed class ZingApp : Application
 			return snapshot => libraryWriter.Write(snapshot);
 		}, Now, () => Guid.NewGuid().ToString());
 		_onQuit.Add(() => libraryWriter?.Flush());
-		var siteData = new SiteDataKeeper(new WebViewSitePurger(AnyLivePage, () => _windows.Count > 0), (domain, error) => TestHooks.Record($"purge {domain}", error));
+		// A persistent profile exists so sign-ins survive closing a tab and quitting; purging would undo exactly that.
+		PersistentProfile = settings.Get("persistentProfile")?.GetValue<bool>() ?? throw new InvalidDataException("Setting persistentProfile is missing");
+		var siteData = PersistentProfile ? null : new SiteDataKeeper(new WebViewSitePurger(AnyLivePage, () => _windows.Count > 0), (domain, error) => TestHooks.Record($"purge {domain}", error));
 		// Test runs skip the gate unless a test is about the gate; a real launch never does.
 		var skipGate = TestHooks.IsEndToEndRun && System.Environment.GetEnvironmentVariable("ZING_SKIP_ACCOUNT_GATE") == "1";
 		var account = new AccountStore(Path.Combine(AppPaths.UserData, "account"), new DpapiCipher(), skipGate);
@@ -155,7 +164,8 @@ public sealed class ZingApp : Application
 		options.AdditionalBrowserArguments = TestHooks.BrowserArguments();
 		// zing://home parses with a host, as Electron's standard scheme did. The getter hands back a copy, so assign the whole list.
 		options.CustomSchemeRegistrations = new List<CoreWebView2CustomSchemeRegistration> { new(StartPage.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true } };
-		var userData = Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Zing", TestHooks.IsEndToEndRun ? $"e2e-{System.Environment.ProcessId}" : "WebView2");
+		// The engine's own data; an e2e run keeps it in its scratch profile, so a relaunch finds it and nothing is left in AppData.
+		var userData = TestHooks.IsEndToEndRun ? Path.Combine(AppPaths.UserData, "WebView2") : Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Zing", "WebView2");
 		return await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, options);
 	}
 }

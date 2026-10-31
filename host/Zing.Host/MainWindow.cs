@@ -78,6 +78,11 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		_stacks = new CoveringLayer(_root, _environment, _bridge, "overlay-stack", ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add);
 		_overview = new CoveringLayer(_root, _environment, _bridge, "overlay-overview", ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
 		_pageUi = new PageUiLayer(_root, _environment, _bridge, ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
+		_bridge.Register("default-browser:open-settings", _ =>
+		{
+			Shell.OpenExternal("ms-settings:defaultapps");
+			return (object?)null;
+		});
 		_bridge.Register("chrome:titlebar-colors", (JsonElement[] args) =>
 		{
 			AppWindow.TitleBar.ButtonForegroundColor = ParseColor(args[0].GetProperty("symbolColor").GetString()!);
@@ -105,7 +110,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		// Pages go just above the chrome renderer, under every layer.
 		_root.Children.Insert(Math.Min(1, _root.Children.Count), view);
 		var settings = _app.Services.Settings;
-		return new WebView2Page(view, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), () => settings.Get("theme")!.GetValue<string>(), this);
+		return new WebView2Page(view, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), () => settings.Get("theme")!.GetValue<string>(), this, _app.PersistentProfile);
 	}
 
 	public void Show(IPage page)
