@@ -73,3 +73,17 @@ test('Dropdown style stacks a site and lists its pages in the overlay', async ()
 	await expect(zing.chrome.locator('.tab.stack.open')).toHaveCount(0)
 	await zing.close()
 })
+
+test('the tab overview shows a card per tab with pictures, and closes again', async () => {
+	const zing = await launchZing()
+	await openPage(zing.chrome, 'one', 'First')
+	await openPage(zing.chrome, 'two', 'Second')
+	await zing.chrome.evaluate(() => window.zing.runCommand('tabs.overview'))
+	const overview = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay-overview'))
+	// The start page tab plus the two opened.
+	await expect(overview.locator('.overview-card')).toHaveCount(3)
+	await expect(overview.locator('.overview-thumb img')).not.toHaveCount(0)
+	await zing.chrome.evaluate(() => window.zing.closeOverview())
+	await expect(overview.locator('.overview-card')).toHaveCount(0)
+	await zing.close()
+})

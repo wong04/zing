@@ -85,6 +85,18 @@ public sealed class WebView2Page : IPage
 		}
 	}
 
+	public async Task<string?> CaptureAsync()
+	{
+		if (!IsOpen || _core is null) return null;
+		using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+		await _core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Jpeg, stream);
+		if (stream.Size == 0) return null;
+		using var memory = new MemoryStream();
+		stream.Seek(0);
+		await stream.AsStreamForRead().CopyToAsync(memory);
+		return "data:image/jpeg;base64," + Convert.ToBase64String(memory.ToArray());
+	}
+
 	/// <summary>Edge's own print preview, inside the page.</summary>
 	public void Print() => Run(core => core.ShowPrintUI(CoreWebView2PrintDialogKind.Browser));
 

@@ -21,7 +21,8 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	private RendererView? _surface;
 	private NoticeLayer? _notices;
 	private PageUiLayer? _pageUi;
-	private StackLayer? _stacks;
+	private CoveringLayer? _stacks;
+	private CoveringLayer? _overview;
 	private readonly WindowsDownloads _downloads = new();
 	private CoreWebView2Environment? _environment;
 	private WebView2Page? _shown;
@@ -74,7 +75,8 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		// The chrome view joins the grid at once, under every page; its API must be registered before it loads and asks for state.
 		var chrome = RendererView.CreateAsync(_root, _environment, _bridge, "chrome", transparent: false);
 		_notices = new NoticeLayer(_root, _environment, _bridge, ContentRect, DispatcherQueue);
-		_stacks = new StackLayer(_root, _environment, _bridge, ContentRect, _renderers.Add);
+		_stacks = new CoveringLayer(_root, _environment, _bridge, "overlay-stack", ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add);
+		_overview = new CoveringLayer(_root, _environment, _bridge, "overlay-overview", ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
 		_pageUi = new PageUiLayer(_root, _environment, _bridge, ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
 		_bridge.Register("chrome:titlebar-colors", (JsonElement[] args) =>
 		{
@@ -159,6 +161,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		_notices?.Layout();
 		_pageUi?.Layout();
 		_stacks?.Layout();
+		_overview?.Layout();
 		// The shell model works out where the surface goes and answers through SurfaceRegionChanged.
 		Api?.LayoutChanged();
 	}
@@ -296,7 +299,13 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 
 	public void Report(string what, Exception error) => TestHooks.Record(what, error);
 
-	public void StackDropdownChanged(StackDropdownState? state) => _stacks?.Changed(state);
+	public void StackDropdownChanged(StackDropdownState? state) => _stacks?.Changed(state is not null);
+
+	public void OverviewChanged(OverviewState? state) => _overview?.Changed(state is not null);
+
+	public void Warn(string what, Exception error) => System.Diagnostics.Debug.WriteLine($"{what}: {error.Message}");
+
+	public void Background(Task task, string what) => TestHooks.Background(task, what);
 
 	public IShellActions Shell { get; } = new WindowsShell();
 
@@ -360,6 +369,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		_notices?.Destroy();
 		_pageUi?.Destroy();
 		_stacks?.Destroy();
+		_overview?.Destroy();
 		foreach (var renderer in _renderers) renderer.Close();
 		_app.Closed(this);
 	}

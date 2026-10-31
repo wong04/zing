@@ -34,6 +34,8 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public void RunWhenLoaded(string script) => Calls.Add($"when loaded {script}");
 	public int TextSize { get; set; } = Zing.Core.TextSize.Default;
 	public void Print() => Calls.Add("print");
+	public string? Picture { get; set; } = "data:image/jpeg;base64,AA==";
+	public Task<string?> CaptureAsync() => Task.FromResult(Picture);
 	public void Close() => Closed = true;
 }
 
@@ -88,6 +90,11 @@ public sealed class FakeWindowHost : IWindowHost
 
 	public List<StackDropdownState?> Dropdowns { get; } = [];
 	public void StackDropdownChanged(StackDropdownState? state) => Dropdowns.Add(state);
+
+	public List<OverviewState?> Overviews { get; } = [];
+	public void OverviewChanged(OverviewState? state) => Overviews.Add(state);
+	public void Warn(string what, Exception error) { }
+	public void Background(Task task, string what) => task.GetAwaiter().GetResult();
 
 	public List<Exception> Reported { get; } = [];
 	public void Report(string what, Exception error) => Reported.Add(error);

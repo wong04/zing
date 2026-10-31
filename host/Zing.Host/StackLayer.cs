@@ -6,20 +6,21 @@ using Zing.Core;
 namespace Zing.Host;
 
 /// <summary>
-/// The stack dropdown's view (#overlay-stack): while open it covers everything
-/// under the tab strip, so a click outside the list lands on its backdrop.
-/// Created on first use, so a window that never opens a stack pays nothing.
+/// A Zing view that, while open, covers everything below a line of the chrome:
+/// the stack dropdown (#overlay-stack, below the tab strip) and the tab
+/// overview (#overlay-overview, over the page). A click outside its content
+/// lands on its backdrop, never on the page beneath. Created on first use.
 /// </summary>
-public sealed class StackLayer(Panel parent, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, Action<RendererView> created)
+public sealed class CoveringLayer(Panel parent, CoreWebView2Environment environment, Bridge bridge, string hash, Func<Rect> content, Func<double> top, Action<RendererView> created)
 {
 	private Task<RendererView>? _ready;
 	private bool _open;
 
-	public void Changed(StackDropdownState? state)
+	public void Changed(bool open)
 	{
-		_open = state is not null;
+		_open = open;
 		if (_ready is null && !_open) return;
-		TestHooks.Background(ShowAsync(), "stack dropdown");
+		TestHooks.Background(ShowAsync(), hash);
 	}
 
 	public void Layout()
@@ -28,7 +29,8 @@ public sealed class StackLayer(Panel parent, CoreWebView2Environment environment
 		if (_open)
 		{
 			var area = content();
-			view.Place(new Rect(0, Zing.Core.Layout.TabStripHeight, area.Width, Math.Max(0, area.Height - Zing.Core.Layout.TabStripHeight)));
+			var y = top();
+			view.Place(new Rect(0, y, area.Width, Math.Max(0, area.Height - y)));
 			Layers.Raise(parent, view.View);
 		}
 		view.Visible = _open;
@@ -42,13 +44,13 @@ public sealed class StackLayer(Panel parent, CoreWebView2Environment environment
 	{
 		var view = await (_ready ??= CreateAsync());
 		Layout();
-		// Keys (arrows, Enter, Escape) go to the list, not the page underneath.
+		// Keys (arrows, Enter, Escape) go to the layer, not the page underneath.
 		if (_open) view.View.Focus(FocusState.Programmatic);
 	}
 
 	private async Task<RendererView> CreateAsync()
 	{
-		var view = await RendererView.CreateAsync(parent, environment, bridge, "overlay-stack", transparent: true);
+		var view = await RendererView.CreateAsync(parent, environment, bridge, hash, transparent: true);
 		created(view);
 		return view;
 	}

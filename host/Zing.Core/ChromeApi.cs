@@ -32,8 +32,14 @@ public interface IWindowHost
 	void FocusPageUi();
 	/// <summary>The stack dropdown opened, changed or closed (null).</summary>
 	void StackDropdownChanged(StackDropdownState? state);
+	/// <summary>The tab overview opened, changed or closed (null).</summary>
+	void OverviewChanged(OverviewState? state);
+	/// <summary>Something optional failed (a tab picture); worth a note, not a failure.</summary>
+	void Warn(string what, Exception error);
 	/// <summary>A background job failed with no caller to throw to.</summary>
 	void Report(string what, Exception error);
+	/// <summary>Work nobody awaits; its failures are reported.</summary>
+	void Background(Task task, string what);
 	/// <summary>Where downloads are saved, and the file actions on them.</summary>
 	string DownloadsDirectory { get; }
 	IDownloadHost DownloadHost { get; }
@@ -88,6 +94,8 @@ public sealed class ChromeApi : IDisposable
 
 	public ShellModel Shell { get; }
 
+	public TabOverview Overview { get; }
+
 	/// <summary>Fires after any change to this window's tabs, e.g. so the primary window's session can be saved.</summary>
 	public event Action? TabsChanged;
 
@@ -108,6 +116,13 @@ public sealed class ChromeApi : IDisposable
 			// The strip redraws its pressed stack chip.
 			host.Push("tabs:state", State());
 		});
+		Overview = new TabOverview(Tabs, State, state =>
+		{
+			host.Push("overlay:overview", state);
+			host.OverviewChanged(state);
+		}, (id, error) => host.Warn($"picture of tab {id}", error));
+		Tabs.Leaving += Overview.Leaving;
+		Tabs.Closed += Overview.Forget;
 		Shell = new ShellModel(appVersion, new ShellWindow(PageArea, () => host.ContentSize, () => host.ContentOrigin, () => host.Cursor), host.Scheduler, Flag("sidebarPinned"), !app.Account.State().SignedIn, RecentFeatures());
 		Shell.StateChanged += state => host.Push("shell:state", state);
 		Shell.PanelsChanged += state => host.Push("toolpanel:state", state);
@@ -178,6 +193,8 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("toolpanel:focus", args => Do(() => Shell.FocusPanel(Text(args, 0))));
 		bridge.Register("toolpanel:begin-drag", args => Do(() => Shell.BeginPanelDrag(Text(args, 0))));
 		bridge.Register("toolpanel:end-drag", args => Do(() => Shell.EndPanelDrag(Text(args, 0), PointArg(args, 1))));
+		bridge.Register("overview:get", _ => Overview.Current);
+		bridge.Register("overview:close", _ => Do(Overview.Close));
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
 		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
@@ -311,6 +328,7 @@ public sealed class ChromeApi : IDisposable
 			"page.reload" => Act(page is not null, () => page!.Reload()),
 			"page.find" => Act(page is not null, Find.Open),
 			"page.print" => Act(page is not null, () => page!.Print()),
+			"tabs.overview" => Act(true, () => _host.Background(Overview.ToggleAsync(), "tab overview")),
 			"page.textBigger" => Act(page is not null, () => page!.TextSize = TextSize.Bigger(page.TextSize)),
 			"page.textSmaller" => Act(page is not null, () => page!.TextSize = TextSize.Smaller(page.TextSize)),
 			// WinUI's WebView2 has no zoom API, but the engine zooms on these keys itself: let them through.
@@ -490,6 +508,7 @@ public sealed class ChromeApi : IDisposable
 		Find?.ActiveChanged();
 		Lifecycle?.Reschedule();
 		Stacks?.Refresh();
+		Overview?.Refresh();
 		_host.Push("tabs:state", State());
 		TabsChanged?.Invoke();
 	}
@@ -566,8 +585,7 @@ internal sealed class LifecycleTabs(TabService tabs) : ILifecycleTabs
 		}
 	}
 
-	// The tab overview that shows thumbnails isn't ported yet (W3d); a sleeping tab may have none, as in Electron.
-	public Task<string?> CaptureThumbnailAsync(string id) => Task.FromResult<string?>(null);
+	public Task<string?> CaptureThumbnailAsync(string id) => tabs.PageOf(id)?.CaptureAsync() ?? Task.FromResult<string?>(null);
 
 	public void Sleep(string id) => tabs.Sleep(id);
 	public void Close(string id) => tabs.Close(id);

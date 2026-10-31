@@ -28,6 +28,8 @@ public interface IPage
 	/// <summary>The tab's text size in percent; the page keeps it across its own navigations.</summary>
 	int TextSize { get; set; }
 	void Print();
+	/// <summary>A JPEG data URL of what the page shows now, or null when there is nothing to show.</summary>
+	Task<string?> CaptureAsync();
 	void StopFind();
 }
 
@@ -98,6 +100,12 @@ public sealed class TabService
 
 	/// <summary>A sleeping tab just got a fresh page, so its saved scroll can be put back.</summary>
 	public event Action<string, IPage>? Woke;
+
+	/// <summary>A tab's page is about to leave the screen: the last moment it can be pictured.</summary>
+	public event Action<string, IPage>? Leaving;
+
+	/// <summary>A tab closed for good.</summary>
+	public event Action<string>? Closed;
 
 	/// <param name="blankUrl">What a window that lost its last tab opens.</param>
 	/// <param name="intercept">The window's say over a navigation (the start page's search and settings links); null leaves it to tracker stripping.</param>
@@ -173,7 +181,11 @@ public sealed class TabService
 		var record = _store.Activate(id);
 		if (previous is not null && previous != id)
 		{
-			if (_pages.TryGetValue(previous, out var leaving)) _host.Hide(leaving);
+			if (_pages.TryGetValue(previous, out var leaving))
+			{
+				Leaving?.Invoke(previous, leaving);
+				_host.Hide(leaving);
+			}
 			if (_store.Has(previous)) _store.Touch(previous);
 		}
 		_host.Show(EnsurePage(record));
@@ -187,6 +199,7 @@ public sealed class TabService
 		DestroyPage(id);
 		_sleeping.Remove(id);
 		_icons.Remove(id);
+		Closed?.Invoke(id);
 		// After the page is gone, so nothing can write to the storage again as it is cleared.
 		_siteData?.Release(id);
 		_openers.Remove(id, out var opener);
