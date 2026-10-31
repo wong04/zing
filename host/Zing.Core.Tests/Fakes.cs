@@ -25,6 +25,7 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public void Reload() => Calls.Add("reload");
 	public void Stop() => Calls.Add("stop");
 	public void Focus() => Calls.Add("focus");
+	public void Run(string script) => Calls.Add("run");
 	public void Close() => Closed = true;
 }
 
@@ -70,6 +71,9 @@ public sealed class FakeWindowHost : IWindowHost
 
 	public List<IReadOnlyList<MenuItem>> Menus { get; } = [];
 	public void ShowMenu(IReadOnlyList<MenuItem> items, double x, double y) => Menus.Add(items);
+
+	public ManualScheduler FakeScheduler { get; } = new();
+	public IScheduler Scheduler => FakeScheduler;
 
 	public FakeShell FakeShell { get; } = new();
 	public IShellActions Shell => FakeShell;

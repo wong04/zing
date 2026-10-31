@@ -15,13 +15,26 @@ public interface IPage
 	void Stop();
 	void Focus();
 	void Close();
+	/// <summary>Runs a script of Zing's own in the page, e.g. restyling the start page.</summary>
+	void Run(string script);
+}
+
+/// <summary>What happens to a page's navigation.</summary>
+public abstract record NavigationDecision
+{
+	public static readonly NavigationDecision Allow = new Allowed();
+	public static readonly NavigationDecision Cancel = new Cancelled();
+
+	public sealed record Allowed : NavigationDecision;
+	public sealed record Cancelled : NavigationDecision;
+	public sealed record Redirect(string Url) : NavigationDecision;
 }
 
 /// <summary>What a live page reports to its tab. The host calls these from the page's events.</summary>
 public interface IPageEvents
 {
-	/// <summary>A main-frame navigation is about to start; a different URL comes back when it carries trackers.</summary>
-	string? Redirect(string url);
+	/// <summary>A main-frame navigation from <paramref name="from"/> is about to start.</summary>
+	NavigationDecision Navigating(string from, string to);
 	void Navigated(string url);
 	void TitleChanged(string title);
 	/// <summary>Loading or history changed.</summary>
@@ -55,12 +68,15 @@ public sealed class TabService
 	private readonly string _blankUrl;
 	private readonly Action _changed;
 	private readonly Action<TabRecord, string> _loadFailed;
+	private readonly Func<string, string, NavigationDecision?> _intercept;
 	private readonly Dictionary<string, IPage> _pages = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, string> _openers = new(StringComparer.Ordinal);
 
-	/// <param name="blankUrl">What a window that lost its last tab opens: the start page once it is ported (W3), about:blank until then.</param>
-	public TabService(TabStore store, IPageHost host, string blankUrl, Action changed, Action<TabRecord, string> loadFailed)
+	/// <param name="blankUrl">What a window that lost its last tab opens.</param>
+	/// <param name="intercept">The window's say over a navigation (the start page's search and settings links); null leaves it to tracker stripping.</param>
+	public TabService(TabStore store, IPageHost host, string blankUrl, Action changed, Action<TabRecord, string> loadFailed, Func<string, string, NavigationDecision?>? intercept = null)
 	{
+		_intercept = intercept ?? ((_, _) => null);
 		_store = store;
 		_host = host;
 		_blankUrl = blankUrl;
@@ -247,15 +263,26 @@ public sealed class TabService
 
 	private sealed class TabPageEvents(TabService service, string id) : IPageEvents
 	{
-		public string? Redirect(string url)
+		public NavigationDecision Navigating(string from, string to)
 		{
-			var clean = LinkCleaner.StripTrackers(url);
-			return clean == url ? null : clean;
+			if (service._intercept(from, to) is { } decision)
+			{
+				// Like typing it: the tab shows where it is going even before (or if never) the page commits.
+				if (decision is NavigationDecision.Redirect redirect) service.Update(id, new TabContentPatch(Url: redirect.Url));
+				return decision;
+			}
+			var clean = LinkCleaner.StripTrackers(to);
+			return clean == to ? NavigationDecision.Allow : new NavigationDecision.Redirect(clean);
 		}
 
 		public void Navigated(string url) => service.Update(id, new TabContentPatch(Url: url));
 
-		public void TitleChanged(string title) => service.Update(id, new TabContentPatch(Title: string.IsNullOrEmpty(title) ? TabStore.NewTabTitle : title));
+		public void TitleChanged(string title)
+		{
+			if (!service._store.Has(id)) return;
+			var startPage = StartPage.IsStartPage(service._store.Get(id).Url);
+			service.Update(id, new TabContentPatch(Title: string.IsNullOrEmpty(title) || startPage ? TabStore.NewTabTitle : title));
+		}
 
 		public void StateChanged() => service._changed();
 

@@ -32,7 +32,7 @@ public sealed class RendererView
 	public static async Task<RendererView> CreateAsync(Panel parent, CoreWebView2Environment environment, Bridge bridge, string hash, bool transparent)
 	{
 		var renderer = new RendererView(bridge, hash);
-		if (transparent) renderer.View.DefaultBackgroundColor = Colors.Transparent;
+		if (transparent) renderer.View.DefaultBackgroundColor = Microsoft.UI.Colors.Transparent;
 		parent.Children.Add(renderer.View);
 		await renderer.View.EnsureCoreWebView2Async(environment);
 		var core = renderer.View.CoreWebView2;

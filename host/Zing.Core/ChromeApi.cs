@@ -18,6 +18,8 @@ public interface IWindowHost
 	void FocusSurface();
 	/// <summary>Shows a native menu at a point of the window content, in DIPs.</summary>
 	void ShowMenu(IReadOnlyList<MenuItem> items, double x, double y);
+	/// <summary>Runs delayed work on the window's UI thread.</summary>
+	IScheduler Scheduler { get; }
 	IShellActions Shell { get; }
 }
 
@@ -32,7 +34,7 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 /// </summary>
 public sealed class ChromeApi : IDisposable
 {
-	public const string BlankUrl = TabStore.NewTabUrl;
+	public const string BlankUrl = StartPage.Url;
 
 	private static readonly HashSet<string> NavigableSchemes = new(StringComparer.OrdinalIgnoreCase) { "http", "https", "about", "file" };
 
@@ -47,6 +49,8 @@ public sealed class ChromeApi : IDisposable
 
 	public TabService Tabs { get; }
 
+	public TabOrdering Ordering { get; }
+
 	/// <summary>Fires after any change to this window's tabs, e.g. so the primary window's session can be saved.</summary>
 	public event Action? TabsChanged;
 
@@ -55,13 +59,20 @@ public sealed class ChromeApi : IDisposable
 		_app = app;
 		_host = host;
 		_appVersion = appVersion;
-		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, (tab, description) => host.Notify($"Couldn't load {tab.Url} ({description})"));
+		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, (tab, description) => host.Notify($"Couldn't load {tab.Url} ({description})"), InterceptNavigation);
+		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 
 		bridge.Register("tabs:get", _ => State());
 		bridge.Register("tabs:activate", args => Do(() => Tabs.Activate(Text(args, 0))));
 		bridge.Register("tabs:close", args => Do(() => Tabs.Close(Text(args, 0))));
 		bridge.Register("tabs:navigate", args => Do(() => Navigate(Text(args, 0), Text(args, 1))));
-		bridge.Register("tabs:move", args => Do(() => Tabs.Move(Text(args, 0), Int(args, 1))));
+		bridge.Register("tabs:move", args => Do(() => Ordering.Move(Text(args, 0), Int(args, 1))));
+		bridge.Register("tabs:move-stack", args => Do(() => Ordering.MoveStack(Text(args, 0), Int(args, 1))));
+		bridge.Register("tabs:move-within", args => Do(() => Ordering.MoveWithin(Text(args, 0), Text(args, 1), Int(args, 2))));
+		bridge.Register("tabs:set-organization", args => Do(() => Ordering.SetOrganization(TabOrganizations.Parse(Text(args, 0)))));
+		bridge.Register("tabs:set-dropdowns", args => Do(() => Ordering.SetDropdowns(Bool(args, 0))));
+		bridge.Register("chrome:strip-menu", args => Do(() => Menu(Menus.Strip(Ordering), args, 0)));
+		bridge.Register("chrome:stack-menu", args => Do(() => Menu(Menus.Stack(Tabs, Ordering, Text(args, 0), host.Shell), args, 1)));
 		bridge.Register("tabs:pin", args => Do(() => Tabs.Pin(Text(args, 0))));
 		bridge.Register("tabs:unpin", args => Do(() => Tabs.Unpin(Text(args, 0))));
 		bridge.Register("tabs:close-others", args => Do(() => Tabs.CloseOthers(Text(args, 0))));
@@ -112,7 +123,7 @@ public sealed class ChromeApi : IDisposable
 	public void OpenLink(string url)
 	{
 		AssertNavigable(url);
-		if (Tabs.Records is [{ Url: BlankUrl } only]) Navigate(only.Id, url);
+		if (Tabs.Records is [var only] && (only.Url == TabStore.NewTabUrl || StartPage.IsStartPage(only.Url))) Navigate(only.Id, url);
 		else Tabs.Open(LinkCleaner.StripTrackers(url));
 	}
 
@@ -136,6 +147,7 @@ public sealed class ChromeApi : IDisposable
 	public void Dispose()
 	{
 		foreach (var subscription in _subscriptions) subscription.Dispose();
+		Ordering.Dispose();
 		_unsubscribeLibrary();
 		Tabs.Destroy();
 	}
@@ -248,7 +260,13 @@ public sealed class ChromeApi : IDisposable
 	private void OnSettingChanged(JsonObject settings, string key)
 	{
 		_host.Push("settings:changed", settings);
-		if (key is "tabOrganization" or "tabDropdowns") OnTabsChanged();
+		if (key is "tabOrganization" or "tabDropdowns")
+		{
+			Ordering.Reorganize();
+			OnTabsChanged();
+		}
+		if (key is "accent" or "theme") ForEachStartPage(page => page.Run(StartPage.RestyleScript(StartPage.Theme(Setting("accent")))));
+		if (key is "startShortcuts" or "searchEngine") ForEachStartPage(page => page.Reload());
 		if (key is "showFavouritesBar") _host.Push("library:state", LibraryState());
 		if (key is "sidebarPinned" or "showFavouritesBar" or "tabBarPosition")
 		{
@@ -333,8 +351,33 @@ public sealed class ChromeApi : IDisposable
 		if (Tabs.ActiveId is { } id) Tabs.FocusPage(id);
 	}
 
+	private void ForEachStartPage(Action<IPage> act)
+	{
+		foreach (var record in Tabs.Records)
+			if (StartPage.IsStartPage(record.Url) && Tabs.PageOf(record.Id) is { } page) act(page);
+	}
+
+	/// <summary>The start page's search and settings links are Zing's to handle; no web page may open Settings.</summary>
+	private NavigationDecision? InterceptNavigation(string from, string to)
+	{
+		switch (StartPage.ClassifyNavigation(from, to, Setting("searchEngine")))
+		{
+			case StartPageNavigation.Search search:
+				if (AddressInput.JsTrim(search.Query).Length == 0) return NavigationDecision.Cancel;
+				return new NavigationDecision.Redirect(_app.Address.Resolve(search.Query, Setting("searchEngine")));
+			case StartPageNavigation.EditShortcuts:
+				OpenSettings(null);
+				return NavigationDecision.Cancel;
+			case StartPageNavigation.Block:
+				return NavigationDecision.Cancel;
+			default:
+				return null;
+		}
+	}
+
 	private void OnTabsChanged()
 	{
+		Ordering?.ScheduleReorganize();
 		_host.Push("tabs:state", State());
 		TabsChanged?.Invoke();
 	}
@@ -364,6 +407,12 @@ public sealed class ChromeApi : IDisposable
 
 	private static string? OptionalText(JsonElement[] args, int index) =>
 		index >= args.Length || args[index].ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? null : Text(args, index);
+
+	private static bool Bool(JsonElement[] args, int index)
+	{
+		var arg = Arg(args, index);
+		return arg.ValueKind is JsonValueKind.True or JsonValueKind.False ? arg.GetBoolean() : throw new ArgumentException($"Argument {index} must be a boolean");
+	}
 
 	private static int Int(JsonElement[] args, int index)
 	{

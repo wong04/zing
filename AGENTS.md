@@ -60,6 +60,8 @@ Briefs for smaller models (Haiku) need:
   - serve fixtures from a local server, never live sites
   - never read the real mouse or keyboard
   - drive timers through `ZING_TEST_CLOCK`
+- **Never start Zing.exe by hand** without  and a scratch : without them it opens on the user's screen with their real profile. Go through .
+- **Write files with backslashes (Windows paths, JSON escapes) with the Write tool,** not a Git Bash heredoc, which has collapsed  to  here.
 - **Line endings are LF** (`.gitattributes`, `.editorconfig`), and indentation uses tabs.
 
 ## Test runs must not disturb the person at the PC

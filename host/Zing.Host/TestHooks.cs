@@ -13,6 +13,16 @@ public static class TestHooks
 	/// <summary>Remote debugging port for Playwright; only honoured in e2e runs.</summary>
 	public static string? DebuggingPort => IsEndToEndRun ? Environment.GetEnvironmentVariable("ZING_CDP_PORT") : null;
 
+	/// <summary>Chromium switches for e2e runs: the debugging port, and with ZING_E2E_OFFLINE=1 a dead proxy so no test can reach a live site.</summary>
+	public static string BrowserArguments()
+	{
+		if (!IsEndToEndRun) return "";
+		var args = new List<string>();
+		if (DebuggingPort is { } port) args.Add($"--remote-debugging-port={port}");
+		if (Environment.GetEnvironmentVariable("ZING_E2E_OFFLINE") == "1") args.Add("--proxy-server=127.0.0.1:9 --proxy-bypass-list=<-loopback>");
+		return string.Join(' ', args);
+	}
+
 	public static void RecordUnhandledErrors()
 	{
 		AppDomain.CurrentDomain.UnhandledException += (_, e) => Record("unhandled", e.ExceptionObject);

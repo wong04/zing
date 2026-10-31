@@ -70,8 +70,8 @@ public sealed class TabServiceTests
 	{
 		var tab = _tabs.Open("about:blank");
 		var events = ((FakePage)_tabs.PageOf(tab.Id)!).Events;
-		Assert.Equal("https://example.com/", events.Redirect("https://example.com/?fbclid=abc"));
-		Assert.Null(events.Redirect("https://example.com/"));
+		Assert.Equal(new NavigationDecision.Redirect("https://example.com/"), events.Navigating("about:blank", "https://example.com/?fbclid=abc"));
+		Assert.Equal(NavigationDecision.Allow, events.Navigating("about:blank", "https://example.com/"));
 	}
 
 	[Fact]

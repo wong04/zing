@@ -44,6 +44,6 @@ test('a second launch hands its link to the running window as a new tab and exit
 
 test('a link that is not a web address is ignored', async () => {
 	const zing = await launchZing({ args: ['file:///C:/Windows/win.ini', 'ms-settings:'] })
-	await expect.poll(() => urls(zing.chrome)).toEqual(['about:blank'])
+	await expect.poll(async () => (await urls(zing.chrome)).map((u) => u.replace(/\/$/, ''))).toEqual(['zing://home'])
 	await zing.close()
 })

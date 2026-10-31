@@ -23,6 +23,8 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 	private CoreWebView2Environment? _environment;
 	private WebView2Page? _shown;
 	private bool _closed;
+	private DispatcherScheduler? _scheduler;
+	private IDisposable? _themeSubscription;
 
 	public MainWindow(ZingApp app)
 	{
@@ -40,10 +42,12 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 		{
 			if (e.WindowActivationState != WindowActivationState.Deactivated) _app.Focused(this);
 		};
-		_ = StartAsync().ContinueWith(t => TestHooks.Record("startup", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
 	}
 
 	public ChromeApi? Api { get; private set; }
+
+	/// <summary>Called once the app has listed the window, so nothing it does on starting finds it missing.</summary>
+	public void Start() => _ = StartAsync().ContinueWith(t => TestHooks.Record("startup", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
 
 	public IPageHost Pages => this;
 
@@ -69,6 +73,12 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 		});
 		Api = new ChromeApi(_bridge, _app.Services, this, typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "0");
 		Api.TabsChanged += () => _app.TabsChanged(this);
+		_themeSubscription = _app.Services.Settings.Subscribe((_, key) =>
+		{
+			if (key != "theme") return;
+			foreach (var record in Api.Tabs.Records)
+				if (Api.Tabs.PageOf(record.Id) is WebView2Page page) page.FollowTheme();
+		});
 		Api.Start(_app.TakePendingRestore(), System.Environment.GetEnvironmentVariable("ZING_START_URL"));
 		_app.Ready(this);
 		_chrome = await chrome;
@@ -82,7 +92,8 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 		var view = new WebView2 { Visibility = Visibility.Collapsed };
 		// Pages go just above the chrome renderer, under every layer.
 		_root.Children.Insert(Math.Min(1, _root.Children.Count), view);
-		return new WebView2Page(view, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"));
+		var settings = _app.Services.Settings;
+		return new WebView2Page(view, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), () => settings.Get("theme")!.GetValue<string>());
 	}
 
 	public void Show(IPage page)
@@ -151,6 +162,8 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 
 	public IShellActions Shell { get; } = new WindowsShell();
 
+	public IScheduler Scheduler => _scheduler ??= new DispatcherScheduler(DispatcherQueue);
+
 	public void ShowMenu(IReadOnlyList<Zing.Core.MenuItem> items, double x, double y)
 	{
 		var flyout = new MenuFlyout();
@@ -202,6 +215,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 	private void OnClosed()
 	{
 		_closed = true;
+		_themeSubscription?.Dispose();
 		Api?.Dispose();
 		_notices?.Destroy();
 		foreach (var renderer in _renderers) renderer.Close();

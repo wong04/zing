@@ -72,8 +72,13 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 			// Quit as a person would, by closing every window, so pending writes are flushed.
 			const exited = new Promise<void>((resolve) => host.once('exit', () => resolve()))
 			const chromes = pages(browser).filter((p) => p.url() === CHROME_URL)
-			// A window that closes takes its renderer with it, so the evaluate may never answer.
-			for (const page of chromes) void page.evaluate(() => (globalThis as unknown as { zing: { runCommand(id: string): Promise<unknown> } }).zing.runCommand('window.close')).catch(() => undefined)
+			// One window at a time, as a person closes them. A window that closes takes its renderer
+			// with it, so the evaluate may never answer; the page's close event is the answer.
+			for (const page of chromes) {
+				const gone = new Promise<void>((resolve) => page.once('close', () => resolve()))
+				void page.evaluate(() => (globalThis as unknown as { zing: { runCommand(id: string): Promise<unknown> } }).zing.runCommand('window.close')).catch(() => undefined)
+				await Promise.race([gone, exited, new Promise((resolve) => setTimeout(resolve, 5_000))])
+			}
 			const quit = await Promise.race([exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15_000))])
 			await browser.close().catch(() => undefined)
 			if (!quit) host.kill()

@@ -108,6 +108,29 @@ public static class Menus
 		];
 	}
 
+	/// <summary>A stack chip offers its lead page's menu plus closing the whole stack.</summary>
+	public static IReadOnlyList<MenuItem> Stack(TabService tabs, TabOrdering ordering, string key, IShellActions shell)
+	{
+		var stack = ordering.Stacks().FirstOrDefault(s => s.Key == key && s.Ids.Count > 1);
+		if (stack is null) return [];
+		var lead = stack.Ids.FirstOrDefault(id => id == tabs.ActiveId) ?? stack.Ids[0];
+		return [.. Tab(tabs, lead, shell), MenuItem.Separator, new MenuItem($"Close All {stack.Ids.Count} Tabs from {stack.Name}", () =>
+		{
+			foreach (var id in stack.Ids.ToList()) tabs.Close(id);
+		})];
+	}
+
+	/// <summary>Right-click on the empty strip: how tabs are arranged and drawn.</summary>
+	public static IReadOnlyList<MenuItem> Strip(TabOrdering ordering) =>
+	[
+		new MenuItem("Arrange Tabs", Submenu: ZingJson.LoadDefaults("tab-organizations.json").AsArray().Select(o =>
+		{
+			var organization = TabOrganizations.Parse(o!["id"]!.GetValue<string>());
+			return new MenuItem(o["label"]!.GetValue<string>(), () => ordering.SetOrganization(organization), Checked: ordering.Organization == organization);
+		}).ToList()),
+		new MenuItem("Group Sites into Dropdowns", () => ordering.SetDropdowns(!ordering.Dropdowns), Checked: ordering.Dropdowns),
+	];
+
 	/// <summary>A Favourites-bar folder: its contents, then Open All.</summary>
 	public static IReadOnlyList<MenuItem> LibraryFolder(LibraryStore library, string id, Action<string> open, Action<string> openAll)
 	{

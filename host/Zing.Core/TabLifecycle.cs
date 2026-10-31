@@ -160,8 +160,8 @@ public sealed record AutoClosePolicy(
 		settings.Get(key) ?? throw new InvalidDataException($"Setting {key} is missing");
 }
 
-/// <summary>A tab reduced to what auto-close needs (src/shared/browser/tabOrganizer.ts TabSnapshot).</summary>
-public sealed record TabSnapshot(string Id, long LastAccessed, bool IsPinned, bool IsActive);
+/// <summary>A tab reduced to what auto-close needs (src/shared/browser/tabOrganizer.ts AutoCloseTab).</summary>
+public sealed record AutoCloseTab(string Id, long LastAccessed, bool IsPinned, bool IsActive);
 
 /// <summary>The calendar arithmetic the daily sweep needs, so tests can pin a time zone.</summary>
 public interface IDayCalendar
@@ -205,7 +205,7 @@ public static class AutoClose
 	/// active tab because closing what someone is looking at is indefensible, and
 	/// the final tab because a browser with no tabs is a broken browser.
 	/// </summary>
-	private static List<string> Closable(IReadOnlyList<TabSnapshot> tabs, Func<TabSnapshot, bool> isEligible)
+	private static List<string> Closable(IReadOnlyList<AutoCloseTab> tabs, Func<AutoCloseTab, bool> isEligible)
 	{
 		var doomed = new List<string>();
 		var survivors = tabs.Count;
@@ -220,7 +220,7 @@ public static class AutoClose
 	}
 
 	/// <summary>Which tabs the sweeper should close.</summary>
-	public static List<string> TabsToClose(IReadOnlyList<TabSnapshot> tabs, AutoClosePolicy policy, long now)
+	public static List<string> TabsToClose(IReadOnlyList<AutoCloseTab> tabs, AutoClosePolicy policy, long now)
 	{
 		if (!policy.Enabled) return [];
 		var cutoff = now - policy.Interval();
@@ -231,7 +231,7 @@ public static class AutoClose
 	/// Everything eligible for the scheduled daily sweep: same exemptions,
 	/// but age doesn't matter because the user asked for a clean slate at a particular time.
 	/// </summary>
-	public static List<string> TabsToCloseOnSchedule(IReadOnlyList<TabSnapshot> tabs) => Closable(tabs, _ => true);
+	public static List<string> TabsToCloseOnSchedule(IReadOnlyList<AutoCloseTab> tabs) => Closable(tabs, _ => true);
 
 	/// <summary>
 	/// Whether the daily sweep instant fell between two checks. Asking whether the instant lies in
@@ -262,7 +262,7 @@ public static class AutoClose
 	/// The soonest moment a sweep could do something, so one timer replaces polling.
 	/// TabsToClose closes a tab once its age is strictly past the interval, hence the +1.
 	/// </summary>
-	public static long? NextCheck(IReadOnlyList<TabSnapshot> tabs, AutoClosePolicy policy, long now, IDayCalendar calendar)
+	public static long? NextCheck(IReadOnlyList<AutoCloseTab> tabs, AutoClosePolicy policy, long now, IDayCalendar calendar)
 	{
 		if (!policy.Enabled) return null;
 		var targets = new List<long>();
@@ -363,8 +363,8 @@ public sealed class TabAutoCloser
 		foreach (var id in ids) _tabs.Close(id);
 	}
 
-	private List<TabSnapshot> Snapshots() =>
-		_tabs.Records.Select(t => new TabSnapshot(t.Id, t.LastActiveAt, t.Pinned, t.Id == _tabs.ActiveId)).ToList();
+	private List<AutoCloseTab> Snapshots() =>
+		_tabs.Records.Select(t => new AutoCloseTab(t.Id, t.LastActiveAt, t.Pinned, t.Id == _tabs.ActiveId)).ToList();
 }
 
 /// <summary>A window's auto-close and sleeping-tab timers, kept in step with its tabs and settings.</summary>

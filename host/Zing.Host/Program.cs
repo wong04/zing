@@ -90,6 +90,7 @@ public sealed class ZingApp : Application
 	{
 		var window = new MainWindow(this);
 		_windows.Add(window);
+		window.Start();
 		window.Activate();
 		return window;
 	}
@@ -138,7 +139,9 @@ public sealed class ZingApp : Application
 	private static async Task<CoreWebView2Environment> CreateEnvironmentAsync()
 	{
 		var options = new CoreWebView2EnvironmentOptions();
-		if (TestHooks.DebuggingPort is { } port) options.AdditionalBrowserArguments = $"--remote-debugging-port={port}";
+		options.AdditionalBrowserArguments = TestHooks.BrowserArguments();
+		// zing://home parses with a host, as Electron's standard scheme did. The getter hands back a copy, so assign the whole list.
+		options.CustomSchemeRegistrations = new List<CoreWebView2CustomSchemeRegistration> { new(StartPage.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true } };
 		var userData = Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Zing", TestHooks.IsEndToEndRun ? $"e2e-{System.Environment.ProcessId}" : "WebView2");
 		return await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, options);
 	}

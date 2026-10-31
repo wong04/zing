@@ -177,14 +177,14 @@ public class TabLifecycleTests
 	private static JsonElement TabList(JsonElement root, JsonElement specs) =>
 		specs.ValueKind == JsonValueKind.String ? root.GetProperty("tabSets").GetProperty(specs.GetString()!) : specs;
 
-	private static List<TabSnapshot> AgedSnapshots(JsonElement specs) =>
+	private static List<AutoCloseTab> AgedSnapshots(JsonElement specs) =>
 		TabList(V, specs).EnumerateArray()
-			.Select(t => new TabSnapshot(t.GetProperty("id").GetString()!, Now - t.GetProperty("minutesAgo").GetInt64() * Minute, Flag(t, "pinned"), Flag(t, "active")))
+			.Select(t => new AutoCloseTab(t.GetProperty("id").GetString()!, Now - t.GetProperty("minutesAgo").GetInt64() * Minute, Flag(t, "pinned"), Flag(t, "active")))
 			.ToList();
 
-	private static List<TabSnapshot> MsSnapshots(JsonElement specs, long now) =>
+	private static List<AutoCloseTab> MsSnapshots(JsonElement specs, long now) =>
 		TabList(Schedule, specs).EnumerateArray()
-			.Select(t => new TabSnapshot(t.GetProperty("id").GetString()!, now - t.GetProperty("agoMs").GetInt64(), Flag(t, "isPinned"), Flag(t, "isActive")))
+			.Select(t => new AutoCloseTab(t.GetProperty("id").GetString()!, now - t.GetProperty("agoMs").GetInt64(), Flag(t, "isPinned"), Flag(t, "isActive")))
 			.ToList();
 
 	private static string[] Strings(JsonElement array) => array.EnumerateArray().Select(e => e.GetString()!).ToArray();
