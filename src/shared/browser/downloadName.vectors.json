@@ -1,0 +1,12 @@
+{
+	"fileName": [
+		{ "name": "keeps a free name", "filename": "report.pdf", "taken": [], "expected": "report.pdf" },
+		{ "name": "numbers on collision", "filename": "report.pdf", "taken": ["report.pdf", "report 2.pdf"], "expected": "report 3.pdf" },
+		{ "name": "numbers a file with no extension", "filename": "LICENSE", "taken": ["LICENSE"], "expected": "LICENSE 2" },
+		{ "name": "strips characters Windows forbids", "filename": "a<b>.txt", "taken": [], "expected": "ab.txt" },
+		{ "name": "keeps a leading-dot name whole", "filename": ".env", "taken": [], "expected": ".env" },
+		{ "name": "a reserved device name is suffixed", "filename": "CON.txt", "taken": [], "expected": "CON_.txt" },
+		{ "name": "a name of only forbidden characters becomes file", "filename": "???.bin", "taken": [], "expected": "file.bin" },
+		{ "name": "trailing dots and spaces are dropped from the base", "filename": "notes .zip", "taken": [], "expected": "notes.zip" }
+	]
+}

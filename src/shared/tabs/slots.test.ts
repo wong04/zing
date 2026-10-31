@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { buildSlots, findStack, pinnedSlotCount, snapshotOf, type SnapshotSource } from './slots'
 
@@ -5,24 +6,14 @@ function source(id: string, url: string, extra: Partial<SnapshotSource> = {}): S
 	return { id, url, title: id, pinned: false, createdAt: 1, lastActiveAt: 1, ...extra }
 }
 
-describe('snapshotOf', () => {
-	it('gives a blank tab no site', () => {
-		const snap = snapshotOf(source('a', 'about:blank'), false)
-		expect(snap.domain).toBe('')
-		expect(snap.group).toBe('')
-	})
+// The snapshotOf cases are shared with the C# port (TabOrganizerTests.cs).
+const { snapshotOf: snapshotCases } = JSON.parse(
+	readFileSync(new URL('../browser/tabOrganizer.vectors.json', import.meta.url), 'utf8'),
+) as { snapshotOf: { name: string; url: string; active: boolean; want: Record<string, unknown> }[] }
 
-	it('groups subdomains under the registrable domain', () => {
-		const snap = snapshotOf(source('a', 'https://docs.example.co.uk/x'), true)
-		expect(snap.domain).toBe('example.co.uk')
-		expect(snap.isActive).toBe(true)
-	})
-
-	it('splits Google products into their own groups', () => {
-		const mail = snapshotOf(source('m', 'https://mail.google.com/'), false)
-		const docs = snapshotOf(source('d', 'https://docs.google.com/document/d/1'), false)
-		expect(mail.group).not.toBe(docs.group)
-		expect(docs.groupName).toBe('Google Docs')
+describe('snapshotOf (shared vectors)', () => {
+	it.each(snapshotCases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+		expect(snapshotOf(source('a', c.url), c.active)).toMatchObject(c.want)
 	})
 })
 

@@ -1,0 +1,56 @@
+{
+	"breakage": [
+		{ "stderr": "ERROR: unable to download video data: HTTP Error 403: Forbidden", "expected": true },
+		{ "stderr": "ERROR: unable to extract player response", "expected": true },
+		{ "stderr": "WARNING: nsig extraction failed", "expected": true },
+		{ "stderr": "ERROR: requested format is not available", "expected": true },
+		{ "stderr": "HTTP Error 403: Forbidden", "expected": true },
+		{ "stderr": "ERROR: Private video. Sign in if you've been granted access", "expected": false },
+		{ "stderr": "ERROR: Video unavailable", "expected": false },
+		{ "stderr": "ERROR: 'x' is not a valid URL", "expected": false },
+		{ "stderr": "ERROR: No space left on device", "expected": false }
+	],
+	"explainContains": [
+		{ "name": "403 explained plainly", "stderr": "HTTP Error 403: Forbidden", "exitCode": 1, "contains": "updating" },
+		{ "name": "private video explained", "stderr": "ERROR: Private video.", "exitCode": 1, "contains": "private" },
+		{ "name": "age gate explained", "stderr": "ERROR: Sign in to confirm your age", "exitCode": 1, "contains": "age-restricted" },
+		{ "name": "disk full explained", "stderr": "ERROR: No space left on device", "exitCode": 1, "contains": "disk is full" }
+	],
+	"explainEquals": [
+		{ "name": "unknown falls back to last line", "stderr": "something\nweird happened", "exitCode": 3, "expected": "weird happened" },
+		{ "name": "empty stderr falls back to the exit code", "stderr": "", "exitCode": 3, "expected": "yt-dlp exited with code 3." }
+	],
+	"args": [
+		{
+			"name": "audio extracts best-quality mp3",
+			"mode": "audio",
+			"template": "C:\\D\\%(title)s.%(ext)s",
+			"url": "https://y.example/v",
+			"expected": ["--newline", "--no-playlist", "-o", "C:\\D\\%(title)s.%(ext)s", "-x", "--audio-format", "mp3", "--audio-quality", "0", "https://y.example/v"]
+		},
+		{
+			"name": "video prefers a pre-merged mp4",
+			"mode": "video",
+			"template": "o",
+			"url": "u",
+			"expected": ["--newline", "--no-playlist", "-o", "o", "-f", "best[ext=mp4]/bestvideo+bestaudio/best", "u"]
+		}
+	],
+	"retry": [
+		{ "name": "the retry only asks for the default player client", "args": ["--newline", "u"], "expected": ["--extractor-args", "youtube:player_client=default", "--newline", "u"] }
+	],
+	"progress": [
+		{
+			"name": "parses percent, size, speed and ETA",
+			"line": "[download]  42.3% of ~ 12.00MiB at  1.50MiB/s ETA 01:05 (frag 3/9)",
+			"expected": { "percent": 42.3, "totalBytes": 12582912, "speedBytesPerSecond": 1572864, "etaSeconds": 65 }
+		},
+		{
+			"name": "parses the final line's percent",
+			"line": "[download] 100% of   3.20MiB in 00:00:02 at 1.43MiB/s",
+			"expected": { "percent": 100, "totalBytes": 3355443.2 }
+		},
+		{ "name": "ignores a webpage line", "line": "[youtube] abc: Downloading webpage", "expected": null },
+		{ "name": "ignores a destination line", "line": "[download] Destination: x.mp4", "expected": null }
+	]
+}

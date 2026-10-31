@@ -1,162 +1,606 @@
 [
 	{
 		"id": "tab.new",
-		"label": "New Tab"
+		"label": "New Tab",
+		"shortcuts": [
+			{
+				"code": "KeyT",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+T"
+			}
+		]
 	},
 	{
 		"id": "window.new",
-		"label": "New Window"
+		"label": "New Window",
+		"shortcuts": [
+			{
+				"code": "KeyN",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+N"
+			}
+		]
 	},
 	{
 		"id": "location.open",
-		"label": "Open Location…"
+		"label": "Open Location…",
+		"shortcuts": [
+			{
+				"code": "KeyL",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+L"
+			},
+			{
+				"code": "KeyD",
+				"ctrl": false,
+				"shift": false,
+				"alt": true,
+				"label": "Alt+D"
+			},
+			{
+				"code": "F6",
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"label": "F6"
+			}
+		]
 	},
 	{
 		"id": "tab.close",
-		"label": "Close Tab"
+		"label": "Close Tab",
+		"shortcuts": [
+			{
+				"code": "KeyW",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+W"
+			},
+			{
+				"code": "F4",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+F4"
+			}
+		]
 	},
 	{
 		"id": "window.close",
-		"label": "Close Window"
+		"label": "Close Window",
+		"shortcuts": [
+			{
+				"code": "KeyW",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+W"
+			}
+		]
 	},
 	{
 		"id": "tab.reopenClosed",
-		"label": "Reopen Last Closed Tab"
+		"label": "Reopen Last Closed Tab",
+		"shortcuts": [
+			{
+				"code": "KeyT",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+T"
+			}
+		]
 	},
 	{
 		"id": "page.find",
-		"label": "Find…"
+		"label": "Find…",
+		"shortcuts": [
+			{
+				"code": "KeyF",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+F"
+			}
+		]
 	},
 	{
 		"id": "page.findNext",
-		"label": "Find Next"
+		"label": "Find Next",
+		"shortcuts": [
+			{
+				"code": "F3",
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"label": "F3"
+			},
+			{
+				"code": "KeyG",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+G"
+			}
+		]
 	},
 	{
 		"id": "page.findPrevious",
-		"label": "Find Previous"
+		"label": "Find Previous",
+		"shortcuts": [
+			{
+				"code": "F3",
+				"ctrl": false,
+				"shift": true,
+				"alt": false,
+				"label": "Shift+F3"
+			},
+			{
+				"code": "KeyG",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+G"
+			}
+		]
 	},
 	{
 		"id": "page.reload",
-		"label": "Reload Page"
+		"label": "Reload Page",
+		"shortcuts": [
+			{
+				"code": "F5",
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"label": "F5"
+			},
+			{
+				"code": "KeyR",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+R"
+			}
+		]
 	},
 	{
 		"id": "page.stop",
-		"label": "Stop"
+		"label": "Stop",
+		"shortcuts": [
+			{
+				"code": "Escape",
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"label": "Esc"
+			}
+		]
 	},
 	{
 		"id": "history.back",
-		"label": "Back"
+		"label": "Back",
+		"shortcuts": [
+			{
+				"code": "ArrowLeft",
+				"ctrl": false,
+				"shift": false,
+				"alt": true,
+				"label": "Alt+Left"
+			}
+		]
 	},
 	{
 		"id": "history.forward",
-		"label": "Forward"
+		"label": "Forward",
+		"shortcuts": [
+			{
+				"code": "ArrowRight",
+				"ctrl": false,
+				"shift": false,
+				"alt": true,
+				"label": "Alt+Right"
+			}
+		]
 	},
 	{
 		"id": "history.home",
-		"label": "Home"
+		"label": "Home",
+		"shortcuts": [
+			{
+				"code": "Home",
+				"ctrl": false,
+				"shift": false,
+				"alt": true,
+				"label": "Alt+Home"
+			}
+		]
 	},
 	{
 		"id": "page.zoomIn",
-		"label": "Zoom In"
+		"label": "Zoom In",
+		"shortcuts": [
+			{
+				"code": "Equal",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+="
+			},
+			{
+				"code": "Equal",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+="
+			},
+			{
+				"code": "NumpadAdd",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+Num +"
+			}
+		]
 	},
 	{
 		"id": "page.zoomOut",
-		"label": "Zoom Out"
+		"label": "Zoom Out",
+		"shortcuts": [
+			{
+				"code": "Minus",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+-"
+			},
+			{
+				"code": "NumpadSubtract",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+Num -"
+			}
+		]
 	},
 	{
 		"id": "page.actualSize",
-		"label": "Actual Size"
+		"label": "Actual Size",
+		"shortcuts": [
+			{
+				"code": "Digit0",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+0"
+			},
+			{
+				"code": "Numpad0",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+Num 0"
+			}
+		]
 	},
 	{
 		"id": "page.textBigger",
-		"label": "Make Text Bigger"
+		"label": "Make Text Bigger",
+		"shortcuts": [
+			{
+				"code": "Period",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+."
+			}
+		]
 	},
 	{
 		"id": "page.textSmaller",
-		"label": "Make Text Smaller"
+		"label": "Make Text Smaller",
+		"shortcuts": [
+			{
+				"code": "Comma",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+,"
+			}
+		]
 	},
 	{
 		"id": "page.print",
-		"label": "Print…"
+		"label": "Print…",
+		"shortcuts": [
+			{
+				"code": "KeyP",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+P"
+			}
+		]
 	},
 	{
 		"id": "page.reader",
-		"label": "Show Reader"
+		"label": "Show Reader",
+		"shortcuts": [
+			{
+				"code": "F9",
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"label": "F9"
+			}
+		]
 	},
 	{
 		"id": "tabs.overview",
-		"label": "Show Tab Overview"
+		"label": "Show Tab Overview",
+		"shortcuts": [
+			{
+				"code": "Backslash",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+\\"
+			}
+		]
 	},
 	{
 		"id": "tab.next",
-		"label": "Show Next Tab"
+		"label": "Show Next Tab",
+		"shortcuts": [
+			{
+				"code": "Tab",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+Tab"
+			},
+			{
+				"code": "PageDown",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+PgDn"
+			}
+		]
 	},
 	{
 		"id": "tab.previous",
-		"label": "Show Previous Tab"
+		"label": "Show Previous Tab",
+		"shortcuts": [
+			{
+				"code": "Tab",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+Tab"
+			},
+			{
+				"code": "PageUp",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+PgUp"
+			}
+		]
 	},
 	{
 		"id": "tab.select1",
-		"label": "Show Tab 1"
+		"label": "Show Tab 1",
+		"shortcuts": [
+			{
+				"code": "Digit1",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+1"
+			}
+		]
 	},
 	{
 		"id": "tab.select2",
-		"label": "Show Tab 2"
+		"label": "Show Tab 2",
+		"shortcuts": [
+			{
+				"code": "Digit2",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+2"
+			}
+		]
 	},
 	{
 		"id": "tab.select3",
-		"label": "Show Tab 3"
+		"label": "Show Tab 3",
+		"shortcuts": [
+			{
+				"code": "Digit3",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+3"
+			}
+		]
 	},
 	{
 		"id": "tab.select4",
-		"label": "Show Tab 4"
+		"label": "Show Tab 4",
+		"shortcuts": [
+			{
+				"code": "Digit4",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+4"
+			}
+		]
 	},
 	{
 		"id": "tab.select5",
-		"label": "Show Tab 5"
+		"label": "Show Tab 5",
+		"shortcuts": [
+			{
+				"code": "Digit5",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+5"
+			}
+		]
 	},
 	{
 		"id": "tab.select6",
-		"label": "Show Tab 6"
+		"label": "Show Tab 6",
+		"shortcuts": [
+			{
+				"code": "Digit6",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+6"
+			}
+		]
 	},
 	{
 		"id": "tab.select7",
-		"label": "Show Tab 7"
+		"label": "Show Tab 7",
+		"shortcuts": [
+			{
+				"code": "Digit7",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+7"
+			}
+		]
 	},
 	{
 		"id": "tab.select8",
-		"label": "Show Tab 8"
+		"label": "Show Tab 8",
+		"shortcuts": [
+			{
+				"code": "Digit8",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+8"
+			}
+		]
 	},
 	{
 		"id": "tab.select9",
-		"label": "Show Last Tab"
+		"label": "Show Last Tab",
+		"shortcuts": [
+			{
+				"code": "Digit9",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+9"
+			}
+		]
 	},
 	{
 		"id": "library.bookmarks",
-		"label": "Show Bookmarks"
+		"label": "Show Bookmarks",
+		"shortcuts": [
+			{
+				"code": "KeyO",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+O"
+			}
+		]
 	},
 	{
 		"id": "library.readingList",
-		"label": "Show Reading List"
+		"label": "Show Reading List",
+		"shortcuts": [
+			{
+				"code": "KeyY",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+Y"
+			}
+		]
 	},
 	{
 		"id": "library.addFavourite",
-		"label": "Add to Favourites"
+		"label": "Add to Favourites",
+		"shortcuts": [
+			{
+				"code": "KeyD",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+D"
+			}
+		]
 	},
 	{
 		"id": "library.addReadingList",
-		"label": "Add to Reading List"
+		"label": "Add to Reading List",
+		"shortcuts": [
+			{
+				"code": "KeyD",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+D"
+			}
+		]
 	},
 	{
 		"id": "view.favouritesBar",
-		"label": "Toggle Favourites Bar"
+		"label": "Toggle Favourites Bar",
+		"shortcuts": [
+			{
+				"code": "KeyB",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+B"
+			}
+		]
 	},
 	{
 		"id": "view.sidebar",
-		"label": "Toggle Sidebar"
+		"label": "Toggle Sidebar",
+		"shortcuts": [
+			{
+				"code": "KeyS",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+S"
+			}
+		]
 	},
 	{
 		"id": "app.settings",
-		"label": "Settings…"
+		"label": "Settings…",
+		"shortcuts": [
+			{
+				"code": "Comma",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+,"
+			}
+		]
 	}
 ]

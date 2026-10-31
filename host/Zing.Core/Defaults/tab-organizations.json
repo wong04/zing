@@ -1,0 +1,22 @@
+[
+	{
+		"id": "manual",
+		"label": "Manual"
+	},
+	{
+		"id": "domain",
+		"label": "By site"
+	},
+	{
+		"id": "alphabetical",
+		"label": "A–Z"
+	},
+	{
+		"id": "recentlyUsed",
+		"label": "Last opened"
+	},
+	{
+		"id": "newest",
+		"label": "Newest first"
+	}
+]

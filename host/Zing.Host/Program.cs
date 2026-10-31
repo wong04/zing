@@ -12,6 +12,7 @@ public static class Program
 	{
 		TestHooks.RecordUnhandledErrors();
 		ComWrappersSupport.InitializeComWrappers();
+		if (SingleInstance.RedirectedToRunningZing()) return;
 		Application.Start(_ => new ZingApp());
 	}
 }
@@ -25,6 +26,8 @@ public sealed class ZingApp : Application
 {
 	private readonly List<MainWindow> _windows = [];
 	private readonly List<Action> _onQuit = [];
+	private readonly LinkInbox _links = new();
+	private MainWindow? _mostRecent;
 	private AppServices? _services;
 	private SessionSaver? _session;
 	private IReadOnlyList<SessionTab> _pendingRestore = [];
@@ -52,13 +55,42 @@ public sealed class ZingApp : Application
 		_onQuit.Add(_session.Flush);
 		if (Flag("restoreTabs")) _pendingRestore = Session.Load(AppPaths.Session);
 		else Session.Discard(AppPaths.Session);
+		foreach (var url in LaunchArgs.Urls(System.Environment.GetCommandLineArgs().Skip(1))) _links.Push(url);
+		SingleInstance.Listen(OnSecondLaunch);
 		NewWindow();
+	}
+
+	/// <summary>The window used last; links from other apps open there.</summary>
+	public MainWindow? MostRecent => _mostRecent is { } w && _windows.Contains(w) ? w : _windows.LastOrDefault();
+
+	public void Focused(MainWindow window) => _mostRecent = window;
+
+	/// <summary>A window can take links once its tabs exist; the first such window takes the ones that arrived during startup.</summary>
+	public void Ready(MainWindow window)
+	{
+		if (window == Primary) _links.Attach(OpenLink);
+	}
+
+	private void OpenLink(string url)
+	{
+		var target = MostRecent ?? NewWindow();
+		target.OpenLink(url);
+		target.Reveal();
+	}
+
+	/// <summary>Another launch handed over its command line: open its links, or just bring Zing forward.</summary>
+	private void OnSecondLaunch(IReadOnlyList<string> argv)
+	{
+		var urls = LaunchArgs.Urls(argv);
+		foreach (var url in urls) _links.Push(url);
+		if (urls.Count == 0) MostRecent?.Reveal();
 	}
 
 	public MainWindow NewWindow()
 	{
 		var window = new MainWindow(this);
 		_windows.Add(window);
+		window.Start();
 		window.Activate();
 		return window;
 	}
@@ -107,7 +139,9 @@ public sealed class ZingApp : Application
 	private static async Task<CoreWebView2Environment> CreateEnvironmentAsync()
 	{
 		var options = new CoreWebView2EnvironmentOptions();
-		if (TestHooks.DebuggingPort is { } port) options.AdditionalBrowserArguments = $"--remote-debugging-port={port}";
+		options.AdditionalBrowserArguments = TestHooks.BrowserArguments();
+		// zing://home parses with a host, as Electron's standard scheme did. The getter hands back a copy, so assign the whole list.
+		options.CustomSchemeRegistrations = new List<CoreWebView2CustomSchemeRegistration> { new(StartPage.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true } };
 		var userData = Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Zing", TestHooks.IsEndToEndRun ? $"e2e-{System.Environment.ProcessId}" : "WebView2");
 		return await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, options);
 	}

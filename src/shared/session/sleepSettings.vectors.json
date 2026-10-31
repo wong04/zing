@@ -1,0 +1,24 @@
+{
+	"_doc": "Shared by sleepSettings.test.ts and TabLifecycleTests.cs: what the sleepingTabs setting accepts.",
+	"default": { "enabled": true, "afterMinutes": 30, "sleepPinned": false },
+	"valid": [
+		{ "enabled": false, "afterMinutes": 5, "sleepPinned": true },
+		{ "enabled": true, "afterMinutes": 1, "sleepPinned": false },
+		{ "enabled": true, "afterMinutes": 10080, "sleepPinned": false },
+		{ "enabled": true, "afterMinutes": 0.5e1, "sleepPinned": false }
+	],
+	"invalid": [
+		null,
+		[],
+		"sleep",
+		{ "enabled": true, "afterMinutes": 30 },
+		{ "enabled": true, "afterMinutes": 0, "sleepPinned": false },
+		{ "enabled": true, "afterMinutes": 0.5, "sleepPinned": false },
+		{ "enabled": true, "afterMinutes": 99999, "sleepPinned": false },
+		{ "enabled": true, "afterMinutes": 10081, "sleepPinned": false },
+		{ "enabled": "yes", "afterMinutes": 30, "sleepPinned": false },
+		{ "enabled": true, "afterMinutes": "30", "sleepPinned": false },
+		{ "enabled": true, "afterMinutes": 30, "sleepPinned": 0 },
+		{ "enabled": true, "afterMinutes": 30, "sleepPinned": false, "extra": 1 }
+	]
+}

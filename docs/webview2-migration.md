@@ -200,3 +200,32 @@ Every other channel replies `NotImplementedError`.
 - single instance and default browser
 - `persistentProfile`
 - the rest of B1–B34
+
+## W3a (2026-10-31): menus, keys, links, start page, tab ordering
+
+**Ported to `host/Zing.Core`.** All of these are held to the TypeScript by shared vectors; the start page is checked byte-for-byte:
+- `Commands` (the registry, matching keys to shortcuts, and virtual-key to `KeyboardEvent.code`)
+- `Menus` (the app, tab, stack, strip and library menus as a platform-neutral model)
+- `LaunchArgs` and `LinkInbox`
+- `StartPage`, `StartShortcuts` and `Palette`
+- `TabOrganizer`, `TabOrdering`, `TabReorder`, `SiteGroup` and `RegistrableDomain`
+- `TabLifecycle` and `TabSleep` (sleeping tabs and auto-close)
+- `Downloads`, `Favicons`, `Permissions` and `PageUi`
+
+The last two items are ported and tested but not yet wired into the host (W3b).
+
+**Host:**
+- Native `MenuFlyout` menus.
+- Keyboard shortcuts from every view: WebView2 raises accelerator keys as `KeyDown` on the root grid.
+- Single instance per profile through `AppInstance` redirection. A second launch hands its links over and exits; launch links open in the first window.
+- `zing://home` is served by `WebResourceRequested`. The start page's search and Edit Shortcuts links are intercepted, and no web page can open Settings. It restyles when the accent or theme changes, and reloads when the shortcuts or search engine change.
+- New tabs open the start page.
+- Tab arrangements and the strip menu.
+
+**Checks:**
+- `e2e-webview2/windows.spec.ts` and `startpage.spec.ts`; 20 WebView2 e2e tests in all.
+- `ZING_E2E_OFFLINE=1` points every page at a dead proxy, so no test reaches a live site.
+
+**Open:**
+- When two windows are closed within milliseconds of each other over CDP, the second window's bridge message was sometimes never received by the host. The harness now closes windows one at a time. Check this again with real input before W4.
+- Keyboard shortcuts are covered by unit tests only, because CDP key events go straight to the renderer and skip the WebView2 accelerator path.

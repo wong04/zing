@@ -1,0 +1,11 @@
+[
+	{ "name": "finds http and https links and skips the executable, app path and switches", "argv": ["C:\\Program Files\\Zing\\Zing.exe", ".", "--user-data-dir=C:\\tmp", "https://example.com/a?b=1", "http://x.test"], "urls": ["https://example.com/a?b=1", "http://x.test"] },
+	{ "name": "removes double quotes Windows leaves around an argument", "argv": ["\"https://example.com/?a=1&b=2\""], "urls": ["https://example.com/?a=1&b=2"] },
+	{ "name": "removes single quotes", "argv": ["'https://example.com'"], "urls": ["https://example.com"] },
+	{ "name": "removes a stray trailing quote", "argv": ["https://example.com/path/\""], "urls": ["https://example.com/path/"] },
+	{ "name": "trims around quotes", "argv": ["  \"https://example.com\"  "], "urls": ["https://example.com"] },
+	{ "name": "refuses schemes a link click should never open", "argv": ["file:///C:/secret.txt", "javascript:alert(1)", "ms-settings:defaultapps", "C:\\Users\\me\\page.html"], "urls": [] },
+	{ "name": "does not read a URL out of a switch value", "argv": ["--url=https://example.com", "--app=https://example.com"], "urls": [] },
+	{ "name": "nothing for an empty command line", "argv": [], "urls": [] },
+	{ "name": "nothing for a link-less command line", "argv": ["Zing.exe", "", "\"\""], "urls": [] }
+]

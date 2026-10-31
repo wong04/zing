@@ -1,0 +1,73 @@
+[
+	{
+		"label": "File",
+		"items": [
+			"tab.new",
+			"window.new",
+			"separator",
+			"location.open",
+			"separator",
+			"tab.close",
+			"window.close",
+			"tab.reopenClosed",
+			"separator",
+			"page.print",
+			"separator",
+			"app.settings"
+		]
+	},
+	{
+		"label": "Edit",
+		"items": [
+			"page.find",
+			"page.findNext",
+			"page.findPrevious"
+		]
+	},
+	{
+		"label": "View",
+		"items": [
+			"view.sidebar",
+			"view.favouritesBar",
+			"separator",
+			"tabs.overview",
+			"page.reader",
+			"separator",
+			"page.reload",
+			"page.stop",
+			"separator",
+			"page.zoomIn",
+			"page.zoomOut",
+			"page.actualSize",
+			"page.textBigger",
+			"page.textSmaller"
+		]
+	},
+	{
+		"label": "History",
+		"items": [
+			"history.back",
+			"history.forward",
+			"history.home",
+			"separator",
+			"tab.reopenClosed"
+		]
+	},
+	{
+		"label": "Bookmarks",
+		"items": [
+			"library.addFavourite",
+			"library.addReadingList",
+			"separator",
+			"library.bookmarks",
+			"library.readingList"
+		]
+	},
+	{
+		"label": "Window",
+		"items": [
+			"tab.previous",
+			"tab.next"
+		]
+	}
+]

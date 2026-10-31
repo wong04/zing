@@ -1,0 +1,890 @@
+{
+	"comment": "Chips of the given widths are laid out left to right with 4pt gaps from x=8, 28 high. transpose swaps x/y and width/height. Layout widths are compared to 1e-9.",
+	"geometry": [
+		{
+			"name": "cursor target slot: far left",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 0,
+			"want": 0
+		},
+		{
+			"name": "cursor target slot, vertical strip: far left",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 0,
+			"transpose": true,
+			"axis": "y",
+			"want": 0
+		},
+		{
+			"name": "cursor target slot: left half of chip 0",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 20,
+			"want": 0
+		},
+		{
+			"name": "cursor target slot, vertical strip: left half of chip 0",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 20,
+			"transpose": true,
+			"axis": "y",
+			"want": 0
+		},
+		{
+			"name": "cursor target slot: past chip 0 mid",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 60,
+			"want": 1
+		},
+		{
+			"name": "cursor target slot, vertical strip: past chip 0 mid",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 60,
+			"transpose": true,
+			"axis": "y",
+			"want": 1
+		},
+		{
+			"name": "cursor target slot: past chip 1 mid",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 170,
+			"want": 2
+		},
+		{
+			"name": "cursor target slot, vertical strip: past chip 1 mid",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 170,
+			"transpose": true,
+			"axis": "y",
+			"want": 2
+		},
+		{
+			"name": "cursor target slot: past chip 2 mid",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 250,
+			"want": 3
+		},
+		{
+			"name": "cursor target slot, vertical strip: past chip 2 mid",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 250,
+			"transpose": true,
+			"axis": "y",
+			"want": 3
+		},
+		{
+			"name": "cursor target slot: far right",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 9999,
+			"want": 3
+		},
+		{
+			"name": "cursor target slot, vertical strip: far right",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 9999,
+			"transpose": true,
+			"axis": "y",
+			"want": 3
+		},
+		{
+			"name": "cursor target slot: just before chip 0 midpoint",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 47.5,
+			"want": 0
+		},
+		{
+			"name": "cursor target slot, vertical strip: just before chip 0 midpoint",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 47.5,
+			"transpose": true,
+			"axis": "y",
+			"want": 0
+		},
+		{
+			"name": "cursor target slot: just past chip 0 midpoint",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 48.5,
+			"want": 1
+		},
+		{
+			"name": "cursor target slot, vertical strip: just past chip 0 midpoint",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 48.5,
+			"transpose": true,
+			"axis": "y",
+			"want": 1
+		},
+		{
+			"name": "cursor target slot: empty frames",
+			"op": "targetIndex",
+			"widths": [],
+			"position": 50,
+			"want": 0
+		},
+		{
+			"name": "reads the axis it is given: y over a row is past every centre",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 20,
+			"axis": "y",
+			"want": 3
+		},
+		{
+			"name": "reads the axis it is given: x over a row",
+			"op": "targetIndex",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"position": 20,
+			"axis": "x",
+			"want": 0
+		},
+		{
+			"name": "dragged chip: nudged 10pt right: stays",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 162,
+			"want": 1
+		},
+		{
+			"name": "dragged chip, vertical strip: nudged 10pt right: stays",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 162,
+			"transpose": true,
+			"axis": "y",
+			"want": 1
+		},
+		{
+			"name": "dragged chip: just short of neighbour's centre: stays",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 245,
+			"want": 1
+		},
+		{
+			"name": "dragged chip, vertical strip: just short of neighbour's centre: stays",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 245,
+			"transpose": true,
+			"axis": "y",
+			"want": 1
+		},
+		{
+			"name": "dragged chip: past neighbour's centre: swaps",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 247,
+			"want": 2
+		},
+		{
+			"name": "dragged chip, vertical strip: past neighbour's centre: swaps",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 247,
+			"transpose": true,
+			"axis": "y",
+			"want": 2
+		},
+		{
+			"name": "dragged chip: far right: last slot",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 9999,
+			"want": 3
+		},
+		{
+			"name": "dragged chip, vertical strip: far right: last slot",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 9999,
+			"transpose": true,
+			"axis": "y",
+			"want": 3
+		},
+		{
+			"name": "dragged chip: dragged left past chip 0's centre",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 47,
+			"want": 0
+		},
+		{
+			"name": "dragged chip, vertical strip: dragged left past chip 0's centre",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 47,
+			"transpose": true,
+			"axis": "y",
+			"want": 0
+		},
+		{
+			"name": "dragged chip: dragged left, not far enough",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 49,
+			"want": 1
+		},
+		{
+			"name": "dragged chip, vertical strip: dragged left, not far enough",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 1,
+			"center": 49,
+			"transpose": true,
+			"axis": "y",
+			"want": 1
+		},
+		{
+			"name": "dragged chip: index off the strip is returned as is",
+			"op": "targetIndexDragging",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"index": 9,
+			"center": 100,
+			"want": 9
+		},
+		{
+			"name": "centre after a move right: lands flush with the old right edge",
+			"op": "centerAfterMove",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"from": 1,
+			"to": 2,
+			"want": 216
+		},
+		{
+			"name": "centre after a move left: lands flush with the old left edge",
+			"op": "centerAfterMove",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"from": 1,
+			"to": 0,
+			"want": 68
+		},
+		{
+			"name": "centre after a move right, vertical strip",
+			"op": "centerAfterMove",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"from": 1,
+			"to": 2,
+			"transpose": true,
+			"axis": "y",
+			"want": 216
+		},
+		{
+			"name": "centre after a move left, vertical strip",
+			"op": "centerAfterMove",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"from": 1,
+			"to": 0,
+			"transpose": true,
+			"axis": "y",
+			"want": 68
+		},
+		{
+			"name": "centre without a move is the chip centre",
+			"op": "centerAfterMove",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"from": 1,
+			"to": 1,
+			"want": 152
+		},
+		{
+			"name": "centre of a chip off the strip is 0",
+			"op": "centerAfterMove",
+			"widths": [
+				80,
+				120,
+				60,
+				100
+			],
+			"from": 9,
+			"to": 1,
+			"want": 0
+		}
+	],
+	"layouts": [
+		{
+			"name": "one tab spans the row",
+			"input": {
+				"total": 1000,
+				"pinned": 0,
+				"loose": 1,
+				"activeLoose": 0
+			},
+			"want": {
+				"looseWidths": [
+					1000
+				],
+				"compact": [
+					false
+				]
+			}
+		},
+		{
+			"name": "four tabs split it equally and keep their titles",
+			"input": {
+				"total": 1000,
+				"pinned": 0,
+				"loose": 4,
+				"activeLoose": 2
+			},
+			"want": {
+				"looseWidths": [
+					248.5,
+					248.5,
+					248.5,
+					248.5
+				],
+				"compact": [
+					false,
+					false,
+					false,
+					false
+				]
+			}
+		},
+		{
+			"name": "pinned icons come off the top first",
+			"input": {
+				"total": 1000,
+				"pinned": 3,
+				"loose": 2,
+				"activeLoose": 0
+			},
+			"want": {
+				"looseWidths": [
+					440.5,
+					440.5
+				],
+				"compact": [
+					false,
+					false
+				]
+			}
+		},
+		{
+			"name": "crowded: the active tab keeps a title, the rest are icons",
+			"input": {
+				"total": 1000,
+				"pinned": 0,
+				"loose": 20,
+				"activeLoose": 5
+			},
+			"want": {
+				"looseWidths": [
+					40,
+					40,
+					40,
+					40,
+					40,
+					202,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40
+				],
+				"compact": [
+					true,
+					true,
+					true,
+					true,
+					true,
+					false,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true
+				]
+			}
+		},
+		{
+			"name": "never narrower than an icon",
+			"input": {
+				"total": 600,
+				"pinned": 0,
+				"loose": 60,
+				"activeLoose": 0
+			},
+			"want": {
+				"looseWidths": [
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40
+				],
+				"compact": [
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true
+				]
+			}
+		},
+		{
+			"name": "active tab pinned: loose tabs share evenly as icons",
+			"input": {
+				"total": 500,
+				"pinned": 1,
+				"loose": 10,
+				"activeLoose": null
+			},
+			"want": {
+				"looseWidths": [
+					43.7,
+					43.7,
+					43.7,
+					43.7,
+					43.7,
+					43.7,
+					43.7,
+					43.7,
+					43.7,
+					43.7
+				],
+				"compact": [
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true
+				]
+			}
+		},
+		{
+			"name": "icon tabs leave room for the close button beside the icon",
+			"input": {
+				"total": 1000,
+				"pinned": 0,
+				"loose": 20,
+				"activeLoose": 0
+			},
+			"want": {
+				"looseWidths": [
+					202,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40,
+					40
+				],
+				"compact": [
+					false,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true,
+					true
+				]
+			}
+		},
+		{
+			"name": "no loose tabs",
+			"input": {
+				"total": 1000,
+				"pinned": 0,
+				"loose": 0,
+				"activeLoose": null
+			},
+			"want": {
+				"looseWidths": [],
+				"compact": []
+			}
+		},
+		{
+			"name": "the active tab gives back width when icons are at their smallest",
+			"input": {
+				"total": 300,
+				"pinned": 0,
+				"loose": 6,
+				"activeLoose": 1
+			},
+			"want": {
+				"looseWidths": [
+					40,
+					90,
+					40,
+					40,
+					40,
+					40
+				],
+				"compact": [
+					true,
+					true,
+					true,
+					true,
+					true,
+					true
+				]
+			}
+		}
+	]
+}
