@@ -13,3 +13,5 @@ test-results/
 playwright-report/
 spikes/**/bin/
 spikes/**/obj/
+host/**/bin/
+host/**/obj/

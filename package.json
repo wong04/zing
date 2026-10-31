@@ -14,7 +14,11 @@
 		"lint": "eslint .",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"test:e2e": "npm run build && playwright test"
+		"test:e2e": "npm run build && playwright test",
+		"gen:host-defaults": "rolldown scripts/gen-host-defaults.ts --platform node --format esm --file out/gen-host-defaults.mjs && node out/gen-host-defaults.mjs",
+		"build:host": "dotnet build host/Zing.Host -c Release",
+		"test:host": "dotnet test host/Zing.Core.Tests",
+		"test:e2e:webview2": "npm run build && npm run build:host && playwright test -c playwright.webview2.config.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

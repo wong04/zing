@@ -130,3 +130,31 @@ WebView2 quirks found (carry these into W1):
 - **Custom schemes:** `CoreWebView2EnvironmentOptions.CustomSchemeRegistrations` returns a copy. `.Add()` registers nothing; assign a whole list.
 - **Projection types:** in this projection `TreatAsSecure` is an `int` and `HasAuthorityComponent` a `bool`.
 - **Request filters:** custom-scheme requests need the three-argument `AddWebResourceRequestedFilter(..., CoreWebView2WebResourceRequestSourceKinds.All)`.
+
+## W1 (2026-10-31): done
+
+- **`host/Zing.Core`** (net9.0, no UI): `Bridge`, the message protocol that matches `src/shared/bridge/webviewBridge.ts`; `TabStore`; `Address`, a stand-in until W2 ports `addressInput`; and `ChromeApi`, the chrome's channels over an `IPage`. It's tested by `host/Zing.Core.Tests` (xUnit v3, 31 tests).
+- **`host/Zing.Host`** (WinUI 3, self-contained, unpackaged; it builds `Zing.exe`):
+  - The chrome WebView2 loads the built React renderer from `https://app.zing/` (a virtual host mapped to `out/renderer`).
+  - One InPrivate page WebView2 sits in the page area.
+  - Mica and an extended title bar. `-webkit-app-region` works through `IsNonClientRegionSupportEnabled`.
+  - Off-screen and error-recording behaviour under `ZING_E2E`, like the Electron hooks.
+- **Shared with Electron:**
+  - `src/shared/zingApi.ts` is the single method→channel table.
+  - `src/renderer/src/api.ts` picks the Electron preload or the WebView2 bridge.
+- **One source of truth:** `npm run gen:host-defaults` exports the settings defaults, empty library, commands, search engines and layout from TypeScript into `host/Zing.Core/Defaults`, and `src/shared/hostDefaults.test.ts` fails if they drift.
+- **Checks:**
+  - `npm run test:host`
+  - `npm run test:e2e:webview2`, which runs `e2e-webview2/` (chrome loads with one tab, typing an address navigates, Back/Forward)
+  - CI runs both on `windows-latest`
+
+**Not in W1, and still to do in W2:**
+- settings writes
+- more than one tab
+- the overlays (stack dropdown, page UI, surface)
+- the full address rule
+- the start page
+- per-site purge
+- everything the 82-channel contract has beyond the ten channels answered now: `tabs:get`, `tabs:activate`, `tabs:navigate`, `command:run`, `settings:get`, `library:get`, `account:get`, `shell:get`, `toolpanel:get`, `chrome:titlebar-colors`
+
+Every other channel replies `NotImplementedError`.
