@@ -143,7 +143,21 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 **9. Parity audit**: walk `PARITY.md`. Every row is closed with a linked test or screenshot, or listed in a "Known differences on Windows" section in the README. Then delete `reference/krackn/`.
 
-**10. Ongoing**: Renovate for Electron security bumps (ship within ~7 days), the weekly upstream-Krackn diff issue, and blocklist updates. After v1, the roadmap in milestone order: E2E sync, Spaces/profiles, Ctrl+K command bar, Chrome Web Store extensions.
+**10. Ongoing**: Renovate for Electron security bumps (ship within ~7 days), the weekly upstream-Krackn diff issue, and blocklist updates. After v1, the roadmap in milestone order: E2E sync, Spaces/profiles, Ctrl+K command bar, Chrome extensions (see 11).
+
+**11. Chrome extensions (roadmap, after v1)**: WebView2 can run Chrome extensions, but only partly.
+- **What WebView2 gives:** with `AreBrowserExtensionsEnabled`, `CoreWebView2Profile.AddBrowserExtensionAsync` installs an **unpacked** extension (a folder with `manifest.json`) into the profile. Its background and content scripts run.
+- **What's missing:**
+  - There is no Web Store install.
+  - The extension's UI (toolbar icon, badge, popup) never appears, because WebView2 has no browser UI to host it.
+  - Which `chrome.*` APIs work isn't documented clearly, so it has to be measured.
+- **Zing's converter** fills those gaps:
+  - **Install:** take a Chrome Web Store link, a `.crx` or a `.zip`. Download the CRX through the Web Store's public update endpoint, strip the CRX header, unpack it into Zing's extensions folder and validate the manifest. Then install it with `AddBrowserExtensionAsync`.
+  - **Compatibility report:** before installing, list the manifest's permissions and the APIs the code calls. Mark each as supported, partial or missing in WebView2, based on a measured API table kept in the repo. Show this to the user rather than failing silently.
+  - **UI host:** Zing draws its own toolbar buttons for `action` / `browser_action`. They show icons and badges, and open the extension's popup page (`chrome-extension://<id>/<popup>`) in an overlay WebView2. `chrome.tabs` / `chrome.windows` calls are answered from Zing's tab service, where WebView2 doesn't.
+  - **Updates and removal:** re-download on a schedule. Editing an installed extension's files removes it from the profile, so updates reinstall it. Remove with `RemoveAsync`.
+- **First targets:** uBlock Origin Lite, Bitwarden and 1Password. Each is verified in the e2e suite with a local fixture page.
+- **Docs:** [AddBrowserExtensionAsync](https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2profile.addbrowserextensionasync) and the [WebView2 extensions spec](https://github.com/MicrosoftEdge/WebView2Feedback/blob/main/specs/Extensions.md).
 
 Parallelizable once Phase 2 lands: 3, 6 and 7 are independent; 4 and 5 follow 3's tab strip; 6c only needs the bookmark/vault stores.
 
