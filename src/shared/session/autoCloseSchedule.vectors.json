@@ -1,0 +1,58 @@
+{
+	"_doc": "Shared by autoCloseSchedule.test.ts and TabLifecycleTests.cs. `now` is 2026-01-10T12:00:00Z; the policy starts from the defaults with enabled true; ages and expectations are offsets from now in ms; calendar is UTC.",
+	"now": "2026-01-10T12:00:00Z",
+	"nextDailyFire": [
+		{ "name": "is later today when the time has not passed", "policy": { "hour": 15, "minute": 30 }, "expectOffsetMs": 12600000 },
+		{ "name": "rolls to tomorrow once it has", "policy": { "hour": 3, "minute": 0 }, "expectOffsetMs": 54000000 },
+		{ "name": "does not fire again at the exact instant it just fired", "policy": { "hour": 12, "minute": 0 }, "expectOffsetMs": 86400000 }
+	],
+	"nextAutoCloseCheck": [
+		{
+			"name": "is nothing while disabled",
+			"policy": { "enabled": false },
+			"tabs": "standard",
+			"expectOffsetMs": null
+		},
+		{
+			"name": "waits for the earliest-expiring eligible tab, one past its interval",
+			"policy": { "rule": "day" },
+			"tabs": "standard",
+			"expectOffsetMs": 79200001
+		},
+		{
+			"name": "ignores pinned and active tabs",
+			"policy": { "rule": "day" },
+			"tabs": [
+				{ "id": "active", "agoMs": 32400000, "isActive": true },
+				{ "id": "pin", "agoMs": 32400000, "isPinned": true },
+				{ "id": "x", "agoMs": 3600000 }
+			],
+			"expectOffsetMs": 82800001
+		},
+		{
+			"name": "has nothing to wait for with a lone tab",
+			"policy": { "rule": "hour" },
+			"tabs": [{ "id": "only", "agoMs": 18000000 }],
+			"expectOffsetMs": null
+		},
+		{
+			"name": "takes the daily time when it comes first",
+			"policy": { "rule": "week", "atTimeEnabled": true, "hour": 13, "minute": 0 },
+			"tabs": "standard",
+			"expectOffsetMs": 3600000
+		},
+		{
+			"name": "schedules the daily time even with a lone tab",
+			"policy": { "atTimeEnabled": true, "hour": 13, "minute": 0 },
+			"tabs": [{ "id": "only", "agoMs": 0 }],
+			"expectOffsetMs": 3600000
+		}
+	],
+	"tabSets": {
+		"standard": [
+			{ "id": "active", "agoMs": 0, "isActive": true },
+			{ "id": "old", "agoMs": 7200000 },
+			{ "id": "newer", "agoMs": 600000 }
+		]
+	}
+}

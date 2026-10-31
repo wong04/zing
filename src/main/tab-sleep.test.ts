@@ -1,22 +1,51 @@
+// The scenarios live in tabLifecycle.vectors.json ("sleeper"), which the C# port's tests play too.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import raw from '@shared/browser/tabLifecycle.vectors.json'
 import type { SleepSettings } from '@shared/layout/sleep'
 import type { TabRecord } from '@shared/model'
 import type { Clock } from '@shared/session/clock'
-import { SLEEP_RETRY_MS, TabSleeper, type SleepHost, type SleepablePage } from './tab-sleep'
+import { TabSleeper, type SleepHost, type SleepablePage } from './tab-sleep'
 
+type Step =
+	| { advanceMinutes: number }
+	| { advanceMs: number }
+	| { reschedule: number }
+	| { setAudible: string; value: boolean }
+	| { setDirty: string; value: boolean }
+	| { setProbeFails: string; value: boolean }
+	| { expectSlept: string[] }
+	| { expectTimers: number }
+	| { expectErrors: number }
+	| { expectWakeScroll: string; value: number | null }
+
+interface TabSpec {
+	id: string
+	pinned?: boolean
+	audible?: boolean
+	dirty?: boolean
+	scrollY?: number
+	touchOnProbe?: boolean
+	probeFails?: boolean
+	idleMinutes?: number
+}
+
+interface Scenario {
+	name: string
+	active: string
+	tabs: TabSpec[]
+	steps: Step[]
+}
+
+const scenarios = (raw as unknown as { sleeper: Scenario[] }).sleeper
 const MIN = 60_000
 const clock: Clock = { now: () => Date.now(), onAdvance: () => () => undefined }
 const settings: SleepSettings = { enabled: true, afterMinutes: 30, sleepPinned: false }
-
-function record(id: string, changes: Partial<TabRecord> = {}): TabRecord {
-	const at = Date.now()
-	return { id, url: `https://${id}.test/`, title: id, pinned: false, createdAt: at, lastActiveAt: at, updatedAt: at, ...changes }
-}
 
 interface PageState {
 	audible: boolean
 	dirty: boolean
 	scrollY: number
+	probeFails: boolean
 	onProbe?: () => void
 }
 
@@ -28,9 +57,7 @@ class FakeHost implements SleepHost {
 	constructor(
 		public records: TabRecord[],
 		public activeId: string | undefined,
-	) {
-		for (const t of records) this.pages.set(t.id, { audible: false, dirty: false, scrollY: 0 })
-	}
+	) {}
 
 	hasView(id: string): boolean {
 		return this.pages.has(id)
@@ -44,6 +71,7 @@ class FakeHost implements SleepHost {
 			isCurrentlyAudible: () => state.audible,
 			executeJavaScript: () => {
 				state.onProbe?.()
+				if (state.probeFails) return Promise.reject(new Error('page navigated'))
 				return Promise.resolve({ scrollY: state.scrollY, dirty: state.dirty })
 			},
 			capturePage: () => Promise.resolve({ isEmpty: () => true }),
@@ -58,75 +86,77 @@ class FakeHost implements SleepHost {
 	}
 }
 
-function arm(host: FakeHost): TabSleeper {
-	const sleeper = new TabSleeper(host, () => settings, clock)
-	host.sleeper = sleeper
-	sleeper.reschedule()
-	return sleeper
+function build(scenario: Scenario): FakeHost {
+	const at = Date.now()
+	const records = scenario.tabs.map<TabRecord>((t) => ({
+		id: t.id,
+		url: `https://${t.id}.test/`,
+		title: t.id,
+		pinned: t.pinned ?? false,
+		createdAt: at,
+		lastActiveAt: at - (t.idleMinutes ?? 0) * MIN,
+		updatedAt: at,
+	}))
+	const host = new FakeHost(records, scenario.active)
+	for (const t of scenario.tabs) {
+		host.pages.set(t.id, {
+			audible: t.audible ?? false,
+			dirty: t.dirty ?? false,
+			scrollY: t.scrollY ?? 0,
+			probeFails: t.probeFails ?? false,
+			onProbe: t.touchOnProbe
+				? () => {
+						host.records = host.records.map((r) => (r.id === t.id ? { ...r, lastActiveAt: Date.now() } : r))
+					}
+				: undefined,
+		})
+	}
+	return host
+}
+
+function wakeScroll(sleeper: TabSleeper, id: string): number | null {
+	const scripts: string[] = []
+	const loaded: (() => void)[] = []
+	const contents = {
+		isDestroyed: () => false,
+		once: (_event: string, handler: () => void) => loaded.push(handler),
+		executeJavaScript: (script: string) => {
+			scripts.push(script)
+			return Promise.resolve()
+		},
+	} as unknown as SleepablePage
+	sleeper.restoreOnWake(id, contents)
+	for (const handler of loaded) handler()
+	if (scripts.length === 0) return null
+	return Number(/scrollTo\(0, ([\d.]+)\)/.exec(scripts[0] ?? '')![1])
 }
 
 beforeEach(() => {
 	vi.useFakeTimers()
-	vi.setSystemTime(Date.UTC(2026, 0, 10, 12))
+	vi.setSystemTime(Date.parse(raw.scenarioStart))
 })
 afterEach(() => vi.useRealTimers())
 
 describe('TabSleeper', () => {
-	it('sleeps an inactive tab after the idle period, never the active or a pinned one', async () => {
-		const host = new FakeHost([record('active'), record('idle'), record('pin', { pinned: true })], 'active')
-		arm(host)
-		await vi.advanceTimersByTimeAsync(29 * MIN)
-		expect(host.slept).toEqual([])
-		await vi.advanceTimersByTimeAsync(2 * MIN)
-		expect(host.slept).toEqual(['idle'])
-	})
+	it.each(scenarios)('$name', async (scenario) => {
+		const host = build(scenario)
+		const warnings = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+		const sleeper = new TabSleeper(host, () => settings, clock)
+		host.sleeper = sleeper
+		sleeper.reschedule()
 
-	it('leaves a tab playing audio awake, then sleeps it once it falls silent', async () => {
-		const host = new FakeHost([record('active'), record('radio')], 'active')
-		host.pages.get('radio')!.audible = true
-		arm(host)
-		await vi.advanceTimersByTimeAsync(31 * MIN)
-		expect(host.slept).toEqual([])
-		host.pages.get('radio')!.audible = false
-		await vi.advanceTimersByTimeAsync(SLEEP_RETRY_MS + MIN)
-		expect(host.slept).toEqual(['radio'])
-	})
-
-	it('leaves a tab with unsaved input awake, then sleeps it once the input is gone', async () => {
-		const host = new FakeHost([record('active'), record('form')], 'active')
-		host.pages.get('form')!.dirty = true
-		arm(host)
-		await vi.advanceTimersByTimeAsync(31 * MIN)
-		expect(host.slept).toEqual([])
-		host.pages.get('form')!.dirty = false
-		await vi.advanceTimersByTimeAsync(SLEEP_RETRY_MS + MIN)
-		expect(host.slept).toEqual(['form'])
-	})
-
-	it('does not sleep a tab the user returned to while it was being inspected', async () => {
-		const host = new FakeHost([record('active'), record('back')], 'active')
-		host.pages.get('back')!.onProbe = () => {
-			host.records = host.records.map((t) => (t.id === 'back' ? { ...t, lastActiveAt: Date.now() } : t))
+		for (const step of scenario.steps) {
+			if ('advanceMinutes' in step) await vi.advanceTimersByTimeAsync(step.advanceMinutes * MIN)
+			else if ('advanceMs' in step) await vi.advanceTimersByTimeAsync(step.advanceMs)
+			else if ('reschedule' in step) for (let i = 0; i < step.reschedule; i++) sleeper.reschedule()
+			else if ('setAudible' in step) host.pages.get(step.setAudible)!.audible = step.value
+			else if ('setDirty' in step) host.pages.get(step.setDirty)!.dirty = step.value
+			else if ('setProbeFails' in step) host.pages.get(step.setProbeFails)!.probeFails = step.value
+			else if ('expectSlept' in step) expect(host.slept).toEqual(step.expectSlept)
+			else if ('expectErrors' in step) expect(warnings).toHaveBeenCalledTimes(step.expectErrors)
+			else if ('expectWakeScroll' in step) expect(wakeScroll(sleeper, step.expectWakeScroll)).toBe(step.value)
+			else expect(vi.getTimerCount()).toBe(step.expectTimers)
 		}
-		arm(host)
-		await vi.advanceTimersByTimeAsync(31 * MIN)
-		expect(host.slept).toEqual([])
-	})
-
-	it('sleeps a tab that is already past its idle time when scheduling starts', async () => {
-		const host = new FakeHost([record('active'), record('stale', { lastActiveAt: Date.now() - 2 * 60 * MIN })], 'active')
-		arm(host)
-		await vi.advanceTimersByTimeAsync(200)
-		expect(host.slept).toEqual(['stale'])
-	})
-
-	it('keeps one timer armed, and none when nothing can sleep', () => {
-		const host = new FakeHost([record('active'), record('a'), record('b')], 'active')
-		const sleeper = arm(host)
-		for (let i = 0; i < 10; i++) sleeper.reschedule()
-		expect(vi.getTimerCount()).toBe(1)
-		vi.clearAllTimers()
-		arm(new FakeHost([record('only')], 'only'))
-		expect(vi.getTimerCount()).toBe(0)
+		warnings.mockRestore()
 	})
 })

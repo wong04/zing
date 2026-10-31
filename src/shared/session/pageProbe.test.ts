@@ -1,17 +1,13 @@
+// The cases live in pageProbe.vectors.json, which the C# port's tests read too.
 import { describe, expect, it } from 'vitest'
 import { PageProbeError, parsePageProbe } from './pageProbe'
+import vectors from './pageProbe.vectors.json'
 
 describe('parsePageProbe', () => {
-	it('accepts the probe shape', () => {
-		expect(parsePageProbe({ scrollY: 120, dirty: false })).toEqual({ scrollY: 120, dirty: false })
+	it.each(vectors.accepted)('$name', ({ input, expect: want }) => {
+		expect(parsePageProbe(input)).toEqual(want)
 	})
-	it('clamps negative overscroll to the top', () => {
-		expect(parsePageProbe({ scrollY: -5, dirty: true }).scrollY).toBe(0)
+	it.each(vectors.rejected as unknown[])('rejects %j', (value) => {
+		expect(() => parsePageProbe(value)).toThrow(PageProbeError)
 	})
-	it.each([null, 'x', {}, { scrollY: 'a', dirty: false }, { scrollY: Infinity, dirty: false }, { scrollY: 1, dirty: 'no' }])(
-		'rejects %j',
-		(value) => {
-			expect(() => parsePageProbe(value)).toThrow(PageProbeError)
-		},
-	)
 })

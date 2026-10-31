@@ -1,62 +1,49 @@
+// The cases live in autoCloseSchedule.vectors.json, which the C# port's tests read too.
 import { describe, expect, it } from 'vitest'
 import { defaultAutoClosePolicy, utcCalendar, type AutoClosePolicy } from '../browser/tabLifecycle'
 import { makeTabSnapshot, type TabSnapshot } from '../browser/tabOrganizer'
 import { nextAutoCloseCheck, nextDailyFire } from './autoCloseSchedule'
+import raw from './autoCloseSchedule.vectors.json'
 
-const HOUR = 3_600_000
-const now = Date.UTC(2026, 0, 10, 12, 0, 0)
+interface TabSpec {
+	id: string
+	agoMs: number
+	isPinned?: boolean
+	isActive?: boolean
+}
+
+interface Vectors {
+	now: string
+	nextDailyFire: { name: string; policy: Partial<AutoClosePolicy>; expectOffsetMs: number }[]
+	nextAutoCloseCheck: { name: string; policy: Partial<AutoClosePolicy>; tabs: string | TabSpec[]; expectOffsetMs: number | null }[]
+	tabSets: Record<string, TabSpec[]>
+}
+
+const vectors = raw as unknown as Vectors
+const now = Date.parse(vectors.now)
 
 function policyOf(changes: Partial<AutoClosePolicy>): AutoClosePolicy {
 	return { ...defaultAutoClosePolicy, enabled: true, ...changes }
 }
 
-function snap(id: string, agoMs: number, changes: Partial<TabSnapshot> = {}): TabSnapshot {
-	return { ...makeTabSnapshot({ id, title: id, domain: '', lastAccessed: now - agoMs, createdAt: now - agoMs }), ...changes }
+function snapshots(specs: string | TabSpec[]): TabSnapshot[] {
+	const list = typeof specs === 'string' ? vectors.tabSets[specs]! : specs
+	return list.map((t) => ({
+		...makeTabSnapshot({ id: t.id, title: t.id, domain: '', lastAccessed: now - t.agoMs, createdAt: now - t.agoMs }),
+		isPinned: t.isPinned ?? false,
+		isActive: t.isActive ?? false,
+	}))
 }
 
 describe('nextDailyFire', () => {
-	it('is later today when the time has not passed', () => {
-		const policy = policyOf({ hour: 15, minute: 30 })
-		expect(nextDailyFire(policy, now, utcCalendar)).toBe(Date.UTC(2026, 0, 10, 15, 30))
-	})
-	it('rolls to tomorrow once it has', () => {
-		const policy = policyOf({ hour: 3, minute: 0 })
-		expect(nextDailyFire(policy, now, utcCalendar)).toBe(Date.UTC(2026, 0, 11, 3, 0))
-	})
-	it('does not fire again at the exact instant it just fired', () => {
-		const policy = policyOf({ hour: 12, minute: 0 })
-		expect(nextDailyFire(policy, now, utcCalendar)).toBe(Date.UTC(2026, 0, 11, 12, 0))
+	it.each(vectors.nextDailyFire)('$name', ({ policy, expectOffsetMs }) => {
+		expect(nextDailyFire(policyOf(policy), now, utcCalendar)).toBe(now + expectOffsetMs)
 	})
 })
 
 describe('nextAutoCloseCheck', () => {
-	const tabs = [snap('active', 0, { isActive: true }), snap('old', 2 * HOUR), snap('newer', 10 * 60_000)]
-
-	it('is nothing while disabled', () => {
-		expect(nextAutoCloseCheck(tabs, policyOf({ enabled: false }), now)).toBeUndefined()
-	})
-
-	it('waits for the earliest-expiring eligible tab, one past its interval', () => {
-		const policy = policyOf({ rule: 'day' })
-		expect(nextAutoCloseCheck(tabs, policy, now)).toBe(now - 2 * HOUR + 24 * HOUR + 1)
-	})
-
-	it('ignores pinned and active tabs', () => {
-		const spared = [snap('active', 9 * HOUR, { isActive: true }), snap('pin', 9 * HOUR, { isPinned: true }), snap('x', HOUR)]
-		expect(nextAutoCloseCheck(spared, policyOf({ rule: 'day' }), now)).toBe(now - HOUR + 24 * HOUR + 1)
-	})
-
-	it('has nothing to wait for with a lone tab', () => {
-		expect(nextAutoCloseCheck([snap('only', 5 * HOUR)], policyOf({ rule: 'hour' }), now)).toBeUndefined()
-	})
-
-	it('takes the daily time when it comes first', () => {
-		const policy = policyOf({ rule: 'week', atTimeEnabled: true, hour: 13, minute: 0 })
-		expect(nextAutoCloseCheck(tabs, policy, now, utcCalendar)).toBe(Date.UTC(2026, 0, 10, 13, 0))
-	})
-
-	it('schedules the daily time even with a lone tab', () => {
-		const policy = policyOf({ atTimeEnabled: true, hour: 13, minute: 0 })
-		expect(nextAutoCloseCheck([snap('only', 0)], policy, now, utcCalendar)).toBe(Date.UTC(2026, 0, 10, 13, 0))
+	it.each(vectors.nextAutoCloseCheck)('$name', ({ policy, tabs, expectOffsetMs }) => {
+		const next = nextAutoCloseCheck(snapshots(tabs), policyOf(policy), now, utcCalendar)
+		expect(next === undefined ? null : next - now).toBe(expectOffsetMs)
 	})
 })
