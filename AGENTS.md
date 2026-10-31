@@ -60,8 +60,8 @@ Briefs for smaller models (Haiku) need:
   - serve fixtures from a local server, never live sites
   - never read the real mouse or keyboard
   - drive timers through `ZING_TEST_CLOCK`
-- **Never start Zing.exe by hand** without  and a scratch : without them it opens on the user's screen with their real profile. Go through .
-- **Write files with backslashes (Windows paths, JSON escapes) with the Write tool,** not a Git Bash heredoc, which has collapsed  to  here.
+- **Never start `Zing.exe` by hand** without `ZING_E2E=1` and a scratch `ZING_USER_DATA`: without them it opens on the user's screen with their real profile. Go through `e2e-webview2/zing.ts`.
+- **Write text containing backslashes or backticks with the Write or Edit tool,** never inside a shell string. A Git Bash heredoc collapsed `\\` to `\`, and backticks in a double-quoted string ran as commands (one ran a `.ts` file as a shell script).
 - **Line endings are LF** (`.gitattributes`, `.editorconfig`), and indentation uses tabs.
 
 ## Test runs must not disturb the person at the PC
