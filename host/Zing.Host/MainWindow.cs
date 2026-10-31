@@ -21,6 +21,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	private RendererView? _surface;
 	private NoticeLayer? _notices;
 	private PageUiLayer? _pageUi;
+	private StackLayer? _stacks;
 	private readonly WindowsDownloads _downloads = new();
 	private CoreWebView2Environment? _environment;
 	private WebView2Page? _shown;
@@ -72,6 +73,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		// The chrome view joins the grid at once, under every page; its API must be registered before it loads and asks for state.
 		var chrome = RendererView.CreateAsync(_root, _environment, _bridge, "chrome", transparent: false);
 		_notices = new NoticeLayer(_root, _environment, _bridge, ContentRect, DispatcherQueue);
+		_stacks = new StackLayer(_root, _environment, _bridge, ContentRect, _renderers.Add);
 		_pageUi = new PageUiLayer(_root, _environment, _bridge, ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
 		_bridge.Register("chrome:titlebar-colors", (JsonElement[] args) =>
 		{
@@ -155,6 +157,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		if (_shown is not null) PlacePage(_shown);
 		_notices?.Layout();
 		_pageUi?.Layout();
+		_stacks?.Layout();
 		if (Api is null) return;
 		if (Api.SettingsOpen) _ = ShowSurfaceAsync().ContinueWith(t => TestHooks.Record("surface", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
 		else if (_surface is not null) _surface.Visible = false;
@@ -250,6 +253,8 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 
 	public void Report(string what, Exception error) => TestHooks.Record(what, error);
 
+	public void StackDropdownChanged(StackDropdownState? state) => _stacks?.Changed(state);
+
 	public IShellActions Shell { get; } = new WindowsShell();
 
 	public IScheduler Scheduler => _scheduler ??= new DispatcherScheduler(DispatcherQueue);
@@ -309,6 +314,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		Api?.Dispose();
 		_notices?.Destroy();
 		_pageUi?.Destroy();
+		_stacks?.Destroy();
 		foreach (var renderer in _renderers) renderer.Close();
 		_app.Closed(this);
 	}

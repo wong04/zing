@@ -25,6 +25,9 @@ public interface IPage
 	Task<System.Text.Json.JsonElement> EvaluateAsync(string script);
 	/// <summary>Runs a script once the current navigation has loaded, e.g. to put back a woken tab's scroll.</summary>
 	void RunWhenLoaded(string script);
+	/// <summary>The tab's text size in percent; the page keeps it across its own navigations.</summary>
+	int TextSize { get; set; }
+	void Print();
 	void StopFind();
 }
 

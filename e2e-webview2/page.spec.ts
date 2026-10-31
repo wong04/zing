@@ -98,3 +98,15 @@ test("a page's icon reaches its tab as an in-memory image", async () => {
 		.toBe('data:image/png;base64,')
 	await zing.close()
 })
+
+test('bigger text scales type in this tab and survives its next page', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)
+	const fontSize = () => page.evaluate(() => (globalThis as unknown as { getComputedStyle(e: unknown): { fontSize: string }; document: { documentElement: unknown } }).getComputedStyle((globalThis as unknown as { document: { documentElement: unknown } }).document.documentElement).fontSize)
+	await expect.poll(fontSize).toBe('16px')
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.textBigger'))
+	await expect.poll(fontSize).toBe('17.6px')
+	await page.reload()
+	await expect.poll(fontSize).toBe('17.6px')
+	await zing.close()
+})

@@ -89,10 +89,18 @@ public sealed class ChromeApiTests : IDisposable
 	[Fact]
 	public async Task Commands_not_ported_yet_say_so_out_loud_with_their_label()
 	{
-		var outcome = Value(await Invoke("command:run", "page.print"));
+		var outcome = Value(await Invoke("command:run", "page.reader"));
 		Assert.Equal("not-implemented", outcome.GetProperty("status").GetString());
-		Assert.Equal("Print…", outcome.GetProperty("label").GetString());
-		Assert.Equal(["Print… isn't implemented yet"], _host.Notices);
+		Assert.Equal("Show Reader", outcome.GetProperty("label").GetString());
+		Assert.Equal(["Show Reader isn't implemented yet"], _host.Notices);
+	}
+
+	[Fact]
+	public async Task Text_size_steps_per_tab_and_zoom_keys_are_left_to_the_engine()
+	{
+		Value(await Invoke("command:run", "page.textBigger"));
+		Assert.Equal(110, ActivePage.TextSize);
+		Assert.Equal("not-applicable", Value(await Invoke("command:run", "page.zoomIn")).GetProperty("status").GetString());
 	}
 
 	[Fact]

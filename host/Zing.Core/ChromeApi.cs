@@ -23,6 +23,8 @@ public interface IWindowHost
 	/// <summary>The page UI renderer measured what it shows.</summary>
 	void SetPageUiHeight(int height);
 	void FocusPageUi();
+	/// <summary>The stack dropdown opened, changed or closed (null).</summary>
+	void StackDropdownChanged(StackDropdownState? state);
 	/// <summary>A background job failed with no caller to throw to.</summary>
 	void Report(string what, Exception error);
 	/// <summary>Where downloads are saved, and the file actions on them.</summary>
@@ -77,6 +79,8 @@ public sealed class ChromeApi : IDisposable
 
 	public TabLifecycle Lifecycle { get; }
 
+	public StackDropdown Stacks { get; }
+
 	/// <summary>Fires after any change to this window's tabs, e.g. so the primary window's session can be saved.</summary>
 	public event Action? TabsChanged;
 
@@ -90,6 +94,13 @@ public sealed class ChromeApi : IDisposable
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
 		Permissions = new PermissionBroker(PageUi);
+		Stacks = new StackDropdown(key => StackMembers.Of(Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")), Ordering.Stacks(), key), host.Scheduler, state =>
+		{
+			host.Push("stack:dropdown", state);
+			host.StackDropdownChanged(state);
+			// The strip redraws its pressed stack chip.
+			host.Push("tabs:state", State());
+		});
 		Lifecycle = new TabLifecycle(new LifecycleTabs(Tabs), app.Settings, app.Clock, host.Scheduler, error => host.Report("tab lifecycle", error));
 		Tabs.Woke += (id, page) =>
 		{
@@ -111,6 +122,11 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("tabs:move-within", args => Do(() => Ordering.MoveWithin(Text(args, 0), Text(args, 1), Int(args, 2))));
 		bridge.Register("tabs:set-organization", args => Do(() => Ordering.SetOrganization(TabOrganizations.Parse(Text(args, 0)))));
 		bridge.Register("tabs:set-dropdowns", args => Do(() => Ordering.SetDropdowns(Bool(args, 0))));
+		bridge.Register("stack:toggle", args => Do(() => Stacks.Toggle(Text(args, 0), Number(args, 1))));
+		bridge.Register("stack:open-for-drag", args => Do(() => Stacks.OpenForDrag(Text(args, 0), Number(args, 1))));
+		bridge.Register("stack:close", _ => Do(Stacks.Close));
+		bridge.Register("stack:current", _ => Stacks.Current);
+		bridge.Register("stack:drag-presence", args => Do(() => Stacks.DragPresence(Text(args, 0), Bool(args, 1))));
 		bridge.Register("chrome:strip-menu", args => Do(() => Menu(Menus.Strip(Ordering), args, 0)));
 		bridge.Register("chrome:stack-menu", args => Do(() => Menu(Menus.Stack(Tabs, Ordering, Text(args, 0), host.Shell), args, 1)));
 		bridge.Register("tabs:pin", args => Do(() => Tabs.Pin(Text(args, 0))));
@@ -153,7 +169,7 @@ public sealed class ChromeApi : IDisposable
 
 	public bool SettingsOpen => _settingsOpen;
 
-	public TabsState State() => Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns"));
+	public TabsState State() => Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")) with { OpenStack = Stacks?.OpenKey };
 
 	/// <summary>Where the chrome ends and the page begins. With tabs on the left the app sidebar folds into the rail.</summary>
 	public ChromeInsets Insets()
@@ -237,6 +253,11 @@ public sealed class ChromeApi : IDisposable
 			"history.home" => Act(Tabs.ActiveId is not null, () => Tabs.Navigate(Tabs.ActiveId!, HomepageUrl())),
 			"page.reload" => Act(page is not null, () => page!.Reload()),
 			"page.find" => Act(page is not null, Find.Open),
+			"page.print" => Act(page is not null, () => page!.Print()),
+			"page.textBigger" => Act(page is not null, () => page!.TextSize = TextSize.Bigger(page.TextSize)),
+			"page.textSmaller" => Act(page is not null, () => page!.TextSize = TextSize.Smaller(page.TextSize)),
+			// WinUI's WebView2 has no zoom API, but the engine zooms on these keys itself: let them through.
+			"page.zoomIn" or "page.zoomOut" or "page.actualSize" => NotApplicable,
 			"page.findNext" => Act(page is not null, () => Find.Step(FindDirection.Next)),
 			"page.findPrevious" => Act(page is not null, () => Find.Step(FindDirection.Previous)),
 			"page.stop" => Act(page is { IsLoading: true }, () => page!.Stop()),
@@ -316,6 +337,7 @@ public sealed class ChromeApi : IDisposable
 	private void OnSettingChanged(JsonObject settings, string key)
 	{
 		_host.Push("settings:changed", settings);
+		if (key is "tabDropdowns") Stacks.Close();
 		if (key is "tabOrganization" or "tabDropdowns")
 		{
 			Ordering.Reorganize();
@@ -436,6 +458,7 @@ public sealed class ChromeApi : IDisposable
 		Ordering?.ScheduleReorganize();
 		Find?.ActiveChanged();
 		Lifecycle?.Reschedule();
+		Stacks?.Refresh();
 		_host.Push("tabs:state", State());
 		TabsChanged?.Invoke();
 	}
@@ -465,6 +488,12 @@ public sealed class ChromeApi : IDisposable
 
 	private static string? OptionalText(JsonElement[] args, int index) =>
 		index >= args.Length || args[index].ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? null : Text(args, index);
+
+	private static double Number(JsonElement[] args, int index)
+	{
+		var arg = Arg(args, index);
+		return arg.ValueKind == JsonValueKind.Number ? arg.GetDouble() : throw new ArgumentException($"Argument {index} must be a number");
+	}
 
 	private static bool Bool(JsonElement[] args, int index)
 	{

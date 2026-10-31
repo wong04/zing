@@ -32,6 +32,8 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public System.Text.Json.JsonElement ProbeResult { get; set; } = System.Text.Json.JsonDocument.Parse("{\"scrollY\":0,\"dirty\":false}").RootElement;
 	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script) => Task.FromResult(ProbeResult);
 	public void RunWhenLoaded(string script) => Calls.Add($"when loaded {script}");
+	public int TextSize { get; set; } = Zing.Core.TextSize.Default;
+	public void Print() => Calls.Add("print");
 	public void Close() => Closed = true;
 }
 
@@ -77,6 +79,9 @@ public sealed class FakeWindowHost : IWindowHost
 
 	public List<IReadOnlyList<MenuItem>> Menus { get; } = [];
 	public void ShowMenu(IReadOnlyList<MenuItem> items, double x, double y) => Menus.Add(items);
+
+	public List<StackDropdownState?> Dropdowns { get; } = [];
+	public void StackDropdownChanged(StackDropdownState? state) => Dropdowns.Add(state);
 
 	public List<Exception> Reported { get; } = [];
 	public void Report(string what, Exception error) => Reported.Add(error);
