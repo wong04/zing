@@ -1,0 +1,82 @@
+{
+	"best": [
+		{
+			"name": "prefers rel=icon over apple-touch-icon",
+			"links": [
+				{ "href": "https://x.com/touch.png", "rel": "apple-touch-icon", "sizes": "180x180" },
+				{ "href": "https://x.com/i.png", "rel": "icon", "sizes": "32x32" }
+			],
+			"expected": "https://x.com/i.png"
+		},
+		{
+			"name": "picks the size nearest 32",
+			"links": [
+				{ "href": "https://x.com/16.png", "rel": "icon", "sizes": "16x16" },
+				{ "href": "https://x.com/32.png", "rel": "icon", "sizes": "32x32" },
+				{ "href": "https://x.com/192.png", "rel": "icon", "sizes": "192x192" }
+			],
+			"expected": "https://x.com/32.png"
+		},
+		{
+			"name": "an svg or 'any' beats a tiny bitmap",
+			"links": [
+				{ "href": "https://x.com/16.png", "rel": "icon", "sizes": "16x16" },
+				{ "href": "https://x.com/i.svg", "rel": "icon", "type": "image/svg+xml" }
+			],
+			"expected": "https://x.com/i.svg"
+		},
+		{
+			"name": "unlabelled icons keep the page's order",
+			"links": [
+				{ "href": "https://x.com/a.ico", "rel": "shortcut icon" },
+				{ "href": "https://x.com/b.ico", "rel": "icon" }
+			],
+			"expected": "https://x.com/a.ico"
+		},
+		{
+			"name": "data: image icons are allowed",
+			"links": [{ "href": "data:image/png;base64,AAAA", "rel": "icon" }],
+			"expected": "data:image/png;base64,AAAA"
+		},
+		{
+			"name": "javascript: and empty hrefs are ignored",
+			"links": [
+				{ "href": "javascript:alert(1)", "rel": "icon" },
+				{ "href": "", "rel": "icon" }
+			],
+			"expected": null
+		},
+		{
+			"name": "skips an icon whose media query does not match",
+			"links": [
+				{ "href": "https://github.com/light.svg", "rel": "icon", "type": "image/svg+xml", "mediaMatches": false },
+				{ "href": "https://github.com/dark.svg", "rel": "icon", "type": "image/svg+xml", "mediaMatches": true }
+			],
+			"expected": "https://github.com/dark.svg"
+		},
+		{
+			"name": "nothing but mismatched icons means no declared icon",
+			"links": [{ "href": "https://x.com/i.png", "rel": "icon", "mediaMatches": false }],
+			"expected": null
+		},
+		{
+			"name": "rel and sizes are compared lowercased",
+			"links": [
+				{ "href": "https://x.com/touch.png", "rel": "Apple-Touch-Icon", "sizes": "32X32" },
+				{ "href": "https://x.com/i.png", "rel": "ICON", "sizes": "16X16" }
+			],
+			"expected": "https://x.com/i.png"
+		}
+	],
+	"distinct": [
+		{
+			"name": "Docs and Slides resolve to different icons",
+			"a": [{ "href": "https://ssl.gstatic.com/docs/documents/images/kix-favicon-2023q4.ico", "rel": "shortcut icon" }],
+			"b": [{ "href": "https://ssl.gstatic.com/docs/presentations/images/favicon-2023q4.ico", "rel": "shortcut icon" }]
+		}
+	],
+	"largestSize": [
+		{ "sizes": "16x16 32x32", "expected": 32 },
+		{ "sizes": "any", "expected": null }
+	]
+}
