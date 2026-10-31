@@ -1,0 +1,10 @@
+{
+	"shouldDownload": [
+		{ "name": "a zip opened as a page downloads", "canShow": false, "contentDisposition": null, "isMainFrame": true, "expected": true },
+		{ "name": "Content-Disposition: attachment downloads, even if showable", "canShow": true, "contentDisposition": "attachment; filename=\"a.pdf\"", "isMainFrame": true, "expected": true },
+		{ "name": "...and from a hidden frame (how download buttons often work)", "canShow": true, "contentDisposition": " Attachment ", "isMainFrame": false, "expected": true },
+		{ "name": "an ordinary page is shown", "canShow": true, "contentDisposition": null, "isMainFrame": true, "expected": false },
+		{ "name": "inline disposition is shown", "canShow": true, "contentDisposition": "inline", "isMainFrame": true, "expected": false },
+		{ "name": "an odd type in an embedded frame doesn't drop a file", "canShow": false, "contentDisposition": null, "isMainFrame": false, "expected": false }
+	]
+}

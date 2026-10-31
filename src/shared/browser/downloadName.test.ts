@@ -1,25 +1,11 @@
+// The cases live in downloadName.vectors.json, which the C# port's tests read too.
 import { describe, expect, it } from 'vitest'
 import { downloadFileName } from './downloadName'
+import vectors from './downloadName.vectors.json'
 
 describe('downloadFileName', () => {
-	it('keeps a free name', () => {
-		expect(downloadFileName('report.pdf', () => false)).toBe('report.pdf')
-	})
-
-	it('numbers on collision', () => {
-		const taken = new Set(['report.pdf', 'report 2.pdf'])
-		expect(downloadFileName('report.pdf', (n) => taken.has(n))).toBe('report 3.pdf')
-	})
-
-	it('numbers a file with no extension', () => {
-		expect(downloadFileName('LICENSE', (n) => n === 'LICENSE')).toBe('LICENSE 2')
-	})
-
-	it('strips characters Windows forbids', () => {
-		expect(downloadFileName('a<b>.txt', () => false)).toBe('ab.txt')
-	})
-
-	it('keeps a leading-dot name whole', () => {
-		expect(downloadFileName('.env', () => false)).toBe('.env')
+	it.each(vectors.fileName)('$name', ({ filename, taken, expected }) => {
+		const used = new Set(taken)
+		expect(downloadFileName(filename, (n) => used.has(n))).toBe(expected)
 	})
 })
