@@ -91,6 +91,7 @@ public sealed class RendererView
 			TestHooks.Record("bridge", new UnauthorizedAccessException($"Message from {e.Source} refused in #{_hash}"));
 			return;
 		}
+		if (TestHooks.TryHandle(e.WebMessageAsJson)) return;
 		try
 		{
 			var reply = await _bridge.HandleAsync(e.WebMessageAsJson);

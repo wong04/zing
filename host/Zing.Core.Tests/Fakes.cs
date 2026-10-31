@@ -28,6 +28,10 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public void Run(string script) => Calls.Add("run");
 	public void Find(string query, FindDirection direction, FindMode mode) => Calls.Add($"find {query} {direction} {mode}");
 	public void StopFind() => Calls.Add("stop find");
+	public bool IsAudible { get; set; }
+	public System.Text.Json.JsonElement ProbeResult { get; set; } = System.Text.Json.JsonDocument.Parse("{\"scrollY\":0,\"dirty\":false}").RootElement;
+	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script) => Task.FromResult(ProbeResult);
+	public void RunWhenLoaded(string script) => Calls.Add($"when loaded {script}");
 	public void Close() => Closed = true;
 }
 
@@ -74,6 +78,9 @@ public sealed class FakeWindowHost : IWindowHost
 	public List<IReadOnlyList<MenuItem>> Menus { get; } = [];
 	public void ShowMenu(IReadOnlyList<MenuItem> items, double x, double y) => Menus.Add(items);
 
+	public List<Exception> Reported { get; } = [];
+	public void Report(string what, Exception error) => Reported.Add(error);
+
 	public List<PageUiState> PageUiStates { get; } = [];
 	public void PageUiChanged(PageUiState state) => PageUiStates.Add(state);
 	public void SetPageUiHeight(int height) { }
@@ -118,5 +125,20 @@ public static class Deterministic
 	{
 		var time = start;
 		return () => time++;
+	}
+}
+
+/// <summary>The app clock for window tests: ticks once per read, like <see cref="Deterministic.Clock"/>.</summary>
+public sealed class TickingClock : IClock
+{
+	private readonly Func<long> _time = Deterministic.Clock();
+
+	public long Now() => _time();
+
+	public IDisposable OnAdvance(Action listener) => new Nothing();
+
+	private sealed class Nothing : IDisposable
+	{
+		public void Dispose() { }
 	}
 }

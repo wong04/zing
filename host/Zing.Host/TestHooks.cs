@@ -23,6 +23,26 @@ public static class TestHooks
 		return string.Join(' ', args);
 	}
 
+	/// <summary>The app clock. ZING_TEST_CLOCK=1 in an e2e run gives one a test can move forward (test:advance-clock).</summary>
+	public static Zing.Core.IClock Clock { get; } = IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_TEST_CLOCK") == "1" ? new Zing.Core.OffsetClock() : new Zing.Core.SystemClock();
+
+	/// <summary>
+	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
+	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms}.
+	/// </summary>
+	public static bool TryHandle(string json)
+	{
+		if (!IsEndToEndRun) return false;
+		using var message = System.Text.Json.JsonDocument.Parse(json);
+		var root = message.RootElement;
+		if (!root.TryGetProperty("kind", out var kind) || kind.GetString() != "test") return false;
+		var action = root.GetProperty("action").GetString();
+		if (action != "advance-clock") throw new InvalidOperationException($"Unknown test action {action}");
+		if (Clock is not Zing.Core.OffsetClock clock) throw new InvalidOperationException("advance-clock needs ZING_TEST_CLOCK=1");
+		clock.Advance(root.GetProperty("ms").GetInt64());
+		return true;
+	}
+
 	public static void RecordUnhandledErrors()
 	{
 		AppDomain.CurrentDomain.UnhandledException += (_, e) => Record("unhandled", e.ExceptionObject);

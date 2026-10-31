@@ -14,7 +14,7 @@ public sealed class ChromeApiTests : IDisposable
 	public ChromeApiTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _saved.Add, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), Deterministic.Clock()), _host, "test");
+		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), new TickingClock()), _host, "test");
 		_api.Start([], "about:blank");
 	}
 

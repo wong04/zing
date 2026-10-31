@@ -19,6 +19,12 @@ public interface IPage
 	void Run(string script);
 	/// <summary>Finds in the page; results come back through <see cref="IPageEvents.FindResult"/>.</summary>
 	void Find(string query, FindDirection direction, FindMode mode);
+	/// <summary>Whether the page is playing sound; a playing tab never sleeps.</summary>
+	bool IsAudible { get; }
+	/// <summary>Runs a script and hands back its JSON result.</summary>
+	Task<System.Text.Json.JsonElement> EvaluateAsync(string script);
+	/// <summary>Runs a script once the current navigation has loaded, e.g. to put back a woken tab's scroll.</summary>
+	void RunWhenLoaded(string script);
 	void StopFind();
 }
 
@@ -40,6 +46,8 @@ public interface IPageEvents
 	NavigationDecision Navigating(string from, string to);
 	void Navigated(string url);
 	void TitleChanged(string title);
+	/// <summary>The page's icon as a data URL, kept in memory only; null when it has none.</summary>
+	void IconChanged(string? dataUrl);
 	/// <summary>Loading or history changed.</summary>
 	void StateChanged();
 	void LoadFailed(string description);
@@ -59,6 +67,8 @@ public interface IPageHost
 	void Hide(IPage page);
 }
 
+public sealed class ActiveTabSleepException(string tabId) : Exception($"Tab {tabId} is the active tab and cannot sleep");
+
 public sealed class TabOrderException(string detail) : Exception($"Can't apply that tab order: {detail}");
 
 /// <summary>
@@ -74,16 +84,23 @@ public sealed class TabService
 	private readonly Action _changed;
 	private readonly Action<TabRecord, string> _loadFailed;
 	private readonly Func<string, string, NavigationDecision?> _intercept;
+	private readonly SiteDataKeeper? _siteData;
 
 	/// <summary>A page reported find results; the window's find bar decides whether they are for it.</summary>
 	public event Action<IPage, int, int>? FindResult;
 	private readonly Dictionary<string, IPage> _pages = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, string> _openers = new(StringComparer.Ordinal);
+	private readonly HashSet<string> _sleeping = new(StringComparer.Ordinal);
+	private readonly Dictionary<string, string> _icons = new(StringComparer.Ordinal);
+
+	/// <summary>A sleeping tab just got a fresh page, so its saved scroll can be put back.</summary>
+	public event Action<string, IPage>? Woke;
 
 	/// <param name="blankUrl">What a window that lost its last tab opens.</param>
 	/// <param name="intercept">The window's say over a navigation (the start page's search and settings links); null leaves it to tracker stripping.</param>
-	public TabService(TabStore store, IPageHost host, string blankUrl, Action changed, Action<TabRecord, string> loadFailed, Func<string, string, NavigationDecision?>? intercept = null)
+	public TabService(TabStore store, IPageHost host, string blankUrl, Action changed, Action<TabRecord, string> loadFailed, Func<string, string, NavigationDecision?>? intercept = null, SiteDataKeeper? siteData = null)
 	{
+		_siteData = siteData;
 		_intercept = intercept ?? ((_, _) => null);
 		_store = store;
 		_host = host;
@@ -96,7 +113,24 @@ public sealed class TabService
 	public bool CanReopen => _store.CanReopen;
 	public IReadOnlyList<TabRecord> Records => _store.Records;
 
-	public TabsState State(string organization, bool dropdowns) => _store.Snapshot(organization, dropdowns, PageStateOf);
+	public TabsState State(string organization, bool dropdowns)
+	{
+		var state = _store.Snapshot(organization, dropdowns, PageStateOf);
+		return state with { Tabs = [.. state.Tabs.Select(t => t with { Sleeping = _sleeping.Contains(t.Id), Icon = _icons.GetValueOrDefault(t.Id) })] };
+	}
+
+	public bool IsSleeping(string id) => _sleeping.Contains(id);
+
+	/// <summary>Drops the page but keeps the record, so the tab wakes at its URL when next activated.</summary>
+	public void Sleep(string id)
+	{
+		_store.Get(id);
+		if (id == _store.ActiveId) throw new ActiveTabSleepException(id);
+		if (!_pages.ContainsKey(id)) return;
+		DestroyPage(id);
+		_sleeping.Add(id);
+		_changed();
+	}
 
 	public bool HasPage(string id) => _pages.ContainsKey(id);
 
@@ -148,6 +182,10 @@ public sealed class TabService
 	{
 		var result = _store.Close(id);
 		DestroyPage(id);
+		_sleeping.Remove(id);
+		_icons.Remove(id);
+		// After the page is gone, so nothing can write to the storage again as it is cleared.
+		_siteData?.Release(id);
 		_openers.Remove(id, out var opener);
 		if (_store.Records.Count == 0)
 		{
@@ -230,6 +268,7 @@ public sealed class TabService
 	public void Destroy()
 	{
 		foreach (var id in _pages.Keys.ToList()) DestroyPage(id);
+		foreach (var record in _store.Records) _siteData?.Release(record.Id);
 	}
 
 	private PageState? PageStateOf(string id) =>
@@ -241,6 +280,7 @@ public sealed class TabService
 		var page = _host.Create(new TabPageEvents(this, record.Id));
 		_pages[record.Id] = page;
 		page.Navigate(record.Url);
+		if (_sleeping.Remove(record.Id)) Woke?.Invoke(record.Id, page);
 		return page;
 	}
 
@@ -283,7 +323,11 @@ public sealed class TabService
 			return clean == to ? NavigationDecision.Allow : new NavigationDecision.Redirect(clean);
 		}
 
-		public void Navigated(string url) => service.Update(id, new TabContentPatch(Url: url));
+		public void Navigated(string url)
+		{
+			service._siteData?.Visit(id, url);
+			service.Update(id, new TabContentPatch(Url: url));
+		}
 
 		public void TitleChanged(string title)
 		{
@@ -293,6 +337,14 @@ public sealed class TabService
 		}
 
 		public void StateChanged() => service._changed();
+
+		public void IconChanged(string? dataUrl)
+		{
+			if (!service._store.Has(id)) return;
+			if (dataUrl is null) service._icons.Remove(id);
+			else service._icons[id] = dataUrl;
+			service._changed();
+		}
 
 		public void FindResult(int matches, int activeOrdinal)
 		{
