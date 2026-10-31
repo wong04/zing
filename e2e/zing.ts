@@ -126,6 +126,21 @@ async function engineReleased(userData: string): Promise<void> {
 	}
 }
 
+export interface Layer {
+	readonly url: string
+	readonly visible: boolean
+	readonly width: number
+	readonly height: number
+}
+
+/** What the window really shows, bottom to top (TestHooks "layers"); page-side visibility doesn't follow a hidden view. */
+export async function layers(chrome: Page): Promise<Layer[]> {
+	const file = join(await mkdtemp(join(tmpdir(), 'zing-layers-')), 'layers.json')
+	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'layers', file: path }), file)
+	await expect.poll(() => existsSync(file)).toBe(true)
+	return JSON.parse(readFileSync(file, 'utf8')) as Layer[]
+}
+
 export function pages(browser: Browser): Page[] {
 	return browser.contexts().flatMap((context) => context.pages())
 }
