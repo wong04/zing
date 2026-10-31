@@ -110,3 +110,23 @@ This plan covers:
 - **Each W step:** `dotnet test`, `npm test` (vitest, ~1,600), `npm run lint`, `npm run typecheck`, and `npm run test:e2e`, with Playwright attaching to the WebView2 host. All green before the next step.
 - **W3 done:** every Phase 3 e2e scenario passes on WebView2, and PARITY B1–B34 are re-ticked with evidence.
 - **Final:** the opt-in web-compat test (`ZING_WEBCOMPAT=1`) passes, and you complete a real Google sign-in in Zing itself.
+
+## W0 results (2026-10-31): go
+
+The spike is in `spikes/webview2/`; its checks run with `npx playwright test -c spikes/webview2/playwright.config.ts`.
+
+| Check | Result |
+|---|---|
+| Google sign-in (the user, by hand) | ✓ reached the password step and signed in. Nothing about the browser was disguised. |
+| Playwright attaches over CDP | ✓ |
+| `zing://home` served by the host | ✓ |
+| Popup keeps `window.opener`, posts to it and closes | ✓ |
+| Transparent overlay WebView2 above the page | ✓ |
+| Per-origin purge (`Storage.clearDataForOrigin`) clears localStorage and cookies | ✓ |
+| Memory (sum of working sets) | 545 MB with 1 tab, 2,463 MB with 31 (about 64 MB per extra tab). Today's Electron Zing measured the same way: 779 MB with 1 tab. |
+
+WebView2 quirks found (carry these into W1):
+- **XAML resources:** `XamlControlsResources` throws in a project without XAML resources ("Cannot find a resource with the given key"). Zing doesn't use it, since the UI is the React renderer.
+- **Custom schemes:** `CoreWebView2EnvironmentOptions.CustomSchemeRegistrations` returns a copy. `.Add()` registers nothing; assign a whole list.
+- **Projection types:** in this projection `TreatAsSecure` is an `int` and `HasAuthorityComponent` a `bool`.
+- **Request filters:** custom-scheme requests need the three-argument `AddWebResourceRequestedFilter(..., CoreWebView2WebResourceRequestSourceKinds.All)`.
