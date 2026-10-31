@@ -17,7 +17,7 @@ function parseErrors(script: string): string[] {
 		'[void][System.Management.Automation.Language.Parser]::ParseInput($text, [ref]$null, [ref]$errors)',
 		'$errors | ForEach-Object { $_.Message }',
 	].join('; ')
-	const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { encoding: 'utf8' })
+	const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { encoding: 'utf8', windowsHide: true })
 	if (result.error) throw result.error
 	if (result.status !== 0) throw new Error(`PowerShell exited ${result.status}: ${result.stderr}`)
 	return result.stdout.split(/\r?\n/).filter(Boolean)

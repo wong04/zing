@@ -24,7 +24,7 @@ import { DebouncedJsonWriter, loadSettingsFile } from './settings-file'
 import { claimSingleInstance } from './single-instance'
 import { registerStartPageScheme, StartPage } from './start-page'
 import { TaskbarIcon } from './taskbar-icon'
-import { recordMainErrorsForTests } from './test-hooks'
+import { isEndToEndRun, keepOffscreenTestWindowsPainting, recordMainError, recordMainErrorsForTests } from './test-hooks'
 import { WindowManager, installQuitConfirmation } from './windows'
 
 // Before app ready: the zing: scheme must be declared standard before any page loads it.
@@ -140,11 +140,18 @@ async function start(): Promise<void> {
 
 function fail(error: unknown): void {
 	console.error(error)
+	// A test run reports the failure to the harness instead of a dialog nobody is there to close.
+	if (isEndToEndRun()) {
+		recordMainError('startup', error)
+		app.exit(1)
+		return
+	}
 	dialog.showErrorBox('Zing could not start', error instanceof Error ? error.message : String(error))
 	app.exit(1)
 }
 
 recordMainErrorsForTests()
+keepOffscreenTestWindowsPainting()
 app.setAppUserModelId('app.zing.browser')
 if (claimSingleInstance(linkInbox, () => windows?.mostRecent()?.reveal())) app.whenReady().then(start).catch(fail)
 else app.quit()

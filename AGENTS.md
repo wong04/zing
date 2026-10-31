@@ -61,3 +61,14 @@ Briefs for smaller models (Haiku) need:
   - never read the real mouse or keyboard
   - drive timers through `ZING_TEST_CLOCK`
 - **Line endings are LF** (`.gitattributes`, `.editorconfig`), and indentation uses tabs.
+
+## Test runs must not disturb the person at the PC
+
+Agents and CI run hundreds of app launches while the user may be working on the same machine. So in e2e runs (`ZING_E2E=1`, unpackaged builds only):
+
+- **Windows are kept out of the way.** Every window opens at `testWindowPlacement()`: off-screen and out of the taskbar. It is shown with `showWindow()`, which never takes focus. Never call `BrowserWindow.show()` or `focus()` directly; use those helpers. `e2e/launch.spec.ts` checks that windows are off every display and unfocused.
+- **Painting carries on off-screen.** `keepOffscreenTestWindowsPainting()` turns off Chromium's occlusion detection, so off-screen windows still paint and run timers.
+- **No dialogs.** A startup failure goes to the harness log instead of an error box. Any test that triggers a native dialog (quit confirmation, file pickers) stubs `dialog` first, as `e2e/windows.spec.ts` does.
+- **No consoles or OS actions.** Child processes use `windowsHide: true`; `runProcess` does this already. Tests never call `shell.openPath`, `showItemInFolder` or `openExternal`, which would open Explorer, apps or the real browser.
+- **Code mustn't depend on focus to tidy up.** Test windows never have focus, and a user can switch apps at any moment. For example, the edge-reveal sidebar now puts itself away when Zing loses focus.
+- **Tests must be deterministic.** Never compare two values that each stamp the current time. Freeze the clock (`vi.useFakeTimers`) or compare without the timestamp.

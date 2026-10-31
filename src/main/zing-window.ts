@@ -27,6 +27,7 @@ import { TabService } from './tab-service'
 import { TabLifecycle, appClock } from './tab-lifecycle'
 import { takePendingRestore } from './session-restore'
 import { loadUnlessGone } from './web-contents'
+import { isEndToEndRun, showWindow, testWindowPlacement } from './test-hooks'
 import { chromeInsets, VERTICAL_TABS, type ChromeInsets } from '@shared/layout/chrome'
 import { SIDEBAR_COLUMN_WIDTH } from '@shared/shell/shellState'
 
@@ -97,6 +98,7 @@ export class ZingWindow {
 		this.#options = options
 		this.account = options.account
 		this.window = new BrowserWindow({
+			...testWindowPlacement(),
 			width: 1280,
 			height: 820,
 			minWidth: 480,
@@ -274,8 +276,8 @@ export class ZingWindow {
 
 	reveal(): void {
 		if (this.window.isMinimized()) this.window.restore()
-		this.window.show()
-		this.window.focus()
+		showWindow(this.window)
+		if (!isEndToEndRun()) this.window.focus()
 	}
 
 	/** Takes whatever was typed or a ready URL; blank input does nothing. */
@@ -342,7 +344,7 @@ export class ZingWindow {
 	}
 
 	#wireWindow(): void {
-		this.window.once('ready-to-show', () => this.window.show())
+		this.window.once('ready-to-show', () => showWindow(this.window))
 		this.window.on('resize', () => this.#layout())
 		this.window.on('closed', () => {
 			this.#batcher.cancel()

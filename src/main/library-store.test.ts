@@ -135,7 +135,13 @@ describe('library file', () => {
 	const scratch = () => join(mkdtempSync(join(tmpdir(), 'zing-lib-')), 'library.json')
 
 	it('starts empty when there is no file yet', () => {
-		expect(loadLibraryFile(scratch())).toEqual(emptyLibrary())
+		// Both sides stamp updatedAt; a millisecond tick between them made this flaky.
+		vi.useFakeTimers({ now: 1_000 })
+		try {
+			expect(loadLibraryFile(scratch())).toEqual(emptyLibrary())
+		} finally {
+			vi.useRealTimers()
+		}
 	})
 
 	it('round-trips what the store saved', () => {

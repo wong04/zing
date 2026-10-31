@@ -323,7 +323,14 @@ export class ShellController {
 
 	#sampleCursor(): void {
 		const { window } = this.#o
-		if (window.isDestroyed() || !window.isFocused()) return
+		if (window.isDestroyed()) return
+		// Unfocused counts as "the cursor is elsewhere": a revealed sidebar still
+		// puts itself away when the user switches to another app, and nothing
+		// is revealed in a window they aren't using.
+		if (!window.isFocused()) {
+			this.#reveal.update({ x: -1, y: -1, inWindow: false, now: this.#clock() })
+			return
+		}
 		const content = window.getContentBounds()
 		const cursor = cursorPoint()
 		const x = cursor.x - content.x
