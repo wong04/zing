@@ -310,3 +310,32 @@ The last two items are ported and tested but not yet wired into the host (W3b).
 - **Harness:** the Playwright worker crashed with `0xC0000409` about once per full run, always right after a test closed its Zing. The harness no longer closes a DevTools connection that the exited host had already dropped.
 
 **W3 result:** every Phase 0–3 feature of the Electron build runs on the WebView2 host. There are 958 host tests and 36 WebView2 e2e tests. Still to check by hand: real mouse clicks on the stack dropdown's rows.
+
+## W4 (2026-10-31): Electron removed
+
+**Removed:**
+- `src/main`, `src/preload`, the Electron e2e suite, `electron.vite.config.ts`
+- the packages `electron`, `electron-vite`, `@ghostery/adblocker-electron` and `linkedom`
+- `src/shared/browser/userAgent.ts`, which formatted Electron's user agent
+
+They stay in git history and in the merged PRs as the reference.
+
+**Moved and renamed:**
+- The vectors whose TypeScript original went with `src/main` now live in `host/Zing.Core.Tests/vectors/`, and C# is their source of truth: account, launch args, panels, sidebar, and the byte-exact start page.
+- Vectors whose TypeScript still exists in `src/shared` stay shared.
+- The WebView2 suite is now `e2e/` with `playwright.config.ts`.
+
+**Build:**
+- `vite.config.ts` builds the renderer to `out/renderer`.
+- `npm start` builds everything and runs `Zing.exe`.
+- `npm run test:e2e` builds the renderer and the host, then runs Playwright over CDP. CI runs `lint`, `typecheck`, `test`, `test:host` and `test:e2e`.
+
+**Settings:**
+- The "Identify as Electron, not Chrome" row is gone. WebView2 presents Edge's own user agent. The `defaultUserAgent` key stays in the schema so existing settings files still load.
+- `acceleratedCanvas` now works on WebView2 (`--disable-accelerated-2d-canvas`) and applies from the next launch.
+
+**Still to check by hand:**
+- A Google sign-in in Zing itself.
+- Real mouse clicks on the stack dropdown's rows (DevTools input doesn't reach that view).
+
+**Next:** the extension converter (roadmap 11, for uBlock Origin Lite), then Phase 4.

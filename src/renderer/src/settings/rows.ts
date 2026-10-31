@@ -266,7 +266,6 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 	],
 	advanced: [
 		toggle('acceleratedCanvas', 'Draw canvas on the GPU', { detail: 'Faster on canvas-heavy pages. Relaunch to apply.' }),
-		toggle('defaultUserAgent', "Identify as Electron, not Chrome", { detail: 'Some sites then serve a lesser page.' }),
 	],
 	account: [{ type: 'custom', id: 'account', keys: [] }],
 	about: [{ type: 'custom', id: 'about', keys: [] }],

@@ -2,7 +2,7 @@
 
 ## Context
 
-> **2026-10-31: Zing is moving from Electron to WebView2** because Google blocks sign-in in Electron. See [webview2-migration.md](webview2-migration.md) for what survives, what gets ported and how the phases change. Where this document says Electron, read it as the plan that was replaced.
+> **2026-10-31: Zing moved from Electron to WebView2** (a C# WinUI 3 host) because Google blocks sign-in in Electron; the Electron code was removed in W4. See [webview2-migration.md](webview2-migration.md) for how it was done and how the phases changed. Where this document says Electron, read it as the plan that was replaced.
 
 [yityler/Krackn](https://github.com/yityler/Krackn) is a macOS-only "super-app": a privacy browser (WebKit, in-memory data store) plus a toolbox with Open a Link/unblock relay, Diagnose, Network & VPN, Convert (196 formats), Download (yt-dlp), Security, file Viewer, a graphing calculator, background remover and about a dozen dev utilities. It is 22.7k lines of SwiftUI/AppKit and has no third-party deps, but it relies on ~15 Apple-only frameworks (WebKit, Network, Vision, SceneKit, PDFKit, AVKit, Quartz/QuickLook, Security/Keychain, CryptoKit, `sips`, `textutil`, Gatekeeper/XProtect). None of that runs on Windows, so **"switch to Chromium + works on Windows" is a rewrite, not a patch**. The risk is quietly losing features along the way. This plan makes parity measurable: every Krackn feature becomes a tracked item, and an item closes only with a passing test or a screenshot.
 

@@ -5,22 +5,19 @@
 	"description": "A privacy-first Chromium browser for Windows.",
 	"license": "MIT",
 	"private": true,
-	"main": "out/main/index.js",
 	"scripts": {
-		"dev": "electron-vite dev",
-		"build": "electron-vite build",
-		"start": "electron-vite preview",
+		"dev": "vite",
+		"build": "vite build",
 		"typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
 		"lint": "eslint .",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"test:e2e": "npm run build && playwright test",
-		"gen:start-page-vectors": "vitest run src/shared/browser/startPage.vectors.test.ts -u",
 		"gen:host-defaults": "rolldown scripts/gen-host-defaults.ts --platform node --format esm --file out/gen-host-defaults.mjs && node out/gen-host-defaults.mjs",
 		"gen:reader": "rolldown scripts/reader-entry.ts --format iife --file host/Zing.Host/Assets/reader.js && rolldown scripts/gen-reader.ts --platform node --format esm --file out/gen-reader.mjs && node out/gen-reader.mjs",
 		"build:host": "npm run gen:reader && dotnet build host/Zing.Host -c Release",
 		"test:host": "dotnet test host/Zing.Core.Tests",
-		"test:e2e:webview2": "npm run build && npm run build:host && playwright test -c playwright.webview2.config.ts"
+		"test:e2e": "npm run build && npm run build:host && playwright test",
+		"start": "npm run build && npm run build:host && host/Zing.Host/bin/Release/net9.0-windows10.0.22621.0/win-x64/Zing.exe"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
@@ -29,8 +26,6 @@
 		"@types/react": "^19.3.0",
 		"@types/react-dom": "^19.3.0",
 		"@vitejs/plugin-react": "^6.1.2",
-		"electron": "^45.1.0",
-		"electron-vite": "^6.0.0",
 		"eslint": "^10.13.0",
 		"eslint-plugin-react-hooks": "^7.1.1",
 		"typescript": "^6.0.3",
@@ -39,9 +34,7 @@
 		"vitest": "^5.0.5"
 	},
 	"dependencies": {
-		"@ghostery/adblocker-electron": "2.20.1",
 		"@mozilla/readability": "0.6.0",
-		"linkedom": "0.18.13",
 		"react": "^19.3.1",
 		"react-dom": "^19.3.1"
 	},

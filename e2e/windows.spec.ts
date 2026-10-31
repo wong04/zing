@@ -1,82 +1,49 @@
-import { spawn } from 'node:child_process'
-import { once } from 'node:events'
-import { expect, test } from '@playwright/test'
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { expect, test, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { html, newTab, serve, tabsOf } from './fixtures'
-import { launchZing } from './zing'
+import { launchZing, pages } from './zing'
 
-const page = html('<script>document.title = "linked"</script>')
+declare const window: { readonly zing: ZingApi }
 
-test('New Window opens a second window and closing the last window quits', async () => {
-	const { app, chrome } = await launchZing()
-	const count = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)
-	await chrome.evaluate(() => (globalThis as unknown as { zing: ZingApi }).zing.runCommand('window.new'))
-	await expect.poll(count).toBe(2)
+let server: Server
+let base = ''
 
-	// Each window has its own tab service: a tab opened in one does not appear in the other.
-	await newTab(chrome)
-	expect((await tabsOf(chrome)).tabs).toHaveLength(2)
-
-	await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[1]?.close())
-	await expect.poll(count).toBe(1)
-	const closed = app.waitForEvent('close')
-	await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close())
-	await closed
+test.beforeAll(async () => {
+	server = createServer((_req, res) => {
+		res.setHeader('content-type', 'text/html')
+		res.end('<!doctype html><title>linked</title>')
+	})
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+	base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 })
 
-test('a link in the launch arguments opens in the first window', async () => {
-	const site = await serve({ '/linked': page })
-	const url = `http://127.0.0.1:${site.port}/linked`
-	const { app, chrome } = await launchZing({ args: [url] })
-	await expect.poll(async () => (await tabsOf(chrome)).tabs.map((t) => t.url)).toContain(url)
-	await app.close()
-	await site.close()
+test.afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())))
+
+const urls = async (chrome: Page) => (await chrome.evaluate(() => window.zing.getTabs())).tabs.map((t) => t.url)
+
+test('a link in the launch arguments opens in the first window, in the blank tab', async () => {
+	const url = `${base}/linked`
+	const zing = await launchZing({ args: [url] })
+	await expect.poll(() => urls(zing.chrome)).toEqual([url])
+	await zing.close()
 })
 
-test('a second launch hands its link to the running window as a new tab', async () => {
-	const site = await serve({ '/linked': page })
-	const url = `http://127.0.0.1:${site.port}/linked?from=other-app`
-	const { app, chrome, userDataDir } = await launchZing()
-	const execPath = await app.evaluate(() => process.execPath)
-
-	const second = spawn(execPath, ['.', `--user-data-dir=${userDataDir}`, url], { stdio: 'ignore' })
-	const [code] = await once(second, 'exit')
-	expect(code).toBe(0)
-
-	await expect.poll(async () => (await tabsOf(chrome)).tabs.map((t) => t.url)).toContain(url)
-	expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1)
-	await app.close()
-	await site.close()
+test('a second launch hands its link to the running window as a new tab and exits', async () => {
+	const zing = await launchZing()
+	await zing.chrome.evaluate(async () => {
+		const { activeId } = await window.zing.getTabs()
+		await window.zing.navigateTab(activeId!, 'http://127.0.0.1:1/first')
+	})
+	const url = `${base}/linked?from=other-app`
+	expect(await zing.launchAgain([url])).toBe(0)
+	await expect.poll(() => urls(zing.chrome)).toContain(url)
+	expect(pages(zing.browser).filter((p) => p.url().endsWith('#chrome'))).toHaveLength(1)
+	await zing.close()
 })
 
-test('confirm before quit asks only with several tabs open, and Cancel keeps Zing running', async () => {
-	const { app, chrome } = await launchZing({ settings: { confirmQuit: true } })
-	const asked = () => app.evaluate(() => (globalThis as { __asked?: number }).__asked ?? 0)
-	const answer = (response: number) =>
-		app.evaluate(
-			({ dialog }, r) => {
-				const g = globalThis as { __asked?: number }
-				g.__asked = 0
-				dialog.showMessageBox = (async () => {
-					g.__asked = (g.__asked ?? 0) + 1
-					return { response: r, checkboxChecked: false }
-				}) as unknown as typeof dialog.showMessageBox
-			},
-			response,
-		)
-
-	await newTab(chrome)
-	await answer(1)
-	await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close())
-	await expect.poll(asked).toBe(1)
-	expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1)
-
-	await app.evaluate(({ app: electronApp }) => electronApp.quit())
-	await expect.poll(asked).toBe(2)
-	expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1)
-
-	await answer(0)
-	const closed = app.waitForEvent('close')
-	await app.evaluate(({ app: electronApp }) => electronApp.quit())
-	await closed
+test('a link that is not a web address is ignored', async () => {
+	const zing = await launchZing({ args: ['file:///C:/Windows/win.ini', 'ms-settings:'] })
+	await expect.poll(async () => (await urls(zing.chrome)).map((u) => u.replace(/\/$/, ''))).toEqual(['zing://home'])
+	await zing.close()
 })

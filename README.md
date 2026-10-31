@@ -2,9 +2,20 @@
 
 A privacy-first browser for Windows, built on Chromium. It keeps nothing by default, puts tabs wherever you want them (top, left or right), does split view, and comes in actual colours.
 
-Zing is a remake of [Krackn](https://github.com/yityler/Krackn), a macOS browser + toolbox written in SwiftUI on WebKit. Krackn's features (the private session, tab organisation, Open a Link, Diagnose, Convert, Download, Security, the file viewer and the utilities) are being ported to Electron + TypeScript on Windows.
+Zing is a remake of [Krackn](https://github.com/yityler/Krackn), a macOS browser + toolbox written in SwiftUI on WebKit. Krackn's features (the private session, tab organisation, Open a Link, Diagnose, Convert, Download, Security, the file viewer and the utilities) are being ported to Windows: a C# WinUI 3 app hosting Edge's WebView2 (Chromium), with the UI in React and TypeScript.
 
-> **Status: planning.** No app code yet. Follow progress on the [milestones](https://github.com/wong04/zing/milestones).
+> **Status: in development.** The browser core runs (tabs, start page, find, downloads, reader, sleeping tabs, per-site purge, account gate); the toolbox and later phases are still to come. Follow progress on the [milestones](https://github.com/wong04/zing/milestones).
+
+## Build and run
+
+Needs Node 24, the .NET 9 SDK and the WebView2 runtime (part of Windows 11).
+
+```
+npm ci
+npm start
+```
+
+`npm test`, `npm run test:host` and `npm run test:e2e` run the TypeScript, C# and end-to-end tests.
 
 ## What's different from Krackn
 

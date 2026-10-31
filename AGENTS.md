@@ -1,6 +1,6 @@
 # Working on Zing with agents
 
-Read `CLAUDE.md` first. This file covers how to run **several agents in parallel** without them breaking each other or the app. It comes from Phase 3, where six agents shared one checkout and produced a run of crashes and flaky tests.
+Read `CLAUDE.md` first. This file covers how to run **several agents in parallel** without them breaking each other or the app. It comes from Phase 3, where six agents shared one checkout and produced a run of crashes and flaky tests, and from Phase W, where port agents worked side by side on the C# host. The table below records Electron-era failures; their file names are gone, but the rules still hold.
 
 ## What went wrong in Phase 3, and the rule that prevents each
 
@@ -45,22 +45,18 @@ Briefs for smaller models (Haiku) need:
 
 ## Code rules that prevent the Phase 3 bugs
 
-- **Construction order.** Nothing may call back into an object before its constructor has finished. In `ZingWindow`, create every field first; opening tabs and loading pages come last. If a callback can fire during construction, it must not touch fields that are created later.
-- **After any `await` on a view or page,** check it's still there:
-  - `isViewLive(window, view)` before using a view or its window
-  - `loadUnlessGone()` for Zing's own renderer pages
-  - `runInPage()` / `runInIsolatedWorld()` for scripts in web pages
-
-  These treat "the page is gone" as an expected result and re-raise everything else.
+- **Construction order.** Nothing may call back into an object before it exists. A `MainWindow` is listed by `ZingApp` before `Start()` runs, and the chrome's bridge channels are registered before its view loads and asks for state.
+- **After any `await` on a view or page,** check it's still there. `RendererView.CreateAsync` throws `ViewGoneException` when its window closed meanwhile, and `TestHooks.Background` treats that as an expected result while recording everything else. `WebView2Page` checks `IsOpen` after starting.
+- **UI thread only.** WinUI and WebView2 calls fail anywhere else (`RPC_E_WRONG_THREAD`). `Program.Main` installs the dispatcher synchronization context; timers go through `IWindowHost.Scheduler`; anything that may be called from another thread (e.g. `Notify`) hops to the dispatcher.
 - **Optional features never abort startup or a command.** Their failures are logged with the reason. Real errors still raise.
-- **Layout comes from `ZingWindow.chromeInsets()`.** Never hard-code chrome heights or widths in a layer.
+- **Layout comes from `ChromeApi.Insets()`.** Never hard-code chrome heights or widths in a layer.
 - **e2e tests:**
-  - always go through `launchZing()`, which fails the test on any main-process error
-  - always end with `app.close()`
-  - serve fixtures from a local server, never live sites
+  - always go through `launchZing()` (`e2e/zing.ts`), which fails the test on any error the host records
+  - always end with `zing.close()`, which quits as a person would and waits until the engine releases the profile
+  - serve fixtures from a local server, never live sites; `ZING_E2E_OFFLINE=1` points every page at a dead proxy
   - never read the real mouse or keyboard
-  - drive timers through `ZING_TEST_CLOCK`
-- **Never start `Zing.exe` by hand** without `ZING_E2E=1` and a scratch `ZING_USER_DATA`: without them it opens on the user's screen with their real profile. Go through `e2e-webview2/zing.ts`.
+  - drive timers with `ZING_TEST_CLOCK=1` and the `advance-clock` test message
+- **Never start `Zing.exe` by hand** without `ZING_E2E=1` and a scratch `ZING_USER_DATA`: without them it opens on the user's screen with their real profile. Go through `e2e/zing.ts`.
 - **Write text containing backslashes or backticks with the Write or Edit tool,** never inside a shell string. A Git Bash heredoc collapsed `\\` to `\`, and backticks in a double-quoted string ran as commands (one ran a `.ts` file as a shell script).
 - **Line endings are LF** (`.gitattributes`, `.editorconfig`), and indentation uses tabs.
 
@@ -68,9 +64,8 @@ Briefs for smaller models (Haiku) need:
 
 Agents and CI run hundreds of app launches while the user may be working on the same machine. So in e2e runs (`ZING_E2E=1`, unpackaged builds only):
 
-- **Windows are kept out of the way.** Every window opens at `testWindowPlacement()`: off-screen and out of the taskbar. It is shown with `showWindow()`, which never takes focus. Never call `BrowserWindow.show()` or `focus()` directly; use those helpers. `e2e/launch.spec.ts` checks that windows are off every display and unfocused.
-- **Painting carries on off-screen.** `keepOffscreenTestWindowsPainting()` turns off Chromium's occlusion detection, so off-screen windows still paint and run timers.
-- **No dialogs.** A startup failure goes to the harness log instead of an error box. Any test that triggers a native dialog (quit confirmation, file pickers) stubs `dialog` first, as `e2e/windows.spec.ts` does.
-- **No consoles or OS actions.** Child processes use `windowsHide: true`; `runProcess` does this already. Tests never call `shell.openPath`, `showItemInFolder` or `openExternal`, which would open Explorer, apps or the real browser.
+- **Windows are kept out of the way.** In an e2e run every window opens at (-20000, -20000) and out of the switchers (`MainWindow.Place`), and `Reveal()` never takes focus.
+- **No dialogs or OS actions.** Startup failures go to `ZING_ERRORS_FILE`, never an error box. Opening a file, Explorer, another app or a link outside Zing (`WindowsShell.OpenExternal`, `WindowsDownloads.OpenFile`/`ShowInFolder`) throws in an e2e run, so a test that reaches one fails.
+- **Nothing on the real profile.** e2e runs must set `ZING_USER_DATA` (the harness does) and `ZING_DOWNLOADS_DIR`; the engine's data goes into the same scratch folder.
 - **Code mustn't depend on focus to tidy up.** Test windows never have focus, and a user can switch apps at any moment. For example, the edge-reveal sidebar now puts itself away when Zing loses focus.
 - **Tests must be deterministic.** Never compare two values that each stamp the current time. Freeze the clock (`vi.useFakeTimers`) or compare without the timestamp.
