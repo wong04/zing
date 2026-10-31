@@ -144,7 +144,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 			return;
 		}
 		if (_notices is null || _closed) return;
-		_ = _notices.ShowAsync(text).ContinueWith(t => TestHooks.Record("notice", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+		TestHooks.Background(_notices.ShowAsync(text), "notice");
 	}
 
 	public void NewWindow() => _app.NewWindow();
@@ -159,7 +159,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		_pageUi?.Layout();
 		_stacks?.Layout();
 		if (Api is null) return;
-		if (Api.SettingsOpen) _ = ShowSurfaceAsync().ContinueWith(t => TestHooks.Record("surface", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+		if (Api.SettingsOpen) TestHooks.Background(ShowSurfaceAsync(), "surface");
 		else if (_surface is not null) _surface.Visible = false;
 	}
 

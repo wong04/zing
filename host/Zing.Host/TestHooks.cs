@@ -43,6 +43,14 @@ public static class TestHooks
 		return true;
 	}
 
+	/// <summary>Work nobody awaits: its failures are recorded, except a view that went with its closing window.</summary>
+	public static void Background(Task task, string what) =>
+		_ = task.ContinueWith(t =>
+		{
+			if (t.Exception!.InnerExceptions.All(e => e is ViewGoneException)) return;
+			Record(what, t.Exception);
+		}, TaskContinuationOptions.OnlyOnFaulted);
+
 	public static void RecordUnhandledErrors()
 	{
 		AppDomain.CurrentDomain.UnhandledException += (_, e) => Record("unhandled", e.ExceptionObject);
