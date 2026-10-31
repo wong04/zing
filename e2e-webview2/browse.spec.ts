@@ -39,7 +39,7 @@ test('typing an address loads it in the page and the tab shows its title', async
 })
 
 test('back and forward go through the page history', async () => {
-	const zing = await launchZing({ ZING_START_URL: `${base}/one` })
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/one` } })
 	await pageWhere(zing.browser, (p) => p.url() === `${base}/one`)
 	const address = zing.chrome.getByRole('textbox', { name: 'Address and search bar' })
 	await address.click()

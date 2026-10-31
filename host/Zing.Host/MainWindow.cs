@@ -1,5 +1,4 @@
-using System.Text.Json.Nodes;
-using Microsoft.UI;
+using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
@@ -8,35 +7,39 @@ using Zing.Core;
 namespace Zing.Host;
 
 /// <summary>
-/// One Zing window (W1): the chrome renderer (Zing's React UI) fills the
-/// window, and the active tab's page WebView2 sits in the page area the
-/// chrome leaves free. A WebView2 is its own window, so nothing XAML can draw
-/// over it; UI over pages will be further WebView2s, as the W0 spike proved.
+/// One browser window (zing-window.ts): the chrome renderer at the bottom, the
+/// active tab's page above it, then the settings surface and the notice layer.
+/// Later children of the root grid paint above earlier ones.
 /// </summary>
-public sealed class MainWindow : Window
+public sealed class MainWindow : Window, IWindowHost, IPageHost
 {
-	private const string AppHost = "app.zing";
-
+	private readonly ZingApp _app;
 	private readonly Grid _root = new();
-	private readonly WebView2 _chrome = new();
-	private readonly Dictionary<string, WebView2Page> _pages = new(StringComparer.Ordinal);
 	private readonly Bridge _bridge = new();
-	private readonly TabStore _tabs = new(() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-	private readonly JsonObject _settings = ZingJson.LoadDefaults("settings.json").AsObject();
-	private readonly JsonObject _layout = ZingJson.LoadDefaults("layout.json").AsObject();
+	private readonly List<RendererView> _renderers = [];
+	private RendererView? _chrome;
+	private RendererView? _surface;
+	private NoticeLayer? _notices;
 	private CoreWebView2Environment? _environment;
-	private ChromeApi? _api;
+	private WebView2Page? _shown;
+	private bool _closed;
 
-	public MainWindow()
+	public MainWindow(ZingApp app)
 	{
+		_app = app;
 		Title = "Zing";
 		SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop();
 		ExtendsContentIntoTitleBar = true;
-		_root.Children.Add(_chrome);
 		Content = _root;
 		Place();
+		_root.SizeChanged += (_, _) => Relayout();
+		Closed += (_, _) => OnClosed();
 		_ = StartAsync().ContinueWith(t => TestHooks.Record("startup", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
 	}
+
+	public ChromeApi? Api { get; private set; }
+
+	public IPageHost Pages => this;
 
 	private void Place()
 	{
@@ -46,148 +49,133 @@ public sealed class MainWindow : Window
 		AppWindow.IsShownInSwitchers = false;
 	}
 
+	// Construction order (AGENTS.md): every field exists before anything can call back into the window.
 	private async Task StartAsync()
 	{
-		_environment = await CreateEnvironmentAsync();
-		await _chrome.EnsureCoreWebView2Async(_environment);
-		var chrome = _chrome.CoreWebView2;
-		chrome.Settings.IsNonClientRegionSupportEnabled = true;
-		chrome.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
-		chrome.WebMessageReceived += OnChromeMessage;
-
-		_api = new ChromeApi(_bridge, _tabs, Address.FromDefaults(), _settings, ZingJson.LoadDefaults("library.json"), id => _pages[id], Push, "w1");
-		_bridge.Register("chrome:titlebar-colors", (System.Text.Json.JsonElement[] args) =>
+		_environment = await _app.Environment;
+		// The chrome view joins the grid at once, under every page; its API must be registered before it loads and asks for state.
+		var chrome = RendererView.CreateAsync(_root, _environment, _bridge, "chrome", transparent: false);
+		_notices = new NoticeLayer(_root, _environment, _bridge, ContentRect, DispatcherQueue);
+		_bridge.Register("chrome:titlebar-colors", (JsonElement[] args) =>
 		{
-			var color = args[0].GetProperty("symbolColor").GetString()!;
-			AppWindow.TitleBar.ButtonForegroundColor = ParseColor(color);
+			AppWindow.TitleBar.ButtonForegroundColor = ParseColor(args[0].GetProperty("symbolColor").GetString()!);
 			return (object?)null;
 		});
-
-		var first = _tabs.Add(Environment.GetEnvironmentVariable("ZING_START_URL") ?? "about:blank");
-		_tabs.Activate(first.Id);
-		await AddPageAsync(first.Id, first.Url);
-		chrome.Navigate($"https://{AppHost}/index.html#chrome");
+		Api = new ChromeApi(_bridge, _app.Services, this, typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "0");
+		Api.TabsChanged += () => _app.TabsChanged(this);
+		Api.Start(_app.TakePendingRestore(), System.Environment.GetEnvironmentVariable("ZING_START_URL"));
+		_chrome = await chrome;
+		_renderers.Add(_chrome);
 	}
 
-	private static async Task<CoreWebView2Environment> CreateEnvironmentAsync()
+	// MARK: IPageHost
+
+	public IPage Create(IPageEvents events)
 	{
-		var options = new CoreWebView2EnvironmentOptions();
-		if (TestHooks.DebuggingPort is { } port) options.AdditionalBrowserArguments = $"--remote-debugging-port={port}";
-		var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zing", TestHooks.IsEndToEndRun ? $"e2e-{Environment.ProcessId}" : "WebView2");
-		return await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, options);
+		var view = new WebView2 { Visibility = Visibility.Collapsed };
+		// Pages go just above the chrome renderer, under every layer.
+		_root.Children.Insert(Math.Min(1, _root.Children.Count), view);
+		return new WebView2Page(view, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"));
 	}
 
-	private async Task AddPageAsync(string id, string url)
+	public void Show(IPage page)
 	{
-		var view = new WebView2();
-		_root.Children.Add(view);
-		view.Margin = PageMargin();
-		var controller = _environment!.CreateCoreWebView2ControllerOptions();
-		// Keeps nothing: an in-memory profile, as Electron's non-persistent partition was.
-		controller.IsInPrivateModeEnabled = true;
-		controller.ProfileName = "zing-private";
-		await view.EnsureCoreWebView2Async(_environment, controller);
-		view.CoreWebView2.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
-		var page = new WebView2Page(view, () => PageChanged(id));
-		_pages[id] = page;
-		page.Navigate(url);
+		var shown = (WebView2Page)page;
+		if (_shown is not null && _shown != shown) _shown.View.Visibility = Visibility.Collapsed;
+		_shown = shown;
+		PlacePage(shown);
+		shown.View.Visibility = Visibility.Visible;
 	}
 
-	private void PageChanged(string id)
+	public void Hide(IPage page)
 	{
-		var page = _pages[id];
-		_tabs.Update(id, new TabContentPatch(Url: page.Url, Title: string.IsNullOrWhiteSpace(page.Title) ? TabStore.NewTabTitle : page.Title));
-		_api?.TabsChanged();
+		var hidden = (WebView2Page)page;
+		hidden.View.Visibility = Visibility.Collapsed;
+		if (_shown == hidden) _shown = null;
+		if (!hidden.IsOpen) _root.Children.Remove(hidden.View);
 	}
 
-	/// <summary>Where the page sits: below the tab strip and toolbar, right of a pinned sidebar (W2 moves this to chromeInsets).</summary>
-	private Thickness PageMargin()
-	{
-		var top = _layout["tabStripHeight"]!.GetValue<int>() + _layout["toolbarHeight"]!.GetValue<int>();
-		var left = _settings["sidebarPinned"]!.GetValue<bool>() ? _layout["sidebarColumnWidth"]!.GetValue<int>() : 0;
-		return new Thickness(left, top, 0, 0);
-	}
+	// MARK: IWindowHost
 
-	private async void OnChromeMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e)
+	public void Push(string channel, object? payload)
 	{
-		// Only Zing's own UI may talk to the host, never a web page.
-		if (!e.Source.StartsWith($"https://{AppHost}/", StringComparison.Ordinal))
+		var json = Bridge.Event(channel, payload);
+		void Send()
 		{
-			TestHooks.Record("bridge", new UnauthorizedAccessException($"Message from {e.Source} refused"));
-			return;
+			foreach (var renderer in _renderers) renderer.Send(json);
 		}
-		try
-		{
-			sender.PostWebMessageAsJson(await _bridge.HandleAsync(e.WebMessageAsJson));
-		}
-		catch (Exception error)
-		{
-			TestHooks.Record("bridge", error);
-			throw;
-		}
+		if (DispatcherQueue.HasThreadAccess) Send();
+		else DispatcherQueue.TryEnqueue(Send);
 	}
 
-	private void Push(string channel, object? payload) =>
-		DispatcherQueue.TryEnqueue(() => _chrome.CoreWebView2?.PostWebMessageAsJson(Bridge.Event(channel, payload)));
-
-	/// <summary>
-	/// The built React renderer. ZING_RENDERER_DIR wins (tests, packaging);
-	/// otherwise the nearest out/renderer above the app, which is where a
-	/// development checkout builds it.
-	/// </summary>
-	private static string RendererFolder()
+	public void Notify(string text)
 	{
-		var configured = Environment.GetEnvironmentVariable("ZING_RENDERER_DIR");
-		if (!string.IsNullOrEmpty(configured)) return RequireIndex(configured);
-		for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-		{
-			var candidate = Path.Combine(dir.FullName, "out", "renderer");
-			if (File.Exists(Path.Combine(candidate, "index.html"))) return candidate;
-		}
-		throw new DirectoryNotFoundException("No built renderer: run `npm run build`, or set ZING_RENDERER_DIR");
+		if (_notices is null || _closed) return;
+		_ = _notices.ShowAsync(text).ContinueWith(t => TestHooks.Record("notice", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
 	}
 
-	private static string RequireIndex(string folder) =>
-		File.Exists(Path.Combine(folder, "index.html")) ? folder : throw new DirectoryNotFoundException($"{folder} has no index.html");
+	public void NewWindow() => _app.NewWindow();
+
+	// Not inside the bridge call that asked: the window takes its renderer views with it.
+	public void CloseWindow() => DispatcherQueue.TryEnqueue(Close);
+
+	public void Relayout()
+	{
+		if (_shown is not null) PlacePage(_shown);
+		_notices?.Layout();
+		if (Api is null) return;
+		if (Api.SettingsOpen) _ = ShowSurfaceAsync().ContinueWith(t => TestHooks.Record("surface", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+		else if (_surface is not null) _surface.Visible = false;
+	}
+
+	public void FocusChrome() => _chrome?.View.Focus(FocusState.Programmatic);
+
+	public void FocusSurface() => _surface?.View.Focus(FocusState.Programmatic);
+
+	// MARK: Layout
+
+	private Rect ContentRect() => new(0, 0, _root.ActualWidth, _root.ActualHeight);
+
+	private void PlacePage(WebView2Page page)
+	{
+		if (Api is null) return;
+		var insets = Api.Insets();
+		var content = ContentRect();
+		page.View.HorizontalAlignment = HorizontalAlignment.Left;
+		page.View.VerticalAlignment = VerticalAlignment.Top;
+		page.View.Margin = new Thickness(insets.Left, insets.Top, 0, 0);
+		page.View.Width = Math.Max(0, content.Width - insets.Left - insets.Right);
+		page.View.Height = Math.Max(0, content.Height - insets.Top);
+	}
+
+	/// <summary>The settings sheet covers the whole window while it is open (panels.ts surfaceRegion).</summary>
+	private async Task ShowSurfaceAsync()
+	{
+		if (_surface is null)
+		{
+			_surface = await RendererView.CreateAsync(_root, _environment!, _bridge, "surface", transparent: true);
+			_renderers.Add(_surface);
+		}
+		if (_closed || Api is not { SettingsOpen: true }) return;
+		_surface.Place(ContentRect());
+		Layers.Raise(_root, _surface.View);
+		_notices?.Raise();
+		_surface.Visible = true;
+		FocusSurface();
+	}
+
+	private void OnClosed()
+	{
+		_closed = true;
+		Api?.Dispose();
+		_notices?.Destroy();
+		foreach (var renderer in _renderers) renderer.Close();
+		_app.Closed(this);
+	}
 
 	private static Windows.UI.Color ParseColor(string hex)
 	{
 		if (hex.Length != 7 || hex[0] != '#') throw new FormatException($"Expected #RRGGBB, got {hex}");
 		return Windows.UI.Color.FromArgb(255, Convert.ToByte(hex[1..3], 16), Convert.ToByte(hex[3..5], 16), Convert.ToByte(hex[5..7], 16));
 	}
-}
-
-/// <summary>A tab's page: an IPage over a WebView2, reporting every change.</summary>
-public sealed class WebView2Page : IPage
-{
-	private readonly CoreWebView2 _core;
-
-	public WebView2Page(WebView2 view, Action changed)
-	{
-		_core = view.CoreWebView2;
-		_core.NavigationStarting += (_, _) =>
-		{
-			IsLoading = true;
-			changed();
-		};
-		_core.NavigationCompleted += (_, _) =>
-		{
-			IsLoading = false;
-			changed();
-		};
-		_core.SourceChanged += (_, _) => changed();
-		_core.DocumentTitleChanged += (_, _) => changed();
-		_core.HistoryChanged += (_, _) => changed();
-	}
-
-	public string Url => _core.Source;
-	public string Title => _core.DocumentTitle;
-	public bool IsLoading { get; private set; }
-	public bool CanGoBack => _core.CanGoBack;
-	public bool CanGoForward => _core.CanGoForward;
-	public void Navigate(string url) => _core.Navigate(url);
-	public void GoBack() => _core.GoBack();
-	public void GoForward() => _core.GoForward();
-	public void Reload() => _core.Reload();
-	public void Stop() => _core.Stop();
 }

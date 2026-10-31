@@ -65,6 +65,19 @@ describe('WebView2 bridge', () => {
 		expect(seen).toEqual([1])
 	})
 
+	it('an event pushed before anything listens reaches the first listener, latest only, once', () => {
+		const webview = fakeWebView()
+		const zing = webViewZingApi(webview)
+		webview.deliver({ kind: 'event', channel: 'overlay:notice', payload: { id: 1, text: 'old' } })
+		webview.deliver({ kind: 'event', channel: 'overlay:notice', payload: { id: 2, text: 'new' } })
+		const first: unknown[] = []
+		const second: unknown[] = []
+		zing.onNotice((n) => first.push(n))
+		zing.onNotice((n) => second.push(n))
+		expect(first).toEqual([{ id: 2, text: 'new' }])
+		expect(second).toEqual([])
+	})
+
 	it('a result nobody asked for is a protocol error, not silently dropped', () => {
 		const webview = fakeWebView()
 		webViewZingApi(webview)

@@ -2,5 +2,12 @@
 	"tabStripHeight": 40,
 	"toolbarHeight": 40,
 	"favouritesBarHeight": 28,
-	"sidebarColumnWidth": 204
+	"sidebarColumnWidth": 204,
+	"libraryPanelWidth": 320,
+	"verticalTabs": {
+		"defaultWidth": 240,
+		"minWidth": 160,
+		"maxWidth": 480,
+		"collapsedWidth": 48
+	}
 }

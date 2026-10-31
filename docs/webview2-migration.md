@@ -158,3 +158,45 @@ WebView2 quirks found (carry these into W1):
 - everything the 82-channel contract has beyond the ten channels answered now: `tabs:get`, `tabs:activate`, `tabs:navigate`, `command:run`, `settings:get`, `library:get`, `account:get`, `shell:get`, `toolpanel:get`, `chrome:titlebar-colors`
 
 Every other channel replies `NotImplementedError`.
+
+## W2 (2026-10-31): core plumbing done
+
+**Ported to C# in `host/Zing.Core`:**
+- **Pure logic, held to the TypeScript by shared test vectors.** These are `*.vectors.json` files under `src/shared`, read by vitest and by xUnit through `host/Zing.Core.Tests/Vectors.cs`:
+  - `Address` / `AddressInput` (the full address rule) and `LinkCleaner` (tracker stripping)
+  - `Settings` (schema rules come from the generated `settings-schema.json`), `SettingsStore`, and `JsonFiles` (atomic writes and the debounced writer)
+  - `Library` and `LibraryStore`
+  - `TabStore` (the full tab-store model: pinning, moving, the closed stack, shortcuts)
+  - `Session` (the session codec)
+- **`TabService`:** pages are created on first activation. Popups are adopted as the engine's own `CoreWebView2`, so `window.opener` works. Trackers are stripped on every navigation, and closing the last tab leaves a fresh one.
+- **`ChromeApi`:** one window's bridge channels. It covers tabs, settings get/set (`settings:changed`), library get/apply/open/panel, the settings sheet (`shell:open-settings` / `shell:close-settings`), and the commands that have a host behind them. Every other command gives an "isn't implemented yet" notice, as in Electron.
+- **`Layout.Insets`:** the `chromeInsets` rule, with sizes from the generated `layout.json`.
+- **`SessionSaver`:** saves the primary window's tabs.
+
+**In `host/Zing.Host`:**
+- **`ZingApp`:** shared services, one WebView2 environment, the window list (the oldest window is primary), and flushing writes on quit.
+- **`MainWindow`:** the chrome, pages laid out from `Insets()`, the settings surface over the whole window, the `NoticeLayer`, and New Window / Close Window.
+- **`RendererView`:** any root of the React bundle. Every view of a window shares that window's bridge, and only `https://app.zing/` may call it.
+- **`WebView2Page`:** queues calls until the engine is ready.
+- **`AppPaths`:** the profile folder. It is `%APPDATA%\Zing`, the same folder the Electron build used; e2e runs must pass `ZING_USER_DATA`.
+
+**Fixes in shared code:**
+- Under WebView2, `api.ts` puts the bridge on `window.zing`, as the preload does.
+- `webviewBridge.ts` hands the latest event that arrived before any listener to the first listener. Without it, a layer's first notice was lost.
+
+**Checks:**
+- `e2e-webview2/core.spec.ts` covers new tab and close, pinning, a setting surviving a relaunch, an invalid setting being refused, a favourite surviving a relaunch, restoreTabs, the sidebar narrowing the page, a notice, a popup keeping `window.opener`, and New Window. All 13 WebView2 e2e tests pass.
+- The harness now quits by closing every window, so pending writes are flushed. It fails if Zing doesn't exit.
+
+**Still to do (W3):**
+- the start page (new tabs open `about:blank` for now)
+- the stack dropdown and tab organisation (`tabOrganizer`)
+- the tab overview, page UI (find, downloads, permissions) and native menus (`MenuFlyout`)
+- the sidebar reveal and tool panels
+- the account gate
+- sleeping tabs and auto-close
+- favicons
+- per-site purge
+- single instance and default browser
+- `persistentProfile`
+- the rest of B1–B34

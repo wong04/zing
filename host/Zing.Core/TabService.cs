@@ -1,0 +1,276 @@
+namespace Zing.Core;
+
+/// <summary>A tab's live page. The WinUI host implements it over a WebView2; tests use a fake.</summary>
+public interface IPage
+{
+	string Url { get; }
+	string Title { get; }
+	bool IsLoading { get; }
+	bool CanGoBack { get; }
+	bool CanGoForward { get; }
+	void Navigate(string url);
+	void GoBack();
+	void GoForward();
+	void Reload();
+	void Stop();
+	void Focus();
+	void Close();
+}
+
+/// <summary>What a live page reports to its tab. The host calls these from the page's events.</summary>
+public interface IPageEvents
+{
+	/// <summary>A main-frame navigation is about to start; a different URL comes back when it carries trackers.</summary>
+	string? Redirect(string url);
+	void Navigated(string url);
+	void TitleChanged(string title);
+	/// <summary>Loading or history changed.</summary>
+	void StateChanged();
+	void LoadFailed(string description);
+	/// <summary>The page closed itself (window.close()).</summary>
+	void Closed();
+	/// <summary>The page opened a window; the returned page must be the one handed to the engine, so window.opener works.</summary>
+	IPage Popup(string url, bool background);
+}
+
+/// <summary>Makes pages and puts them on screen. The window owns layout and stacking.</summary>
+public interface IPageHost
+{
+	IPage Create(IPageEvents events);
+	void Show(IPage page);
+	void Hide(IPage page);
+}
+
+public sealed class TabOrderException(string detail) : Exception($"Can't apply that tab order: {detail}");
+
+/// <summary>
+/// A window's tabs (tab-service.ts): records in a <see cref="TabStore"/>, and a
+/// page attached to a record only when it is first activated. Every tab
+/// operation goes through here.
+/// </summary>
+public sealed class TabService
+{
+	private readonly TabStore _store;
+	private readonly IPageHost _host;
+	private readonly string _blankUrl;
+	private readonly Action _changed;
+	private readonly Action<TabRecord, string> _loadFailed;
+	private readonly Dictionary<string, IPage> _pages = new(StringComparer.Ordinal);
+	private readonly Dictionary<string, string> _openers = new(StringComparer.Ordinal);
+
+	/// <param name="blankUrl">What a window that lost its last tab opens: the start page once it is ported (W3), about:blank until then.</param>
+	public TabService(TabStore store, IPageHost host, string blankUrl, Action changed, Action<TabRecord, string> loadFailed)
+	{
+		_store = store;
+		_host = host;
+		_blankUrl = blankUrl;
+		_changed = changed;
+		_loadFailed = loadFailed;
+	}
+
+	public string? ActiveId => _store.ActiveId;
+	public bool CanReopen => _store.CanReopen;
+	public IReadOnlyList<TabRecord> Records => _store.Records;
+
+	public TabsState State(string organization, bool dropdowns) => _store.Snapshot(organization, dropdowns, PageStateOf);
+
+	public bool HasPage(string id) => _pages.ContainsKey(id);
+
+	public IPage? PageOf(string id) => _pages.GetValueOrDefault(id);
+
+	public IPage? ActivePage => _store.ActiveId is { } id ? _pages.GetValueOrDefault(id) : null;
+
+	public TabRecord Get(string id) => _store.Get(id);
+
+	/// <summary>A record only; no page until it is activated.</summary>
+	public TabRecord Create(string url)
+	{
+		var record = _store.Add(url);
+		_changed();
+		return record;
+	}
+
+	public TabRecord Open(string url)
+	{
+		var record = Create(url);
+		Activate(record.Id);
+		return record;
+	}
+
+	/// <summary>Brings back saved tabs as records; only the one that was in front gets a page.</summary>
+	public void Restore(IReadOnlyList<SessionTab> tabs)
+	{
+		var records = tabs.Select(t => _store.AddRestored(t.Url, string.IsNullOrEmpty(t.Title) ? TabStore.NewTabTitle : t.Title, t.Pinned)).ToList();
+		if (records.Count == 0) return;
+		var front = tabs.ToList().FindIndex(t => t.Active);
+		Activate(records[Math.Max(0, front)].Id);
+	}
+
+	public void Activate(string id)
+	{
+		var previous = _store.ActiveId;
+		var record = _store.Activate(id);
+		if (previous is not null && previous != id)
+		{
+			if (_pages.TryGetValue(previous, out var leaving)) _host.Hide(leaving);
+			if (_store.Has(previous)) _store.Touch(previous);
+		}
+		_host.Show(EnsurePage(record));
+		_changed();
+	}
+
+	/// <summary>Closing the last tab leaves a fresh one, as in Krackn: a window is never tabless.</summary>
+	public void Close(string id)
+	{
+		var result = _store.Close(id);
+		DestroyPage(id);
+		_openers.Remove(id, out var opener);
+		if (_store.Records.Count == 0)
+		{
+			Open(_blankUrl);
+			return;
+		}
+		if (opener is not null && result.NextActiveId is not null && _store.Has(opener))
+		{
+			Activate(opener);
+			return;
+		}
+		if (result.NextActiveId is not null)
+		{
+			Activate(result.NextActiveId);
+			return;
+		}
+		_changed();
+	}
+
+	public void CloseOthers(string keep)
+	{
+		_store.Get(keep);
+		foreach (var record in _store.Records.Where(r => r.Id != keep && !r.Pinned).ToList()) Close(record.Id);
+		if (_store.ActiveId != keep) Activate(keep);
+	}
+
+	/// <summary>Loads a ready URL (the window has already resolved what was typed).</summary>
+	public void Navigate(string id, string url)
+	{
+		var clean = LinkCleaner.StripTrackers(url);
+		_store.Update(id, new TabContentPatch(Url: clean));
+		if (_pages.TryGetValue(id, out var page)) page.Navigate(clean);
+		_changed();
+	}
+
+	public void Move(string id, int index)
+	{
+		_store.Move(id, index);
+		_changed();
+	}
+
+	/// <summary>Puts the tabs in exactly this order (pinned first); the arrangement and drag code decide what it is.</summary>
+	public void ApplyOrder(IReadOnlyList<string> ids)
+	{
+		var current = _store.Records.Select(t => t.Id).ToList();
+		if (ids.Count != current.Count) throw new TabOrderException($"{ids.Count} ids for {current.Count} tabs");
+		if (ids.SequenceEqual(current)) return;
+		for (var i = 0; i < ids.Count; i++) _store.Move(ids[i], i);
+		if (!_store.Records.Select(t => t.Id).SequenceEqual(ids)) throw new TabOrderException("it puts a tab across the pinned divider");
+		_changed();
+	}
+
+	public void Pin(string id)
+	{
+		_store.Pin(id);
+		_changed();
+	}
+
+	public void Unpin(string id)
+	{
+		_store.Unpin(id);
+		_changed();
+	}
+
+	public TabRecord? ReopenClosed()
+	{
+		var record = _store.ReopenClosed();
+		if (record is null) return null;
+		Activate(record.Id);
+		return record;
+	}
+
+	public string? NextId() => _store.NextId();
+	public string? PreviousId() => _store.PreviousId();
+	public string? IdForShortcut(int n) => _store.IdForShortcut(n);
+
+	public void FocusPage(string id) => _pages.GetValueOrDefault(id)?.Focus();
+
+	/// <summary>Window teardown: every page goes, records go with the window.</summary>
+	public void Destroy()
+	{
+		foreach (var id in _pages.Keys.ToList()) DestroyPage(id);
+	}
+
+	private PageState? PageStateOf(string id) =>
+		_pages.TryGetValue(id, out var page) ? new PageState(page.IsLoading, page.CanGoBack, page.CanGoForward) : null;
+
+	private IPage EnsurePage(TabRecord record)
+	{
+		if (_pages.TryGetValue(record.Id, out var existing)) return existing;
+		var page = _host.Create(new TabPageEvents(this, record.Id));
+		_pages[record.Id] = page;
+		page.Navigate(record.Url);
+		return page;
+	}
+
+	private void DestroyPage(string id)
+	{
+		if (!_pages.Remove(id, out var page)) return;
+		_host.Hide(page);
+		page.Close();
+	}
+
+	private void Update(string id, TabContentPatch patch)
+	{
+		if (!_store.Has(id)) return;
+		_store.Update(id, patch);
+		_changed();
+	}
+
+	private IPage AdoptPopup(string openerId, string url, bool background)
+	{
+		var record = _store.AddAfter(openerId, url);
+		var page = _host.Create(new TabPageEvents(this, record.Id));
+		_pages[record.Id] = page;
+		_openers[record.Id] = openerId;
+		if (background) _changed();
+		else Activate(record.Id);
+		return page;
+	}
+
+	private sealed class TabPageEvents(TabService service, string id) : IPageEvents
+	{
+		public string? Redirect(string url)
+		{
+			var clean = LinkCleaner.StripTrackers(url);
+			return clean == url ? null : clean;
+		}
+
+		public void Navigated(string url) => service.Update(id, new TabContentPatch(Url: url));
+
+		public void TitleChanged(string title) => service.Update(id, new TabContentPatch(Title: string.IsNullOrEmpty(title) ? TabStore.NewTabTitle : title));
+
+		public void StateChanged() => service._changed();
+
+		public void LoadFailed(string description)
+		{
+			if (service._store.Has(id)) service._loadFailed(service._store.Get(id), description);
+		}
+
+		public void Closed()
+		{
+			if (!service._pages.Remove(id, out var page)) return;
+			service._host.Hide(page);
+			if (service._store.Has(id)) service.Close(id);
+		}
+
+		public IPage Popup(string url, bool background) => service.AdoptPopup(id, url, background);
+	}
+}

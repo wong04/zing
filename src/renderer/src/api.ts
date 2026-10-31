@@ -10,8 +10,11 @@ import { webViewZingApi, type WebViewChannel } from '@shared/bridge/webviewBridg
 function hostApi(): ZingApi {
 	if ('zing' in window) return window.zing
 	const webview = (window as { chrome?: { webview?: WebViewChannel } }).chrome?.webview
-	if (webview) return webViewZingApi(webview)
-	throw new Error('No Zing host: neither the Electron preload nor WebView2 is present')
+	if (!webview) throw new Error('No Zing host: neither the Electron preload nor WebView2 is present')
+	// Where the preload puts it, so both hosts look the same to e2e tests and devtools.
+	const api = webViewZingApi(webview)
+	Object.defineProperty(window, 'zing', { value: api })
+	return api
 }
 
 export const zing: ZingApi = hostApi()

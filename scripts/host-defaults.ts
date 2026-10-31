@@ -5,7 +5,8 @@
 import { SEARCH_URLS } from '../src/shared/browser/searchEngines'
 import { COMMANDS } from '../src/shared/commands/registry'
 import { emptyLibrary } from '../src/shared/library/library'
-import { CHROME_LAYOUT } from '../src/shared/ipc'
+import { CHROME_LAYOUT, LIBRARY_PANEL_WIDTH } from '../src/shared/ipc'
+import { VERTICAL_TABS } from '../src/shared/layout/chrome'
 import {
 	ACCENTS,
 	APPEARANCES,
@@ -113,6 +114,6 @@ export function hostDefaults(): Record<string, unknown> {
 		'library.json': stableLibrary,
 		'commands.json': COMMANDS.map(({ id, label }) => ({ id, label })),
 		'search-engines.json': SEARCH_URLS,
-		'layout.json': { ...CHROME_LAYOUT, sidebarColumnWidth: SIDEBAR_COLUMN_WIDTH },
+		'layout.json': { ...CHROME_LAYOUT, sidebarColumnWidth: SIDEBAR_COLUMN_WIDTH, libraryPanelWidth: LIBRARY_PANEL_WIDTH, verticalTabs: VERTICAL_TABS },
 	}
 }

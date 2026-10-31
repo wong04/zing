@@ -52,12 +52,17 @@ export function webViewZingApi(webview: WebViewChannel): ZingApi {
 	let nextId = 1
 	const pending = new Map<number, Pending>()
 	const listeners = new Map<EventChannel, Set<(payload: unknown) => void>>()
+	// The host may push before React has subscribed (a layer's first notice is sent as soon as its page loads).
+	// The latest such event per channel goes to the first listener instead of being lost.
+	const unheard = new Map<EventChannel, unknown>()
 
 	webview.addEventListener('message', ({ data }) => receive(data as HostMessage))
 
 	function receive(message: HostMessage): void {
 		if (message.kind === 'event') {
-			for (const listener of listeners.get(message.channel) ?? []) listener(message.payload)
+			const set = listeners.get(message.channel)
+			if (!set || set.size === 0) unheard.set(message.channel, message.payload)
+			for (const listener of set ?? []) listener(message.payload)
 			return
 		}
 		if (message.kind !== 'result') throw new BridgeProtocolError(`Unknown message from the host: ${JSON.stringify(message)}`)
@@ -81,6 +86,11 @@ export function webViewZingApi(webview: WebViewChannel): ZingApi {
 		listeners.set(channel, set)
 		const wrapped = listener as (payload: unknown) => void
 		set.add(wrapped)
+		if (unheard.has(channel)) {
+			const payload = unheard.get(channel)
+			unheard.delete(channel)
+			wrapped(payload)
+		}
 		return () => set.delete(wrapped)
 	}
 

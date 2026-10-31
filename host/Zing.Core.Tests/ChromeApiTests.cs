@@ -1,39 +1,29 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Zing.Core;
 
 namespace Zing.Core.Tests;
 
-public sealed class ChromeApiTests
+public sealed class ChromeApiTests : IDisposable
 {
-	private sealed class FakePage : IPage
-	{
-		public List<string> Calls { get; } = [];
-		public bool CanGoBack { get; set; }
-		public bool CanGoForward { get; set; }
-		public bool IsLoading { get; set; }
-		public void Navigate(string url) => Calls.Add($"navigate {url}");
-		public void GoBack() => Calls.Add("back");
-		public void GoForward() => Calls.Add("forward");
-		public void Reload() => Calls.Add("reload");
-		public void Stop() => Calls.Add("stop");
-	}
-
 	private readonly Bridge _bridge = new();
-	private readonly TabStore _tabs = new(() => 1);
-	private readonly FakePage _page = new();
-	private readonly List<(string Channel, object? Payload)> _pushed = [];
-	private readonly string _tabId;
+	private readonly FakeWindowHost _host = new();
+	private readonly SettingsStore _settings = new();
+	private readonly List<BrowserLibrary> _saved = [];
+	private readonly ChromeApi _api;
 
 	public ChromeApiTests()
 	{
-		var settings = ZingJson.LoadDefaults("settings.json").AsObject();
-		_ = new ChromeApi(_bridge, _tabs, Address.FromDefaults(), settings, ZingJson.LoadDefaults("library.json"), _ => _page, (c, p) => _pushed.Add((c, p)), "test");
-		_tabId = _tabs.Add("about:blank").Id;
-		_tabs.Activate(_tabId);
+		var library = new LibraryStore(Library.EmptyLibrary(0), _saved.Add, Deterministic.Clock(), Deterministic.Ids("id-"));
+		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), Deterministic.Clock()), _host, "test");
+		_api.Start([], "about:blank");
 	}
 
-	private async Task<JsonElement> Invoke(string channel, params object[] args)
+	public void Dispose() => _api.Dispose();
+
+	private string ActiveId => _api.Tabs.ActiveId!;
+	private FakePage ActivePage => (FakePage)_api.Tabs.ActivePage!;
+
+	private async Task<JsonElement> Invoke(string channel, params object?[] args)
 	{
 		var json = JsonSerializer.Serialize(new { kind = "invoke", id = 1, channel, args });
 		return JsonDocument.Parse(await _bridge.HandleAsync(json)).RootElement;
@@ -46,74 +36,143 @@ public sealed class ChromeApiTests
 		return result.TryGetProperty("value", out var value) ? value : default;
 	}
 
+	private static string ErrorName(JsonElement result) => result.GetProperty("error").GetProperty("name").GetString()!;
+
 	[Fact]
 	public async Task Typed_text_is_resolved_and_loaded_in_that_tab()
 	{
-		Value(await Invoke("tabs:navigate", _tabId, "hello world"));
-		Assert.Equal(["navigate https://www.google.com/search?q=hello%20world"], _page.Calls);
+		Value(await Invoke("tabs:navigate", ActiveId, "hello world"));
+		Assert.Equal(["navigate https://www.google.com/search?q=hello%20world", "focus"], ActivePage.Calls[^2..]);
 	}
 
 	[Fact]
 	public async Task Blank_input_does_nothing()
 	{
-		Value(await Invoke("tabs:navigate", _tabId, "   "));
-		Assert.Empty(_page.Calls);
+		var before = ActivePage.Calls.Count;
+		Value(await Invoke("tabs:navigate", ActiveId, "   "));
+		Assert.Equal(before, ActivePage.Calls.Count);
+	}
+
+	[Fact]
+	public async Task A_url_Zing_cannot_open_is_a_notice_not_a_navigation()
+	{
+		Value(await Invoke("tabs:navigate", ActiveId, "ftp://example.com/file"));
+		Assert.Contains(_host.Notices, n => n.StartsWith("Zing can't open", StringComparison.Ordinal));
 	}
 
 	[Fact]
 	public async Task Navigating_an_unknown_tab_is_an_error()
 	{
-		var result = await Invoke("tabs:navigate", "nope", "example.com");
-		Assert.Equal(nameof(UnknownTabException), result.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal(nameof(UnknownTabException), ErrorName(await Invoke("tabs:navigate", "nope", "example.com")));
+	}
+
+	[Fact]
+	public async Task New_tab_and_close_go_through_the_bridge_and_push_the_strip()
+	{
+		Value(await Invoke("command:run", "tab.new"));
+		Assert.Equal(2, Value(await Invoke("tabs:get")).GetProperty("tabs").GetArrayLength());
+		Assert.Contains(_host.Pushed, p => p.Channel == "chrome:focus-address");
+		Value(await Invoke("tabs:close", ActiveId));
+		Assert.Equal(1, Value(await Invoke("tabs:get")).GetProperty("tabs").GetArrayLength());
+		Assert.Contains(_host.Pushed, p => p.Channel == "tabs:state");
 	}
 
 	[Fact]
 	public async Task Back_is_done_only_when_there_is_history()
 	{
 		Assert.Equal("not-applicable", Value(await Invoke("command:run", "history.back")).GetProperty("status").GetString());
-		_page.CanGoBack = true;
+		ActivePage.CanGoBack = true;
 		Assert.Equal("done", Value(await Invoke("command:run", "history.back")).GetProperty("status").GetString());
-		Assert.Equal(["back"], _page.Calls);
+		Assert.Equal("back", ActivePage.Calls[^1]);
 	}
 
 	[Fact]
-	public async Task Commands_not_ported_yet_say_so_with_their_label()
+	public async Task Commands_not_ported_yet_say_so_out_loud_with_their_label()
 	{
 		var outcome = Value(await Invoke("command:run", "page.print"));
 		Assert.Equal("not-implemented", outcome.GetProperty("status").GetString());
 		Assert.Equal("Print…", outcome.GetProperty("label").GetString());
+		Assert.Equal(["Print… isn't implemented yet"], _host.Notices);
 	}
 
 	[Fact]
-	public async Task Open_location_focuses_the_address_bar()
+	public async Task A_setting_is_validated_stored_and_pushed()
 	{
-		Value(await Invoke("command:run", "location.open"));
-		Assert.Contains(_pushed, p => p.Channel == "chrome:focus-address");
+		Value(await Invoke("settings:set", "searchEngine", "duckduckgo"));
+		Assert.Equal("duckduckgo", _settings.Get("searchEngine")!.GetValue<string>());
+		Assert.Contains(_host.Pushed, p => p.Channel == "settings:changed");
+		Assert.Equal(nameof(InvalidSettingException), ErrorName(await Invoke("settings:set", "searchEngine", "altavista")));
+		Assert.Equal(nameof(UnknownSettingException), ErrorName(await Invoke("settings:set", "nope", true)));
 	}
 
 	[Fact]
-	public async Task The_chrome_gets_the_typescript_defaults()
+	public async Task Pinning_the_sidebar_moves_the_page_and_relayouts()
 	{
-		var settings = Value(await Invoke("settings:get"));
-		Assert.Equal("google", settings.GetProperty("searchEngine").GetString());
+		var pinned = _api.Insets().Left;
+		Value(await Invoke("command:run", "view.sidebar"));
+		Assert.NotEqual(pinned, _api.Insets().Left);
+		Assert.True(_host.Relayouts > 0);
+	}
+
+	[Fact]
+	public async Task A_favourite_is_saved_from_the_active_page()
+	{
+		Assert.Equal("not-applicable", Value(await Invoke("command:run", "library.addFavourite")).GetProperty("status").GetString());
+		Value(await Invoke("tabs:navigate", ActiveId, "https://example.com"));
+		ActivePage.Events.TitleChanged("Example");
+		Value(await Invoke("command:run", "library.addFavourite"));
+		Assert.Equal(["Added to Favourites."], _host.Notices);
 		var library = Value(await Invoke("library:get"));
-		Assert.Equal("Favourites", library.GetProperty("bookmarks")[0].GetProperty("title").GetString());
+		Assert.Equal("https://example.com", library.GetProperty("library").GetProperty("bookmarks")[0].GetProperty("children")[0].GetProperty("url").GetString());
+		Assert.NotEmpty(_saved);
 	}
 
 	[Fact]
-	public async Task Tabs_state_lists_the_tab_with_the_strip_settings()
+	public async Task The_library_panel_takes_room_from_the_left()
 	{
-		var state = Value(await Invoke("tabs:get"));
-		Assert.Equal(_tabId, state.GetProperty("activeId").GetString());
-		Assert.Equal("manual", state.GetProperty("organization").GetString());
-		Assert.Equal(1, state.GetProperty("tabs").GetArrayLength());
+		var before = _api.Insets().Left;
+		Value(await Invoke("library:panel", "bookmarks"));
+		Assert.Equal(before + Layout.LibraryPanelWidth, _api.Insets().Left);
+		Assert.Equal("bookmarks", Value(await Invoke("library:get")).GetProperty("panel").GetString());
 	}
 
 	[Fact]
-	public void Settings_without_a_reader_fail_loudly()
+	public async Task Settings_open_and_close_through_the_shell_state()
 	{
-		var broken = new JsonObject { ["tabDropdowns"] = false };
-		var api = new ChromeApi(new Bridge(), _tabs, Address.FromDefaults(), broken, ZingJson.LoadDefaults("library.json"), _ => _page, (_, _) => { }, "test");
-		Assert.Throws<InvalidDataException>(() => api.Snapshot());
+		Value(await Invoke("command:run", "app.settings"));
+		Assert.True(Value(await Invoke("shell:get")).GetProperty("settingsOpen").GetBoolean());
+		Value(await Invoke("shell:close-settings"));
+		Assert.False(_api.SettingsOpen);
+	}
+
+	[Fact]
+	public void A_link_from_another_app_reuses_the_lone_blank_tab()
+	{
+		_api.OpenLink("https://example.com/?utm_source=x");
+		var tab = Assert.Single(_api.Tabs.Records);
+		Assert.Equal("https://example.com/", tab.Url);
+		_api.OpenLink("https://two.example/");
+		Assert.Equal(2, _api.Tabs.Records.Count);
+		Assert.Throws<UnsupportedUrlException>(() => _api.OpenLink("ms-settings:"));
+	}
+
+	[Fact]
+	public async Task New_window_and_close_window_go_to_the_host()
+	{
+		Value(await Invoke("command:run", "window.new"));
+		Value(await Invoke("command:run", "window.close"));
+		Assert.Equal((1, 1), (_host.NewWindows, _host.Closes));
+	}
+
+	[Fact]
+	public void Insets_follow_the_tab_bar_position()
+	{
+		_settings.Set("sidebarPinned", false);
+		_settings.Set("showFavouritesBar", false);
+		Assert.Equal(new ChromeInsets(80, 0, 0), _api.Insets());
+		_settings.Set("tabBarPosition", "left");
+		Assert.Equal(new ChromeInsets(40, Layout.RailDefaultWidth, 0), _api.Insets());
+		_settings.Set("tabBarPosition", "right");
+		Assert.Equal(new ChromeInsets(40, 0, Layout.RailDefaultWidth), _api.Insets());
 	}
 }

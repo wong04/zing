@@ -16,7 +16,14 @@ export class HostProcessError extends Error {
 export interface Launched {
 	readonly browser: Browser
 	readonly chrome: Page
+	/** Where this run kept settings and the library; pass it to the next launch to test a relaunch. */
+	readonly userDataDir: string
 	close(): Promise<void>
+}
+
+export interface LaunchOptions {
+	readonly env?: Readonly<Record<string, string>>
+	readonly userDataDir?: string
 }
 
 let nextPort = 9700
@@ -26,12 +33,22 @@ let nextPort = 9700
  * `close()` fails the test if the host recorded any unhandled error, the
  * WebView2 counterpart of e2e/zing.ts's main-process guard.
  */
-export async function launchZing(env: Readonly<Record<string, string>> = {}): Promise<Launched> {
+export async function launchZing({ env = {}, userDataDir }: LaunchOptions = {}): Promise<Launched> {
 	if (!existsSync(HOST_EXE)) throw new HostProcessError(`No host build at ${HOST_EXE}: run npm run build:host`)
 	const port = String(nextPort++)
 	const errors = join(await mkdtemp(join(tmpdir(), 'zing-host-e2e-')), 'errors.log')
+	// Never the user's real profile: every run gets its own folder unless a test relaunches into one.
+	const userData = userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-host-data-')))
 	const host: ChildProcess = spawn(HOST_EXE, [], {
-		env: { ...process.env, ZING_E2E: '1', ZING_CDP_PORT: port, ZING_ERRORS_FILE: errors, ZING_RENDERER_DIR: join(ROOT, 'out', 'renderer'), ...env },
+		env: {
+			...process.env,
+			ZING_E2E: '1',
+			ZING_CDP_PORT: port,
+			ZING_ERRORS_FILE: errors,
+			ZING_RENDERER_DIR: join(ROOT, 'out', 'renderer'),
+			ZING_USER_DATA: userData,
+			...env,
+		},
 		stdio: 'ignore',
 	})
 	await expect
@@ -43,10 +60,18 @@ export async function launchZing(env: Readonly<Record<string, string>> = {}): Pr
 	return {
 		browser,
 		chrome,
+		userDataDir: userData,
 		close: async () => {
+			// Quit as a person would, by closing every window, so pending writes are flushed.
+			const exited = new Promise<void>((resolve) => host.once('exit', () => resolve()))
+			const chromes = pages(browser).filter((p) => p.url() === CHROME_URL)
+			// A window that closes takes its renderer with it, so the evaluate may never answer.
+			for (const page of chromes) void page.evaluate(() => (globalThis as unknown as { zing: { runCommand(id: string): Promise<unknown> } }).zing.runCommand('window.close')).catch(() => undefined)
+			const quit = await Promise.race([exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15_000))])
 			await browser.close().catch(() => undefined)
-			host.kill()
+			if (!quit) host.kill()
 			if (existsSync(errors)) throw new HostProcessError(`The host recorded errors during this test:\n\n${readFileSync(errors, 'utf8')}`)
+			if (!quit) throw new HostProcessError('Zing did not quit within 15 s of its last window closing')
 		},
 	}
 }
