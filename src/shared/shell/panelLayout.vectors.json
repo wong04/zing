@@ -1,0 +1,80 @@
+{
+	"comment": "Rects are [x, y, width, height]. op is resolve or resolveAfterDrop around frames[fixed]. Checks: unchanged/moved (indices whose frame equals/differs from the input), noOverlaps (no pair intersects), inside (indices contained in bounds inset by 8), insideOrOriginal (every frame is inside the inset bounds or equals some input frame), disjoint (pairs that do not intersect), fieldEquals/fieldGreater (a frame field of an index).",
+	"cases": [
+		{
+			"name": "the dropped panel keeps its spot",
+			"op": "resolve",
+			"fixed": 1,
+			"bounds": [0, 0, 1200, 800],
+			"frames": [[100, 100, 400, 300], [250, 150, 400, 300]],
+			"want": { "unchanged": [1], "moved": [0], "noOverlaps": true, "inside": [0] }
+		},
+		{
+			"name": "panels that don't touch are left alone",
+			"op": "resolve",
+			"fixed": 0,
+			"bounds": [0, 0, 1200, 800],
+			"frames": [[20, 20, 400, 300], [600, 400, 400, 300]],
+			"want": { "unchanged": [0, 1] }
+		},
+		{
+			"name": "the push is the shortest one available: right, not down",
+			"op": "resolve",
+			"fixed": 0,
+			"bounds": [0, 0, 1200, 800],
+			"frames": [[100, 100, 400, 300], [460, 100, 400, 300]],
+			"want": {
+				"fieldEquals": [{ "index": 1, "field": "y", "value": 100 }],
+				"fieldGreater": [{ "index": 1, "field": "x", "than": 460 }]
+			}
+		},
+		{
+			"name": "the push clears by exactly the gap",
+			"op": "resolve",
+			"fixed": 0,
+			"bounds": [0, 0, 1200, 800],
+			"frames": [[100, 100, 400, 300], [460, 100, 400, 300]],
+			"want": { "fieldEquals": [{ "index": 1, "field": "x", "value": 512 }] }
+		},
+		{
+			"name": "a panel pinned against the edge escapes the other way",
+			"op": "resolve",
+			"fixed": 0,
+			"bounds": [0, 0, 1200, 800],
+			"frames": [[700, 250, 400, 300], [790, 250, 400, 300]],
+			"want": { "inside": [1], "disjoint": [[0, 1]] }
+		},
+		{
+			"name": "three panels in a pile all end up apart",
+			"op": "resolve",
+			"fixed": 2,
+			"bounds": [0, 0, 1200, 800],
+			"frames": [[300, 200, 400, 300], [320, 220, 400, 300], [340, 240, 400, 300]],
+			"want": { "noOverlaps": true, "insideOrOriginal": true }
+		},
+		{
+			"name": "a window too small to separate them leaves them be",
+			"op": "resolve",
+			"fixed": 1,
+			"bounds": [0, 0, 500, 350],
+			"frames": [[10, 10, 400, 300], [60, 30, 400, 300]],
+			"want": { "unchanged": [0] }
+		},
+		{
+			"name": "mid-drag the held panel never moves",
+			"op": "resolve",
+			"fixed": 1,
+			"bounds": [0, 0, 1240, 800],
+			"frames": [[380, 102, 520, 580], [460, 182, 480, 540]],
+			"want": { "unchanged": [1] }
+		},
+		{
+			"name": "after the drop the dropped panel may slide, and nothing overlaps",
+			"op": "resolveAfterDrop",
+			"fixed": 1,
+			"bounds": [0, 0, 1240, 800],
+			"frames": [[380, 102, 520, 580], [460, 182, 480, 540]],
+			"want": { "disjoint": [[0, 1]], "inside": [0, 1] }
+		}
+	]
+}

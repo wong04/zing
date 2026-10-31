@@ -21,11 +21,14 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	private RendererView? _surface;
 	private NoticeLayer? _notices;
 	private PageUiLayer? _pageUi;
+	private CoveringLayer? _stacks;
+	private CoveringLayer? _overview;
 	private readonly WindowsDownloads _downloads = new();
 	private CoreWebView2Environment? _environment;
 	private WebView2Page? _shown;
 	private bool _closed;
 	private DispatcherScheduler? _scheduler;
+	private Rect? _surfaceRegion;
 	private IDisposable? _themeSubscription;
 
 	public MainWindow(ZingApp app)
@@ -72,6 +75,8 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		// The chrome view joins the grid at once, under every page; its API must be registered before it loads and asks for state.
 		var chrome = RendererView.CreateAsync(_root, _environment, _bridge, "chrome", transparent: false);
 		_notices = new NoticeLayer(_root, _environment, _bridge, ContentRect, DispatcherQueue);
+		_stacks = new CoveringLayer(_root, _environment, _bridge, "overlay-stack", ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add);
+		_overview = new CoveringLayer(_root, _environment, _bridge, "overlay-overview", ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
 		_pageUi = new PageUiLayer(_root, _environment, _bridge, ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
 		_bridge.Register("chrome:titlebar-colors", (JsonElement[] args) =>
 		{
@@ -155,9 +160,53 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		if (_shown is not null) PlacePage(_shown);
 		_notices?.Layout();
 		_pageUi?.Layout();
-		if (Api is null) return;
-		if (Api.SettingsOpen) TestHooks.Background(ShowSurfaceAsync(), "surface");
-		else if (_surface is not null) _surface.Visible = false;
+		_stacks?.Layout();
+		_overview?.Layout();
+		// The shell model works out where the surface goes and answers through SurfaceRegionChanged.
+		Api?.LayoutChanged();
+	}
+
+	public ContentSize ContentSize => new(_root.ActualWidth, _root.ActualHeight);
+
+	/// <summary>The content's top-left on screen in DIPs, the units of the renderer's screen points.</summary>
+	public Point ContentOrigin
+	{
+		get
+		{
+			var origin = new Native.POINT();
+			Native.ClientToScreen(WinRT.Interop.WindowNative.GetWindowHandle(this), ref origin);
+			var scale = Scale;
+			return new Point(origin.X / scale, origin.Y / scale);
+		}
+	}
+
+	/// <summary>Test runs never read the real mouse (AGENTS.md), so the sidebar never reveals itself there.</summary>
+	public Point? Cursor
+	{
+		get
+		{
+			if (TestHooks.IsEndToEndRun) return null;
+			var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+			if (Native.GetForegroundWindow() != hwnd || !Native.GetCursorPos(out var cursor)) return null;
+			var origin = ContentOrigin;
+			var scale = Scale;
+			var point = new Point(cursor.X / scale - origin.X, cursor.Y / scale - origin.Y);
+			var size = ContentSize;
+			return point.X < 0 || point.Y < 0 || point.X > size.Width || point.Y > size.Height ? null : point;
+		}
+	}
+
+	private double Scale => _root.XamlRoot?.RasterizationScale ?? 1;
+
+	public void SurfaceRegionChanged(Rect? region)
+	{
+		_surfaceRegion = region;
+		if (region is null)
+		{
+			if (_surface is not null) _surface.Visible = false;
+			return;
+		}
+		TestHooks.Background(ShowSurfaceAsync(), "surface");
 	}
 
 	/// <summary>A link from another app (windows.ts openLink).</summary>
@@ -250,6 +299,14 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 
 	public void Report(string what, Exception error) => TestHooks.Record(what, error);
 
+	public void StackDropdownChanged(StackDropdownState? state) => _stacks?.Changed(state is not null);
+
+	public void OverviewChanged(OverviewState? state) => _overview?.Changed(state is not null);
+
+	public void Warn(string what, Exception error) => System.Diagnostics.Debug.WriteLine($"{what}: {error.Message}");
+
+	public void Background(Task task, string what) => TestHooks.Background(task, what);
+
 	public IShellActions Shell { get; } = new WindowsShell();
 
 	public IScheduler Scheduler => _scheduler ??= new DispatcherScheduler(DispatcherQueue);
@@ -287,19 +344,21 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	}
 
 	/// <summary>The settings sheet covers the whole window while it is open (panels.ts surfaceRegion).</summary>
+	/// <summary>The surface floats above the page and chrome, sized to what it shows, so it never takes the page's clicks.</summary>
 	private async Task ShowSurfaceAsync()
 	{
 		if (_surface is null)
 		{
 			_surface = await RendererView.CreateAsync(_root, _environment!, _bridge, "surface", transparent: true);
 			_renderers.Add(_surface);
+			// It may have missed the state pushed while it loaded.
+			if (Api is not null) _surface.Send(Bridge.Event("shell:state", Api.Shell.State()));
 		}
-		if (_closed || Api is not { SettingsOpen: true }) return;
-		_surface.Place(ContentRect());
+		if (_closed || _surfaceRegion is not { } region) return;
+		_surface.Place(region);
 		Layers.Raise(_root, _surface.View);
 		_notices?.Raise();
 		_surface.Visible = true;
-		FocusSurface();
 	}
 
 	private void OnClosed()
@@ -309,6 +368,8 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		Api?.Dispose();
 		_notices?.Destroy();
 		_pageUi?.Destroy();
+		_stacks?.Destroy();
+		_overview?.Destroy();
 		foreach (var renderer in _renderers) renderer.Close();
 		_app.Closed(this);
 	}

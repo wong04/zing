@@ -20,6 +20,7 @@ public sealed class WebView2Page : IPage
 	private readonly List<Action<CoreWebView2>> _queued = [];
 	private CoreWebView2? _core;
 	private string? _findTerm;
+	private int _textSize = Zing.Core.TextSize.Default;
 
 	public WebView2Page(WebView2 view, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, Func<string> theme, IPageFeatureHost features)
 	{
@@ -73,6 +74,31 @@ public sealed class WebView2Page : IPage
 		if (direction == FindDirection.Next) core.Find.FindNext();
 		else core.Find.FindPrevious();
 	});
+
+	public int TextSize
+	{
+		get => _textSize;
+		set
+		{
+			_textSize = value;
+			Run(core => _ = core.ExecuteScriptAsync(Zing.Core.TextSize.Script(value)));
+		}
+	}
+
+	public async Task<string?> CaptureAsync()
+	{
+		if (!IsOpen || _core is null) return null;
+		using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+		await _core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Jpeg, stream);
+		if (stream.Size == 0) return null;
+		using var memory = new MemoryStream();
+		stream.Seek(0);
+		await stream.AsStreamForRead().CopyToAsync(memory);
+		return "data:image/jpeg;base64," + Convert.ToBase64String(memory.ToArray());
+	}
+
+	/// <summary>Edge's own print preview, inside the page.</summary>
+	public void Print() => Run(core => core.ShowPrintUI(CoreWebView2PrintDialogKind.Browser));
 
 	public bool IsAudible => _core?.IsDocumentPlayingAudio ?? false;
 
@@ -168,6 +194,11 @@ public sealed class WebView2Page : IPage
 			_events.StateChanged();
 		};
 		core.SourceChanged += (_, _) => _events.Navigated(core.Source);
+		// The override dies with each document, so every new one gets it again.
+		core.DOMContentLoaded += (_, _) =>
+		{
+			if (_textSize != Zing.Core.TextSize.Default) _ = core.ExecuteScriptAsync(Zing.Core.TextSize.Script(_textSize));
+		};
 		core.DocumentTitleChanged += (_, _) => _events.TitleChanged(core.DocumentTitle);
 		core.FaviconChanged += async (_, _) =>
 		{

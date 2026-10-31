@@ -1,134 +1,158 @@
+// The data-shaped cases live in panels.vectors.json, which the C# port (ToolPanelsTests.cs) reads too.
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { intersects, type Rect } from '@shared/shell/panelLayout'
-import { section, Section, tool, UtilityTool } from '@shared/toolbox/panelContent'
-import { clampOrigin, PanelNotTearableError, PanelStore, surfaceRegion, UnknownPanelError } from './panels'
+import { panelContentFromId } from '@shared/toolbox/panelContent'
+import { clampOrigin, PanelNotTearableError, PanelStore, surfaceRegion, UnknownPanelError, type SurfaceInput } from './panels'
 
-const area: Rect = { x: 204, y: 80, width: 1000, height: 700 }
-const centre = { x: 700, y: 400 }
+type RectTuple = readonly [number, number, number, number]
+type PointTuple = readonly [number, number]
 
-function fill(store: PanelStore, count: number): void {
-	const tools = [UtilityTool.hash, UtilityTool.jwt, UtilityTool.json, UtilityTool.regex]
-	for (const t of tools.slice(0, count)) store.open(tool(t), centre, area)
+interface Step {
+	readonly op: 'open' | 'minimize' | 'close' | 'restore' | 'focus' | 'beginDrag' | 'endDrag'
+	readonly content?: string
+	readonly at?: PointTuple
+	readonly as?: string
+	readonly want?: string
+	readonly throws?: 'notTearable' | 'unknownPanel'
+	readonly panel?: string
+	readonly id?: string
+	readonly origin?: PointTuple
+	readonly originFromFrame?: { panel: string; dx: number; dy: number }
 }
 
-describe('PanelStore', () => {
-	it('shows at most three panels and refuses the fourth', () => {
-		const store = new PanelStore()
-		fill(store, 3)
-		expect(store.isFull).toBe(true)
-		expect(store.open(tool(UtilityTool.regex), centre, area)).toEqual({ status: 'full' })
-		expect(store.all).toHaveLength(3)
-	})
+interface Checks {
+	readonly all?: number
+	readonly visible?: number
+	readonly isFull?: boolean
+	readonly dragging?: boolean
+	readonly front?: string
+	readonly minimized?: Record<string, boolean>
+	readonly frame?: { panel: string; x: number; y: number; width?: number; height?: number }
+	readonly wholePixels?: string
+	readonly disjointVisible?: boolean
+}
 
-	it('opens an already open panel by focusing it, not by adding another', () => {
-		const store = new PanelStore()
-		fill(store, 2)
-		expect(store.open(tool(UtilityTool.hash), centre, area)).toEqual({ status: 'focused' })
-		expect(store.all).toHaveLength(2)
-		expect(store.state().frontId).toBe(store.all.at(-1)?.id)
-	})
-
-	it('minimizing frees a slot, and restoring into a full window is refused', () => {
-		const store = new PanelStore()
-		fill(store, 3)
-		const first = store.all[0]!.id
-		store.minimize(first)
-		expect(store.isFull).toBe(false)
-		expect(store.open(tool(UtilityTool.regex), centre, area)).toEqual({ status: 'opened' })
-		expect(store.restore(first, area)).toEqual({ status: 'full' })
-		expect(store.all.find((p) => p.id === first)?.minimized).toBe(true)
-	})
-
-	it('opening a minimized panel restores it', () => {
-		const store = new PanelStore()
-		fill(store, 1)
-		store.minimize(store.all[0]!.id)
-		expect(store.open(tool(UtilityTool.hash), centre, area)).toEqual({ status: 'restored' })
-		expect(store.visible).toHaveLength(1)
-	})
-
-	it('keeps visible panels apart after a release, moving the others', () => {
-		const store = new PanelStore()
-		const roomy: Rect = { x: 204, y: 80, width: 1500, height: 900 }
-		store.open(tool(UtilityTool.hash), centre, roomy)
-		store.open(tool(UtilityTool.jwt), centre, roomy)
-		const [a, b] = store.all
-		store.beginDrag(b!.id)
-		store.endDrag(b!.id, { x: a!.frame.x + 10, y: a!.frame.y + 10 }, roomy)
-		const [pa, pb] = store.visible
-		expect(intersects(pa!.frame, pb!.frame)).toBe(false)
-		expect(store.dragging).toBe(false)
-	})
-
-	it('puts the released panel exactly where it was dropped when there is room', () => {
-		const store = new PanelStore()
-		fill(store, 1)
-		const id = store.all[0]!.id
-		store.endDrag(id, { x: 300, y: 120 }, area)
-		expect(store.all[0]!.frame).toMatchObject({ x: 300, y: 120 })
-	})
-
-	it('refuses panels the browser must keep to itself', () => {
-		expect(() => new PanelStore().open(section(Section.browser), centre, area)).toThrow(PanelNotTearableError)
-	})
-
-	it('throws for an id that names no panel', () => {
-		expect(() => new PanelStore().close('nope')).toThrow(UnknownPanelError)
-	})
-
-	it('hands out whole-pixel frames', () => {
-		const store = new PanelStore()
-		store.open(tool(UtilityTool.hash), { x: 700.4, y: 400.7 }, area)
-		const f = store.all[0]!.frame
-		for (const n of [f.x, f.y, f.width, f.height]) expect(Number.isInteger(n)).toBe(true)
-	})
-})
-
-describe('clampOrigin', () => {
-	it('keeps a grabbable strip of the panel inside the area', () => {
-		const size = { width: 400, height: 300 }
-		expect(clampOrigin({ x: -9000, y: -9000 }, size, area)).toEqual({ x: area.x + 60 - 400, y: area.y + 6 })
-		expect(clampOrigin({ x: 9000, y: 9000 }, size, area)).toEqual({
-			x: area.x + area.width - 60,
-			y: area.y + area.height - 40,
-		})
-	})
-})
-
-describe('surfaceRegion', () => {
-	const content = { width: 1280, height: 780 }
-	const base = {
-		content,
-		page: area,
-		gated: false,
-		settingsOpen: false,
-		sidebarRevealed: false,
-		panelFrames: [] as Rect[],
-		dragging: false,
+interface SurfaceCase {
+	readonly name: string
+	readonly input: {
+		content: PointTuple
+		page: RectTuple
+		gated: boolean
+		settingsOpen: boolean
+		sidebarRevealed: boolean
+		panelFrames: RectTuple[]
+		dragging: boolean
 	}
+	readonly want: RectTuple | null
+}
 
-	it('is hidden when nothing is shown', () => {
-		expect(surfaceRegion(base)).toBeNull()
+const vectors = JSON.parse(readFileSync(new URL('./panels.vectors.json', import.meta.url), 'utf8')) as {
+	scenarios: { name: string; area: RectTuple; steps: Step[]; checks: Checks }[]
+	clamp: { name: string; point: PointTuple; size: PointTuple; area: RectTuple; want: PointTuple }[]
+	surface: SurfaceCase[]
+}
+
+const toRect = (t: RectTuple): Rect => ({ x: t[0], y: t[1], width: t[2], height: t[3] })
+const toPoint = (t: PointTuple) => ({ x: t[0], y: t[1] })
+const fromRect = (r: Rect | null): RectTuple | null => (r ? [r.x, r.y, r.width, r.height] : null)
+
+function need<T>(value: T | undefined, what: string): T {
+	if (value === undefined) throw new TypeError(`vector step has no ${what}`)
+	return value
+}
+
+describe('PanelStore (shared vectors)', () => {
+	it.each(vectors.scenarios.map((s) => [s.name, s] as const))('%s', (_name, s) => {
+		const store = new PanelStore()
+		const area = toRect(s.area)
+		const ids = new Map<string, string>()
+		const idOf = (step: Step): string => (step.id ?? ids.get(need(step.panel, 'panel'))) as string
+		const frameOf = (name: string): Rect => {
+			const found = store.all.find((p) => p.id === ids.get(name))
+			if (!found) throw new TypeError(`no panel named ${name}`)
+			return found.frame
+		}
+
+		for (const step of s.steps) {
+			const run = (): unknown => {
+				switch (step.op) {
+					case 'open': {
+						const content = panelContentFromId(need(step.content, 'content'))
+						if (!content) throw new TypeError(`bad content ${step.content}`)
+						return store.open(content, toPoint(need(step.at, 'at')), area)
+					}
+					case 'minimize':
+						return store.minimize(idOf(step))
+					case 'close':
+						return store.close(idOf(step))
+					case 'restore':
+						return store.restore(idOf(step), area)
+					case 'focus':
+						return store.bringToFront(idOf(step))
+					case 'beginDrag':
+						return store.beginDrag(idOf(step))
+					case 'endDrag': {
+						const from = step.originFromFrame
+						const origin = from
+							? { x: frameOf(from.panel).x + from.dx, y: frameOf(from.panel).y + from.dy }
+							: toPoint(need(step.origin, 'origin'))
+						return store.endDrag(idOf(step), origin, area)
+					}
+				}
+			}
+			if (step.throws) {
+				expect(run).toThrow(step.throws === 'notTearable' ? PanelNotTearableError : UnknownPanelError)
+				continue
+			}
+			const outcome = run()
+			if (step.want) expect(outcome).toEqual({ status: step.want })
+			if (step.as) ids.set(step.as, store.all.at(-1)!.id)
+		}
+
+		const c = s.checks
+		if (c.all !== undefined) expect(store.all).toHaveLength(c.all)
+		if (c.visible !== undefined) expect(store.visible).toHaveLength(c.visible)
+		if (c.isFull !== undefined) expect(store.isFull).toBe(c.isFull)
+		if (c.dragging !== undefined) expect(store.dragging).toBe(c.dragging)
+		if (c.front !== undefined) expect(store.state().frontId).toBe(ids.get(c.front))
+		for (const [name, minimized] of Object.entries(c.minimized ?? {})) {
+			expect(store.all.find((p) => p.id === ids.get(name))?.minimized).toBe(minimized)
+		}
+		if (c.frame) {
+			const f = frameOf(c.frame.panel)
+			expect(f).toMatchObject({ x: c.frame.x, y: c.frame.y })
+			if (c.frame.width !== undefined) expect(f).toMatchObject({ width: c.frame.width, height: c.frame.height })
+		}
+		if (c.wholePixels) {
+			const f = frameOf(c.wholePixels)
+			for (const n of [f.x, f.y, f.width, f.height]) expect(Number.isInteger(n)).toBe(true)
+		}
+		if (c.disjointVisible) {
+			const shown = store.visible
+			for (const [i, a] of shown.entries()) for (const b of shown.slice(i + 1)) expect(intersects(a.frame, b.frame)).toBe(false)
+		}
 	})
+})
 
-	it('covers the whole window for the settings sheet and the account gate', () => {
-		const whole = { x: 0, y: 0, ...content }
-		expect(surfaceRegion({ ...base, settingsOpen: true })).toEqual(whole)
-		expect(surfaceRegion({ ...base, gated: true })).toEqual(whole)
+describe('clampOrigin (shared vectors)', () => {
+	it.each(vectors.clamp.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+		const origin = clampOrigin(toPoint(c.point), { width: c.size[0], height: c.size[1] }, toRect(c.area))
+		expect([origin.x, origin.y]).toEqual(c.want)
 	})
+})
 
-	it('hugs a panel plus its shadow rather than the page', () => {
-		const panel = { x: 400, y: 200, width: 300, height: 200 }
-		expect(surfaceRegion({ ...base, panelFrames: [panel] })).toEqual({ x: 368, y: 168, width: 364, height: 264 })
-	})
-
-	it('covers the page while dragging so the pointer stays inside', () => {
-		const region = surfaceRegion({ ...base, dragging: true, panelFrames: [{ x: 400, y: 200, width: 300, height: 200 }] })
-		expect(region).toEqual(area)
-	})
-
-	it('includes the sidebar strip while it is revealed, and stays inside the window', () => {
-		const region = surfaceRegion({ ...base, sidebarRevealed: true })
-		expect(region).toEqual({ x: 0, y: 0, width: 204, height: 780 })
+describe('surfaceRegion (shared vectors)', () => {
+	it.each(vectors.surface.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+		const input: SurfaceInput = {
+			content: { width: c.input.content[0], height: c.input.content[1] },
+			page: toRect(c.input.page),
+			gated: c.input.gated,
+			settingsOpen: c.input.settingsOpen,
+			sidebarRevealed: c.input.sidebarRevealed,
+			panelFrames: c.input.panelFrames.map(toRect),
+			dragging: c.input.dragging,
+		}
+		expect(fromRect(surfaceRegion(input))).toEqual(c.want)
 	})
 })

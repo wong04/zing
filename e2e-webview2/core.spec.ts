@@ -138,7 +138,7 @@ test('pinning the sidebar narrows the page from the left', async () => {
 
 test('a command that is not ported yet shows a notice', async () => {
 	const zing = await launchZing()
-	await run(zing.chrome, 'page.print')
+	await run(zing.chrome, 'page.reader')
 	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
 	await expect(overlay.getByText(/isn't implemented yet/)).toBeVisible()
 	await zing.close()

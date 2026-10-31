@@ -11,7 +11,7 @@ public sealed class CommandsTests : IDisposable
 	public CommandsTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(new Bridge(), new AppServices(_settings, library, Address.FromDefaults(), new TickingClock()), _host, "test");
+		_api = new ChromeApi(new Bridge(), new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), _host, "test");
 		_api.Start([], "https://example.com/");
 	}
 
@@ -77,7 +77,7 @@ public sealed class FindTests : IDisposable
 	public FindTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(new Bridge(), new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock()), _host, "test");
+		_api = new ChromeApi(new Bridge(), new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), _host, "test");
 		_api.Start([], "https://example.com/");
 	}
 
@@ -107,5 +107,55 @@ public sealed class FindTests : IDisposable
 		_api.Run("tab.new");
 		Assert.Null(_api.PageUi.State.Find);
 		Assert.Equal("stop find", old.Calls[^1]);
+	}
+}
+
+public sealed class StackDropdownTests : IDisposable
+{
+	private readonly FakeWindowHost _host = new();
+	private readonly SettingsStore _settings = new();
+	private readonly ChromeApi _api;
+
+	public StackDropdownTests()
+	{
+		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+		_api = new ChromeApi(new Bridge(), new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), _host, "test");
+		_api.Start([], "https://news.example/a");
+		_api.Tabs.Open("https://news.example/b");
+		_api.Tabs.Open("https://other.test/");
+		_settings.Set("tabDropdowns", true);
+	}
+
+	public void Dispose() => _api.Dispose();
+
+	private string StackKey => _api.Ordering.Stacks().Single(s => s.Ids.Count > 1).Key;
+
+	[Fact]
+	public void A_stack_opens_with_its_pages_and_the_strip_knows_which_is_open()
+	{
+		_api.Stacks.Toggle(StackKey, 120);
+		var state = _host.Dropdowns[^1]!;
+		Assert.Equal(2, state.Tabs.Count);
+		Assert.Equal(StackKey, _api.State().OpenStack);
+		_api.Stacks.Toggle(StackKey, 120);
+		Assert.Null(_host.Dropdowns[^1]);
+	}
+
+	[Fact]
+	public void The_dropdown_closes_once_its_stack_has_fewer_than_two_pages()
+	{
+		var key = StackKey;
+		_api.Stacks.Toggle(key, 0);
+		_api.Tabs.Close(_api.Tabs.Records.First(r => r.Url == "https://news.example/a").Id);
+		Assert.Null(_api.Stacks.OpenKey);
+	}
+
+	[Fact]
+	public void Opened_by_a_drag_it_closes_soon_after_the_drag_leaves_chip_and_list()
+	{
+		_api.Stacks.OpenForDrag(StackKey, 0);
+		_api.Stacks.DragPresence("chip", false);
+		_host.FakeScheduler.Advance(TimeSpan.FromMilliseconds(400));
+		Assert.Null(_api.Stacks.OpenKey);
 	}
 }

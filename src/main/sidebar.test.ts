@@ -1,80 +1,44 @@
+// The cases live in sidebar.vectors.json, which the C# port (SidebarRevealTests.cs) reads too.
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { EdgeReveal } from './sidebar'
 
-function setup() {
-	const changes: boolean[] = []
-	const reveal = new EdgeReveal({ onChange: (r) => changes.push(r) })
-	reveal.setEnabled(true)
-	const at = (x: number, now: number, y = 300, inWindow = true) => reveal.update({ x, y, inWindow, now })
-	return { reveal, changes, at }
+interface Step {
+	readonly op: 'update' | 'setEnabled' | 'peek'
+	readonly x?: number
+	readonly y?: number
+	readonly now?: number
+	readonly inWindow?: boolean
+	readonly value?: boolean
+	readonly revealed?: boolean
+	readonly changes?: boolean[]
 }
 
-describe('EdgeReveal', () => {
-	it('reveals only after a short dwell at the left edge', () => {
-		const { reveal, at } = setup()
-		at(2, 0)
-		expect(reveal.revealed).toBe(false)
-		at(2, 40)
-		expect(reveal.revealed).toBe(false)
-		at(2, 80)
-		expect(reveal.revealed).toBe(true)
-	})
+const vectors = JSON.parse(readFileSync(new URL('./sidebar.vectors.json', import.meta.url), 'utf8')) as {
+	cases: { name: string; steps: Step[] }[]
+}
 
-	it('ignores a sweep past the edge that does not dwell', () => {
-		const { reveal, at } = setup()
-		at(2, 0)
-		at(300, 30)
-		at(2, 60)
-		at(2, 100)
-		expect(reveal.revealed).toBe(false)
-	})
+function need<T>(value: T | undefined, what: string): T {
+	if (value === undefined) throw new TypeError(`vector step has no ${what}`)
+	return value
+}
 
-	it('ignores the very top row, where the window controls live', () => {
-		const { reveal, at } = setup()
-		at(2, 0, 0)
-		at(2, 200, 0)
-		expect(reveal.revealed).toBe(false)
-	})
-
-	it('puts the sidebar away once the cursor moves clear of it', () => {
-		const { reveal, at } = setup()
-		at(2, 0)
-		at(2, 100)
-		at(150, 200)
-		expect(reveal.revealed).toBe(true)
-		at(400, 300)
-		expect(reveal.revealed).toBe(false)
-	})
-
-	it('puts it away when the cursor leaves the window', () => {
-		const { reveal, at } = setup()
-		at(2, 0)
-		at(2, 100)
-		at(-50, 200, 300, false)
-		expect(reveal.revealed).toBe(false)
-	})
-
-	it('does nothing while disabled, and disabling hides it at once', () => {
-		const { reveal, changes, at } = setup()
-		reveal.setEnabled(false)
-		at(2, 0)
-		at(2, 100)
-		expect(changes).toEqual([])
+describe('EdgeReveal (shared vectors)', () => {
+	it.each(vectors.cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+		const changes: boolean[] = []
+		const reveal = new EdgeReveal({ onChange: (r) => changes.push(r) })
 		reveal.setEnabled(true)
-		at(2, 200)
-		at(2, 300)
-		expect(reveal.revealed).toBe(true)
-		reveal.setEnabled(false)
-		expect(reveal.revealed).toBe(false)
-	})
-
-	it('a peek holds the sidebar out for a moment even with the cursor elsewhere', () => {
-		const { reveal, at } = setup()
-		reveal.peek(1000)
-		expect(reveal.revealed).toBe(true)
-		at(900, 1500)
-		expect(reveal.revealed).toBe(true)
-		at(900, 2500)
-		expect(reveal.revealed).toBe(false)
+		changes.length = 0
+		for (const step of c.steps) {
+			if (step.op === 'update') {
+				reveal.update({ x: need(step.x, 'x'), y: step.y ?? 300, inWindow: step.inWindow ?? true, now: need(step.now, 'now') })
+			} else if (step.op === 'setEnabled') {
+				reveal.setEnabled(need(step.value, 'value'))
+			} else {
+				reveal.peek(need(step.now, 'now'))
+			}
+			if (step.revealed !== undefined) expect(reveal.revealed).toBe(step.revealed)
+			if (step.changes !== undefined) expect(changes).toEqual(step.changes)
+		}
 	})
 })

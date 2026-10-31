@@ -16,6 +16,13 @@ public interface IWindowHost
 	void Relayout();
 	void FocusChrome();
 	void FocusSurface();
+	/// <summary>The window's content size in DIPs, and its top-left on screen (where the renderer's screen points start).</summary>
+	ContentSize ContentSize { get; }
+	Point ContentOrigin { get; }
+	/// <summary>The cursor over the content, or null when it is outside or Zing is not the focused app.</summary>
+	Point? Cursor { get; }
+	/// <summary>Where the surface view (settings sheet, account gate, sidebar, panels) goes; null hides it.</summary>
+	void SurfaceRegionChanged(Rect? region);
 	/// <summary>Shows a native menu at a point of the window content, in DIPs.</summary>
 	void ShowMenu(IReadOnlyList<MenuItem> items, double x, double y);
 	/// <summary>The find bar, downloads and permission prompts changed; show, size or hide their layer.</summary>
@@ -23,8 +30,16 @@ public interface IWindowHost
 	/// <summary>The page UI renderer measured what it shows.</summary>
 	void SetPageUiHeight(int height);
 	void FocusPageUi();
+	/// <summary>The stack dropdown opened, changed or closed (null).</summary>
+	void StackDropdownChanged(StackDropdownState? state);
+	/// <summary>The tab overview opened, changed or closed (null).</summary>
+	void OverviewChanged(OverviewState? state);
+	/// <summary>Something optional failed (a tab picture); worth a note, not a failure.</summary>
+	void Warn(string what, Exception error);
 	/// <summary>A background job failed with no caller to throw to.</summary>
 	void Report(string what, Exception error);
+	/// <summary>Work nobody awaits; its failures are reported.</summary>
+	void Background(Task task, string what);
 	/// <summary>Where downloads are saved, and the file actions on them.</summary>
 	string DownloadsDirectory { get; }
 	IDownloadHost DownloadHost { get; }
@@ -35,7 +50,7 @@ public interface IWindowHost
 
 /// <summary>What every window shares: one settings store, one library, one address rule.</summary>
 /// <param name="Clock">The app's clock; an e2e run swaps in an <see cref="OffsetClock"/> it can move forward.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, SiteDataKeeper? SiteData = null)
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -60,8 +75,6 @@ public sealed class ChromeApi : IDisposable
 	private readonly List<IDisposable> _subscriptions = [];
 	private readonly Action _unsubscribeLibrary;
 	private string? _libraryPanel;
-	private bool _settingsOpen;
-	private string _settingsCategory = "general";
 
 	public TabService Tabs { get; }
 
@@ -77,6 +90,12 @@ public sealed class ChromeApi : IDisposable
 
 	public TabLifecycle Lifecycle { get; }
 
+	public StackDropdown Stacks { get; }
+
+	public ShellModel Shell { get; }
+
+	public TabOverview Overview { get; }
+
 	/// <summary>Fires after any change to this window's tabs, e.g. so the primary window's session can be saved.</summary>
 	public event Action? TabsChanged;
 
@@ -90,7 +109,39 @@ public sealed class ChromeApi : IDisposable
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
 		Permissions = new PermissionBroker(PageUi);
-		Lifecycle = new TabLifecycle(new LifecycleTabs(Tabs), app.Settings, app.Clock, host.Scheduler, error => host.Report("tab lifecycle", error));
+		Stacks = new StackDropdown(key => StackMembers.Of(Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")), Ordering.Stacks(), key), host.Scheduler, state =>
+		{
+			host.Push("stack:dropdown", state);
+			host.StackDropdownChanged(state);
+			// The strip redraws its pressed stack chip.
+			host.Push("tabs:state", State());
+		});
+		Overview = new TabOverview(Tabs, State, state =>
+		{
+			host.Push("overlay:overview", state);
+			host.OverviewChanged(state);
+		}, (id, error) => host.Warn($"picture of tab {id}", error));
+		Tabs.Leaving += Overview.Leaving;
+		Tabs.Closed += Overview.Forget;
+		Shell = new ShellModel(appVersion, new ShellWindow(PageArea, () => host.ContentSize, () => host.ContentOrigin, () => host.Cursor), host.Scheduler, Flag("sidebarPinned"), !app.Account.State().SignedIn, RecentFeatures());
+		Shell.StateChanged += state => host.Push("shell:state", state);
+		Shell.PanelsChanged += state => host.Push("toolpanel:state", state);
+		Shell.SurfaceRegionChanged += host.SurfaceRegionChanged;
+		Shell.FocusSurfaceRequested += host.FocusSurface;
+		Shell.FocusPageRequested += () =>
+		{
+			if (Tabs.ActiveId is { } id) Tabs.FocusPage(id);
+		};
+		Shell.RelayoutRequested += host.Relayout;
+		Shell.NoticeRaised += host.Notify;
+		Shell.RecentFeaturesChanged += recents => app.Settings.Set("recentFeatures", new JsonArray([.. recents.Select(r => (JsonNode)r)]));
+		Shell.SidebarPinRequested += pinned => app.Settings.Set("sidebarPinned", pinned);
+		_subscriptions.Add(app.Account.Subscribe(state =>
+		{
+			host.Push("account:state", state);
+			Shell.AccountChanged(state.SignedIn);
+		}));
+		Lifecycle = new TabLifecycle(new LifecycleTabs(Tabs, Overview), app.Settings, app.Clock, host.Scheduler, error => host.Report("tab lifecycle", error));
 		Tabs.Woke += (id, page) =>
 		{
 			if (Lifecycle.Woke(id) is { } y) page.RunWhenLoaded($"window.scrollTo(0, {y.ToString(System.Globalization.CultureInfo.InvariantCulture)})");
@@ -111,6 +162,11 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("tabs:move-within", args => Do(() => Ordering.MoveWithin(Text(args, 0), Text(args, 1), Int(args, 2))));
 		bridge.Register("tabs:set-organization", args => Do(() => Ordering.SetOrganization(TabOrganizations.Parse(Text(args, 0)))));
 		bridge.Register("tabs:set-dropdowns", args => Do(() => Ordering.SetDropdowns(Bool(args, 0))));
+		bridge.Register("stack:toggle", args => Do(() => Stacks.Toggle(Text(args, 0), Number(args, 1))));
+		bridge.Register("stack:open-for-drag", args => Do(() => Stacks.OpenForDrag(Text(args, 0), Number(args, 1))));
+		bridge.Register("stack:close", _ => Do(Stacks.Close));
+		bridge.Register("stack:current", _ => Stacks.Current);
+		bridge.Register("stack:drag-presence", args => Do(() => Stacks.DragPresence(Text(args, 0), Bool(args, 1))));
 		bridge.Register("chrome:strip-menu", args => Do(() => Menu(Menus.Strip(Ordering), args, 0)));
 		bridge.Register("chrome:stack-menu", args => Do(() => Menu(Menus.Stack(Tabs, Ordering, Text(args, 0), host.Shell), args, 1)));
 		bridge.Register("tabs:pin", args => Do(() => Tabs.Pin(Text(args, 0))));
@@ -124,11 +180,30 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("library:open", args => Do(() => OpenLibraryItem(Text(args, 0), Text(args, 1))));
 		bridge.Register("library:open-all", args => Do(() => OpenAll(Text(args, 0))));
 		bridge.Register("library:panel", args => Do(() => SetLibraryPanel(OptionalText(args, 0))));
-		bridge.Register("shell:get", _ => ShellState());
-		bridge.Register("shell:open-settings", args => Do(() => OpenSettings(OptionalText(args, 0))));
-		bridge.Register("shell:close-settings", _ => Do(CloseSettings));
-		// No account gate yet (W3 ports src/main/account.ts); the window opens signed in.
-		bridge.Register("account:get", _ => new { hasAccount = false, signedIn = true, needsPasswordReset = false, requirePasswordOnLaunch = false });
+		bridge.Register("shell:get", _ => Shell.State());
+		bridge.Register("shell:open-settings", args => Do(() => Shell.OpenSettings(OptionalText(args, 0))));
+		bridge.Register("shell:close-settings", _ => Do(Shell.CloseSettings));
+		bridge.Register("shell:toolbox", _ => Do(Shell.OpenToolbox));
+		bridge.Register("shell:menu", args => Do(() => Menu([.. Shell.MenuItems(Text(args, 0), Text(args, 1)).Select(i => i.Invoke is null ? MenuItem.Separator : new MenuItem(i.Label, i.Invoke))], args, 2)));
+		bridge.Register("toolpanel:get", _ => Shell.PanelsState());
+		bridge.Register("toolpanel:open", args => Shell.OpenPanel(Text(args, 0), PointArg(args, 1)));
+		bridge.Register("toolpanel:close", args => Do(() => Shell.ClosePanel(Text(args, 0))));
+		bridge.Register("toolpanel:minimize", args => Do(() => Shell.MinimizePanel(Text(args, 0))));
+		bridge.Register("toolpanel:restore", args => Shell.RestorePanel(Text(args, 0)));
+		bridge.Register("toolpanel:focus", args => Do(() => Shell.FocusPanel(Text(args, 0))));
+		bridge.Register("toolpanel:begin-drag", args => Do(() => Shell.BeginPanelDrag(Text(args, 0))));
+		bridge.Register("toolpanel:end-drag", args => Do(() => Shell.EndPanelDrag(Text(args, 0), PointArg(args, 1))));
+		bridge.Register("overview:get", _ => Overview.Current);
+		bridge.Register("overview:close", _ => Do(Overview.Close));
+		bridge.Register("account:get", _ => app.Account.State());
+		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
+		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
+		bridge.Register("account:reset-password", args => app.Account.Run(() => app.Account.ResetPassword(Text(args, 0))));
+		bridge.Register("account:sign-out", _ => app.Account.Run(app.Account.SignOut));
+		bridge.Register("account:continue-as-guest", _ => app.Account.Run(app.Account.ContinueAsGuest));
+		bridge.Register("account:update-profile", args => app.Account.Run(() => app.Account.UpdateProfile(Text(args, 0), Text(args, 1))));
+		bridge.Register("account:require-password", args => app.Account.Run(() => app.Account.SetRequirePasswordOnLaunch(Bool(args, 0))));
+		bridge.Register("account:delete", _ => app.Account.Run(app.Account.DeleteAccount));
 		bridge.Register("chrome:app-menu", args => Do(() => Menu(Menus.App(id => Run(id)), args, 0)));
 		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Text(args, 0), host.Shell), args, 1)));
 		bridge.Register("library:folder-menu", args => Do(() => Menu(Menus.LibraryFolder(app.Library, Text(args, 0), id => OpenLibraryItem(id, "current"), OpenAll), args, 1)));
@@ -145,15 +220,26 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("downloads:dismiss", _ => Do(Downloads.Dismiss));
 		bridge.Register("permission:allow", args => Do(() => Permissions.Answer(Int(args, 0), true)));
 		bridge.Register("permission:deny", args => Do(() => Permissions.Answer(Int(args, 0), false)));
-		bridge.Register("toolpanel:get", _ => new { panels = Array.Empty<object>(), dragging = false });
 
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
 		_unsubscribeLibrary = app.Library.Subscribe(_ => host.Push("library:state", LibraryState()));
 	}
 
-	public bool SettingsOpen => _settingsOpen;
+	public bool SettingsOpen => Shell.SettingsOpen;
 
-	public TabsState State() => Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns"));
+	/// <summary>The window resized or the page moved: panels and the surface follow.</summary>
+	public void LayoutChanged() => Shell.LayoutChanged();
+
+	private Rect PageArea()
+	{
+		var insets = Insets();
+		var size = _host.ContentSize;
+		return new Rect(insets.Left, insets.Top, Math.Max(0, size.Width - insets.Left - insets.Right), Math.Max(0, size.Height - insets.Top));
+	}
+
+	private List<string> RecentFeatures() => [.. (_app.Settings.Get("recentFeatures")?.AsArray() ?? []).Select(n => n!.GetValue<string>())];
+
+	public TabsState State() => Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")) with { OpenStack = Stacks?.OpenKey };
 
 	/// <summary>Where the chrome ends and the page begins. With tabs on the left the app sidebar folds into the rail.</summary>
 	public ChromeInsets Insets()
@@ -169,6 +255,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		if (restored.Count > 0) Tabs.Restore(restored);
 		else Tabs.Open(startUrl ?? HomepageUrl());
+		Shell.Start();
 	}
 
 	/// <summary>A link from another app: a new tab, or the lone blank tab reused. Non-web links are refused.</summary>
@@ -191,6 +278,8 @@ public sealed class ChromeApi : IDisposable
 
 	public object Run(string command)
 	{
+		// Behind the account gate nothing may act on the browser.
+		if (Shell.Gated) return NotApplicable;
 		var outcome = RunCommand(command);
 		if (outcome is NotImplemented missing) _host.Notify($"{missing.Label} isn't implemented yet");
 		return outcome;
@@ -199,6 +288,7 @@ public sealed class ChromeApi : IDisposable
 	public void Dispose()
 	{
 		foreach (var subscription in _subscriptions) subscription.Dispose();
+		Shell.Dispose();
 		Ordering.Dispose();
 		Lifecycle.Dispose();
 		_unsubscribeLibrary();
@@ -217,8 +307,8 @@ public sealed class ChromeApi : IDisposable
 		if (command.StartsWith("tab.select", StringComparison.Ordinal) && int.TryParse(command["tab.select".Length..], out var n)) return ActivateIfAny(Tabs.IdForShortcut(n));
 		return command switch
 		{
-			"app.settings" => Act(true, () => OpenSettings(null)),
-			"view.sidebar" => Act(true, () => _app.Settings.Set("sidebarPinned", !Flag("sidebarPinned"))),
+			"app.settings" => Act(true, () => Shell.OpenSettings()),
+			"view.sidebar" => Act(true, Shell.ToggleSidebar),
 			"view.favouritesBar" => Act(true, () => _app.Settings.Set("showFavouritesBar", !Flag("showFavouritesBar"))),
 			"library.addFavourite" => SaveActive(favourite: true),
 			"library.addReadingList" => SaveActive(favourite: false),
@@ -237,6 +327,12 @@ public sealed class ChromeApi : IDisposable
 			"history.home" => Act(Tabs.ActiveId is not null, () => Tabs.Navigate(Tabs.ActiveId!, HomepageUrl())),
 			"page.reload" => Act(page is not null, () => page!.Reload()),
 			"page.find" => Act(page is not null, Find.Open),
+			"page.print" => Act(page is not null, () => page!.Print()),
+			"tabs.overview" => Act(true, () => _host.Background(Overview.ToggleAsync(), "tab overview")),
+			"page.textBigger" => Act(page is not null, () => page!.TextSize = TextSize.Bigger(page.TextSize)),
+			"page.textSmaller" => Act(page is not null, () => page!.TextSize = TextSize.Smaller(page.TextSize)),
+			// WinUI's WebView2 has no zoom API, but the engine zooms on these keys itself: let them through.
+			"page.zoomIn" or "page.zoomOut" or "page.actualSize" => NotApplicable,
 			"page.findNext" => Act(page is not null, () => Find.Step(FindDirection.Next)),
 			"page.findPrevious" => Act(page is not null, () => Find.Step(FindDirection.Previous)),
 			"page.stop" => Act(page is { IsLoading: true }, () => page!.Stop()),
@@ -316,6 +412,7 @@ public sealed class ChromeApi : IDisposable
 	private void OnSettingChanged(JsonObject settings, string key)
 	{
 		_host.Push("settings:changed", settings);
+		if (key is "tabDropdowns") Stacks.Close();
 		if (key is "tabOrganization" or "tabDropdowns")
 		{
 			Ordering.Reorganize();
@@ -324,6 +421,8 @@ public sealed class ChromeApi : IDisposable
 		if (key is "accent" or "theme") ForEachStartPage(page => page.Run(StartPage.RestyleScript(StartPage.Theme(Setting("accent")))));
 		if (key is "startShortcuts" or "searchEngine") ForEachStartPage(page => page.Reload());
 		if (key is "showFavouritesBar") _host.Push("library:state", LibraryState());
+		if (key is "sidebarPinned") Shell.SetSidebarPinned(Flag("sidebarPinned"));
+		if (key is "recentFeatures") Shell.SetRecentFeatures(RecentFeatures());
 		if (key is "sidebarPinned" or "showFavouritesBar" or "tabBarPosition")
 		{
 			_host.Relayout();
@@ -379,34 +478,6 @@ public sealed class ChromeApi : IDisposable
 		foreach (var url in _app.Library.UrlsOf(id)) Tabs.Open(url);
 	}
 
-	private object ShellState() => new
-	{
-		settingsOpen = _settingsOpen,
-		settingsCategory = _settingsCategory,
-		sidebarRevealed = false,
-		gated = false,
-		origin = new { x = 0, y = 0 },
-		appVersion = _appVersion,
-	};
-
-	private void OpenSettings(string? category)
-	{
-		if (category is not null) _settingsCategory = category;
-		_settingsOpen = true;
-		_host.Relayout();
-		_host.Push("shell:state", ShellState());
-		_host.FocusSurface();
-	}
-
-	private void CloseSettings()
-	{
-		if (!_settingsOpen) return;
-		_settingsOpen = false;
-		_host.Relayout();
-		_host.Push("shell:state", ShellState());
-		if (Tabs.ActiveId is { } id) Tabs.FocusPage(id);
-	}
-
 	private void ForEachStartPage(Action<IPage> act)
 	{
 		foreach (var record in Tabs.Records)
@@ -422,7 +493,7 @@ public sealed class ChromeApi : IDisposable
 				if (AddressInput.JsTrim(search.Query).Length == 0) return NavigationDecision.Cancel;
 				return new NavigationDecision.Redirect(_app.Address.Resolve(search.Query, Setting("searchEngine")));
 			case StartPageNavigation.EditShortcuts:
-				OpenSettings(null);
+				Shell.OpenSettings();
 				return NavigationDecision.Cancel;
 			case StartPageNavigation.Block:
 				return NavigationDecision.Cancel;
@@ -436,6 +507,8 @@ public sealed class ChromeApi : IDisposable
 		Ordering?.ScheduleReorganize();
 		Find?.ActiveChanged();
 		Lifecycle?.Reschedule();
+		Stacks?.Refresh();
+		Overview?.Refresh();
 		_host.Push("tabs:state", State());
 		TabsChanged?.Invoke();
 	}
@@ -466,6 +539,18 @@ public sealed class ChromeApi : IDisposable
 	private static string? OptionalText(JsonElement[] args, int index) =>
 		index >= args.Length || args[index].ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? null : Text(args, index);
 
+	private static double Number(JsonElement[] args, int index)
+	{
+		var arg = Arg(args, index);
+		return arg.ValueKind == JsonValueKind.Number ? arg.GetDouble() : throw new ArgumentException($"Argument {index} must be a number");
+	}
+
+	private static Point PointArg(JsonElement[] args, int index)
+	{
+		var arg = Arg(args, index);
+		return new Point(Number(arg, "x"), Number(arg, "y"));
+	}
+
 	private static bool Bool(JsonElement[] args, int index)
 	{
 		var arg = Arg(args, index);
@@ -480,7 +565,7 @@ public sealed class ChromeApi : IDisposable
 }
 
 /// <summary>What sleeping tabs and auto-close need from a window's tabs.</summary>
-internal sealed class LifecycleTabs(TabService tabs) : ILifecycleTabs
+internal sealed class LifecycleTabs(TabService tabs, TabOverview overview) : ILifecycleTabs
 {
 	public string? ActiveId => tabs.ActiveId;
 	public IReadOnlyList<TabRecord> Records => tabs.Records;
@@ -500,8 +585,8 @@ internal sealed class LifecycleTabs(TabService tabs) : ILifecycleTabs
 		}
 	}
 
-	// The tab overview that shows thumbnails isn't ported yet (W3d); a sleeping tab may have none, as in Electron.
-	public Task<string?> CaptureThumbnailAsync(string id) => Task.FromResult<string?>(null);
+	// A hidden page never finishes a capture; the overview pictured it as it left the screen.
+	public Task<string?> CaptureThumbnailAsync(string id) => Task.FromResult(overview.Thumbnail(id));
 
 	public void Sleep(string id) => tabs.Sleep(id);
 	public void Close(string id) => tabs.Close(id);

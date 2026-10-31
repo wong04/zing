@@ -32,6 +32,10 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public System.Text.Json.JsonElement ProbeResult { get; set; } = System.Text.Json.JsonDocument.Parse("{\"scrollY\":0,\"dirty\":false}").RootElement;
 	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script) => Task.FromResult(ProbeResult);
 	public void RunWhenLoaded(string script) => Calls.Add($"when loaded {script}");
+	public int TextSize { get; set; } = Zing.Core.TextSize.Default;
+	public void Print() => Calls.Add("print");
+	public string? Picture { get; set; } = "data:image/jpeg;base64,AA==";
+	public Task<string?> CaptureAsync() => Task.FromResult(Picture);
 	public void Close() => Closed = true;
 }
 
@@ -77,6 +81,20 @@ public sealed class FakeWindowHost : IWindowHost
 
 	public List<IReadOnlyList<MenuItem>> Menus { get; } = [];
 	public void ShowMenu(IReadOnlyList<MenuItem> items, double x, double y) => Menus.Add(items);
+
+	public ContentSize ContentSize { get; set; } = new(1280, 820);
+	public Point ContentOrigin => new(0, 0);
+	public Point? Cursor { get; set; }
+	public List<Rect?> SurfaceRegions { get; } = [];
+	public void SurfaceRegionChanged(Rect? region) => SurfaceRegions.Add(region);
+
+	public List<StackDropdownState?> Dropdowns { get; } = [];
+	public void StackDropdownChanged(StackDropdownState? state) => Dropdowns.Add(state);
+
+	public List<OverviewState?> Overviews { get; } = [];
+	public void OverviewChanged(OverviewState? state) => Overviews.Add(state);
+	public void Warn(string what, Exception error) { }
+	public void Background(Task task, string what) => task.GetAwaiter().GetResult();
 
 	public List<Exception> Reported { get; } = [];
 	public void Report(string what, Exception error) => Reported.Add(error);
@@ -141,4 +159,10 @@ public sealed class TickingClock : IClock
 	{
 		public void Dispose() { }
 	}
+}
+
+/// <summary>A signed-in guest account in a scratch folder, so window tests start past the gate.</summary>
+public static class Accounts
+{
+	public static AccountStore Guest() => new(Directory.CreateTempSubdirectory("zing-account-").FullName, new FakeCipher(), startAsGuest: true);
 }
