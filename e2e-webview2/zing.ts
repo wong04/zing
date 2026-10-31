@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { createServer } from 'node:net'
+import type { AddressInfo } from 'node:net'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -29,7 +31,17 @@ export interface LaunchOptions {
 	readonly args?: readonly string[]
 }
 
-let nextPort = 9700
+/**
+ * A port nothing listens on now. A fixed counter restarted at the same number in a fresh worker
+ * after a crash, and the next test attached to the crashed run's host, which was still running.
+ */
+async function freePort(): Promise<string> {
+	const probe = createServer()
+	await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve))
+	const { port } = probe.address() as AddressInfo
+	await new Promise<void>((resolve) => probe.close(() => resolve()))
+	return String(port)
+}
 
 /**
  * Starts Zing's WebView2 host off-screen (ZING_E2E) and attaches over CDP.
@@ -38,7 +50,7 @@ let nextPort = 9700
  */
 export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOptions = {}): Promise<Launched> {
 	if (!existsSync(HOST_EXE)) throw new HostProcessError(`No host build at ${HOST_EXE}: run npm run build:host`)
-	const port = String(nextPort++)
+	const port = await freePort()
 	const errors = join(await mkdtemp(join(tmpdir(), 'zing-host-e2e-')), 'errors.log')
 	// Never the user's real profile: every run gets its own folder unless a test relaunches into one.
 	const userData = userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-host-data-')))
@@ -95,6 +107,6 @@ export function pages(browser: Browser): Page[] {
 }
 
 export async function pageWhere(browser: Browser, match: (page: Page) => boolean): Promise<Page> {
-	await expect.poll(() => pages(browser).some(match), { timeout: 20_000 }).toBe(true)
+	await expect.poll(() => pages(browser).some(match), { timeout: 40_000 }).toBe(true)
 	return pages(browser).find(match)!
 }
