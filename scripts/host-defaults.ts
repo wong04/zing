@@ -3,7 +3,8 @@
 // source of truth. `src/shared/hostDefaults.test.ts` fails if the committed
 // files drift; regenerate with `npm run gen:host-defaults`.
 import { SEARCH_URLS } from '../src/shared/browser/searchEngines'
-import { COMMANDS } from '../src/shared/commands/registry'
+import { COMMANDS, MENU_LAYOUT } from '../src/shared/commands/registry'
+import { shortcutLabel } from '../src/shared/commands/shortcut'
 import { emptyLibrary } from '../src/shared/library/library'
 import { CHROME_LAYOUT, LIBRARY_PANEL_WIDTH } from '../src/shared/ipc'
 import { VERTICAL_TABS } from '../src/shared/layout/chrome'
@@ -112,7 +113,12 @@ export function hostDefaults(): Record<string, unknown> {
 		'settings.json': DEFAULT_SETTINGS,
 		'settings-schema.json': SETTING_RULES,
 		'library.json': stableLibrary,
-		'commands.json': COMMANDS.map(({ id, label }) => ({ id, label })),
+		'commands.json': COMMANDS.map(({ id, label, shortcuts }) => ({
+			id,
+			label,
+			shortcuts: shortcuts.map((s) => ({ code: s.code, ctrl: Boolean(s.ctrl), shift: Boolean(s.shift), alt: Boolean(s.alt), label: shortcutLabel(s) })),
+		})),
+		'menu.json': MENU_LAYOUT,
 		'search-engines.json': SEARCH_URLS,
 		'layout.json': { ...CHROME_LAYOUT, sidebarColumnWidth: SIDEBAR_COLUMN_WIDTH, libraryPanelWidth: LIBRARY_PANEL_WIDTH, verticalTabs: VERTICAL_TABS },
 	}

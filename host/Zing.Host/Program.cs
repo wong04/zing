@@ -12,6 +12,7 @@ public static class Program
 	{
 		TestHooks.RecordUnhandledErrors();
 		ComWrappersSupport.InitializeComWrappers();
+		if (SingleInstance.RedirectedToRunningZing()) return;
 		Application.Start(_ => new ZingApp());
 	}
 }
@@ -25,6 +26,8 @@ public sealed class ZingApp : Application
 {
 	private readonly List<MainWindow> _windows = [];
 	private readonly List<Action> _onQuit = [];
+	private readonly LinkInbox _links = new();
+	private MainWindow? _mostRecent;
 	private AppServices? _services;
 	private SessionSaver? _session;
 	private IReadOnlyList<SessionTab> _pendingRestore = [];
@@ -52,7 +55,35 @@ public sealed class ZingApp : Application
 		_onQuit.Add(_session.Flush);
 		if (Flag("restoreTabs")) _pendingRestore = Session.Load(AppPaths.Session);
 		else Session.Discard(AppPaths.Session);
+		foreach (var url in LaunchArgs.Urls(System.Environment.GetCommandLineArgs().Skip(1))) _links.Push(url);
+		SingleInstance.Listen(OnSecondLaunch);
 		NewWindow();
+	}
+
+	/// <summary>The window used last; links from other apps open there.</summary>
+	public MainWindow? MostRecent => _mostRecent is { } w && _windows.Contains(w) ? w : _windows.LastOrDefault();
+
+	public void Focused(MainWindow window) => _mostRecent = window;
+
+	/// <summary>A window can take links once its tabs exist; the first such window takes the ones that arrived during startup.</summary>
+	public void Ready(MainWindow window)
+	{
+		if (window == Primary) _links.Attach(OpenLink);
+	}
+
+	private void OpenLink(string url)
+	{
+		var target = MostRecent ?? NewWindow();
+		target.OpenLink(url);
+		target.Reveal();
+	}
+
+	/// <summary>Another launch handed over its command line: open its links, or just bring Zing forward.</summary>
+	private void OnSecondLaunch(IReadOnlyList<string> argv)
+	{
+		var urls = LaunchArgs.Urls(argv);
+		foreach (var url in urls) _links.Push(url);
+		if (urls.Count == 0) MostRecent?.Reveal();
 	}
 
 	public MainWindow NewWindow()

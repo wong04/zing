@@ -33,7 +33,13 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 		Content = _root;
 		Place();
 		_root.SizeChanged += (_, _) => Relayout();
+		// Keys from every view of the window, web pages included: WebView2 raises accelerator keys as KeyDown.
+		_root.AddHandler(UIElement.KeyDownEvent, new Microsoft.UI.Xaml.Input.KeyEventHandler(OnKeyDown), handledEventsToo: false);
 		Closed += (_, _) => OnClosed();
+		Activated += (_, e) =>
+		{
+			if (e.WindowActivationState != WindowActivationState.Deactivated) _app.Focused(this);
+		};
 		_ = StartAsync().ContinueWith(t => TestHooks.Record("startup", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
 	}
 
@@ -64,6 +70,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 		Api = new ChromeApi(_bridge, _app.Services, this, typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "0");
 		Api.TabsChanged += () => _app.TabsChanged(this);
 		Api.Start(_app.TakePendingRestore(), System.Environment.GetEnvironmentVariable("ZING_START_URL"));
+		_app.Ready(this);
 		_chrome = await chrome;
 		_renderers.Add(_chrome);
 	}
@@ -128,9 +135,37 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost
 		else if (_surface is not null) _surface.Visible = false;
 	}
 
+	/// <summary>A link from another app (windows.ts openLink).</summary>
+	public void OpenLink(string url) => (Api ?? throw new InvalidOperationException("The window has not started")).OpenLink(url);
+
+	/// <summary>Brings the window forward; test runs never take focus (AGENTS.md).</summary>
+	public void Reveal()
+	{
+		if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Minimized } presenter) presenter.Restore();
+		if (!TestHooks.IsEndToEndRun) Activate();
+	}
+
 	public void FocusChrome() => _chrome?.View.Focus(FocusState.Programmatic);
 
 	public void FocusSurface() => _surface?.View.Focus(FocusState.Programmatic);
+
+	public IShellActions Shell { get; } = new WindowsShell();
+
+	public void ShowMenu(IReadOnlyList<Zing.Core.MenuItem> items, double x, double y)
+	{
+		var flyout = new MenuFlyout();
+		foreach (var item in items) flyout.Items.Add(NativeMenus.Build(item));
+		flyout.ShowAt(_root, new Windows.Foundation.Point(x, y));
+	}
+
+	private void OnKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+	{
+		if (Api is null || Commands.CodeOf((int)e.Key) is not { } code) return;
+		static bool Down(Windows.System.VirtualKey key) =>
+			Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+		var input = new KeyInput(code, Down(Windows.System.VirtualKey.Control), Down(Windows.System.VirtualKey.Shift), Down(Windows.System.VirtualKey.Menu));
+		if (Api.HandleKey(input)) e.Handled = true;
+	}
 
 	// MARK: Layout
 

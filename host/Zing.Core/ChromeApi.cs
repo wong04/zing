@@ -16,6 +16,9 @@ public interface IWindowHost
 	void Relayout();
 	void FocusChrome();
 	void FocusSurface();
+	/// <summary>Shows a native menu at a point of the window content, in DIPs.</summary>
+	void ShowMenu(IReadOnlyList<MenuItem> items, double x, double y);
+	IShellActions Shell { get; }
 }
 
 /// <summary>What every window shares: one settings store, one library, one address rule.</summary>
@@ -30,9 +33,6 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 public sealed class ChromeApi : IDisposable
 {
 	public const string BlankUrl = TabStore.NewTabUrl;
-
-	private static readonly IReadOnlyDictionary<string, string> CommandLabels = ZingJson.LoadDefaults("commands.json").AsArray()
-		.ToDictionary(c => c!["id"]!.GetValue<string>(), c => c!["label"]!.GetValue<string>(), StringComparer.Ordinal);
 
 	private static readonly HashSet<string> NavigableSchemes = new(StringComparer.OrdinalIgnoreCase) { "http", "https", "about", "file" };
 
@@ -78,6 +78,10 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("shell:close-settings", _ => Do(CloseSettings));
 		// No account gate yet (W3 ports src/main/account.ts); the window opens signed in.
 		bridge.Register("account:get", _ => new { hasAccount = false, signedIn = true, needsPasswordReset = false, requirePasswordOnLaunch = false });
+		bridge.Register("chrome:app-menu", args => Do(() => Menu(Menus.App(id => Run(id)), args, 0)));
+		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Text(args, 0), host.Shell), args, 1)));
+		bridge.Register("library:folder-menu", args => Do(() => Menu(Menus.LibraryFolder(app.Library, Text(args, 0), id => OpenLibraryItem(id, "current"), OpenAll), args, 1)));
+		bridge.Register("library:item-menu", args => Do(() => Menu(Menus.LibraryItem(app.Library, Text(args, 0), OpenLibraryItem, OpenAll), args, 1)));
 		bridge.Register("toolpanel:get", _ => new { panels = Array.Empty<object>(), dragging = false });
 
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
@@ -110,6 +114,16 @@ public sealed class ChromeApi : IDisposable
 		AssertNavigable(url);
 		if (Tabs.Records is [{ Url: BlankUrl } only]) Navigate(only.Id, url);
 		else Tabs.Open(LinkCleaner.StripTrackers(url));
+	}
+
+	/// <summary>
+	/// A key pressed in any of the window's views. True when a command took it,
+	/// so the page never sees it; a command with nothing to act on lets the key through.
+	/// </summary>
+	public bool HandleKey(KeyInput input)
+	{
+		if (Commands.ForInput(input) is not { } command) return false;
+		return Run(command.Id) is not Outcome { Status: "not-applicable" };
 	}
 
 	public object Run(string command)
@@ -158,7 +172,7 @@ public sealed class ChromeApi : IDisposable
 			"history.home" => Act(Tabs.ActiveId is not null, () => Tabs.Navigate(Tabs.ActiveId!, HomepageUrl())),
 			"page.reload" => Act(page is not null, () => page!.Reload()),
 			"page.stop" => Act(page is { IsLoading: true }, () => page!.Stop()),
-			_ => new NotImplemented(Label(command)),
+			_ => new NotImplemented(Commands.Get(command).Label),
 		};
 	}
 
@@ -325,12 +339,19 @@ public sealed class ChromeApi : IDisposable
 		TabsChanged?.Invoke();
 	}
 
-	private static string Label(string command) =>
-		CommandLabels.TryGetValue(command, out var label) ? label : throw new UnknownCommandException(command);
-
 	private string Setting(string key) => _app.Settings.Get(key)?.GetValue<string>() ?? throw new InvalidDataException($"Setting {key} is missing");
 
 	private bool Flag(string key) => _app.Settings.Get(key)?.GetValue<bool>() ?? throw new InvalidDataException($"Setting {key} is missing");
+
+	private void Menu(IReadOnlyList<MenuItem> items, JsonElement[] args, int anchorIndex)
+	{
+		if (items.Count == 0) return;
+		var anchor = Arg(args, anchorIndex);
+		_host.ShowMenu(items, Number(anchor, "x"), Number(anchor, "y"));
+	}
+
+	private static double Number(JsonElement value, string name) =>
+		value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out var n) && n.ValueKind == JsonValueKind.Number ? n.GetDouble() : throw new ArgumentException($"Anchor needs a numeric {name}");
 
 	private static JsonElement Arg(JsonElement[] args, int index) =>
 		index < args.Length ? args[index] : throw new ArgumentException($"Argument {index} is missing");

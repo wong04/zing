@@ -18,12 +18,15 @@ export interface Launched {
 	readonly chrome: Page
 	/** Where this run kept settings and the library; pass it to the next launch to test a relaunch. */
 	readonly userDataDir: string
+	/** Starts Zing again on the same profile, as a link click from another app would, and resolves with its exit code. */
+	launchAgain(args: readonly string[]): Promise<number | null>
 	close(): Promise<void>
 }
 
 export interface LaunchOptions {
 	readonly env?: Readonly<Record<string, string>>
 	readonly userDataDir?: string
+	readonly args?: readonly string[]
 }
 
 let nextPort = 9700
@@ -33,24 +36,22 @@ let nextPort = 9700
  * `close()` fails the test if the host recorded any unhandled error, the
  * WebView2 counterpart of e2e/zing.ts's main-process guard.
  */
-export async function launchZing({ env = {}, userDataDir }: LaunchOptions = {}): Promise<Launched> {
+export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOptions = {}): Promise<Launched> {
 	if (!existsSync(HOST_EXE)) throw new HostProcessError(`No host build at ${HOST_EXE}: run npm run build:host`)
 	const port = String(nextPort++)
 	const errors = join(await mkdtemp(join(tmpdir(), 'zing-host-e2e-')), 'errors.log')
 	// Never the user's real profile: every run gets its own folder unless a test relaunches into one.
 	const userData = userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-host-data-')))
-	const host: ChildProcess = spawn(HOST_EXE, [], {
-		env: {
-			...process.env,
-			ZING_E2E: '1',
-			ZING_CDP_PORT: port,
-			ZING_ERRORS_FILE: errors,
-			ZING_RENDERER_DIR: join(ROOT, 'out', 'renderer'),
-			ZING_USER_DATA: userData,
-			...env,
-		},
-		stdio: 'ignore',
-	})
+	const hostEnv = {
+		...process.env,
+		ZING_E2E: '1',
+		ZING_CDP_PORT: port,
+		ZING_ERRORS_FILE: errors,
+		ZING_RENDERER_DIR: join(ROOT, 'out', 'renderer'),
+		ZING_USER_DATA: userData,
+		...env,
+	}
+	const host: ChildProcess = spawn(HOST_EXE, [...args], { env: hostEnv, stdio: 'ignore' })
 	await expect
 		.poll(async () => (await fetch(`http://127.0.0.1:${port}/json/version`).catch(() => undefined))?.ok ?? false, { timeout: 30_000 })
 		.toBe(true)
@@ -61,6 +62,12 @@ export async function launchZing({ env = {}, userDataDir }: LaunchOptions = {}):
 		browser,
 		chrome,
 		userDataDir: userData,
+		launchAgain: (again) =>
+			new Promise((resolve, reject) => {
+				const second = spawn(HOST_EXE, [...again], { env: hostEnv, stdio: 'ignore' })
+				second.once('error', reject)
+				second.once('exit', (code) => resolve(code))
+			}),
 		close: async () => {
 			// Quit as a person would, by closing every window, so pending writes are flushed.
 			const exited = new Promise<void>((resolve) => host.once('exit', () => resolve()))

@@ -1,31 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { LinkInbox, parseLaunchUrls } from './launch-args'
+import vectors from './launch-args.vectors.json'
 
+// Shared with host/Zing.Core.Tests/LaunchArgsTests.cs.
 describe('parseLaunchUrls', () => {
-	it('finds http and https links and skips the executable, app path and switches', () => {
-		const argv = ['C:\\Program Files\\Zing\\Zing.exe', '.', '--user-data-dir=C:\\tmp', 'https://example.com/a?b=1', 'http://x.test']
-		expect(parseLaunchUrls(argv)).toEqual(['https://example.com/a?b=1', 'http://x.test'])
-	})
-
-	it('removes the quotes Windows leaves around an argument', () => {
-		expect(parseLaunchUrls(['"https://example.com/?a=1&b=2"'])).toEqual(['https://example.com/?a=1&b=2'])
-		expect(parseLaunchUrls(["'https://example.com'"])).toEqual(['https://example.com'])
-		expect(parseLaunchUrls(['https://example.com/path/"'])).toEqual(['https://example.com/path/'])
-		expect(parseLaunchUrls(['  "https://example.com"  '])).toEqual(['https://example.com'])
-	})
-
-	it('refuses schemes a link click should never open', () => {
-		const argv = ['file:///C:/secret.txt', 'javascript:alert(1)', 'ms-settings:defaultapps', 'C:\\Users\\me\\page.html']
-		expect(parseLaunchUrls(argv)).toEqual([])
-	})
-
-	it('does not read a URL out of a switch value', () => {
-		expect(parseLaunchUrls(['--url=https://example.com', '--app=https://example.com'])).toEqual([])
-	})
-
-	it('returns nothing for an empty or link-less command line', () => {
-		expect(parseLaunchUrls([])).toEqual([])
-		expect(parseLaunchUrls(['Zing.exe', '', '""'])).toEqual([])
+	it.each(vectors)('$name', ({ argv, urls }) => {
+		expect(parseLaunchUrls(argv)).toEqual(urls)
 	})
 })
 

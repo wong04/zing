@@ -67,6 +67,20 @@ public sealed class FakeWindowHost : IWindowHost
 	public void Relayout() => Relayouts++;
 	public void FocusChrome() { }
 	public void FocusSurface() { }
+
+	public List<IReadOnlyList<MenuItem>> Menus { get; } = [];
+	public void ShowMenu(IReadOnlyList<MenuItem> items, double x, double y) => Menus.Add(items);
+
+	public FakeShell FakeShell { get; } = new();
+	public IShellActions Shell => FakeShell;
+}
+
+public sealed class FakeShell : IShellActions
+{
+	public List<string> Copied { get; } = [];
+	public List<string> Opened { get; } = [];
+	public void CopyText(string text) => Copied.Add(text);
+	public void OpenExternal(string url) => Opened.Add(url);
 }
 
 /// <summary>Ids t1, t2…, and a clock that ticks once per read, as in the shared tab-store vectors.</summary>
