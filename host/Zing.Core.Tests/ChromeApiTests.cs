@@ -29,7 +29,8 @@ public sealed class ChromeApiTests
 	{
 		var settings = ZingJson.LoadDefaults("settings.json").AsObject();
 		_ = new ChromeApi(_bridge, _tabs, Address.FromDefaults(), settings, ZingJson.LoadDefaults("library.json"), _ => _page, (c, p) => _pushed.Add((c, p)), "test");
-		_tabId = _tabs.Open("about:blank").Id;
+		_tabId = _tabs.Add("about:blank").Id;
+		_tabs.Activate(_tabId);
 	}
 
 	private async Task<JsonElement> Invoke(string channel, params object[] args)

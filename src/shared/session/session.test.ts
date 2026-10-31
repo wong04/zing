@@ -1,6 +1,7 @@
 // Port of Krackn `Tests/unit` section M (SessionStore). The interactionState
 // cases are WebKit-only and have no Chromium counterpart; Tests/persist drives
 // a live WKWebView and is covered by the e2e suite instead.
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
 	MAX_SESSION_TABS,
@@ -11,62 +12,56 @@ import {
 	type SessionTab,
 } from './session'
 
+interface Vectors {
+	restorableUrls: { yes: string[]; no: string[] }
+	prepare: {
+		name: string
+		generate?: { loose: number; pinned: number }
+		tabs?: SessionTab[]
+		expect?: SessionTab[]
+		expectLength?: number
+		expectPinned?: number
+	}[]
+	roundTrip: { tabs: SessionTab[]; expect: SessionTab[] }
+	decode: { name: string; text: string; expect: SessionTab[] }[]
+}
+
+const vectors = JSON.parse(readFileSync(new URL('./session.vectors.json', import.meta.url), 'utf8')) as Vectors
+
 function rec(url: string, changes: Partial<SessionTab> = {}): SessionTab {
 	return { url, title: 't', pinned: false, active: false, ...changes }
 }
 
 describe('restorable urls', () => {
-	it.each(['http://a.com', 'https://a.com/x?y=1'])('%s is restorable', (url) => {
+	it.each(vectors.restorableUrls.yes)('%s is restorable', (url) => {
 		expect(isRestorableUrl(url)).toBe(true)
 	})
-	it.each([
-		['start page', 'zing://home'],
-		['blank tab', 'about:blank'],
-		['file', 'file:///etc/passwd'],
-		['junk', 'not a url'],
-		['empty', ''],
-	])('%s is not restorable', (_name, url) => {
+	it.each(vectors.restorableUrls.no)('"%s" is not restorable', (url) => {
 		expect(isRestorableUrl(url)).toBe(false)
 	})
 })
 
 describe('prepareSession', () => {
-	it('respects the cap and keeps every pinned tab through it', () => {
-		const loose = Array.from({ length: 60 }, (_, i) => rec(`https://loose${i}.com`))
-		const pinned = Array.from({ length: 5 }, (_, i) => rec(`https://pinned${i}.com`, { pinned: true }))
-		const capped = prepareSession([...loose, ...pinned])
-		expect(capped).toHaveLength(MAX_SESSION_TABS)
-		expect(capped.filter((t) => t.pinned)).toHaveLength(5)
-	})
-
-	it('leaves order alone under the cap', () => {
-		const tabs = [rec('https://b.com'), rec('https://a.com')]
-		expect(prepareSession(tabs)).toEqual(tabs)
+	it.each(vectors.prepare)('$name', (c) => {
+		if (c.generate) {
+			const loose = Array.from({ length: c.generate.loose }, (_, i) => rec(`https://loose${i}.com`))
+			const pinned = Array.from({ length: c.generate.pinned }, (_, i) => rec(`https://pinned${i}.com`, { pinned: true }))
+			const capped = prepareSession([...loose, ...pinned])
+			expect(c.expectLength).toBe(MAX_SESSION_TABS)
+			expect(capped).toHaveLength(c.expectLength!)
+			expect(capped.filter((t) => t.pinned)).toHaveLength(c.expectPinned!)
+			return
+		}
+		expect(prepareSession(c.tabs!)).toEqual(c.expect)
 	})
 })
 
 describe('round trip', () => {
-	const session = [
-		rec('https://a.com', { pinned: true }),
-		rec('https://b.com', { active: true }),
-		rec('zing://home'),
-	]
-
 	it('filters unrestorable tabs on save and remembers pinned and active', () => {
-		const back = decodeSession(encodeSession(session))
-		expect(back).toHaveLength(2)
-		expect(back[0]?.pinned).toBe(true)
-		expect(back.some((t) => t.active && t.url === 'https://b.com')).toBe(true)
+		expect(decodeSession(encodeSession(vectors.roundTrip.tabs))).toEqual(vectors.roundTrip.expect)
 	})
 
-	it('decodes garbage and empty input to no tabs', () => {
-		expect(decodeSession('{{{not json')).toEqual([])
-		expect(decodeSession('')).toEqual([])
-		expect(decodeSession('{"url":"https://a.com"}')).toEqual([])
-	})
-
-	it('drops malformed entries but keeps valid ones', () => {
-		const text = JSON.stringify([{ url: 'https://a.com' }, 7, rec('https://ok.com')])
-		expect(decodeSession(text).map((t) => t.url)).toEqual(['https://ok.com'])
+	it.each(vectors.decode)('decode: $name', (c) => {
+		expect(decodeSession(c.text)).toEqual(c.expect)
 	})
 })

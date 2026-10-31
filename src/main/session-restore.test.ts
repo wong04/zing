@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TabRecord } from '@shared/model'
+import type { SessionTab } from '@shared/session/session'
 import { SettingsStore } from '@shared/settings'
 import {
 	SessionFileError,
@@ -13,6 +14,14 @@ import {
 	takePendingRestore,
 	toSessionTabs,
 } from './session-restore'
+
+const vectors = JSON.parse(readFileSync(new URL('../shared/session/session.vectors.json', import.meta.url), 'utf8')) as {
+	toSessionTabs: {
+		records: { id: string; url: string; title: string; pinned: boolean }[]
+		activeId: string
+		expect: SessionTab[]
+	}
+}
 
 let dir: string
 
@@ -103,6 +112,14 @@ describe('SessionSaver', () => {
 		saver.changed()
 		vi.advanceTimersByTime(1000)
 		expect(existsSync(path)).toBe(false)
+	})
+})
+
+describe('toSessionTabs', () => {
+	it('marks the active tab and keeps every record', () => {
+		const { toSessionTabs: vector } = vectors
+		const records = vector.records.map((r) => record(r.id, r.url, { title: r.title, pinned: r.pinned }))
+		expect(toSessionTabs(records, vector.activeId)).toEqual(vector.expect)
 	})
 })
 
