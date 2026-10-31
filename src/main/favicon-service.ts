@@ -1,3 +1,4 @@
+import { runInPage } from './web-contents'
 import { nativeImage, type Session, type WebContents } from 'electron'
 import { best, faviconProbeScript, makeFaviconLink, type FaviconLinkInit } from '@shared/browser/faviconChoice'
 import type { TabId, TabRecord } from '@shared/model'
@@ -102,9 +103,10 @@ export class FaviconService {
 		if (contents.isDestroyed()) return
 		const host = hostOf(contents.getURL())
 		if (!host) return
-		const found: unknown = await contents.executeJavaScript(faviconProbeScript)
-		if (contents.isDestroyed()) return
-		const chosen = best(asLinkInits(found).map(makeFaviconLink))
+		// The tab may close or navigate while the probe runs; then there is nothing to update.
+		const probe = await runInPage<unknown>(contents, faviconProbeScript)
+		if (probe.status === 'gone' || contents.isDestroyed()) return
+		const chosen = best(asLinkInits(probe.value).map(makeFaviconLink))
 		const id = tabs.idOf(contents)
 		if (chosen && id !== undefined) {
 			tabs.setFaviconUrl(id, chosen)

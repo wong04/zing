@@ -2,8 +2,11 @@
 // script that replaces the .mobileconfig. The scripts are parsed by the real
 // PowerShell parser, the equivalent of Krackn parsing its plist.
 import { spawnSync } from 'node:child_process'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { displayTitle, makeDisableScript, makeEnableScript, psQuote, RESOLVERS, scriptFileName, wireGuardCommands } from './dohScript'
+
+// Each case starts Windows PowerShell, which can take seconds to cold-start on a busy CI runner.
+vi.setConfig({ testTimeout: 30_000 })
 
 // Never executes anything: only the parser runs, and it reports syntax errors.
 function parseErrors(script: string): string[] {
@@ -14,7 +17,7 @@ function parseErrors(script: string): string[] {
 		'[void][System.Management.Automation.Language.Parser]::ParseInput($text, [ref]$null, [ref]$errors)',
 		'$errors | ForEach-Object { $_.Message }',
 	].join('; ')
-	const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { encoding: 'utf8' })
+	const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { encoding: 'utf8', windowsHide: true })
 	if (result.error) throw result.error
 	if (result.status !== 0) throw new Error(`PowerShell exited ${result.status}: ${result.stderr}`)
 	return result.stdout.split(/\r?\n/).filter(Boolean)

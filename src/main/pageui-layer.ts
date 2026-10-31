@@ -1,3 +1,4 @@
+import { isViewLive, loadUnlessGone } from './web-contents'
 import { WebContentsView, type BrowserWindow, type Rectangle, type WebContents } from 'electron'
 import { EMPTY_PAGE_UI, hasVisiblePageUi, type PageUiState } from '@shared/browser/pageUi'
 
@@ -76,7 +77,7 @@ export class PageUiLayer implements PageUiHost {
 		// Nothing to show and no view yet: don't pay for a renderer.
 		if (!this.#view && !hasVisiblePageUi(this.#state)) return
 		const view = await this.#ensure()
-		if (view.webContents.isDestroyed()) return
+		if (!isViewLive(this.options.window, view)) return
 		view.webContents.send('pageui:state', this.#state)
 		this.#sync()
 	}
@@ -124,7 +125,7 @@ export class PageUiLayer implements PageUiHost {
 		this.options.window.contentView.addChildView(view)
 		this.options.onContentsCreated(view.webContents)
 		this.#view = view
-		await this.options.load(view.webContents)
+		await loadUnlessGone(view.webContents, this.options.load)
 		return view
 	}
 }

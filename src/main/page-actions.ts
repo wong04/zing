@@ -1,3 +1,4 @@
+import { runInPage } from './web-contents'
 import type { BrowserWindow, Session, WebContents } from 'electron'
 import { DEFAULT_TEXT_SIZE, biggerText, smallerText, textSizeCss } from '@shared/browser/textSize'
 import type { FindDirection, HistoryDirection } from '@shared/browser/pageUi'
@@ -103,7 +104,7 @@ export class FullscreenController {
 	#exitPage(): void {
 		const contents = this.#contents
 		if (!contents || contents.isDestroyed()) return
-		void contents.executeJavaScript('document.fullscreenElement && document.exitFullscreen()')
+		void runInPage(contents, 'document.fullscreenElement && document.exitFullscreen()')
 	}
 }
 

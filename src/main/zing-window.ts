@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, type Rectangle, type Session, type WebContents, type WebContentsView } from 'electron'
 import type { CommandId } from '@shared/commands'
-import { CHROME_LAYOUT, chromeHeight, type CommandOutcome, type MenuAnchor, type TabsState, type TitleBarColors } from '@shared/ipc'
+import { CHROME_LAYOUT, type CommandOutcome, type MenuAnchor, type TabsState, type TitleBarColors } from '@shared/ipc'
 import { stripTrackers } from '@shared/browser/linkCleaner'
 import { startPageURL } from '@shared/browser/startPage'
 import { NEW_TAB_URL, type TabId } from '@shared/model'
@@ -26,6 +26,10 @@ import { TabOrdering } from './tab-ordering'
 import { TabService } from './tab-service'
 import { TabLifecycle, appClock } from './tab-lifecycle'
 import { takePendingRestore } from './session-restore'
+import { loadUnlessGone } from './web-contents'
+import { isEndToEndRun, showWindow, testWindowPlacement } from './test-hooks'
+import { chromeInsets, VERTICAL_TABS, type ChromeInsets } from '@shared/layout/chrome'
+import { SIDEBAR_COLUMN_WIDTH } from '@shared/shell/shellState'
 
 export interface ZingWindowOptions {
 	readonly session: Session
@@ -55,14 +59,14 @@ function assertNavigable(url: string): void {
 	if (!URL.canParse(url) || !NAVIGABLE_PROTOCOLS.has(new URL(url).protocol)) throw new UnsupportedUrlError(url)
 }
 
-/** Page bounds in whole DIPs; CHROME_HEIGHT keeps the top edge on a device pixel too. */
 /** Fullscreen video: the page view takes the whole window, chrome included. */
 function fullBounds(content: Rectangle): Rectangle {
 	return { x: 0, y: 0, width: content.width, height: content.height }
 }
 
-function pageBounds(content: Rectangle, top: number, left: number): Rectangle {
-	return { x: left, y: top, width: Math.max(0, content.width - left), height: Math.max(0, content.height - top) }
+/** Page bounds in whole DIPs; every inset is a multiple of 4, so the edges land on device pixels too. */
+function pageBounds(content: Rectangle, { top, left, right }: ChromeInsets): Rectangle {
+	return { x: left, y: top, width: Math.max(0, content.width - left - right), height: Math.max(0, content.height - top) }
 }
 
 /**
@@ -88,11 +92,13 @@ export class ZingWindow {
 	readonly #tabsListeners = new Set<() => void>()
 	#lifecycle: TabLifecycle | undefined
 	#shown: WebContentsView | undefined
+	#railWidth: number = VERTICAL_TABS.defaultWidth
 
 	constructor(options: ZingWindowOptions) {
 		this.#options = options
 		this.account = options.account
 		this.window = new BrowserWindow({
+			...testWindowPlacement(),
 			width: 1280,
 			height: 820,
 			minWidth: 480,
@@ -133,7 +139,7 @@ export class ZingWindow {
 				preload: PRELOAD_PATH,
 				load: loadPageUi,
 				onContentsCreated: (c) => this.#adoptTrusted(c),
-				top: () => chromeHeight(this.library.favouritesBar),
+				top: () => this.chromeInsets().top,
 			},
 		})
 		this.tabs = new TabService({
@@ -182,7 +188,7 @@ export class ZingWindow {
 			load: loadTabOverview,
 			onContentsCreated: (c) => this.#adoptTrusted(c),
 			tabs: this.tabs,
-			top: () => chromeHeight(this.library.favouritesBar),
+			top: () => this.chromeInsets().top,
 		})
 		this.library = new LibraryController({
 			store: options.library,
@@ -216,8 +222,7 @@ export class ZingWindow {
 			},
 			notify: (text) => this.notify(text),
 			relayout: () => this.#layout(),
-			top: () => chromeHeight(this.library.favouritesBar),
-			leftInset: () => this.library.leftInset,
+			pageArea: () => this.#pageRect(),
 		})
 		routeShortcuts(this.window.webContents, (id) => this.run(id))
 		this.#wireWindow()
@@ -225,7 +230,7 @@ export class ZingWindow {
 		const restored = takePendingRestore()
 		if (restored.length > 0) this.tabs.restore(restored)
 		else this.tabs.open(this.#homepageUrl())
-		void loadChrome(this.window.webContents)
+		void loadUnlessGone(this.window.webContents, loadChrome)
 	}
 
 	/** True for the oldest open window; the session-restore code saves only from this one. */
@@ -271,8 +276,8 @@ export class ZingWindow {
 
 	reveal(): void {
 		if (this.window.isMinimized()) this.window.restore()
-		this.window.show()
-		this.window.focus()
+		showWindow(this.window)
+		if (!isEndToEndRun()) this.window.focus()
 	}
 
 	/** Takes whatever was typed or a ready URL; blank input does nothing. */
@@ -339,7 +344,7 @@ export class ZingWindow {
 	}
 
 	#wireWindow(): void {
-		this.window.once('ready-to-show', () => this.window.show())
+		this.window.once('ready-to-show', () => showWindow(this.window))
 		this.window.on('resize', () => this.#layout())
 		this.window.on('closed', () => {
 			this.#batcher.cancel()
@@ -381,7 +386,31 @@ export class ZingWindow {
 	#pageRect(): Rectangle {
 		const content = this.window.getContentBounds()
 		if (this.features.fullscreen.active) return fullBounds(content)
-		return pageBounds(content, chromeHeight(this.library.favouritesBar), this.shell.pinnedWidth + this.library.leftInset)
+		return pageBounds(content, this.chromeInsets())
+	}
+
+	/**
+	 * Where the chrome ends and the page begins on each side. Built from settings
+	 * and the library, not from the shell, so layers created before the shell can
+	 * ask for it. With tabs on the left the app sidebar folds into the tab rail,
+	 * so it only takes its own column in the other positions.
+	 */
+	chromeInsets(): ChromeInsets {
+		const settings = this.#options.settings
+		const position = settings.get('tabBarPosition')
+		const sidebar = position !== 'left' && settings.get('sidebarPinned') ? SIDEBAR_COLUMN_WIDTH : 0
+		return chromeInsets({
+			position,
+			favouritesBar: this.library.favouritesBar,
+			railWidth: this.#railWidth,
+			leftDock: sidebar + this.library.leftInset,
+		})
+	}
+
+	/** The vertical tab rail was resized or collapsed in the chrome renderer. */
+	setRailWidth(width: number): void {
+		this.#railWidth = width
+		this.#layout()
 	}
 
 	#layout(): void {

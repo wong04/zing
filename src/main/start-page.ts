@@ -1,3 +1,4 @@
+import { runInPage } from './web-contents'
 import { protocol, type Session, type WebContents } from 'electron'
 import {
 	editShortcutsHost,
@@ -126,7 +127,7 @@ export class StartPage {
 			const open = pages().filter((c) => !c.isDestroyed() && isStartPage(c.getURL()))
 			if (key === 'accent' || key === 'theme') {
 				const script = restyleScript(startPageTheme(settings.accent))
-				for (const contents of open) void contents.executeJavaScript(script)
+				for (const contents of open) void runInPage(contents, script)
 				return
 			}
 			if (key === 'startShortcuts' || key === 'searchEngine') for (const contents of open) contents.reload()

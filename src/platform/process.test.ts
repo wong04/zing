@@ -7,8 +7,10 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { executableNames, LineSplitter, ProcessCancelledError, ProcessTimeoutError, runProcess, searchPaths, ToolNotFoundError, which } from './process'
 
-const POWERSHELL = 'powershell.exe'
-const ps = (script: string) => ['-NoProfile', '-NonInteractive', '-Command', script]
+// Node, not PowerShell: Windows PowerShell can take over 5 s to cold-start on a
+// busy CI runner, which timed this suite out. These tests are about the runner.
+const NODE = process.execPath
+const node = (script: string) => ['-e', script]
 
 describe('line splitting', () => {
 	it('splits on \\n, \\r\\n and bare \\r (progress redraws)', () => {
@@ -42,7 +44,7 @@ describe('finding tools', () => {
 
 describe('running processes', () => {
 	it('captures stdout, stderr and the exit code without throwing on failure', async () => {
-		const result = await runProcess(POWERSHELL, ps("[Console]::Out.Write('hi'); [Console]::Error.Write('oops'); exit 3"))
+		const result = await runProcess(NODE, node("process.stdout.write('hi'); process.stderr.write('oops'); process.exit(3)"))
 		expect(result).toEqual({ exitCode: 3, stdout: 'hi', stderr: 'oops' })
 	})
 	it('passes arguments without a shell, so metacharacters stay literal', async () => {
@@ -52,7 +54,7 @@ describe('running processes', () => {
 	})
 	it('streams lines as they arrive', async () => {
 		const lines: string[] = []
-		await runProcess(POWERSHELL, ps("Write-Output one; Write-Output two"), { onLine: (l) => lines.push(l) })
+		await runProcess(NODE, node("console.log('one'); console.log('two')"), { onLine: (l) => lines.push(l) })
 		expect(lines).toEqual(['one', 'two'])
 	})
 	it('a missing executable is a ToolNotFoundError', async () => {
@@ -61,19 +63,19 @@ describe('running processes', () => {
 	it('cancelling returns in well under the run time', async () => {
 		const controller = new AbortController()
 		const started = Date.now()
-		const run = runProcess(POWERSHELL, ps('Start-Sleep -Seconds 30'), { signal: controller.signal })
+		const run = runProcess(NODE, node('setTimeout(() => {}, 30_000)'), { signal: controller.signal })
 		setTimeout(() => controller.abort(), 300)
 		await expect(run).rejects.toBeInstanceOf(ProcessCancelledError)
 		expect(Date.now() - started).toBeLessThan(5000)
 	}, 15_000)
 	it('15 simultaneous cancels do not deadlock', async () => {
 		const controller = new AbortController()
-		const runs = Array.from({ length: 15 }, () => runProcess(POWERSHELL, ps('Start-Sleep -Seconds 30'), { signal: controller.signal }))
+		const runs = Array.from({ length: 15 }, () => runProcess(NODE, node('setTimeout(() => {}, 30_000)'), { signal: controller.signal }))
 		setTimeout(() => controller.abort(), 500)
 		const results = await Promise.allSettled(runs)
 		expect(results.every((r) => r.status === 'rejected' && r.reason instanceof ProcessCancelledError)).toBe(true)
 	}, 30_000)
 	it('times out', async () => {
-		await expect(runProcess(POWERSHELL, ps('Start-Sleep -Seconds 30'), { timeoutMs: 500 })).rejects.toBeInstanceOf(ProcessTimeoutError)
+		await expect(runProcess(NODE, node('setTimeout(() => {}, 30_000)'), { timeoutMs: 500 })).rejects.toBeInstanceOf(ProcessTimeoutError)
 	}, 15_000)
 })

@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -42,14 +42,41 @@ async function seedBlocklist(userDataDir: string, filters: string): Promise<void
 	await writeFile(join(userDataDir, CACHE_FILE), engine.serialize())
 }
 
+/** Written by src/main/test-hooks.ts when ZING_E2E=1. */
+const MAIN_ERRORS_FILE = 'main-errors.log'
+
+export class MainProcessError extends Error {
+	override name = 'MainProcessError'
+}
+
+/** Throws if the app recorded any uncaught main-process error in this profile. */
+export function assertNoMainErrors(userDataDir: string): void {
+	const file = join(userDataDir, MAIN_ERRORS_FILE)
+	if (!existsSync(file)) return
+	throw new MainProcessError(`Zing's main process threw during this test:\n\n${readFileSync(file, 'utf8')}`)
+}
+
+/**
+ * Every test ends with `app.close()`, so the check rides on it: no test can
+ * pass while the main process threw behind its back.
+ */
+function failOnMainErrors(app: ElectronApplication, userDataDir: string): void {
+	const close = app.close.bind(app)
+	app.close = async () => {
+		await close()
+		assertNoMainErrors(userDataDir)
+	}
+}
+
 export async function launchZing(options: LaunchOptions = {}): Promise<Launched> {
 	const userDataDir = options.userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-e2e-')))
 	if (!existsSync(join(userDataDir, CACHE_FILE))) await seedBlocklist(userDataDir, options.filters ?? '')
 	if (options.settings) await writeFile(join(userDataDir, 'settings.json'), JSON.stringify(options.settings))
 	const app = await electron.launch({
 		args: ['.', `--user-data-dir=${userDataDir}`, ...(options.args ?? [])],
-		env: { ...(process.env as Record<string, string>), ZING_SKIP_ACCOUNT_GATE: '1', ...options.env },
+		env: { ...(process.env as Record<string, string>), ZING_SKIP_ACCOUNT_GATE: '1', ZING_E2E: '1', ...options.env },
 	})
+	failOnMainErrors(app, userDataDir)
 	const existing = app.windows().find(isChrome)
 	const chrome = existing ?? (await app.waitForEvent('window', { predicate: isChrome }))
 	await chrome.waitForLoadState('domcontentloaded')

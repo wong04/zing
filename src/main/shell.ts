@@ -1,4 +1,6 @@
-import { Menu, screen, WebContentsView, type BrowserWindow, type Session, type WebContents } from 'electron'
+import { cursorPoint } from './test-hooks'
+import { isViewLive, loadUnlessGone } from './web-contents'
+import { Menu, WebContentsView, type BrowserWindow, type Session, type WebContents } from 'electron'
 import { type EventChannel, type EventContract, type MenuAnchor } from '@shared/ipc'
 import { isSettingKey, UnknownSettingError, type Settings, type SettingsStore } from '@shared/settings'
 import type { Rect } from '@shared/shell/panelLayout'
@@ -38,10 +40,8 @@ export interface ShellOptions {
 	readonly notify: (text: string) => void
 	/** The page view's rectangle changed (the sidebar was pinned or unpinned). */
 	readonly relayout: () => void
-	/** Where the page starts below the chrome; it moves down when the Favourites bar shows. */
-	readonly top: () => number
-	/** Width of anything else docked left of the page (the bookmarks panel). */
-	readonly leftInset: () => number
+	/** The page view's rectangle, owned by the window: it knows the tab bar position, Favourites bar and docked panels. */
+	readonly pageArea: () => Rect
 	readonly clock?: () => number
 }
 
@@ -108,10 +108,7 @@ export class ShellController {
 
 	/** Where the page view sits, in whole DIPs. */
 	pageRect(): Rect {
-		const content = this.#o.window.getContentBounds()
-		const left = this.pinnedWidth + this.#o.leftInset()
-		const top = this.#o.top()
-		return { x: left, y: top, width: Math.max(0, content.width - left), height: Math.max(0, content.height - top) }
+		return this.#o.pageArea()
 	}
 
 	state(): ShellState {
@@ -164,7 +161,9 @@ export class ShellController {
 		this.#settingsOpen = true
 		this.#sync()
 		this.#sendState()
-		void this.#ensure().then((view) => view.webContents.focus())
+		void this.#ensure().then((view) => {
+			if (isViewLive(this.#o.window, view)) view.webContents.focus()
+		})
 	}
 
 	closeSettings(): void {
@@ -324,9 +323,16 @@ export class ShellController {
 
 	#sampleCursor(): void {
 		const { window } = this.#o
-		if (window.isDestroyed() || !window.isFocused()) return
+		if (window.isDestroyed()) return
+		// Unfocused counts as "the cursor is elsewhere": a revealed sidebar still
+		// puts itself away when the user switches to another app, and nothing
+		// is revealed in a window they aren't using.
+		if (!window.isFocused()) {
+			this.#reveal.update({ x: -1, y: -1, inWindow: false, now: this.#clock() })
+			return
+		}
 		const content = window.getContentBounds()
-		const cursor = screen.getCursorScreenPoint()
+		const cursor = cursorPoint()
 		const x = cursor.x - content.x
 		const y = cursor.y - content.y
 		this.#reveal.update({ x, y, inWindow: x >= 0 && y >= 0 && x < content.width && y < content.height, now: this.#clock() })
@@ -334,7 +340,9 @@ export class ShellController {
 
 	#focusSurfaceIfCovering(): void {
 		if (!this.gated && !this.#settingsOpen) return
-		void this.#ensure().then((view) => view.webContents.focus())
+		void this.#ensure().then((view) => {
+			if (isViewLive(this.#o.window, view)) view.webContents.focus()
+		})
 	}
 
 	#sync(): void {
@@ -355,6 +363,7 @@ export class ShellController {
 			return
 		}
 		void this.#ensure().then((view) => {
+			if (!isViewLive(this.#o.window, view)) return
 			// The region may have changed while the view was loading.
 			const now = this.#region
 			if (!now) return
@@ -385,7 +394,7 @@ export class ShellController {
 		this.#o.window.contentView.addChildView(view)
 		this.#o.onContentsCreated(view.webContents)
 		this.#view = view
-		await this.#o.load(view.webContents)
+		await loadUnlessGone(view.webContents, this.#o.load)
 		this.#loaded = true
 		return view
 	}

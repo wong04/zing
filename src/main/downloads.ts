@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { app, shell, type DownloadItem, type Session, type WebContents } from 'electron'
 import { downloadFileName } from '@shared/browser/downloadName'
 import type { DownloadEntry, DownloadStatus } from '@shared/browser/pageUi'
+import { holdMarkOfTheWeb } from '../platform/windows/holdMark'
 import { INTERNET_ZONE, readMarkOfTheWeb, writeMarkOfTheWeb } from '../platform/windows/security'
 import type { PageUiHost } from './pageui-layer'
 
@@ -14,7 +15,8 @@ export class UnknownDownloadError extends Error {
 }
 
 const PROGRESS_THROTTLE_MS = 120
-const ENGINE_MARK_WAIT_MS = 2000
+// How long Chromium may take to stamp its own mark on a busy PC.
+const ENGINE_MARK_WINDOW_MS = 10_000
 const ENGINE_MARK_POLL_MS = 100
 
 /** `ZING_DOWNLOADS_DIR` lets tests save somewhere disposable. */
@@ -106,19 +108,16 @@ export class DownloadManager {
 
 	/**
 	 * Without this stream SmartScreen and Office never treat the file as
-	 * downloaded. Chromium stamps its own generic `about:internet` mark shortly
-	 * after `done`, so ours waits for that one and replaces it with the real
-	 * HostUrl and ReferrerUrl.
+	 * downloaded. Ours carries the real HostUrl and ReferrerUrl and is held
+	 * against Chromium's later generic mark (see holdMarkOfTheWeb).
 	 */
 	async #mark(id: number, path: string, item: DownloadItem, referrer: string): Promise<void> {
 		try {
-			for (let waited = 0; waited < ENGINE_MARK_WAIT_MS && !(await readMarkOfTheWeb(path)); waited += ENGINE_MARK_POLL_MS) {
-				await new Promise((resolve) => setTimeout(resolve, ENGINE_MARK_POLL_MS))
-			}
-			await writeMarkOfTheWeb(path, {
-				zoneId: INTERNET_ZONE,
-				hostUrl: item.getURL(),
-				...(referrer && { referrerUrl: referrer }),
+			const ours = { zoneId: INTERNET_ZONE, hostUrl: item.getURL(), ...(referrer && { referrerUrl: referrer }) }
+			await holdMarkOfTheWeb({ read: () => readMarkOfTheWeb(path), write: (mark) => writeMarkOfTheWeb(path, mark) }, ours, {
+				windowMs: ENGINE_MARK_WINDOW_MS,
+				pollMs: ENGINE_MARK_POLL_MS,
+				sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 			})
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error)

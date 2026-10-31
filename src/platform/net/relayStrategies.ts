@@ -6,8 +6,8 @@ import {
 	waybackSnapshotURL,
 } from '../../shared/unblock/relayEngine'
 import { MalformedResponseError } from '../../shared/unblock/pinnedHTTPClient'
-import { startDeadline, throwIfCancelled } from './abort'
 import { pinnedFetch } from './pinnedFetch'
+import { systemResolve } from './probes'
 import { userAgent } from './userAgent'
 
 /**
@@ -48,26 +48,23 @@ interface PlainResponse {
 	readonly finalURL: URL
 }
 
-/** Ordinary fetch through the OS resolver; fetch follows redirects itself. */
+/**
+ * Ordinary fetch through the OS resolver. It goes through the same request
+ * path as the pinned fetch rather than Node's `fetch`, which also caps
+ * response headers at 16 KiB and failed on cloudflare.com.
+ */
 async function plainFetch(
 	url: URL,
 	signal: AbortSignal,
 	timeoutMs: number,
 	headers: Record<string, string>,
 ): Promise<PlainResponse> {
-	throwIfCancelled(signal)
-	const deadline = startDeadline(signal, timeoutMs)
-	try {
-		const response = await fetch(url, { headers, signal: deadline.signal })
-		const body = new Uint8Array(await response.arrayBuffer())
-		return {
-			status: response.status,
-			body,
-			contentType: response.headers.get('content-type') ?? undefined,
-			finalURL: new URL(response.url || url.href),
-		}
-	} catch (error) {
-		throw deadline.toError(error)
+	const result = await pinnedFetch(url, signal, { timeoutMs, resolve: systemResolve, headers })
+	return {
+		status: result.response.statusCode,
+		body: result.response.body,
+		contentType: result.contentType,
+		finalURL: result.finalURL,
 	}
 }
 
