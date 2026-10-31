@@ -1,26 +1,23 @@
+// What `sleepingTabs` accepts lives in sleepSettings.vectors.json, which the C# port's tests read too.
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, acceptsValue, changedSettings } from '../settings'
 import { InvalidSettingError, SettingsStore, parseSettings } from '../settings/store'
 import { DEFAULT_SLEEPING_TABS, isSleepSettings } from './sleepSettings'
+import vectors from './sleepSettings.vectors.json'
 
 describe('sleepingTabs setting', () => {
 	it('defaults to on, 30 minutes, pinned tabs kept awake', () => {
-		expect(DEFAULT_SETTINGS.sleepingTabs).toEqual({ enabled: true, afterMinutes: 30, sleepPinned: false })
+		expect(DEFAULT_SETTINGS.sleepingTabs).toEqual(vectors.default)
 		expect(isSleepSettings(DEFAULT_SLEEPING_TABS)).toBe(true)
 	})
 
-	it('accepts a valid group and rejects malformed ones', () => {
-		expect(acceptsValue('sleepingTabs', { enabled: false, afterMinutes: 5, sleepPinned: true })).toBe(true)
-		const bad: unknown[] = [
-			null,
-			[],
-			{ enabled: true, afterMinutes: 30 },
-			{ enabled: true, afterMinutes: 0, sleepPinned: false },
-			{ enabled: true, afterMinutes: 99_999, sleepPinned: false },
-			{ enabled: 'yes', afterMinutes: 30, sleepPinned: false },
-			{ enabled: true, afterMinutes: 30, sleepPinned: false, extra: 1 },
-		]
-		for (const value of bad) expect(isSleepSettings(value), JSON.stringify(value)).toBe(false)
+	it.each(vectors.valid)('accepts %j', (value) => {
+		expect(acceptsValue('sleepingTabs', value)).toBe(true)
+		expect(isSleepSettings(value)).toBe(true)
+	})
+
+	it.each(vectors.invalid as unknown[])('rejects %j', (value) => {
+		expect(isSleepSettings(value)).toBe(false)
 	})
 
 	it('persists only when it differs from the default, and refuses invalid writes', () => {

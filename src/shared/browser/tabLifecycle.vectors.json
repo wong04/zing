@@ -1,0 +1,261 @@
+{
+	"_doc": "Shared by src/shared/browser/tabLifecycle.test.ts, src/main/tab-lifecycle.test.ts, src/main/tab-sleep.test.ts and host/Zing.Core.Tests/TabLifecycleTests.cs. Times are epoch ms; tab ages are minutes before `now`.",
+	"now": 1700000000000,
+	"autoClose": [
+		{ "name": "1 hour closes anything older", "policy": { "enabled": true, "rule": "hour" }, "tabs": "aged", "expect": ["ancient", "stale"] },
+		{ "name": "1 day spares the 2-hour-old tab", "policy": { "enabled": true, "rule": "day" }, "tabs": "aged", "expect": ["ancient"] },
+		{ "name": "7 days spares all but the 14-day-old", "policy": { "enabled": true, "rule": "week" }, "tabs": "aged", "expect": ["ancient"] },
+		{ "name": "custom 1.5h", "policy": { "enabled": true, "rule": "custom", "customHours": 1.5 }, "tabs": "aged", "expect": ["ancient", "stale"] },
+		{ "name": "disabled closes nothing", "policy": { "enabled": false, "rule": "custom", "customHours": 1.5 }, "tabs": "aged", "expect": [] },
+		{
+			"name": "never closes the active tab",
+			"policy": { "enabled": true, "rule": "hour" },
+			"tabs": [
+				{ "id": "active", "minutesAgo": 5000, "active": true },
+				{ "id": "other", "minutesAgo": 5000 },
+				{ "id": "third", "minutesAgo": 5000 }
+			],
+			"expect": ["other", "third"]
+		},
+		{ "name": "never closes a pinned tab", "policy": { "enabled": true, "rule": "hour" }, "tabs": "withPinned", "expect": ["loose", "loose2"] },
+		{
+			"name": "never closes the last tab",
+			"policy": { "enabled": true, "rule": "hour" },
+			"tabs": [{ "id": "solo", "minutesAgo": 99999 }],
+			"expect": []
+		},
+		{
+			"name": "leaves one survivor from two stale tabs",
+			"policy": { "enabled": true, "rule": "hour" },
+			"tabs": [
+				{ "id": "one", "minutesAgo": 99999 },
+				{ "id": "two", "minutesAgo": 99999 }
+			],
+			"expectCount": 1
+		}
+	],
+	"tabSets": {
+		"aged": [
+			{ "id": "fresh", "minutesAgo": 5 },
+			{ "id": "stale", "minutesAgo": 120 },
+			{ "id": "ancient", "minutesAgo": 20000 }
+		],
+		"withPinned": [
+			{ "id": "pinned", "minutesAgo": 5000, "pinned": true },
+			{ "id": "loose", "minutesAgo": 5000 },
+			{ "id": "loose2", "minutesAgo": 5000 }
+		]
+	},
+	"scheduledSweep": [
+		{ "name": "spares pinned, ignores age", "tabs": "withPinned", "expect": ["loose", "loose2"] }
+	],
+	"scheduleElapsed": {
+		"policy": { "enabled": true, "rule": "day", "atTimeEnabled": true, "hour": 3, "minute": 0 },
+		"cases": [
+			{ "name": "fires when 03:00 falls inside the window", "since": "2026-03-01T02:55:00Z", "until": "2026-03-01T03:05:00Z", "expect": true },
+			{ "name": "does not fire before the time", "since": "2026-03-01T01:00:00Z", "until": "2026-03-01T02:00:00Z", "expect": false },
+			{ "name": "does not fire after it already passed", "since": "2026-03-01T04:00:00Z", "until": "2026-03-01T05:00:00Z", "expect": false },
+			{ "name": "fires after sleeping across the instant", "since": "2026-03-01T22:00:00Z", "until": "2026-03-02T09:00:00Z", "expect": true },
+			{ "name": "a multi-day gap still fires", "since": "2026-03-01T04:00:00Z", "until": "2026-03-05T04:00:00Z", "expect": true },
+			{ "name": "no schedule when the option is off", "policyChanges": { "atTimeEnabled": false }, "since": "2026-03-01T02:00:00Z", "until": "2026-03-01T04:00:00Z", "expect": false },
+			{ "name": "a window ending exactly at the time fires", "since": "2026-03-01T02:00:00Z", "until": "2026-03-01T03:00:00Z", "expect": true },
+			{ "name": "a window starting exactly at the time does not", "since": "2026-03-01T03:00:00Z", "until": "2026-03-01T04:00:00Z", "expect": false },
+			{ "name": "an empty window never fires", "since": "2026-03-01T03:00:00Z", "until": "2026-03-01T03:00:00Z", "expect": false }
+		]
+	},
+	"intervalLabels": [
+		{ "hours": 0.5, "expect": "30 minutes" },
+		{ "hours": 1, "expect": "1 hour" },
+		{ "hours": 6, "expect": "6 hours" },
+		{ "hours": 24, "expect": "1 day" },
+		{ "hours": 72, "expect": "3 days" },
+		{ "hours": 0.01, "expect": "15 minutes" }
+	],
+	"intervals": [
+		{ "name": "hour", "policy": { "rule": "hour" }, "expectMs": 3600000 },
+		{ "name": "day", "policy": { "rule": "day" }, "expectMs": 86400000 },
+		{ "name": "week", "policy": { "rule": "week" }, "expectMs": 604800000 },
+		{ "name": "custom", "policy": { "rule": "custom", "customHours": 1.5 }, "expectMs": 5400000 },
+		{ "name": "custom has a quarter-hour floor", "policy": { "rule": "custom", "customHours": 0.01 }, "expectMs": 900000 }
+	],
+	"keepAwake": {
+		"settings": { "enabled": true, "afterMinutes": 30, "sleepPinned": false },
+		"base": { "id": "t", "lastActiveAgoMinutes": 60, "pinned": false, "isActive": false, "visibleInSplit": false, "playingAudio": false, "hasUnsavedForm": false, "asleep": false },
+		"cases": [
+			{ "name": "idle tab may sleep", "expect": null },
+			{ "name": "disabled", "settingsChanges": { "enabled": false }, "expect": "disabled" },
+			{ "name": "already asleep", "tab": { "asleep": true }, "expect": "already-asleep" },
+			{ "name": "active", "tab": { "isActive": true }, "expect": "active" },
+			{ "name": "visible in split", "tab": { "visibleInSplit": true }, "expect": "visible-in-split" },
+			{ "name": "playing audio", "tab": { "playingAudio": true }, "expect": "playing-audio" },
+			{ "name": "unsaved form", "tab": { "hasUnsavedForm": true }, "expect": "unsaved-form" },
+			{ "name": "pinned", "tab": { "pinned": true }, "expect": "pinned" },
+			{ "name": "pinned may sleep when allowed", "tab": { "pinned": true }, "settingsChanges": { "sleepPinned": true }, "expect": null },
+			{ "name": "recently used", "tab": { "lastActiveAgoMinutes": 29 }, "expect": "recently-used" },
+			{ "name": "exactly at the threshold may sleep", "tab": { "lastActiveAgoMinutes": 30 }, "expect": null },
+			{ "name": "disabled wins over active", "tab": { "isActive": true }, "settingsChanges": { "enabled": false }, "expect": "disabled" },
+			{ "name": "active wins over audio", "tab": { "isActive": true, "playingAudio": true }, "expect": "active" }
+		],
+		"tabsToSleep": {
+			"tabs": [
+				{ "id": "a", "lastActiveAgoMinutes": 60 },
+				{ "id": "b", "lastActiveAgoMinutes": 5 },
+				{ "id": "c", "lastActiveAgoMinutes": 90, "isActive": true },
+				{ "id": "d", "lastActiveAgoMinutes": 90, "pinned": true },
+				{ "id": "e", "lastActiveAgoMinutes": 31 }
+			],
+			"expect": ["a", "e"]
+		},
+		"nextSleepCheck": [
+			{ "name": "soonest recently-used tab", "tabs": [{ "id": "a", "lastActiveAgoMinutes": 10 }, { "id": "b", "lastActiveAgoMinutes": 20 }], "expectInMinutes": 10 },
+			{ "name": "ignores tabs blocked for other reasons", "tabs": [{ "id": "a", "lastActiveAgoMinutes": 10, "playingAudio": true }, { "id": "b", "lastActiveAgoMinutes": 5, "pinned": true }], "expectInMinutes": null },
+			{ "name": "nothing while disabled", "settingsChanges": { "enabled": false }, "tabs": [{ "id": "a", "lastActiveAgoMinutes": 10 }], "expectInMinutes": null },
+			{ "name": "nothing when every tab is already due", "tabs": [{ "id": "a", "lastActiveAgoMinutes": 40 }], "expectInMinutes": null }
+		]
+	},
+	"scenarioStart": "2026-01-10T12:00:00Z",
+	"autoCloser": [
+		{
+			"name": "closes an idle tab once its interval passes, sparing active and pinned tabs",
+			"policy": { "rule": "hour" },
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "pinned", "pinned": true }, { "id": "idle" }, { "id": "busy" }],
+			"steps": [
+				{ "advanceMinutes": 30 },
+				{ "touch": "busy" },
+				{ "advanceMinutes": 31 },
+				{ "expectClosed": ["idle"] },
+				{ "advanceMinutes": 30 },
+				{ "expectClosed": ["idle", "busy"] },
+				{ "expectRemaining": ["active", "pinned"] }
+			]
+		},
+		{
+			"name": "does nothing while disabled and arms no timer",
+			"policy": { "enabled": false },
+			"active": "a",
+			"tabs": [{ "id": "a" }, { "id": "b" }],
+			"steps": [{ "expectTimers": 0 }, { "advanceMinutes": 6000 }, { "expectClosed": [] }]
+		},
+		{
+			"name": "keeps a single timer armed however often tabs change",
+			"policy": { "rule": "day" },
+			"active": "a",
+			"tabs": [{ "id": "a" }, { "id": "b" }, { "id": "c" }],
+			"steps": [{ "reschedule": 20 }, { "expectTimers": 1 }]
+		},
+		{
+			"name": "never closes the last tab",
+			"policy": { "rule": "hour" },
+			"active": null,
+			"tabs": [{ "id": "a" }, { "id": "b" }],
+			"steps": [{ "advanceMinutes": 120 }, { "expectRemainingCount": 1 }]
+		},
+		{
+			"name": "sweeps everything but pinned and active at the daily time, regardless of age",
+			"policy": { "rule": "week", "atTimeEnabled": true, "hour": 3, "minute": 0 },
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "pinned", "pinned": true }, { "id": "x" }, { "id": "y" }],
+			"steps": [
+				{ "advanceMinutes": 840 },
+				{ "expectClosed": [] },
+				{ "advanceMinutes": 60 },
+				{ "expectClosed": ["x", "y"] },
+				{ "expectRemaining": ["active", "pinned"] }
+			]
+		},
+		{
+			"name": "does not fire a daily sweep for a time that passed before the schedule was switched on",
+			"policy": { "rule": "week" },
+			"active": "a",
+			"tabs": [{ "id": "a" }, { "id": "b" }],
+			"steps": [
+				{ "advanceMinutes": 1800 },
+				{ "policy": { "rule": "week", "atTimeEnabled": true, "hour": 3, "minute": 0 } },
+				{ "expectClosed": [] },
+				{ "advanceMinutes": 1500 },
+				{ "expectClosed": ["b"] }
+			]
+		}
+	],
+	"sleeper": [
+		{
+			"name": "sleeps an inactive tab after the idle period, never the active or a pinned one",
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "idle" }, { "id": "pin", "pinned": true }],
+			"steps": [{ "advanceMinutes": 29 }, { "expectSlept": [] }, { "advanceMinutes": 2 }, { "expectSlept": ["idle"] }]
+		},
+		{
+			"name": "leaves a tab playing audio awake, then sleeps it once it falls silent",
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "radio", "audible": true }],
+			"steps": [
+				{ "advanceMinutes": 31 },
+				{ "expectSlept": [] },
+				{ "setAudible": "radio", "value": false },
+				{ "advanceMinutes": 6 },
+				{ "expectSlept": ["radio"] }
+			]
+		},
+		{
+			"name": "leaves a tab with unsaved input awake, then sleeps it once the input is gone",
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "form", "dirty": true }],
+			"steps": [
+				{ "advanceMinutes": 31 },
+				{ "expectSlept": [] },
+				{ "setDirty": "form", "value": false },
+				{ "advanceMinutes": 6 },
+				{ "expectSlept": ["form"] }
+			]
+		},
+		{
+			"name": "does not sleep a tab the user returned to while it was being inspected",
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "back", "touchOnProbe": true }],
+			"steps": [{ "advanceMinutes": 31 }, { "expectSlept": [] }]
+		},
+		{
+			"name": "sleeps a tab that is already past its idle time when scheduling starts",
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "stale", "idleMinutes": 120 }],
+			"steps": [{ "advanceMs": 200 }, { "expectSlept": ["stale"] }]
+		},
+		{
+			"name": "keeps one timer armed however often tabs change",
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "a" }, { "id": "b" }],
+			"steps": [{ "reschedule": 10 }, { "expectTimers": 1 }]
+		},
+		{
+			"name": "arms no timer when nothing can sleep",
+			"active": "only",
+			"tabs": [{ "id": "only" }],
+			"steps": [{ "expectTimers": 0 }]
+		},
+		{
+			"name": "a tab whose page is unavailable stays awake and is retried later",
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "gone", "probeFails": true }],
+			"steps": [
+				{ "advanceMinutes": 31 },
+				{ "expectSlept": [] },
+				{ "expectErrors": 1 },
+				{ "setProbeFails": "gone", "value": false },
+				{ "advanceMinutes": 6 },
+				{ "expectSlept": ["gone"] }
+			]
+		},
+		{
+			"name": "remembers the scroll position and hands it back once on wake",
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "long", "scrollY": 480 }],
+			"steps": [
+				{ "advanceMinutes": 31 },
+				{ "expectSlept": ["long"] },
+				{ "expectWakeScroll": "long", "value": 480 },
+				{ "expectWakeScroll": "long", "value": null }
+			]
+		}
+	]
+}

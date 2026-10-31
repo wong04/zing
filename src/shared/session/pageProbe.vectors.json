@@ -1,0 +1,9 @@
+{
+	"_doc": "Shared by pageProbe.test.ts and TabLifecycleTests.cs. 1e999 stands for Infinity, which JSON cannot spell.",
+	"accepted": [
+		{ "name": "accepts the probe shape", "input": { "scrollY": 120, "dirty": false }, "expect": { "scrollY": 120, "dirty": false } },
+		{ "name": "clamps negative overscroll to the top", "input": { "scrollY": -5, "dirty": true }, "expect": { "scrollY": 0, "dirty": true } },
+		{ "name": "ignores extra fields", "input": { "scrollY": 3.5, "dirty": true, "x": 1 }, "expect": { "scrollY": 3.5, "dirty": true } }
+	],
+	"rejected": [null, "x", [], {}, { "scrollY": "a", "dirty": false }, { "scrollY": 1e999, "dirty": false }, { "scrollY": 1, "dirty": "no" }, { "scrollY": 1 }, { "dirty": false }]
+}

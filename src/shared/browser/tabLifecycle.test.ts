@@ -1,6 +1,8 @@
 // Port of Krackn `Tests/taborg`: auto-close, schedule window, interval labels.
+// The cases live in tabLifecycle.vectors.json, which the C# port's tests read too.
 import { describe, expect, it } from 'vitest'
 import {
+	autoCloseInterval,
 	defaultAutoClosePolicy,
 	describedInterval,
 	scheduleElapsed,
@@ -9,112 +11,120 @@ import {
 	utcCalendar,
 	type AutoClosePolicy,
 } from './tabLifecycle'
+import { keepAwakeReason, nextSleepCheck, tabsToSleep, type SleepCandidate, type SleepSettings } from '../layout/sleep'
 import type { TabSnapshot } from './tabOrganizer'
 import { base, tab } from './taborgFixtures'
+import raw from './tabLifecycle.vectors.json'
 
+interface TabSpec {
+	id: string
+	minutesAgo: number
+	pinned?: boolean
+	active?: boolean
+}
+
+interface SleepTabSpec extends Partial<SleepCandidate> {
+	lastActiveAgoMinutes?: number
+}
+
+interface Vectors {
+	now: number
+	autoClose: { name: string; policy: Partial<AutoClosePolicy>; tabs: string | TabSpec[]; expect?: string[]; expectCount?: number }[]
+	tabSets: Record<string, TabSpec[]>
+	scheduledSweep: { name: string; tabs: string; expect: string[] }[]
+	scheduleElapsed: {
+		policy: AutoClosePolicy
+		cases: { name: string; policyChanges?: Partial<AutoClosePolicy>; since: string; until: string; expect: boolean }[]
+	}
+	intervalLabels: { hours: number; expect: string }[]
+	intervals: { name: string; policy: Partial<AutoClosePolicy>; expectMs: number }[]
+	keepAwake: {
+		settings: SleepSettings
+		base: SleepTabSpec
+		cases: { name: string; tab?: SleepTabSpec; settingsChanges?: Partial<SleepSettings>; expect: string | null }[]
+		tabsToSleep: { tabs: SleepTabSpec[]; expect: string[] }
+		nextSleepCheck: { name: string; tabs: SleepTabSpec[]; settingsChanges?: Partial<SleepSettings>; expectInMinutes: number | null }[]
+	}
+}
+
+const vectors = raw as unknown as Vectors
 const now = base
+const MINUTE = 60_000
 
 function policyOf(changes: Partial<AutoClosePolicy>): AutoClosePolicy {
 	return { ...defaultAutoClosePolicy, ...changes }
 }
 
-function closing(tabs: TabSnapshot[], policy: AutoClosePolicy): string[] {
-	return tabsToClose(tabs, policy, now).sort()
+function snapshots(specs: string | TabSpec[]): TabSnapshot[] {
+	const list = typeof specs === 'string' ? vectors.tabSets[specs]! : specs
+	return list.map((t) => tab(t.id, 'x.com', { accessedMinutesAgo: t.minutesAgo, pinned: t.pinned, active: t.active }))
 }
 
+function candidate(spec: SleepTabSpec): SleepCandidate {
+	const { lastActiveAgoMinutes, ...rest } = { ...vectors.keepAwake.base, ...spec }
+	return {
+		id: 't',
+		pinned: false,
+		isActive: false,
+		visibleInSplit: false,
+		playingAudio: false,
+		hasUnsavedForm: false,
+		asleep: false,
+		...rest,
+		lastActiveAt: now - (lastActiveAgoMinutes ?? 0) * MINUTE,
+	}
+}
+
+describe('vectors', () => {
+	it('share the clock the fixtures use', () => {
+		expect(vectors.now).toBe(now)
+	})
+})
+
 describe('auto-close', () => {
-	const aged = [
-		tab('fresh', 'a.com', { accessedMinutesAgo: 5 }), // 5 minutes
-		tab('stale', 'b.com', { accessedMinutesAgo: 120 }), // 2 hours
-		tab('ancient', 'c.com', { accessedMinutesAgo: 20_000 }), // ~14 days
-	]
-
-	it('1 hour closes anything older', () => {
-		expect(closing(aged, policyOf({ enabled: true, rule: 'hour' }))).toEqual(['ancient', 'stale'])
-	})
-	it('1 day spares the 2-hour-old tab', () => {
-		expect(closing(aged, policyOf({ enabled: true, rule: 'day' }))).toEqual(['ancient'])
-	})
-	it('7 days spares all but the 14-day-old', () => {
-		expect(closing(aged, policyOf({ enabled: true, rule: 'week' }))).toEqual(['ancient'])
-	})
-	it('custom 1.5h', () => {
-		expect(closing(aged, policyOf({ enabled: true, rule: 'custom', customHours: 1.5 }))).toEqual(['ancient', 'stale'])
-	})
-	it('disabled closes nothing', () => {
-		expect(closing(aged, policyOf({ enabled: false, rule: 'custom', customHours: 1.5 }))).toEqual([])
+	it.each(vectors.autoClose)('$name', ({ policy, tabs, expect: want, expectCount }) => {
+		const closing = tabsToClose(snapshots(tabs), policyOf(policy), now).sort()
+		if (want) expect(closing).toEqual(want)
+		if (expectCount !== undefined) expect(closing).toHaveLength(expectCount)
 	})
 
-	// The three exemptions, each for a different reason.
-	const hourly = policyOf({ enabled: true, rule: 'hour' })
-	const withPinned = [
-		tab('pinned', 'a.com', { accessedMinutesAgo: 5000, pinned: true }),
-		tab('loose', 'b.com', { accessedMinutesAgo: 5000 }),
-		tab('loose2', 'c.com', { accessedMinutesAgo: 5000 }),
-	]
-
-	it('never closes the active tab', () => {
-		const withActive = [
-			tab('active', 'a.com', { accessedMinutesAgo: 5000, active: true }),
-			tab('other', 'b.com', { accessedMinutesAgo: 5000 }),
-			tab('third', 'c.com', { accessedMinutesAgo: 5000 }),
-		]
-		expect(closing(withActive, hourly)).toEqual(['other', 'third'])
-	})
-	it('never closes a pinned tab', () => {
-		expect(closing(withPinned, hourly)).toEqual(['loose', 'loose2'])
-	})
-	it('never closes the last tab', () => {
-		expect(closing([tab('solo', 'a.com', { accessedMinutesAgo: 99999 })], hourly)).toEqual([])
-	})
-	it('leaves one survivor from two stale tabs', () => {
-		const two = [tab('one', 'a.com', { accessedMinutesAgo: 99999 }), tab('two', 'b.com', { accessedMinutesAgo: 99999 })]
-		expect(closing(two, hourly)).toHaveLength(1)
-	})
 	// The scheduled sweep ignores age but keeps the same exemptions.
-	it('scheduled sweep spares pinned', () => {
-		expect(tabsToCloseOnSchedule(withPinned).sort()).toEqual(['loose', 'loose2'])
+	it.each(vectors.scheduledSweep)('scheduled sweep: $name', ({ tabs, expect: want }) => {
+		expect(tabsToCloseOnSchedule(snapshots(tabs)).sort()).toEqual(want)
 	})
 })
 
 describe('schedule window', () => {
-	const at = (y: number, m: number, d: number, h: number, min: number) => Date.UTC(y, m - 1, d, h, min)
-	const timed = policyOf({ enabled: true, rule: 'day', atTimeEnabled: true, hour: 3, minute: 0 })
-	const elapsed = (policy: AutoClosePolicy, since: number, until: number) =>
-		scheduleElapsed(policy, since, until, utcCalendar)
-
-	it('fires when 03:00 falls inside the window', () => {
-		expect(elapsed(timed, at(2026, 3, 1, 2, 55), at(2026, 3, 1, 3, 5))).toBe(true)
-	})
-	it('doesn\'t fire before the time', () => {
-		expect(elapsed(timed, at(2026, 3, 1, 1, 0), at(2026, 3, 1, 2, 0))).toBe(false)
-	})
-	it('doesn\'t fire after it already passed', () => {
-		expect(elapsed(timed, at(2026, 3, 1, 4, 0), at(2026, 3, 1, 5, 0))).toBe(false)
-	})
-	// The reason it's an interval test and not "is it 03:00 now": a machine asleep
-	// across the instant must still sweep when it wakes.
-	it('fires after sleeping across the instant', () => {
-		expect(elapsed(timed, at(2026, 3, 1, 22, 0), at(2026, 3, 2, 9, 0))).toBe(true)
-	})
-	it('a multi-day gap still fires exactly once', () => {
-		expect(elapsed(timed, at(2026, 3, 1, 4, 0), at(2026, 3, 5, 4, 0))).toBe(true)
-	})
-	it('no schedule when the option is off', () => {
-		expect(elapsed({ ...timed, atTimeEnabled: false }, at(2026, 3, 1, 2, 0), at(2026, 3, 1, 4, 0))).toBe(false)
+	const { policy, cases } = vectors.scheduleElapsed
+	it.each(cases)('$name', ({ policyChanges, since, until, expect: want }) => {
+		const result = scheduleElapsed({ ...policy, ...policyChanges }, Date.parse(since), Date.parse(until), utcCalendar)
+		expect(result).toBe(want)
 	})
 })
 
-describe('interval labels', () => {
-	const label = (hours: number) => describedInterval(policyOf({ enabled: true, rule: 'custom', customHours: hours }))
+describe('intervals', () => {
+	it.each(vectors.intervalLabels)('$hours hours -> $expect', ({ hours, expect: want }) => {
+		expect(describedInterval(policyOf({ enabled: true, rule: 'custom', customHours: hours }))).toBe(want)
+	})
+	it.each(vectors.intervals)('$name', ({ policy, expectMs }) => {
+		expect(autoCloseInterval(policyOf(policy))).toBe(expectMs)
+	})
+})
 
-	it.each([
-		[0.5, '30 minutes'],
-		[1, '1 hour'],
-		[6, '6 hours'],
-		[24, '1 day'],
-		[72, '3 days'],
-	])('%s hours -> %s', (hours, want) => {
-		expect(label(hours)).toBe(want)
+describe('keepAwakeReason', () => {
+	const { settings } = vectors.keepAwake
+	it.each(vectors.keepAwake.cases)('$name', ({ tab: changes, settingsChanges, expect: want }) => {
+		const reason = keepAwakeReason(candidate(changes ?? {}), now, { ...settings, ...settingsChanges })
+		expect(reason ?? null).toBe(want)
+	})
+
+	it('tabsToSleep picks the idle, unprotected tabs', () => {
+		const { tabs, expect: want } = vectors.keepAwake.tabsToSleep
+		expect(tabsToSleep(tabs.map(candidate), now, settings)).toEqual(want)
+	})
+
+	it.each(vectors.keepAwake.nextSleepCheck)('nextSleepCheck: $name', ({ tabs, settingsChanges, expectInMinutes }) => {
+		const next = nextSleepCheck(tabs.map(candidate), now, { ...settings, ...settingsChanges })
+		expect(next === undefined ? null : (next - now) / MINUTE).toBe(expectInMinutes)
 	})
 })
