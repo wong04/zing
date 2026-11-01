@@ -12,12 +12,12 @@ public sealed class SessionSaver : IDisposable
 	private readonly DebouncedJsonWriter _writer;
 	private readonly IDisposable _subscription;
 
-	public SessionSaver(string path, SettingsStore settings, Func<(IReadOnlyList<TabRecord>, string?)> source, IScheduler scheduler)
+	public SessionSaver(string path, SettingsStore settings, Func<(IReadOnlyList<TabRecord>, string?)> source, IScheduler scheduler, Action<Exception> onError)
 	{
 		_path = path;
 		_settings = settings;
 		_source = source;
-		_writer = new DebouncedJsonWriter(path, TimeSpan.FromMilliseconds(500), scheduler);
+		_writer = new DebouncedJsonWriter(path, TimeSpan.FromMilliseconds(500), scheduler, onError);
 		_subscription = settings.Subscribe((_, key) =>
 		{
 			if (key != "restoreTabs") return;

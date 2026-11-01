@@ -42,6 +42,8 @@ public sealed class ZingApp
 	private AppServices? _services;
 	private SessionSaver? _session;
 	private IReadOnlyList<SessionTab> _pendingRestore = [];
+	private readonly List<string> _startupNotices = [];
+	private IScheduler? _scheduler;
 	private Task<CoreWebView2Environment>? _environment;
 
 	public AppServices Services => _services ?? throw new InvalidOperationException("Zing has not started");
@@ -56,15 +58,23 @@ public sealed class ZingApp
 
 	public void Launch()
 	{
+		var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+		// Debounced saves run on the UI thread, where the stores they read are edited; none of them lock.
+		_scheduler = new DispatcherScheduler(dispatcher);
 		_services = OpenServices();
 		_environment = CreateEnvironmentAsync(Flag("acceleratedCanvas"));
-		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => (Primary?.Api?.Tabs.Records ?? [], Primary?.Api?.Tabs.ActiveId), new SystemScheduler());
+		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => (Primary?.Api?.Tabs.Records ?? [], Primary?.Api?.Tabs.ActiveId), _scheduler, e => TestHooks.Record("session write", e));
 		_onQuit.Add(_session.Flush);
-		if (Flag("restoreTabs")) _pendingRestore = Session.Load(AppPaths.Session);
-		else Session.Discard(AppPaths.Session);
+		if (Flag("restoreTabs"))
+		{
+			var restored = Session.LoadOrRecover(AppPaths.Session);
+			_pendingRestore = restored.Value;
+			if (restored.Problem is { } problem) StartupProblem("session", "your saved tabs", "without them", problem);
+		}
+		else DiscardSession();
 		foreach (var url in LaunchArgs.Urls(System.Environment.GetCommandLineArgs().Skip(1))) _links.Push(url);
 		SingleInstance.Listen(OnSecondLaunch);
-		_taskbar = new TaskbarIcon(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
+		_taskbar = new TaskbarIcon(dispatcher);
 		NewWindow();
 	}
 
@@ -76,7 +86,34 @@ public sealed class ZingApp
 	/// <summary>A window can take links once its tabs exist; the first such window takes the ones that arrived during startup.</summary>
 	public void Ready(MainWindow window)
 	{
-		if (window == Primary) _links.Attach(OpenLink);
+		if (window != Primary) return;
+		_links.Attach(OpenLink);
+		// A notice replaces the one before, so problems found at startup are told together.
+		if (_startupNotices.Count > 0) window.Notify(string.Join(" ", _startupNotices));
+		_startupNotices.Clear();
+	}
+
+	/// <summary>A user data file that couldn't be used: recorded, and told to the person once the first window is up.</summary>
+	private void StartupProblem(string kind, string what, string fallback, LoadProblem problem)
+	{
+		TestHooks.Record($"{kind} load", problem.Error);
+		var name = Path.GetFileName(problem.Path);
+		_startupNotices.Add(problem.KeptAs is { } kept
+			? $"Zing couldn't read {what}, so it started {fallback}. The old file is kept as {Path.GetFileName(kept)}."
+			: $"Zing couldn't open {what} ({name}), so it started {fallback}. The file was left as it is.");
+	}
+
+	/// <summary>With restore off the file must go; if it can't be deleted now, the next launch tries again.</summary>
+	private static void DiscardSession()
+	{
+		try
+		{
+			Session.Discard(AppPaths.Session);
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+		{
+			TestHooks.Record("session discard", error);
+		}
 	}
 
 	private void OpenLink(string url)
@@ -130,17 +167,28 @@ public sealed class ZingApp
 	{
 		var clock = TestHooks.Clock;
 		long Now() => clock.Now();
-		var settings = new SettingsStore(JsonFiles.LoadSettingsFile(AppPaths.Settings));
-		var settingsWriter = new DebouncedJsonWriter(AppPaths.Settings, TimeSpan.FromMilliseconds(500), new SystemScheduler());
-		settings.Subscribe((s, _) => settingsWriter.Write(Settings.Changed(s)));
-		_onQuit.Add(settingsWriter.Flush);
+		var scheduler = _scheduler ?? throw new InvalidOperationException("Launch creates the scheduler first");
+		// Names a quarantined file; the e2e clock keeps it deterministic.
+		var stamp = DateTimeOffset.FromUnixTimeMilliseconds(Now()).LocalDateTime;
+		var loadedSettings = JsonFiles.LoadSettingsOrRecover(AppPaths.Settings, stamp);
+		if (loadedSettings.Problem is { } settingsProblem) StartupProblem("settings", "your settings", "with the defaults", settingsProblem);
+		var settings = new SettingsStore(loadedSettings.Value);
+		// A file that couldn't be read is still there and may be fine, so this launch's changes don't overwrite it.
+		if (loadedSettings.Problem is not { OriginalInPlace: true })
+		{
+			var settingsWriter = new DebouncedJsonWriter(AppPaths.Settings, TimeSpan.FromMilliseconds(500), scheduler, e => TestHooks.Record("settings write", e));
+			settings.Subscribe((s, _) => settingsWriter.Write(Settings.Changed(s)));
+			_onQuit.Add(settingsWriter.Flush);
+		}
 
 		DebouncedJsonWriter? libraryWriter = null;
-		var library = LibraryStore.Open(AppPaths.Library, path =>
+		var openedLibrary = LibraryStore.Open(AppPaths.Library, path =>
 		{
-			libraryWriter = new DebouncedJsonWriter(path, TimeSpan.FromMilliseconds(500), new SystemScheduler());
+			libraryWriter = new DebouncedJsonWriter(path, TimeSpan.FromMilliseconds(500), scheduler, e => TestHooks.Record("library write", e));
 			return snapshot => libraryWriter.Write(snapshot);
-		}, Now, () => Guid.NewGuid().ToString());
+		}, Now, () => Guid.NewGuid().ToString(), stamp);
+		if (openedLibrary.Problem is { } libraryProblem) StartupProblem("library", "your bookmarks and reading list", "with an empty library", libraryProblem);
+		var library = openedLibrary.Value;
 		_onQuit.Add(() => libraryWriter?.Flush());
 		// A persistent profile exists so sign-ins survive closing a tab and quitting; purging would undo exactly that.
 		PersistentProfile = settings.Get("persistentProfile")?.GetValue<bool>() ?? throw new InvalidDataException("Setting persistentProfile is missing");

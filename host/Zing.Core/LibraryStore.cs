@@ -260,11 +260,23 @@ public sealed class LibraryStore
 		return true;
 	}
 
-	/// <summary>`ZING_LIBRARY_FILE` lets harnesses use a scratch file so they never touch real bookmarks. `createSave` builds the writer for the resolved path.</summary>
-	public static LibraryStore Open(string defaultPath, Func<string, Action<BrowserLibrary>> createSave, Func<long> now, Func<string> newId)
+	/// <summary>
+	/// The library for this launch. An invalid file is moved aside and the library starts empty; an unreadable one is left alone
+	/// (UserData.Load). Either way startup goes on and the problem is returned.
+	/// </summary>
+	public static Loaded<BrowserLibrary> LoadLibraryOrRecover(string path, long now, DateTime stamp) =>
+		UserData.Load(path, () => LoadLibraryFile(path, now), () => Library.EmptyLibrary(now), stamp);
+
+	/// <summary>
+	/// `ZING_LIBRARY_FILE` lets harnesses use a scratch file so they never touch real bookmarks. `createSave` builds the writer for the resolved path.
+	/// When a file that couldn't be read is still in place, this launch's edits aren't saved, so they never overwrite bookmarks that may be fine.
+	/// </summary>
+	public static Loaded<LibraryStore> Open(string defaultPath, Func<string, Action<BrowserLibrary>> createSave, Func<long> now, Func<string> newId, DateTime stamp)
 	{
 		var env = Environment.GetEnvironmentVariable("ZING_LIBRARY_FILE");
 		var path = string.IsNullOrEmpty(env) ? defaultPath : env;
-		return new LibraryStore(LoadLibraryFile(path, now()), createSave(path), now, newId);
+		var loaded = LoadLibraryOrRecover(path, now(), stamp);
+		Action<BrowserLibrary> save = loaded.Problem is { OriginalInPlace: true } ? _ => { } : createSave(path);
+		return new Loaded<LibraryStore>(new LibraryStore(loaded.Value, save, now, newId), loaded.Problem);
 	}
 }
