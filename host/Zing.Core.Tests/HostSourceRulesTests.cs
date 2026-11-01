@@ -1,0 +1,55 @@
+using System.Text.RegularExpressions;
+
+namespace Zing.Core.Tests;
+
+/// <summary>
+/// Source rules for host/Zing.Host, which has no tests of its own (it needs Windows and WebView2).
+///
+/// The error boundary rule: no <c>async void</c> in Zing.Host, neither a method nor an async
+/// lambda subscribed to an event (<c>+= async</c>). An exception out of <c>async void</c> crashes
+/// the process. A handler that has to await is a plain <c>void</c> that hands its work, an
+/// <c>async Task</c> method, to <c>TestHooks.Background(task, kind)</c>, which records a failure in
+/// the fault log (and ZING_ERRORS_FILE in e2e runs) and never rethrows; a ViewGoneException is
+/// expected and not recorded. With no <c>async void</c> left, no <c>throw;</c> can escape one either.
+///
+/// The check is textual: it reads every line that isn't a comment, so it can't be fooled by a
+/// mention in a doc comment, and needs nothing but the source files.
+/// </summary>
+public sealed partial class HostSourceRulesTests
+{
+	[GeneratedRegex(@"\basync\s+void\b")]
+	private static partial Regex AsyncVoidMethod();
+
+	[GeneratedRegex(@"\+=\s*async\b")]
+	private static partial Regex AsyncHandlerLambda();
+
+	[Fact]
+	public void HostHasNoAsyncVoid()
+	{
+		var offences = HostSources()
+			.SelectMany(file => File.ReadAllLines(file).Select((line, index) => (file, line, number: index + 1)))
+			.Where(l => !l.line.TrimStart().StartsWith("//", StringComparison.Ordinal))
+			.Where(l => AsyncVoidMethod().IsMatch(l.line) || AsyncHandlerLambda().IsMatch(l.line))
+			.Select(l => $"{Path.GetFileName(l.file)}:{l.number}: {l.line.Trim()}")
+			.ToList();
+		Assert.True(offences.Count == 0, "async void crashes Zing on a throw; pass an async Task to TestHooks.Background instead:\n" + string.Join("\n", offences));
+	}
+
+	[Fact]
+	public void RuleSeesTheHostSources()
+	{
+		// Guards the guard: a wrong root would find no files and pass vacuously.
+		Assert.Contains(HostSources(), f => Path.GetFileName(f) == "WebView2Page.cs");
+	}
+
+	private static string[] HostSources() => Directory.GetFiles(Path.Combine(RepoRoot(), "host", "Zing.Host"), "*.cs", SearchOption.TopDirectoryOnly);
+
+	private static string RepoRoot()
+	{
+		for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+		{
+			if (Directory.Exists(Path.Combine(dir.FullName, "host", "Zing.Host"))) return dir.FullName;
+		}
+		throw new DirectoryNotFoundException($"No host/Zing.Host above {AppContext.BaseDirectory}");
+	}
+}

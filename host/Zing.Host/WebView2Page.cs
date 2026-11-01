@@ -86,7 +86,7 @@ public sealed class WebView2Page : IPage
 	public void Reload() => Run(core => core.Reload());
 	public void Stop() => Run(core => core.Stop());
 	public void Focus() => Run(_ => _view!.Focus());
-	public void Run(string script) => Run(core => _ = core.ExecuteScriptAsync(script));
+	public void Run(string script) => Run(core => Background(core.ExecuteScriptAsync(script).AsTask(), "script"));
 
 	public void Find(string query, FindDirection direction, FindMode mode) => Run(core =>
 	{
@@ -98,7 +98,7 @@ public sealed class WebView2Page : IPage
 			options.ShouldHighlightAllMatches = true;
 			// Zing draws its own find bar.
 			options.SuppressDefaultFindDialog = true;
-			_ = core.Find.StartAsync(options).AsTask().ContinueWith(t => TestHooks.Record("find", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+			Background(core.Find.StartAsync(options).AsTask(), "find");
 			return;
 		}
 		if (direction == FindDirection.Next) core.Find.FindNext();
@@ -111,7 +111,7 @@ public sealed class WebView2Page : IPage
 		set
 		{
 			_textSize = value;
-			Run(core => _ = core.ExecuteScriptAsync(Zing.Core.TextSize.Script(value)));
+			Run(core => Background(core.ExecuteScriptAsync(Zing.Core.TextSize.Script(value)).AsTask(), "text size"));
 		}
 	}
 
@@ -166,7 +166,7 @@ public sealed class WebView2Page : IPage
 	}
 
 	public void GoToHistoryEntry(int entryId) =>
-		Run(core => _ = core.CallDevToolsProtocolMethodAsync("Page.navigateToHistoryEntry", System.Text.Json.JsonSerializer.Serialize(new { entryId })));
+		Run(core => Background(core.CallDevToolsProtocolMethodAsync("Page.navigateToHistoryEntry", System.Text.Json.JsonSerializer.Serialize(new { entryId })).AsTask(), "history"));
 
 	public bool IsAudible => _core?.IsDocumentPlayingAudio ?? false;
 
@@ -182,7 +182,7 @@ public sealed class WebView2Page : IPage
 		void Loaded(CoreWebView2 sender, CoreWebView2NavigationCompletedEventArgs e)
 		{
 			core.NavigationCompleted -= Loaded;
-			if (e.IsSuccess) _ = core.ExecuteScriptAsync(script);
+			if (e.IsSuccess) Background(core.ExecuteScriptAsync(script).AsTask(), "script");
 		}
 		core.NavigationCompleted += Loaded;
 	});
@@ -273,21 +273,10 @@ public sealed class WebView2Page : IPage
 		// The override dies with each document, so every new one gets it again.
 		core.DOMContentLoaded += (_, _) =>
 		{
-			if (_textSize != Zing.Core.TextSize.Default) _ = core.ExecuteScriptAsync(Zing.Core.TextSize.Script(_textSize));
+			if (_textSize != Zing.Core.TextSize.Default) Background(core.ExecuteScriptAsync(Zing.Core.TextSize.Script(_textSize)).AsTask(), "text size");
 		};
 		core.DocumentTitleChanged += (_, _) => _events.TitleChanged(core.DocumentTitle);
-		core.FaviconChanged += async (_, _) =>
-		{
-			try
-			{
-				_events.IconChanged(string.IsNullOrEmpty(core.FaviconUri) ? null : await IconDataUrlAsync(core));
-			}
-			catch (Exception error)
-			{
-				TestHooks.Record("favicon", error);
-				throw;
-			}
-		};
+		core.FaviconChanged += (_, _) => Background(IconChangedAsync(core), "favicon");
 		core.HistoryChanged += (_, _) => _events.StateChanged();
 		core.WindowCloseRequested += (_, _) => _events.Closed();
 		core.NewWindowRequested += OnNewWindowRequested;
@@ -300,6 +289,35 @@ public sealed class WebView2Page : IPage
 		// ActiveMatchIndex already counts from 1, as the find bar does; it is -1 with no match.
 		core.Find.MatchCountChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
 		core.Find.ActiveMatchIndexChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
+	}
+
+	private async Task IconChangedAsync(CoreWebView2 core)
+	{
+		if (string.IsNullOrEmpty(core.FaviconUri))
+		{
+			_events.IconChanged(null);
+			return;
+		}
+		var icon = await IconDataUrlAsync(core);
+		// The tab may have closed while the icon was read.
+		if (IsOpen) _events.IconChanged(icon);
+	}
+
+	/// <summary>
+	/// Page work nobody awaits (TestHooks.Background). A call cut off because this page closed
+	/// meanwhile is an expected outcome, like a view that went with its window; anything else is recorded.
+	/// </summary>
+	private void Background(Task task, string what) => TestHooks.Background(WhileOpen(task), what);
+
+	private async Task WhileOpen(Task task)
+	{
+		try
+		{
+			await task;
+		}
+		catch (Exception) when (!IsOpen)
+		{
+		}
 	}
 
 	/// <summary>The engine has already chosen and fetched the icon; Zing keeps it as a PNG data URL in memory.</summary>
@@ -316,13 +334,14 @@ public sealed class WebView2Page : IPage
 	/// A navigation that turns into a download completes as ConnectionAborted (with no HTTP status) just
 	/// before DownloadStarting is raised. So an abort is reported only if no download starts soon after.
 	/// </summary>
-	private async void ReportFailure(CoreWebView2WebErrorStatus status)
+	private void ReportFailure(CoreWebView2WebErrorStatus status)
 	{
-		if (status != CoreWebView2WebErrorStatus.ConnectionAborted)
-		{
-			_events.LoadFailed(status.ToString());
-			return;
-		}
+		if (status != CoreWebView2WebErrorStatus.ConnectionAborted) _events.LoadFailed(status.ToString());
+		else Background(ReportAbortAsync(status), "load failure");
+	}
+
+	private async Task ReportAbortAsync(CoreWebView2WebErrorStatus status)
+	{
 		var downloadsBefore = _downloads;
 		await Task.Delay(DownloadGrace);
 		if (IsOpen && _downloads == downloadsBefore) _events.LoadFailed(status.ToString());
@@ -350,23 +369,23 @@ public sealed class WebView2Page : IPage
 	/// loading the same URL, or window.opener is null and OAuth popups (Google,
 	/// Microsoft, payment pages) have nowhere to send their result.
 	/// </summary>
-	private async void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs e)
+	private void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs e) =>
+		Background(OpenPopupAsync(e), "popup");
+
+	private async Task OpenPopupAsync(CoreWebView2NewWindowRequestedEventArgs e)
 	{
 		var deferral = e.GetDeferral();
 		try
 		{
 			var popup = (WebView2Page)_events.Popup(e.Uri, background: false);
 			await popup.Ready;
-			e.NewWindow = popup.Core;
-			e.Handled = true;
-		}
-		catch (Exception error)
-		{
-			TestHooks.Record("popup", error);
-			throw;
+			// The opener or the popup may have closed while the engine started it: then there is no window to hand over.
+			if (IsOpen && popup.IsOpen && popup.IsStarted) e.NewWindow = popup.Core;
 		}
 		finally
 		{
+			// Handled even without a NewWindow (window.open gets null), so the engine never opens an Edge window of its own.
+			if (IsOpen) e.Handled = true;
 			deferral.Complete();
 		}
 	}

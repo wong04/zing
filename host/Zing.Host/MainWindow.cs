@@ -157,7 +157,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			foreach (var renderer in _renderers) renderer.Send(json);
 		}
 		if (_dispatcher.HasThreadAccess) Send();
-		else _dispatcher.TryEnqueue(Send);
+		else Faults.Enqueue(_dispatcher, Send, $"event {channel}");
 	}
 
 	/// <summary>Any thread may report something; the notice is drawn on the window's own.</summary>
@@ -165,7 +165,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	{
 		if (!_dispatcher.HasThreadAccess)
 		{
-			_dispatcher.TryEnqueue(() => Notify(text));
+			Faults.Enqueue(_dispatcher, () => Notify(text), "notice");
 			return;
 		}
 		if (_notices is null || _closed) return;
@@ -293,7 +293,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			if (outcome is not { } done) return;
 			_downloads.Forget(started.Id);
 			Api.Downloads.Done(started.Id, done, operation.BytesReceived);
-			if (done == DownloadOutcome.Completed) _ = MarkAsync(started, operation.Uri, page.Url);
+			if (done == DownloadOutcome.Completed) TestHooks.Background(MarkAsync(started, operation.Uri, page.Url), "mark of the web");
 		};
 	}
 
@@ -335,7 +335,12 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public void OverviewChanged(OverviewState? state) => _overview?.Changed(state is not null);
 
-	public void Warn(string what, Exception error) => System.Diagnostics.Debug.WriteLine($"{what}: {error.Message}");
+	/// <summary>An optional feature failed, as it may: a warning line in the fault log, never ZING_ERRORS_FILE.</summary>
+	public void Warn(string what, Exception error)
+	{
+		System.Diagnostics.Debug.WriteLine($"{what}: {error.Message}");
+		Faults.Warning(what, error);
+	}
 
 	public void Background(Task task, string what) => TestHooks.Background(task, what);
 
