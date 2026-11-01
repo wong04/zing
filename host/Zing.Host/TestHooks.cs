@@ -151,7 +151,7 @@ public static class TestHooks
 		TaskScheduler.UnobservedTaskException += (_, e) => Record("unobserved task", e.Exception);
 	}
 
-	/// <summary>Records a fault in the local fault log (Faults) in every run, and in an e2e run also in ZING_ERRORS_FILE, which fails the test.</summary>
+	/// <summary>Records a fault in the test runs' fault log (Faults), and in an e2e run also in ZING_ERRORS_FILE, which fails the test.</summary>
 	public static void Record(string kind, object error)
 	{
 		Faults.Error(kind, error);

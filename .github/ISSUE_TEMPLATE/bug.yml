@@ -34,7 +34,7 @@ body:
     id: faults
     attributes:
       label: Fault log
-      description: Paste the relevant lines of %LOCALAPPDATA%\Zing\logs\faults.log, if any. It stays on your PC; check it holds nothing private before pasting.
+      description: Only test runs keep one (logs\faults.log inside ZING_USER_DATA, or a failed CI run's e2e-failures artifact); a real install keeps none. Paste the relevant lines, if any.
       render: text
   - type: input
     id: version

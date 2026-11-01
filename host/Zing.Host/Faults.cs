@@ -3,10 +3,10 @@ using Microsoft.UI.Dispatching;
 namespace Zing.Host;
 
 /// <summary>
-/// The host's error boundary. Faults go to a small local log (AppPaths.FaultLog) in every run,
-/// so a fault on a real install leaves a trace; it is never uploaded. Zing keeps nothing by
-/// default (CLAUDE.md), and an error's message can hold a page's address or a file name, so
-/// outside e2e runs the log keeps only exception types and stack frames (Describe). e2e runs also fail on
+/// The host's error boundary. In test runs faults go to a small local log (AppPaths.FaultLog),
+/// never uploaded; a real install keeps no log, because Zing keeps nothing by default (CLAUDE.md).
+/// An error's message can hold a page's address or a file name, so outside e2e runs (a hand run on
+/// a scratch profile) the log keeps only exception types and stack frames (Describe). e2e runs also fail on
 /// ZING_ERRORS_FILE (TestHooks.Record). Event handlers never use <c>async void</c>: they hand
 /// their work to TestHooks.Background, which records a failure and never rethrows
 /// (HostSourceRulesTests holds Zing.Host to that).

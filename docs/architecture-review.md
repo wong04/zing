@@ -145,7 +145,7 @@ Everything below is on `claude/funny-lovelace-vzz8lv`. It is checked on Linux (v
 
 | Workstream | Done | Still open |
 |---|---|---|
-| W-0 | Bug issue template. `app:report-error`: a view's unhandled errors are recorded like the host's. Local fault log, keeping only types and stack frames outside e2e. The e2e harness prints how the host exited, plus its fault log, when Zing goes before `close()`. | – (the `bug` label already existed; PARITY B rows re-verified: 20 Done and closed with test evidence, 10 Partial, 4 Open, with the gaps listed in PARITY.md) |
+| W-0 | Bug issue template. `app:report-error`: a view's unhandled errors are recorded like the host's. Local fault log, kept only by test runs (decided 2026-11-01: a real install keeps none, since Zing keeps nothing by default), with only types and stack frames outside e2e. The e2e harness prints how the host exited, plus its fault log, when Zing goes before `close()`. | – (the `bug` label already existed; PARITY B rows re-verified: 20 Done and closed with test evidence, 10 Partial, 4 Open, with the gaps listed in PARITY.md) |
 | W-1 | No `async void` in `Zing.Host` (`HostSourceRulesTests`). A malformed bridge message gets an error reply. Fire-and-forget work and refused `TryEnqueue` are recorded everywhere. A failed host call is reported only when nothing handles it. | – |
 | W-2 | `WindowScope`: each window tracks every view as its creation starts and checks itself after each await. `e2e/teardown.spec.ts` closes a new window at each of its 6 startup checkpoints. | – |
 | W-3 | Saves run on the UI thread, flushed to disk. Corrupt settings, library, session and account files are set aside and the first window says so (`e2e/userdata.spec.ts`). | – |
