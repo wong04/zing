@@ -13,7 +13,7 @@ public sealed class SessionSaverTests : IDisposable
 
 	public void Dispose() => Directory.Delete(_dir, recursive: true);
 
-	private SessionSaver Saver() => new(File, _settings, () => (_tabs.Records, _tabs.ActiveId), _scheduler);
+	private SessionSaver Saver() => new(File, _settings, () => (_tabs.Records, _tabs.ActiveId), _scheduler, error => throw new InvalidOperationException("unexpected session write failure", error));
 
 	[Fact]
 	public void Nothing_is_written_while_restore_is_off()

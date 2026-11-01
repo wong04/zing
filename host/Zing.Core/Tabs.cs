@@ -30,7 +30,31 @@ public sealed record TabView(
 	bool CanGoForward,
 	string? FaviconUrl = null,
 	string? Icon = null,
-	bool? Sleeping = null);
+	bool? Sleeping = null,
+	string? PageState = null);
+
+/// <summary>
+/// Why a tab's page isn't working (src/shared/ipc.ts TabPageState). The record survives either:
+/// a tab is a record, so Reload brings the page back at its URL.
+/// </summary>
+public enum PageFault
+{
+	/// <summary>The page's render process exited; the engine shows its own error page until a reload.</summary>
+	Crashed,
+	/// <summary>The page's render process stopped answering; it may recover, or a reload starts it afresh.</summary>
+	Unresponsive,
+}
+
+public static class PageFaults
+{
+	/// <summary>The wire name the chrome reads.</summary>
+	public static string Name(PageFault fault) => fault switch
+	{
+		PageFault.Crashed => "crashed",
+		PageFault.Unresponsive => "unresponsive",
+		_ => throw new ArgumentOutOfRangeException(nameof(fault), fault, null),
+	};
+}
 
 /// <summary>src/shared/ipc.ts TabsState.</summary>
 public sealed record TabsState(IReadOnlyList<TabView> Tabs, string? ActiveId, string Organization, bool Dropdowns, string? OpenStack);

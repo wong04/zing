@@ -17,6 +17,7 @@ public sealed class WebView2Page : IPage
 	private readonly bool _persistent;
 	private readonly List<Action<CoreWebView2>> _queued = [];
 	private readonly HostWindow _window;
+	private readonly WindowScope _scope;
 	private HostedView? _view;
 	private Rect _bounds;
 	private bool _visible;
@@ -32,9 +33,10 @@ public sealed class WebView2Page : IPage
 		return (File.ReadAllText(Path.Combine(dir, "reader.js")), File.ReadAllText(Path.Combine(dir, "reader.css")));
 	});
 
-	public WebView2Page(HostWindow window, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, Func<string> theme, IPageFeatureHost features, bool persistent)
+	public WebView2Page(HostWindow window, WindowScope scope, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, Func<string> theme, IPageFeatureHost features, bool persistent)
 	{
 		_window = window;
+		_scope = scope;
 		_events = events;
 		_serveStartPage = serveStartPage;
 		_theme = theme;
@@ -54,6 +56,12 @@ public sealed class WebView2Page : IPage
 		_bounds = bounds;
 		_view?.Place(bounds);
 	}
+
+	/// <summary>Puts this page above the window's other pages (they are sibling windows); overlays are popups above all of them.</summary>
+	public void BringToFront() => _view?.Raise();
+
+	/// <summary>The engine capture under way, if any. A hidden WebView2 never finishes one, so a page leaving the screen stays drawn until it has.</summary>
+	public Task? PendingCapture { get; private set; }
 
 	public bool Visible
 	{
@@ -86,7 +94,7 @@ public sealed class WebView2Page : IPage
 	public void Reload() => Run(core => core.Reload());
 	public void Stop() => Run(core => core.Stop());
 	public void Focus() => Run(_ => _view!.Focus());
-	public void Run(string script) => Run(core => _ = core.ExecuteScriptAsync(script));
+	public void Run(string script) => Run(core => Background(core.ExecuteScriptAsync(script).AsTask(), "script"));
 
 	public void Find(string query, FindDirection direction, FindMode mode) => Run(core =>
 	{
@@ -98,7 +106,7 @@ public sealed class WebView2Page : IPage
 			options.ShouldHighlightAllMatches = true;
 			// Zing draws its own find bar.
 			options.SuppressDefaultFindDialog = true;
-			_ = core.Find.StartAsync(options).AsTask().ContinueWith(t => TestHooks.Record("find", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+			Background(core.Find.StartAsync(options).AsTask(), "find");
 			return;
 		}
 		if (direction == FindDirection.Next) core.Find.FindNext();
@@ -111,15 +119,42 @@ public sealed class WebView2Page : IPage
 		set
 		{
 			_textSize = value;
-			Run(core => _ = core.ExecuteScriptAsync(Zing.Core.TextSize.Script(value)));
+			Run(core => Background(core.ExecuteScriptAsync(Zing.Core.TextSize.Script(value)).AsTask(), "text size"));
 		}
 	}
 
-	public async Task<string?> CaptureAsync()
+	/// <summary>
+	/// Engine captures not yet finished, in every window (TestHooks "live-counts"). The WebView2 runtime's
+	/// browser process crashes (0xC0000005) when a page's renderer dies while a capture of it is pending, and a
+	/// hidden page never finishes one; MainWindow.Hide keeps a leaving page drawn until it has. e2e checks it drains.
+	/// </summary>
+	public static int CapturesInFlight { get; private set; }
+
+	public Task<string?> CaptureAsync()
+	{
+		var capture = CaptureNowAsync();
+		PendingCapture = capture;
+		return capture;
+	}
+
+	private async Task<string?> CaptureNowAsync()
 	{
 		if (!IsOpen || _core is null) return null;
 		using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
-		await _core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Jpeg, stream);
+		CapturesInFlight++;
+		try
+		{
+			await WhileOpenAsync(_core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Jpeg, stream).AsTask());
+		}
+		catch (ViewGoneException)
+		{
+			// The tab closed while the engine drew it: no picture, as for a page that never started.
+			return null;
+		}
+		finally
+		{
+			CapturesInFlight--;
+		}
 		if (stream.Size == 0) return null;
 		using var memory = new MemoryStream();
 		stream.Seek(0);
@@ -140,12 +175,14 @@ public sealed class WebView2Page : IPage
 	{
 		if (!IsOpen || _core is null) return "Reader isn't available for this page";
 		var (script, css) = Reader.Value;
-		using var tree = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}"));
+		var core = _core;
+		// The tab may close at any await; then the reader has nothing to show (ViewGoneException, which callers expect).
+		using var tree = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}").AsTask()));
 		var frameId = tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("id").GetString();
-		using var world = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Page.createIsolatedWorld", System.Text.Json.JsonSerializer.Serialize(new { frameId, worldName = "zing-reader" })));
+		using var world = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.createIsolatedWorld", System.Text.Json.JsonSerializer.Serialize(new { frameId, worldName = "zing-reader" })).AsTask()));
 		var contextId = world.RootElement.GetProperty("executionContextId").GetInt32();
 		var expression = $"{script}\n;__zingReader({System.Text.Json.JsonSerializer.Serialize(css)})";
-		using var evaluated = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Runtime.evaluate", System.Text.Json.JsonSerializer.Serialize(new { expression, contextId, returnByValue = true })));
+		using var evaluated = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Runtime.evaluate", System.Text.Json.JsonSerializer.Serialize(new { expression, contextId, returnByValue = true })).AsTask()));
 		if (evaluated.RootElement.TryGetProperty("exceptionDetails", out var failure)) throw new ReaderScriptException(failure.GetRawText());
 		using var outcome = System.Text.Json.JsonDocument.Parse(evaluated.RootElement.GetProperty("result").GetProperty("value").GetString()!);
 		if (!outcome.RootElement.GetProperty("ok").GetBoolean()) return outcome.RootElement.GetProperty("reason").GetString();
@@ -157,7 +194,17 @@ public sealed class WebView2Page : IPage
 	public async Task<PageHistory> HistoryAsync()
 	{
 		if (!IsOpen || _core is null) return new PageHistory([], 0);
-		using var history = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Page.getNavigationHistory", "{}"));
+		string json;
+		try
+		{
+			json = await WhileOpenAsync(_core.CallDevToolsProtocolMethodAsync("Page.getNavigationHistory", "{}").AsTask());
+		}
+		catch (ViewGoneException)
+		{
+			// The tab closed while the engine answered: no history, as for a page that never started.
+			return new PageHistory([], 0);
+		}
+		using var history = System.Text.Json.JsonDocument.Parse(json);
 		var root = history.RootElement;
 		var entries = root.GetProperty("entries").EnumerateArray()
 			.Select(e => new HistoryEntry(e.GetProperty("id").GetInt32(), e.GetProperty("url").GetString()!, e.GetProperty("title").GetString() ?? ""))
@@ -166,14 +213,15 @@ public sealed class WebView2Page : IPage
 	}
 
 	public void GoToHistoryEntry(int entryId) =>
-		Run(core => _ = core.CallDevToolsProtocolMethodAsync("Page.navigateToHistoryEntry", System.Text.Json.JsonSerializer.Serialize(new { entryId })));
+		Run(core => Background(core.CallDevToolsProtocolMethodAsync("Page.navigateToHistoryEntry", System.Text.Json.JsonSerializer.Serialize(new { entryId })).AsTask(), "history"));
 
 	public bool IsAudible => _core?.IsDocumentPlayingAudio ?? false;
 
 	public async Task<System.Text.Json.JsonElement> EvaluateAsync(string script)
 	{
 		if (!IsOpen || _core is null) throw new InvalidOperationException("The page is not running");
-		var json = await _core.ExecuteScriptAsync(script);
+		// A tab that closes meanwhile has no result (ViewGoneException).
+		var json = await WhileOpenAsync(_core.ExecuteScriptAsync(script).AsTask());
 		return System.Text.Json.JsonDocument.Parse(json).RootElement;
 	}
 
@@ -182,7 +230,7 @@ public sealed class WebView2Page : IPage
 		void Loaded(CoreWebView2 sender, CoreWebView2NavigationCompletedEventArgs e)
 		{
 			core.NavigationCompleted -= Loaded;
-			if (e.IsSuccess) _ = core.ExecuteScriptAsync(script);
+			if (e.IsSuccess) Background(core.ExecuteScriptAsync(script).AsTask(), "script");
 		}
 		core.NavigationCompleted += Loaded;
 	});
@@ -223,7 +271,8 @@ public sealed class WebView2Page : IPage
 		// Keeps nothing by default: an in-memory profile, as Electron's non-persistent partition was.
 		options.IsInPrivateModeEnabled = !_persistent;
 		options.ProfileName = _persistent ? "zing" : "zing-private";
-		_view = await HostedView.CreateAsync(_window, environment, options, "page", overlay: false);
+		// The window's scope tracks the view from the start, so a window that closes meanwhile closes it.
+		_view = await HostedView.CreateAsync(_window, _scope, environment, options, "page", overlay: false);
 		if (!IsOpen)
 		{
 			_view.Close();
@@ -273,24 +322,14 @@ public sealed class WebView2Page : IPage
 		// The override dies with each document, so every new one gets it again.
 		core.DOMContentLoaded += (_, _) =>
 		{
-			if (_textSize != Zing.Core.TextSize.Default) _ = core.ExecuteScriptAsync(Zing.Core.TextSize.Script(_textSize));
+			if (_textSize != Zing.Core.TextSize.Default) Background(core.ExecuteScriptAsync(Zing.Core.TextSize.Script(_textSize)).AsTask(), "text size");
 		};
 		core.DocumentTitleChanged += (_, _) => _events.TitleChanged(core.DocumentTitle);
-		core.FaviconChanged += async (_, _) =>
-		{
-			try
-			{
-				_events.IconChanged(string.IsNullOrEmpty(core.FaviconUri) ? null : await IconDataUrlAsync(core));
-			}
-			catch (Exception error)
-			{
-				TestHooks.Record("favicon", error);
-				throw;
-			}
-		};
+		core.FaviconChanged += (_, _) => Background(IconChangedAsync(core), "favicon");
 		core.HistoryChanged += (_, _) => _events.StateChanged();
 		core.WindowCloseRequested += (_, _) => _events.Closed();
 		core.NewWindowRequested += OnNewWindowRequested;
+		core.ProcessFailed += OnProcessFailed;
 		core.DownloadStarting += (_, e) =>
 		{
 			_downloads++;
@@ -300,6 +339,67 @@ public sealed class WebView2Page : IPage
 		// ActiveMatchIndex already counts from 1, as the find bar does; it is -1 with no match.
 		core.Find.MatchCountChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
 		core.Find.ActiveMatchIndexChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
+	}
+
+	private async Task IconChangedAsync(CoreWebView2 core)
+	{
+		if (string.IsNullOrEmpty(core.FaviconUri))
+		{
+			_events.IconChanged(null);
+			return;
+		}
+		var icon = await IconDataUrlAsync(core);
+		// The tab may have closed while the icon was read.
+		if (IsOpen) _events.IconChanged(icon);
+	}
+
+	/// <summary>
+	/// Page work nobody awaits (TestHooks.Background). A call cut off because this page closed
+	/// meanwhile is an expected outcome, like a view that went with its window; anything else is recorded.
+	/// </summary>
+	private void Background(Task task, string what) => TestHooks.Background(WhileOpen(task), what);
+
+	private async Task WhileOpen(Task task)
+	{
+		try
+		{
+			await task;
+		}
+		catch (Exception) when (!IsOpen)
+		{
+		}
+	}
+
+	/// <summary>
+	/// Page work a caller awaits. If the page closed meanwhile its outcome is moot (often an engine error
+	/// from the closed view), so it ends in ViewGoneException, which TestHooks.Background expects.
+	/// </summary>
+	private async Task<T> WhileOpenAsync<T>(Task<T> work)
+	{
+		T result;
+		try
+		{
+			result = await work;
+		}
+		catch (Exception) when (!IsOpen)
+		{
+			throw new ViewGoneException("page");
+		}
+		if (!IsOpen) throw new ViewGoneException("page");
+		return result;
+	}
+
+	private async Task WhileOpenAsync(Task work)
+	{
+		try
+		{
+			await work;
+		}
+		catch (Exception) when (!IsOpen)
+		{
+			throw new ViewGoneException("page");
+		}
+		if (!IsOpen) throw new ViewGoneException("page");
 	}
 
 	/// <summary>The engine has already chosen and fetched the icon; Zing keeps it as a PNG data URL in memory.</summary>
@@ -316,13 +416,14 @@ public sealed class WebView2Page : IPage
 	/// A navigation that turns into a download completes as ConnectionAborted (with no HTTP status) just
 	/// before DownloadStarting is raised. So an abort is reported only if no download starts soon after.
 	/// </summary>
-	private async void ReportFailure(CoreWebView2WebErrorStatus status)
+	private void ReportFailure(CoreWebView2WebErrorStatus status)
 	{
-		if (status != CoreWebView2WebErrorStatus.ConnectionAborted)
-		{
-			_events.LoadFailed(status.ToString());
-			return;
-		}
+		if (status != CoreWebView2WebErrorStatus.ConnectionAborted) _events.LoadFailed(status.ToString());
+		else Background(ReportAbortAsync(status), "load failure");
+	}
+
+	private async Task ReportAbortAsync(CoreWebView2WebErrorStatus status)
+	{
 		var downloadsBefore = _downloads;
 		await Task.Delay(DownloadGrace);
 		if (IsOpen && _downloads == downloadsBefore) _events.LoadFailed(status.ToString());
@@ -346,27 +447,54 @@ public sealed class WebView2Page : IPage
 	}
 
 	/// <summary>
+	/// A process of this page failed (EngineFailures). The page's own renderer, gone or hung, marks
+	/// the tab, which keeps its record and offers Reload; the engine shows its error page meanwhile.
+	/// A subframe's renderer, the GPU and helper processes come back by themselves, so they are only
+	/// logged. The browser process takes every view of every window with it: the app rebuilds.
+	/// </summary>
+	private void OnProcessFailed(CoreWebView2 sender, CoreWebView2ProcessFailedEventArgs e)
+	{
+		// A page Zing closed may still hear its renderer go.
+		if (!IsOpen) return;
+		EngineFailures.Warn("page", e);
+		switch (e.ProcessFailedKind)
+		{
+			case CoreWebView2ProcessFailedKind.RenderProcessExited:
+				// A load the renderer took with it never completes; the tab mustn't spin over the error page.
+				IsLoading = false;
+				_events.Crashed(PageFault.Crashed);
+				break;
+			case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
+				_events.Crashed(PageFault.Unresponsive);
+				break;
+			case CoreWebView2ProcessFailedKind.BrowserProcessExited:
+				EngineFailures.ReportBrowserLost();
+				break;
+		}
+	}
+
+	/// <summary>
 	/// A popup must be the CoreWebView2 the engine asked for, not a fresh tab
 	/// loading the same URL, or window.opener is null and OAuth popups (Google,
 	/// Microsoft, payment pages) have nowhere to send their result.
 	/// </summary>
-	private async void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs e)
+	private void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs e) =>
+		Background(OpenPopupAsync(e), "popup");
+
+	private async Task OpenPopupAsync(CoreWebView2NewWindowRequestedEventArgs e)
 	{
 		var deferral = e.GetDeferral();
 		try
 		{
 			var popup = (WebView2Page)_events.Popup(e.Uri, background: false);
 			await popup.Ready;
-			e.NewWindow = popup.Core;
-			e.Handled = true;
-		}
-		catch (Exception error)
-		{
-			TestHooks.Record("popup", error);
-			throw;
+			// The opener or the popup may have closed while the engine started it: then there is no window to hand over.
+			if (IsOpen && popup.IsOpen && popup.IsStarted) e.NewWindow = popup.Core;
 		}
 		finally
 		{
+			// Handled even without a NewWindow (window.open gets null), so the engine never opens an Edge window of its own.
+			if (IsOpen) e.Handled = true;
 			deferral.Complete();
 		}
 	}

@@ -87,3 +87,30 @@ test('the account gate covers the window, stores no plaintext secret on disk, an
 	expect(await second.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: true, signedIn: true })
 	await second.close()
 })
+
+test('the pinned sidebar sits flush with the window’s top, left and bottom edges', async () => {
+	const zing = await launchZing()
+	await zing.chrome.evaluate(() => window.zing.setSetting('sidebarPinned', true))
+	const sidebar = zing.chrome.locator('.sidebar-slot > .sidebar')
+	await expect(sidebar).toBeVisible()
+	const box = (await sidebar.boundingBox())!
+	const height = await zing.chrome.evaluate(() => (globalThis as unknown as { innerHeight: number }).innerHeight)
+	expect(box.x).toBe(0)
+	expect(box.y).toBe(0)
+	expect(box.y + box.height).toBe(height)
+	await zing.close()
+})
+
+test('the empty favourites bar’s Ctrl+D hint closes, and stays closed after a relaunch', async () => {
+	const zing = await launchZing()
+	const hint = zing.chrome.locator('.fav-hint')
+	await expect(hint).toBeVisible()
+	await hint.getByRole('button', { name: 'Hide this hint' }).click()
+	await expect(hint).toHaveCount(0)
+	await zing.close()
+
+	const again = await launchZing({ userDataDir: zing.userDataDir })
+	await expect(again.chrome.locator('.favourites-bar')).toBeVisible()
+	await expect(again.chrome.locator('.fav-hint')).toHaveCount(0)
+	await again.close()
+})

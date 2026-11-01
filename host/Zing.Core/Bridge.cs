@@ -14,6 +14,9 @@ public sealed class Bridge
 
 	private readonly Dictionary<string, Handler> _handlers = new(StringComparer.Ordinal);
 
+	/// <summary>Every channel with a handler, for checking against the contract (Defaults/channels.json).</summary>
+	public IReadOnlyCollection<string> Channels => _handlers.Keys;
+
 	public void Register(string channel, Handler handler)
 	{
 		if (!_handlers.TryAdd(channel, handler)) throw new ArgumentException($"{channel} already has a handler", nameof(channel));

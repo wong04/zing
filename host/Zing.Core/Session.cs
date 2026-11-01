@@ -75,6 +75,19 @@ public static class Session
 		return Decode(text);
 	}
 
+	/// <summary>For startup: a corrupt file is no tabs (Load), and one that can't be read is no tabs plus the problem, so the browser still opens.</summary>
+	public static Loaded<List<SessionTab>> LoadOrRecover(string path)
+	{
+		try
+		{
+			return new Loaded<List<SessionTab>>(Load(path), null);
+		}
+		catch (SessionFileException error)
+		{
+			return new Loaded<List<SessionTab>>([], new LoadProblem(path, null, error));
+		}
+	}
+
 	/// <summary>With restore off nothing may stay on disk, including a file left by an earlier run.</summary>
 	public static void Discard(string path)
 	{

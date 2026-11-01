@@ -184,4 +184,59 @@ public sealed class LibraryStoreTests : IDisposable
 		var directoryAsFile = Path.GetDirectoryName(ScratchFile())!;
 		Assert.Throws<LibraryFileException>(() => LibraryStore.LoadLibraryFile(directoryAsFile, 1));
 	}
+
+	private static readonly DateTime Stamp = new(2026, 3, 4, 5, 6, 7);
+
+	[Fact]
+	public void A_corrupt_library_is_kept_aside_and_Zing_starts_with_an_empty_one()
+	{
+		var path = ScratchFile();
+		File.WriteAllText(path, "not json");
+
+		var loaded = LibraryStore.LoadLibraryOrRecover(path, 5, Stamp);
+
+		LibraryTests.AssertSame(V.GetProperty("emptyLibrary").GetProperty("expected"), loaded.Value);
+		var problem = Assert.IsType<LoadProblem>(loaded.Problem);
+		Assert.IsType<LibraryFileException>(problem.Error);
+		Assert.Equal(path + ".corrupt-20260304-050607", problem.KeptAs);
+		Assert.False(File.Exists(path));
+		Assert.Equal("not json", File.ReadAllText(problem.KeptAs!));
+	}
+
+	[Fact]
+	public void Opening_over_a_corrupt_library_saves_new_edits_to_the_usual_path()
+	{
+		var path = ScratchFile();
+		File.WriteAllText(path, """{"bookmarks": [{"id": 1}], "readingList": []}""");
+		var saved = new List<string>();
+
+		var opened = LibraryStore.Open(path, p => { saved.Add(p); return _ => _saves++; }, () => 1, () => "id-1", Stamp);
+
+		Assert.NotNull(opened.Problem!.KeptAs);
+		Assert.Equal([path], saved);
+		opened.Value.AddFavourite("A", "https://a.test/");
+		Assert.Equal(1, _saves);
+	}
+
+	[Fact]
+	public void An_unreadable_library_is_left_in_place_and_not_saved_over()
+	{
+		var path = Path.GetDirectoryName(ScratchFile())!;
+
+		var opened = LibraryStore.Open(path, _ => _ => _saves++, () => 1, () => "id-1", Stamp);
+
+		var problem = Assert.IsType<LoadProblem>(opened.Problem);
+		Assert.True(problem.OriginalInPlace);
+		Assert.True(Directory.Exists(path));
+		opened.Value.AddFavourite("A", "https://a.test/");
+		Assert.Equal(0, _saves);
+		Assert.Single(Library.Favourites(opened.Value.Snapshot));
+	}
+
+	[Fact]
+	public void A_good_library_opens_with_no_problem()
+	{
+		var opened = LibraryStore.Open(ScratchFile(), _ => _ => _saves++, () => 1, () => "id-1", Stamp);
+		Assert.Null(opened.Problem);
+	}
 }

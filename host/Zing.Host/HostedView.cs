@@ -22,15 +22,18 @@ public sealed class HostedView
 	private readonly HostWindow _window;
 	private readonly nint _hwnd;
 	private readonly bool _overlay;
+	private readonly IDisposable _tracked;
 	private Rect _bounds;
 	private bool _visible;
 
-	private HostedView(HostWindow window, nint hwnd, bool overlay, CoreWebView2Controller controller)
+	private HostedView(HostWindow window, nint hwnd, bool overlay, CoreWebView2Controller controller, IDisposable tracked)
 	{
 		_window = window;
 		_hwnd = hwnd;
 		_overlay = overlay;
+		_tracked = tracked;
 		Controller = controller;
+		Live++;
 		// An overlay starts hidden; a view in the window starts shown, as the engine creates it.
 		Visible = !overlay;
 	}
@@ -40,6 +43,12 @@ public sealed class HostedView
 	public CoreWebView2 Core => Controller.CoreWebView2;
 
 	public bool IsClosed { get; private set; }
+
+	/// <summary>Views created and not yet closed, in every window (the e2e live-counts hook).</summary>
+	internal static int Live { get; private set; }
+
+	/// <summary>Views whose controller the engine is still creating, in every window.</summary>
+	internal static int Pending { get; private set; }
 
 	/// <summary>How many sibling windows are stacked above the view's window; 0 is the top.</summary>
 	public int Depth
@@ -72,27 +81,49 @@ public sealed class HostedView
 	}
 
 	/// <summary>Creates a view in <paramref name="window"/>; <paramref name="overlay"/> views are transparent and float above it.</summary>
+	/// <remarks>The view is tracked by <paramref name="scope"/> from the start, so a window that closes while the engine starts it closes it exactly once.</remarks>
 	/// <exception cref="ViewGoneException">The window closed while the engine started the view.</exception>
-	public static async Task<HostedView> CreateAsync(HostWindow window, CoreWebView2Environment environment, CoreWebView2ControllerOptions options, string name, bool overlay)
+	public static async Task<HostedView> CreateAsync(HostWindow window, WindowScope scope, CoreWebView2Environment environment, CoreWebView2ControllerOptions options, string name, bool overlay)
 	{
+		scope.ThrowIfClosed(name);
 		if (window.IsClosed) throw new ViewGoneException(name);
 		var hwnd = CreateHost(window.Hwnd, overlay);
+		HostedView? view = null;
+		var tracked = scope.Track(() => view?.Close());
 		CoreWebView2Controller controller;
+		Pending++;
 		try
 		{
 			controller = await environment.CreateCoreWebView2ControllerAsync(CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)hwnd), options);
 		}
-		catch (COMException) when (window.IsClosed)
+		catch (COMException) when (window.IsClosed || scope.IsClosed)
 		{
+			tracked.Dispose();
 			throw new ViewGoneException(name);
 		}
-		if (window.IsClosed)
+		catch
 		{
+			tracked.Dispose();
+			throw;
+		}
+		finally
+		{
+			Pending--;
+		}
+		try
+		{
+			scope.Checkpoint(name);
+			if (window.IsClosed) throw new ViewGoneException(name);
+		}
+		catch (ViewGoneException)
+		{
+			// Never adopted, so this is its only close.
+			tracked.Dispose();
 			controller.Close();
-			throw new ViewGoneException(name);
+			throw;
 		}
 		if (overlay) controller.DefaultBackgroundColor = Windows.UI.Color.FromArgb(0, 255, 255, 255);
-		var view = new HostedView(window, hwnd, overlay, controller);
+		view = new HostedView(window, hwnd, overlay, controller, tracked);
 		window.Adopt(view);
 		return view;
 	}
@@ -133,6 +164,8 @@ public sealed class HostedView
 	{
 		if (IsClosed) return;
 		IsClosed = true;
+		Live--;
+		_tracked.Dispose();
 		_window.Forget(this);
 		Controller.Close();
 		// A view's window goes with the main window, so it may already be gone.

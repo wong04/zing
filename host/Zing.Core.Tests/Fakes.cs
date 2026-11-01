@@ -141,6 +141,19 @@ public sealed class FakeShell : IShellActions
 	public void OpenExternal(string url) => Opened.Add(url);
 }
 
+public sealed class FakeBrowsingData : IBrowsingData
+{
+	public int Clears { get; private set; }
+	public Exception? Failure { get; set; }
+
+	public Task ClearAllAsync()
+	{
+		if (Failure is not null) return Task.FromException(Failure);
+		Clears++;
+		return Task.CompletedTask;
+	}
+}
+
 /// <summary>Ids t1, t2…, and a clock that ticks once per read, as in the shared tab-store vectors.</summary>
 public static class Deterministic
 {

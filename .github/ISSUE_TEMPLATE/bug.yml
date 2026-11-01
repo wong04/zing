@@ -1,0 +1,42 @@
+name: Bug
+description: Something in Zing behaves wrongly. A report needs a way to see it fail (AGENTS.md).
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what should happen
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to see it fail
+      description: A failing test (xUnit, vitest or e2e) is best, checked to fail for the reason claimed. Otherwise exact steps from a fresh launch.
+    validations:
+      required: true
+  - type: dropdown
+    id: class
+    attributes:
+      label: Bug class (docs/architecture-review.md, section 3)
+      options:
+        - A. Teardown / lifetime race
+        - B. Error that crashes or vanishes
+        - C. Threading
+        - D. Startup / user data
+        - E. Engine (WebView2 process) failure
+        - F. Contract drift (TS ↔ C#)
+        - G. Overlay / focus / z-order
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: faults
+    attributes:
+      label: Fault log
+      description: Paste the relevant lines of %LOCALAPPDATA%\Zing\logs\faults.log, if any. It stays on your PC; check it holds nothing private before pasting.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Zing version and Windows build

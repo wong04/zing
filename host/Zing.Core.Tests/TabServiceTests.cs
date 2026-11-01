@@ -200,3 +200,128 @@ public sealed class TabSleepServiceTests
 		Assert.Throws<ActiveTabSleepException>(() => _tabs.Sleep(tab.Id));
 	}
 }
+
+/// <summary>A tab is a record: it outlives its page's renderer, and Reload brings the page back.</summary>
+public sealed class TabCrashServiceTests
+{
+	private readonly FakePageHost _host = new();
+	private int _changes;
+	private readonly TabService _tabs;
+
+	public TabCrashServiceTests()
+	{
+		_tabs = new TabService(new TabStore(Deterministic.Clock(), Deterministic.Ids()), _host, "about:blank", () => _changes++, (_, _) => { });
+	}
+
+	private TabView ViewOf(string id) => _tabs.State("manual", false).Tabs.Single(t => t.Id == id);
+
+	private FakePage PageOf(string id) => (FakePage)_tabs.PageOf(id)!;
+
+	[Fact]
+	public void A_crashed_page_keeps_its_tab_and_page_and_the_strip_says_so()
+	{
+		var tab = _tabs.Open("https://a.example/");
+		var page = PageOf(tab.Id);
+		var before = _changes;
+		page.Events.Crashed(PageFault.Crashed);
+		Assert.Equal(before + 1, _changes);
+		Assert.Equal(PageFault.Crashed, _tabs.FaultOf(tab.Id));
+		Assert.Equal("crashed", ViewOf(tab.Id).PageState);
+		Assert.Same(page, _tabs.PageOf(tab.Id));
+		Assert.False(page.Closed);
+		Assert.Equal("https://a.example/", _tabs.Get(tab.Id).Url);
+	}
+
+	[Fact]
+	public void A_working_page_has_no_page_state_on_the_wire()
+	{
+		var tab = _tabs.Open("https://a.example/");
+		Assert.Null(ViewOf(tab.Id).PageState);
+		Assert.DoesNotContain("pageState", System.Text.Json.JsonSerializer.Serialize(ViewOf(tab.Id), ZingJson.Options));
+	}
+
+	[Fact]
+	public void Reload_clears_the_crash_and_reloads_the_page()
+	{
+		var tab = _tabs.Open("https://a.example/");
+		PageOf(tab.Id).Events.Crashed(PageFault.Crashed);
+		_tabs.Reload(tab.Id);
+		Assert.Null(_tabs.FaultOf(tab.Id));
+		Assert.Null(ViewOf(tab.Id).PageState);
+		Assert.Equal("reload", PageOf(tab.Id).Calls[^1]);
+	}
+
+	[Fact]
+	public void A_new_document_starting_in_the_page_clears_the_crash()
+	{
+		var tab = _tabs.Open("https://a.example/");
+		var events = PageOf(tab.Id).Events;
+		events.Crashed(PageFault.Crashed);
+		Assert.Equal(NavigationDecision.Allow, events.Navigating("https://a.example/", "https://a.example/"));
+		Assert.Null(_tabs.FaultOf(tab.Id));
+	}
+
+	[Fact]
+	public void A_navigation_rewritten_to_a_clean_link_keeps_the_crash_until_the_clean_one_starts()
+	{
+		var tab = _tabs.Open("https://a.example/");
+		var events = PageOf(tab.Id).Events;
+		events.Crashed(PageFault.Crashed);
+		events.Navigating("https://a.example/", "https://b.example/?utm_source=x");
+		Assert.Equal(PageFault.Crashed, _tabs.FaultOf(tab.Id));
+		events.Navigating("https://a.example/", "https://b.example/");
+		Assert.Null(_tabs.FaultOf(tab.Id));
+	}
+
+	[Fact]
+	public void An_unresponsive_page_is_marked_once_and_a_crash_outranks_it()
+	{
+		var tab = _tabs.Open("https://a.example/");
+		var events = PageOf(tab.Id).Events;
+		events.Crashed(PageFault.Unresponsive);
+		var after = _changes;
+		events.Crashed(PageFault.Unresponsive);
+		Assert.Equal(after, _changes);
+		Assert.Equal("unresponsive", ViewOf(tab.Id).PageState);
+		events.Crashed(PageFault.Crashed);
+		Assert.Equal("crashed", ViewOf(tab.Id).PageState);
+		events.Crashed(PageFault.Unresponsive);
+		Assert.Equal("crashed", ViewOf(tab.Id).PageState);
+	}
+
+	[Fact]
+	public void A_crashed_background_tab_that_sleeps_wakes_with_a_working_page()
+	{
+		var background = _tabs.Open("https://a.example/");
+		_tabs.Open("https://b.example/");
+		PageOf(background.Id).Events.Crashed(PageFault.Crashed);
+		_tabs.Sleep(background.Id);
+		Assert.Null(ViewOf(background.Id).PageState);
+		_tabs.Activate(background.Id);
+		Assert.Null(_tabs.FaultOf(background.Id));
+		Assert.Equal(["navigate https://a.example/"], PageOf(background.Id).Calls);
+	}
+
+	[Fact]
+	public void A_crash_reported_after_the_tab_closed_changes_nothing()
+	{
+		var first = _tabs.Open("https://a.example/");
+		_tabs.Open("https://b.example/");
+		var events = PageOf(first.Id).Events;
+		_tabs.Close(first.Id);
+		var before = _changes;
+		events.Crashed(PageFault.Crashed);
+		Assert.Equal(before, _changes);
+		Assert.Null(_tabs.FaultOf(first.Id));
+	}
+
+	[Fact]
+	public void Closing_a_crashed_tab_forgets_the_crash()
+	{
+		var first = _tabs.Open("https://a.example/");
+		_tabs.Open("https://b.example/");
+		PageOf(first.Id).Events.Crashed(PageFault.Crashed);
+		_tabs.Close(first.Id);
+		Assert.Null(_tabs.FaultOf(first.Id));
+	}
+}

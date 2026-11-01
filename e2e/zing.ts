@@ -20,6 +20,8 @@ export interface Launched {
 	readonly chrome: Page
 	/** Where this run kept settings and the library; pass it to the next launch to test a relaunch. */
 	readonly userDataDir: string
+	/** Zing.exe's process id, for the real-input tier's OS input helper (e2e/real-input.ps1). */
+	readonly pid: number
 	/** The menus the host opened, oldest first, as their labels (a separator is null); test runs never show them. */
 	menus(): (string | null)[][]
 	/** Starts Zing again on the same profile, as a link click from another app would, and resolves with its exit code. */
@@ -71,6 +73,13 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		...env,
 	}
 	const host: ChildProcess = spawn(HOST_EXE, [...args], { env: hostEnv, stdio: 'ignore' })
+	let closing = false
+	// A host that goes before close() leaves the test only "target closed"; say how it went and what it logged.
+	host.once('exit', (code, signal) => {
+		if (closing) return
+		const how = code === null ? `signal ${signal}` : `exit code ${code} (0x${(code >>> 0).toString(16).toUpperCase()})`
+		process.stderr.write(`Zing exited before close(), with ${how}.\n${hostLogs(errors, userData)}\n`)
+	})
 	await expect
 		.poll(async () => (await fetch(`http://127.0.0.1:${port}/json/version`).catch(() => undefined))?.ok ?? false, { timeout: 30_000 })
 		.toBe(true)
@@ -81,6 +90,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		browser,
 		chrome,
 		userDataDir: userData,
+		pid: host.pid!,
 		menus: () =>
 			existsSync(menus)
 				? readFileSync(menus, 'utf8')
@@ -95,6 +105,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 				second.once('exit', (code) => resolve(code))
 			}),
 		close: async () => {
+			closing = true
 			// Quit as a person would, by closing every window, so pending writes are flushed.
 			const exited = new Promise<void>((resolve) => host.once('exit', () => resolve()))
 			const chromes = pages(browser).filter((p) => p.url() === CHROME_URL)
@@ -111,10 +122,19 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 			if (browser.isConnected()) await browser.close()
 			if (!quit) host.kill()
 			await engineReleased(userData)
-			if (existsSync(errors)) throw new HostProcessError(`The host recorded errors during this test:\n\n${readFileSync(errors, 'utf8')}`)
+			if (existsSync(errors)) throw new HostProcessError(`The host recorded errors during this test:\n\n${readFileSync(errors, 'utf8')}\n${hostLogs(undefined, userData)}`)
 			if (!quit) throw new HostProcessError('Zing did not quit within 15 s of its last window closing')
 		},
 	}
+}
+
+/** The e2e run's own logs: the errors file (when given) and the scratch profile's fault log, warnings included. */
+function hostLogs(errors: string | undefined, userData: string): string {
+	const parts: string[] = []
+	if (errors && existsSync(errors)) parts.push(`Recorded errors:\n${readFileSync(errors, 'utf8')}`)
+	const faults = join(userData, 'logs', 'faults.log')
+	if (existsSync(faults)) parts.push(`Fault log (${faults}):\n${readFileSync(faults, 'utf8')}`)
+	return parts.length > 0 ? parts.join('\n') : 'The host logged nothing.'
 }
 
 /**
@@ -141,6 +161,9 @@ async function engineReleased(userData: string): Promise<void> {
 export interface Layer {
 	readonly url: string
 	readonly visible: boolean
+	/** Where the view sits in the window's content, in DIPs. */
+	readonly x: number
+	readonly y: number
 	readonly width: number
 	readonly height: number
 	/** How many sibling windows are stacked above the view's window (0 is the top); compare views of the same kind. */
@@ -153,6 +176,38 @@ export async function layers(chrome: Page): Promise<Layer[]> {
 	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'layers', file: path }), file)
 	await expect.poll(() => existsSync(file)).toBe(true)
 	return JSON.parse(readFileSync(file, 'utf8')) as Layer[]
+}
+
+export interface LiveCounts {
+	/** Zing windows not yet destroyed. */
+	readonly windows: number
+	/** WebView2 views not yet closed, in every window. */
+	readonly views: number
+	/** Views whose controller the engine is still creating. */
+	readonly pending: number
+	/** Page captures (CapturePreviewAsync) the engine hasn't finished, e.g. the picture taken as a tab leaves the screen. */
+	readonly captures: number
+	/** The newest window: how many windows came before it and itself, its scope checkpoints so far, whether it finished starting and whether it closed. */
+	readonly newest: { readonly serial: number; readonly checkpoints: number; readonly started: boolean; readonly closed: boolean }
+}
+
+/** What is still alive in the host (TestHooks "live-counts"), for teardown tests. */
+export async function liveCounts(chrome: Page): Promise<LiveCounts> {
+	const file = join(await mkdtemp(join(tmpdir(), 'zing-live-')), 'live.json')
+	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'live-counts', file: path }), file)
+	let counts: LiveCounts | undefined
+	// Read until whole: the host may still be writing the file when it first appears.
+	await expect
+		.poll(() => {
+			try {
+				counts = JSON.parse(readFileSync(file, 'utf8')) as LiveCounts
+				return true
+			} catch {
+				return false
+			}
+		})
+		.toBe(true)
+	return counts!
 }
 
 export function pages(browser: Browser): Page[] {

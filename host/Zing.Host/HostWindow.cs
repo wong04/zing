@@ -40,6 +40,9 @@ public sealed class HostWindow
 
 	public nint Hwnd { get; }
 
+	/// <summary>Windows created and not yet destroyed (the e2e live-counts hook).</summary>
+	internal static int OpenCount => Open.Count;
+
 	public Microsoft.UI.Windowing.AppWindow AppWindow { get; }
 
 	public bool IsClosed { get; private set; }
@@ -151,7 +154,7 @@ public sealed class HostWindow
 				break;
 			case Native.WM_SETFOCUS:
 				// After the queued messages, so a click that activated the window places focus itself first.
-				window._dispatcher.TryEnqueue(window.PassFocus);
+				Faults.Enqueue(window._dispatcher, window.PassFocus, "passing focus");
 				break;
 			case Native.WM_DPICHANGED:
 				var suggested = System.Runtime.InteropServices.Marshal.PtrToStructure<Native.RECT>(lParam);
@@ -168,13 +171,21 @@ public sealed class HostWindow
 
 	/// <summary>
 	/// WinUI's title-bar input window covers the top band of the window and answers "caption" there even
-	/// with no caption rectangles, which took the tabs' clicks. All of it passes through to the chrome view,
-	/// whose CSS app-region:drag areas move the window; the caption buttons are a window of their own above.
+	/// with no caption rectangles, which took the tabs' clicks. So the band passes through to the chrome view,
+	/// whose CSS app-region:drag areas move the window, except where Windows draws the caption buttons: a
+	/// pass-through rectangle over them sent their clicks to the chrome too, and minimise, maximise and close
+	/// did nothing (only the drag region's double-click worked). The rectangles are in client pixels.
 	/// </summary>
 	private void PassThroughTitleBar()
 	{
 		Native.GetClientRect(Hwnd, out var client);
-		Microsoft.UI.Input.InputNonClientPointerSource.GetForWindowId(AppWindow.Id).SetRegionRects(Microsoft.UI.Input.NonClientRegionKind.Passthrough, [new Windows.Graphics.RectInt32(0, 0, client.Right, client.Bottom)]);
+		var bar = AppWindow.TitleBar;
+		var buttons = Math.Clamp(bar.RightInset, 0, client.Right);
+		var band = Math.Clamp(bar.Height, 0, client.Bottom);
+		Windows.Graphics.RectInt32[] passThrough = buttons == 0 || band == 0
+			? [new(0, 0, client.Right, client.Bottom)]
+			: [new(0, 0, client.Right - buttons, band), new(0, band, client.Right, client.Bottom - band)];
+		Microsoft.UI.Input.InputNonClientPointerSource.GetForWindowId(AppWindow.Id).SetRegionRects(Microsoft.UI.Input.NonClientRegionKind.Passthrough, passThrough);
 	}
 
 	/// <summary>A size in DIPs, in pixels for this window's screen, at most 90% of its work area so it opens whole.</summary>

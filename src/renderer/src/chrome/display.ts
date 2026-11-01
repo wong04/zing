@@ -24,3 +24,23 @@ export function monogram(tab: TabView): string {
 	const host = new URL(tab.url).hostname.replace(/^www\./, '')
 	return host ? host[0]!.toUpperCase() : '•'
 }
+
+/** What the chrome says about a tab whose page isn't working; undefined while it is. */
+export function pageFaultText(tab: TabView | undefined): string | undefined {
+	switch (tab?.pageState) {
+		case 'crashed':
+			return 'This page crashed'
+		case 'unresponsive':
+			return 'This page isn’t responding'
+		default:
+			return undefined
+	}
+}
+
+/** The chip's tooltip: its title, plus why its page isn't working. */
+export function tabTooltip(tab: TabView): string {
+	const title = tabTitle(tab)
+	if (tab.pageState === 'crashed') return `${title} (crashed)`
+	if (tab.pageState === 'unresponsive') return `${title} (not responding)`
+	return title
+}

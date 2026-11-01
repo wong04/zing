@@ -1,6 +1,7 @@
 import { useState, type DragEvent, type MouseEvent } from 'react'
 import { favourites, isFolder, type BookmarkNode, type BrowserLibrary } from '@shared/library/library'
 import { zing } from '../api'
+import { useSettings } from '../settings/useSettings'
 
 const MIDDLE_BUTTON = 1
 
@@ -53,6 +54,7 @@ function Chip({ node, onDragOver, onDrop, dropSide }: {
 
 export function FavouritesBar({ library }: { library: BrowserLibrary }) {
 	const items = favourites(library)
+	const showHint = useSettings()?.settings.favouritesHint ?? false
 	const [over, setOver] = useState<{ id: string; side: 'before' | 'after' } | undefined>()
 
 	const sideOf = (e: DragEvent<HTMLElement>): 'before' | 'after' => {
@@ -70,7 +72,14 @@ export function FavouritesBar({ library }: { library: BrowserLibrary }) {
 
 	return (
 		<div className="favourites-bar" role="toolbar" aria-label="Favourites" onDragLeave={() => setOver(undefined)}>
-			{items.length === 0 ? <span className="fav-hint">Press Ctrl+D to add this page to Favourites</span> : null}
+			{items.length === 0 && showHint ? (
+				<span className="fav-hint">
+					Press Ctrl+D to add this page to Favourites
+					<button type="button" className="fav-hint-close" aria-label="Hide this hint" title="Hide this hint" onClick={() => void zing.setSetting('favouritesHint', false)}>
+						×
+					</button>
+				</span>
+			) : null}
 			{items.map((node) => (
 				<Chip
 					key={node.id}

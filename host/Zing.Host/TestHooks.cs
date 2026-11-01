@@ -10,6 +10,14 @@ public static class TestHooks
 {
 	public static bool IsEndToEndRun => Environment.GetEnvironmentVariable("ZING_E2E") == "1";
 
+	/// <summary>
+	/// An e2e run's windows open off-screen, out of the switchers, and never take focus (AGENTS.md). The
+	/// real-input tier (e2e/real-input.spec.ts, run by hand on a PC nobody is using) sets ZING_E2E_ONSCREEN=1:
+	/// its window opens where a person's would and is activated, because OS input (SendInput) only reaches
+	/// the window in front. Everything else about an e2e run stays: menus are recorded, the cursor never read.
+	/// </summary>
+	public static bool KeepsOutOfTheWay => IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_E2E_ONSCREEN") != "1";
+
 	/// <summary>Remote debugging port for Playwright; only honoured in e2e runs.</summary>
 	public static string? DebuggingPort => IsEndToEndRun ? Environment.GetEnvironmentVariable("ZING_CDP_PORT") : null;
 
@@ -26,9 +34,16 @@ public static class TestHooks
 	/// <summary>The app clock. ZING_TEST_CLOCK=1 in an e2e run gives one a test can move forward (test:advance-clock).</summary>
 	public static Zing.Core.IClock Clock { get; } = IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_TEST_CLOCK") == "1" ? new Zing.Core.OffsetClock() : new Zing.Core.SystemClock();
 
+	private static int? _closeNextAt;
+	private static WindowScope? _newest;
+	private static int _windows;
+	private static bool _newestStarted;
+
 	/// <summary>
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
-	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms}.
+	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
+	/// "layers" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
+	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
 	public static bool TryHandle(string json, HostWindow window)
 	{
@@ -42,6 +57,18 @@ public static class TestHooks
 			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(Layers(window)));
 			return true;
 		}
+		if (action == "live-counts")
+		{
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(LiveCounts()));
+			return true;
+		}
+		if (action == "close-at")
+		{
+			var n = root.GetProperty("n").GetInt32();
+			if (n < 1) throw new InvalidOperationException($"close-at counts checkpoints from 1, got {n}");
+			_closeNextAt = n;
+			return true;
+		}
 		if (action != "advance-clock") throw new InvalidOperationException($"Unknown test action {action}");
 		if (Clock is not Zing.Core.OffsetClock clock) throw new InvalidOperationException("advance-clock needs ZING_TEST_CLOCK=1");
 		clock.Advance(root.GetProperty("ms").GetInt64());
@@ -49,18 +76,51 @@ public static class TestHooks
 	}
 
 	/// <summary>
-	/// What the window actually shows: each WebView2 with its address, whether it is visible and its size
-	/// in DIPs. Page-side signals (document.visibilityState) don't follow a hidden view.
+	/// What the window actually shows: each WebView2 with its address, whether it is visible, and its place
+	/// in the window's content and size in DIPs. Page-side signals (document.visibilityState) don't follow a hidden view.
 	/// </summary>
 	private static List<object> Layers(HostWindow window) =>
 		[.. window.Views.Select(v => new
 		{
 			url = v.Core.Source,
 			visible = v.Visible,
+			x = v.Bounds.X,
+			y = v.Bounds.Y,
 			width = v.Bounds.Width,
 			height = v.Bounds.Height,
 			depth = v.Depth,
 		})];
+
+	/// <summary>
+	/// What is still alive, for the teardown guard: windows not yet destroyed, views not yet closed and
+	/// views whose controller is still being created (every window), and the newest window's scope.
+	/// </summary>
+	private static object LiveCounts() => new
+	{
+		windows = HostWindow.OpenCount,
+		views = HostedView.Live,
+		pending = HostedView.Pending,
+		captures = WebView2Page.CapturesInFlight,
+		newest = new { serial = _windows, checkpoints = _newest?.Checkpoints ?? 0, started = _newestStarted, closed = _newest?.IsClosed ?? false },
+	};
+
+	/// <summary>A new window's scope, in an e2e run: counted, and closed at a checkpoint if a test asked (close-at).</summary>
+	public static void Watch(WindowScope scope, Action closeWindow)
+	{
+		if (!IsEndToEndRun) return;
+		_newest = scope;
+		_windows++;
+		_newestStarted = false;
+		if (_closeNextAt is not { } n) return;
+		_closeNextAt = null;
+		scope.CloseAt(n, closeWindow);
+	}
+
+	/// <summary>A window finished starting (the end of MainWindow.StartAsync).</summary>
+	public static void Started(WindowScope scope)
+	{
+		if (scope == _newest) _newestStarted = true;
+	}
 
 	/// <summary>
 	/// e2e runs never show a menu: a Win32 menu appears on the person's screen even for the off-screen
@@ -73,7 +133,11 @@ public static class TestHooks
 		File.AppendAllText(file, System.Text.Json.JsonSerializer.Serialize(items.Select(i => i.Label)) + "\n");
 	}
 
-	/// <summary>Work nobody awaits: its failures are recorded, except a view that went with its closing window.</summary>
+	/// <summary>
+	/// Work nobody awaits: its failures are recorded, except a view that went with its closing window.
+	/// This is also the host's error boundary for event handlers: a handler that awaits is a plain
+	/// <c>void</c> that passes its async work here, never <c>async void</c>, which would crash the process on a throw.
+	/// </summary>
 	public static void Background(Task task, string what) =>
 		_ = task.ContinueWith(t =>
 		{
@@ -87,8 +151,10 @@ public static class TestHooks
 		TaskScheduler.UnobservedTaskException += (_, e) => Record("unobserved task", e.Exception);
 	}
 
+	/// <summary>Records a fault in the local fault log (Faults) in every run, and in an e2e run also in ZING_ERRORS_FILE, which fails the test.</summary>
 	public static void Record(string kind, object error)
 	{
+		Faults.Error(kind, error);
 		var file = Environment.GetEnvironmentVariable("ZING_ERRORS_FILE");
 		if (!IsEndToEndRun || string.IsNullOrEmpty(file)) return;
 		File.AppendAllText(file, $"{kind}: {error}\n\n");

@@ -140,7 +140,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 		{ type: 'custom', id: 'default-browser', keys: [] },
 		toggle('confirmQuit', 'Confirm before quitting'),
 		toggle('sidebarPinned', 'Keep the sidebar open', {
-			detail: (s) => (s.sidebarPinned ? undefined : 'Move to the left edge to show it. Ctrl+Shift+S pins it again.'),
+			detail: (s) => (s.sidebarPinned ? undefined : 'Move to the left edge to show it. Ctrl+S pins it again.'),
 		}),
 	],
 	browsing: [
@@ -158,6 +158,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 			control: { kind: 'text', placeholder: 'New-tab page', width: 260 },
 		},
 		toggle('showFavouritesBar', 'Show the favourites bar'),
+		toggle('favouritesHint', 'Show the Ctrl+D hint on an empty favourites bar'),
 		toggle('passwordAutofill', 'Offer to fill saved passwords', {
 			detail: 'A key appears in sign-in fields. Passwords are kept only in the vault on this PC.',
 		}),

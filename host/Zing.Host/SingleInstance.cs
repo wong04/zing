@@ -33,7 +33,7 @@ public static class SingleInstance
 		AppInstance.GetCurrent().Activated += (_, e) =>
 		{
 			var argv = e.Data is ILaunchActivatedEventArgs launch ? Zing.Core.LaunchArgs.Split(launch.Arguments) : [];
-			dispatcher.TryEnqueue(() => onSecondLaunch(argv));
+			Faults.Enqueue(dispatcher, () => onSecondLaunch(argv), "a second launch");
 		};
 	}
 }

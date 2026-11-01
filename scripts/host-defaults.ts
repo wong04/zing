@@ -69,6 +69,7 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	sidebarPinned: flag,
 	recentFeatures: { type: 'textList' },
 	showFavouritesBar: flag,
+	favouritesHint: flag,
 	passwordAutofill: flag,
 	tabDropdowns: flag,
 	tabBarPosition: oneOf(TAB_BAR_POSITIONS),

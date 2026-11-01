@@ -1,7 +1,8 @@
 /*
- * Pinned, the sidebar is the chrome's left column (204 px: the 196 px pane plus
- * an 8 px inset, SIDEBAR_COLUMN_WIDTH), and main places the page view to its
- * right. Floating, the same pane is drawn over the page by the surface view.
+ * Pinned, the sidebar is the chrome's left column, flush with the window's top,
+ * bottom and left edges (204 px, SIDEBAR_COLUMN_WIDTH), and the host places the
+ * page view to its right. Floating, the pane is a card drawn over the page by the
+ * surface view.
  */
 
 .shell {
@@ -17,7 +18,13 @@
 .sidebar-slot {
 	flex: none;
 	width: 204px;
-	padding: 8px 0 8px 8px;
+}
+
+.sidebar-slot > .sidebar {
+	width: 100%;
+	border: 0;
+	border-right: 1px solid var(--separator);
+	border-radius: 0;
 }
 
 .sidebar {

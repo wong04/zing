@@ -22,7 +22,7 @@ public sealed class TaskbarIcon
 	{
 		_icon = IconForTaskbar();
 		// Raised off the UI thread when the user switches Windows between light and dark.
-		_ui.ColorValuesChanged += (_, _) => dispatcher.TryEnqueue(Refresh);
+		_ui.ColorValuesChanged += (_, _) => Faults.Enqueue(dispatcher, Refresh, "the taskbar icon refresh");
 	}
 
 	public void Add(AppWindow window)

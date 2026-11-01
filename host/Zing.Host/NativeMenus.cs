@@ -84,6 +84,12 @@ public sealed class WindowsShell : IShellActions
 	{
 		if (TestHooks.IsEndToEndRun) throw new InvalidOperationException($"e2e runs must not open {url} in another app");
 		// Windows' own pages (ms-settings:) as well as web links.
-		_ = Windows.System.Launcher.LaunchUriAsync(new Uri(url));
+		TestHooks.Background(LaunchAsync(new Uri(url)), "open external");
+	}
+
+	/// <summary>Windows answers false when no app takes the link; the address stays out of the error, which may reach the fault log.</summary>
+	private static async Task LaunchAsync(Uri uri)
+	{
+		if (!await Windows.System.Launcher.LaunchUriAsync(uri)) throw new InvalidOperationException($"No app opened the {uri.Scheme}: link");
 	}
 }

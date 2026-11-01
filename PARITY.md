@@ -72,40 +72,54 @@ WebKit-only internals with no Chromium equivalent: `WebKitTuning.swift` (private
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| B1 | Core tab actions | parity | App/Commands.swift, Features/Browser/BrowserModel.swift | [#28](https://github.com/wong04/zing/issues/28) | Open |
-| B2 | Pinned tabs | parity | Features/Browser/BrowserView.swift | [#29](https://github.com/wong04/zing/issues/29) | Open |
-| B3 | Drag-to-reorder tabs | parity | Features/Browser/TabReorder.swift, BrowserView.swift | [#30](https://github.com/wong04/zing/issues/30) | Open |
-| B4 | Tab arrangements | parity | Features/Browser/TabOrganizer.swift | [#31](https://github.com/wong04/zing/issues/31) | Open |
-| B5 | Tab stacks (Separate / Dropdown) | parity | Features/Browser/BrowserView.swift (TabStackChip, TabStackDropdown) | [#32](https://github.com/wong04/zing/issues/32) | Open |
-| B6 | Auto-close tabs | parity | Features/Browser/TabOrganizer.swift | [#33](https://github.com/wong04/zing/issues/33) | Open |
-| B7 | Popups keep window.opener (OAuth) | parity | Features/Browser/BrowserTab.swift (createWebViewWith) | [#34](https://github.com/wong04/zing/issues/34) | Open |
-| B8 | Downloads | parity | Features/Browser/DownloadPolicy.swift, BrowserChrome.swift | [#35](https://github.com/wong04/zing/issues/35) | Open |
+| B1 | Core tab actions | parity | App/Commands.swift, Features/Browser/BrowserModel.swift | [#28](https://github.com/wong04/zing/issues/28) | Done |
+| B2 | Pinned tabs | parity | Features/Browser/BrowserView.swift | [#29](https://github.com/wong04/zing/issues/29) | Done |
+| B3 | Drag-to-reorder tabs | parity | Features/Browser/TabReorder.swift, BrowserView.swift | [#30](https://github.com/wong04/zing/issues/30) | Partial |
+| B4 | Tab arrangements | parity | Features/Browser/TabOrganizer.swift | [#31](https://github.com/wong04/zing/issues/31) | Done |
+| B5 | Tab stacks (Separate / Dropdown) | parity | Features/Browser/BrowserView.swift (TabStackChip, TabStackDropdown) | [#32](https://github.com/wong04/zing/issues/32) | Done |
+| B6 | Auto-close tabs | parity | Features/Browser/TabOrganizer.swift | [#33](https://github.com/wong04/zing/issues/33) | Partial |
+| B7 | Popups keep window.opener (OAuth) | parity | Features/Browser/BrowserTab.swift (createWebViewWith) | [#34](https://github.com/wong04/zing/issues/34) | Done |
+| B8 | Downloads | parity | Features/Browser/DownloadPolicy.swift, BrowserChrome.swift | [#35](https://github.com/wong04/zing/issues/35) | Done |
 | B9 | Fullscreen video | parity | Features/Browser/WebViewHost.swift | [#36](https://github.com/wong04/zing/issues/36) | Open |
-| B10 | Keeps-nothing privacy model | parity | README 'Privacy, stated precisely' | [#37](https://github.com/wong04/zing/issues/37) | Open |
-| B11 | Tracker + ad blocking | parity | README (48 tracker domains) | [#38](https://github.com/wong04/zing/issues/38) | Open |
-| B12 | Opt-in persistent profile and tab restore | parity | App/AppSettings.swift (persistentProfile, restoreTabs), SettingsView.swift | [#39](https://github.com/wong04/zing/issues/39) | Open |
-| B13 | Bookmarks, Reading List, Favourites bar | parity | Features/Browser/BrowserLibrary.swift, LibraryStore.swift | [#40](https://github.com/wong04/zing/issues/40) | Open |
-| B14 | Find in page | parity | Features/Browser/BrowserTabActions.swift | [#41](https://github.com/wong04/zing/issues/41) | Open |
-| B15 | Reader mode | parity | Features/Browser/BrowserTabActions.swift | [#42](https://github.com/wong04/zing/issues/42) | Open |
-| B16 | Zoom and text size | parity | Features/Browser/BrowserTabActions.swift | [#43](https://github.com/wong04/zing/issues/43) | Open |
+| B10 | Keeps-nothing privacy model | parity | README 'Privacy, stated precisely' | [#37](https://github.com/wong04/zing/issues/37) | Done |
+| B11 | Tracker + ad blocking | parity | README (48 tracker domains) | [#38](https://github.com/wong04/zing/issues/38) | Partial |
+| B12 | Opt-in persistent profile and tab restore | parity | App/AppSettings.swift (persistentProfile, restoreTabs), SettingsView.swift | [#39](https://github.com/wong04/zing/issues/39) | Done |
+| B13 | Bookmarks, Reading List, Favourites bar | parity | Features/Browser/BrowserLibrary.swift, LibraryStore.swift | [#40](https://github.com/wong04/zing/issues/40) | Partial |
+| B14 | Find in page | parity | Features/Browser/BrowserTabActions.swift | [#41](https://github.com/wong04/zing/issues/41) | Done |
+| B15 | Reader mode | parity | Features/Browser/BrowserTabActions.swift | [#42](https://github.com/wong04/zing/issues/42) | Done |
+| B16 | Zoom and text size | parity | Features/Browser/BrowserTabActions.swift | [#43](https://github.com/wong04/zing/issues/43) | Partial |
 | B17 | Print | parity | Features/Browser/BrowserTabActions.swift | [#44](https://github.com/wong04/zing/issues/44) | Open |
-| B18 | Tab overview | parity | Features/Browser/BrowserChrome.swift | [#45](https://github.com/wong04/zing/issues/45) | Open |
-| B19 | Back/forward history menus | parity | Features/Browser/BrowserChrome.swift | [#46](https://github.com/wong04/zing/issues/46) | Open |
-| B20 | Start page | parity | Features/Browser/StartPage.swift, StartShortcuts.swift | [#47](https://github.com/wong04/zing/issues/47) | Open |
-| B21 | Search engine and homepage settings | parity | App/AppSettings.swift | [#48](https://github.com/wong04/zing/issues/48) | Open |
-| B22 | Memory-only favicons | parity | Features/Browser/FaviconStore.swift | [#49](https://github.com/wong04/zing/issues/49) | Open |
-| B23 | Camera, mic and permission prompts | parity | Features/Browser/BrowserTab.swift | [#50](https://github.com/wong04/zing/issues/50) | Open |
-| B24 | Multiple windows | parity | App/KracknApp.swift (WindowSession) | [#51](https://github.com/wong04/zing/issues/51) | Open |
-| B25 | Default browser + links from other apps | parity | App/KracknApp.swift (AppGate, LinkInbox) | [#52](https://github.com/wong04/zing/issues/52) | Open |
+| B18 | Tab overview | parity | Features/Browser/BrowserChrome.swift | [#45](https://github.com/wong04/zing/issues/45) | Done |
+| B19 | Back/forward history menus | parity | Features/Browser/BrowserChrome.swift | [#46](https://github.com/wong04/zing/issues/46) | Done |
+| B20 | Start page | parity | Features/Browser/StartPage.swift, StartShortcuts.swift | [#47](https://github.com/wong04/zing/issues/47) | Done |
+| B21 | Search engine and homepage settings | parity | App/AppSettings.swift | [#48](https://github.com/wong04/zing/issues/48) | Partial |
+| B22 | Memory-only favicons | parity | Features/Browser/FaviconStore.swift | [#49](https://github.com/wong04/zing/issues/49) | Done |
+| B23 | Camera, mic and permission prompts | parity | Features/Browser/BrowserTab.swift | [#50](https://github.com/wong04/zing/issues/50) | Partial |
+| B24 | Multiple windows | parity | App/KracknApp.swift (WindowSession) | [#51](https://github.com/wong04/zing/issues/51) | Done |
+| B25 | Default browser + links from other apps | parity | App/KracknApp.swift (AppGate, LinkInbox) | [#52](https://github.com/wong04/zing/issues/52) | Partial |
 | B26 | Confirm before quit | parity | App/AppSettings.swift (confirmQuit) | [#53](https://github.com/wong04/zing/issues/53) | Open |
 | B27 | Clean user agent | parity | Features/Browser/UserAgent.swift | [#54](https://github.com/wong04/zing/issues/54) | Open |
-| B28 | App sidebar with edge reveal | parity | App/Sidebar.swift | [#55](https://github.com/wong04/zing/issues/55) | Open |
-| B29 | Floating tool panels | parity | App/FloatingPanels.swift | [#56](https://github.com/wong04/zing/issues/56) | Open |
-| B30 | Settings sheet | parity | Features/Settings/SettingsView.swift | [#57](https://github.com/wong04/zing/issues/57) | Open |
-| B31 | Account gate | parity | Features/Account/AccountStore.swift, AuthView.swift | [#58](https://github.com/wong04/zing/issues/58) | Open |
-| B32 | Sleeping tabs | new | - | [#59](https://github.com/wong04/zing/issues/59) | Open |
-| B33 | Lazy session restore | new | - | [#60](https://github.com/wong04/zing/issues/60) | Open |
-| B34 | Shared UI components | parity | App/Components.swift, FileComponents.swift, ScrollFade.swift | [#61](https://github.com/wong04/zing/issues/61) | Open |
+| B28 | App sidebar with edge reveal | parity | App/Sidebar.swift | [#55](https://github.com/wong04/zing/issues/55) | Done |
+| B29 | Floating tool panels | parity | App/FloatingPanels.swift | [#56](https://github.com/wong04/zing/issues/56) | Partial |
+| B30 | Settings sheet | parity | Features/Settings/SettingsView.swift | [#57](https://github.com/wong04/zing/issues/57) | Done |
+| B31 | Account gate | parity | Features/Account/AccountStore.swift, AuthView.swift | [#58](https://github.com/wong04/zing/issues/58) | Done |
+| B32 | Sleeping tabs | new | - | [#59](https://github.com/wong04/zing/issues/59) | Done |
+| B33 | Lazy session restore | new | - | [#60](https://github.com/wong04/zing/issues/60) | Done |
+| B34 | Shared UI components | parity | App/Components.swift, FileComponents.swift, ScrollFade.swift | [#61](https://github.com/wong04/zing/issues/61) | Partial |
+
+**B rows, 2026-11-01:** re-verified on the WebView2 host. Evidence for each Done row is in its issue, and every cited test passed on Windows CI ([run 41289375469](https://github.com/wong04/zing/actions/runs/41289375469), the whole e2e suite plus vitest and xUnit). Partial rows, still open:
+- B3: no e2e drag on the strip (logic: TabReorder/TabOrdering tests)
+- B6: auto-close has no e2e
+- B11: domain blocking is Edge Strict, untested; full blocking waits on uBO Lite
+- B13: Reading List and the panels have no e2e
+- B16: zoom menu items do nothing; zoom is left to the engine’s keys
+- B21: the homepage setting and Home command are untested
+- B23: e2e covers only denying a notification; no camera/mic or Allow
+- B25: default-browser registration waits on the installer (Phase 8)
+- B29: no e2e; the toolbox isn’t there yet
+- B34: mostly visual; needs light + dark screenshots
+
+Still open, nothing to test yet: B9 (no fullscreen handler), B17 (print uses Edge's preview; untested), B26 (`confirmQuit` is never read by the host), B27 (dropped: WebView2 presents Edge's own user agent; belongs under Known differences).
 
 ## M4 Tab bar position + split view
 

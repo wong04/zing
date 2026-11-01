@@ -15,12 +15,17 @@ import type {
 	ToolPanelsState,
 } from './shell/shellState'
 
+/** The page's render process exited ('crashed') or stopped answering ('unresponsive'). Host: PageFault. */
+export type TabPageState = 'crashed' | 'unresponsive'
+
 /** A tab as the chrome draws it: the record plus state that only exists while a renderer is attached. */
 export interface TabView extends TabRecord {
 	/** The memory-only favicon (a small data URL) once it has loaded. */
 	readonly icon?: string
 	/** Its renderer was discarded to save memory; the strip can draw it dimmed. Activating wakes it. */
 	readonly sleeping?: boolean
+	/** Why its page isn't working; absent while it is. The tab keeps its record, and Reload brings the page back. */
+	readonly pageState?: TabPageState
 	readonly loading: boolean
 	readonly canGoBack: boolean
 	readonly canGoForward: boolean
@@ -131,8 +136,22 @@ export interface OverviewState {
 	readonly tabs: readonly OverviewTab[]
 }
 
-/** Renderer → main requests, answered with a promise. */
+/** An error a Zing view hit, sent to the host so it is recorded like the host's own (e2e fails on it). */
+export interface RendererErrorReport {
+	readonly kind: 'error' | 'unhandledrejection' | 'bridge'
+	readonly message: string
+	readonly stack?: string
+	/** The view's root, e.g. `chrome` or `overlay-stack`. */
+	readonly view?: string
+}
+
+/**
+ * Renderer → host requests, answered with a promise. The C# host registers a
+ * handler for each by name (ChromeApi, plus a few in MainWindow); the list is
+ * generated into host/Zing.Core/Defaults/channels.json and checked on both sides.
+ */
 export interface InvokeContract {
+	'app:report-error': { args: [report: RendererErrorReport]; result: void }
 	'command:run': { args: [id: CommandId]; result: CommandOutcome }
 	'tabs:get': { args: []; result: TabsState }
 	'tabs:activate': { args: [id: TabId]; result: void }
@@ -209,7 +228,7 @@ export interface InvokeContract {
 	'overview:close': { args: []; result: void }
 }
 
-/** Main → renderer pushes. `tabs:state` is coalesced to at most one per frame. */
+/** Host → renderer pushes. The host sends one per change, uncoalesced. */
 export interface EventContract {
 	'tabs:state': TabsState
 	'chrome:focus-address': undefined
@@ -229,7 +248,10 @@ export type EventChannel = keyof EventContract
 
 export type Unsubscribe = () => void
 
-/** The whole surface the preload exposes as `window.zing`. Nothing else crosses the bridge. */
+/**
+ * The whole surface Zing's views see as `window.zing`, built over the WebView2
+ * bridge (bridge/webviewBridge.ts, zingApi.ts). Nothing else crosses the bridge.
+ */
 export interface ZingApi {
 	runCommand(id: CommandId): Promise<CommandOutcome>
 	getTabs(): Promise<TabsState>
@@ -293,6 +315,7 @@ export interface ZingApi {
 	openToolbox(): Promise<void>
 	openShellMenu(kind: ShellMenuKind, id: string, anchor: MenuAnchor): Promise<void>
 	clearBrowsingSession(): Promise<void>
+	reportError(report: RendererErrorReport): Promise<void>
 	onShellState(listener: (state: ShellState) => void): Unsubscribe
 	getToolPanels(): Promise<ToolPanelsState>
 	openPanel(content: string, at: Point): Promise<OpenPanelOutcome>

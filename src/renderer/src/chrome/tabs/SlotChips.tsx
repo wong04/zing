@@ -1,7 +1,7 @@
 import { useRef, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import type { TabView } from '@shared/ipc'
 import { zing } from '../../api'
-import { tabTitle } from '../display'
+import { tabTitle, tabTooltip } from '../display'
 import { tabIconContent } from '../TabIcon'
 import { CloseIcon } from '../icons'
 import { useSpringLoad } from './springLoad'
@@ -30,6 +30,14 @@ function classes(...names: (string | false)[]): string {
 }
 
 function Icon({ tab }: { tab: TabView }) {
+	// A crashed or hung page shows a marker in place of its icon; a page stuck mid-load would otherwise spin forever.
+	if (tab.pageState) {
+		return (
+			<span className="tab-icon fault" aria-hidden="true">
+				!
+			</span>
+		)
+	}
 	return (
 		<span className={tab.loading ? 'tab-icon loading' : 'tab-icon'} aria-hidden="true">
 			{tab.loading ? null : tabIconContent(tab)}
@@ -73,12 +81,13 @@ export function TabChip({ tab, active, frame }: { tab: TabView; active: boolean;
 			role="tab"
 			aria-selected={active}
 			tabIndex={active ? 0 : -1}
-			className={classes('tab', active && 'active', tab.pinned && 'pinned', iconOnly && 'icon-only', frame.dragging && 'dragging', tab.sleeping === true && 'sleeping')}
+			className={classes('tab', active && 'active', tab.pinned && 'pinned', iconOnly && 'icon-only', frame.dragging && 'dragging', tab.sleeping === true && 'sleeping', tab.pageState !== undefined && 'faulted')}
 			style={chipStyle(frame)}
-			title={title}
+			title={tabTooltip(tab)}
 			data-tab-id={tab.id}
 			data-pinned={tab.pinned}
 			data-sleeping={tab.sleeping ? 'true' : undefined}
+			data-page-state={tab.pageState}
 			onPointerDown={onPointerDown}
 			onPointerMove={frame.drag.onPointerMove}
 			onPointerUp={frame.drag.onPointerUp}

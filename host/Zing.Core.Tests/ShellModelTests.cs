@@ -219,6 +219,22 @@ public sealed class ShellModelTests
 	}
 
 	[Fact]
+	public void Unpinning_with_the_toggle_puts_the_sidebar_away_without_a_peek()
+	{
+		var h = new Harness(pinned: true);
+		// The host flips the setting, which comes back as SetSidebarPinned (ChromeApi).
+		h.Model.SidebarPinRequested += pinned => h.Model.SetSidebarPinned(pinned);
+		h.Model.ToggleSidebar();
+		Assert.False(h.Model.SidebarPinned);
+		Assert.False(h.Model.SidebarRevealed);
+		Assert.Equal(0, h.Model.PinnedWidth);
+		// The next unpin from Settings still peeks.
+		h.Model.SetSidebarPinned(true);
+		h.Model.SetSidebarPinned(false);
+		Assert.True(h.Model.SidebarRevealed);
+	}
+
+	[Fact]
 	public void The_toolbox_is_not_there_yet()
 	{
 		var h = new Harness();

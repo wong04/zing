@@ -584,6 +584,13 @@
 			{
 				"code": "KeyS",
 				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+S"
+			},
+			{
+				"code": "KeyS",
+				"ctrl": true,
 				"shift": true,
 				"alt": false,
 				"label": "Ctrl+Shift+S"

@@ -45,6 +45,15 @@ public interface ISitePurger
 }
 
 /// <summary>
+/// Everything sites have stored in the browsing profile, in memory or persistent:
+/// cookies and other storage, the cache and HTTP auth. The host clears it through the engine.
+/// </summary>
+public interface IBrowsingData
+{
+	Task ClearAllAsync();
+}
+
+/// <summary>
 /// Keeps nothing (privacy.ts): the profile is in memory, and on top of that a
 /// site's data is purged the moment the last tab that touched it closes. The
 /// only thing remembered is which sites open tabs have used, in memory. Shared

@@ -9,12 +9,13 @@ public sealed class ChromeApiTests : IDisposable
 	private readonly FakeWindowHost _host = new();
 	private readonly SettingsStore _settings = new();
 	private readonly List<BrowserLibrary> _saved = [];
+	private readonly FakeBrowsingData _browsingData = new();
 	private readonly ChromeApi _api;
 
 	public ChromeApiTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _saved.Add, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), _host, "test");
+		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), BrowsingData: _browsingData), _host, "test");
 		_api.Start([], "about:blank");
 	}
 
@@ -37,6 +38,34 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	private static string ErrorName(JsonElement result) => result.GetProperty("error").GetProperty("name").GetString()!;
+
+	[Fact]
+	public async Task Clear_session_clears_the_profile_and_says_so_and_keeps_the_tabs()
+	{
+		Value(await Invoke("tabs:navigate", ActiveId, "https://example.com"));
+		Value(await Invoke("shell:clear-session"));
+		Assert.Equal(1, _browsingData.Clears);
+		Assert.Equal("Browsing session cleared", _host.Notices[^1]);
+		Assert.Contains("example.com", Value(await Invoke("tabs:get")).GetProperty("tabs")[0].GetProperty("url").GetString());
+	}
+
+	[Fact]
+	public async Task Clear_session_that_fails_rejects_and_claims_nothing()
+	{
+		_browsingData.Failure = new IOException("engine gone");
+		Assert.Equal(nameof(IOException), ErrorName(await Invoke("shell:clear-session")));
+		Assert.DoesNotContain("Browsing session cleared", _host.Notices);
+	}
+
+	[Fact]
+	public async Task Clear_session_without_an_engine_rejects()
+	{
+		var bridge = new Bridge();
+		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), new FakeWindowHost(), "test");
+		var json = JsonSerializer.Serialize(new { kind = "invoke", id = 1, channel = "shell:clear-session", args = Array.Empty<object>() });
+		Assert.Equal(nameof(InvalidOperationException), ErrorName(JsonDocument.Parse(await bridge.HandleAsync(json)).RootElement));
+	}
 
 	[Fact]
 	public async Task Typed_text_is_resolved_and_loaded_in_that_tab()
