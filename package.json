@@ -18,7 +18,7 @@
 		"test:host": "dotnet test host/Zing.Core.Tests",
 		"test:e2e": "npm run build && npm run build:host && playwright test",
 		"test:e2e:real-input": "npm run build && npm run build:host && playwright test --grep @real-input",
-		"start": "npm run build && npm run build:host && host/Zing.Host/bin/Release/net9.0-windows10.0.22621.0/win-x64/Zing.exe"
+		"start": "npm run build && npm run build:host && \"host\\\\Zing.Host\\\\bin\\\\Release\\\\net9.0-windows10.0.22621.0\\\\win-x64\\\\Zing.exe\""
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
