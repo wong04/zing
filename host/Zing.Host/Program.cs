@@ -93,10 +93,13 @@ public sealed class ZingApp
 		_startupNotices.Clear();
 	}
 
-	/// <summary>A user data file that couldn't be used: recorded, and told to the person once the first window is up.</summary>
+	/// <summary>
+	/// A user data file that couldn't be used: logged, and told to the person once the first window is up.
+	/// A warning, not a fault: Zing recovered and says so, so an e2e run with a corrupt file (e2e/userdata.spec.ts) still passes.
+	/// </summary>
 	private void StartupProblem(string kind, string what, string fallback, LoadProblem problem)
 	{
-		TestHooks.Record($"{kind} load", problem.Error);
+		Faults.Warning($"{kind} load", problem.Error);
 		var name = Path.GetFileName(problem.Path);
 		_startupNotices.Add(problem.KeptAs is { } kept
 			? $"Zing couldn't read {what}, so it started {fallback}. The old file is kept as {Path.GetFileName(kept)}."
@@ -197,7 +200,9 @@ public sealed class ZingApp
 		var siteData = PersistentProfile ? null : new SiteDataKeeper(purger, (domain, error) => TestHooks.Record($"purge {domain}", error));
 		// Test runs skip the gate unless a test is about the gate; a real launch never does.
 		var skipGate = TestHooks.IsEndToEndRun && System.Environment.GetEnvironmentVariable("ZING_SKIP_ACCOUNT_GATE") == "1";
-		var account = new AccountStore(Path.Combine(AppPaths.UserData, "account"), new DpapiCipher(), skipGate);
+		var openedAccount = AccountStore.Open(Path.Combine(AppPaths.UserData, "account"), new DpapiCipher(), stamp, skipGate);
+		if (openedAccount.Problem is { } accountProblem) StartupProblem("account", "your Zing account", "without it", accountProblem);
+		var account = openedAccount.Value;
 		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData, purger);
 	}
 

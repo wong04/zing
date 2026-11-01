@@ -2,7 +2,8 @@
 // list in UserDefaults; here storage is the caller's, so "stored" means `encode`d and
 // "nothing stored" means `decode(null)`.
 import { describe, expect, it } from 'vitest'
-import { decode, defaults, encode, escapeHTML, glyph, limit, make, type StartShortcut } from './startShortcuts'
+import { decode, defaults, encode, escapeHTML, glyph, isWebAddress, limit, make, name, type StartShortcut } from './startShortcuts'
+import vectors from './startShortcuts.vectors.json'
 
 describe('New-tab shortcuts are yours to choose', () => {
 	it('nothing chosen yet: the built-in eight', () => {
@@ -81,5 +82,30 @@ describe('shortcut details', () => {
 	})
 	it('a well-formed list of the wrong shape falls back to the built-ins', () => {
 		expect(decode('[{"title":1,"url":"https://ok.com"}]')).toEqual(defaults)
+	})
+})
+
+// The same cases run against host/Zing.Core/StartShortcuts.cs (StartShortcutsVectorTests.cs).
+describe('start shortcut vectors', () => {
+	it.each(vectors.decode)('decode: $name', ({ raw, expected }) => {
+		expect(decode(raw)).toEqual(expected)
+	})
+	it.each(vectors.encode)('encode: $name', ({ list, expected }) => {
+		expect(encode(list)).toBe(expected)
+	})
+	it.each(vectors.make)('make: $name', ({ title, address, expected }) => {
+		expect(make(title, address)).toEqual(expected)
+	})
+	it.each(vectors.name)('name: $url', ({ url, expected }) => {
+		expect(name(url)).toBe(expected)
+	})
+	it.each(vectors.glyph)('glyph: $title', ({ title, url, expected }) => {
+		expect(glyph({ title, url })).toBe(expected)
+	})
+	it.each(vectors.isWebAddress)('web address: $text', ({ text, expected }) => {
+		expect(isWebAddress(text)).toBe(expected)
+	})
+	it.each(vectors.escapeHTML)('escape: $text', ({ text, expected }) => {
+		expect(escapeHTML(text)).toBe(expected)
 	})
 })

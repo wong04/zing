@@ -226,6 +226,115 @@ public sealed class AccountTests : IDisposable
 		Assert.Throws<AccountFileException>(() => Store(dir));
 	}
 
+	private static readonly DateTime Stamp = new(2026, 11, 1, 9, 30, 0);
+
+	private static void WriteProfile(string dir, bool requirePassword) =>
+		File.WriteAllText(
+			Path.Combine(dir, "account.json"),
+			$"{{\"username\":\"jdoe\",\"displayName\":\"Jane\",\"email\":\"\",\"createdAt\":\"2026-10-31T00:00:00.000Z\",\"salt\":\"{new string('0', 64)}\",\"requirePassword\":{(requirePassword ? "true" : "false")}}}");
+
+	[Fact]
+	public void OpensAGoodAccountWithNoProblem()
+	{
+		var dir = TempDir();
+		Store(dir).SignUp("jdoe", "Jane", "", "longenough1");
+		var opened = AccountStore.Open(dir, new FakeCipher(), Stamp);
+		Assert.Null(opened.Problem);
+		Assert.True(opened.Value.State().HasAccount);
+		Assert.False(opened.Value.ReadOnly);
+	}
+
+	[Theory]
+	[InlineData("{ nope")]
+	[InlineData("[1, 2]")]
+	[InlineData("{\"username\": \"jdoe\"}")]
+	public void ACorruptProfileIsSetAsideAndZingStartsSignedOutWithNoAccount(string garbage)
+	{
+		var dir = TempDir();
+		var profile = Path.Combine(dir, "account.json");
+		File.WriteAllText(profile, garbage);
+
+		var opened = AccountStore.Open(dir, new FakeCipher(), Stamp);
+
+		var problem = Assert.IsType<LoadProblem>(opened.Problem);
+		Assert.Equal(profile + ".corrupt-20261101-093000", problem.KeptAs);
+		Assert.Equal(garbage, File.ReadAllText(problem.KeptAs!));
+		Assert.False(File.Exists(profile));
+		var state = opened.Value.State();
+		Assert.False(state.HasAccount);
+		// Never "an account with no password required": the person is signed out and sees the gate.
+		Assert.False(state.SignedIn);
+		Assert.False(opened.Value.ReadOnly);
+		// The file is out of the way, so a new account can be made.
+		opened.Value.SignUp("jdoe", "Jane", "", "longenough1");
+		Assert.True(AccountStore.Open(dir, new FakeCipher(), Stamp).Value.State().HasAccount);
+	}
+
+	[Fact]
+	public void ALockedAccountThatWasCorruptStillStartsSignedOut()
+	{
+		var dir = TempDir();
+		WriteProfile(dir, requirePassword: true);
+		File.AppendAllText(Path.Combine(dir, "account.json"), "trailing garbage");
+		var state = AccountStore.Open(dir, new FakeCipher(), Stamp).Value.State();
+		Assert.False(state.SignedIn);
+		Assert.False(state.HasAccount);
+	}
+
+	[Fact]
+	public void AProfileThatCannotBeReadIsLeftInPlaceAndNeverOverwritten()
+	{
+		var dir = TempDir();
+		// A directory where the file should be reads as access denied on Windows and Linux alike: an I/O error, not invalid content.
+		var profile = Path.Combine(dir, "account.json");
+		Directory.CreateDirectory(profile);
+
+		var opened = AccountStore.Open(dir, new FakeCipher(), Stamp);
+
+		var problem = Assert.IsType<LoadProblem>(opened.Problem);
+		Assert.True(problem.OriginalInPlace);
+		Assert.Equal(profile, problem.Path);
+		Assert.True(Directory.Exists(profile));
+		Assert.Empty(Directory.GetFileSystemEntries(dir, "*.corrupt-*"));
+		var s = opened.Value;
+		Assert.True(s.ReadOnly);
+		Assert.False(s.State().HasAccount);
+		Assert.False(s.State().SignedIn);
+		Assert.Equal(AccountErrorCode.AccountExists, CodeOf(() => s.SignUp("jdoe", "Jane", "", "longenough1")));
+		Assert.Equal(AccountErrorCode.NoAccount, CodeOf(s.DeleteAccount));
+		Assert.False(File.Exists(Path.Combine(dir, "account.verifier")));
+		// Skipping the gate still works.
+		s.ContinueAsGuest();
+		Assert.True(s.State().SignedIn);
+	}
+
+	[Fact]
+	public void APasswordCheckThatCannotBeReadKeepsBothFilesAndStartsWithNoAccount()
+	{
+		var dir = TempDir();
+		WriteProfile(dir, requirePassword: true);
+		Directory.CreateDirectory(Path.Combine(dir, "account.verifier"));
+
+		var opened = AccountStore.Open(dir, new FakeCipher(), Stamp);
+
+		var problem = Assert.IsType<LoadProblem>(opened.Problem);
+		Assert.True(problem.OriginalInPlace);
+		Assert.Equal(Path.Combine(dir, "account.verifier"), problem.Path);
+		Assert.True(File.Exists(Path.Combine(dir, "account.json")));
+		Assert.True(opened.Value.ReadOnly);
+		Assert.False(opened.Value.State().HasAccount);
+		Assert.False(opened.Value.State().SignedIn);
+		Assert.Equal(AccountErrorCode.AccountExists, CodeOf(() => opened.Value.SignUp("jdoe", "Jane", "", "longenough1")));
+	}
+
+	[Fact]
+	public void StartsAsAGuestEvenWhenTheProfileWasCorrupt()
+	{
+		var dir = TempDir();
+		File.WriteAllText(Path.Combine(dir, "account.json"), "{ nope");
+		Assert.True(AccountStore.Open(dir, new FakeCipher(), Stamp, startAsGuest: true).Value.State().SignedIn);
+	}
+
 	[Fact]
 	public void ReadsTheProfileFileTheElectronBuildWrote()
 	{

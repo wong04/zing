@@ -1,0 +1,20 @@
+{
+	"steps": [70, 80, 90, 100, 110, 125, 150, 175, 200],
+	"default": 100,
+	"sizes": [
+		{"percent": 70, "bigger": 80, "smaller": 70, "css": "html { font-size: 70% !important; }"},
+		{"percent": 80, "bigger": 90, "smaller": 70, "css": "html { font-size: 80% !important; }"},
+		{"percent": 90, "bigger": 100, "smaller": 80, "css": "html { font-size: 90% !important; }"},
+		{"percent": 100, "bigger": 110, "smaller": 90, "css": "html { font-size: 100% !important; }"},
+		{"percent": 110, "bigger": 125, "smaller": 100, "css": "html { font-size: 110% !important; }"},
+		{"percent": 125, "bigger": 150, "smaller": 110, "css": "html { font-size: 125% !important; }"},
+		{"percent": 150, "bigger": 175, "smaller": 125, "css": "html { font-size: 150% !important; }"},
+		{"percent": 175, "bigger": 200, "smaller": 150, "css": "html { font-size: 175% !important; }"},
+		{"percent": 200, "bigger": 200, "smaller": 175, "css": "html { font-size: 200% !important; }"},
+		{"percent": 103, "bigger": 110, "smaller": 90, "css": "html { font-size: 103% !important; }"},
+		{"percent": 0, "bigger": 110, "smaller": 90, "css": "html { font-size: 0% !important; }"},
+		{"percent": -10, "bigger": 110, "smaller": 90, "css": "html { font-size: -10% !important; }"},
+		{"percent": 250, "bigger": 110, "smaller": 90, "css": "html { font-size: 250% !important; }"},
+		{"percent": 99, "bigger": 110, "smaller": 90, "css": "html { font-size: 99% !important; }"}
+	]
+}

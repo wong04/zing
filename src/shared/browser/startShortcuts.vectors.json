@@ -1,0 +1,84 @@
+{
+	"decode": [
+		{"name": "nothing stored", "raw": null, "expected": [{"title": "GitHub", "url": "https://github.com"}, {"title": "Stack Overflow", "url": "https://stackoverflow.com"}, {"title": "arXiv", "url": "https://arxiv.org"}, {"title": "MDN", "url": "https://developer.mozilla.org"}, {"title": "Wikipedia", "url": "https://wikipedia.org"}, {"title": "Wolfram Alpha", "url": "https://www.wolframalpha.com"}, {"title": "Desmos", "url": "https://www.desmos.com/calculator"}, {"title": "Hacker News", "url": "https://news.ycombinator.com"}]},
+		{"name": "empty list", "raw": "[]", "expected": []},
+		{"name": "not json", "raw": "{nope", "expected": [{"title": "GitHub", "url": "https://github.com"}, {"title": "Stack Overflow", "url": "https://stackoverflow.com"}, {"title": "arXiv", "url": "https://arxiv.org"}, {"title": "MDN", "url": "https://developer.mozilla.org"}, {"title": "Wikipedia", "url": "https://wikipedia.org"}, {"title": "Wolfram Alpha", "url": "https://www.wolframalpha.com"}, {"title": "Desmos", "url": "https://www.desmos.com/calculator"}, {"title": "Hacker News", "url": "https://news.ycombinator.com"}]},
+		{"name": "not a list", "raw": "{\"title\":\"a\",\"url\":\"https://a.com\"}", "expected": [{"title": "GitHub", "url": "https://github.com"}, {"title": "Stack Overflow", "url": "https://stackoverflow.com"}, {"title": "arXiv", "url": "https://arxiv.org"}, {"title": "MDN", "url": "https://developer.mozilla.org"}, {"title": "Wikipedia", "url": "https://wikipedia.org"}, {"title": "Wolfram Alpha", "url": "https://www.wolframalpha.com"}, {"title": "Desmos", "url": "https://www.desmos.com/calculator"}, {"title": "Hacker News", "url": "https://news.ycombinator.com"}]},
+		{"name": "an entry without a url", "raw": "[{\"title\":\"a\"}]", "expected": [{"title": "GitHub", "url": "https://github.com"}, {"title": "Stack Overflow", "url": "https://stackoverflow.com"}, {"title": "arXiv", "url": "https://arxiv.org"}, {"title": "MDN", "url": "https://developer.mozilla.org"}, {"title": "Wikipedia", "url": "https://wikipedia.org"}, {"title": "Wolfram Alpha", "url": "https://www.wolframalpha.com"}, {"title": "Desmos", "url": "https://www.desmos.com/calculator"}, {"title": "Hacker News", "url": "https://news.ycombinator.com"}]},
+		{"name": "an entry with a number title", "raw": "[{\"title\":1,\"url\":\"https://a.com\"}]", "expected": [{"title": "GitHub", "url": "https://github.com"}, {"title": "Stack Overflow", "url": "https://stackoverflow.com"}, {"title": "arXiv", "url": "https://arxiv.org"}, {"title": "MDN", "url": "https://developer.mozilla.org"}, {"title": "Wikipedia", "url": "https://wikipedia.org"}, {"title": "Wolfram Alpha", "url": "https://www.wolframalpha.com"}, {"title": "Desmos", "url": "https://www.desmos.com/calculator"}, {"title": "Hacker News", "url": "https://news.ycombinator.com"}]},
+		{"name": "a null entry", "raw": "[null]", "expected": [{"title": "GitHub", "url": "https://github.com"}, {"title": "Stack Overflow", "url": "https://stackoverflow.com"}, {"title": "arXiv", "url": "https://arxiv.org"}, {"title": "MDN", "url": "https://developer.mozilla.org"}, {"title": "Wikipedia", "url": "https://wikipedia.org"}, {"title": "Wolfram Alpha", "url": "https://www.wolframalpha.com"}, {"title": "Desmos", "url": "https://www.desmos.com/calculator"}, {"title": "Hacker News", "url": "https://news.ycombinator.com"}]},
+		{"name": "extra keys dropped", "raw": "[{\"title\":\"A\",\"url\":\"https://a.com\",\"x\":1}]", "expected": [{"title": "A", "url": "https://a.com"}]},
+		{"name": "javascript is dropped", "raw": "[{\"title\":\"x\",\"url\":\"javascript:alert(1)\"},{\"title\":\"B\",\"url\":\"https://b.com\"}]", "expected": [{"title": "B", "url": "https://b.com"}]},
+		{"name": "file and data are dropped", "raw": "[{\"title\":\"f\",\"url\":\"file:///c:/x\"},{\"title\":\"d\",\"url\":\"data:text/html,hi\"}]", "expected": []},
+		{"name": "http is kept", "raw": "[{\"title\":\"h\",\"url\":\"http://h.test/path?q=1#f\"}]", "expected": [{"title": "h", "url": "http://h.test/path?q=1#f"}]},
+		{"name": "a relative address is dropped", "raw": "[{\"title\":\"r\",\"url\":\"/relative\"}]", "expected": []},
+		{"name": "an empty url is dropped", "raw": "[{\"title\":\"e\",\"url\":\"\"}]", "expected": []},
+		{"name": "more than the limit is cut", "raw": "[{\"title\":\"T0\",\"url\":\"https://t0.test\"},{\"title\":\"T1\",\"url\":\"https://t1.test\"},{\"title\":\"T2\",\"url\":\"https://t2.test\"},{\"title\":\"T3\",\"url\":\"https://t3.test\"},{\"title\":\"T4\",\"url\":\"https://t4.test\"},{\"title\":\"T5\",\"url\":\"https://t5.test\"},{\"title\":\"T6\",\"url\":\"https://t6.test\"},{\"title\":\"T7\",\"url\":\"https://t7.test\"},{\"title\":\"T8\",\"url\":\"https://t8.test\"},{\"title\":\"T9\",\"url\":\"https://t9.test\"},{\"title\":\"T10\",\"url\":\"https://t10.test\"},{\"title\":\"T11\",\"url\":\"https://t11.test\"},{\"title\":\"T12\",\"url\":\"https://t12.test\"},{\"title\":\"T13\",\"url\":\"https://t13.test\"},{\"title\":\"T14\",\"url\":\"https://t14.test\"},{\"title\":\"T15\",\"url\":\"https://t15.test\"},{\"title\":\"T16\",\"url\":\"https://t16.test\"},{\"title\":\"T17\",\"url\":\"https://t17.test\"},{\"title\":\"T18\",\"url\":\"https://t18.test\"},{\"title\":\"T19\",\"url\":\"https://t19.test\"}]", "expected": [{"title": "T0", "url": "https://t0.test"}, {"title": "T1", "url": "https://t1.test"}, {"title": "T2", "url": "https://t2.test"}, {"title": "T3", "url": "https://t3.test"}, {"title": "T4", "url": "https://t4.test"}, {"title": "T5", "url": "https://t5.test"}, {"title": "T6", "url": "https://t6.test"}, {"title": "T7", "url": "https://t7.test"}, {"title": "T8", "url": "https://t8.test"}, {"title": "T9", "url": "https://t9.test"}, {"title": "T10", "url": "https://t10.test"}, {"title": "T11", "url": "https://t11.test"}, {"title": "T12", "url": "https://t12.test"}, {"title": "T13", "url": "https://t13.test"}, {"title": "T14", "url": "https://t14.test"}, {"title": "T15", "url": "https://t15.test"}]}
+	],
+	"encode": [
+		{"name": "empty", "list": [], "expected": "[]"},
+		{"name": "quotes, backslashes and controls", "list": [{"title": "a \"q\" \\ \n\t\u0001", "url": "https://a.com/?q=\"x\""}], "expected": "[{\"title\":\"a \\\"q\\\" \\\\ \\n\\t\\u0001\",\"url\":\"https://a.com/?q=\\\"x\\\"\"}]"},
+		{"name": "unicode as is", "list": [{"title": "Bücher ✦ 😀  ", "url": "https://bücher.de"}], "expected": "[{\"title\":\"Bücher ✦ 😀  \",\"url\":\"https://bücher.de\"}]"},
+		{"name": "cut at the limit", "list": [{"title": "T0", "url": "https://t0.test"}, {"title": "T1", "url": "https://t1.test"}, {"title": "T2", "url": "https://t2.test"}, {"title": "T3", "url": "https://t3.test"}, {"title": "T4", "url": "https://t4.test"}, {"title": "T5", "url": "https://t5.test"}, {"title": "T6", "url": "https://t6.test"}, {"title": "T7", "url": "https://t7.test"}, {"title": "T8", "url": "https://t8.test"}, {"title": "T9", "url": "https://t9.test"}, {"title": "T10", "url": "https://t10.test"}, {"title": "T11", "url": "https://t11.test"}, {"title": "T12", "url": "https://t12.test"}, {"title": "T13", "url": "https://t13.test"}, {"title": "T14", "url": "https://t14.test"}, {"title": "T15", "url": "https://t15.test"}, {"title": "T16", "url": "https://t16.test"}, {"title": "T17", "url": "https://t17.test"}], "expected": "[{\"title\":\"T0\",\"url\":\"https://t0.test\"},{\"title\":\"T1\",\"url\":\"https://t1.test\"},{\"title\":\"T2\",\"url\":\"https://t2.test\"},{\"title\":\"T3\",\"url\":\"https://t3.test\"},{\"title\":\"T4\",\"url\":\"https://t4.test\"},{\"title\":\"T5\",\"url\":\"https://t5.test\"},{\"title\":\"T6\",\"url\":\"https://t6.test\"},{\"title\":\"T7\",\"url\":\"https://t7.test\"},{\"title\":\"T8\",\"url\":\"https://t8.test\"},{\"title\":\"T9\",\"url\":\"https://t9.test\"},{\"title\":\"T10\",\"url\":\"https://t10.test\"},{\"title\":\"T11\",\"url\":\"https://t11.test\"},{\"title\":\"T12\",\"url\":\"https://t12.test\"},{\"title\":\"T13\",\"url\":\"https://t13.test\"},{\"title\":\"T14\",\"url\":\"https://t14.test\"},{\"title\":\"T15\",\"url\":\"https://t15.test\"}]"}
+	],
+	"make": [
+		{"name": "bare address", "title": "", "address": "apple.com", "expected": {"title": "Apple", "url": "https://apple.com"}},
+		{"name": "given name trimmed", "title": "  My Docs ", "address": "docs.google.com/document/u/0/", "expected": {"title": "My Docs", "url": "https://docs.google.com/document/u/0/"}},
+		{"name": "www is dropped from the name", "title": "", "address": "www.apple.com", "expected": {"title": "Apple", "url": "https://www.apple.com"}},
+		{"name": "http kept", "title": "", "address": "http://example.com", "expected": {"title": "Example", "url": "http://example.com"}},
+		{"name": "a search is no shortcut", "title": "", "address": "hello world", "expected": null},
+		{"name": "javascript is no shortcut", "title": "x", "address": "javascript:alert(1)", "expected": null},
+		{"name": "empty address", "title": "x", "address": "", "expected": null},
+		{"name": "long name cut to 40 characters", "title": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ", "address": "a.com", "expected": {"title": "abcdefghijklmnopqrstuvwxyz0123456789ABCD", "url": "https://a.com"}},
+		{"name": "emoji counted as one character", "title": "😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽", "address": "a.com", "expected": {"title": "😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽😀👍🏽", "url": "https://a.com"}},
+		{"name": "port in the address", "title": "", "address": "localhost:3000", "expected": {"title": "Localhost", "url": "http://localhost:3000"}},
+		{"name": "ip address", "title": "", "address": "192.168.1.1", "expected": {"title": "192", "url": "http://192.168.1.1"}},
+		{"name": "international host", "title": "", "address": "https://bücher.de", "expected": {"title": "Bücher", "url": "https://bücher.de"}}
+	],
+	"name": [
+		{"url": "https://www.apple.com", "expected": "Apple"},
+		{"url": "https://docs.google.com/x", "expected": "Docs"},
+		{"url": "https://user:pw@host.test:8080/a", "expected": "Host"},
+		{"url": "https://bücher.de/", "expected": "Bücher"},
+		{"url": "https://EXAMPLE.com", "expected": "EXAMPLE"},
+		{"url": "http://192.168.0.1:80", "expected": "192"},
+		{"url": "https://[::1]:8080/", "expected": "[::1]"},
+		{"url": "not a url", "expected": "T a url"},
+		{"url": "https://www.", "expected": ""},
+		{"url": "https://straße.de", "expected": "Straße"},
+		{"url": "https://ßtraße.de", "expected": "SStraße"}
+	],
+	"glyph": [
+		{"title": "GitHub", "url": "https://github.com", "expected": "◱"},
+		{"title": "GitHub elsewhere", "url": "https://github.com/x", "expected": "G"},
+		{"title": "apple", "url": "https://apple.com", "expected": "A"},
+		{"title": "   ", "url": "https://a.com", "expected": "•"},
+		{"title": "", "url": "https://a.com", "expected": "•"},
+		{"title": "  zed", "url": "https://a.com", "expected": "Z"},
+		{"title": "😀 smile", "url": "https://a.com", "expected": "😀"},
+		{"title": "élan", "url": "https://a.com", "expected": "É"},
+		{"title": "élan", "url": "https://a.com", "expected": "É"},
+		{"title": "ßtraße", "url": "https://a.com", "expected": "SS"},
+		{"title": "ǆungla", "url": "https://a.com", "expected": "Ǆ"},
+		{"title": "ıstanbul", "url": "https://a.com", "expected": "I"},
+		{"title": "ﬁne", "url": "https://a.com", "expected": "FI"}
+	],
+	"isWebAddress": [
+		{"text": "https://a.com", "expected": true},
+		{"text": "http://a.com", "expected": true},
+		{"text": "HTTPS://A.COM", "expected": true},
+		{"text": "ftp://a.com", "expected": false},
+		{"text": "javascript:alert(1)", "expected": false},
+		{"text": "https://", "expected": false},
+		{"text": "http://[::1]/", "expected": true},
+		{"text": "https://a.com:99999", "expected": false},
+		{"text": "mailto:a@b.com", "expected": false},
+		{"text": "https://a b.com", "expected": false},
+		{"text": "", "expected": false}
+	],
+	"escapeHTML": [
+		{"text": "plain", "expected": "plain"},
+		{"text": "<a href=\"x\">'&'</a>", "expected": "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;"},
+		{"text": "&amp;", "expected": "&amp;amp;"}
+	]
+}
