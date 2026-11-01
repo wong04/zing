@@ -132,6 +132,9 @@
 	"showFavouritesBar": {
 		"type": "flag"
 	},
+	"favouritesHint": {
+		"type": "flag"
+	},
 	"passwordAutofill": {
 		"type": "flag"
 	},

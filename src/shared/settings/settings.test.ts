@@ -7,7 +7,7 @@ import { InvalidSettingError, SettingsStore, UnknownSettingError, changedSetting
 const KRACKN_KEYS = vectors.kracknKeys
 
 describe('settings schema', () => {
-	it('has all 30 Krackn keys plus Zing tabBarPosition', () => {
+	it('has all 30 Krackn keys plus Zing’s own keys', () => {
 		expect(KRACKN_KEYS).toHaveLength(30)
 		expect([...SETTING_KEYS].sort()).toEqual([...KRACKN_KEYS, ...vectors.zingKeys].sort())
 	})

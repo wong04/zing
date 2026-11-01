@@ -27,6 +27,7 @@
 	"sidebarPinned": true,
 	"recentFeatures": [],
 	"showFavouritesBar": true,
+	"favouritesHint": true,
 	"passwordAutofill": true,
 	"tabDropdowns": false,
 	"tabBarPosition": "top",

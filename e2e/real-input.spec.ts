@@ -136,3 +136,37 @@ test('a real click on a stack dropdown row switches to that tab', { tag: '@real-
 	await expect(zing.chrome.locator('.tab.stack.open')).toHaveCount(0)
 	await zing.close()
 })
+
+test('a real click on the window’s maximise button maximises it', { tag: '@real-input' }, async () => {
+	const zing = await launchZing({ env: ON_SCREEN })
+	const chromeWidth = async (): Promise<number> => (await layers(zing.chrome)).find((l) => l.url.endsWith('#chrome'))!.width
+	// The host gives the chrome the caption buttons' width (--caption-inset); minimise, maximise and close share it.
+	let inset = 0
+	await expect.poll(async () => (inset = await zing.chrome.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--caption-inset')) || 0))).toBeGreaterThan(0)
+	const before = await chromeWidth()
+
+	// The middle third of the buttons, a few pixels below the top edge: the caption buttons took no clicks
+	// while the whole title band was passed through to the chrome view.
+	await realInput(zing, { x: before - inset / 2, y: 12 })
+	await expect.poll(chromeWidth).toBeGreaterThan(before)
+	await zing.close()
+})
+
+test('Ctrl+S on the keyboard puts the sidebar away and brings it back', { tag: '@real-input' }, async () => {
+	const zing = await launchZing({ env: ON_SCREEN })
+	const pinned = async (): Promise<boolean> => (await zing.chrome.evaluate(() => window.zing.getSettings())).sidebarPinned
+	await zing.chrome.evaluate(() => window.zing.setSetting('sidebarPinned', true))
+	let start: Layer | undefined
+	await expect.poll(async () => (start = (await layers(zing.chrome)).find((l) => l.url.startsWith('zing://home') && l.visible)) !== undefined).toBe(true)
+	const left = start!.x
+	// Brings Zing to the front, as in the Ctrl+T test.
+	await realInput(zing, center(start!))
+
+	await realInput(zing, { keys: 'ctrl+s' })
+	await expect.poll(pinned).toBe(false)
+	// The page takes the sidebar's column.
+	await expect.poll(async () => (await layers(zing.chrome)).find((l) => l.url.startsWith('zing://home') && l.visible)?.x).toBeLessThan(left)
+	await realInput(zing, { keys: 'ctrl+s' })
+	await expect.poll(pinned).toBe(true)
+	await zing.close()
+})

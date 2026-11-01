@@ -108,7 +108,7 @@ export const COMMANDS: readonly CommandDefinition[] = [
 	{ id: 'library.addFavourite', label: 'Add to Favourites', shortcuts: [ctrl('KeyD')] },
 	{ id: 'library.addReadingList', label: 'Add to Reading List', shortcuts: [ctrlShift('KeyD')] },
 	{ id: 'view.favouritesBar', label: 'Toggle Favourites Bar', shortcuts: [ctrlShift('KeyB')] },
-	{ id: 'view.sidebar', label: 'Toggle Sidebar', shortcuts: [ctrlShift('KeyS')] },
+	{ id: 'view.sidebar', label: 'Toggle Sidebar', shortcuts: [ctrl('KeyS'), ctrlShift('KeyS')] },
 	{ id: 'app.settings', label: 'Settings…', shortcuts: [ctrl('Comma')] },
 ]
 

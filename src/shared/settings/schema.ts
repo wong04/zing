@@ -108,6 +108,8 @@ export const SETTINGS_SCHEMA = {
 	/** Feature names only, never what was done with them. */
 	recentFeatures: textList(),
 	showFavouritesBar: flag(true),
+	/** The empty favourites bar's "Press Ctrl+D" hint, until its close button is clicked. */
+	favouritesHint: flag(true),
 	passwordAutofill: flag(true),
 	tabDropdowns: flag(false),
 	/** Zing: where the tab strip sits. */

@@ -1,6 +1,6 @@
 {
 	"kracknKeys": ["theme", "accent", "homepage", "startShortcuts", "searchEngine", "blockTrackers", "confirmQuit", "defaultQuality", "preserveOriginals", "dohProvider", "tabOrganization", "autoCloseEnabled", "autoCloseRule", "autoCloseCustomHours", "autoCloseAtTimeEnabled", "autoCloseHour", "autoCloseMinute", "persistentProfile", "defaultUserAgent", "acceleratedCanvas", "restoreTabs", "securityRealtime", "securityDownloadScan", "securityDomainBlocking", "securitySignatureCheck", "sidebarPinned", "recentFeatures", "showFavouritesBar", "passwordAutofill", "tabDropdowns"],
-	"zingKeys": ["tabBarPosition", "sleepingTabs"],
+	"zingKeys": ["tabBarPosition", "sleepingTabs", "favouritesHint"],
 	"defaultsSubset": {
 		"theme": "system", "accent": "yellow", "searchEngine": "google", "homepage": "", "startShortcuts": null,
 		"blockTrackers": true, "preserveOriginals": true, "defaultQuality": 80, "dohProvider": "cloudflare",
