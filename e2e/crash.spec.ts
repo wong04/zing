@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { expect, test, type CDPSession, type Page } from '@playwright/test'
 import type { TabView, ZingApi } from '../src/shared/ipc'
-import { launchZing, pageWhere } from './zing'
+import { launchZing, liveCounts, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -91,6 +91,11 @@ test('a crashed background tab is marked and comes back when it navigates', asyn
 	zing.chrome.on('crash', () => events.push('the chrome view crashed'))
 	zing.chrome.on('close', () => events.push('the chrome page closed'))
 	zing.browser.on('disconnected', () => events.push('the DevTools connection dropped'))
+	// The page just left the screen, so its overview picture is being taken. The WebView2 runtime's browser
+	// process crashes (0xC0000005) when a renderer dies during a capture of it, taking every view with it;
+	// that is the engine's fault, and Zing comes back from it by rebuilding the engine (W-4). This test is
+	// about a background tab's own crash, so it lets the capture finish first.
+	await expect.poll(async () => (await liveCounts(zing.chrome)).captures).toBe(0)
 	crash(await page.context().newCDPSession(page))
 
 	try {

@@ -100,6 +100,7 @@ public static class TestHooks
 		windows = HostWindow.OpenCount,
 		views = HostedView.Live,
 		pending = HostedView.Pending,
+		captures = WebView2Page.CapturesInFlight,
 		newest = new { serial = _windows, checkpoints = _newest?.Checkpoints ?? 0, started = _newestStarted, closed = _newest?.IsClosed ?? false },
 	};
 

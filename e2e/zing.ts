@@ -185,6 +185,8 @@ export interface LiveCounts {
 	readonly views: number
 	/** Views whose controller the engine is still creating. */
 	readonly pending: number
+	/** Page captures (CapturePreviewAsync) the engine hasn't finished, e.g. the picture taken as a tab leaves the screen. */
+	readonly captures: number
 	/** The newest window: how many windows came before it and itself, its scope checkpoints so far, whether it finished starting and whether it closed. */
 	readonly newest: { readonly serial: number; readonly checkpoints: number; readonly started: boolean; readonly closed: boolean }
 }

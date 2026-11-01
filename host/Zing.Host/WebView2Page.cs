@@ -117,10 +117,18 @@ public sealed class WebView2Page : IPage
 		}
 	}
 
+	/// <summary>
+	/// Engine captures not yet finished, in every window (TestHooks "live-counts"). The WebView2 runtime's
+	/// browser process can crash (0xC0000005) when a page's renderer dies while a capture of it is pending,
+	/// so a test that kills a renderer on purpose waits for this to reach 0 first.
+	/// </summary>
+	public static int CapturesInFlight { get; private set; }
+
 	public async Task<string?> CaptureAsync()
 	{
 		if (!IsOpen || _core is null) return null;
 		using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+		CapturesInFlight++;
 		try
 		{
 			await WhileOpenAsync(_core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Jpeg, stream).AsTask());
@@ -129,6 +137,10 @@ public sealed class WebView2Page : IPage
 		{
 			// The tab closed while the engine drew it: no picture, as for a page that never started.
 			return null;
+		}
+		finally
+		{
+			CapturesInFlight--;
 		}
 		if (stream.Size == 0) return null;
 		using var memory = new MemoryStream();
