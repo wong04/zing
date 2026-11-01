@@ -23,6 +23,3 @@ jobs:
       - run: npm test
       - run: npm run test:host
       - run: npm run test:e2e
-      # TEMPORARY (reverted once found): repeat the crash spec to catch its intermittent failure with diagnostics.
-      - if: always()
-        run: npx playwright test e2e/crash.spec.ts --repeat-each=8

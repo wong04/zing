@@ -125,9 +125,17 @@ Phase 4 waits for W-0..W-3. W-4 and W-5 can run in parallel worktrees per AGENTS
 
 - **Pages on window close:** `ChromeApi.Dispose` calls `Tabs.Destroy()`, which closes every page and releases each tab's site data, so a closed window's sites are still purged (`host/Zing.Core/ChromeApi.cs:297`, `host/Zing.Core/TabService.cs:290-294`).
 
-## 6. Status (2026-11-01, after waves 1–3)
+## 6. Status (2026-11-01, after waves 1–3 and Windows e2e)
 
-Everything below is on `claude/funny-lovelace-vzz8lv`. It is checked on Linux (vitest, xUnit with 1,114 tests, lint, typecheck, a `Zing.Host` compile) and by the full e2e suite on CI's `windows-latest`. `ci.yml` now also runs on pushes to `claude/**`.
+Everything below is on `claude/funny-lovelace-vzz8lv`. It is checked on Linux (vitest, xUnit with 1,114 tests, lint, typecheck, a `Zing.Host` compile) and on CI's `windows-latest`. On commit `02f7b85` (run 41289375469), everything passed: lint, typecheck, vitest (1,806), xUnit (1,114), **the whole e2e suite (46 tests)**, and `crash.spec.ts` repeated 8 times. `ci.yml` now also runs on pushes to `claude/**`; drop that before merging if it isn't wanted.
+
+**What the Windows runs found:**
+- **The renderer reporter was too eager.** It recorded a failed host call that its caller had awaited and expected (an invalid setting). Now a failure is reported only when nothing handles it.
+- **A real engine crash** (found by `crash.spec.ts`, about 1 run in 2):
+  - The overview's picture of a tab leaving the screen was started and the page hidden at once. A hidden WebView2 never finishes a capture, so the call stayed pending forever and the tab got no picture.
+  - If that page's renderer then died, the WebView2 browser process crashed (0xC0000005) and took every view with it.
+  - `MainWindow.Hide` now keeps a leaving page drawn under the new one until its picture is taken (at most 1.5 s). `live-counts` reports captures in flight, and the test checks they drain.
+- **Known flake, not fixed:** on a busy runner the engine sometimes holds the profile lock for more than 15 s after Zing quits. It happened once, in `windows.spec.ts`. It predates this work: one test's close took 27 s in the first wave 1 run.
 
 | Workstream | Done | Still open |
 |---|---|---|
