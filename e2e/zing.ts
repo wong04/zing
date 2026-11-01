@@ -155,6 +155,36 @@ export async function layers(chrome: Page): Promise<Layer[]> {
 	return JSON.parse(readFileSync(file, 'utf8')) as Layer[]
 }
 
+export interface LiveCounts {
+	/** Zing windows not yet destroyed. */
+	readonly windows: number
+	/** WebView2 views not yet closed, in every window. */
+	readonly views: number
+	/** Views whose controller the engine is still creating. */
+	readonly pending: number
+	/** The newest window: how many windows came before it and itself, its scope checkpoints so far, whether it finished starting and whether it closed. */
+	readonly newest: { readonly serial: number; readonly checkpoints: number; readonly started: boolean; readonly closed: boolean }
+}
+
+/** What is still alive in the host (TestHooks "live-counts"), for teardown tests. */
+export async function liveCounts(chrome: Page): Promise<LiveCounts> {
+	const file = join(await mkdtemp(join(tmpdir(), 'zing-live-')), 'live.json')
+	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'live-counts', file: path }), file)
+	let counts: LiveCounts | undefined
+	// Read until whole: the host may still be writing the file when it first appears.
+	await expect
+		.poll(() => {
+			try {
+				counts = JSON.parse(readFileSync(file, 'utf8')) as LiveCounts
+				return true
+			} catch {
+				return false
+			}
+		})
+		.toBe(true)
+	return counts!
+}
+
 export function pages(browser: Browser): Page[] {
 	return browser.contexts().flatMap((context) => context.pages())
 }
