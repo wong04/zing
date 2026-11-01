@@ -124,3 +124,23 @@ Phase 4 waits for W-0..W-3. W-4 and W-5 can run in parallel worktrees per AGENTS
 ## 5. Checked and fine
 
 - **Pages on window close:** `ChromeApi.Dispose` calls `Tabs.Destroy()`, which closes every page and releases each tab's site data, so a closed window's sites are still purged (`host/Zing.Core/ChromeApi.cs:297`, `host/Zing.Core/TabService.cs:290-294`).
+
+## 6. Status (2026-11-01, wave 1)
+
+Landed on `claude/funny-lovelace-vzz8lv`, checked on Linux (vitest, xUnit, lint, typecheck, and a `Zing.Host` compile). **The e2e suite hasn't run yet;** it needs Windows.
+
+| Workstream | Done | Still open |
+|---|---|---|
+| W-0 | Bug issue template. `app:report-error`: renderer errors are recorded like host ones. Local fault log (types and stack frames only outside e2e). | `bug` label on GitHub; re-tick PARITY B1–B34 |
+| W-1 | No `async void` in `Zing.Host` (`HostSourceRulesTests`). A malformed bridge message still gets an error reply. Fire-and-forget work and refused `TryEnqueue` are recorded. The renderer reports a failed host call once, at the bridge. | `TryEnqueue` in `MainWindow` (close, menu), `HostWindow`, `TaskbarIcon`; `NativeMenus`' `LaunchUriAsync` |
+| W-2 | – | All of it (`WindowScope`, close-at-every-await e2e) |
+| W-3 | Debounced writes on the `DispatcherScheduler`, failures reported. Flushed atomic writes. Corrupt settings, library and session are set aside, and the first window says so. | `AccountStore` still throws on a corrupt account file; e2e test with a garbage `settings.json` |
+| W-4 | – | All of it |
+| W-5 | `channels.json` generated from `ipc.ts`; `ChannelContractTests` checks it both ways. `shell:clear-session` works again (`Profile.ClearBrowsingDataAsync`). Stale Electron comments fixed. | Generated C# record shapes; vectors for `TextSize`, `StartShortcuts`, `HistoryMenu`, `Palette`, `PageUi` |
+| W-6 | – | The spike |
+
+**Windows hand-checks for wave 1:**
+- `npm run test:e2e` must be green. Errors that used to vanish are now recorded, so this run may expose real bugs.
+- Garbage in `settings.json` or `library.json` → Zing opens with a notice and keeps a `.corrupt-` file.
+- Settings → Clear session signs out of sites.
+- A popup that fails to start: `window.open` returns null, where before an Edge window opened.
