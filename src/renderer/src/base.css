@@ -44,7 +44,8 @@ input {
 	flex: none;
 	gap: 4px;
 	background: var(--bg);
-	padding: 0 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)) 0 8px;
+	/* Room for the window's minimise/maximise/close buttons, which the host measures and sets. */
+	padding: 0 var(--caption-inset, 0px) 0 8px;
 	-webkit-app-region: drag;
 }
 

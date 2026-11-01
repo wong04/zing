@@ -57,3 +57,11 @@ test('back and forward go through the page history', async () => {
 	await expect(zing.chrome.locator('[role="tab"]')).toContainText('Page two')
 	await zing.close()
 })
+
+test('the tab strip leaves room for the window buttons', async () => {
+	const zing = await launchZing()
+	const padding = () => zing.chrome.locator('.tabstrip').evaluate((el) => parseFloat((globalThis as unknown as { getComputedStyle(e: unknown): { paddingRight: string } }).getComputedStyle(el).paddingRight))
+	// Minimise, maximise and close take about 138 DIPs; nothing of the strip may sit under them.
+	await expect.poll(padding).toBeGreaterThan(100)
+	await zing.close()
+})
