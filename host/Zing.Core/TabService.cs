@@ -68,6 +68,11 @@ public interface IPageEvents
 	void Closed();
 	/// <summary>The page opened a window; the returned page must be the one handed to the engine, so window.opener works.</summary>
 	IPage Popup(string url, bool background);
+	/// <summary>
+	/// The page's render process exited or stopped answering. The tab keeps its record and its
+	/// page; the chrome offers Reload, and the next document the page starts clears the fault.
+	/// </summary>
+	void Crashed(PageFault fault);
 }
 
 /// <summary>Makes pages and puts them on screen. The window owns layout and stacking.</summary>
@@ -103,6 +108,7 @@ public sealed class TabService
 	private readonly Dictionary<string, string> _openers = new(StringComparer.Ordinal);
 	private readonly HashSet<string> _sleeping = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, string> _icons = new(StringComparer.Ordinal);
+	private readonly Dictionary<string, PageFault> _faults = new(StringComparer.Ordinal);
 
 	/// <summary>A sleeping tab just got a fresh page, so its saved scroll can be put back.</summary>
 	public event Action<string, IPage>? Woke;
@@ -133,10 +139,22 @@ public sealed class TabService
 	public TabsState State(string organization, bool dropdowns)
 	{
 		var state = _store.Snapshot(organization, dropdowns, PageStateOf);
-		return state with { Tabs = [.. state.Tabs.Select(t => t with { Sleeping = _sleeping.Contains(t.Id), Icon = _icons.GetValueOrDefault(t.Id) })] };
+		return state with { Tabs = [.. state.Tabs.Select(t => t with { Sleeping = _sleeping.Contains(t.Id), Icon = _icons.GetValueOrDefault(t.Id), PageState = FaultOf(t.Id) is { } fault ? PageFaults.Name(fault) : null })] };
 	}
 
 	public bool IsSleeping(string id) => _sleeping.Contains(id);
+
+	/// <summary>Why the tab's page isn't working, or null while it is (or has no page).</summary>
+	public PageFault? FaultOf(string id) => _faults.TryGetValue(id, out var fault) ? fault : null;
+
+	/// <summary>Reloads the tab's page, which starts a crashed or hung one afresh at its URL.</summary>
+	public void Reload(string id)
+	{
+		_store.Get(id);
+		if (!_pages.TryGetValue(id, out var page)) return;
+		ClearFault(id);
+		page.Reload();
+	}
 
 	/// <summary>Drops the page but keeps the record, so the tab wakes at its URL when next activated.</summary>
 	public void Sleep(string id)
@@ -308,9 +326,16 @@ public sealed class TabService
 
 	private void DestroyPage(string id)
 	{
+		// A fault belongs to the page, not the record: a woken tab starts with a working one.
+		_faults.Remove(id);
 		if (!_pages.Remove(id, out var page)) return;
 		_host.Hide(page);
 		page.Close();
+	}
+
+	private void ClearFault(string id)
+	{
+		if (_faults.Remove(id)) _changed();
 	}
 
 	private void Update(string id, TabContentPatch patch)
@@ -335,6 +360,14 @@ public sealed class TabService
 	{
 		public NavigationDecision Navigating(string from, string to)
 		{
+			var decision = Decide(from, to);
+			// A new document is starting, so the page has a working renderer again (a reload, a link, Back).
+			if (decision is NavigationDecision.Allowed) service.ClearFault(id);
+			return decision;
+		}
+
+		private NavigationDecision Decide(string from, string to)
+		{
 			if (service._intercept(from, to) is { } decision)
 			{
 				// Like typing it: the tab shows where it is going even before (or if never) the page commits.
@@ -343,6 +376,17 @@ public sealed class TabService
 			}
 			var clean = LinkCleaner.StripTrackers(to);
 			return clean == to ? NavigationDecision.Allow : new NavigationDecision.Redirect(clean);
+		}
+
+		public void Crashed(PageFault fault)
+		{
+			// Only this tab's current page counts: one that closed or slept meanwhile has nothing to reload.
+			if (!service._store.Has(id) || !service._pages.ContainsKey(id)) return;
+			var current = service.FaultOf(id);
+			// A crash outranks a hang, and a hang reported again changes nothing.
+			if (current == fault || current == PageFault.Crashed) return;
+			service._faults[id] = fault;
+			service._changed();
 		}
 
 		public void Navigated(string url)

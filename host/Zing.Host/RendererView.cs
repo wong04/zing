@@ -26,6 +26,9 @@ public sealed class RendererView
 
 	public HostedView View { get; }
 
+	/// <summary>The view's render process exited and the view is reloading itself; it fetches its state again as it loads.</summary>
+	public event Action<RendererView>? Crashed;
+
 	/// <summary>Creates the view in <paramref name="window"/> and loads its root; an <paramref name="overlay"/> is transparent and floats above the window.</summary>
 	/// <exception cref="ViewGoneException">The window (<paramref name="scope"/>) closed while the view started or loaded.</exception>
 	public static async Task<RendererView> CreateAsync(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, string hash, bool overlay)
@@ -45,6 +48,7 @@ public sealed class RendererView
 		core.Settings.AreDefaultContextMenusEnabled = false;
 		core.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
 		core.WebMessageReceived += renderer.OnMessage;
+		core.ProcessFailed += renderer.OnProcessFailed;
 		// Events sent before the root has loaded would be lost, so callers get the view once it has.
 		// Never resumed inside the engine's event, which may close the window (the e2e close-at hook does).
 		var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -81,6 +85,27 @@ public sealed class RendererView
 	public bool IsClosed => View.IsClosed;
 
 	public void Close() => View.Close();
+
+	/// <summary>
+	/// Zing's own UI holds no state of its own (the host has it, and a loading view asks for a snapshot),
+	/// so a view whose renderer died just loads again. A hang is logged and left to recover; the
+	/// browser process going takes every view with it, which the app handles (EngineFailures).
+	/// </summary>
+	private void OnProcessFailed(CoreWebView2 sender, CoreWebView2ProcessFailedEventArgs e)
+	{
+		if (IsClosed) return;
+		EngineFailures.Warn($"#{_hash} view", e);
+		switch (e.ProcessFailedKind)
+		{
+			case CoreWebView2ProcessFailedKind.RenderProcessExited:
+				sender.Reload();
+				Crashed?.Invoke(this);
+				break;
+			case CoreWebView2ProcessFailedKind.BrowserProcessExited:
+				EngineFailures.ReportBrowserLost();
+				break;
+		}
+	}
 
 	private void OnMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e) =>
 		TestHooks.Background(AnswerAsync(sender, e.Source, e.WebMessageAsJson), "bridge");

@@ -304,6 +304,7 @@ public sealed class WebView2Page : IPage
 		core.HistoryChanged += (_, _) => _events.StateChanged();
 		core.WindowCloseRequested += (_, _) => _events.Closed();
 		core.NewWindowRequested += OnNewWindowRequested;
+		core.ProcessFailed += OnProcessFailed;
 		core.DownloadStarting += (_, e) =>
 		{
 			_downloads++;
@@ -418,6 +419,33 @@ public sealed class WebView2Page : IPage
 			response = sender.Environment.CreateWebResourceResponse(null, 404, "Not Found", "");
 		}
 		e.Response = response;
+	}
+
+	/// <summary>
+	/// A process of this page failed (EngineFailures). The page's own renderer, gone or hung, marks
+	/// the tab, which keeps its record and offers Reload; the engine shows its error page meanwhile.
+	/// A subframe's renderer, the GPU and helper processes come back by themselves, so they are only
+	/// logged. The browser process takes every view of every window with it: the app rebuilds.
+	/// </summary>
+	private void OnProcessFailed(CoreWebView2 sender, CoreWebView2ProcessFailedEventArgs e)
+	{
+		// A page Zing closed may still hear its renderer go.
+		if (!IsOpen) return;
+		EngineFailures.Warn("page", e);
+		switch (e.ProcessFailedKind)
+		{
+			case CoreWebView2ProcessFailedKind.RenderProcessExited:
+				// A load the renderer took with it never completes; the tab mustn't spin over the error page.
+				IsLoading = false;
+				_events.Crashed(PageFault.Crashed);
+				break;
+			case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
+				_events.Crashed(PageFault.Unresponsive);
+				break;
+			case CoreWebView2ProcessFailedKind.BrowserProcessExited:
+				EngineFailures.ReportBrowserLost();
+				break;
+		}
 	}
 
 	/// <summary>

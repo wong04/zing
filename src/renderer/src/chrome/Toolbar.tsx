@@ -6,6 +6,8 @@ import { AddressBar } from './AddressBar'
 import { BackIcon, ForwardIcon, MoreIcon, ReloadIcon, StopIcon } from './icons'
 import { HistoryButton } from './HistoryButton'
 import { commandTooltip } from './tooltip'
+import { pageFaultText } from './display'
+import './pageFault.css'
 
 function CommandButton({ command, disabled, children }: { command: CommandId; disabled?: boolean; children: ReactNode }) {
 	const title = commandTooltip(command)
@@ -23,13 +25,28 @@ function CommandButton({ command, disabled, children }: { command: CommandId; di
 	)
 }
 
+/** The active tab's page crashed or hung: say so, and offer the reload that starts it afresh. */
+function PageFault({ tab }: { tab: TabView | undefined }) {
+	const text = pageFaultText(tab)
+	if (text === undefined) return null
+	return (
+		<div className="page-fault" role="status" data-page-state={tab?.pageState}>
+			<span>{text}</span>
+			<button type="button" className="page-fault-reload" onClick={() => void zing.runCommand('page.reload')}>
+				Reload
+			</button>
+		</div>
+	)
+}
+
 function openMenu(e: MouseEvent<HTMLButtonElement>): void {
 	const rect = e.currentTarget.getBoundingClientRect()
 	void zing.openAppMenu({ x: rect.left, y: rect.bottom })
 }
 
 export function Toolbar({ tab }: { tab: TabView | undefined }) {
-	const loading = tab?.loading ?? false
+	// A crashed page can be left mid-load; Stop would do nothing for it, Reload brings it back.
+	const loading = (tab?.loading ?? false) && tab?.pageState === undefined
 	return (
 		<div className="toolbar">
 			<HistoryButton command="history.back" direction="back" disabled={!tab?.canGoBack}>
@@ -48,6 +65,7 @@ export function Toolbar({ tab }: { tab: TabView | undefined }) {
 				</CommandButton>
 			)}
 			<AddressBar tab={tab} />
+			<PageFault tab={tab} />
 			<button type="button" className="icon-button" aria-label="Menu" title="Menu" onClick={openMenu}>
 				<MoreIcon />
 			</button>
