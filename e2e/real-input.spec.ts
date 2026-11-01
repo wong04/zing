@@ -164,6 +164,8 @@ test('Ctrl+S on the keyboard puts the sidebar away and brings it back', { tag: '
 
 	await realInput(zing, { keys: 'ctrl+s' })
 	await expect.poll(pinned).toBe(false)
+	// Put away, not shown again as the floating sidebar (unpinning used to peek at it).
+	expect((await zing.chrome.evaluate(() => window.zing.getShell())).sidebarRevealed).toBe(false)
 	// The page takes the sidebar's column.
 	await expect.poll(async () => (await layers(zing.chrome)).find((l) => l.url.startsWith('zing://home') && l.visible)?.x).toBeLessThan(left)
 	await realInput(zing, { keys: 'ctrl+s' })

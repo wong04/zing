@@ -44,6 +44,8 @@ public sealed class ShellModel : IDisposable
 	private bool _settingsOpen;
 	private string _category = ShellConstants.DefaultCategory;
 	private bool _pinned;
+	/// <summary>The next unpin came from the toggle (Ctrl+S, the sidebar's button): put the sidebar away, no peek.</summary>
+	private bool _unpinQuietly;
 	private List<string> _recents;
 	private Rect? _region;
 
@@ -158,7 +160,10 @@ public sealed class ShellModel : IDisposable
 		_reveal.SetEnabled(!pinned);
 		// The page view's left edge moves with the sidebar.
 		RelayoutRequested?.Invoke();
-		if (!pinned) _reveal.Peek();
+		// Unpinning from Settings peeks, to show where the sidebar went. The toggle means "put it away":
+		// a peek there showed it again at once, and it stayed while the pointer was over it.
+		if (!pinned && !_unpinQuietly) _reveal.Peek();
+		_unpinQuietly = false;
 	}
 
 	/// <summary>The <c>recentFeatures</c> setting changed elsewhere.</summary>
@@ -190,7 +195,11 @@ public sealed class ShellModel : IDisposable
 
 	// Sidebar
 
-	public void ToggleSidebar() => SidebarPinRequested?.Invoke(!_pinned);
+	public void ToggleSidebar()
+	{
+		_unpinQuietly = _pinned;
+		SidebarPinRequested?.Invoke(!_pinned);
+	}
 
 	public void OpenToolbox() => NoticeRaised?.Invoke(ToolboxNotice);
 
