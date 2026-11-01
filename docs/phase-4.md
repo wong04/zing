@@ -29,7 +29,7 @@ Parity rows T1–T5 in `PARITY.md`, plus two new rows: T6 (favourite tiles) and 
 
 ### A. The rail (T1, T2, T3), PR 1
 
-- **Layout.** With tabs on the side, the tab strip row goes. The toolbar becomes the window's top band, with the drag region and the room for the caption buttons. The rail is a column on its side. The Favourites bar is hidden.
+- **Layout.** With tabs on the side, the tab strip row goes. The toolbar becomes the window's top band, with the drag region and the room for the caption buttons. The rail is a column on its side. The Favourites bar stays under the toolbar until PR 2 turns the Favourites into tiles.
 - **What the rail shows, top to bottom:**
   - the app sidebar's items: Browser, Toolbox, recents and Settings, in one compact row (T3)
   - a divider and New Tab
@@ -41,7 +41,8 @@ Parity rows T1–T5 in `PARITY.md`, plus two new rows: T6 (favourite tiles) and 
 - **Width.**
   - New setting `verticalTabWidth`, with a default, a schema test and vectors.
   - The rail's edge drags to resize it, within `clampRailWidth`.
-  - The host takes the width through a new `chrome:rail-width` call, so the page moves with it.
+  - The host reads the width from the setting, so the page moves with it; no separate bridge call is needed.
+  - Hidden with Ctrl+S, the rail gives the page its column and slides out from the left edge, as the app sidebar does.
 - **Defaults.** `tabBarPosition` defaults to `left`. Switching position never loses tabs.
 - **Tests (e2e):** switching positions keeps the tabs, the page bounds for each position are whole pixels, vertical drag reorders, and resizing moves the page.
 

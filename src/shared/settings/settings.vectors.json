@@ -1,6 +1,6 @@
 {
 	"kracknKeys": ["theme", "accent", "homepage", "startShortcuts", "searchEngine", "blockTrackers", "confirmQuit", "defaultQuality", "preserveOriginals", "dohProvider", "tabOrganization", "autoCloseEnabled", "autoCloseRule", "autoCloseCustomHours", "autoCloseAtTimeEnabled", "autoCloseHour", "autoCloseMinute", "persistentProfile", "defaultUserAgent", "acceleratedCanvas", "restoreTabs", "securityRealtime", "securityDownloadScan", "securityDomainBlocking", "securitySignatureCheck", "sidebarPinned", "recentFeatures", "showFavouritesBar", "passwordAutofill", "tabDropdowns"],
-	"zingKeys": ["tabBarPosition", "sleepingTabs", "favouritesHint"],
+	"zingKeys": ["tabBarPosition", "verticalTabWidth", "sleepingTabs", "favouritesHint"],
 	"retiredKeys": ["confirmQuit"],
 	"defaultsSubset": {
 		"theme": "system", "accent": "yellow", "searchEngine": "google", "homepage": "", "startShortcuts": null,
@@ -8,7 +8,7 @@
 		"tabOrganization": "manual", "autoCloseRule": "day", "autoCloseCustomHours": 12, "autoCloseHour": 3, "autoCloseMinute": 0,
 		"acceleratedCanvas": true, "securityRealtime": true, "securityDownloadScan": true, "securityDomainBlocking": true,
 		"securitySignatureCheck": true, "sidebarPinned": true, "showFavouritesBar": true, "passwordAutofill": true,
-		"persistentProfile": false, "restoreTabs": false, "tabDropdowns": false, "tabBarPosition": "top"
+		"persistentProfile": false, "restoreTabs": false, "tabDropdowns": false, "tabBarPosition": "left", "verticalTabWidth": 240
 	},
 	"parseAccepted": [
 		{ "name": "absent keys read as defaults", "input": { "restoreTabs": true }, "expectSubset": { "restoreTabs": true, "preserveOriginals": true, "blockTrackers": true } },
@@ -22,6 +22,11 @@
 		{ "input": [], "error": "InvalidSetting" }
 	],
 	"accepts": [
+		{ "key": "verticalTabWidth", "value": 160, "ok": true },
+		{ "key": "verticalTabWidth", "value": 480, "ok": true },
+		{ "key": "verticalTabWidth", "value": 159, "ok": false },
+		{ "key": "verticalTabWidth", "value": 481, "ok": false },
+		{ "key": "verticalTabWidth", "value": 240.5, "ok": false },
 		{ "key": "defaultQuality", "value": 10, "ok": true },
 		{ "key": "defaultQuality", "value": 100, "ok": true },
 		{ "key": "defaultQuality", "value": 9, "ok": false },

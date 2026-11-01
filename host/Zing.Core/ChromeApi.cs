@@ -130,6 +130,7 @@ public sealed class ChromeApi : IDisposable
 		Shell.PanelsChanged += state => host.Push("toolpanel:state", state);
 		Shell.SurfaceRegionChanged += host.SurfaceRegionChanged;
 		Shell.FocusSurfaceRequested += host.FocusSurface;
+		Shell.SetSidebarWidth(SidebarWidth());
 		Shell.FocusPageRequested += () =>
 		{
 			if (Tabs.ActiveId is { } id) Tabs.FocusPage(id);
@@ -250,10 +251,18 @@ public sealed class ChromeApi : IDisposable
 	public ChromeInsets Insets()
 	{
 		var position = Setting("tabBarPosition");
-		var sidebar = position != "left" && Flag("sidebarPinned") ? Layout.SidebarColumnWidth : 0;
+		var pinned = Flag("sidebarPinned");
+		// On the left the rail is the sidebar: Ctrl+S hides it like the app sidebar, and it slides out from the edge.
+		var rail = position == "left" && !pinned ? 0 : RailWidth();
+		var sidebar = position != "left" && pinned ? Layout.SidebarColumnWidth : 0;
 		var panel = _libraryPanel is null ? 0 : Layout.LibraryPanelWidth;
-		return Layout.Insets(position, Flag("showFavouritesBar"), Layout.RailDefaultWidth, sidebar + panel);
+		return Layout.Insets(position, Flag("showFavouritesBar"), rail, sidebar + panel);
 	}
+
+	private int RailWidth() => _app.Settings.Get("verticalTabWidth")?.GetValue<int>() ?? throw new InvalidDataException("Setting verticalTabWidth is missing");
+
+	/// <summary>The left sidebar: the tab rail when tabs are on the left, the app sidebar's column otherwise.</summary>
+	private int SidebarWidth() => Setting("tabBarPosition") == "left" ? RailWidth() : Layout.SidebarColumnWidth;
 
 	/// <summary>Opens the first tab, or brings back a saved session.</summary>
 	public void Start(IReadOnlyList<SessionTab> restored, string? startUrl)
@@ -469,7 +478,8 @@ public sealed class ChromeApi : IDisposable
 		if (key is "showFavouritesBar") _host.Push("library:state", LibraryState());
 		if (key is "sidebarPinned") Shell.SetSidebarPinned(Flag("sidebarPinned"));
 		if (key is "recentFeatures") Shell.SetRecentFeatures(RecentFeatures());
-		if (key is "sidebarPinned" or "showFavouritesBar" or "tabBarPosition")
+		if (key is "tabBarPosition" or "verticalTabWidth") Shell.SetSidebarWidth(SidebarWidth());
+		if (key is "sidebarPinned" or "showFavouritesBar" or "tabBarPosition" or "verticalTabWidth")
 		{
 			_host.Relayout();
 			_host.Push("library:state", LibraryState());
@@ -481,7 +491,7 @@ public sealed class ChromeApi : IDisposable
 		library = _app.Library.Snapshot,
 		panel = _libraryPanel,
 		favouritesBar = Flag("showFavouritesBar"),
-		offset = Flag("sidebarPinned") ? Layout.SidebarColumnWidth : 0,
+		offset = Shell.PinnedWidth,
 	};
 
 	private Outcome SaveActive(bool favourite)

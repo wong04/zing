@@ -89,8 +89,8 @@ public class SettingsTests
 		var store = new SettingsStore();
 		var seen = new List<string>();
 		store.Subscribe((_, key) => seen.Add(key));
-		store.Set("tabBarPosition", JsonValue.Create("left"));
-		Assert.Equal("left", store.Get("tabBarPosition")!.GetValue<string>());
+		store.Set("tabBarPosition", JsonValue.Create("right"));
+		Assert.Equal("right", store.Get("tabBarPosition")!.GetValue<string>());
 		Assert.Equal(["tabBarPosition"], seen);
 		foreach (var c in V.GetProperty("storeRejects").EnumerateArray())
 		{

@@ -88,16 +88,20 @@ test('the account gate covers the window, stores no plaintext secret on disk, an
 	await second.close()
 })
 
-test('the pinned sidebar sits flush with the window’s top, left and bottom edges', async () => {
+test('the pinned sidebar sits flush with the window’s top, left and bottom edges, as the app sidebar or as the tab rail', async () => {
 	const zing = await launchZing()
 	await zing.chrome.evaluate(() => window.zing.setSetting('sidebarPinned', true))
-	const sidebar = zing.chrome.locator('.sidebar-slot > .sidebar')
-	await expect(sidebar).toBeVisible()
-	const box = (await sidebar.boundingBox())!
 	const height = await zing.chrome.evaluate(() => (globalThis as unknown as { innerHeight: number }).innerHeight)
-	expect(box.x).toBe(0)
-	expect(box.y).toBe(0)
-	expect(box.y + box.height).toBe(height)
+	const flush = async (selector: string): Promise<void> => {
+		const sidebar = zing.chrome.locator(selector)
+		await expect(sidebar).toBeVisible()
+		const box = (await sidebar.boundingBox())!
+		expect([box.x, box.y, box.y + box.height]).toEqual([0, 0, height])
+	}
+	// Tabs on the left (the default): the rail is the sidebar.
+	await flush('.rail-slot > .rail')
+	await zing.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'top'))
+	await flush('.sidebar-slot > .sidebar')
 	await zing.close()
 })
 

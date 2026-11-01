@@ -4,6 +4,7 @@ import { TabStrip } from './chrome/TabStrip'
 import { LibraryChrome } from './library/LibraryChrome'
 import { Toolbar } from './chrome/Toolbar'
 import { useTabsState } from './chrome/useTabsState'
+import { TabRail } from './rail/TabRail'
 import { useAccentTheme } from './settings/useAccentTheme'
 import { useSettings } from './settings/useSettings'
 import { Sidebar } from './sidebar/Sidebar'
@@ -14,24 +15,43 @@ const layout = {
 	'--toolbar-height': `${CHROME_LAYOUT.toolbarHeight}px`,
 } as CSSProperties
 
-/** The window chrome above the page. The page itself is a separate view main lays out below this. */
+/**
+ * The window chrome around the page. The page itself is a separate view main lays out beside this. Tabs on
+ * top: the app sidebar, then the tab strip over the toolbar. Tabs on the left: the rail, which is also the
+ * app sidebar, then the toolbar as the top band. Tabs on the right: the app sidebar, the toolbar, the rail.
+ */
 export function App() {
 	const state = useTabsState()
 	const active = state?.tabs.find((t) => t.id === state.activeId)
-	const pinned = useSettings()?.settings.sidebarPinned ?? true
+	const settings = useSettings()?.settings
+	const sidebarPinned = settings?.sidebarPinned ?? true
+	const position = settings?.tabBarPosition ?? 'left'
 	useAccentTheme()
+	const appSidebar =
+		sidebarPinned && position !== 'left' ? (
+			<div className="sidebar-slot">
+				<Sidebar variant="pinned" />
+			</div>
+		) : null
 	return (
-		<div className="shell">
-			{pinned ? (
-				<div className="sidebar-slot">
-					<Sidebar variant="pinned" />
+		<div className="shell" style={layout}>
+			{position === 'left' && sidebarPinned ? (
+				<div className="rail-slot">
+					<TabRail state={state} variant="pinned" side="left" />
 				</div>
-			) : null}
-			<div className="chrome" style={layout}>
-				<TabStrip state={state} />
+			) : (
+				appSidebar
+			)}
+			<div className={position === 'top' ? 'chrome' : 'chrome side'} style={layout}>
+				{position === 'top' ? <TabStrip state={state} /> : null}
 				<Toolbar tab={active} />
 				<LibraryChrome />
 			</div>
+			{position === 'right' ? (
+				<div className="rail-slot">
+					<TabRail state={state} variant="pinned" side="right" />
+				</div>
+			) : null}
 		</div>
 	)
 }

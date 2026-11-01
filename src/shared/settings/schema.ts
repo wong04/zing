@@ -1,3 +1,4 @@
+import { VERTICAL_TABS } from '../layout/chrome'
 import { DEFAULT_SLEEPING_TABS, isSleepSettings } from '../session/sleepSettings'
 
 /**
@@ -111,8 +112,10 @@ export const SETTINGS_SCHEMA = {
 	favouritesHint: flag(true),
 	passwordAutofill: flag(true),
 	tabDropdowns: flag(false),
-	/** Zing: where the tab strip sits. */
-	tabBarPosition: oneOf(TAB_BAR_POSITIONS, 'top'),
+	/** Zing: where the tabs sit. On the side by default, as in Arc and Dia (docs/phase-4.md). */
+	tabBarPosition: oneOf(TAB_BAR_POSITIONS, 'left'),
+	/** Zing: the side rail's width in DIPs; dragging its edge sets it (clampRailWidth). */
+	verticalTabWidth: integerIn(VERTICAL_TABS.minWidth, VERTICAL_TABS.maxWidth, VERTICAL_TABS.defaultWidth),
 	/** Zing: discard idle tabs' renderers to save memory; the record and URL stay. */
 	sleepingTabs: { default: DEFAULT_SLEEPING_TABS, accepts: isSleepSettings },
 } as const

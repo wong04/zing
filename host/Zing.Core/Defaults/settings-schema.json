@@ -146,6 +146,11 @@
 			"right"
 		]
 	},
+	"verticalTabWidth": {
+		"type": "integer",
+		"min": 160,
+		"max": 480
+	},
 	"sleepingTabs": {
 		"type": "sleep",
 		"min": 1,

@@ -227,14 +227,36 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
-	public void Insets_follow_the_tab_bar_position()
+	public void Insets_follow_the_tab_bar_position_and_the_rail_width()
 	{
-		_settings.Set("sidebarPinned", false);
 		_settings.Set("showFavouritesBar", false);
-		Assert.Equal(new ChromeInsets(80, 0, 0), _api.Insets());
+		_settings.Set("tabBarPosition", "top");
+		Assert.Equal(new ChromeInsets(80, Layout.SidebarColumnWidth, 0), _api.Insets());
+		// On the left the app sidebar folds into the rail: one column, the rail's width.
 		_settings.Set("tabBarPosition", "left");
 		Assert.Equal(new ChromeInsets(40, Layout.RailDefaultWidth, 0), _api.Insets());
+		_settings.Set("verticalTabWidth", 300);
+		Assert.Equal(new ChromeInsets(40, 300, 0), _api.Insets());
+		// Hidden (Ctrl+S), the rail gives the page its column and slides out from the edge instead.
+		_settings.Set("sidebarPinned", false);
+		Assert.Equal(new ChromeInsets(40, 0, 0), _api.Insets());
+		// On the right the rail always shows; the app sidebar keeps its own column on the left.
 		_settings.Set("tabBarPosition", "right");
-		Assert.Equal(new ChromeInsets(40, 0, Layout.RailDefaultWidth), _api.Insets());
+		Assert.Equal(new ChromeInsets(40, 0, 300), _api.Insets());
+		_settings.Set("sidebarPinned", true);
+		Assert.Equal(new ChromeInsets(40, Layout.SidebarColumnWidth, 300), _api.Insets());
+	}
+
+	[Fact]
+	public void The_sidebar_that_slides_out_is_as_wide_as_the_rail_when_tabs_are_on_the_left()
+	{
+		_settings.Set("tabBarPosition", "top");
+		Assert.Equal(Layout.SidebarColumnWidth, _api.Shell.SidebarWidth);
+		_settings.Set("tabBarPosition", "left");
+		_settings.Set("verticalTabWidth", 320);
+		Assert.Equal(320, _api.Shell.SidebarWidth);
+		Assert.Equal(320, _api.Shell.PinnedWidth);
+		_settings.Set("sidebarPinned", false);
+		Assert.Equal(0, _api.Shell.PinnedWidth);
 	}
 }

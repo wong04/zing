@@ -108,7 +108,19 @@ public sealed class ShellModel : IDisposable
 	public IReadOnlyList<string> RecentFeatures => _recents;
 
 	/// <summary>The column a pinned sidebar takes from the chrome; zero when it is hidden.</summary>
-	public int PinnedWidth => _pinned ? Layout.SidebarColumnWidth : 0;
+	public int PinnedWidth => _pinned ? SidebarWidth : 0;
+
+	/// <summary>The left sidebar's width: the app sidebar's column, or the tab rail's when tabs are on the left (the app sidebar folds into it).</summary>
+	public int SidebarWidth { get; private set; } = Layout.SidebarColumnWidth;
+
+	public void SetSidebarWidth(int width)
+	{
+		if (width == SidebarWidth) return;
+		SidebarWidth = width;
+		_reveal.SetWidth(width);
+		Sync();
+		PushState();
+	}
 
 	public Rect PageRect() => _window.PageArea();
 
@@ -324,6 +336,7 @@ public sealed class ShellModel : IDisposable
 			Gated,
 			_settingsOpen,
 			_reveal.Revealed,
+			SidebarWidth,
 			_panels.Visible.Select(p => p.Frame).ToList(),
 			_panels.Dragging));
 		SurfaceRegionChanged?.Invoke(_region);

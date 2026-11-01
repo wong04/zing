@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { TabsState } from '@shared/ipc'
+import { followHostState } from '../hostState'
 import { zing } from '../api'
 
 /** Live tab state from main, applied at most once per animation frame. */
@@ -16,8 +17,7 @@ export function useTabsState(): TabsState | undefined {
 				setState(latest)
 			})
 		}
-		const unsubscribe = zing.onTabsState(apply)
-		void zing.getTabs().then(apply)
+		const unsubscribe = followHostState(zing.onTabsState, zing.getTabs, apply)
 		return () => {
 			unsubscribe()
 			cancelAnimationFrame(frame)

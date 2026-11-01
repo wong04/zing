@@ -29,7 +29,8 @@
 	"favouritesHint": true,
 	"passwordAutofill": true,
 	"tabDropdowns": false,
-	"tabBarPosition": "top",
+	"tabBarPosition": "left",
+	"verticalTabWidth": 240,
 	"sleepingTabs": {
 		"enabled": true,
 		"afterMinutes": 30,

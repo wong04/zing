@@ -1,6 +1,7 @@
 import './overview.css'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { OverviewState } from '@shared/ipc'
+import { followHostState } from '../hostState'
 import { zing } from '../api'
 
 /** The tab overview: a grid of page pictures. Choosing one switches to it; Escape closes. */
@@ -9,9 +10,7 @@ export function TabOverviewView() {
 	const grid = useRef<HTMLDivElement>(null)
 
 	useEffect(() => {
-		const unsubscribe = zing.onOverview(setState)
-		void zing.getOverview().then(setState)
-		return unsubscribe
+		return followHostState(zing.onOverview, zing.getOverview, setState)
 	}, [])
 	const open = state !== null
 	useEffect(() => {
