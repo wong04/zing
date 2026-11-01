@@ -4,9 +4,10 @@ export type Invoke = <C extends InvokeChannel>(channel: C, ...args: InvokeContra
 export type Listen = <C extends EventChannel>(channel: C, listener: (payload: EventContract[C]) => void) => Unsubscribe
 
 /**
- * The renderer's whole view of the host, built over any transport: Electron's
- * ipcRenderer today, WebView2's chrome.webview messaging next. One table, so
- * both hosts expose exactly the same methods on exactly the same channels.
+ * The renderer's whole view of the host, built over a transport (WebView2's
+ * chrome.webview messaging, `bridge/webviewBridge.ts`). A plain table of methods
+ * onto channels; behaviour around every call, such as reporting failures
+ * (`bridge/reportingInvoke.ts`), belongs in the `invoke` passed in.
  */
 export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 	return {
