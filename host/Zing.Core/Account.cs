@@ -298,13 +298,7 @@ public sealed class AccountStore
 		_account = account;
 	}
 
-	private void WriteAtomic(string name, byte[] data)
-	{
-		var path = Path.Combine(_dir, name);
-		var temp = $"{path}.{Environment.ProcessId}.tmp";
-		File.WriteAllBytes(temp, data);
-		File.Move(temp, path, overwrite: true);
-	}
+	private void WriteAtomic(string name, byte[] data) => JsonFiles.WriteAllBytesAtomic(Path.Combine(_dir, name), data);
 
 	private void Emit()
 	{

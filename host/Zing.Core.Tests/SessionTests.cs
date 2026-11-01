@@ -126,6 +126,27 @@ public sealed class SessionTests : IDisposable
 	}
 
 	[Fact]
+	public void At_startup_a_corrupt_file_is_no_tabs_and_no_problem()
+	{
+		var path = Path.Combine(_dir, "s.json");
+		File.WriteAllText(path, "{{{not json");
+		var loaded = Session.LoadOrRecover(path);
+		Assert.Empty(loaded.Value);
+		Assert.Null(loaded.Problem);
+	}
+
+	[Fact]
+	public void At_startup_an_unreadable_file_is_no_tabs_and_a_problem_not_a_throw()
+	{
+		var loaded = Session.LoadOrRecover(_dir);
+		Assert.Empty(loaded.Value);
+		var problem = Assert.IsType<LoadProblem>(loaded.Problem);
+		Assert.IsType<SessionFileException>(problem.Error);
+		Assert.True(problem.OriginalInPlace);
+		Assert.True(Directory.Exists(_dir));
+	}
+
+	[Fact]
 	public void Discarding_removes_the_file_and_tolerates_none()
 	{
 		var path = Path.Combine(_dir, "s.json");
