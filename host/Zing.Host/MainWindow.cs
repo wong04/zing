@@ -11,6 +11,8 @@ namespace Zing.Host;
 /// </summary>
 public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 {
+	// First: everything the window starts is tracked by it, and closes with it.
+	private readonly WindowScope _scope = new();
 	private readonly ZingApp _app;
 	private readonly HostWindow _window;
 	private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
@@ -25,12 +27,10 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private readonly WindowsDownloads _downloads = new();
 	private CoreWebView2Environment? _environment;
 	private WebView2Page? _shown;
-	private bool _closed;
 	private DispatcherScheduler? _scheduler;
 	private Rect? _surfaceRegion;
 	private Task? _surfaceReady;
 	private bool _surfaceWantsFocus;
-	private IDisposable? _themeSubscription;
 
 	public MainWindow(ZingApp app)
 	{
@@ -47,6 +47,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_window.Destroyed += OnClosed;
 		_window.Activated += () => _app.Focused(this);
 		_window.DefaultFocus = () => _shown?.View ?? _chrome?.View;
+		TestHooks.Watch(_scope, () => Faults.Enqueue(_dispatcher, _window.Close, "test close"));
 	}
 
 	public Microsoft.UI.Windowing.AppWindow AppWindow => _window.AppWindow;
@@ -56,8 +57,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public ChromeApi? Api { get; private set; }
 
-	/// <summary>Called once the app has listed the window, so nothing it does on starting finds it missing.</summary>
-	public void Start() => _ = StartAsync().ContinueWith(t => TestHooks.Record("startup", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+	/// <summary>
+	/// Called once the app has listed the window, so nothing it does on starting finds it missing. A window
+	/// closed while it started is gone, not broken (ViewGoneException); any other failure is recorded.
+	/// </summary>
+	public void Start() => TestHooks.Background(StartAsync(), "startup");
 
 	public IPageHost Pages => this;
 
@@ -66,15 +70,18 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		Api?.Tabs.Records.Select(r => Api.Tabs.PageOf(r.Id)).OfType<WebView2Page>().FirstOrDefault(p => p.IsOpen && p.IsStarted)?.Core;
 
 	// Construction order (AGENTS.md): every field exists before anything can call back into the window.
+	// After each await the window may have closed: the scope's checkpoint stops here then (ViewGoneException).
 	private async Task StartAsync()
 	{
+		_scope.Checkpoint("startup");
 		_environment = await _app.Environment;
+		_scope.Checkpoint("startup");
 		// The chrome view is created first, under every page; its API must be registered before it loads and asks for state.
-		var chrome = RendererView.CreateAsync(_window, _environment, _bridge, "chrome", overlay: false);
-		_notices = new NoticeLayer(_window, _environment, _bridge, ContentRect, _dispatcher);
-		_stacks = new CoveringLayer(_window, _environment, _bridge, "overlay-stack", ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add);
-		_overview = new CoveringLayer(_window, _environment, _bridge, "overlay-overview", ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
-		_pageUi = new PageUiLayer(_window, _environment, _bridge, ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
+		var chrome = RendererView.CreateAsync(_window, _scope, _environment, _bridge, "chrome", overlay: false);
+		_notices = new NoticeLayer(_window, _scope, _environment, _bridge, ContentRect, _dispatcher);
+		_stacks = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-stack", ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add);
+		_overview = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-overview", ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
+		_pageUi = new PageUiLayer(_window, _scope, _environment, _bridge, ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
 		_bridge.Register("default-browser:open-settings", _ =>
 		{
 			Shell.OpenExternal("ms-settings:defaultapps");
@@ -93,20 +100,23 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		});
 		Api = new ChromeApi(_bridge, _app.Services, this, typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "0");
 		Api.TabsChanged += () => _app.TabsChanged(this);
-		_themeSubscription = _app.Services.Settings.Subscribe((_, key) =>
+		var themeSubscription = _app.Services.Settings.Subscribe((_, key) =>
 		{
 			if (key != "theme") return;
 			foreach (var record in Api.Tabs.Records)
 				if (Api.Tabs.PageOf(record.Id) is WebView2Page page) page.FollowTheme();
 		});
+		_scope.Track(themeSubscription.Dispose);
 		Api.Start(_app.TakePendingRestore(), System.Environment.GetEnvironmentVariable("ZING_START_URL"));
 		_app.Ready(this);
 		_chrome = await chrome;
+		_scope.Checkpoint("startup");
 		_renderers.Add(_chrome);
 		// It fills the window, so every page goes over it, including pages started before it and after.
 		_window.Backmost = _chrome.View;
 		_chrome.Place(ContentRect());
 		ReserveCaptionButtons();
+		TestHooks.Started(_scope);
 	}
 
 	/// <summary>
@@ -128,7 +138,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	{
 		var settings = _app.Services.Settings;
 		// Created after the chrome view, so above it; overlays are popups above both.
-		return new WebView2Page(_window, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), () => settings.Get("theme")!.GetValue<string>(), this, _app.PersistentProfile);
+		return new WebView2Page(_window, _scope, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), () => settings.Get("theme")!.GetValue<string>(), this, _app.PersistentProfile);
 	}
 
 	public void Show(IPage page)
@@ -168,7 +178,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			Faults.Enqueue(_dispatcher, () => Notify(text), "notice");
 			return;
 		}
-		if (_notices is null || _closed) return;
+		if (_notices is null || _scope.IsClosed) return;
 		TestHooks.Background(_notices.ShowAsync(text), "notice");
 	}
 
@@ -392,8 +402,9 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		// One view, however many layout passes ask for it while it loads: a second one was left on
 		// top when the first was hidden, and covered the window after "Skip for now".
 		await (_surfaceReady ??= CreateSurfaceAsync());
+		_scope.Checkpoint("surface");
 		// The region may have gone (gate passed, sheet closed) while the view loaded.
-		if (_closed || _surface is null) return;
+		if (_surface is null) return;
 		if (_surfaceRegion is not { } region)
 		{
 			_surface.Visible = false;
@@ -410,7 +421,9 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	private async Task CreateSurfaceAsync()
 	{
-		_surface = await RendererView.CreateAsync(_window, _environment!, _bridge, "surface", overlay: true);
+		var surface = await RendererView.CreateAsync(_window, _scope, _environment!, _bridge, "surface", overlay: true);
+		_scope.ThrowIfClosed("surface");
+		_surface = surface;
 		_renderers.Add(_surface);
 		// It may have missed the state pushed while it loaded.
 		if (Api is not null) _surface.Send(Bridge.Event("shell:state", Api.Shell.State()));
@@ -418,14 +431,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	private void OnClosed()
 	{
-		_closed = true;
-		_themeSubscription?.Dispose();
+		// The tabs first (Tabs.Destroy closes their pages while they are still open), then everything else
+		// the window started: renderer views, those still loading included, and the theme subscription.
 		Api?.Dispose();
+		_scope.Close();
 		_notices?.Destroy();
-		_pageUi?.Destroy();
-		_stacks?.Destroy();
-		_overview?.Destroy();
-		foreach (var renderer in _renderers) renderer.Close();
 		_app.Closed(this);
 	}
 

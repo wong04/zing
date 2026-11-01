@@ -40,6 +40,9 @@ public sealed class HostWindow
 
 	public nint Hwnd { get; }
 
+	/// <summary>Windows created and not yet destroyed (the e2e live-counts hook).</summary>
+	internal static int OpenCount => Open.Count;
+
 	public Microsoft.UI.Windowing.AppWindow AppWindow { get; }
 
 	public bool IsClosed { get; private set; }

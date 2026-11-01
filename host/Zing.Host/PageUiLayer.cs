@@ -7,8 +7,9 @@ namespace Zing.Host;
 /// The find bar, downloads list and permission prompt (pageui-layer.ts): a
 /// transparent column at the page's top-right, sized to what the renderer
 /// reports and hidden when empty, so it never takes clicks meant for the page.
+/// Its view closes with the window's scope, even one still loading.
 /// </summary>
-public sealed class PageUiLayer(HostWindow window, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, Func<double> top, Action<RendererView> created)
+public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, Func<double> top, Action<RendererView> created)
 {
 	private const double PanelWidth = 392;
 	private const double PanelMargin = 8;
@@ -55,19 +56,19 @@ public sealed class PageUiLayer(HostWindow window, CoreWebView2Environment envir
 		view.View.Focus();
 	}
 
-	public void Destroy() => Ready()?.Close();
-
 	private RendererView? Ready() => _ready is { IsCompletedSuccessfully: true } ? _ready.Result : null;
 
 	private async Task ShowAsync()
 	{
 		await (_ready ??= CreateAsync());
+		scope.Checkpoint("pageui");
 		Layout();
 	}
 
 	private async Task<RendererView> CreateAsync()
 	{
-		var view = await RendererView.CreateAsync(window, environment, bridge, "pageui", overlay: true);
+		var view = await RendererView.CreateAsync(window, scope, environment, bridge, "pageui", overlay: true);
+		scope.ThrowIfClosed("pageui");
 		created(view);
 		return view;
 	}

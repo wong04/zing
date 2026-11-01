@@ -17,6 +17,7 @@ public sealed class WebView2Page : IPage
 	private readonly bool _persistent;
 	private readonly List<Action<CoreWebView2>> _queued = [];
 	private readonly HostWindow _window;
+	private readonly WindowScope _scope;
 	private HostedView? _view;
 	private Rect _bounds;
 	private bool _visible;
@@ -32,9 +33,10 @@ public sealed class WebView2Page : IPage
 		return (File.ReadAllText(Path.Combine(dir, "reader.js")), File.ReadAllText(Path.Combine(dir, "reader.css")));
 	});
 
-	public WebView2Page(HostWindow window, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, Func<string> theme, IPageFeatureHost features, bool persistent)
+	public WebView2Page(HostWindow window, WindowScope scope, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, Func<string> theme, IPageFeatureHost features, bool persistent)
 	{
 		_window = window;
+		_scope = scope;
 		_events = events;
 		_serveStartPage = serveStartPage;
 		_theme = theme;
@@ -119,7 +121,15 @@ public sealed class WebView2Page : IPage
 	{
 		if (!IsOpen || _core is null) return null;
 		using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
-		await _core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Jpeg, stream);
+		try
+		{
+			await WhileOpenAsync(_core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Jpeg, stream).AsTask());
+		}
+		catch (ViewGoneException)
+		{
+			// The tab closed while the engine drew it: no picture, as for a page that never started.
+			return null;
+		}
 		if (stream.Size == 0) return null;
 		using var memory = new MemoryStream();
 		stream.Seek(0);
@@ -140,12 +150,14 @@ public sealed class WebView2Page : IPage
 	{
 		if (!IsOpen || _core is null) return "Reader isn't available for this page";
 		var (script, css) = Reader.Value;
-		using var tree = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}"));
+		var core = _core;
+		// The tab may close at any await; then the reader has nothing to show (ViewGoneException, which callers expect).
+		using var tree = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}").AsTask()));
 		var frameId = tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("id").GetString();
-		using var world = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Page.createIsolatedWorld", System.Text.Json.JsonSerializer.Serialize(new { frameId, worldName = "zing-reader" })));
+		using var world = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.createIsolatedWorld", System.Text.Json.JsonSerializer.Serialize(new { frameId, worldName = "zing-reader" })).AsTask()));
 		var contextId = world.RootElement.GetProperty("executionContextId").GetInt32();
 		var expression = $"{script}\n;__zingReader({System.Text.Json.JsonSerializer.Serialize(css)})";
-		using var evaluated = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Runtime.evaluate", System.Text.Json.JsonSerializer.Serialize(new { expression, contextId, returnByValue = true })));
+		using var evaluated = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Runtime.evaluate", System.Text.Json.JsonSerializer.Serialize(new { expression, contextId, returnByValue = true })).AsTask()));
 		if (evaluated.RootElement.TryGetProperty("exceptionDetails", out var failure)) throw new ReaderScriptException(failure.GetRawText());
 		using var outcome = System.Text.Json.JsonDocument.Parse(evaluated.RootElement.GetProperty("result").GetProperty("value").GetString()!);
 		if (!outcome.RootElement.GetProperty("ok").GetBoolean()) return outcome.RootElement.GetProperty("reason").GetString();
@@ -157,7 +169,17 @@ public sealed class WebView2Page : IPage
 	public async Task<PageHistory> HistoryAsync()
 	{
 		if (!IsOpen || _core is null) return new PageHistory([], 0);
-		using var history = System.Text.Json.JsonDocument.Parse(await _core.CallDevToolsProtocolMethodAsync("Page.getNavigationHistory", "{}"));
+		string json;
+		try
+		{
+			json = await WhileOpenAsync(_core.CallDevToolsProtocolMethodAsync("Page.getNavigationHistory", "{}").AsTask());
+		}
+		catch (ViewGoneException)
+		{
+			// The tab closed while the engine answered: no history, as for a page that never started.
+			return new PageHistory([], 0);
+		}
+		using var history = System.Text.Json.JsonDocument.Parse(json);
 		var root = history.RootElement;
 		var entries = root.GetProperty("entries").EnumerateArray()
 			.Select(e => new HistoryEntry(e.GetProperty("id").GetInt32(), e.GetProperty("url").GetString()!, e.GetProperty("title").GetString() ?? ""))
@@ -173,7 +195,8 @@ public sealed class WebView2Page : IPage
 	public async Task<System.Text.Json.JsonElement> EvaluateAsync(string script)
 	{
 		if (!IsOpen || _core is null) throw new InvalidOperationException("The page is not running");
-		var json = await _core.ExecuteScriptAsync(script);
+		// A tab that closes meanwhile has no result (ViewGoneException).
+		var json = await WhileOpenAsync(_core.ExecuteScriptAsync(script).AsTask());
 		return System.Text.Json.JsonDocument.Parse(json).RootElement;
 	}
 
@@ -223,7 +246,8 @@ public sealed class WebView2Page : IPage
 		// Keeps nothing by default: an in-memory profile, as Electron's non-persistent partition was.
 		options.IsInPrivateModeEnabled = !_persistent;
 		options.ProfileName = _persistent ? "zing" : "zing-private";
-		_view = await HostedView.CreateAsync(_window, environment, options, "page", overlay: false);
+		// The window's scope tracks the view from the start, so a window that closes meanwhile closes it.
+		_view = await HostedView.CreateAsync(_window, _scope, environment, options, "page", overlay: false);
 		if (!IsOpen)
 		{
 			_view.Close();
@@ -318,6 +342,38 @@ public sealed class WebView2Page : IPage
 		catch (Exception) when (!IsOpen)
 		{
 		}
+	}
+
+	/// <summary>
+	/// Page work a caller awaits. If the page closed meanwhile its outcome is moot (often an engine error
+	/// from the closed view), so it ends in ViewGoneException, which TestHooks.Background expects.
+	/// </summary>
+	private async Task<T> WhileOpenAsync<T>(Task<T> work)
+	{
+		T result;
+		try
+		{
+			result = await work;
+		}
+		catch (Exception) when (!IsOpen)
+		{
+			throw new ViewGoneException("page");
+		}
+		if (!IsOpen) throw new ViewGoneException("page");
+		return result;
+	}
+
+	private async Task WhileOpenAsync(Task work)
+	{
+		try
+		{
+			await work;
+		}
+		catch (Exception) when (!IsOpen)
+		{
+			throw new ViewGoneException("page");
+		}
+		if (!IsOpen) throw new ViewGoneException("page");
 	}
 
 	/// <summary>The engine has already chosen and fetched the icon; Zing keeps it as a PNG data URL in memory.</summary>

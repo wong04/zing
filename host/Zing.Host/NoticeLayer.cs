@@ -7,9 +7,10 @@ namespace Zing.Host;
 /// <summary>
 /// The top layer for notices (overlay.ts): a transparent renderer view above the
 /// pages, hidden whenever it shows nothing and sized to what it shows, so it
-/// never takes clicks meant for the page.
+/// never takes clicks meant for the page. Its view closes with the window's
+/// scope, even one still loading.
 /// </summary>
-public sealed class NoticeLayer(HostWindow window, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, DispatcherQueue dispatcher)
+public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, DispatcherQueue dispatcher)
 {
 	private const int NoticeMs = 4000;
 	private const double NoticeWidth = 480;
@@ -23,6 +24,7 @@ public sealed class NoticeLayer(HostWindow window, CoreWebView2Environment envir
 	public async Task ShowAsync(string text)
 	{
 		var view = await (_ready ??= CreateAsync());
+		scope.Checkpoint("overlay");
 		view.Place(Bounds());
 		view.Send(Bridge.Event("overlay:notice", new { id = _nextId++, text }));
 		view.View.Raise();
@@ -50,11 +52,8 @@ public sealed class NoticeLayer(HostWindow window, CoreWebView2Environment envir
 		if (Ready() is { } view) view.View.Raise();
 	}
 
-	public void Destroy()
-	{
-		_hideTimer?.Stop();
-		Ready()?.Close();
-	}
+	/// <summary>The window closed: its scope closes the view, and no timer may fire for it.</summary>
+	public void Destroy() => _hideTimer?.Stop();
 
 	private RendererView? Ready() => _ready is { IsCompletedSuccessfully: true } ? _ready.Result : null;
 
@@ -65,11 +64,7 @@ public sealed class NoticeLayer(HostWindow window, CoreWebView2Environment envir
 		return new Rect(Math.Round((area.Width - width) / 2), area.Height - NoticeHeight - NoticeMargin, width, NoticeHeight);
 	}
 
-	private async Task<RendererView> CreateAsync()
-	{
-		var view = await RendererView.CreateAsync(window, environment, bridge, "overlay", overlay: true);
-		return view;
-	}
+	private Task<RendererView> CreateAsync() => RendererView.CreateAsync(window, scope, environment, bridge, "overlay", overlay: true);
 
 	private DispatcherQueueTimer CreateTimer()
 	{

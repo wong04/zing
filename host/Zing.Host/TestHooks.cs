@@ -26,9 +26,16 @@ public static class TestHooks
 	/// <summary>The app clock. ZING_TEST_CLOCK=1 in an e2e run gives one a test can move forward (test:advance-clock).</summary>
 	public static Zing.Core.IClock Clock { get; } = IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_TEST_CLOCK") == "1" ? new Zing.Core.OffsetClock() : new Zing.Core.SystemClock();
 
+	private static int? _closeNextAt;
+	private static WindowScope? _newest;
+	private static int _windows;
+	private static bool _newestStarted;
+
 	/// <summary>
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
-	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms}.
+	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
+	/// "layers" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
+	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
 	public static bool TryHandle(string json, HostWindow window)
 	{
@@ -40,6 +47,18 @@ public static class TestHooks
 		if (action == "layers")
 		{
 			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(Layers(window)));
+			return true;
+		}
+		if (action == "live-counts")
+		{
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(LiveCounts()));
+			return true;
+		}
+		if (action == "close-at")
+		{
+			var n = root.GetProperty("n").GetInt32();
+			if (n < 1) throw new InvalidOperationException($"close-at counts checkpoints from 1, got {n}");
+			_closeNextAt = n;
 			return true;
 		}
 		if (action != "advance-clock") throw new InvalidOperationException($"Unknown test action {action}");
@@ -61,6 +80,36 @@ public static class TestHooks
 			height = v.Bounds.Height,
 			depth = v.Depth,
 		})];
+
+	/// <summary>
+	/// What is still alive, for the teardown guard: windows not yet destroyed, views not yet closed and
+	/// views whose controller is still being created (every window), and the newest window's scope.
+	/// </summary>
+	private static object LiveCounts() => new
+	{
+		windows = HostWindow.OpenCount,
+		views = HostedView.Live,
+		pending = HostedView.Pending,
+		newest = new { serial = _windows, checkpoints = _newest?.Checkpoints ?? 0, started = _newestStarted, closed = _newest?.IsClosed ?? false },
+	};
+
+	/// <summary>A new window's scope, in an e2e run: counted, and closed at a checkpoint if a test asked (close-at).</summary>
+	public static void Watch(WindowScope scope, Action closeWindow)
+	{
+		if (!IsEndToEndRun) return;
+		_newest = scope;
+		_windows++;
+		_newestStarted = false;
+		if (_closeNextAt is not { } n) return;
+		_closeNextAt = null;
+		scope.CloseAt(n, closeWindow);
+	}
+
+	/// <summary>A window finished starting (the end of MainWindow.StartAsync).</summary>
+	public static void Started(WindowScope scope)
+	{
+		if (scope == _newest) _newestStarted = true;
+	}
 
 	/// <summary>
 	/// e2e runs never show a menu: a Win32 menu appears on the person's screen even for the off-screen

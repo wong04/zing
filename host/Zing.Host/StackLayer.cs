@@ -7,9 +7,10 @@ namespace Zing.Host;
 /// A Zing view that, while open, covers everything below a line of the chrome:
 /// the stack dropdown (#overlay-stack, below the tab strip) and the tab
 /// overview (#overlay-overview, over the page). A click outside its content
-/// lands on its backdrop, never on the page beneath. Created on first use.
+/// lands on its backdrop, never on the page beneath. Created on first use; its
+/// view closes with the window's scope, even one still loading.
 /// </summary>
-public sealed class CoveringLayer(HostWindow window, CoreWebView2Environment environment, Bridge bridge, string hash, Func<Rect> content, Func<double> top, Action<RendererView> created)
+public sealed class CoveringLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, string hash, Func<Rect> content, Func<double> top, Action<RendererView> created)
 {
 	private Task<RendererView>? _ready;
 	private bool _open;
@@ -34,13 +35,12 @@ public sealed class CoveringLayer(HostWindow window, CoreWebView2Environment env
 		view.Visible = _open;
 	}
 
-	public void Destroy() => Ready()?.Close();
-
 	private RendererView? Ready() => _ready is { IsCompletedSuccessfully: true } ? _ready.Result : null;
 
 	private async Task ShowAsync()
 	{
 		var view = await (_ready ??= CreateAsync());
+		scope.Checkpoint(hash);
 		Layout();
 		// Keys (arrows, Enter, Escape) go to the layer, not the page underneath.
 		if (_open) view.View.Focus();
@@ -48,7 +48,8 @@ public sealed class CoveringLayer(HostWindow window, CoreWebView2Environment env
 
 	private async Task<RendererView> CreateAsync()
 	{
-		var view = await RendererView.CreateAsync(window, environment, bridge, hash, overlay: true);
+		var view = await RendererView.CreateAsync(window, scope, environment, bridge, hash, overlay: true);
+		scope.ThrowIfClosed(hash);
 		created(view);
 		return view;
 	}

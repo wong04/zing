@@ -27,14 +27,17 @@ public sealed class RendererView
 	public HostedView View { get; }
 
 	/// <summary>Creates the view in <paramref name="window"/> and loads its root; an <paramref name="overlay"/> is transparent and floats above the window.</summary>
-	public static async Task<RendererView> CreateAsync(HostWindow window, CoreWebView2Environment environment, Bridge bridge, string hash, bool overlay)
+	/// <exception cref="ViewGoneException">The window (<paramref name="scope"/>) closed while the view started or loaded.</exception>
+	public static async Task<RendererView> CreateAsync(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, string hash, bool overlay)
 	{
 		// Zing's own UI keeps nothing either, as Electron's zing-chrome partition did: no cache, no storage, no autofill on disk.
 		var options = environment.CreateCoreWebView2ControllerOptions();
 		options.IsInPrivateModeEnabled = true;
 		options.ProfileName = "zing-chrome";
 		// The window may close while the engine starts; that is an expected outcome (ViewGoneException), not a crash.
-		var view = await HostedView.CreateAsync(window, environment, options, hash, overlay);
+		var view = await HostedView.CreateAsync(window, scope, environment, options, hash, overlay);
+		// Once created the scope tracks the view, so a window that closes from here on closes it too.
+		scope.ThrowIfClosed(hash);
 		var renderer = new RendererView(view, bridge, hash, window);
 		var core = view.Core;
 		// CSS app-region:drag moves the window from the chrome, the sign-in screen and the revealed sidebar.
@@ -43,16 +46,21 @@ public sealed class RendererView
 		core.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
 		core.WebMessageReceived += renderer.OnMessage;
 		// Events sent before the root has loaded would be lost, so callers get the view once it has.
-		var loaded = new TaskCompletionSource();
+		// Never resumed inside the engine's event, which may close the window (the e2e close-at hook does).
+		var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		void Completed(CoreWebView2 sender, CoreWebView2NavigationCompletedEventArgs e)
 		{
 			core.NavigationCompleted -= Completed;
-			if (e.IsSuccess) loaded.SetResult();
-			else loaded.SetException(new RendererLoadException(hash, e.WebErrorStatus.ToString()));
+			if (e.IsSuccess) loaded.TrySetResult();
+			else if (scope.IsClosed) loaded.TrySetException(new ViewGoneException(hash));
+			else loaded.TrySetException(new RendererLoadException(hash, e.WebErrorStatus.ToString()));
 		}
 		core.NavigationCompleted += Completed;
+		// A closed view never completes its navigation; the scope (which closes the view) ends the wait.
+		using var gone = scope.Token.Register(() => loaded.TrySetException(new ViewGoneException(hash)));
 		core.Navigate($"https://{AppHost}/index.html#{hash}");
 		await loaded.Task;
+		scope.Checkpoint(hash);
 		return renderer;
 	}
 
