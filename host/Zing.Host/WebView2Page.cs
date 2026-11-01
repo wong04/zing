@@ -24,7 +24,9 @@ public sealed class WebView2Page : IPage
 	private CoreWebView2? _core;
 	private string? _findTerm;
 	private int _textSize = Zing.Core.TextSize.Default;
+	private double _zoom = Zing.Core.Zoom.Default;
 	private int _downloads;
+	private ulong _navigation;
 	private static readonly TimeSpan DownloadGrace = TimeSpan.FromSeconds(1);
 
 	private static readonly Lazy<(string Script, string Css)> Reader = new(() =>
@@ -123,6 +125,17 @@ public sealed class WebView2Page : IPage
 		}
 	}
 
+	/// <summary>The controller's zoom factor, which the engine keeps across the page's navigations; set before the view exists, it applies once it does.</summary>
+	public double Zoom
+	{
+		get => _view?.Controller.ZoomFactor ?? _zoom;
+		set
+		{
+			_zoom = value;
+			Run(_ => _view!.Controller.ZoomFactor = value);
+		}
+	}
+
 	/// <summary>
 	/// Engine captures not yet finished, in every window (TestHooks "live-counts"). The WebView2 runtime's
 	/// browser process crashes (0xC0000005) when a page's renderer dies while a capture of it is pending, and a
@@ -162,10 +175,23 @@ public sealed class WebView2Page : IPage
 		return "data:image/jpeg;base64," + Convert.ToBase64String(memory.ToArray());
 	}
 
-	/// <summary>Edge's own print preview, inside the page.</summary>
-	public void Print() => Run(core => core.ShowPrintUI(CoreWebView2PrintDialogKind.Browser));
+	/// <summary>Edge's own print preview, inside the page; an e2e run records it instead.</summary>
+	public void Print() => Run(core =>
+	{
+		if (TestHooks.IsEndToEndRun) TestHooks.RecordDialog("print", core.Source);
+		else core.ShowPrintUI(CoreWebView2PrintDialogKind.Browser);
+	});
 
 	public bool InReader { get; private set; }
+
+	/// <summary>Whether an element of the page is fullscreen; the window then gives the page all of itself.</summary>
+	public bool IsFullScreen => _core?.ContainsFullScreenElement ?? false;
+
+	/// <summary>Takes the page's element out of fullscreen, as the page's own exit would.</summary>
+	public void ExitFullScreen()
+	{
+		if (IsFullScreen) Run(core => Background(core.ExecuteScriptAsync("document.exitFullscreen()").AsTask(), "exit fullscreen"));
+	}
 
 	/// <summary>
 	/// Runs the reader bundle in an isolated world of the page (as Electron did), so page
@@ -306,6 +332,7 @@ public sealed class WebView2Page : IPage
 					core.Navigate(redirect.Url);
 					return;
 			}
+			_navigation = e.NavigationId;
 			// NavigationStarting is only raised for new documents; in-page navigations keep their grants.
 			_features.Left(this);
 			InReader = false;
@@ -315,7 +342,7 @@ public sealed class WebView2Page : IPage
 		core.NavigationCompleted += (_, e) =>
 		{
 			IsLoading = false;
-			if (!e.IsSuccess && e.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled) ReportFailure(e.WebErrorStatus);
+			if (!e.IsSuccess && e.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled) ReportFailure(e.WebErrorStatus, e.NavigationId);
 			_events.StateChanged();
 		};
 		core.SourceChanged += (_, _) => _events.Navigated(core.Source);
@@ -336,6 +363,7 @@ public sealed class WebView2Page : IPage
 			_features.DownloadStarting(this, e);
 		};
 		core.PermissionRequested += (_, e) => _features.PermissionRequested(this, e);
+		core.ContainsFullScreenElementChanged += (_, _) => _features.FullScreenChanged(this);
 		// ActiveMatchIndex already counts from 1, as the find bar does; it is -1 with no match.
 		core.Find.MatchCountChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
 		core.Find.ActiveMatchIndexChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
@@ -416,17 +444,22 @@ public sealed class WebView2Page : IPage
 	/// A navigation that turns into a download completes as ConnectionAborted (with no HTTP status) just
 	/// before DownloadStarting is raised. So an abort is reported only if no download starts soon after.
 	/// </summary>
-	private void ReportFailure(CoreWebView2WebErrorStatus status)
+	private void ReportFailure(CoreWebView2WebErrorStatus status, ulong navigation)
 	{
 		if (status != CoreWebView2WebErrorStatus.ConnectionAborted) _events.LoadFailed(status.ToString());
-		else Background(ReportAbortAsync(status), "load failure");
+		else Background(ReportAbortAsync(status, navigation), "load failure");
 	}
 
-	private async Task ReportAbortAsync(CoreWebView2WebErrorStatus status)
+	/// <summary>
+	/// An aborted load is a failure only if nothing explains it within the grace: a download it turned into, or a
+	/// newer navigation that replaced it (a new tab's blank page sent straight to an address). The engine ends the
+	/// replaced load before it raises the new one's NavigationStarting, so that can only be told afterwards.
+	/// </summary>
+	private async Task ReportAbortAsync(CoreWebView2WebErrorStatus status, ulong navigation)
 	{
 		var downloadsBefore = _downloads;
 		await Task.Delay(DownloadGrace);
-		if (IsOpen && _downloads == downloadsBefore) _events.LoadFailed(status.ToString());
+		if (IsOpen && _downloads == downloadsBefore && _navigation == navigation) _events.LoadFailed(status.ToString());
 	}
 
 	/// <summary>zing://home is generated by Zing; any other zing: page does not exist.</summary>

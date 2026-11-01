@@ -41,9 +41,9 @@ public sealed class JsonFilesTests : IDisposable
 	public void FlushWritesThePendingChangeImmediately()
 	{
 		var writer = new DebouncedJsonWriter(SettingsPath, TimeSpan.FromSeconds(10), new ManualScheduler(), _writeErrors.Add);
-		writer.Write(new JsonObject { ["confirmQuit"] = true });
+		writer.Write(new JsonObject { ["restoreTabs"] = true });
 		writer.Flush();
-		Assert.True(JsonFiles.LoadSettingsFile(SettingsPath)["confirmQuit"]!.GetValue<bool>());
+		Assert.True(JsonFiles.LoadSettingsFile(SettingsPath)["restoreTabs"]!.GetValue<bool>());
 	}
 
 	[Fact]
@@ -108,7 +108,7 @@ public sealed class JsonFilesTests : IDisposable
 		// The settings path is a directory, so the move over it fails.
 		Directory.CreateDirectory(SettingsPath);
 		var writer = new DebouncedJsonWriter(SettingsPath, TimeSpan.FromSeconds(1), clock, _writeErrors.Add);
-		writer.Write(new JsonObject { ["confirmQuit"] = true });
+		writer.Write(new JsonObject { ["restoreTabs"] = true });
 		clock.Advance(TimeSpan.FromSeconds(1));
 		Assert.True(Assert.Single(_writeErrors) is IOException or UnauthorizedAccessException);
 		Assert.Equal(0, clock.PendingCount);
@@ -120,12 +120,12 @@ public sealed class JsonFilesTests : IDisposable
 		var clock = new ManualScheduler();
 		Directory.CreateDirectory(SettingsPath);
 		var writer = new DebouncedJsonWriter(SettingsPath, TimeSpan.FromSeconds(1), clock, _writeErrors.Add);
-		writer.Write(new JsonObject { ["confirmQuit"] = true });
+		writer.Write(new JsonObject { ["restoreTabs"] = true });
 		clock.Advance(TimeSpan.FromSeconds(1));
 		Directory.Delete(SettingsPath);
 		writer.Flush();
 		Assert.Single(_writeErrors);
-		Assert.True(JsonFiles.LoadSettingsFile(SettingsPath)["confirmQuit"]!.GetValue<bool>());
+		Assert.True(JsonFiles.LoadSettingsFile(SettingsPath)["restoreTabs"]!.GetValue<bool>());
 	}
 
 	[Theory]
@@ -165,17 +165,17 @@ public sealed class JsonFilesTests : IDisposable
 	public void AGoodOrMissingSettingsFileHasNoProblem()
 	{
 		Assert.Null(JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp).Problem);
-		JsonFiles.WriteJsonAtomic(SettingsPath, new JsonObject { ["confirmQuit"] = true });
+		JsonFiles.WriteJsonAtomic(SettingsPath, new JsonObject { ["restoreTabs"] = true });
 		var loaded = JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp);
 		Assert.Null(loaded.Problem);
-		Assert.True(loaded.Value["confirmQuit"]!.GetValue<bool>());
+		Assert.True(loaded.Value["restoreTabs"]!.GetValue<bool>());
 	}
 
 	[Fact]
 	public void ASettingsFileThatCannotBeReadIsLeftInPlaceAndZingStillStarts()
 	{
 		// As LoadSettingsFile reports a locked or access-denied file: an I/O error, not invalid content.
-		JsonFiles.WriteJsonAtomic(SettingsPath, new JsonObject { ["confirmQuit"] = true });
+		JsonFiles.WriteJsonAtomic(SettingsPath, new JsonObject { ["restoreTabs"] = true });
 		var locked = new SettingsFileException(SettingsPath, new IOException("in use by another process"));
 
 		var loaded = UserData.Load<JsonObject>(SettingsPath, () => throw locked, SettingsSchema.Defaults, Stamp);

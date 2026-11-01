@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { DEFAULT_SETTINGS, SETTING_KEYS, SETTINGS_SCHEMA, acceptsValue, type SettingKey, type Settings } from './schema'
+import { DEFAULT_SETTINGS, RETIRED_SETTING_KEYS, SETTING_KEYS, SETTINGS_SCHEMA, acceptsValue, type SettingKey, type Settings } from './schema'
 import vectors from './settings.vectors.json'
 import { InvalidSettingError, SettingsStore, UnknownSettingError, changedSettings, parseSettings } from './store'
 
@@ -7,9 +7,10 @@ import { InvalidSettingError, SettingsStore, UnknownSettingError, changedSetting
 const KRACKN_KEYS = vectors.kracknKeys
 
 describe('settings schema', () => {
-	it('has all 30 Krackn keys plus Zing’s own keys', () => {
+	it('has the 30 Krackn keys plus Zing’s own, less the retired ones', () => {
 		expect(KRACKN_KEYS).toHaveLength(30)
-		expect([...SETTING_KEYS].sort()).toEqual([...KRACKN_KEYS, ...vectors.zingKeys].sort())
+		expect([...RETIRED_SETTING_KEYS]).toEqual(vectors.retiredKeys)
+		expect([...SETTING_KEYS].sort()).toEqual([...KRACKN_KEYS, ...vectors.zingKeys].filter((k) => !vectors.retiredKeys.includes(k)).sort())
 	})
 
 	it('gives every key a default its own validator accepts, readable through the typed accessor', () => {
@@ -39,9 +40,11 @@ describe('settings schema', () => {
 const ERRORS = { InvalidSetting: InvalidSettingError, UnknownSetting: UnknownSettingError }
 
 describe('parseSettings', () => {
-	for (const { name, input, expectSubset } of vectors.parseAccepted) {
+	for (const { name, input, expectSubset, expectAbsent = [] } of vectors.parseAccepted as { name: string; input: unknown; expectSubset: object; expectAbsent?: string[] }[]) {
 		it(name, () => {
-			expect(parseSettings(input)).toMatchObject(expectSubset)
+			const parsed = parseSettings(input)
+			expect(parsed).toMatchObject(expectSubset)
+			for (const key of expectAbsent) expect(Object.hasOwn(parsed, key), key).toBe(false)
 		})
 	}
 

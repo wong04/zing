@@ -35,7 +35,9 @@ npm start
 
 ## Known differences on Windows
 
-None yet. Anything Krackn does that Zing can't is listed here.
+Anything Krackn does that Zing can't is listed here.
+
+- **User agent.** Krackn sent a cleaned Safari user agent. Zing runs on Edge's WebView2 and presents Edge's own, which sites (Google sign-in included) accept as it is.
 
 ## License
 

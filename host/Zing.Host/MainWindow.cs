@@ -37,6 +37,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private Rect? _surfaceRegion;
 	private Task? _surfaceReady;
 	private bool _surfaceWantsFocus;
+	private bool _fullScreen;
+	private Microsoft.UI.Windowing.AppWindowPresenter? _windowed;
 
 	public MainWindow(ZingApp app)
 	{
@@ -160,12 +162,18 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public void Show(IPage page)
 	{
 		var shown = (WebView2Page)page;
-		if (_shown is not null && _shown != shown) _shown.Visible = false;
+		if (_shown is not null && _shown != shown)
+		{
+			// A tab left in fullscreen would still own the screen the next time it shows.
+			_shown.ExitFullScreen();
+			_shown.Visible = false;
+		}
 		_shown = shown;
-		_layout.PlacePage(shown);
+		PlaceShown();
 		shown.Visible = true;
 		// Over any page that is still drawn while its picture is taken (Hide).
 		shown.BringToFront();
+		FollowFullScreen();
 	}
 
 	/// <summary>Longest a leaving page stays drawn under the next one for its overview picture (TabOverview's capture timeout).</summary>
@@ -174,7 +182,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public void Hide(IPage page)
 	{
 		var hidden = (WebView2Page)page;
-		if (_shown == hidden) _shown = null;
+		if (_shown == hidden)
+		{
+			_shown = null;
+			FollowFullScreen();
+		}
 		// A page leaving the screen is being pictured for the overview (TabOverview.Leaving). A hidden WebView2 never
 		// finishes a capture: the call stays pending in the engine, the tab gets no picture, and if that page's
 		// renderer later dies the engine's browser process crashes (0xC0000005). So it stays drawn, under the
@@ -230,7 +242,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		// The buttons' width changes with the DPI and between maximised and restored.
 		ReserveCaptionButtons();
 		_chrome?.Place(_layout.ContentRect());
-		if (_shown is not null) _layout.PlacePage(_shown);
+		PlaceShown();
 		_notices?.Layout();
 		_pageUi?.Layout();
 		_stacks?.Layout();
@@ -243,7 +255,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public Point ContentOrigin => _layout.ContentOrigin;
 
-	public Point? Cursor => _layout.Cursor;
+	/// <summary>Nothing reveals itself over a fullscreen page: the cursor counts as away.</summary>
+	public Point? Cursor => _fullScreen ? null : _layout.Cursor;
 
 	public void SurfaceRegionChanged(Rect? region)
 	{
@@ -292,6 +305,47 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public void PermissionRequested(WebView2Page page, CoreWebView2PermissionRequestedEventArgs e) => _permissions.Requested(page, e);
 
 	public void Left(WebView2Page page) => _permissions.Left(page);
+
+	public void FullScreenChanged(WebView2Page page)
+	{
+		// Only the shown page may have the screen; one in the background (a video that went fullscreen as its tab left) is put back.
+		if (page != _shown)
+		{
+			page.ExitFullScreen();
+			return;
+		}
+		FollowFullScreen();
+	}
+
+	/// <summary>
+	/// The window follows the shown page: fullscreen while one of its elements is (the page then covers the chrome),
+	/// back to a normal window when it leaves. Test windows stay off-screen, so they only change the layout (AGENTS.md).
+	/// </summary>
+	private void FollowFullScreen()
+	{
+		var wanted = _shown?.IsFullScreen == true;
+		if (wanted == _fullScreen) return;
+		_fullScreen = wanted;
+		if (!TestHooks.KeepsOutOfTheWay)
+		{
+			// The window's own presenter goes back as it was, maximised or not.
+			if (wanted)
+			{
+				_windowed = AppWindow.Presenter;
+				AppWindow.SetPresenter(Microsoft.UI.Windowing.AppWindowPresenterKind.FullScreen);
+			}
+			else AppWindow.SetPresenter(_windowed ?? throw new InvalidOperationException("Left fullscreen without having entered it"));
+		}
+		Relayout();
+	}
+
+	/// <summary>The shown page goes inside the chrome, or over the whole window while it is fullscreen.</summary>
+	private void PlaceShown()
+	{
+		if (_shown is null) return;
+		if (_fullScreen) _shown.Place(_layout.ContentRect());
+		else _layout.PlacePage(_shown);
+	}
 
 	public void SetPageUiHeight(int height) => _pageUi?.SetHeight(height);
 

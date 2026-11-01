@@ -1,16 +1,18 @@
 {
 	"kracknKeys": ["theme", "accent", "homepage", "startShortcuts", "searchEngine", "blockTrackers", "confirmQuit", "defaultQuality", "preserveOriginals", "dohProvider", "tabOrganization", "autoCloseEnabled", "autoCloseRule", "autoCloseCustomHours", "autoCloseAtTimeEnabled", "autoCloseHour", "autoCloseMinute", "persistentProfile", "defaultUserAgent", "acceleratedCanvas", "restoreTabs", "securityRealtime", "securityDownloadScan", "securityDomainBlocking", "securitySignatureCheck", "sidebarPinned", "recentFeatures", "showFavouritesBar", "passwordAutofill", "tabDropdowns"],
 	"zingKeys": ["tabBarPosition", "sleepingTabs", "favouritesHint"],
+	"retiredKeys": ["confirmQuit"],
 	"defaultsSubset": {
 		"theme": "system", "accent": "yellow", "searchEngine": "google", "homepage": "", "startShortcuts": null,
 		"blockTrackers": true, "preserveOriginals": true, "defaultQuality": 80, "dohProvider": "cloudflare",
 		"tabOrganization": "manual", "autoCloseRule": "day", "autoCloseCustomHours": 12, "autoCloseHour": 3, "autoCloseMinute": 0,
 		"acceleratedCanvas": true, "securityRealtime": true, "securityDownloadScan": true, "securityDomainBlocking": true,
 		"securitySignatureCheck": true, "sidebarPinned": true, "showFavouritesBar": true, "passwordAutofill": true,
-		"persistentProfile": false, "restoreTabs": false, "confirmQuit": false, "tabDropdowns": false, "tabBarPosition": "top"
+		"persistentProfile": false, "restoreTabs": false, "tabDropdowns": false, "tabBarPosition": "top"
 	},
 	"parseAccepted": [
-		{ "name": "absent keys read as defaults", "input": { "confirmQuit": true }, "expectSubset": { "confirmQuit": true, "preserveOriginals": true, "blockTrackers": true } }
+		{ "name": "absent keys read as defaults", "input": { "restoreTabs": true }, "expectSubset": { "restoreTabs": true, "preserveOriginals": true, "blockTrackers": true } },
+		{ "name": "a retired key is skipped, not refused", "input": { "confirmQuit": true, "restoreTabs": true }, "expectSubset": { "restoreTabs": true }, "expectAbsent": ["confirmQuit"] }
 	],
 	"parseRejected": [
 		{ "input": { "defaultQuality": 400 }, "error": "InvalidSetting" },

@@ -15,6 +15,7 @@ import {
 	AUTO_CLOSE_RULES,
 	DOH_PROVIDERS,
 	DEFAULT_SETTINGS,
+	RETIRED_SETTING_KEYS,
 	SEARCH_ENGINES,
 	TAB_BAR_POSITIONS,
 	TAB_ORGANIZATIONS,
@@ -47,7 +48,6 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	startShortcuts: { type: 'startShortcuts' },
 	searchEngine: oneOf(SEARCH_ENGINES),
 	blockTrackers: flag,
-	confirmQuit: flag,
 	defaultQuality: range('integer', 10, 100),
 	preserveOriginals: flag,
 	dohProvider: oneOf(DOH_PROVIDERS),
@@ -114,6 +114,7 @@ export function hostDefaults(): Record<string, unknown> {
 	return {
 		'settings.json': DEFAULT_SETTINGS,
 		'settings-schema.json': SETTING_RULES,
+		'settings-retired.json': RETIRED_SETTING_KEYS,
 		'library.json': stableLibrary,
 		'commands.json': COMMANDS.map(({ id, label, shortcuts }) => ({
 			id,

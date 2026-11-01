@@ -24,6 +24,8 @@ export interface Launched {
 	readonly pid: number
 	/** The menus the host opened, oldest first, as their labels (a separator is null); test runs never show them. */
 	menus(): (string | null)[][]
+	/** The dialogs the host would have opened (Edge's print preview), oldest first; test runs never show them. */
+	dialogs(): { readonly kind: string; readonly url: string }[]
 	/** Starts Zing again on the same profile, as a link click from another app would, and resolves with its exit code. */
 	launchAgain(args: readonly string[]): Promise<number | null>
 	close(): Promise<void>
@@ -109,6 +111,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 	const scratch = await mkdtemp(join(tmpdir(), 'zing-host-e2e-'))
 	const errors = join(scratch, 'errors.log')
 	const menus = join(scratch, 'menus.jsonl')
+	const dialogs = join(scratch, 'dialogs.jsonl')
 	// Never the user's real profile: every run gets its own folder unless a test relaunches into one.
 	const userData = userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-host-data-')))
 	const hostEnv = {
@@ -117,6 +120,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		ZING_CDP_PORT: port,
 		ZING_ERRORS_FILE: errors,
 		ZING_MENUS_FILE: menus,
+		ZING_DIALOGS_FILE: dialogs,
 		ZING_RENDERER_DIR: join(ROOT, 'out', 'renderer'),
 		ZING_USER_DATA: userData,
 		ZING_DOWNLOADS_DIR: join(userData, 'downloads'),
@@ -150,6 +154,13 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 						.split('\n')
 						.filter((line) => line.length > 0)
 						.map((line) => JSON.parse(line) as (string | null)[])
+				: [],
+		dialogs: () =>
+			existsSync(dialogs)
+				? readFileSync(dialogs, 'utf8')
+						.split('\n')
+						.filter((line) => line.length > 0)
+						.map((line) => JSON.parse(line) as { kind: string; url: string })
 				: [],
 		launchAgain: (again) =>
 			new Promise((resolve, reject) => {

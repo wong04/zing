@@ -124,6 +124,37 @@ test('restoreTabs brings the tabs back after a relaunch', async () => {
 	await second.close()
 })
 
+test('Home goes to the homepage setting, and to the start page while it is empty', async () => {
+	const zing = await launchZing()
+	const id = await activeId(zing.chrome)
+	await visit(zing.chrome, id, 'one')
+	await run(zing.chrome, 'history.home')
+	await expect.poll(async () => (await tabsOf(zing.chrome)).tabs.find((t) => t.id === id)?.url).toMatch(/^zing:\/\/home/)
+	await zing.chrome.evaluate((url) => window.zing.setSetting('homepage', url), `${base}/home`)
+	await run(zing.chrome, 'history.home')
+	await expect.poll(async () => (await tabsOf(zing.chrome)).tabs.find((t) => t.id === id)?.title).toBe('Page home')
+	await zing.close()
+})
+
+test('Add to Reading List saves the page, and the Reading List panel marks it read and deletes it', async () => {
+	const zing = await launchZing()
+	await visit(zing.chrome, await activeId(zing.chrome), 'article')
+	await run(zing.chrome, 'library.addReadingList')
+	await run(zing.chrome, 'library.readingList')
+	const panel = zing.chrome.getByRole('complementary', { name: 'Reading List' })
+	await expect(panel).toBeVisible()
+	await expect(panel.getByText('Page article')).toBeVisible()
+	// A row's buttons show while it is under the pointer.
+	await panel.getByText('Page article').hover()
+	await panel.getByRole('button', { name: 'Mark read' }).click()
+	await expect(panel.getByRole('button', { name: 'Mark unread' })).toBeVisible()
+	await panel.getByRole('button', { name: 'Delete Page article' }).click()
+	await expect(panel.getByText('Your Reading List is empty.')).toBeVisible()
+	await run(zing.chrome, 'library.readingList')
+	await expect(panel).toBeHidden()
+	await zing.close()
+})
+
 test('pinning the sidebar narrows the page from the left', async () => {
 	const zing = await launchZing()
 	await visit(zing.chrome, await activeId(zing.chrome), 'one')
@@ -133,6 +164,22 @@ test('pinning the sidebar narrows the page from the left', async () => {
 	const before = await width()
 	await zing.chrome.evaluate((on) => window.zing.setSetting('sidebarPinned', on), !pinned)
 	await expect.poll(width).not.toBe(before)
+	await zing.close()
+})
+
+test('a new tab sent straight to an address says nothing about the blank page it replaced', async () => {
+	const zing = await launchZing()
+	await visit(zing.chrome, await activeId(zing.chrome), 'one')
+	await run(zing.chrome, 'tab.new')
+	await visit(zing.chrome, await activeId(zing.chrome), 'two')
+	// A real failure is reported a second after the load gives up (WebView2Page.DownloadGrace): watch past it.
+	const notices: string[] = []
+	for (let waited = 0; waited < 2_500; waited += 100) {
+		const overlay = pages(zing.browser).find((p) => p.url().endsWith('#overlay'))
+		if (overlay) notices.push(await overlay.evaluate(() => (globalThis as unknown as { document: { body: { innerText: string } } }).document.body.innerText))
+		await zing.chrome.waitForTimeout(100)
+	}
+	expect(notices.filter((text) => text.includes("Couldn't load"))).toEqual([])
 	await zing.close()
 })
 

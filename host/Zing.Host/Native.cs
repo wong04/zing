@@ -94,6 +94,10 @@ internal static class Native
 	public static extern bool DestroyWindow(nint hwnd);
 
 	[DllImport("user32.dll")]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool IsWindow(nint hwnd);
+
+	[DllImport("user32.dll")]
 	public static extern int GetMessageW(out MSG msg, nint hwnd, uint min, uint max);
 
 	[DllImport("user32.dll")]

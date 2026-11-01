@@ -63,6 +63,20 @@ test('an idle tab sleeps without a page and wakes at its URL and scroll position
 	await zing.close()
 })
 
+test('auto-close closes a tab left alone past its rule, and keeps the one on screen', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('autoCloseRule', 'hour'))
+	await zing.chrome.evaluate(() => window.zing.setSetting('autoCloseEnabled', true))
+	const left = await openTab(zing.chrome, '/other')
+	const shown = await openTab(zing.chrome, '/tall')
+	await advanceClock(zing.chrome, 30 * MINUTE)
+	expect((await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.map((t) => t.id)).toContain(left)
+	await advanceClock(zing.chrome, 45 * MINUTE)
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.map((t) => t.id)).not.toContain(left)
+	expect((await zing.chrome.evaluate(() => window.zing.getTabs())).activeId).toBe(shown)
+	await zing.close()
+})
+
 test('a tab with unsaved form input stays awake', async () => {
 	const zing = await launchZing({ env: TEST_CLOCK })
 	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
