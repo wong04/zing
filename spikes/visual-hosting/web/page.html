@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>page</title>
+<style>
+	body { margin: 0; min-height: 100vh; background: rgb(232 85 62); color: #111; font: 18px system-ui }
+	#under { position: absolute; left: 24px; top: 16px; width: 300px; height: 260px; background: rgb(250 220 90); display: grid; place-items: center }
+	main { padding: 24px 24px 24px 380px; display: grid; gap: 16px; max-width: 560px }
+	#drop { border: 3px dashed #111; padding: 24px; background: rgb(255 255 255 / .4) }
+	input { font: inherit; padding: 6px 8px }
+</style>
+<!-- Under the overlay's panel: a click there must reach the overlay, never this. -->
+<div id="under">page content under the overlay</div>
+<main>
+	<h1>Page</h1>
+	<p><span id="text">Selectable page text: the cursor should be an I-beam here.</span></p>
+	<a id="link" href="#linked">A link: the cursor should be a hand here</a>
+	<input id="field" lang="ja" placeholder="page: type here (try Japanese IME)" aria-label="Page field">
+	<div id="drop">Drop a file here</div>
+	<div id="chosen">nothing chosen yet</div>
+</main>
+<script>
+	window.__clicks = []
+	document.addEventListener('mousedown', (e) => window.__clicks.push(e.target.id || e.target.tagName))
+	const drop = document.getElementById('drop')
+	drop.addEventListener('dragover', (e) => e.preventDefault())
+	drop.addEventListener('drop', (e) => {
+		e.preventDefault()
+		drop.textContent = 'dropped: ' + [...e.dataTransfer.files].map((f) => f.name).join(', ')
+	})
+	chrome.webview.addEventListener('message', (e) => {
+		if (e.data.chosen) document.getElementById('chosen').textContent = 'chosen ' + e.data.chosen
+	})
+</script>

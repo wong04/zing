@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>chrome</title>
+<style>
+	body { margin: 0; height: 100vh; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: rgb(43 37 32); color: #eee; font: 15px system-ui }
+	input { flex: 1; max-width: 520px; font: inherit; padding: 4px 8px }
+</style>
+<b>Visual hosting spike</b>
+<input id="address" placeholder="chrome: type here" aria-label="Address">
+<span>Esc toggles the overlay</span>
+<script>
+	// Replies from the host to test messages (test runs only; the host ignores "test" otherwise).
+	window.__replies = []
+	chrome.webview.addEventListener('message', (e) => window.__replies.push(e.data))
+	let nextId = 1
+	window.spike = (test, extra = {}) => {
+		const id = nextId++
+		chrome.webview.postMessage({ test, id, ...extra })
+		return id
+	}
+</script>
