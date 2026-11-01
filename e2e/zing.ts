@@ -73,6 +73,13 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		...env,
 	}
 	const host: ChildProcess = spawn(HOST_EXE, [...args], { env: hostEnv, stdio: 'ignore' })
+	let closing = false
+	// A host that goes before close() leaves the test only "target closed"; say how it went and what it logged.
+	host.once('exit', (code, signal) => {
+		if (closing) return
+		const how = code === null ? `signal ${signal}` : `exit code ${code} (0x${(code >>> 0).toString(16).toUpperCase()})`
+		process.stderr.write(`Zing exited before close(), with ${how}.\n${hostLogs(errors, userData)}\n`)
+	})
 	await expect
 		.poll(async () => (await fetch(`http://127.0.0.1:${port}/json/version`).catch(() => undefined))?.ok ?? false, { timeout: 30_000 })
 		.toBe(true)
@@ -98,6 +105,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 				second.once('exit', (code) => resolve(code))
 			}),
 		close: async () => {
+			closing = true
 			// Quit as a person would, by closing every window, so pending writes are flushed.
 			const exited = new Promise<void>((resolve) => host.once('exit', () => resolve()))
 			const chromes = pages(browser).filter((p) => p.url() === CHROME_URL)
@@ -114,10 +122,19 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 			if (browser.isConnected()) await browser.close()
 			if (!quit) host.kill()
 			await engineReleased(userData)
-			if (existsSync(errors)) throw new HostProcessError(`The host recorded errors during this test:\n\n${readFileSync(errors, 'utf8')}`)
+			if (existsSync(errors)) throw new HostProcessError(`The host recorded errors during this test:\n\n${readFileSync(errors, 'utf8')}\n${hostLogs(undefined, userData)}`)
 			if (!quit) throw new HostProcessError('Zing did not quit within 15 s of its last window closing')
 		},
 	}
+}
+
+/** The e2e run's own logs: the errors file (when given) and the scratch profile's fault log, warnings included. */
+function hostLogs(errors: string | undefined, userData: string): string {
+	const parts: string[] = []
+	if (errors && existsSync(errors)) parts.push(`Recorded errors:\n${readFileSync(errors, 'utf8')}`)
+	const faults = join(userData, 'logs', 'faults.log')
+	if (existsSync(faults)) parts.push(`Fault log (${faults}):\n${readFileSync(faults, 'utf8')}`)
+	return parts.length > 0 ? parts.join('\n') : 'The host logged nothing.'
 }
 
 /**
