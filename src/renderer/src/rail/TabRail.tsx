@@ -13,7 +13,7 @@ import { PanelIcon } from '../panels/panelIcon'
 import { useSettings } from '../settings/useSettings'
 import { useLibraryState } from '../library/useLibraryState'
 import type { DropTarget } from './dropTarget'
-import { StackGroup, TabRow, type RowFrame } from './RailRows'
+import { SplitGroup, StackGroup, TabRow, type RowFrame } from './RailRows'
 import { FavouriteTiles, PinnedSection, type SavedFrame } from './SavedSections'
 import { useItemDrag } from './useItemDrag'
 import { useRowDrag } from './useRowDrag'
@@ -43,6 +43,7 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 	const byId = useMemo(() => new Map<string, TabView>(tabs.map((t) => [t.id, t])), [tabs])
 	const tabsByItem = useMemo(() => new Map<string, TabView>(tabs.flatMap((t) => (t.itemId === undefined ? [] : [[t.itemId, t] as const]))), [tabs])
 	const library = useLibraryState()?.library
+	const splitOf = useMemo(() => new Map((state?.splits ?? []).flatMap((s) => s.tabIds.map((id) => [id, s] as const))), [state?.splits])
 	const pinnedCount = tabs.filter((t) => t.pinned).length
 	const rowDrag = useRowDrag(
 		loose.map((s) => s.key),
@@ -100,7 +101,14 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 					}
 					if (slot.kind === 'tab') {
 						const tab = byId.get(slot.id)
-						return tab ? <TabRow key={slot.key} tab={tab} active={tab.id === activeId} frame={frame} /> : null
+						if (!tab) return null
+						// A split shows once, as a group, where its first tab among today's would be.
+						const split = splitOf.get(tab.id)
+						if (split) {
+							const members = split.tabIds.flatMap((id) => today.find((t) => t.id === id) ?? [])
+							return members[0]?.id === tab.id ? <SplitGroup key={split.id} tabs={members} activeId={activeId} /> : null
+						}
+						return <TabRow key={slot.key} tab={tab} active={tab.id === activeId} frame={frame} />
 					}
 					const members = slot.ids.flatMap((id) => byId.get(id) ?? [])
 					return <StackGroup key={slot.key} name={slot.name} tabs={members} activeId={activeId} frame={frame} />

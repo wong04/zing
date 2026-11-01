@@ -313,6 +313,8 @@ public sealed class WebView2Page : IPage
 		_core.WebResourceRequested += OnWebResourceRequested;
 		FollowTheme();
 		Wire(_core);
+		// A click into a split pane gives it the keyboard; its tab becomes the active one.
+		_view.Controller.GotFocus += (_, _) => _events.Focused();
 		foreach (var action in _queued) action(_core);
 		_queued.Clear();
 	}

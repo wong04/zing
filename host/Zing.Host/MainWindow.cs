@@ -33,6 +33,9 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private CoveringLayer? _overview;
 	private CoreWebView2Environment? _environment;
 	private WebView2Page? _shown;
+	// A split on screen: its layout and its pages in pane order (_shown is the focused one). Empty otherwise.
+	private SplitLayout? _split;
+	private List<WebView2Page> _panes = [];
 	private DispatcherScheduler? _scheduler;
 	private Rect? _surfaceRegion;
 	private Task? _surfaceReady;
@@ -169,6 +172,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			_shown.Visible = false;
 		}
 		_shown = shown;
+		_split = null;
+		_panes = [];
 		PlaceShown();
 		shown.Visible = true;
 		// Over any page that is still drawn while its picture is taken (Hide).
@@ -179,9 +184,28 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	/// <summary>Longest a leaving page stays drawn under the next one for its overview picture (TabOverview's capture timeout).</summary>
 	private static readonly TimeSpan LeavingPictureWait = TimeSpan.FromMilliseconds(1500);
 
+	/// <summary>A split's pages side by side; the tab service hides whatever is no longer shown.</summary>
+	public void ShowSplit(IReadOnlyList<IPage> pages, SplitLayout layout, IPage focused)
+	{
+		var panes = pages.Cast<WebView2Page>().ToList();
+		// The page that had the screen goes out of fullscreen when another pane takes the focus.
+		if (_shown is not null && _shown != focused) _shown.ExitFullScreen();
+		_shown = (WebView2Page)focused;
+		_split = layout;
+		_panes = panes;
+		PlaceShown();
+		foreach (var pane in panes)
+		{
+			pane.Visible = true;
+			pane.BringToFront();
+		}
+		FollowFullScreen();
+	}
+
 	public void Hide(IPage page)
 	{
 		var hidden = (WebView2Page)page;
+		_panes.Remove(hidden);
 		if (_shown == hidden)
 		{
 			_shown = null;
@@ -343,8 +367,20 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private void PlaceShown()
 	{
 		if (_shown is null) return;
-		if (_fullScreen) _shown.Place(_layout.ContentRect());
-		else _layout.PlacePage(_shown);
+		if (_fullScreen)
+		{
+			_shown.Place(_layout.ContentRect());
+			_shown.BringToFront();
+			return;
+		}
+		if (_split is null || _panes.Count != _split.TabIds.Count)
+		{
+			_layout.PlacePage(_shown);
+			return;
+		}
+		if (_layout.PageRect() is not { } area) return;
+		var rects = Split.PaneRects(area, _split);
+		for (var i = 0; i < _panes.Count; i++) _panes[i].Place(rects[i]);
 	}
 
 	public void SetPageUiHeight(int height) => _pageUi?.SetHeight(height);

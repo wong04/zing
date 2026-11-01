@@ -72,6 +72,17 @@ export function TabRow({ tab, active, frame, nested = false }: { tab: TabView; a
 	)
 }
 
+/** A split's tabs (split view) together in one box, in pane order; clicking one shows the split with that pane in front. */
+export function SplitGroup({ tabs, activeId }: { tabs: readonly TabView[]; activeId: string | undefined }) {
+	return (
+		<div className="rail-split" role="group" aria-label="Split view">
+			{tabs.map((tab) => (
+				<TabRow key={tab.id} tab={tab} active={tab.id === activeId} />
+			))}
+		</div>
+	)
+}
+
 /** A site's pages under one heading that folds; the heading moves the whole stack. */
 export function StackGroup({ name, tabs, activeId, frame }: { name: string; tabs: readonly TabView[]; activeId: string | undefined; frame: RowFrame }) {
 	const holdsActive = tabs.some((t) => t.id === activeId)

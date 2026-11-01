@@ -282,6 +282,9 @@ public interface ILifecycleTabs
 {
 	string? ActiveId { get; }
 
+	/// <summary>Whether the tab is on screen: the active tab, or a pane of its split.</summary>
+	bool IsShown(string id);
+
 	IReadOnlyList<TabRecord> Records { get; }
 
 	/// <summary>Whether the tab has a live page (a sleeping or never-loaded tab does not).</summary>
@@ -364,7 +367,7 @@ public sealed class TabAutoCloser
 	}
 
 	private List<AutoCloseTab> Snapshots() =>
-		_tabs.Records.Select(t => new AutoCloseTab(t.Id, t.LastActiveAt, t.Pinned, t.Id == _tabs.ActiveId)).ToList();
+		_tabs.Records.Select(t => new AutoCloseTab(t.Id, t.LastActiveAt, t.Pinned, _tabs.IsShown(t.Id))).ToList();
 }
 
 /// <summary>A window's auto-close and sleeping-tab timers, kept in step with its tabs and settings.</summary>

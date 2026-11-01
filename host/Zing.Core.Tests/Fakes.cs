@@ -63,11 +63,24 @@ public sealed class FakePageHost : IPageHost
 		return page;
 	}
 
+	public SplitLayout? ShownSplit { get; private set; }
+
 	public void Show(IPage page)
 	{
 		foreach (var other in Created) other.Shown = false;
 		((FakePage)page).Shown = true;
+		ShownSplit = null;
 	}
+
+	public void ShowSplit(IReadOnlyList<IPage> pages, SplitLayout layout, IPage focused)
+	{
+		foreach (var other in Created) other.Shown = false;
+		foreach (var page in pages) ((FakePage)page).Shown = true;
+		ShownSplit = layout;
+	}
+
+	/// <summary>The page a tab has now (it must have one).</summary>
+	public FakePage PageFor(TabService tabs, string id) => (FakePage)(tabs.PageOf(id) ?? throw new InvalidOperationException($"Tab {id} has no page"));
 
 	public void Hide(IPage page) => ((FakePage)page).Shown = false;
 }

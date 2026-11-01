@@ -233,3 +233,8 @@
 	background: color-mix(in srgb, var(--caution) 18%, transparent);
 	color: var(--caution);
 }
+
+/* A pane of a split view: its tabs share an accent underline, so they read as one. */
+.tab.in-split {
+	box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 70%, transparent);
+}

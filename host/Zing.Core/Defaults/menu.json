@@ -10,6 +10,7 @@
 			"tab.close",
 			"window.close",
 			"tab.reopenClosed",
+			"tab.split",
 			"separator",
 			"page.print",
 			"separator",

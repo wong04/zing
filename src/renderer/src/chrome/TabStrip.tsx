@@ -46,6 +46,7 @@ export function TabStrip({ state }: { state: TabsState | undefined }) {
 	const organization = state?.organization ?? 'manual'
 	const dropdowns = state?.dropdowns ?? false
 	const openStack = state?.openStack
+	const splitTabs = useMemo(() => new Set((state?.splits ?? []).flatMap((s) => s.tabIds)), [state?.splits])
 
 	const [measure, roomWidth] = useWidth()
 	const [heldKeys, setHeldKeys] = useState<readonly string[]>()
@@ -117,6 +118,7 @@ export function TabStrip({ state }: { state: TabsState | undefined }) {
 							activeId={activeId}
 							openStack={openStack}
 							divider={pinned > 0 && index === pinned - 1 && pinned < displayed.length}
+							splitTabs={splitTabs}
 						/>
 					))}
 				</div>
@@ -143,10 +145,12 @@ interface SlotViewProps {
 	readonly openStack: string | undefined
 	/** The pinned run ends after this slot. */
 	readonly divider: boolean
+	/** Tabs that are panes of a split view. */
+	readonly splitTabs: ReadonlySet<string>
 }
 
-function SlotView({ slot, frame, byId, activeId, openStack, divider }: SlotViewProps) {
-	const chip = chipFor(slot, frame, byId, activeId, openStack)
+function SlotView({ slot, frame, byId, activeId, openStack, divider, splitTabs }: SlotViewProps) {
+	const chip = chipFor(slot, frame, byId, activeId, openStack, splitTabs)
 	if (!chip) return null
 	return (
 		<>
@@ -162,10 +166,11 @@ function chipFor(
 	byId: ReadonlyMap<string, TabView>,
 	activeId: string | undefined,
 	openStack: string | undefined,
+	splitTabs: ReadonlySet<string>,
 ) {
 	if (slot.kind === 'tab') {
 		const tab = byId.get(slot.id)
-		return tab ? <TabChip tab={tab} active={slotHoldsTab(slot, activeId)} frame={frame} /> : null
+		return tab ? <TabChip tab={tab} active={slotHoldsTab(slot, activeId)} frame={frame} inSplit={splitTabs.has(tab.id)} /> : null
 	}
 	const tabs = slot.ids.flatMap((id) => byId.get(id) ?? [])
 	if (tabs.length === 0) return null

@@ -97,6 +97,10 @@ public static class Menus
 		var web = record.Url.StartsWith("http:", StringComparison.OrdinalIgnoreCase) || record.Url.StartsWith("https:", StringComparison.OrdinalIgnoreCase);
 		List<MenuItem> items = [record.Pinned ? new MenuItem("Unpin Tab", () => saved.Unpin(id)) : new MenuItem("Pin Tab", () => saved.Pin(id))];
 		// A saved tab can go back to its item's address, or make the page it is on the item's.
+		// Split view: beside the tab in front, or out of the split the tab is in.
+		if (tabs.Splits.Of(id) is not null) items.Add(new MenuItem("Remove from Split", () => tabs.Unsplit(id)));
+		else if (tabs.ActiveId is { } front && front != id && tabs.Splits.Of(front) is not { TabIds.Count: >= Split.MaxPanes })
+			items.Add(new MenuItem("Show Beside Current Tab", () => tabs.SplitWith(front, id)));
 		if (record.ItemId is not null)
 		{
 			items.Add(new MenuItem("Back to Saved Page", () => saved.Reset(id), Enabled: saved.HasLeftItsAddress(id)));

@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { CHROME_LAYOUT } from '@shared/ipc'
+import { SplitDividers } from './chrome/SplitDividers'
 import { TabStrip } from './chrome/TabStrip'
 import { LibraryChrome } from './library/LibraryChrome'
 import { Toolbar } from './chrome/Toolbar'
@@ -27,6 +28,8 @@ export function App() {
 	const sidebarPinned = settings?.sidebarPinned ?? true
 	const position = settings?.tabBarPosition ?? 'left'
 	useAccentTheme()
+	const shownSplit = state?.shownSplit
+	const split = state?.splits?.find((s) => s.id === shownSplit?.id)
 	const appSidebar =
 		sidebarPinned && position !== 'left' ? (
 			<div className="sidebar-slot">
@@ -52,6 +55,7 @@ export function App() {
 					<TabRail state={state} variant="pinned" side="right" />
 				</div>
 			) : null}
+			{split && shownSplit ? <SplitDividers split={split} shown={shownSplit} /> : null}
 		</div>
 	)
 }

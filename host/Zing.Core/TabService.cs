@@ -68,6 +68,8 @@ public interface IPageEvents
 	void FindResult(int matches, int activeOrdinal);
 	/// <summary>The page closed itself (window.close()).</summary>
 	void Closed();
+	/// <summary>The page took the keyboard, e.g. a click into a split pane: that pane's tab becomes the active one.</summary>
+	void Focused();
 	/// <summary>The page opened a window; the returned page must be the one handed to the engine, so window.opener works.</summary>
 	IPage Popup(string url, bool background);
 	/// <summary>
@@ -82,6 +84,8 @@ public interface IPageHost
 {
 	IPage Create(IPageEvents events);
 	void Show(IPage page);
+	/// <summary>Shows a split's pages, in pane order, laid out by <paramref name="layout"/>; <paramref name="focused"/> is the active tab's.</summary>
+	void ShowSplit(IReadOnlyList<IPage> pages, SplitLayout layout, IPage focused);
 	void Hide(IPage page);
 }
 
@@ -162,7 +166,7 @@ public sealed class TabService
 	public void Sleep(string id)
 	{
 		_store.Get(id);
-		if (id == _store.ActiveId) throw new ActiveTabSleepException(id);
+		if (IsShown(id)) throw new ActiveTabSleepException(id);
 		if (!_pages.ContainsKey(id)) return;
 		DestroyPage(id);
 		_sleeping.Add(id);
@@ -204,23 +208,110 @@ public sealed class TabService
 	public void Activate(string id)
 	{
 		var previous = _store.ActiveId;
-		var record = _store.Activate(id);
+		var shownBefore = previous is null ? [] : Splits.GroupOf(previous);
+		_store.Activate(id);
 		if (previous is not null && previous != id)
 		{
-			if (_pages.TryGetValue(previous, out var leaving))
-			{
-				Leaving?.Invoke(previous, leaving);
-				_host.Hide(leaving);
-			}
+			// Moving between panes of one split hides nothing; leaving it hides every pane.
+			HideAllBut(shownBefore, Splits.GroupOf(id));
 			if (_store.Has(previous)) _store.Touch(previous);
 		}
-		_host.Show(EnsurePage(record));
+		ShowActive();
 		_changed();
+	}
+
+	/// <summary>This window's splits (split view).</summary>
+	public SplitSet Splits { get; } = new();
+
+	/// <summary>Whether the tab's page is on screen: the active tab, or a pane of its split.</summary>
+	public bool IsShown(string id) => _store.ActiveId is { } active && Splits.GroupOf(active).Contains(id);
+
+	/// <summary>
+	/// Puts <paramref name="other"/> beside <paramref name="id"/>: into its split as the last pane, or a new side-by-side
+	/// split of the two. The new pane gets the focus.
+	/// </summary>
+	public void SplitWith(string id, string other)
+	{
+		_store.Get(id);
+		_store.Get(other);
+		if (id == other) throw new SplitException("A tab can't be split with itself");
+		Splits.Remove(other);
+		var layout = Splits.Of(id) is { } split
+			? Split.AddPane(split, other, split.TabIds.Count)
+			: Split.Create(Guid.NewGuid().ToString(), [id, other], "row");
+		Splits.Put(layout);
+		Activate(other);
+	}
+
+	/// <summary>A tab dropped onto a page's edge: beside that page, on that side.</summary>
+	public void SplitDrop(string targetId, string droppedId, string edge)
+	{
+		_store.Get(targetId);
+		_store.Get(droppedId);
+		if (targetId == droppedId) return;
+		Splits.Remove(droppedId);
+		var after = edge is "right" or "bottom";
+		var layout = Splits.Of(targetId) is { } split
+			? Split.AddPane(split, droppedId, split.TabIds.ToList().IndexOf(targetId) + (after ? 1 : 0))
+			: Split.FromDrop(Guid.NewGuid().ToString(), targetId, droppedId, edge);
+		Splits.Put(layout);
+		Activate(droppedId);
+	}
+
+	/// <summary>Takes a tab out of its split; the rest stay together (a split of one dissolves).</summary>
+	public void Unsplit(string id)
+	{
+		var shownBefore = _store.ActiveId is { } active ? Splits.GroupOf(active) : [];
+		if (!Splits.Remove(id)) return;
+		Reshow(shownBefore);
+	}
+
+	/// <summary>New pane sizes, from a divider dragged in the chrome; <paramref name="containerLength"/> is the page area's along the split.</summary>
+	public void SetSplitRatios(string splitId, IReadOnlyList<double> ratios, double containerLength)
+	{
+		Splits.Put(Split.WithRatios(Splits.Get(splitId), ratios, containerLength));
+		if (_store.ActiveId is { } active && Splits.Of(active)?.Id == splitId) ShowActive();
+		_changed();
+	}
+
+	/// <summary>After a split changed: hide what is no longer shown, and show the active tab's group.</summary>
+	private void Reshow(IReadOnlyList<string> shownBefore)
+	{
+		if (_store.ActiveId is not { } active) return;
+		HideAllBut(shownBefore, Splits.GroupOf(active));
+		ShowActive();
+		_changed();
+	}
+
+	private void HideAllBut(IReadOnlyList<string> shown, IReadOnlyList<string> keep)
+	{
+		foreach (var id in shown.Where(t => !keep.Contains(t)))
+		{
+			if (!_pages.TryGetValue(id, out var leaving)) continue;
+			Leaving?.Invoke(id, leaving);
+			_host.Hide(leaving);
+		}
+	}
+
+	/// <summary>The active tab's page, or every pane of its split.</summary>
+	private void ShowActive()
+	{
+		var active = _store.Get(_store.ActiveId ?? throw new InvalidOperationException("No active tab"));
+		if (Splits.Of(active.Id) is not { } split)
+		{
+			_host.Show(EnsurePage(active));
+			return;
+		}
+		var pages = split.TabIds.Select(t => EnsurePage(_store.Get(t))).ToList();
+		_host.ShowSplit(pages, split, pages[split.TabIds.ToList().IndexOf(active.Id)]);
 	}
 
 	/// <summary>Closing the last tab leaves a fresh one, as in Krackn: a window is never tabless.</summary>
 	public void Close(string id)
 	{
+		var shownBefore = _store.ActiveId is { } active ? Splits.GroupOf(active) : [];
+		var wasActive = id == _store.ActiveId;
+		var leftSplit = Splits.Remove(id);
 		var result = _store.Close(id);
 		DestroyPage(id);
 		_sleeping.Remove(id);
@@ -242,6 +333,12 @@ public sealed class TabService
 		if (result.NextActiveId is not null)
 		{
 			Activate(result.NextActiveId);
+			return;
+		}
+		// A pane closed beside the active tab: what is left of the split is laid out again.
+		if (leftSplit && !wasActive)
+		{
+			Reshow(shownBefore);
 			return;
 		}
 		_changed();
@@ -389,6 +486,11 @@ public sealed class TabService
 
 	private sealed class TabPageEvents(TabService service, string id) : IPageEvents
 	{
+		public void Focused()
+		{
+			if (service._store.Has(id) && service._store.ActiveId != id && service.IsShown(id)) service.Activate(id);
+		}
+
 		public NavigationDecision Navigating(string from, string to)
 		{
 			var decision = Decide(from, to);
