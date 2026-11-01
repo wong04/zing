@@ -1,0 +1,28 @@
+# TEMPORARY (docs/architecture-review.md W-6): runs the visual-hosting spike's checks and the
+# real-input tier on a Windows runner, which no person is using. Remove once W-6 is decided.
+name: w6-checks
+
+on:
+  push:
+    branches: ['claude/**']
+
+jobs:
+  w6:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - run: npm ci
+      - name: visual-hosting spike checks
+        run: |
+          dotnet build -c Release spikes/visual-hosting
+          npx playwright test -c spikes/visual-hosting/playwright.config.ts
+      - name: real-input tier
+        if: always()
+        run: npm run test:e2e:real-input
