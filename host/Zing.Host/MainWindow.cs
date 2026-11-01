@@ -116,6 +116,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_window.Backmost = _chrome.View;
 		_chrome.Place(ContentRect());
 		ReserveCaptionButtons();
+		// A reloaded chrome (its renderer crashed) refetches its state, but the caption inset is a script the host sets.
+		_chrome.Crashed += view => view.View.Core.NavigationCompleted += CaptionsAfterReload;
 		TestHooks.Started(_scope);
 	}
 
@@ -129,7 +131,13 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		if (_chrome is null) return;
 		var inset = AppWindow.TitleBar.RightInset / Scale;
 		var px = Math.Ceiling(inset).ToString(System.Globalization.CultureInfo.InvariantCulture);
-		_ = _chrome.View.Core.ExecuteScriptAsync($"document.documentElement.style.setProperty('--caption-inset', '{px}px')");
+		TestHooks.Background(_chrome.View.Core.ExecuteScriptAsync($"document.documentElement.style.setProperty('--caption-inset', '{px}px')").AsTask(), "caption inset");
+	}
+
+	private void CaptionsAfterReload(CoreWebView2 core, CoreWebView2NavigationCompletedEventArgs e)
+	{
+		core.NavigationCompleted -= CaptionsAfterReload;
+		ReserveCaptionButtons();
 	}
 
 	// MARK: IPageHost
