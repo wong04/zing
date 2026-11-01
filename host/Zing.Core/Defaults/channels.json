@@ -1,0 +1,306 @@
+{
+	"invoke": [
+		{
+			"channel": "account:continue-as-guest",
+			"args": 0
+		},
+		{
+			"channel": "account:delete",
+			"args": 0
+		},
+		{
+			"channel": "account:get",
+			"args": 0
+		},
+		{
+			"channel": "account:require-password",
+			"args": 1
+		},
+		{
+			"channel": "account:reset-password",
+			"args": 1
+		},
+		{
+			"channel": "account:sign-in",
+			"args": 1
+		},
+		{
+			"channel": "account:sign-out",
+			"args": 0
+		},
+		{
+			"channel": "account:sign-up",
+			"args": 4
+		},
+		{
+			"channel": "account:update-profile",
+			"args": 2
+		},
+		{
+			"channel": "app:report-error",
+			"args": 1
+		},
+		{
+			"channel": "chrome:app-menu",
+			"args": 1
+		},
+		{
+			"channel": "chrome:history-menu",
+			"args": 2
+		},
+		{
+			"channel": "chrome:stack-menu",
+			"args": 2
+		},
+		{
+			"channel": "chrome:strip-menu",
+			"args": 1
+		},
+		{
+			"channel": "chrome:tab-menu",
+			"args": 2
+		},
+		{
+			"channel": "chrome:titlebar-colors",
+			"args": 1
+		},
+		{
+			"channel": "command:run",
+			"args": 1
+		},
+		{
+			"channel": "default-browser:open-settings",
+			"args": 0
+		},
+		{
+			"channel": "downloads:cancel",
+			"args": 1
+		},
+		{
+			"channel": "downloads:clear",
+			"args": 0
+		},
+		{
+			"channel": "downloads:dismiss",
+			"args": 0
+		},
+		{
+			"channel": "downloads:open",
+			"args": 1
+		},
+		{
+			"channel": "downloads:show",
+			"args": 1
+		},
+		{
+			"channel": "find:close",
+			"args": 0
+		},
+		{
+			"channel": "find:step",
+			"args": 1
+		},
+		{
+			"channel": "find:update",
+			"args": 1
+		},
+		{
+			"channel": "library:apply",
+			"args": 1
+		},
+		{
+			"channel": "library:folder-menu",
+			"args": 2
+		},
+		{
+			"channel": "library:get",
+			"args": 0
+		},
+		{
+			"channel": "library:item-menu",
+			"args": 2
+		},
+		{
+			"channel": "library:open",
+			"args": 2
+		},
+		{
+			"channel": "library:open-all",
+			"args": 1
+		},
+		{
+			"channel": "library:panel",
+			"args": 1
+		},
+		{
+			"channel": "overview:close",
+			"args": 0
+		},
+		{
+			"channel": "overview:get",
+			"args": 0
+		},
+		{
+			"channel": "pageui:get",
+			"args": 0
+		},
+		{
+			"channel": "pageui:height",
+			"args": 1
+		},
+		{
+			"channel": "permission:allow",
+			"args": 1
+		},
+		{
+			"channel": "permission:deny",
+			"args": 1
+		},
+		{
+			"channel": "settings:get",
+			"args": 0
+		},
+		{
+			"channel": "settings:set",
+			"args": 2
+		},
+		{
+			"channel": "shell:clear-session",
+			"args": 0
+		},
+		{
+			"channel": "shell:close-settings",
+			"args": 0
+		},
+		{
+			"channel": "shell:get",
+			"args": 0
+		},
+		{
+			"channel": "shell:menu",
+			"args": 3
+		},
+		{
+			"channel": "shell:open-settings",
+			"minArgs": 0,
+			"maxArgs": 1
+		},
+		{
+			"channel": "shell:toolbox",
+			"args": 0
+		},
+		{
+			"channel": "stack:close",
+			"args": 0
+		},
+		{
+			"channel": "stack:current",
+			"args": 0
+		},
+		{
+			"channel": "stack:drag-presence",
+			"args": 2
+		},
+		{
+			"channel": "stack:open-for-drag",
+			"args": 2
+		},
+		{
+			"channel": "stack:toggle",
+			"args": 2
+		},
+		{
+			"channel": "tabs:activate",
+			"args": 1
+		},
+		{
+			"channel": "tabs:close",
+			"args": 1
+		},
+		{
+			"channel": "tabs:close-others",
+			"args": 1
+		},
+		{
+			"channel": "tabs:get",
+			"args": 0
+		},
+		{
+			"channel": "tabs:move",
+			"args": 2
+		},
+		{
+			"channel": "tabs:move-stack",
+			"args": 2
+		},
+		{
+			"channel": "tabs:move-within",
+			"args": 3
+		},
+		{
+			"channel": "tabs:navigate",
+			"args": 2
+		},
+		{
+			"channel": "tabs:pin",
+			"args": 1
+		},
+		{
+			"channel": "tabs:set-dropdowns",
+			"args": 1
+		},
+		{
+			"channel": "tabs:set-organization",
+			"args": 1
+		},
+		{
+			"channel": "tabs:unpin",
+			"args": 1
+		},
+		{
+			"channel": "toolpanel:begin-drag",
+			"args": 1
+		},
+		{
+			"channel": "toolpanel:close",
+			"args": 1
+		},
+		{
+			"channel": "toolpanel:end-drag",
+			"args": 2
+		},
+		{
+			"channel": "toolpanel:focus",
+			"args": 1
+		},
+		{
+			"channel": "toolpanel:get",
+			"args": 0
+		},
+		{
+			"channel": "toolpanel:minimize",
+			"args": 1
+		},
+		{
+			"channel": "toolpanel:open",
+			"args": 2
+		},
+		{
+			"channel": "toolpanel:restore",
+			"args": 1
+		}
+	],
+	"events": [
+		"account:state",
+		"chrome:focus-address",
+		"library:state",
+		"overlay:notice",
+		"overlay:overview",
+		"pageui:state",
+		"settings:changed",
+		"shell:state",
+		"stack:dropdown",
+		"tabs:state",
+		"toolpanel:state"
+	]
+}

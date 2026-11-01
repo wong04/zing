@@ -102,20 +102,15 @@ public sealed class ZoneFile(string path) : IMarkStore
 /// Closing a window's last tab leaves no live page for a moment, until the fresh tab starts,
 /// so this waits for one. If none comes, every window has closed: Zing is quitting, and the
 /// in-memory profile, with all its data, goes with the process.
+/// It also clears the whole profile for Settings' Clear browsing session, persistent or not.
 /// </summary>
-public sealed class WebViewSitePurger(Func<CoreWebView2?> anyLivePage, Func<bool> anyWindowOpen) : ISitePurger
+public sealed class WebViewSitePurger(Func<CoreWebView2?> anyLivePage, Func<bool> anyWindowOpen) : ISitePurger, IBrowsingData
 {
 	private static readonly TimeSpan Poll = TimeSpan.FromMilliseconds(50);
 
 	public async Task PurgeAsync(SiteToPurge site)
 	{
-		var core = anyLivePage();
-		while (core is null && anyWindowOpen())
-		{
-			await Task.Delay(Poll);
-			core = anyLivePage();
-		}
-		if (core is null) return;
+		if (await LivePageAsync() is not { } core) return;
 		foreach (var origin in site.Origins)
 		{
 			var request = System.Text.Json.JsonSerializer.Serialize(new { origin, storageTypes = "all" });
@@ -123,5 +118,23 @@ public sealed class WebViewSitePurger(Func<CoreWebView2?> anyLivePage, Func<bool
 		}
 		foreach (var cookie in await core.CookieManager.GetCookiesAsync(""))
 			if (RegistrableDomain.Of(cookie.Domain.TrimStart('.')) == site.Domain) core.CookieManager.DeleteCookie(cookie);
+	}
+
+	/// <summary>Every data kind the pages' profile holds: cookies, storage, cache, HTTP auth, and the engine's own history and autofill.</summary>
+	public async Task ClearAllAsync()
+	{
+		if (await LivePageAsync() is not { } core) return;
+		await core.Profile.ClearBrowsingDataAsync();
+	}
+
+	private async Task<CoreWebView2?> LivePageAsync()
+	{
+		var core = anyLivePage();
+		while (core is null && anyWindowOpen())
+		{
+			await Task.Delay(Poll);
+			core = anyLivePage();
+		}
+		return core;
 	}
 }

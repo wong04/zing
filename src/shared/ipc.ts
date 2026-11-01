@@ -140,7 +140,11 @@ export interface RendererErrorReport {
 	readonly view?: string
 }
 
-/** Renderer → host requests, answered with a promise. */
+/**
+ * Renderer → host requests, answered with a promise. The C# host registers a
+ * handler for each by name (ChromeApi, plus a few in MainWindow); the list is
+ * generated into host/Zing.Core/Defaults/channels.json and checked on both sides.
+ */
 export interface InvokeContract {
 	'app:report-error': { args: [report: RendererErrorReport]; result: void }
 	'command:run': { args: [id: CommandId]; result: CommandOutcome }
@@ -219,7 +223,7 @@ export interface InvokeContract {
 	'overview:close': { args: []; result: void }
 }
 
-/** Main → renderer pushes. `tabs:state` is coalesced to at most one per frame. */
+/** Host → renderer pushes. The host sends one per change, uncoalesced. */
 export interface EventContract {
 	'tabs:state': TabsState
 	'chrome:focus-address': undefined
@@ -239,7 +243,10 @@ export type EventChannel = keyof EventContract
 
 export type Unsubscribe = () => void
 
-/** The whole surface the preload exposes as `window.zing`. Nothing else crosses the bridge. */
+/**
+ * The whole surface Zing's views see as `window.zing`, built over the WebView2
+ * bridge (bridge/webviewBridge.ts, zingApi.ts). Nothing else crosses the bridge.
+ */
 export interface ZingApi {
 	runCommand(id: CommandId): Promise<CommandOutcome>
 	getTabs(): Promise<TabsState>
