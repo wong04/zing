@@ -5,9 +5,11 @@ import type { InvokeChannel, RendererErrorReport } from '@shared/ipc'
  * (`app:report-error`), which records them: e2e runs fail on them and real
  * installs log them. One reporter per view, made in `api.ts`.
  *
- * - A failed host call is reported once, as `bridge`, where it fails
- *   (`reportingInvoke`). Its error is marked, so the unhandled rejection a
- *   `void zing.x()` caller then leaves is not reported a second time.
+ * - A failed host call is tagged with its channel where it fails
+ *   (`reportingInvoke`), and reported once, as `bridge`, only if nobody
+ *   handles it: a `void zing.x()` caller leaves an unhandled rejection. A
+ *   caller that awaits and catches it (an expected refusal, such as an invalid
+ *   setting) is handling it, so nothing is reported.
  * - A flood of the same message is cut to `limit` reports per `windowMs`; the
  *   next report after the flood says how many were left out.
  * - A report that fails to send only goes to the console, never back to the
@@ -25,13 +27,15 @@ export interface ErrorReporterOptions {
 }
 
 export interface ErrorReporter {
-	/** A host call on `channel` failed. */
+	/** A host call on `channel` failed: remembers the channel, in case nobody handles the error. */
 	bridge(channel: InvokeChannel, error: unknown): void
 	/** An uncaught error (`ErrorEvent`): its `error`, or just its message when the browser gives no object. */
 	error(error: unknown, message?: string): void
 	/** An unhandled rejection; returns false (sending nothing) when its reason was already reported. */
 	rejection(reason: unknown): boolean
 	isReported(reason: unknown): boolean
+	/** Whether this is a failed host call's error (tagged by `bridge`). */
+	isBridgeFailure(reason: unknown): boolean
 }
 
 interface Flood {
@@ -45,6 +49,7 @@ const MAX_FLOODS = 100
 export function createErrorReporter(options: ErrorReporterOptions): ErrorReporter {
 	const { view, send, now, limit = 3, windowMs = 1000, log = console.error } = options
 	const reported = new WeakSet<object>()
+	const channels = new WeakMap<object, InvokeChannel>()
 	const floods = new Map<string, Flood>()
 
 	/** Undefined when this report is part of a flood; otherwise how many like it were left out before it. */
@@ -97,12 +102,13 @@ export function createErrorReporter(options: ErrorReporterOptions): ErrorReporte
 		})
 	}
 
-	const isReported = (reason: unknown): boolean => typeof reason === 'object' && reason !== null && reported.has(reason)
+	const isObject = (value: unknown): value is object => typeof value === 'object' && value !== null
+	const isReported = (reason: unknown): boolean => isObject(reason) && reported.has(reason)
+	const channelOf = (reason: unknown): InvokeChannel | undefined => (isObject(reason) ? channels.get(reason) : undefined)
 
 	return {
 		bridge(channel, error) {
-			const message = describe(error)
-			report('bridge', error, message.includes(`${channel}:`) ? message : `${channel}: ${message}`)
+			if (isObject(error)) channels.set(error, channel)
 		},
 		error(error, message) {
 			if (isReported(error)) return
@@ -110,10 +116,14 @@ export function createErrorReporter(options: ErrorReporterOptions): ErrorReporte
 		},
 		rejection(reason) {
 			if (isReported(reason)) return false
-			report('unhandledrejection', reason, describe(reason))
+			const channel = channelOf(reason)
+			const message = describe(reason)
+			if (channel) report('bridge', reason, message.includes(`${channel}:`) ? message : `${channel}: ${message}`)
+			else report('unhandledrejection', reason, message)
 			return true
 		},
 		isReported,
+		isBridgeFailure: (reason) => channelOf(reason) !== undefined,
 	}
 }
 
@@ -141,14 +151,15 @@ export interface ErrorEventTarget {
 
 /**
  * Sends the view's uncaught errors and unhandled rejections to the reporter.
- * A rejection already reported as a bridge failure is marked handled, so it is
- * neither reported twice nor logged again as unhandled; everything else keeps
- * its default console output.
+ * An unhandled failed host call is reported as a bridge failure and marked
+ * handled, since the report already names it; everything else keeps its
+ * default console output.
  */
 export function installErrorReporting(target: ErrorEventTarget, reporter: ErrorReporter): void {
 	target.addEventListener('error', (event) => reporter.error(event.error, event.message))
 	target.addEventListener('unhandledrejection', (event) => {
-		if (reporter.isReported(event.reason)) event.preventDefault()
-		else reporter.rejection(event.reason)
+		const bridge = reporter.isBridgeFailure(event.reason)
+		reporter.rejection(event.reason)
+		if (bridge) event.preventDefault()
 	})
 }

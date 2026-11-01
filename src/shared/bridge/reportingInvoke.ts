@@ -1,12 +1,13 @@
 import type { InvokeChannel } from '../ipc'
 import type { Invoke } from '../zingApi'
 
-/** The channel that carries reports; its own failures are never reported through itself. */
+/** The channel that carries reports; its own failures are never passed on. */
 export const REPORT_CHANNEL: InvokeChannel = 'app:report-error'
 
 /**
- * Wraps the bridge's invoke so a failed host call is reported once, at the source,
- * instead of at each of the renderer's call sites. The returned promise still
+ * Wraps the bridge's invoke so a failed host call is passed to `onFailure` with its
+ * channel, at the source, instead of at each of the renderer's call sites. The
+ * renderer's reporter only remembers it there, and reports it if nobody handles it. The returned promise still
  * rejects with the same error for callers that await it. A call that throws
  * before it has a promise (e.g. `postMessage` failing) becomes a rejection too.
  */

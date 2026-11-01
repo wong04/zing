@@ -10,7 +10,7 @@ import { createErrorReporter, installErrorReporting, viewName } from './errors'
  *
  * This module is the view's bootstrap for errors too: every module that talks to
  * the host imports it, so its reporter is listening before any of them runs.
- * A failed host call is reported once here, so call sites can `void` it.
+ * A failed host call is tagged here and reported once if nobody handles it, so call sites can `void` it.
  */
 function hostApi(): ZingApi {
 	const webview = (window as { chrome?: { webview?: WebViewChannel } }).chrome?.webview

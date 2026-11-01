@@ -67,15 +67,20 @@ describe('error reporter', () => {
 		expect(sent).toEqual([{ kind: 'error', message: 'Script error.', view: 'chrome' }])
 	})
 
-	it('reports a bridge failure with its channel, once in the message', () => {
+	it('reports a failed host call only once it goes unhandled, with its channel once in the message', () => {
 		const { sent, reporter } = setup()
+		const named = new HostError('KeyNotFoundException', 'no tab', 'tabs:close')
+		const bare = new Error('broken')
 
-		reporter.bridge('tabs:close', new HostError('KeyNotFoundException', 'no tab', 'tabs:close'))
-		reporter.bridge('tabs:get', 'broken')
+		reporter.bridge('tabs:close', named)
+		reporter.bridge('tabs:get', bare)
+		expect(sent).toEqual([])
 
+		reporter.rejection(named)
+		reporter.rejection(bare)
 		expect(sent.map((r) => [r.kind, r.message])).toEqual([
 			['bridge', 'KeyNotFoundException: tabs:close: no tab'],
-			['bridge', 'tabs:get: broken'],
+			['bridge', 'tabs:get: Error: broken'],
 		])
 	})
 
@@ -155,6 +160,21 @@ describe('installErrorReporting', () => {
 		expect(reason).toBe(error)
 		expect(sent).toEqual([{ kind: 'bridge', message: 'InvalidOperationException: tabs:close: window closed', stack: error.stack, view: 'chrome' }])
 		expect(outcome.prevented).toBe(true)
+	})
+
+	it('a failed host call its caller awaits and catches is never reported', async () => {
+		const { sent, reporter } = setup()
+		installErrorReporting(fakeWindow(), reporter)
+		const refusal = new HostError('InvalidSettingException', 'Invalid value for setting "searchEngine"', 'settings:set')
+		const zing = createZingApi(
+			reportingInvoke((() => Promise.reject(refusal)) as Invoke, reporter.bridge),
+			() => () => undefined,
+		)
+
+		await expect(zing.setSetting('searchEngine', 'altavista')).rejects.toBe(refusal)
+		await vi.runAllTimersAsync()
+
+		expect(sent).toEqual([])
 	})
 
 	it('does not recurse when reporting itself fails', async () => {
