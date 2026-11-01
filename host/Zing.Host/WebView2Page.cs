@@ -57,6 +57,12 @@ public sealed class WebView2Page : IPage
 		_view?.Place(bounds);
 	}
 
+	/// <summary>Puts this page above the window's other pages (they are sibling windows); overlays are popups above all of them.</summary>
+	public void BringToFront() => _view?.Raise();
+
+	/// <summary>The engine capture under way, if any. A hidden WebView2 never finishes one, so a page leaving the screen stays drawn until it has.</summary>
+	public Task? PendingCapture { get; private set; }
+
 	public bool Visible
 	{
 		get => _visible;
@@ -119,12 +125,19 @@ public sealed class WebView2Page : IPage
 
 	/// <summary>
 	/// Engine captures not yet finished, in every window (TestHooks "live-counts"). The WebView2 runtime's
-	/// browser process can crash (0xC0000005) when a page's renderer dies while a capture of it is pending,
-	/// so a test that kills a renderer on purpose waits for this to reach 0 first.
+	/// browser process crashes (0xC0000005) when a page's renderer dies while a capture of it is pending, and a
+	/// hidden page never finishes one; MainWindow.Hide keeps a leaving page drawn until it has. e2e checks it drains.
 	/// </summary>
 	public static int CapturesInFlight { get; private set; }
 
-	public async Task<string?> CaptureAsync()
+	public Task<string?> CaptureAsync()
+	{
+		var capture = CaptureNowAsync();
+		PendingCapture = capture;
+		return capture;
+	}
+
+	private async Task<string?> CaptureNowAsync()
 	{
 		if (!IsOpen || _core is null) return null;
 		using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();

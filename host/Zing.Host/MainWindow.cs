@@ -164,13 +164,35 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_shown = shown;
 		_layout.PlacePage(shown);
 		shown.Visible = true;
+		// Over any page that is still drawn while its picture is taken (Hide).
+		shown.BringToFront();
 	}
+
+	/// <summary>Longest a leaving page stays drawn under the next one for its overview picture (TabOverview's capture timeout).</summary>
+	private static readonly TimeSpan LeavingPictureWait = TimeSpan.FromMilliseconds(1500);
 
 	public void Hide(IPage page)
 	{
 		var hidden = (WebView2Page)page;
-		hidden.Visible = false;
 		if (_shown == hidden) _shown = null;
+		// A page leaving the screen is being pictured for the overview (TabOverview.Leaving). A hidden WebView2 never
+		// finishes a capture: the call stays pending in the engine, the tab gets no picture, and if that page's
+		// renderer later dies the engine's browser process crashes (0xC0000005). So it stays drawn, under the
+		// page that replaces it (Show raises that one), until the picture is taken.
+		if (hidden.PendingCapture is { IsCompleted: false } capture && hidden.IsOpen)
+		{
+			TestHooks.Background(HideAfterPictureAsync(hidden, capture), "hide page");
+			return;
+		}
+		hidden.Visible = false;
+	}
+
+	private async Task HideAfterPictureAsync(WebView2Page page, Task capture)
+	{
+		await Task.WhenAny(capture, Task.Delay(LeavingPictureWait));
+		// Shown again meanwhile, or gone with its tab or window: nothing to hide.
+		if (_scope.IsClosed || !page.IsOpen || _shown == page) return;
+		page.Visible = false;
 	}
 
 	// MARK: IWindowHost
