@@ -100,7 +100,9 @@ test('the Back button menu reads the page history without errors', async () => {
 	await expect.poll(() => titleOf(zing.chrome, tab)).toContain('"ls"')
 	await openIn(zing.chrome, tab, '/read?two')
 	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs[0]?.canGoBack).toBe(true)
-	// Opens a native menu; close() fails the test if the host recorded any error reading the history.
+	// close() fails the test if the host recorded any error reading the history.
 	await zing.chrome.evaluate(() => window.zing.openHistoryMenu('back', { x: 20, y: 60 }))
+	await expect.poll(() => zing.menus().length).toBe(1)
+	expect(zing.menus()[0]!.length).toBeGreaterThan(0)
 	await zing.close()
 })

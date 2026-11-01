@@ -1,5 +1,3 @@
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
 
@@ -10,7 +8,7 @@ namespace Zing.Host;
 /// transparent column at the page's top-right, sized to what the renderer
 /// reports and hidden when empty, so it never takes clicks meant for the page.
 /// </summary>
-public sealed class PageUiLayer(Panel parent, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, Func<double> top, Action<RendererView> created)
+public sealed class PageUiLayer(HostWindow window, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, Func<double> top, Action<RendererView> created)
 {
 	private const double PanelWidth = 392;
 	private const double PanelMargin = 8;
@@ -18,6 +16,7 @@ public sealed class PageUiLayer(Panel parent, CoreWebView2Environment environmen
 	private Task<RendererView>? _ready;
 	private PageUiState _state = PageUiState.Empty;
 	private double _height;
+	private bool _wantsFocus;
 
 	public void Changed(PageUiState state)
 	{
@@ -33,7 +32,12 @@ public sealed class PageUiLayer(Panel parent, CoreWebView2Environment environmen
 		Layout();
 	}
 
-	public void Focus() => Ready()?.View.Focus(FocusState.Programmatic);
+	/// <summary>Focuses the layer once it shows: the find bar asks before its view has appeared, and a hidden window can't take the keyboard.</summary>
+	public void Focus()
+	{
+		_wantsFocus = true;
+		Layout();
+	}
 
 	public void Layout()
 	{
@@ -43,9 +47,12 @@ public sealed class PageUiLayer(Panel parent, CoreWebView2Environment environmen
 		if (shown)
 		{
 			view.Place(Bounds());
-			Layers.Raise(parent, view.View);
+			view.View.Raise();
 		}
 		view.Visible = shown;
+		if (!shown || !_wantsFocus) return;
+		_wantsFocus = false;
+		view.View.Focus();
 	}
 
 	public void Destroy() => Ready()?.Close();
@@ -60,7 +67,7 @@ public sealed class PageUiLayer(Panel parent, CoreWebView2Environment environmen
 
 	private async Task<RendererView> CreateAsync()
 	{
-		var view = await RendererView.CreateAsync(parent, environment, bridge, "pageui", transparent: true);
+		var view = await RendererView.CreateAsync(window, environment, bridge, "pageui", overlay: true);
 		created(view);
 		return view;
 	}

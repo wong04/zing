@@ -1,4 +1,3 @@
-using Microsoft.UI.Xaml;
 using Microsoft.Web.WebView2.Core;
 using WinRT;
 using Zing.Core;
@@ -13,13 +12,18 @@ public static class Program
 		TestHooks.RecordUnhandledErrors();
 		ComWrappersSupport.InitializeComWrappers();
 		if (SingleInstance.RedirectedToRunningZing()) return;
-		Application.Start(start =>
+		// The UI thread's dispatcher; without its context every await on the UI thread resumes on the
+		// thread pool, where WebView2 calls fail (RPC_E_WRONG_THREAD).
+		var dispatcher = Microsoft.UI.Dispatching.DispatcherQueueController.CreateOnCurrentThread();
+		SynchronizationContext.SetSynchronizationContext(new Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext(dispatcher.DispatcherQueue));
+		new ZingApp().Launch();
+		// A plain Win32 message loop, as Microsoft's WebView2Browser sample runs; the last window posts WM_QUIT.
+		while (Native.GetMessageW(out var message, 0, 0, 0) > 0)
 		{
-			// What the XAML-generated Main does: without it every await on the UI thread
-			// resumes on the thread pool, where WinUI and WebView2 calls fail (RPC_E_WRONG_THREAD).
-			SynchronizationContext.SetSynchronizationContext(new Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread()));
-			_ = new ZingApp();
-		});
+			Native.TranslateMessage(ref message);
+			Native.DispatchMessageW(ref message);
+		}
+		dispatcher.ShutdownQueue();
 	}
 }
 
@@ -28,7 +32,7 @@ public static class Program
 /// WebView2 environment) and the list of open windows, oldest first
 /// (index.ts and windows.ts).
 /// </summary>
-public sealed class ZingApp : Application
+public sealed class ZingApp
 {
 	private readonly List<MainWindow> _windows = [];
 	private readonly List<Action> _onQuit = [];
@@ -40,13 +44,6 @@ public sealed class ZingApp : Application
 	private IReadOnlyList<SessionTab> _pendingRestore = [];
 	private Task<CoreWebView2Environment>? _environment;
 
-	public ZingApp()
-	{
-		// WinUI's XamlControlsResources isn't loaded: the project has no XAML
-		// resources (it throws), and Zing's UI is the React renderer anyway.
-		UnhandledException += (_, e) => TestHooks.Record("xaml", e.Exception);
-	}
-
 	public AppServices Services => _services ?? throw new InvalidOperationException("Zing has not started");
 
 	public Task<CoreWebView2Environment> Environment => _environment ?? throw new InvalidOperationException("Zing has not started");
@@ -57,7 +54,7 @@ public sealed class ZingApp : Application
 	/// <summary>Browsing data on disk (opt-in) instead of in memory; chosen at launch, so a change applies on the next one.</summary>
 	public bool PersistentProfile { get; private set; }
 
-	protected override void OnLaunched(LaunchActivatedEventArgs args)
+	public void Launch()
 	{
 		_services = OpenServices();
 		_environment = CreateEnvironmentAsync(Flag("acceleratedCanvas"));
@@ -103,7 +100,7 @@ public sealed class ZingApp : Application
 		_windows.Add(window);
 		_taskbar?.Add(window.AppWindow);
 		window.Start();
-		window.Activate();
+		window.Show();
 		return window;
 	}
 
@@ -126,7 +123,7 @@ public sealed class ZingApp : Application
 		_taskbar?.Remove(window.AppWindow);
 		if (_windows.Count > 0) return;
 		foreach (var flush in _onQuit) flush();
-		Exit();
+		Native.PostQuitMessage(0);
 	}
 
 	private AppServices OpenServices()

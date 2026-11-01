@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-	<!-- The Zing app: a WinUI 3 window hosting WebView2s. Logic lives in Zing.Core. -->
+	<!-- The Zing app: a plain Win32 window hosting WebView2s, with WinUI's windowing API for the title bar. Logic lives in Zing.Core. -->
 	<PropertyGroup>
 		<OutputType>WinExe</OutputType>
 		<AssemblyName>Zing</AssemblyName>
@@ -15,6 +15,7 @@
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 		<DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
 		<ApplicationIcon>..\..\build\icons\icon.ico</ApplicationIcon>
+		<ApplicationManifest>app.manifest</ApplicationManifest>
 	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />

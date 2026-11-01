@@ -30,7 +30,7 @@ public static class TestHooks
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms}.
 	/// </summary>
-	public static bool TryHandle(string json, Microsoft.UI.Xaml.Controls.Panel window)
+	public static bool TryHandle(string json, HostWindow window)
 	{
 		if (!IsEndToEndRun) return false;
 		using var message = System.Text.Json.JsonDocument.Parse(json);
@@ -49,17 +49,29 @@ public static class TestHooks
 	}
 
 	/// <summary>
-	/// What the window actually shows, bottom to top: each WebView2 with its address and whether it is
-	/// visible. Page-side signals (document.visibilityState) don't follow a collapsed view.
+	/// What the window actually shows: each WebView2 with its address, whether it is visible and its size
+	/// in DIPs. Page-side signals (document.visibilityState) don't follow a hidden view.
 	/// </summary>
-	private static List<object> Layers(Microsoft.UI.Xaml.Controls.Panel window) =>
-		[.. window.Children.OfType<Microsoft.UI.Xaml.Controls.WebView2>().Select(v => new
+	private static List<object> Layers(HostWindow window) =>
+		[.. window.Views.Select(v => new
 		{
-			url = v.CoreWebView2?.Source ?? "",
-			visible = v.Visibility == Microsoft.UI.Xaml.Visibility.Visible,
-			width = v.ActualWidth,
-			height = v.ActualHeight,
+			url = v.Core.Source,
+			visible = v.Visible,
+			width = v.Bounds.Width,
+			height = v.Bounds.Height,
+			depth = v.Depth,
 		})];
+
+	/// <summary>
+	/// e2e runs never show a menu: a Win32 menu appears on the person's screen even for the off-screen
+	/// window (AGENTS.md). Its labels go to ZING_MENUS_FILE instead, one JSON array per menu, a separator as null.
+	/// </summary>
+	public static void RecordMenu(IReadOnlyList<Zing.Core.MenuItem> items)
+	{
+		var file = Environment.GetEnvironmentVariable("ZING_MENUS_FILE");
+		if (string.IsNullOrEmpty(file)) throw new InvalidOperationException("e2e runs need ZING_MENUS_FILE to record menus");
+		File.AppendAllText(file, System.Text.Json.JsonSerializer.Serialize(items.Select(i => i.Label)) + "\n");
+	}
 
 	/// <summary>Work nobody awaits: its failures are recorded, except a view that went with its closing window.</summary>
 	public static void Background(Task task, string what) =>

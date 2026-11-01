@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace Zing.Core;
 
-/// <summary>What one window's API needs from the window that shows it. The WinUI host implements it; tests use a fake.</summary>
+/// <summary>What one window's API needs from the window that shows it. The Win32 host implements it; tests use a fake.</summary>
 public interface IWindowHost
 {
 	IPageHost Pages { get; }
@@ -334,7 +334,7 @@ public sealed class ChromeApi : IDisposable
 			"tabs.overview" => Act(true, () => _host.Background(Overview.ToggleAsync(), "tab overview")),
 			"page.textBigger" => Act(page is not null, () => page!.TextSize = TextSize.Bigger(page.TextSize)),
 			"page.textSmaller" => Act(page is not null, () => page!.TextSize = TextSize.Smaller(page.TextSize)),
-			// WinUI's WebView2 has no zoom API, but the engine zooms on these keys itself: let them through.
+			// The host has no zoom of its own yet, but the engine zooms on these keys itself: let them through.
 			"page.zoomIn" or "page.zoomOut" or "page.actualSize" => NotApplicable,
 			"page.findNext" => Act(page is not null, () => Find.Step(FindDirection.Next)),
 			"page.findPrevious" => Act(page is not null, () => Find.Step(FindDirection.Previous)),

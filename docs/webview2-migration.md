@@ -338,4 +338,19 @@ They stay in git history and in the merged PRs as the reference.
 - A Google sign-in in Zing itself.
 - Real mouse clicks on the stack dropdown's rows (DevTools input doesn't reach that view).
 
+## W5 (2026-11-01): a plain Win32 window
+
+Hand-testing found three faults that all came from hosting the views in a WinUI window:
+- **Black overlays.** A transparent WebView2 in WinUI shows nothing of what is beneath it ([microsoft-ui-xaml#2992](https://github.com/microsoft/microsoft-ui-xaml/issues/2992)), so Settings blacked out the page and notices had a black box.
+- **Shortcuts never reached Zing.** WinUI's WebView2 raises no key events for keys in web content, so Edge's own find took Ctrl+F.
+- **Keys reached no view at all** once the views were hosted directly in the WinUI window. A focus trace showed WinUI's content window (`InputSiteWindowClass`) taking keyboard focus on every activation. Its menus (`MenuFlyout`) drew under the views.
+
+**Now:**
+- `HostWindow` is a plain Win32 window with every WebView2 controller on it, as in Microsoft's [WebView2Browser](https://github.com/MicrosoftEdge/WebView2Browser) sample. WinUI's `AppWindow` still draws the title bar, so Windows' caption buttons and Snap Layouts stay.
+- `HostedView` wraps a controller. The chrome and pages are owned by the window; each overlay (surface, notices, page UI, stack dropdown, overview) has an owned popup with a transparent WebView2, which shows the live window beneath.
+- Shortcuts come from every view's `AcceleratorKeyPressed` and go to `ChromeApi.HandleKey`.
+- Menus are Win32 popup menus.
+- `Program.Main` runs a Win32 message loop on a `DispatcherQueue` thread.
+- The spike that proved it is `spikes/overlay-window`.
+
 **Next:** the extension converter (roadmap 11, for uBlock Origin Lite), then Phase 4.

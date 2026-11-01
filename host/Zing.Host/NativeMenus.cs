@@ -1,29 +1,72 @@
-using Microsoft.UI.Xaml.Controls;
 using Windows.ApplicationModel.DataTransfer;
 using Zing.Core;
 
 namespace Zing.Host;
 
-/// <summary>Draws Zing.Core's menu model as WinUI flyout items.</summary>
+/// <summary>Draws Zing.Core's men/// <summary>
+/// Shows Zing.Core's menu model as a Win32 popup menu: a window of its own, above the window's views.
+/// A XAML MenuFlyout would draw inside WinUI's content, which Zing's window no longer has.
+/// </summary>
 public static class NativeMenus
 {
-	public static MenuFlyoutItemBase Build(Zing.Core.MenuItem item)
+	private const uint MF_STRING = 0x0, MF_GRAYED = 0x1, MF_CHECKED = 0x8, MF_POPUP = 0x10, MF_SEPARATOR = 0x800;
+
+	/// <summary>Shows the menu at a point of the window's content, in DIPs, and runs the chosen item.</summary>
+	public static void Show(HostWindow window, IReadOnlyList<Zing.Core.MenuItem> items, double x, double y)
 	{
-		if (item.IsSeparator) return new MenuFlyoutSeparator();
-		if (item.Submenu is { } children)
+		var scale = window.Scale;
+		var origin = window.ClientOrigin;
+		var clicks = new List<Action>();
+		var menu = Build(items, clicks);
+		try
 		{
-			var sub = new MenuFlyoutSubItem { Text = item.Label, IsEnabled = item.Enabled };
-			foreach (var child in children) sub.Items.Add(Build(child));
-			return sub;
+			const uint TPM_RETURNCMD = 0x100, TPM_RIGHTBUTTON = 0x2;
+			// The menu only closes on a click elsewhere when its owner is the foreground window.
+			Native.SetForegroundWindow(window.Hwnd);
+			var chosen = Native.TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, origin.X + (int)Math.Round(x * scale), origin.Y + (int)Math.Round(y * scale), window.Hwnd, 0);
+			if (chosen > 0) clicks[chosen - 1]();
 		}
-		MenuFlyoutItem flyoutItem = item.Checked is { } isChecked
-			? new ToggleMenuFlyoutItem { IsChecked = isChecked }
-			: new MenuFlyoutItem();
-		flyoutItem.Text = item.Label;
-		flyoutItem.IsEnabled = item.Enabled;
-		if (item.Accelerator is { } accelerator) flyoutItem.KeyboardAcceleratorTextOverride = accelerator;
-		if (item.Click is { } click) flyoutItem.Click += (_, _) => click();
-		return flyoutItem;
+		finally
+		{
+			Native.DestroyMenu(menu);
+		}
+	}
+
+	private static nint Build(IReadOnlyList<Zing.Core.MenuItem> items, List<Action> clicks)
+	{
+		var menu = Native.CreatePopupMenu();
+		if (menu == 0) throw new NativeCallException("CreatePopupMenu");
+		foreach (var item in items)
+		{
+			if (item.IsSeparator)
+			{
+				Append(menu, MF_SEPARATOR, 0, null);
+				continue;
+			}
+			var flags = item.Enabled ? MF_STRING : MF_GRAYED;
+			if (item.Submenu is { } children)
+			{
+				Append(menu, flags | MF_POPUP, Build(children, clicks), Text(item));
+				continue;
+			}
+			if (item.Checked == true) flags |= MF_CHECKED;
+			// Ids start at 1: TrackPopupMenuEx returns 0 when nothing was chosen.
+			clicks.Add(item.Click ?? (() => { }));
+			Append(menu, flags, clicks.Count, Text(item));
+		}
+		return menu;
+	}
+
+	/// <summary>A tab separates the label from the right-aligned shortcut; &amp; would underline the next letter.</summary>
+	private static string Text(Zing.Core.MenuItem item)
+	{
+		var label = item.Label!.Replace("&", "&&");
+		return item.Accelerator is { } accelerator ? $"{label}\t{accelerator}" : label;
+	}
+
+	private static void Append(nint menu, uint flags, nint id, string? text)
+	{
+		if (!Native.AppendMenuW(menu, flags, id, text)) throw new NativeCallException("AppendMenu");
 	}
 }
 

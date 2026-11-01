@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, test, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, pageWhere } from './zing'
+import { launchZing, layers, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -85,5 +85,22 @@ test('the tab overview shows a card per tab with pictures, and closes again', as
 	await expect(overview.locator('.overview-thumb img')).not.toHaveCount(0)
 	await zing.chrome.evaluate(() => window.zing.closeOverview())
 	await expect(overview.locator('.overview-card')).toHaveCount(0)
+	await zing.close()
+})
+
+test('a reopened tab shows its page in front of the chrome', async () => {
+	const zing = await launchZing()
+	await openPage(zing.chrome, 'one', 'Reopened')
+	await zing.chrome.evaluate(() => window.zing.runCommand('tab.close'))
+	await zing.chrome.evaluate(() => window.zing.runCommand('tab.reopenClosed'))
+	// A page started after the chrome went under it, so the reopened tab showed blank.
+	await expect
+		.poll(async () => {
+			const shown = await layers(zing.chrome)
+			const page = shown.find((l) => l.url.endsWith('/Reopened') && l.visible)
+			const chrome = shown.find((l) => l.url.endsWith('#chrome'))
+			return page !== undefined && chrome !== undefined && page.depth < chrome.depth
+		})
+		.toBe(true)
 	await zing.close()
 })

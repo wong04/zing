@@ -47,7 +47,8 @@ Briefs for smaller models (Haiku) need:
 
 - **Construction order.** Nothing may call back into an object before it exists. A `MainWindow` is listed by `ZingApp` before `Start()` runs, and the chrome's bridge channels are registered before its view loads and asks for state.
 - **After any `await` on a view or page,** check it's still there. `RendererView.CreateAsync` throws `ViewGoneException` when its window closed meanwhile, and `TestHooks.Background` treats that as an expected result while recording everything else. `WebView2Page` checks `IsOpen` after starting.
-- **UI thread only.** WinUI and WebView2 calls fail anywhere else (`RPC_E_WRONG_THREAD`). `Program.Main` installs the dispatcher synchronization context; timers go through `IWindowHost.Scheduler`; anything that may be called from another thread (e.g. `Notify`) hops to the dispatcher.
+- **No XAML content in the window.** Every view is a WebView2 controller the window hosts itself (`HostWindow`, `HostedView`), the pattern of Microsoft's WebView2Browser sample. WinUI's content window took keyboard focus on every activation, so keys never reached the views, and anything XAML draws (a `MenuFlyout`) sits under them. Menus are Win32 popup menus (`NativeMenus`); overlays are owned popups. WinUI's windowing API (`AppWindow`) is fine: it only draws the title bar.
+- **UI thread only.** Window and WebView2 calls fail anywhere else (`RPC_E_WRONG_THREAD`). `Program.Main` installs the dispatcher synchronization context; timers go through `IWindowHost.Scheduler`; anything that may be called from another thread (e.g. `Notify`) hops to the dispatcher.
 - **Optional features never abort startup or a command.** Their failures are logged with the reason. Real errors still raise.
 - **Layout comes from `ChromeApi.Insets()`.** Never hard-code chrome heights or widths in a layer.
 - **e2e tests:**
