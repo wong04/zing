@@ -1,4 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
+import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { expect, test, type CDPSession, type Page } from '@playwright/test'
 import type { TabView, ZingApi } from '../src/shared/ipc'
@@ -84,9 +86,26 @@ test('a crashed background tab is marked and comes back when it navigates', asyn
 	const { activeId: crashedId } = await zing.chrome.evaluate(() => window.zing.getTabs())
 	await zing.chrome.evaluate(() => window.zing.runCommand('tab.new'))
 
+	// This test once lost the chrome page a second after the crash; say exactly what went if it does again.
+	const events: string[] = []
+	zing.chrome.on('crash', () => events.push('the chrome view crashed'))
+	zing.chrome.on('close', () => events.push('the chrome page closed'))
+	zing.browser.on('disconnected', () => events.push('the DevTools connection dropped'))
 	crash(await page.context().newCDPSession(page))
 
-	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.find((t) => t.id === crashedId)?.pageState).toBe('crashed')
+	try {
+		await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.find((t) => t.id === crashedId)?.pageState).toBe('crashed')
+	} catch (error) {
+		let alive = true
+		try {
+			process.kill(zing.pid, 0)
+		} catch {
+			alive = false
+		}
+		const faults = join(zing.userDataDir, 'logs', 'faults.log')
+		const log = existsSync(faults) ? readFileSync(faults, 'utf8') : '(no fault log)'
+		throw new Error(`${(error as Error).message}\n\nEvents: ${events.join('; ') || 'none'}\nHost alive: ${alive}\nFault log:\n${log}`, { cause: error })
+	}
 	// Only the active tab's crash shows in the toolbar.
 	await expect(zing.chrome.locator('.page-fault')).toHaveCount(0)
 	await expect(zing.chrome.locator(`[role="tab"][data-tab-id="${crashedId}"]`)).toHaveAttribute('data-page-state', 'crashed')

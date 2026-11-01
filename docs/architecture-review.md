@@ -125,22 +125,22 @@ Phase 4 waits for W-0..W-3. W-4 and W-5 can run in parallel worktrees per AGENTS
 
 - **Pages on window close:** `ChromeApi.Dispose` calls `Tabs.Destroy()`, which closes every page and releases each tab's site data, so a closed window's sites are still purged (`host/Zing.Core/ChromeApi.cs:297`, `host/Zing.Core/TabService.cs:290-294`).
 
-## 6. Status (2026-11-01, wave 1)
+## 6. Status (2026-11-01, after waves 1–3)
 
-Landed on `claude/funny-lovelace-vzz8lv`, checked on Linux (vitest, xUnit, lint, typecheck, and a `Zing.Host` compile). **The e2e suite hasn't run yet;** it needs Windows.
+Everything below is on `claude/funny-lovelace-vzz8lv`. It is checked on Linux (vitest, xUnit with 1,114 tests, lint, typecheck, a `Zing.Host` compile) and by the full e2e suite on CI's `windows-latest`. `ci.yml` now also runs on pushes to `claude/**`.
 
 | Workstream | Done | Still open |
 |---|---|---|
-| W-0 | Bug issue template. `app:report-error`: renderer errors are recorded like host ones. Local fault log (types and stack frames only outside e2e). | `bug` label on GitHub; re-tick PARITY B1–B34 |
-| W-1 | No `async void` in `Zing.Host` (`HostSourceRulesTests`). A malformed bridge message still gets an error reply. Fire-and-forget work and refused `TryEnqueue` are recorded. The renderer reports a failed host call once, at the bridge. | `TryEnqueue` in `MainWindow` (close, menu), `HostWindow`, `TaskbarIcon`; `NativeMenus`' `LaunchUriAsync` |
-| W-2 | – | All of it (`WindowScope`, close-at-every-await e2e) |
-| W-3 | Debounced writes on the `DispatcherScheduler`, failures reported. Flushed atomic writes. Corrupt settings, library and session are set aside, and the first window says so. | `AccountStore` still throws on a corrupt account file; e2e test with a garbage `settings.json` |
-| W-4 | – | All of it |
-| W-5 | `channels.json` generated from `ipc.ts`; `ChannelContractTests` checks it both ways. `shell:clear-session` works again (`Profile.ClearBrowsingDataAsync`). Stale Electron comments fixed. | Generated C# record shapes; vectors for `TextSize`, `StartShortcuts`, `HistoryMenu`, `Palette`, `PageUi` |
-| W-6 | – | The spike |
+| W-0 | Bug issue template. `app:report-error`: a view's unhandled errors are recorded like the host's. Local fault log, keeping only types and stack frames outside e2e. The e2e harness prints how the host exited, plus its fault log, when Zing goes before `close()`. | Create the `bug` label on GitHub; re-tick PARITY B1–B34 with this run as evidence |
+| W-1 | No `async void` in `Zing.Host` (`HostSourceRulesTests`). A malformed bridge message gets an error reply. Fire-and-forget work and refused `TryEnqueue` are recorded everywhere. A failed host call is reported only when nothing handles it. | – |
+| W-2 | `WindowScope`: each window tracks every view as its creation starts and checks itself after each await. `e2e/teardown.spec.ts` closes a new window at each of its 6 startup checkpoints. | – |
+| W-3 | Saves run on the UI thread, flushed to disk. Corrupt settings, library, session and account files are set aside and the first window says so (`e2e/userdata.spec.ts`). | – |
+| W-4 | `ProcessFailed`: a crashed page keeps its tab with a Reload affordance, Zing's own views reload themselves, and a failed browser process rebuilds the engine with the primary window's tabs. Runtime check at startup, and an engine-update notice (`e2e/crash.spec.ts`). | The rebuild path has no e2e (it would need killing the engine's browser process) |
+| W-5 | `channels.json` generated from `ipc.ts` and checked both ways (`ChannelContractTests`). `shell:clear-session` restored. Vectors for text size, start shortcuts, page UI and palette, which found one drift: JS-style upper-casing of tile initials. | Generated C# record shapes (optional) |
+| W-6 | `OverlayHost` owns the popups' stacking order. `MainWindow` is split into `WindowLayout`, `DownloadHost` and `PermissionHost`. The sidebar's cursor check counts owned overlays. A real-input tier (`npm run test:e2e:real-input`, by hand only). The visual-hosting spike is in `spikes/visual-hosting`, and its README is the decision record. | **The decision:** run the spike's checks and hand checks on Windows (about half a day). The spike leans towards switching before Phase 4 if Narrator works. |
 
-**Windows hand-checks for wave 1:**
-- `npm run test:e2e` must be green. Errors that used to vanish are now recorded, so this run may expose real bugs.
-- Garbage in `settings.json` or `library.json` → Zing opens with a notice and keeps a `.corrupt-` file.
+**Hand checks still to do:**
 - Settings → Clear session signs out of sites.
-- A popup that fails to start: `window.open` returns null, where before an Edge window opened.
+- A popup that fails to start: `window.open` returns null (before, an Edge window opened).
+- `npm run test:e2e:real-input` on a PC nobody is using.
+- The spike's hand-check list.
