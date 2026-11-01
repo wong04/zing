@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, layers, pages, pageWhere } from './zing'
+import { launchZing, test, layers, pages, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 

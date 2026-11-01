@@ -1,0 +1,31 @@
+# The real-input tier (e2e/real-input.spec.ts): real OS mouse and keyboard on an on-screen Zing.
+# It runs only when started by hand (Actions → real-input → Run workflow), on a runner nobody uses.
+name: real-input
+
+on:
+  workflow_dispatch:
+
+jobs:
+  real-input:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('host/**/*.csproj', 'global.json') }}
+      - run: npm ci
+      - run: npm run test:e2e:real-input
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-input-failures
+          path: test-results/
+          retention-days: 14

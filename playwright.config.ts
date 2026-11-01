@@ -14,5 +14,7 @@ export default defineConfig({
 	expect: { timeout: 15_000 },
 	workers: 1,
 	reporter: 'list',
+	// Only a failed test's folder is kept: its pictures and logs (e2e/zing.ts `test`), which CI uploads.
+	preserveOutput: 'failures-only',
 	grepInvert: realInput ? undefined : /@real-input/,
 })

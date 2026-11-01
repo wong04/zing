@@ -3,9 +3,9 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, layers, pageWhere, pages, type Launched, type Layer } from './zing'
+import { launchZing, test, layers, pageWhere, pages, type Launched, type Layer } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 

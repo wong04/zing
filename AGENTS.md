@@ -54,9 +54,10 @@ Briefs for smaller models (Haiku) need:
 - **Layout comes from `ChromeApi.Insets()`.** Never hard-code chrome heights or widths in a layer.
 - **e2e tests:**
   - always go through `launchZing()` (`e2e/zing.ts`), which fails the test on any error the host records
+  - import `test` from `./zing`, not `@playwright/test`: on a failure it attaches a picture of every Zing view, the recorded errors and the fault log (CI uploads them as `e2e-failures-<shard>`), and stops any Zing left running
   - always end with `zing.close()`, which quits as a person would and waits until the engine releases the profile
   - serve fixtures from a local server, never live sites; `ZING_E2E_OFFLINE=1` points every page at a dead proxy
-  - never read the real mouse or keyboard. The one exception is the real-input tier (`e2e/real-input.spec.ts`, tagged `@real-input`): it opens the window on screen (`ZING_E2E_ONSCREEN=1`) and sends OS input through `e2e/real-input.ps1` (SendInput) to check shortcuts, focus handoff and clicks on overlay popups. It takes over the PC's mouse and keyboard, so it runs only by hand on a PC nobody is using (`npm run test:e2e:real-input`, or everything with `ZING_REAL_INPUT=1`); `npm run test:e2e` and CI leave it out.
+  - never read the real mouse or keyboard. The one exception is the real-input tier (`e2e/real-input.spec.ts`, tagged `@real-input`): it opens the window on screen (`ZING_E2E_ONSCREEN=1`) and sends OS input through `e2e/real-input.ps1` (SendInput) to check shortcuts, focus handoff and clicks on overlay popups. It takes over the PC's mouse and keyboard, so it runs only by hand on a PC nobody is using (`npm run test:e2e:real-input`, or everything with `ZING_REAL_INPUT=1`), or on a CI runner with the `real-input` workflow (Actions → real-input → Run workflow); `npm run test:e2e` and the `ci` workflow leave it out.
   - drive timers with `ZING_TEST_CLOCK=1` and the `advance-clock` test message
 - **Never start `Zing.exe` by hand** without `ZING_E2E=1` and a scratch `ZING_USER_DATA`: without them it opens on the user's screen with their real profile. Go through `e2e/zing.ts`.
 - **Write text containing backslashes or backticks with the Write or Edit tool,** never inside a shell string. A Git Bash heredoc collapsed `\\` to `\`, and backticks in a double-quoted string ran as commands (one ran a `.ts` file as a shell script).
