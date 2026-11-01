@@ -84,6 +84,12 @@ test('Ctrl+T pressed on the keyboard opens a tab', { tag: '@real-input' }, async
 	await expect.poll(() => tabCount(zing.chrome)).toBeGreaterThan(0)
 	await expect.poll(() => viewHasFocus(zing)).toBe(true)
 	const before = await tabCount(zing.chrome)
+	// Windows won't hand the foreground to a window a background process (this test runner) started, so
+	// with no click the OS sends the keys elsewhere; a person who launched Zing has it in front. One real
+	// click on the start page puts Zing in front, as it is for them.
+	let start: Layer | undefined
+	await expect.poll(async () => (start = (await layers(zing.chrome)).find((l) => l.url.startsWith('zing://home') && l.visible)) !== undefined).toBe(true)
+	await realInput(zing, center(start!))
 
 	await realInput(zing, { keys: 'ctrl+t' })
 	await expect.poll(() => tabCount(zing.chrome)).toBe(before + 1)

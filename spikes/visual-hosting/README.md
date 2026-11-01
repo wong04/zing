@@ -1,6 +1,15 @@
 # W-6 spike: visual hosting (decision record)
 
-> **Status: built, NOT RUN.** The spike was written and compiled on Linux (`dotnet build` with `EnableWindowsTargeting`, 0 warnings, 0 errors). It has never been started. No window has opened, no check has passed, and every "Result" below is "to check by hand on Windows" until someone runs it. The code relies on several interop details that only a run can confirm (listed under "Unverified assumptions").
+> **Status: automated checks run on Windows CI, hand checks still to do.** On `windows-latest` ([w6-checks run 41290750480](https://github.com/wong04/zing/actions/runs/41290750480)), 5 of the 6 checks in `checks.spec.ts` pass:
+> - the layout;
+> - the overlay draws over the page and is see-through where it has no content (window pixels);
+> - **a DevTools click on an overlay row reaches the overlay's DOM** (today's popup model fails this);
+> - host-routed clicks land on the topmost view that wants the point;
+> - focus moves to the clicked view, and each view then takes keys.
+>
+> **The cursor check fails** ("Arrow" where "Hand" is expected). This is the known gap under "What Zing would have to own": the C#/WinRT projection gives no system cursor id, so Zing would need its own cursor mapping (`SystemCursorId` via the interop interface, or the CSS cursor from the page). IME, drag-drop from Explorer, Narrator, DPI and real mouse behaviour are still the hand checks below. The decision waits on them.
+>
+> For comparison, today's popup model passed its own real-input tier on the same runner: a real click on a stack dropdown row and focus after closing a tab (`e2e/real-input.spec.ts`).
 
 This is the spike for **W-6** in `docs/architecture-review.md` §4: should Zing move from windowed WebView2 controllers with owned transparent popup overlays (today, proved by `spikes/overlay-window`) to **visual hosting**, where every view is a visual in one window's composition tree?
 
