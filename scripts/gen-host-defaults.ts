@@ -1,9 +1,10 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { hostChannels } from './host-channels'
 import { hostDefaults } from './host-defaults'
 
 const dir = join(import.meta.dirname, '..', 'host', 'Zing.Core', 'Defaults')
-for (const [name, value] of Object.entries(hostDefaults())) {
+for (const [name, value] of Object.entries({ ...hostDefaults(), 'channels.json': hostChannels() })) {
 	writeFileSync(join(dir, name), `${JSON.stringify(value, null, '\t')}\n`)
 	console.info(`wrote host/Zing.Core/Defaults/${name}`)
 }

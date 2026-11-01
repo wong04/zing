@@ -50,7 +50,9 @@ public interface IWindowHost
 
 /// <summary>What every window shares: one settings store, one library, one address rule.</summary>
 /// <param name="Clock">The app's clock; an e2e run swaps in an <see cref="OffsetClock"/> it can move forward.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null)
+/// <param name="SiteData">Purges a site when its last tab closes; null with a persistent profile.</param>
+/// <param name="BrowsingData">Settings' Clear browsing session; null where the host has no engine to clear.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -185,6 +187,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("shell:open-settings", args => Do(() => Shell.OpenSettings(OptionalText(args, 0))));
 		bridge.Register("shell:close-settings", _ => Do(Shell.CloseSettings));
 		bridge.Register("shell:toolbox", _ => Do(Shell.OpenToolbox));
+		bridge.Register("shell:clear-session", _ => ClearBrowsingSessionAsync());
 		bridge.Register("shell:menu", args => Do(() => Menu([.. Shell.MenuItems(Text(args, 0), Text(args, 1)).Select(i => i.Invoke is null ? MenuItem.Separator : new MenuItem(i.Label, i.Invoke))], args, 2)));
 		bridge.Register("toolpanel:get", _ => Shell.PanelsState());
 		bridge.Register("toolpanel:open", args => Shell.OpenPanel(Text(args, 0), PointArg(args, 1)));
@@ -357,6 +360,19 @@ public sealed class ChromeApi : IDisposable
 	private async Task ShowReaderAsync(IPage page)
 	{
 		if (await page.ShowReaderAsync() is { } reason) _host.Notify(reason);
+	}
+
+	/// <summary>
+	/// Settings' "Clear browsing session": signs out of everything now, as
+	/// Electron's session.clearStorageData + clearCache + clearAuthCache did.
+	/// Tabs, the library and settings stay; only what sites stored goes.
+	/// </summary>
+	private async Task<object?> ClearBrowsingSessionAsync()
+	{
+		var data = _app.BrowsingData ?? throw new InvalidOperationException("This host can't clear the browsing session");
+		await data.ClearAllAsync();
+		_host.Notify("Browsing session cleared");
+		return null;
 	}
 
 	private async Task<object?> HistoryMenuAsync(string direction, JsonElement[] args)
