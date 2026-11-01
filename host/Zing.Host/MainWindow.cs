@@ -241,7 +241,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	{
 		if (Api is null) return;
 		var operation = e.DownloadOperation;
-		var name = Path.GetFileName(e.ResultFilePath);
+		var name = DownloadNames.Suggested(operation.ContentDisposition, operation.Uri);
 		var started = Api.Downloads.Start(name, Math.Max(0L, (long)operation.TotalBytesToReceive));
 		e.ResultFilePath = started.Path;
 		// Zing's downloads list replaces Edge's download bubble.

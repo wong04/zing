@@ -177,3 +177,30 @@ public sealed class AccountGateTests
 		Assert.Null(host.SurfaceRegions[^1]);
 	}
 }
+
+public sealed class PageUiHeightTests
+{
+	private sealed class HeightHost : IDisposable
+	{
+		public FakeWindowHost Host { get; } = new();
+		public Bridge Bridge { get; } = new();
+		public ChromeApi Api { get; }
+
+		public HeightHost()
+		{
+			var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+			Api = new ChromeApi(Bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), Host, "test");
+		}
+
+		public void Dispose() => Api.Dispose();
+	}
+
+	[Fact]
+	public async Task A_fractional_height_from_a_scaled_display_is_rounded_up_not_refused()
+	{
+		using var window = new HeightHost();
+		var reply = await window.Bridge.HandleAsync(System.Text.Json.JsonSerializer.Serialize(new { kind = "invoke", id = 1, channel = "pageui:height", args = new object[] { 52.5 } }));
+		Assert.True(System.Text.Json.JsonDocument.Parse(reply).RootElement.GetProperty("ok").GetBoolean(), reply);
+		Assert.Equal(53, window.Host.PageUiHeights[^1]);
+	}
+}

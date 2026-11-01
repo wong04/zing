@@ -8,6 +8,8 @@ namespace Zing.Host;
 public interface IPageFeatureHost
 {
 	void DownloadStarting(WebView2Page page, CoreWebView2DownloadStartingEventArgs e);
+	/// <summary>Where downloads go; also the engine's own default, so it never looks in the user's real Downloads folder for names.</summary>
+	string DownloadsDirectory { get; }
 	void PermissionRequested(WebView2Page page, CoreWebView2PermissionRequestedEventArgs e);
 	/// <summary>The page went to a new document or closed: its session-only grants and queued prompts go.</summary>
 	void Left(WebView2Page page);
