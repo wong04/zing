@@ -73,7 +73,11 @@ public static class TestHooks
 		File.AppendAllText(file, System.Text.Json.JsonSerializer.Serialize(items.Select(i => i.Label)) + "\n");
 	}
 
-	/// <summary>Work nobody awaits: its failures are recorded, except a view that went with its closing window.</summary>
+	/// <summary>
+	/// Work nobody awaits: its failures are recorded, except a view that went with its closing window.
+	/// This is also the host's error boundary for event handlers: a handler that awaits is a plain
+	/// <c>void</c> that passes its async work here, never <c>async void</c>, which would crash the process on a throw.
+	/// </summary>
 	public static void Background(Task task, string what) =>
 		_ = task.ContinueWith(t =>
 		{
@@ -87,8 +91,10 @@ public static class TestHooks
 		TaskScheduler.UnobservedTaskException += (_, e) => Record("unobserved task", e.Exception);
 	}
 
+	/// <summary>Records a fault in the local fault log (Faults) in every run, and in an e2e run also in ZING_ERRORS_FILE, which fails the test.</summary>
 	public static void Record(string kind, object error)
 	{
+		Faults.Error(kind, error);
 		var file = Environment.GetEnvironmentVariable("ZING_ERRORS_FILE");
 		if (!IsEndToEndRun || string.IsNullOrEmpty(file)) return;
 		File.AppendAllText(file, $"{kind}: {error}\n\n");

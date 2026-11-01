@@ -13,6 +13,22 @@ public static class AppPaths
 	public static string Library => Path.Combine(UserData, "library.json");
 	public static string Session => Path.Combine(UserData, "session.json");
 
+	/// <summary>
+	/// The local fault log (Faults): %LOCALAPPDATA%\Zing\logs\faults.log, never uploaded. A run with
+	/// ZING_USER_DATA keeps it in that folder, so e2e runs never write beside the real profile.
+	/// Null in an e2e run without ZING_USER_DATA: logging must not throw, and UserData would.
+	/// </summary>
+	public static string? FaultLog
+	{
+		get
+		{
+			var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");
+			if (!string.IsNullOrEmpty(configured)) return Path.Combine(configured, "logs", "faults.log");
+			if (TestHooks.IsEndToEndRun) return null;
+			return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zing", "logs", "faults.log");
+		}
+	}
+
 	private static string Resolve()
 	{
 		var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");

@@ -74,26 +74,50 @@ public sealed class RendererView
 
 	public void Close() => View.Close();
 
-	private async void OnMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e)
+	private void OnMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e) =>
+		TestHooks.Background(AnswerAsync(sender, e.Source, e.WebMessageAsJson), "bridge");
+
+	/// <summary>Every invoke gets a reply, even one the bridge can't read, so the renderer's promise never hangs.</summary>
+	private async Task AnswerAsync(CoreWebView2 sender, string source, string json)
 	{
 		// Only Zing's own UI may talk to the host, never a web page.
-		if (!e.Source.StartsWith($"https://{AppHost}/", StringComparison.Ordinal))
+		if (!source.StartsWith($"https://{AppHost}/", StringComparison.Ordinal))
 		{
-			TestHooks.Record("bridge", new UnauthorizedAccessException($"Message from {e.Source} refused in #{_hash}"));
+			TestHooks.Record("bridge", new UnauthorizedAccessException($"Message from {source} refused in #{_hash}"));
 			return;
 		}
-		if (TestHooks.TryHandle(e.WebMessageAsJson, _window)) return;
+		string reply;
 		try
 		{
-			var reply = await _bridge.HandleAsync(e.WebMessageAsJson);
-			// A call can close its own window (window.close); then there is no one left to answer.
-			if (IsClosed) return;
-			sender.PostWebMessageAsJson(reply);
+			if (TestHooks.TryHandle(json, _window)) return;
+			// The bridge turns a handler's failure into an error result itself; it throws only for a message it can't read.
+			reply = await _bridge.HandleAsync(json);
 		}
 		catch (Exception error)
 		{
 			TestHooks.Record("bridge", error);
-			throw;
+			if (ErrorReply(json, error) is not { } failed) return;
+			reply = failed;
+		}
+		// A call can close its own window (window.close); then there is no one left to answer.
+		if (IsClosed) return;
+		sender.PostWebMessageAsJson(reply);
+	}
+
+	/// <summary>The bridge's error result (Bridge.cs) for a malformed message that still has an id; null without one.</summary>
+	private static string? ErrorReply(string json, Exception error)
+	{
+		try
+		{
+			using var message = System.Text.Json.JsonDocument.Parse(json);
+			var root = message.RootElement;
+			if (root.ValueKind != System.Text.Json.JsonValueKind.Object || !root.TryGetProperty("id", out var id) || !id.TryGetInt32(out var number)) return null;
+			return System.Text.Json.JsonSerializer.Serialize(new { kind = "result", id = number, ok = false, error = new { name = error.GetType().Name, message = error.Message } }, ZingJson.Options);
+		}
+		catch (System.Text.Json.JsonException)
+		{
+			// Not JSON at all, so no id to answer; the failure is already recorded.
+			return null;
 		}
 	}
 
