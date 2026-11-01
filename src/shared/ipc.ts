@@ -15,12 +15,17 @@ import type {
 	ToolPanelsState,
 } from './shell/shellState'
 
+/** The page's render process exited ('crashed') or stopped answering ('unresponsive'). Host: PageFault. */
+export type TabPageState = 'crashed' | 'unresponsive'
+
 /** A tab as the chrome draws it: the record plus state that only exists while a renderer is attached. */
 export interface TabView extends TabRecord {
 	/** The memory-only favicon (a small data URL) once it has loaded. */
 	readonly icon?: string
 	/** Its renderer was discarded to save memory; the strip can draw it dimmed. Activating wakes it. */
 	readonly sleeping?: boolean
+	/** Why its page isn't working; absent while it is. The tab keeps its record, and Reload brings the page back. */
+	readonly pageState?: TabPageState
 	readonly loading: boolean
 	readonly canGoBack: boolean
 	readonly canGoForward: boolean

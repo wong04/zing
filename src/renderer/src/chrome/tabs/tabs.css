@@ -227,3 +227,9 @@
 .tab.sleeping:not(.active) .tab-title {
 	opacity: 0.5;
 }
+
+/* A crashed or hung page: a marker in place of the icon; Reload (in the toolbar or the tab's menu) brings it back. */
+.tab-icon.fault {
+	background: color-mix(in srgb, var(--caution) 18%, transparent);
+	color: var(--caution);
+}
