@@ -1,5 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+// First, so the view's error reporter listens before anything else runs.
+import './api'
 import './theme/tokens.css'
 import './base.css'
 import { App } from './App'

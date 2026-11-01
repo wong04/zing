@@ -7,7 +7,7 @@
 //                     { kind: 'result', id, ok: false, error: { name, message } }
 //                     { kind: 'event', channel, payload }
 import type { EventChannel, EventContract, InvokeChannel, InvokeContract, Unsubscribe, ZingApi } from '../ipc'
-import { createZingApi } from '../zingApi'
+import { createZingApi, type Invoke } from '../zingApi'
 
 /** The slice of `window.chrome.webview` the bridge uses. */
 export interface WebViewChannel {
@@ -48,7 +48,11 @@ interface Pending {
 	readonly reject: (error: Error) => void
 }
 
-export function webViewZingApi(webview: WebViewChannel): ZingApi {
+/**
+ * `wrapInvoke` decorates every host call, e.g. with `reportingInvoke` so failures
+ * are reported once; the method table itself stays a plain mapping onto channels.
+ */
+export function webViewZingApi(webview: WebViewChannel, wrapInvoke: (invoke: Invoke) => Invoke = (invoke) => invoke): ZingApi {
 	let nextId = 1
 	const pending = new Map<number, Pending>()
 	const listeners = new Map<EventChannel, Set<(payload: unknown) => void>>()
@@ -94,5 +98,5 @@ export function webViewZingApi(webview: WebViewChannel): ZingApi {
 		return () => set.delete(wrapped)
 	}
 
-	return createZingApi(invoke, listen)
+	return createZingApi(wrapInvoke(invoke), listen)
 }
