@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>overlay</title>
+<style>
+	html, body { margin: 0; height: 100%; background: transparent; font: 16px system-ui }
+	#panel { position: absolute; left: 24px; top: 16px; width: 300px; background: #fff; border-radius: 10px; box-shadow: 0 6px 24px rgb(0 0 0 / .3); overflow: hidden }
+	#panel[hidden] { display: none }
+	.head { background: rgb(51 85 204); color: #fff; padding: 10px 14px; font-weight: 600 }
+	#filter { margin: 10px 14px; width: calc(100% - 28px); box-sizing: border-box; font: inherit; padding: 4px 8px }
+	ul { list-style: none; margin: 0; padding: 0 0 8px }
+	li { padding: 10px 14px; cursor: pointer }
+	li:hover, li:focus { background: rgb(230 240 255); outline: none }
+</style>
+<div id="panel" data-hit role="dialog" aria-label="Spike dropdown">
+	<div class="head">Overlay dropdown</div>
+	<input id="filter" placeholder="overlay: type here" aria-label="Filter">
+	<ul role="listbox" aria-label="Rows">
+		<li role="option" tabindex="-1" data-row="1">First row</li>
+		<li role="option" tabindex="-1" data-row="2">Second row</li>
+		<li role="option" tabindex="-1" data-row="3">Third row</li>
+		<li role="option" tabindex="-1" data-row="4">Fourth row</li>
+	</ul>
+</div>
+<script>
+	// The host sends the overlay input only inside these rectangles; elsewhere the page beneath gets it.
+	function report() {
+		const hit = [...document.querySelectorAll('[data-hit]')]
+			.filter((el) => !el.hidden)
+			.map((el) => el.getBoundingClientRect())
+			.map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height }))
+		chrome.webview.postMessage({ hit })
+	}
+	new ResizeObserver(report).observe(document.getElementById('panel'))
+	addEventListener('resize', report)
+	report()
+	document.querySelector('ul').addEventListener('click', (e) => {
+		const row = e.target.closest('li')
+		if (!row) return
+		const n = Number(row.dataset.row)
+		document.title = 'chose:' + n
+		chrome.webview.postMessage({ chose: n })
+	})
+	chrome.webview.addEventListener('message', (e) => {
+		if (!e.data.toggle) return
+		const panel = document.getElementById('panel')
+		panel.hidden = !panel.hidden
+		report()
+	})
+</script>

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- W-6 spike: chrome, page and overlay as composition-hosted WebView2s in ONE window's visual tree. Throwaway; see README.md. -->
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net9.0-windows10.0.22621.0</TargetFramework>
+		<TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+		<Platforms>x64</Platforms>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<!--
+			No Windows App SDK: Windows.UI.Composition (the system compositor, which RootVisualTarget documents
+			as supported) and the system DispatcherQueue come from the Windows SDK projection. This switch picks
+			the same C#/WinRT projection of WebView2 that Zing.Host gets through the App SDK, so the types
+			(Windows.Foundation.Rect, CoreCursor, ...) match what Zing would use.
+		-->
+		<WebView2EnableCsWinRTProjection>true</WebView2EnableCsWinRTProjection>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+	</ItemGroup>
+	<ItemGroup>
+		<Content Include="web\**" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+</Project>
