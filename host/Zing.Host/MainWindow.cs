@@ -101,6 +101,20 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		_app.Ready(this);
 		_chrome = await chrome;
 		_renderers.Add(_chrome);
+		ReserveCaptionButtons();
+	}
+
+	/// <summary>
+	/// The minimise/maximise/close buttons sit over the chrome's top-right corner (the title bar is
+	/// extended into the content). Electron's titleBarOverlay told the renderer through
+	/// env(titlebar-area-*); WebView2 has no such thing, so the host sets the strip's padding itself.
+	/// </summary>
+	private void ReserveCaptionButtons()
+	{
+		if (_chrome is null) return;
+		var inset = AppWindow.TitleBar.RightInset / (_root.XamlRoot?.RasterizationScale ?? 1);
+		var px = Math.Ceiling(inset).ToString(System.Globalization.CultureInfo.InvariantCulture);
+		_ = _chrome.View.CoreWebView2?.ExecuteScriptAsync($"document.documentElement.style.setProperty('--caption-inset', '{px}px')");
 	}
 
 	// MARK: IPageHost
@@ -163,6 +177,8 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 
 	public void Relayout()
 	{
+		// The buttons' width changes with the DPI and between maximised and restored.
+		ReserveCaptionButtons();
 		if (_shown is not null) PlacePage(_shown);
 		_notices?.Layout();
 		_pageUi?.Layout();
