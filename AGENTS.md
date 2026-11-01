@@ -56,7 +56,7 @@ Briefs for smaller models (Haiku) need:
   - always go through `launchZing()` (`e2e/zing.ts`), which fails the test on any error the host records
   - always end with `zing.close()`, which quits as a person would and waits until the engine releases the profile
   - serve fixtures from a local server, never live sites; `ZING_E2E_OFFLINE=1` points every page at a dead proxy
-  - never read the real mouse or keyboard
+  - never read the real mouse or keyboard. The one exception is the real-input tier (`e2e/real-input.spec.ts`, tagged `@real-input`): it opens the window on screen (`ZING_E2E_ONSCREEN=1`) and sends OS input through `e2e/real-input.ps1` (SendInput) to check shortcuts, focus handoff and clicks on overlay popups. It takes over the PC's mouse and keyboard, so it runs only by hand on a PC nobody is using (`npm run test:e2e:real-input`, or everything with `ZING_REAL_INPUT=1`); `npm run test:e2e` and CI leave it out.
   - drive timers with `ZING_TEST_CLOCK=1` and the `advance-clock` test message
 - **Never start `Zing.exe` by hand** without `ZING_E2E=1` and a scratch `ZING_USER_DATA`: without them it opens on the user's screen with their real profile. Go through `e2e/zing.ts`.
 - **Write text containing backslashes or backticks with the Write or Edit tool,** never inside a shell string. A Git Bash heredoc collapsed `\\` to `\`, and backticks in a double-quoted string ran as commands (one ran a `.ts` file as a shell script).
@@ -66,7 +66,7 @@ Briefs for smaller models (Haiku) need:
 
 Agents and CI run hundreds of app launches while the user may be working on the same machine. So in e2e runs (`ZING_E2E=1`, unpackaged builds only):
 
-- **Windows are kept out of the way.** In an e2e run every window opens at (-20000, -20000) and out of the switchers (`MainWindow.Place`), and `Reveal()` never takes focus.
+- **Windows are kept out of the way.** In an e2e run every window opens at (-20000, -20000) and out of the switchers (`MainWindow`'s constructor, `TestHooks.KeepsOutOfTheWay`), and `Reveal()` never takes focus. Only the hand-run real-input tier (`ZING_E2E_ONSCREEN=1`) opens on screen.
 - **No dialogs or OS actions.** Startup failures go to `ZING_ERRORS_FILE`, never an error box. Opening a file, Explorer, another app or a link outside Zing (`WindowsShell.OpenExternal`, `WindowsDownloads.OpenFile`/`ShowInFolder`) throws in an e2e run, so a test that reaches one fails.
 - **Nothing on the real profile.** e2e runs must set `ZING_USER_DATA` (the harness does) and `ZING_DOWNLOADS_DIR`; the engine's data goes into the same scratch folder.
 - **Code mustn't depend on focus to tidy up.** Test windows never have focus, and a user can switch apps at any moment. For example, the edge-reveal sidebar now puts itself away when Zing loses focus.
