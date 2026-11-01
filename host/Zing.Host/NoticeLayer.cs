@@ -10,7 +10,7 @@ namespace Zing.Host;
 /// never takes clicks meant for the page. Its view closes with the window's
 /// scope, even one still loading.
 /// </summary>
-public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, DispatcherQueue dispatcher)
+public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, DispatcherQueue dispatcher, OverlayHost overlays)
 {
 	private const int NoticeMs = 4000;
 	private const double NoticeWidth = 480;
@@ -27,7 +27,7 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 		scope.Checkpoint("overlay");
 		view.Place(Bounds());
 		view.Send(Bridge.Event("overlay:notice", new { id = _nextId++, text }));
-		view.View.Raise();
+		overlays.Show(OverlayLevel.Notices);
 		view.Visible = true;
 		_hideTimer ??= CreateTimer();
 		_hideTimer.Stop();
@@ -47,11 +47,6 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 		if (Ready() is { Visible: true } view) view.Place(Bounds());
 	}
 
-	public void Raise()
-	{
-		if (Ready() is { } view) view.View.Raise();
-	}
-
 	/// <summary>The window closed: its scope closes the view, and no timer may fire for it.</summary>
 	public void Destroy() => _hideTimer?.Stop();
 
@@ -64,7 +59,12 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 		return new Rect(Math.Round((area.Width - width) / 2), area.Height - NoticeHeight - NoticeMargin, width, NoticeHeight);
 	}
 
-	private Task<RendererView> CreateAsync() => RendererView.CreateAsync(window, scope, environment, bridge, "overlay", overlay: true);
+	private async Task<RendererView> CreateAsync()
+	{
+		var view = await RendererView.CreateAsync(window, scope, environment, bridge, "overlay", overlay: true);
+		overlays.Add(OverlayLevel.Notices, view.View);
+		return view;
+	}
 
 	private DispatcherQueueTimer CreateTimer()
 	{

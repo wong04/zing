@@ -8,6 +8,8 @@ namespace Zing.Host;
 /// One browser window (zing-window.ts): the chrome renderer filling the window, the
 /// active tab's page over it, and above them the overlays, each in a popup of its own
 /// (the settings surface, notices, page UI, the stack dropdown and the overview).
+/// The composition root: it creates the window's parts and implements the host interfaces by handing
+/// each call to the part that owns it (WindowLayout, OverlayHost, DownloadHost, PermissionHost, the layers).
 /// </summary>
 public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 {
@@ -17,6 +19,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private readonly HostWindow _window;
 	private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
 	private readonly Bridge _bridge = new();
+	// The overlays' stacking order, for every overlay of the window (the layers and the surface).
+	private readonly OverlayHost _overlays = new();
+	private readonly WindowLayout _layout;
+	private readonly DownloadHost _downloads;
+	private readonly PermissionHost _permissions;
 	private readonly List<RendererView> _renderers = [];
 	private RendererView? _chrome;
 	private RendererView? _surface;
@@ -24,7 +31,6 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private PageUiLayer? _pageUi;
 	private CoveringLayer? _stacks;
 	private CoveringLayer? _overview;
-	private readonly WindowsDownloads _downloads = new();
 	private CoreWebView2Environment? _environment;
 	private WebView2Page? _shown;
 	private DispatcherScheduler? _scheduler;
@@ -35,8 +41,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public MainWindow(ZingApp app)
 	{
 		_app = app;
+		_downloads = new DownloadHost(() => Api);
+		_permissions = new PermissionHost(() => Api);
 		_window = new HostWindow("Zing", 1280, 820);
-		if (TestHooks.IsEndToEndRun)
+		_layout = new WindowLayout(_window, () => Api);
+		if (TestHooks.KeepsOutOfTheWay)
 		{
 			AppWindow.Move(new Windows.Graphics.PointInt32(-20000, -20000));
 			AppWindow.IsShownInSwitchers = false;
@@ -53,7 +62,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public Microsoft.UI.Windowing.AppWindow AppWindow => _window.AppWindow;
 
 	/// <summary>Shows the window; test runs never take focus (AGENTS.md).</summary>
-	public void Show() => _window.Show(activate: !TestHooks.IsEndToEndRun);
+	public void Show() => _window.Show(activate: !TestHooks.KeepsOutOfTheWay);
 
 	public ChromeApi? Api { get; private set; }
 
@@ -78,10 +87,10 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_scope.Checkpoint("startup");
 		// The chrome view is created first, under every page; its API must be registered before it loads and asks for state.
 		var chrome = RendererView.CreateAsync(_window, _scope, _environment, _bridge, "chrome", overlay: false);
-		_notices = new NoticeLayer(_window, _scope, _environment, _bridge, ContentRect, _dispatcher);
-		_stacks = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-stack", ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add);
-		_overview = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-overview", ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
-		_pageUi = new PageUiLayer(_window, _scope, _environment, _bridge, ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
+		_notices = new NoticeLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, _dispatcher, _overlays);
+		_stacks = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-stack", _layout.ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add, _overlays, OverlayLevel.StackDropdown);
+		_overview = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-overview", _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays, OverlayLevel.Overview);
+		_pageUi = new PageUiLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays);
 		_bridge.Register("default-browser:open-settings", _ =>
 		{
 			Shell.OpenExternal("ms-settings:defaultapps");
@@ -114,7 +123,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_renderers.Add(_chrome);
 		// It fills the window, so every page goes over it, including pages started before it and after.
 		_window.Backmost = _chrome.View;
-		_chrome.Place(ContentRect());
+		_chrome.Place(_layout.ContentRect());
 		ReserveCaptionButtons();
 		// A reloaded chrome (its renderer crashed) refetches its state, but the caption inset is a script the host sets.
 		_chrome.Crashed += view => view.View.Core.NavigationCompleted += CaptionsAfterReload;
@@ -129,8 +138,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private void ReserveCaptionButtons()
 	{
 		if (_chrome is null) return;
-		var inset = AppWindow.TitleBar.RightInset / Scale;
-		var px = Math.Ceiling(inset).ToString(System.Globalization.CultureInfo.InvariantCulture);
+		var px = _layout.CaptionInset();
 		TestHooks.Background(_chrome.View.Core.ExecuteScriptAsync($"document.documentElement.style.setProperty('--caption-inset', '{px}px')").AsTask(), "caption inset");
 	}
 
@@ -154,7 +162,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		var shown = (WebView2Page)page;
 		if (_shown is not null && _shown != shown) _shown.Visible = false;
 		_shown = shown;
-		PlacePage(shown);
+		_layout.PlacePage(shown);
 		shown.Visible = true;
 	}
 
@@ -199,8 +207,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	{
 		// The buttons' width changes with the DPI and between maximised and restored.
 		ReserveCaptionButtons();
-		_chrome?.Place(ContentRect());
-		if (_shown is not null) PlacePage(_shown);
+		_chrome?.Place(_layout.ContentRect());
+		if (_shown is not null) _layout.PlacePage(_shown);
 		_notices?.Layout();
 		_pageUi?.Layout();
 		_stacks?.Layout();
@@ -209,35 +217,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		Api?.LayoutChanged();
 	}
 
-	public ContentSize ContentSize => _window.ClientSize;
+	public ContentSize ContentSize => _layout.ContentSize;
 
-	/// <summary>The content's top-left on screen in DIPs, the units of the renderer's screen points.</summary>
-	public Point ContentOrigin
-	{
-		get
-		{
-			var origin = _window.ClientOrigin;
-			var scale = Scale;
-			return new Point(origin.X / scale, origin.Y / scale);
-		}
-	}
+	public Point ContentOrigin => _layout.ContentOrigin;
 
-	/// <summary>Test runs never read the real mouse (AGENTS.md), so the sidebar never reveals itself there.</summary>
-	public Point? Cursor
-	{
-		get
-		{
-			if (TestHooks.IsEndToEndRun) return null;
-			if (Native.GetForegroundWindow() != _window.Hwnd || !Native.GetCursorPos(out var cursor)) return null;
-			var origin = ContentOrigin;
-			var scale = Scale;
-			var point = new Point(cursor.X / scale - origin.X, cursor.Y / scale - origin.Y);
-			var size = ContentSize;
-			return point.X < 0 || point.Y < 0 || point.X > size.Width || point.Y > size.Height ? null : point;
-		}
-	}
-
-	private double Scale => _window.Scale;
+	public Point? Cursor => _layout.Cursor;
 
 	public void SurfaceRegionChanged(Rect? region)
 	{
@@ -257,7 +241,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public void Reveal()
 	{
 		_window.Restore();
-		if (!TestHooks.IsEndToEndRun) _window.Show(activate: true);
+		if (!TestHooks.KeepsOutOfTheWay) _window.Show(activate: true);
 	}
 
 	public void FocusChrome() => _chrome?.View.Focus();
@@ -275,73 +259,17 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public void PageUiChanged(PageUiState state) => _pageUi?.Changed(state);
 
-	public string DownloadsDirectory { get; } = WindowsDownloads.Directory();
+	public string DownloadsDirectory => _downloads.Directory;
 
-	public IDownloadHost DownloadHost => _downloads;
+	public IDownloadHost DownloadHost => _downloads.Files;
 
 	// MARK: IPageFeatureHost
 
-	public void DownloadStarting(WebView2Page page, CoreWebView2DownloadStartingEventArgs e)
-	{
-		if (Api is null) return;
-		var operation = e.DownloadOperation;
-		var name = DownloadNames.Suggested(operation.ContentDisposition, operation.Uri);
-		var started = Api.Downloads.Start(name, Math.Max(0L, (long)operation.TotalBytesToReceive));
-		e.ResultFilePath = started.Path;
-		// Zing's downloads list replaces Edge's download bubble.
-		e.Handled = true;
-		_downloads.Track(started.Id, operation);
-		var lastPublish = DateTime.MinValue;
-		operation.BytesReceivedChanged += (_, _) =>
-		{
-			Api.Downloads.Progress(started.Id, operation.BytesReceived, Math.Max(0L, (long)operation.TotalBytesToReceive));
-			if (DateTime.UtcNow - lastPublish < TimeSpan.FromMilliseconds(250)) return;
-			lastPublish = DateTime.UtcNow;
-			Api.Downloads.Publish();
-		};
-		operation.StateChanged += (_, _) =>
-		{
-			var outcome = operation.State switch
-			{
-				CoreWebView2DownloadState.Completed => DownloadOutcome.Completed,
-				CoreWebView2DownloadState.Interrupted when operation.InterruptReason == CoreWebView2DownloadInterruptReason.UserCanceled => DownloadOutcome.Cancelled,
-				CoreWebView2DownloadState.Interrupted => DownloadOutcome.Interrupted,
-				_ => (DownloadOutcome?)null,
-			};
-			if (outcome is not { } done) return;
-			_downloads.Forget(started.Id);
-			Api.Downloads.Done(started.Id, done, operation.BytesReceived);
-			if (done == DownloadOutcome.Completed) TestHooks.Background(MarkAsync(started, operation.Uri, page.Url), "mark of the web");
-		};
-	}
+	public void DownloadStarting(WebView2Page page, CoreWebView2DownloadStartingEventArgs e) => _downloads.Starting(page, e);
 
-	/// <summary>
-	/// Without this stream SmartScreen and Office never treat the file as downloaded. The engine
-	/// stamps a generic about:internet mark; Zing's carries the real HostUrl and ReferrerUrl and is
-	/// held against the engine's (holdMark.ts).
-	/// </summary>
-	private async Task MarkAsync(StartedDownload started, string hostUrl, string referrer)
-	{
-		try
-		{
-			// A download started from Zing's own start page has no web referrer.
-			var ours = new ZoneMark(ZoneIdentifier.InternetZone, hostUrl, referrer.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? referrer : null);
-			await MarkOfTheWeb.HoldAsync(new ZoneFile(started.Path), ours, windowMs: 10_000, pollMs: 100, ms => Task.Delay(ms));
-		}
-		catch (IOException error)
-		{
-			Api?.Downloads.MarkFailed(started.Id, error.Message);
-		}
-	}
+	public void PermissionRequested(WebView2Page page, CoreWebView2PermissionRequestedEventArgs e) => _permissions.Requested(page, e);
 
-	public void PermissionRequested(WebView2Page page, CoreWebView2PermissionRequestedEventArgs e)
-	{
-		if (Api is null) return;
-		var (permission, details) = PermissionDeferral.Describe(e);
-		Api.Permissions.Request(page, page.Url, permission, details, new PermissionDeferral(e, e.GetDeferral()));
-	}
-
-	public void Left(WebView2Page page) => Api?.Permissions.DropFor(page);
+	public void Left(WebView2Page page) => _permissions.Left(page);
 
 	public void SetPageUiHeight(int height) => _pageUi?.SetHeight(height);
 
@@ -388,21 +316,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		if (Api.HandleKey(input)) e.Handled = true;
 	}
 
-	// MARK: Layout
-
-	private Rect ContentRect()
-	{
-		var size = _window.ClientSize;
-		return new(0, 0, size.Width, size.Height);
-	}
-
-	private void PlacePage(WebView2Page page)
-	{
-		if (Api is null) return;
-		var insets = Api.Insets();
-		var content = ContentRect();
-		page.Place(new Rect(insets.Left, insets.Top, Math.Max(0, content.Width - insets.Left - insets.Right), Math.Max(0, content.Height - insets.Top)));
-	}
+	// MARK: Surface
 
 	/// <summary>The surface floats above the page and chrome, sized to what it shows, so it never takes the page's clicks.</summary>
 	private async Task ShowSurfaceAsync()
@@ -419,8 +333,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			return;
 		}
 		_surface.Place(region);
-		_surface.View.Raise();
-		_notices?.Raise();
+		_overlays.Show(OverlayLevel.Surface);
 		_surface.Visible = true;
 		if (!_surfaceWantsFocus) return;
 		_surfaceWantsFocus = false;
@@ -432,6 +345,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		var surface = await RendererView.CreateAsync(_window, _scope, _environment!, _bridge, "surface", overlay: true);
 		_scope.ThrowIfClosed("surface");
 		_surface = surface;
+		_overlays.Add(OverlayLevel.Surface, surface.View);
 		_renderers.Add(_surface);
 		// It may have missed the state pushed while it loaded.
 		if (Api is not null) _surface.Send(Bridge.Event("shell:state", Api.Shell.State()));

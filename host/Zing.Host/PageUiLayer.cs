@@ -9,7 +9,7 @@ namespace Zing.Host;
 /// reports and hidden when empty, so it never takes clicks meant for the page.
 /// Its view closes with the window's scope, even one still loading.
 /// </summary>
-public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, Func<double> top, Action<RendererView> created)
+public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, Func<double> top, Action<RendererView> created, OverlayHost overlays)
 {
 	private const double PanelWidth = 392;
 	private const double PanelMargin = 8;
@@ -48,7 +48,7 @@ public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebVie
 		if (shown)
 		{
 			view.Place(Bounds());
-			view.View.Raise();
+			overlays.Show(OverlayLevel.PageUi);
 		}
 		view.Visible = shown;
 		if (!shown || !_wantsFocus) return;
@@ -69,6 +69,7 @@ public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebVie
 	{
 		var view = await RendererView.CreateAsync(window, scope, environment, bridge, "pageui", overlay: true);
 		scope.ThrowIfClosed("pageui");
+		overlays.Add(OverlayLevel.PageUi, view.View);
 		created(view);
 		return view;
 	}

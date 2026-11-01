@@ -10,7 +10,7 @@ namespace Zing.Host;
 /// lands on its backdrop, never on the page beneath. Created on first use; its
 /// view closes with the window's scope, even one still loading.
 /// </summary>
-public sealed class CoveringLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, string hash, Func<Rect> content, Func<double> top, Action<RendererView> created)
+public sealed class CoveringLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, string hash, Func<Rect> content, Func<double> top, Action<RendererView> created, OverlayHost overlays, OverlayLevel level)
 {
 	private Task<RendererView>? _ready;
 	private bool _open;
@@ -30,7 +30,7 @@ public sealed class CoveringLayer(HostWindow window, WindowScope scope, CoreWebV
 			var area = content();
 			var y = top();
 			view.Place(new Rect(0, y, area.Width, Math.Max(0, area.Height - y)));
-			view.View.Raise();
+			overlays.Show(level);
 		}
 		view.Visible = _open;
 	}
@@ -50,6 +50,7 @@ public sealed class CoveringLayer(HostWindow window, WindowScope scope, CoreWebV
 	{
 		var view = await RendererView.CreateAsync(window, scope, environment, bridge, hash, overlay: true);
 		scope.ThrowIfClosed(hash);
+		overlays.Add(level, view.View);
 		created(view);
 		return view;
 	}

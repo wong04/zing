@@ -10,6 +10,14 @@ public static class TestHooks
 {
 	public static bool IsEndToEndRun => Environment.GetEnvironmentVariable("ZING_E2E") == "1";
 
+	/// <summary>
+	/// An e2e run's windows open off-screen, out of the switchers, and never take focus (AGENTS.md). The
+	/// real-input tier (e2e/real-input.spec.ts, run by hand on a PC nobody is using) sets ZING_E2E_ONSCREEN=1:
+	/// its window opens where a person's would and is activated, because OS input (SendInput) only reaches
+	/// the window in front. Everything else about an e2e run stays: menus are recorded, the cursor never read.
+	/// </summary>
+	public static bool KeepsOutOfTheWay => IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_E2E_ONSCREEN") != "1";
+
 	/// <summary>Remote debugging port for Playwright; only honoured in e2e runs.</summary>
 	public static string? DebuggingPort => IsEndToEndRun ? Environment.GetEnvironmentVariable("ZING_CDP_PORT") : null;
 
@@ -68,14 +76,16 @@ public static class TestHooks
 	}
 
 	/// <summary>
-	/// What the window actually shows: each WebView2 with its address, whether it is visible and its size
-	/// in DIPs. Page-side signals (document.visibilityState) don't follow a hidden view.
+	/// What the window actually shows: each WebView2 with its address, whether it is visible, and its place
+	/// in the window's content and size in DIPs. Page-side signals (document.visibilityState) don't follow a hidden view.
 	/// </summary>
 	private static List<object> Layers(HostWindow window) =>
 		[.. window.Views.Select(v => new
 		{
 			url = v.Core.Source,
 			visible = v.Visible,
+			x = v.Bounds.X,
+			y = v.Bounds.Y,
 			width = v.Bounds.Width,
 			height = v.Bounds.Height,
 			depth = v.Depth,

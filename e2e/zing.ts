@@ -20,6 +20,8 @@ export interface Launched {
 	readonly chrome: Page
 	/** Where this run kept settings and the library; pass it to the next launch to test a relaunch. */
 	readonly userDataDir: string
+	/** Zing.exe's process id, for the real-input tier's OS input helper (e2e/real-input.ps1). */
+	readonly pid: number
 	/** The menus the host opened, oldest first, as their labels (a separator is null); test runs never show them. */
 	menus(): (string | null)[][]
 	/** Starts Zing again on the same profile, as a link click from another app would, and resolves with its exit code. */
@@ -81,6 +83,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		browser,
 		chrome,
 		userDataDir: userData,
+		pid: host.pid!,
 		menus: () =>
 			existsSync(menus)
 				? readFileSync(menus, 'utf8')
@@ -141,6 +144,9 @@ async function engineReleased(userData: string): Promise<void> {
 export interface Layer {
 	readonly url: string
 	readonly visible: boolean
+	/** Where the view sits in the window's content, in DIPs. */
+	readonly x: number
+	readonly y: number
 	readonly width: number
 	readonly height: number
 	/** How many sibling windows are stacked above the view's window (0 is the top); compare views of the same kind. */
