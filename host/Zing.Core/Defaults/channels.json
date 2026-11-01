@@ -242,8 +242,16 @@
 			"args": 2
 		},
 		{
+			"channel": "tabs:open-item",
+			"args": 1
+		},
+		{
 			"channel": "tabs:pin",
 			"args": 1
+		},
+		{
+			"channel": "tabs:save",
+			"args": 3
 		},
 		{
 			"channel": "tabs:set-dropdowns",

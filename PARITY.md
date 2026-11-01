@@ -40,11 +40,11 @@ Also dropped:
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| S1 | App skeleton with Zing identity (Electron, then the WinUI 3 + WebView2 host from Phase W) | new | - | [#2](https://github.com/wong04/zing/issues/2) | Open |
-| S2 | Frameless window chrome for Windows 11 | parity | App/Components.swift (WindowChrome, WindowDragArea) | [#3](https://github.com/wong04/zing/issues/3) | Open |
-| S3 | Overlay layer for UI drawn over the page | parity | Features/Browser/WebViewHost.swift (shielded) | [#4](https://github.com/wong04/zing/issues/4) | Open |
-| S4 | Tab record model decoupled from webContents | new | Features/Browser/TabOrganizer.swift (TabSnapshot) | [#5](https://github.com/wong04/zing/issues/5) | Open |
-| S5 | In-memory session passed as a parameter | parity | Features/Browser/BrowserTab.swift | [#6](https://github.com/wong04/zing/issues/6) | Open |
+| S1 | App skeleton with Zing identity (Electron, then the WinUI 3 + WebView2 host from Phase W) | new | - | [#2](https://github.com/wong04/zing/issues/2) | Done |
+| S2 | Frameless window chrome for Windows 11 | parity | App/Components.swift (WindowChrome, WindowDragArea) | [#3](https://github.com/wong04/zing/issues/3) | Partial |
+| S3 | Overlay layer for UI drawn over the page | parity | Features/Browser/WebViewHost.swift (shielded) | [#4](https://github.com/wong04/zing/issues/4) | Done |
+| S4 | Tab record model decoupled from webContents | new | Features/Browser/TabOrganizer.swift (TabSnapshot) | [#5](https://github.com/wong04/zing/issues/5) | Done |
+| S5 | In-memory session passed as a parameter | parity | Features/Browser/BrowserTab.swift | [#6](https://github.com/wong04/zing/issues/6) | Done |
 | S6 | Command registry + Windows shortcut map | parity | App/Commands.swift | [#7](https://github.com/wong04/zing/issues/7) | Open |
 | S7 | Typed settings store with registered defaults | parity | App/AppSettings.swift | [#8](https://github.com/wong04/zing/issues/8) | Open |
 | S8 | CSS theme tokens from Krackn's palette | parity | App/Theme.swift, App/Accent.swift | [#9](https://github.com/wong04/zing/issues/9) | Open |
@@ -131,13 +131,13 @@ Also dropped:
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| T1 | Tab bar position setting: top / left / right | new | - | [#62](https://github.com/wong04/zing/issues/62) | Open |
-| T2 | Vertical tab strip | new | - | [#63](https://github.com/wong04/zing/issues/63) | Open |
-| T3 | Fold app sidebar into a left tab rail | new | App/Sidebar.swift | [#64](https://github.com/wong04/zing/issues/64) | Open |
+| T1 | Tab bar position setting: top / left / right | new | - | [#62](https://github.com/wong04/zing/issues/62) | Done |
+| T2 | Vertical tab strip | new | - | [#63](https://github.com/wong04/zing/issues/63) | Partial |
+| T3 | Fold app sidebar into a left tab rail | new | App/Sidebar.swift | [#64](https://github.com/wong04/zing/issues/64) | Done |
 | T4 | Virtualized tab list | new | - | [#65](https://github.com/wong04/zing/issues/65) | Open |
 | T5 | Split view | new | - | [#66](https://github.com/wong04/zing/issues/66) | Open |
-| T6 | Favourite tiles in the tab rail (saved tabs) | new | - | - | Open |
-| T7 | Pinned items in folders (saved tabs) | new | - | - | Open |
+| T6 | Favourite tiles in the tab rail (saved tabs) | new | - | - | Done |
+| T7 | Pinned items in folders (saved tabs) | new | - | - | Done |
 
 ## M5 Themes
 

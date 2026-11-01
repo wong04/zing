@@ -93,24 +93,24 @@
 	margin-bottom: 4px;
 }
 
-/* Pinned tabs: icons in a grid, as many per row as the width fits. */
-.rail-pinned {
+/* The Favourites as tiles: as many per row as the width fits. */
+.rail-favourites {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+	grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
 	gap: 6px;
 	flex: none;
-	padding-bottom: 8px;
-	margin-bottom: 4px;
-	border-bottom: 1px solid var(--separator);
+	padding: 2px 0 8px;
+	border-radius: 10px;
 }
 
 .rail-tile {
 	display: grid;
 	place-items: center;
-	height: 40px;
-	border-radius: 10px;
+	height: 44px;
+	border-radius: 12px;
 	background: color-mix(in srgb, var(--text) 6%, transparent);
 	touch-action: none;
+	user-select: none;
 }
 
 .rail-tile:hover {
@@ -120,6 +120,94 @@
 .rail-tile.active {
 	background: var(--surface);
 	box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+/* A saved tab whose tab is closed: there, but not loaded. */
+.rail-tile.unloaded,
+.rail-item.unloaded {
+	color: var(--text-secondary, var(--text));
+}
+
+.rail-tile.unloaded > *,
+.rail-item.unloaded .rail-row-icon {
+	opacity: 0.6;
+}
+
+.rail-letter {
+	display: grid;
+	place-items: center;
+	width: 16px;
+	height: 16px;
+	border-radius: 4px;
+	background: color-mix(in srgb, var(--text) 12%, transparent);
+	font-size: 10px;
+	font-weight: 600;
+}
+
+.rail-hint {
+	grid-column: 1 / -1;
+	margin: 0;
+	padding: 10px 8px;
+	border: 1px dashed var(--separator);
+	border-radius: 10px;
+	color: var(--text-secondary, var(--text));
+	font-size: 12px;
+	text-align: center;
+}
+
+.rail-pinned-items {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex: none;
+	max-height: 50%;
+	overflow-y: auto;
+	padding-bottom: 6px;
+	margin-bottom: 4px;
+	border-bottom: 1px solid var(--separator);
+	border-radius: 8px;
+}
+
+.rail-section-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	height: 24px;
+	padding: 0 2px 0 9px;
+	color: var(--text-secondary, var(--text));
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+
+.rail-folder-head {
+	font-weight: 600;
+}
+
+.rail-rename {
+	flex: 1;
+	min-width: 0;
+	height: 24px;
+	padding: 0 6px;
+	border: 1px solid var(--accent);
+	border-radius: 6px;
+	background: var(--surface);
+	font: inherit;
+}
+
+.rail-tile.dragging,
+.rail-item.dragging,
+.rail-folder-head.dragging {
+	position: relative;
+	z-index: 5;
+	box-shadow: var(--elevation-strong);
+	background: var(--surface);
+}
+
+/* Where a dragged tab or item would land. */
+.drop-over {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
 }
 
 .rail-tabs {
@@ -194,7 +282,9 @@
 }
 
 .rail-tab:hover .rail-close,
-.rail-tab.active .rail-close {
+.rail-tab.active .rail-close,
+.rail-item:hover .rail-close,
+.rail-item.active .rail-close {
 	visibility: visible;
 }
 

@@ -90,31 +90,39 @@ public static class Menus
 			Submenu: section["items"]!.AsArray().Select(entry => Entry(entry!.GetValue<string>(), run)).ToList())).ToList();
 
 	/// <summary>The right-click menu of a tab.</summary>
-	public static IReadOnlyList<MenuItem> Tab(TabService tabs, string id, IShellActions shell)
+	public static IReadOnlyList<MenuItem> Tab(TabService tabs, SavedTabs saved, string id, IShellActions shell)
 	{
 		var record = tabs.Get(id);
 		var loose = tabs.Records.Any(t => t.Id != id && !t.Pinned);
 		var web = record.Url.StartsWith("http:", StringComparison.OrdinalIgnoreCase) || record.Url.StartsWith("https:", StringComparison.OrdinalIgnoreCase);
+		List<MenuItem> items = [record.Pinned ? new MenuItem("Unpin Tab", () => saved.Unpin(id)) : new MenuItem("Pin Tab", () => saved.Pin(id))];
+		// A saved tab can go back to its item's address, or make the page it is on the item's.
+		if (record.ItemId is not null)
+		{
+			items.Add(new MenuItem("Back to Saved Page", () => saved.Reset(id), Enabled: saved.HasLeftItsAddress(id)));
+			items.Add(new MenuItem("Save This Page Here", () => saved.Update(id), Enabled: saved.HasLeftItsAddress(id) && web));
+		}
 		return
 		[
-			record.Pinned ? new MenuItem("Unpin Tab", () => tabs.Unpin(id)) : new MenuItem("Pin Tab", () => tabs.Pin(id)),
+			.. items,
 			MenuItem.Separator,
 			new MenuItem("Reload", () => tabs.PageOf(id)?.Reload()),
 			new MenuItem("Open in Default Browser", () => shell.OpenExternal(record.Url), Enabled: web),
 			new MenuItem("Copy Address", () => shell.CopyText(record.Url), Enabled: record.Url != TabStore.NewTabUrl),
 			MenuItem.Separator,
-			new MenuItem("Close Tab", () => tabs.Close(id), Enabled: !record.Pinned),
+			// A saved tab closes and its item stays; a pinned tab without one isn't closed by accident.
+			new MenuItem("Close Tab", () => tabs.Close(id), Enabled: !record.Pinned || record.ItemId is not null),
 			new MenuItem("Close Other Tabs", () => tabs.CloseOthers(id), Enabled: loose),
 		];
 	}
 
 	/// <summary>A stack chip offers its lead page's menu plus closing the whole stack.</summary>
-	public static IReadOnlyList<MenuItem> Stack(TabService tabs, TabOrdering ordering, string key, IShellActions shell)
+	public static IReadOnlyList<MenuItem> Stack(TabService tabs, SavedTabs saved, TabOrdering ordering, string key, IShellActions shell)
 	{
 		var stack = ordering.Stacks().FirstOrDefault(s => s.Key == key && s.Ids.Count > 1);
 		if (stack is null) return [];
 		var lead = stack.Ids.FirstOrDefault(id => id == tabs.ActiveId) ?? stack.Ids[0];
-		return [.. Tab(tabs, lead, shell), MenuItem.Separator, new MenuItem($"Close All {stack.Ids.Count} Tabs from {stack.Name}", () =>
+		return [.. Tab(tabs, saved, lead, shell), MenuItem.Separator, new MenuItem($"Close All {stack.Ids.Count} Tabs from {stack.Name}", () =>
 		{
 			foreach (var id in stack.Ids.ToList()) tabs.Close(id);
 		})];
@@ -140,11 +148,14 @@ public static class Menus
 	}
 
 	/// <summary>The right-click menu of a library item.</summary>
-	public static IReadOnlyList<MenuItem> LibraryItem(LibraryStore library, string id, Action<string, string> open, Action<string> openAll)
+	public static IReadOnlyList<MenuItem> LibraryItem(LibraryStore library, string id, Action<string, string> open, Action<string> openAll, SavedTabs saved)
 	{
 		List<MenuItem> items = library.IsFolderNode(id)
 			? [new MenuItem("Open All in New Tabs", () => openAll(id))]
-			: [new MenuItem("Open", () => open(id, "current")), new MenuItem("Open in New Tab", () => open(id, "tab"))];
+			: library.IsSavedTab(id)
+				// A saved tab opens as its own tab; a copy in an ordinary tab is still there for the asking.
+				? [new MenuItem("Open", () => saved.Open(id)), new MenuItem("Open a Copy in New Tab", () => open(id, "tab"))]
+				: [new MenuItem("Open", () => open(id, "current")), new MenuItem("Open in New Tab", () => open(id, "tab"))];
 		items.Add(MenuItem.Separator);
 		items.Add(new MenuItem("Remove", () => library.Apply(new RemoveAction([id]))));
 		return items;

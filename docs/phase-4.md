@@ -27,7 +27,7 @@ Parity rows T1–T5 in `PARITY.md`, plus two new rows: T6 (favourite tiles) and 
 
 ## Work
 
-### A. The rail (T1, T2, T3), PR 1
+### A. The rail (T1, T2, T3), PR 1: done (#131)
 
 - **Layout.** With tabs on the side, the tab strip row goes. The toolbar becomes the window's top band, with the drag region and the room for the caption buttons. The rail is a column on its side. The Favourites bar stays under the toolbar until PR 2 turns the Favourites into tiles.
 - **What the rail shows, top to bottom:**
@@ -46,7 +46,10 @@ Parity rows T1–T5 in `PARITY.md`, plus two new rows: T6 (favourite tiles) and 
 - **Defaults.** `tabBarPosition` defaults to `left`. Switching position never loses tabs.
 - **Tests (e2e):** switching positions keeps the tabs, the page bounds for each position are whole pixels, vertical drag reorders, and resizing moves the page.
 
-### B. Favourites and pinned items (T6, T7), PR 2
+### B. Favourites and pinned items (T6, T7), PR 2: done
+
+As built: `SavedTabs` (host/Zing.Core) ties tabs to items; Pin, Unpin and Ctrl+D go through it; the rail's sections share one drop mechanism (`rail/dropTarget.ts`). Pinned folders are made with the section's folder button and renamed by double-clicking. Which folders are folded is remembered on this PC only.
+
 
 - **Library.** A second fixed folder, Pinned (`PINNED_ID`), next to Favourites. Folders inside it are allowed. Items keep stable ids and `updatedAt` for later sync.
 - **Saved tabs.**

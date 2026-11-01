@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { TabsState, TabView } from '@shared/ipc'
 import { clampRailWidth } from '@shared/layout/chrome'
-import { buildSlots, snapshotOf, type Slot } from '@shared/tabs/slots'
+import { favourites, find, isFolder, pinned as pinnedItems } from '@shared/library/library'
+import { buildSlots, snapshotOf } from '@shared/tabs/slots'
 import { zing } from '../api'
 import { PlusIcon } from '../chrome/icons'
 import { commitMove } from '../chrome/tabs/commitMove'
@@ -10,7 +11,11 @@ import { GearIcon, GridIcon, SidebarIcon, WindowIcon } from '../components/icons
 import { useToolPanels } from '../panels/hooks'
 import { PanelIcon } from '../panels/panelIcon'
 import { useSettings } from '../settings/useSettings'
-import { PinnedTile, StackGroup, TabRow, type RowFrame } from './RailRows'
+import { useLibraryState } from '../library/useLibraryState'
+import type { DropTarget } from './dropTarget'
+import { StackGroup, TabRow, type RowFrame } from './RailRows'
+import { FavouriteTiles, PinnedSection, type SavedFrame } from './SavedSections'
+import { useItemDrag } from './useItemDrag'
 import { useRowDrag } from './useRowDrag'
 import './rail.css'
 
@@ -18,8 +23,10 @@ export type RailVariant = 'pinned' | 'floating'
 export type RailSide = 'left' | 'right'
 
 /**
- * The tabs on the window's side (Phase 4, docs/phase-4.md): pinned tabs as a grid of icons, New Tab, then
- * today's tabs as rows, a site's stack as a group that folds. On the left it is also the app sidebar (its
+ * The tabs on the window's side (Phase 4, docs/phase-4.md), as in Arc and Dia: the Favourites as tiles, the
+ * pinned items in folders, New Tab, then today's tabs as rows, a site's stack as a group that folds. Favourites
+ * and pinned items are saved tabs (SavedTabs on the host): each owns one tab, and closing it keeps the item.
+ * Anything drags between the sections. On the left it is also the app sidebar (its
  * Toolbox, recent tools and Settings sit in its head), so there is one column rather than two. Pinned, it
  * is part of the chrome; hidden (Ctrl+S), the surface view draws it floating when the cursor reaches the edge.
  */
@@ -30,17 +37,28 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 	const activeId = state?.activeId
 	const organization = state?.organization ?? 'manual'
 	const dropdowns = state?.dropdowns ?? false
-	const slots = useMemo(() => buildSlots(tabs.map((t) => snapshotOf(t, t.id === activeId)), organization, dropdowns), [tabs, activeId, organization, dropdowns])
+	// A saved tab sits at its item, so today's tabs are the rest.
+	const today = useMemo(() => tabs.filter((t) => t.itemId === undefined), [tabs])
+	const loose = useMemo(() => buildSlots(today.map((t) => snapshotOf(t, t.id === activeId)), organization, dropdowns), [today, activeId, organization, dropdowns])
 	const byId = useMemo(() => new Map<string, TabView>(tabs.map((t) => [t.id, t])), [tabs])
-	const pinned = slots.filter((s): s is Extract<Slot, { kind: 'tab' }> => s.kind === 'tab' && s.pinned)
-	const loose = slots.filter((s) => !(s.kind === 'tab' && s.pinned))
+	const tabsByItem = useMemo(() => new Map<string, TabView>(tabs.flatMap((t) => (t.itemId === undefined ? [] : [[t.itemId, t] as const]))), [tabs])
+	const library = useLibraryState()?.library
+	const pinnedCount = tabs.filter((t) => t.pinned).length
 	const rowDrag = useRowDrag(
 		loose.map((s) => s.key),
-		(key, to) => {
+		(key, to, outside) => {
 			const slot = loose.find((s) => s.key === key)
-			if (slot) void commitMove(slot, to, pinned.length, dropdowns)
+			if (!slot) return
+			// Out of the list into Favourites or Pinned: the tab becomes a saved tab there.
+			if (outside?.kind === 'folder') {
+				if (slot.kind === 'tab') void zing.saveTab(slot.id, outside.folder, outside.at)
+				return
+			}
+			void commitMove(slot, to, pinnedCount, dropdowns)
 		},
 	)
+	const itemDrag = useItemDrag((id, target) => void dropItem(id, target, tabsByItem))
+	const saved: SavedFrame = { tabsByItem, activeId, drag: itemDrag.handlersFor, endsDrag: itemDrag.consumeClick }
 	const sidebarPinned = handle?.settings.sidebarPinned ?? true
 	const hideLabel = sidebarPinned ? 'Hide sidebar (Ctrl+S)' : 'Keep sidebar open (Ctrl+S)'
 
@@ -54,14 +72,8 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 				</button>
 			</div>
 			{side === 'left' ? <RecentTools /> : null}
-			{pinned.length > 0 ? (
-				<div className="rail-pinned" role="tablist" aria-label="Pinned tabs">
-					{pinned.flatMap((slot) => {
-						const tab = byId.get(slot.id)
-						return tab ? [<PinnedTile key={slot.key} tab={tab} active={tab.id === activeId} />] : []
-					})}
-				</div>
-			) : null}
+			{library ? <FavouriteTiles nodes={favourites(library)} frame={saved} /> : null}
+			{library ? <PinnedSection nodes={pinnedItems(library)} frame={saved} /> : null}
 			<button
 				type="button"
 				className="rail-row rail-new-tab"
@@ -77,7 +89,7 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 				</span>
 				<span className="rail-row-title">New Tab</span>
 			</button>
-			<div className="rail-tabs" role="tablist" aria-label="Tabs" aria-orientation="vertical" data-dragging={rowDrag.drag ? '' : undefined}>
+			<div className="rail-tabs" role="tablist" aria-label="Tabs" aria-orientation="vertical" data-drop="today" data-dragging={rowDrag.drag ? '' : undefined}>
 				{loose.map((slot) => {
 					const frame: RowFrame = {
 						attach: rowDrag.register(slot.key),
@@ -97,6 +109,22 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 			{variant === 'pinned' ? <ResizeEdge side={side} width={width} /> : null}
 		</nav>
 	)
+}
+
+/**
+ * A saved item dropped somewhere in the rail: into a folder of Favourites or Pinned it moves there; among today's
+ * tabs it stops being saved, and its tab (opened first if it has none) stays as an ordinary tab.
+ */
+async function dropItem(id: string, target: DropTarget, tabsByItem: ReadonlyMap<string, TabView>): Promise<void> {
+	if (target.kind === 'folder') {
+		if (target.folder !== id) await zing.applyLibrary({ type: 'moveInto', id, parent: target.folder, to: target.at })
+		return
+	}
+	// A folder has no tab to keep, so it stays where it was.
+	const node = find(id, (await zing.getLibrary()).library.bookmarks)
+	if (!node || isFolder(node)) return
+	if (!tabsByItem.has(id)) await zing.openSavedTab(id)
+	await zing.applyLibrary({ type: 'remove', ids: [id] })
 }
 
 /** The app sidebar's own buttons, folded into the rail's head when tabs are on the left (T3). */

@@ -3,7 +3,8 @@ using System.Text.Json;
 namespace Zing.Core;
 
 /// <summary>One tab as it survives a quit (src/shared/session/session.ts).</summary>
-public sealed record SessionTab(string Url, string Title, bool Pinned, bool Active);
+/// <param name="ItemId">The saved item (Favourites or Pinned) the tab belongs to, so it stays tied after a restore.</param>
+public sealed record SessionTab(string Url, string Title, bool Pinned, bool Active, string? ItemId = null);
 
 public sealed class SessionFileException(string path, Exception cause)
 	: Exception($"Could not read the saved session at {path}: {cause.Message}", cause)
@@ -95,14 +96,16 @@ public static class Session
 	}
 
 	public static List<SessionTab> ToSessionTabs(IEnumerable<TabRecord> records, string? activeId) =>
-		records.Select(t => new SessionTab(t.Url, t.Title, t.Pinned, t.Id == activeId)).ToList();
+		records.Select(t => new SessionTab(t.Url, t.Title, t.Pinned, t.Id == activeId, t.ItemId)).ToList();
 
 	private static SessionTab? ToTab(JsonElement value)
 	{
 		if (value.ValueKind != JsonValueKind.Object) return null;
 		if (!TryString(value, "url", out var url) || !TryString(value, "title", out var title)) return null;
 		if (!TryBool(value, "pinned", out var pinned) || !TryBool(value, "active", out var active)) return null;
-		return new SessionTab(url, title, pinned, active);
+		// Optional: sessions saved before saved tabs have none.
+		var itemId = value.TryGetProperty("itemId", out var item) && item.ValueKind == JsonValueKind.String ? item.GetString() : null;
+		return new SessionTab(url, title, pinned, active, itemId);
 	}
 
 	private static bool TryString(JsonElement obj, string name, out string value)

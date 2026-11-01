@@ -2,7 +2,10 @@ using System.Text.RegularExpressions;
 
 namespace Zing.Core;
 
-/// <summary>A tab as data (src/shared/model/tab.ts TabRecord); it exists with or without a live page.</summary>
+/// <summary>
+/// A tab as data (src/shared/model/tab.ts TabRecord); it exists with or without a live page. <c>ItemId</c> ties it to
+/// a saved item in Favourites or Pinned (SavedTabs): such a tab is pinned, and the item stays when the tab closes.
+/// </summary>
 public sealed record TabRecord(
 	string Id,
 	string Url,
@@ -11,7 +14,8 @@ public sealed record TabRecord(
 	long CreatedAt,
 	long LastActiveAt,
 	long UpdatedAt,
-	string? FaviconUrl = null);
+	string? FaviconUrl = null,
+	string? ItemId = null);
 
 /// <summary>The fields of a tab that page events change (TabContentPatch); null leaves a field as it is.</summary>
 public sealed record TabContentPatch(string? Url = null, string? Title = null, string? FaviconUrl = null);
@@ -31,7 +35,8 @@ public sealed record TabView(
 	string? FaviconUrl = null,
 	string? Icon = null,
 	bool? Sleeping = null,
-	string? PageState = null);
+	string? PageState = null,
+	string? ItemId = null);
 
 /// <summary>
 /// Why a tab's page isn't working (src/shared/ipc.ts TabPageState). The record survives either:
@@ -167,9 +172,9 @@ public sealed partial class TabStore(Func<long> now, Func<string>? newId = null)
 	}
 
 	/// <summary>A tab brought back from a saved session: a record only, placed by its pinned state.</summary>
-	public TabRecord AddRestored(string url, string title, bool pinned)
+	public TabRecord AddRestored(string url, string title, bool pinned, string? itemId = null)
 	{
-		var record = Create(url) with { Title = title, Pinned = pinned };
+		var record = Create(url) with { Title = title, Pinned = pinned || itemId is not null, ItemId = itemId };
 		_tabs.Insert(pinned ? PinnedCount : _tabs.Count, record);
 		return record;
 	}
@@ -218,7 +223,8 @@ public sealed partial class TabStore(Func<long> now, Func<string>? newId = null)
 		var index = IndexOf(id);
 		var closed = _tabs[index];
 		_tabs.RemoveAt(index);
-		if (IsRestorable(closed)) _closed.Push(new ClosedTab(closed.Url, closed.Title, closed.Pinned));
+		// A saved tab's item is the way back to it, so it isn't offered again here as well.
+		if (IsRestorable(closed) && closed.ItemId is null) _closed.Push(new ClosedTab(closed.Url, closed.Title, closed.Pinned));
 		if (ActiveId != id) return new CloseResult(closed);
 		ActiveId = null;
 		if (_tabs.Count == 0) return new CloseResult(closed);
@@ -253,6 +259,25 @@ public sealed partial class TabStore(Func<long> now, Func<string>? newId = null)
 	/// <summary>A newly pinned tab joins the end of the pinned run.</summary>
 	public void Pin(string id) => SetPinned(id, true);
 
+	/// <summary>Ties a tab to a saved item; it joins the pinned run.</summary>
+	public void Bind(string id, string itemId)
+	{
+		SetPinned(id, true);
+		var index = IndexOf(id);
+		_tabs[index] = _tabs[index] with { ItemId = itemId, UpdatedAt = now() };
+	}
+
+	/// <summary>Unties a tab from its item; it becomes an ordinary tab at the start of the loose section.</summary>
+	public void Unbind(string id)
+	{
+		var index = IndexOf(id);
+		_tabs[index] = _tabs[index] with { ItemId = null };
+		SetPinned(id, false);
+	}
+
+	/// <summary>The tab tied to a saved item in this window, if any.</summary>
+	public string? IdForItem(string itemId) => _tabs.Find(t => t.ItemId == itemId)?.Id;
+
 	/// <summary>Drops to the start of the loose section.</summary>
 	public void Unpin(string id) => SetPinned(id, false);
 
@@ -267,7 +292,7 @@ public sealed partial class TabStore(Func<long> now, Func<string>? newId = null)
 		new(_tabs.Select(t => View(t, pageState(t.Id))).ToList(), ActiveId, organization, dropdowns, null);
 
 	private static TabView View(TabRecord t, PageState? page) =>
-		new(t.Id, t.Url, t.Title, t.Pinned, t.CreatedAt, t.LastActiveAt, t.UpdatedAt, page?.Loading ?? false, page?.CanGoBack ?? false, page?.CanGoForward ?? false, t.FaviconUrl);
+		new(t.Id, t.Url, t.Title, t.Pinned, t.CreatedAt, t.LastActiveAt, t.UpdatedAt, page?.Loading ?? false, page?.CanGoBack ?? false, page?.CanGoForward ?? false, t.FaviconUrl, ItemId: t.ItemId);
 
 	private static bool IsRestorable(TabRecord record) => WebUrl().IsMatch(record.Url);
 

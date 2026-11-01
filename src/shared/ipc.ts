@@ -26,6 +26,8 @@ export interface TabView extends TabRecord {
 	readonly sleeping?: boolean
 	/** Why its page isn't working; absent while it is. The tab keeps its record, and Reload brings the page back. */
 	readonly pageState?: TabPageState
+	/** The saved item (Favourites, Pinned) this tab belongs to; the rail draws it there, not among today's tabs. */
+	readonly itemId?: string
 	readonly loading: boolean
 	readonly canGoBack: boolean
 	readonly canGoForward: boolean
@@ -118,6 +120,8 @@ export type LibraryAction =
 	/** Groups the given items into a new folder; with none, adds an empty one. Answers with the folder's id. */
 	| { readonly type: 'newFolder'; readonly ids: readonly string[] }
 	| { readonly type: 'move'; readonly id: string; readonly to: number }
+	/** Moves a bookmark into a folder (its own, or another), before the child now at `to`. */
+	| { readonly type: 'moveInto'; readonly id: string; readonly parent: string; readonly to: number }
 	| { readonly type: 'setRead'; readonly id: string; readonly read: boolean }
 
 export type LibraryOpenTarget = 'current' | 'tab'
@@ -160,6 +164,10 @@ export interface InvokeContract {
 	'tabs:move': { args: [id: TabId, index: number]; result: void }
 	'tabs:pin': { args: [id: TabId]; result: void }
 	'tabs:unpin': { args: [id: TabId]; result: void }
+	/** Switches to a saved item's tab (Favourites, Pinned), or opens one at its address. */
+	'tabs:open-item': { args: [itemId: string]; result: void }
+	/** Saves a tab into a folder of Favourites or Pinned before the child now at `at`, tied to it; a saved tab's item moves there. */
+	'tabs:save': { args: [id: TabId, folderId: string, at: number]; result: void }
 	'tabs:move-stack': { args: [key: string, index: number]; result: void }
 	'tabs:move-within': { args: [id: TabId, key: string, index: number]; result: void }
 	'tabs:close-others': { args: [id: TabId]; result: void }
@@ -261,6 +269,8 @@ export interface ZingApi {
 	moveTab(id: TabId, index: number): Promise<void>
 	pinTab(id: TabId): Promise<void>
 	unpinTab(id: TabId): Promise<void>
+	openSavedTab(itemId: string): Promise<void>
+	saveTab(id: TabId, folderId: string, at: number): Promise<void>
 	moveStack(key: string, index: number): Promise<void>
 	moveWithinStack(id: TabId, key: string, index: number): Promise<void>
 	closeOtherTabs(id: TabId): Promise<void>

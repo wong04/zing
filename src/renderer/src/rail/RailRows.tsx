@@ -106,26 +106,3 @@ export function StackGroup({ name, tabs, activeId, frame }: { name: string; tabs
 		</div>
 	)
 }
-
-export function PinnedTile({ tab, active }: { tab: TabView; active: boolean }) {
-	return (
-		<div
-			role="tab"
-			tabIndex={0}
-			aria-selected={active}
-			aria-label={tabTitle(tab)}
-			title={tabTooltip(tab)}
-			data-tab-id={tab.id}
-			className={active ? 'rail-tile active' : 'rail-tile'}
-			onPointerDown={(e) => {
-				if (e.button === 0) void zing.activateTab(tab.id)
-			}}
-			onContextMenu={(e) => {
-				e.preventDefault()
-				void zing.openTabMenu(tab.id, { x: e.clientX, y: e.clientY })
-			}}
-		>
-			<TabIconView tab={tab} />
-		</div>
-	)
-}

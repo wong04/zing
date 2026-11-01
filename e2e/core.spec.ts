@@ -99,6 +99,8 @@ test('an invalid setting is refused with the host error', async () => {
 
 test('a favourite is on the Favourites bar and survives a relaunch', async () => {
 	const first = await launchZing()
+	// The bar shows with tabs on top; on the side the rail's tiles are the Favourites (saved-tabs.spec.ts).
+	await first.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'top'))
 	await visit(first.chrome, await activeId(first.chrome), 'saved')
 	await run(first.chrome, 'library.addFavourite')
 	await expect(first.chrome.locator('.favourites-bar .fav-title')).toHaveText('Page saved')
