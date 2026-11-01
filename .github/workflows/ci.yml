@@ -5,7 +5,13 @@ on:
     branches: [main, 'claude/**']
   pull_request:
 
+# A newer push to the same branch makes an older run moot; main always finishes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
+  # The fast checks, in parallel with e2e so they report in about two minutes.
   check:
     runs-on: windows-latest
     steps:
@@ -17,9 +23,44 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('host/**/*.csproj', 'global.json') }}
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:host
-      - run: npm run test:e2e
+
+  # The e2e suite split across runners (Playwright sharding): each builds Zing and runs its third.
+  e2e:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('host/**/*.csproj', 'global.json') }}
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:host
+      - run: npx playwright test --shard=${{ matrix.shard }}/3
+      # A failed test's pictures of every Zing view, its recorded errors and fault log (e2e/zing.ts `test`).
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures-${{ matrix.shard }}
+          path: test-results/
+          retention-days: 14

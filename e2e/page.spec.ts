@@ -2,9 +2,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, layers, pages, pageWhere } from './zing'
+import { launchZing, test, layers, pages, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 

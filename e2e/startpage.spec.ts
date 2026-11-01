@@ -1,6 +1,6 @@
-import { expect, test, type Browser } from '@playwright/test'
+import { expect, type Browser } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, pages, pageWhere } from './zing'
+import { launchZing, test, pages, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 

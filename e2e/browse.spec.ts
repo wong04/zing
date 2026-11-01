@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { expect, test } from '@playwright/test'
-import { launchZing, pageWhere } from './zing'
+import { expect } from '@playwright/test'
+import { launchZing, test, pageWhere } from './zing'
 
 let server: Server
 let base = ''

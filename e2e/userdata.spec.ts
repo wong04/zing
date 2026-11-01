@@ -4,9 +4,9 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, pageWhere } from './zing'
+import { launchZing, test, pageWhere } from './zing'
 
 // Evaluated in the chrome renderer, where api.ts puts the bridge on window.
 declare const window: { readonly zing: ZingApi }

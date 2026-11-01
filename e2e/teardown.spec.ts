@@ -1,9 +1,9 @@
 // W-2's guard (docs/architecture-review.md): a window that closes at any await of its startup
 // leaves nothing behind and records no error. Closing the only window quits Zing, so each run
 // closes a second window (New Window) and the first one checks the counts.
-import { expect, test, type Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, liveCounts, pages, type LiveCounts } from './zing'
+import { launchZing, test, liveCounts, pages, type LiveCounts } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 

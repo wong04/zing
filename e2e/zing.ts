@@ -5,7 +5,7 @@ import { closeSync, existsSync, openSync, readFileSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { chromium, expect, type Browser, type Page } from '@playwright/test'
+import { test as base, chromium, expect, type Browser, type Page, type TestInfo } from '@playwright/test'
 
 const ROOT = join(import.meta.dirname, '..')
 export const HOST_EXE = join(ROOT, 'host', 'Zing.Host', 'bin', 'Release', 'net9.0-windows10.0.22621.0', 'win-x64', 'Zing.exe')
@@ -52,6 +52,53 @@ async function freePort(): Promise<string> {
  * `close()` fails the test if the host recorded any unhandled error, the
  * WebView2 counterpart of e2e/zing.ts's main-process guard.
  */
+/** A Zing this test started and hasn't closed yet; on a failure its views and logs go into the report. */
+interface Running {
+	readonly host: ChildProcess
+	readonly browser: Browser
+	readonly errors: string
+	readonly userData: string
+}
+
+const running = new Set<Running>()
+
+/**
+ * Every spec's `test`: Playwright's, plus an automatic fixture that, when a test fails, attaches a
+ * picture of each Zing view and the host's recorded errors and fault log (CI uploads them as an
+ * artifact), then stops any Zing the test left running, so the next test starts clean.
+ */
+export const test = base.extend<{ zingArtifacts: void }>({
+	zingArtifacts: [
+		// Playwright reads a fixture's dependencies from this destructuring, so it must be a pattern, even an empty one.
+		// eslint-disable-next-line no-empty-pattern
+		async ({}, use, testInfo) => {
+			await use()
+			await collect(testInfo)
+		},
+		{ auto: true },
+	],
+})
+
+async function collect(testInfo: TestInfo): Promise<void> {
+	const left = [...running]
+	running.clear()
+	const failed = testInfo.status !== testInfo.expectedStatus
+	for (const [n, zing] of left.entries()) {
+		if (failed) {
+			for (const [i, page] of pages(zing.browser).entries()) {
+				const name = `zing${n + 1}-view${i + 1}-${page.url().replace(/^.*[#/]/, '') || 'blank'}.png`
+				const shot = await page.screenshot({ timeout: 5_000 }).catch(() => undefined)
+				if (shot) await testInfo.attach(name, { body: shot, contentType: 'image/png' })
+			}
+			const faults = join(zing.userData, 'logs', 'faults.log')
+			if (existsSync(zing.errors)) await testInfo.attach(`zing${n + 1}-errors.log`, { path: zing.errors, contentType: 'text/plain' })
+			if (existsSync(faults)) await testInfo.attach(`zing${n + 1}-faults.log`, { path: faults, contentType: 'text/plain' })
+		}
+		if (zing.browser.isConnected()) await zing.browser.close().catch(() => undefined)
+		if (zing.host.exitCode === null) zing.host.kill()
+	}
+}
+
 export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOptions = {}): Promise<Launched> {
 	if (!existsSync(HOST_EXE)) throw new HostProcessError(`No host build at ${HOST_EXE}: run npm run build:host`)
 	const port = await freePort()
@@ -84,6 +131,8 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		.poll(async () => (await fetch(`http://127.0.0.1:${port}/json/version`).catch(() => undefined))?.ok ?? false, { timeout: 30_000 })
 		.toBe(true)
 	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
+	const self: Running = { host, browser, errors, userData }
+	running.add(self)
 	const chrome = await pageWhere(browser, (p) => p.url() === CHROME_URL)
 	await chrome.waitForLoadState('domcontentloaded')
 	return {
@@ -106,6 +155,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 			}),
 		close: async () => {
 			closing = true
+			running.delete(self)
 			// Quit as a person would, by closing every window, so pending writes are flushed.
 			const exited = new Promise<void>((resolve) => host.once('exit', () => resolve()))
 			const chromes = pages(browser).filter((p) => p.url() === CHROME_URL)
