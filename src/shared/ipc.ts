@@ -131,8 +131,18 @@ export interface OverviewState {
 	readonly tabs: readonly OverviewTab[]
 }
 
-/** Renderer → main requests, answered with a promise. */
+/** An error a Zing view hit, sent to the host so it is recorded like the host's own (e2e fails on it). */
+export interface RendererErrorReport {
+	readonly kind: 'error' | 'unhandledrejection' | 'bridge'
+	readonly message: string
+	readonly stack?: string
+	/** The view's root, e.g. `chrome` or `overlay-stack`. */
+	readonly view?: string
+}
+
+/** Renderer → host requests, answered with a promise. */
 export interface InvokeContract {
+	'app:report-error': { args: [report: RendererErrorReport]; result: void }
 	'command:run': { args: [id: CommandId]; result: CommandOutcome }
 	'tabs:get': { args: []; result: TabsState }
 	'tabs:activate': { args: [id: TabId]; result: void }
@@ -293,6 +303,7 @@ export interface ZingApi {
 	openToolbox(): Promise<void>
 	openShellMenu(kind: ShellMenuKind, id: string, anchor: MenuAnchor): Promise<void>
 	clearBrowsingSession(): Promise<void>
+	reportError(report: RendererErrorReport): Promise<void>
 	onShellState(listener: (state: ShellState) => void): Unsubscribe
 	getToolPanels(): Promise<ToolPanelsState>
 	openPanel(content: string, at: Point): Promise<OpenPanelOutcome>

@@ -80,6 +80,12 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			Shell.OpenExternal("ms-settings:defaultapps");
 			return (object?)null;
 		});
+		// A Zing view's own error (RendererErrorReport): recorded like the host's, so an e2e run fails on it.
+		_bridge.Register("app:report-error", (JsonElement[] args) =>
+		{
+			TestHooks.Record("renderer", args[0].GetRawText());
+			return (object?)null;
+		});
 		_bridge.Register("chrome:titlebar-colors", (JsonElement[] args) =>
 		{
 			AppWindow.TitleBar.ButtonForegroundColor = ParseColor(args[0].GetProperty("symbolColor").GetString()!);

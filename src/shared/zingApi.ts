@@ -65,6 +65,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		openToolbox: () => invoke('shell:toolbox'),
 		openShellMenu: (kind, id, anchor) => invoke('shell:menu', kind, id, anchor),
 		clearBrowsingSession: () => invoke('shell:clear-session'),
+		reportError: (report) => invoke('app:report-error', report),
 		onShellState: (listener) => listen('shell:state', listener),
 		getToolPanels: () => invoke('toolpanel:get'),
 		openPanel: (content, at) => invoke('toolpanel:open', content, at),

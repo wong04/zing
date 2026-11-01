@@ -16,3 +16,4 @@ spikes/**/obj/
 host/**/bin/
 host/**/obj/
 host/Zing.Host/Assets/
+.mono/
