@@ -45,6 +45,9 @@ public sealed class WebView2Page : IPage
 		TestHooks.Background(Ready, "page");
 	}
 
+	/// <summary>The page's view once the engine has started it.</summary>
+	public HostedView? View => _view;
+
 	/// <summary>Where the page is in the window's content, in DIPs; kept for when the view exists.</summary>
 	public void Place(Rect bounds)
 	{

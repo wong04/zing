@@ -56,6 +56,7 @@ internal static class Native
 	public const uint WM_MOVE = 0x0003;
 	public const uint WM_SIZE = 0x0005;
 	public const uint WM_ACTIVATE = 0x0006;
+	public const uint WM_SETFOCUS = 0x0007;
 	public const uint WM_CLOSE = 0x0010;
 	public const uint WM_NCACTIVATE = 0x0086;
 	public const uint WM_DPICHANGED = 0x02E0;
@@ -136,6 +137,12 @@ internal static class Native
 
 	[DllImport("user32.dll")]
 	public static extern nint GetForegroundWindow();
+
+	[DllImport("user32.dll")]
+	public static extern nint GetFocus();
+
+	[DllImport("user32.dll")]
+	public static extern nint GetWindow(nint hwnd, uint command);
 
 	[DllImport("user32.dll")]
 	public static extern short GetKeyState(int virtualKey);

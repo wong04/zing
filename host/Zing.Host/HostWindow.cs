@@ -17,7 +17,9 @@ public sealed class HostWindow
 	private static nint _instance;
 
 	private readonly List<HostedView> _views = [];
+	private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
 	private HostedView? _focused;
+	private HostedView? _backmost;
 
 	public HostWindow(string title, int width, int height)
 	{
@@ -52,6 +54,23 @@ public sealed class HostWindow
 	public event Action? Activated;
 	public event Action<HostedView, CoreWebView2AcceleratorKeyPressedEventArgs>? KeyPressed;
 	public event Action? Destroyed;
+
+	/// <summary>The view that takes the keyboard when the window has it and no view did before (the shown page, else the chrome).</summary>
+	public Func<HostedView?> DefaultFocus { get; set; } = () => null;
+
+	/// <summary>
+	/// The view kept under all others (the chrome, which fills the window). A new child window doesn't land
+	/// above the existing ones, so a page started later (a reopened tab) went under the chrome and showed blank.
+	/// </summary>
+	public HostedView? Backmost
+	{
+		get => _backmost;
+		set
+		{
+			_backmost = value;
+			value?.SendToBack();
+		}
+	}
 
 	/// <summary>The client area in DIPs.</summary>
 	public ContentSize ClientSize
@@ -95,6 +114,7 @@ public sealed class HostWindow
 	internal void Adopt(HostedView view)
 	{
 		_views.Add(view);
+		if (!view.IsOverlay) _backmost?.SendToBack();
 		view.Controller.GotFocus += (_, _) => _focused = view;
 		view.Controller.AcceleratorKeyPressed += (_, e) => KeyPressed?.Invoke(view, e);
 	}
@@ -103,6 +123,7 @@ public sealed class HostWindow
 	{
 		_views.Remove(view);
 		if (_focused == view) _focused = null;
+		if (_backmost == view) _backmost = null;
 	}
 
 	private static nint Dispatch(nint hwnd, uint msg, nint wParam, nint lParam)
@@ -125,7 +146,12 @@ public sealed class HostWindow
 				foreach (var view in window._views) view.WindowMoved();
 				break;
 			case Native.WM_ACTIVATE:
-				if (window.OnActivate((int)(wParam & 0xFFFF))) return 0;
+				const int WA_INACTIVE = 0;
+				if ((wParam & 0xFFFF) != WA_INACTIVE) window.Activated?.Invoke();
+				break;
+			case Native.WM_SETFOCUS:
+				// After the queued messages, so a click that activated the window places focus itself first.
+				window._dispatcher.TryEnqueue(window.PassFocus);
 				break;
 			case Native.WM_DPICHANGED:
 				var suggested = System.Runtime.InteropServices.Marshal.PtrToStructure<Native.RECT>(lParam);
@@ -163,17 +189,16 @@ public sealed class HostWindow
 
 	internal bool IsOverlay(nint hwnd) => hwnd != 0 && _views.Any(v => v.IsOverlayWindow(hwnd));
 
-	/// <summary>Returns whether the activation was handled here (focus handed back to a view).</summary>
-	private bool OnActivate(int state)
+	/// <summary>
+	/// The window itself never keeps the keyboard: keys there reach no view, so no shortcut works. It gets it
+	/// on activation and when the focused view closes (Ctrl+W); like a dialog handing focus to a control, it
+	/// passes it on to the view that had it, else the default one.
+	/// </summary>
+	private void PassFocus()
 	{
-		const int WA_INACTIVE = 0, WA_ACTIVE = 1;
-		if (state == WA_INACTIVE) return false;
-		Activated?.Invoke();
-		// DefWindowProc would give the window itself focus, and keys would reach no view. A Win32 app puts
-		// focus back on the control that had it; on a click (WA_CLICKACTIVE) the click itself places it.
-		if (state != WA_ACTIVE || _focused is not { Visible: true } last) return false;
-		last.Focus();
-		return true;
+		if (IsClosed || Native.GetFocus() != Hwnd) return;
+		var target = _focused is { IsClosed: false, Visible: true } last ? last : DefaultFocus();
+		target?.Focus();
 	}
 
 	private static void Marshal(int hresult, string call)

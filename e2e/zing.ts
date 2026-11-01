@@ -143,6 +143,8 @@ export interface Layer {
 	readonly visible: boolean
 	readonly width: number
 	readonly height: number
+	/** How many sibling windows are stacked above the view's window (0 is the top); compare views of the same kind. */
+	readonly depth: number
 }
 
 /** What the window really shows, bottom to top (TestHooks "layers"); page-side visibility doesn't follow a hidden view. */

@@ -59,6 +59,7 @@ public static class TestHooks
 			visible = v.Visible,
 			width = v.Bounds.Width,
 			height = v.Bounds.Height,
+			depth = v.Depth,
 		})];
 
 	/// <summary>

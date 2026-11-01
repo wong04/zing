@@ -46,6 +46,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_window.KeyPressed += OnKey;
 		_window.Destroyed += OnClosed;
 		_window.Activated += () => _app.Focused(this);
+		_window.DefaultFocus = () => _shown?.View ?? _chrome?.View;
 	}
 
 	public Microsoft.UI.Windowing.AppWindow AppWindow => _window.AppWindow;
@@ -96,8 +97,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_app.Ready(this);
 		_chrome = await chrome;
 		_renderers.Add(_chrome);
-		// It fills the window, so the pages (which may have started first) go over it.
-		_chrome.View.SendToBack();
+		// It fills the window, so every page goes over it, including pages started before it and after.
+		_window.Backmost = _chrome.View;
 		_chrome.Place(ContentRect());
 		ReserveCaptionButtons();
 	}
