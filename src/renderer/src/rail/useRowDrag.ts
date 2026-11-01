@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type PointerEvent } from 'react'
+import { clearDropMark, dropTargetAt, markDropTarget, type DropTarget } from './dropTarget'
 
 /** Below this, a press that moves is still a click. */
 const DRAG_THRESHOLD = 4
@@ -33,7 +34,11 @@ interface Pickup {
  * Vertical drag-to-reorder for the rail's rows (the strip's useSlotDrag works along X). The held row
  * follows the pointer; the others slide aside to show where it would land; release reports the place.
  */
-export function useRowDrag(keys: readonly string[], onDrop: (key: string, to: number) => void) {
+/**
+ * @param onDrop the held row's key and its new place among the rows, or where it landed outside them
+ * (a folder of Favourites or Pinned) when it was dropped there
+ */
+export function useRowDrag(keys: readonly string[], onDrop: (key: string, to: number, outside: DropTarget | undefined) => void) {
 	const elements = useRef(new Map<string, HTMLElement>())
 	const pickup = useRef<Pickup | undefined>(undefined)
 	const justDropped = useRef(false)
@@ -75,6 +80,7 @@ export function useRowDrag(keys: readonly string[], onDrop: (key: string, to: nu
 			if (!held.dragging && Math.abs(dy) < DRAG_THRESHOLD) return
 			held.dragging = true
 			setDrag({ key: held.key, dy, to: targetOf(held, dy), room: (held.frames.get(held.key)?.height ?? 0) + 2 })
+			markDropTarget(e.clientX, e.clientY, e.currentTarget)
 		},
 		onPointerUp: (e: PointerEvent<HTMLElement>): void => {
 			const held = pickup.current
@@ -82,9 +88,12 @@ export function useRowDrag(keys: readonly string[], onDrop: (key: string, to: nu
 			if (!held?.dragging) return
 			justDropped.current = true
 			setDrag(undefined)
-			onDrop(held.key, targetOf(held, e.clientY - held.y))
+			const landed = dropTargetAt(e.clientX, e.clientY, e.currentTarget)
+			clearDropMark()
+			onDrop(held.key, targetOf(held, e.clientY - held.y), landed?.kind === 'folder' ? landed : undefined)
 		},
 		onPointerCancel: (): void => {
+			clearDropMark()
 			pickup.current = undefined
 			setDrag(undefined)
 		},

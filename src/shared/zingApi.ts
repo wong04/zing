@@ -19,6 +19,8 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		moveTab: (id, index) => invoke('tabs:move', id, index),
 		pinTab: (id) => invoke('tabs:pin', id),
 		unpinTab: (id) => invoke('tabs:unpin', id),
+		openSavedTab: (itemId) => invoke('tabs:open-item', itemId),
+		saveTab: (id, folderId, at) => invoke('tabs:save', id, folderId, at),
 		moveStack: (key, index) => invoke('tabs:move-stack', key, index),
 		moveWithinStack: (id, key, index) => invoke('tabs:move-within', id, key, index),
 		closeOtherTabs: (id) => invoke('tabs:close-others', id),

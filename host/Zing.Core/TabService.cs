@@ -195,7 +195,7 @@ public sealed class TabService
 	/// <summary>Brings back saved tabs as records; only the one that was in front gets a page.</summary>
 	public void Restore(IReadOnlyList<SessionTab> tabs)
 	{
-		var records = tabs.Select(t => _store.AddRestored(t.Url, string.IsNullOrEmpty(t.Title) ? TabStore.NewTabTitle : t.Title, t.Pinned)).ToList();
+		var records = tabs.Select(t => _store.AddRestored(t.Url, string.IsNullOrEmpty(t.Title) ? TabStore.NewTabTitle : t.Title, t.Pinned, t.ItemId)).ToList();
 		if (records.Count == 0) return;
 		var front = tabs.ToList().FindIndex(t => t.Active);
 		Activate(records[Math.Max(0, front)].Id);
@@ -284,6 +284,35 @@ public sealed class TabService
 	{
 		_store.Pin(id);
 		_changed();
+	}
+
+	/// <summary>Ties a tab to a saved item (SavedTabs).</summary>
+	public void Bind(string id, string itemId)
+	{
+		_store.Bind(id, itemId);
+		_changed();
+	}
+
+	/// <summary>Unties a tab from its item; the tab stays open.</summary>
+	public void Unbind(string id)
+	{
+		_store.Unbind(id);
+		_changed();
+	}
+
+	public string? IdForItem(string itemId) => _store.IdForItem(itemId);
+
+	/// <summary>A saved item's tab: the one it has in this window, or a new one at its address, brought to the front.</summary>
+	public void OpenItem(string itemId, string url)
+	{
+		if (_store.IdForItem(itemId) is { } existing)
+		{
+			Activate(existing);
+			return;
+		}
+		var record = _store.Add(url);
+		_store.Bind(record.Id, itemId);
+		Activate(record.Id);
 	}
 
 	public void Unpin(string id)

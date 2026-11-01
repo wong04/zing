@@ -58,6 +58,12 @@
 					"title": "Favourites",
 					"children": [],
 					"updatedAt": 5
+				},
+				{
+					"id": "fab00000-0000-4000-8000-000000000002",
+					"title": "Pinned",
+					"children": [],
+					"updatedAt": 5
 				}
 			],
 			"readingList": []
@@ -1419,7 +1425,7 @@
 		"now": 3,
 		"valid": [
 			{
-				"name": "a full library parses to itself",
+				"name": "a library parses to itself, with a Pinned folder added after Favourites when it has none",
 				"input": {
 					"bookmarks": [
 						{
@@ -1499,6 +1505,12 @@
 								}
 							],
 							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 3
 						},
 						{
 							"id": "docs",
@@ -1552,6 +1564,12 @@
 							"title": "Favourites",
 							"children": [],
 							"updatedAt": 3
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 3
 						}
 					],
 					"readingList": []
@@ -1595,6 +1613,12 @@
 						{
 							"id": "fab00000-0000-4000-8000-000000000001",
 							"title": "Favourites",
+							"children": [],
+							"updatedAt": 3
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
 							"children": [],
 							"updatedAt": 3
 						},
@@ -1846,6 +1870,12 @@
 							}
 						],
 						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1000
 					}
 				],
 				"readingList": []
@@ -1880,6 +1910,12 @@
 					{
 						"id": "fab00000-0000-4000-8000-000000000001",
 						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
 						"children": [],
 						"updatedAt": 1000
 					}
@@ -1936,6 +1972,12 @@
 						"title": "Favourites",
 						"children": [],
 						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1000
 					}
 				],
 				"readingList": [
@@ -1970,6 +2012,12 @@
 					{
 						"id": "fab00000-0000-4000-8000-000000000001",
 						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
 						"children": [],
 						"updatedAt": 1000
 					}
@@ -2029,6 +2077,12 @@
 							}
 						],
 						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1000
 					}
 				],
 				"readingList": []
@@ -2069,6 +2123,12 @@
 					{
 						"id": "fab00000-0000-4000-8000-000000000001",
 						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
 						"children": [],
 						"updatedAt": 1000
 					}
@@ -2132,6 +2192,12 @@
 							}
 						],
 						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1000
 					}
 				],
 				"readingList": []
@@ -2156,6 +2222,12 @@
 					{
 						"id": "fab00000-0000-4000-8000-000000000001",
 						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
 						"children": [],
 						"updatedAt": 1000
 					},
@@ -2190,6 +2262,12 @@
 					{
 						"id": "fab00000-0000-4000-8000-000000000001",
 						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
 						"children": [],
 						"updatedAt": 1000
 					},
@@ -2283,6 +2361,12 @@
 							}
 						],
 						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1000
 					}
 				],
 				"readingList": [
@@ -2325,6 +2409,12 @@
 					{
 						"id": "fab00000-0000-4000-8000-000000000001",
 						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
 						"children": [],
 						"updatedAt": 1000
 					}
@@ -2439,6 +2529,12 @@
 							}
 						],
 						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1000
 					}
 				],
 				"readingList": []
@@ -2468,6 +2564,12 @@
 						"title": "Favourites",
 						"children": [],
 						"updatedAt": 1000
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1000
 					}
 				],
 				"readingList": [
@@ -2481,6 +2583,85 @@
 					}
 				]
 			}
+		},
+		{
+			"name": "moves a bookmark into another folder, and within its own",
+			"now": 7,
+			"steps": [
+				{
+					"op": "addFavourite",
+					"title": "A",
+					"url": "https://a.test/",
+					"expect": "added"
+				},
+				{
+					"op": "addFavourite",
+					"title": "B",
+					"url": "https://b.test/",
+					"expect": "added"
+				},
+				{
+					"op": "apply",
+					"action": {
+						"type": "moveInto",
+						"id": "id-1",
+						"parent": "fab00000-0000-4000-8000-000000000002",
+						"to": 0
+					},
+					"expect": null
+				},
+				{
+					"op": "apply",
+					"action": {
+						"type": "moveInto",
+						"id": "id-2",
+						"parent": "fab00000-0000-4000-8000-000000000002",
+						"to": 0
+					},
+					"expect": null
+				},
+				{
+					"op": "apply",
+					"action": {
+						"type": "moveInto",
+						"id": "id-2",
+						"parent": "fab00000-0000-4000-8000-000000000002",
+						"to": 2
+					},
+					"expect": null
+				}
+			],
+			"expected": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 7
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [
+							{
+								"id": "id-1",
+								"title": "A",
+								"url": "https://a.test/",
+								"updatedAt": 7
+							},
+							{
+								"id": "id-2",
+								"title": "B",
+								"url": "https://b.test/",
+								"updatedAt": 7
+							}
+						],
+						"updatedAt": 7
+					}
+				],
+				"readingList": []
+			},
+			"saves": 5
 		}
 	],
 	"serialised": {

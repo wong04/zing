@@ -80,6 +80,9 @@ public sealed class ChromeApi : IDisposable
 
 	public TabService Tabs { get; }
 
+	/// <summary>Favourites and pinned items as saved tabs.</summary>
+	public SavedTabs Saved { get; }
+
 	public TabOrdering Ordering { get; }
 
 	public PageUiStore PageUi { get; } = new();
@@ -107,6 +110,7 @@ public sealed class ChromeApi : IDisposable
 		_host = host;
 		_appVersion = appVersion;
 		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, (tab, description) => host.Notify($"Couldn't load {tab.Url} ({description})"), InterceptNavigation, app.SiteData);
+		Saved = new SavedTabs(Tabs, app.Library);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
@@ -172,9 +176,11 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("stack:drag-presence", args => Do(() => Stacks.DragPresence(Text(args, 0), Bool(args, 1))));
 		bridge.Register("chrome:history-menu", args => HistoryMenuAsync(Text(args, 0), args));
 		bridge.Register("chrome:strip-menu", args => Do(() => Menu(Menus.Strip(Ordering), args, 0)));
-		bridge.Register("chrome:stack-menu", args => Do(() => Menu(Menus.Stack(Tabs, Ordering, Text(args, 0), host.Shell), args, 1)));
-		bridge.Register("tabs:pin", args => Do(() => Tabs.Pin(Text(args, 0))));
-		bridge.Register("tabs:unpin", args => Do(() => Tabs.Unpin(Text(args, 0))));
+		bridge.Register("chrome:stack-menu", args => Do(() => Menu(Menus.Stack(Tabs, Saved, Ordering, Text(args, 0), host.Shell), args, 1)));
+		bridge.Register("tabs:pin", args => Do(() => Saved.Pin(Text(args, 0))));
+		bridge.Register("tabs:unpin", args => Do(() => Saved.Unpin(Text(args, 0))));
+		bridge.Register("tabs:open-item", args => Do(() => Saved.Open(Text(args, 0))));
+		bridge.Register("tabs:save", args => Do(() => Saved.Save(Text(args, 0), Text(args, 1), Int(args, 2))));
 		bridge.Register("tabs:close-others", args => Do(() => Tabs.CloseOthers(Text(args, 0))));
 		bridge.Register("command:run", args => Run(Text(args, 0)));
 		bridge.Register("settings:get", _ => app.Settings.Snapshot());
@@ -210,9 +216,9 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("account:require-password", args => app.Account.Run(() => app.Account.SetRequirePasswordOnLaunch(Bool(args, 0))));
 		bridge.Register("account:delete", _ => app.Account.Run(app.Account.DeleteAccount));
 		bridge.Register("chrome:app-menu", args => Do(() => Menu(Menus.App(id => Run(id)), args, 0)));
-		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Text(args, 0), host.Shell), args, 1)));
+		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Saved, Text(args, 0), host.Shell), args, 1)));
 		bridge.Register("library:folder-menu", args => Do(() => Menu(Menus.LibraryFolder(app.Library, Text(args, 0), id => OpenLibraryItem(id, "current"), OpenAll), args, 1)));
-		bridge.Register("library:item-menu", args => Do(() => Menu(Menus.LibraryItem(app.Library, Text(args, 0), OpenLibraryItem, OpenAll), args, 1)));
+		bridge.Register("library:item-menu", args => Do(() => Menu(Menus.LibraryItem(app.Library, Text(args, 0), OpenLibraryItem, OpenAll, Saved), args, 1)));
 		bridge.Register("pageui:get", _ => PageUi.State);
 		// A CSS height, fractional on a scaled display (52.5 at 150%); the view takes whole DIPs, rounded up.
 		bridge.Register("pageui:height", args => Do(() => host.SetPageUiHeight((int)Math.Ceiling(Number(args, 0)))));
@@ -256,8 +262,11 @@ public sealed class ChromeApi : IDisposable
 		var rail = position == "left" && !pinned ? 0 : RailWidth();
 		var sidebar = position != "left" && pinned ? Layout.SidebarColumnWidth : 0;
 		var panel = _libraryPanel is null ? 0 : Layout.LibraryPanelWidth;
-		return Layout.Insets(position, Flag("showFavouritesBar"), rail, sidebar + panel);
+		return Layout.Insets(position, FavouritesBarShown(), rail, sidebar + panel);
 	}
+
+	/// <summary>The Favourites bar shows with tabs on top only; on the side, the rail's tiles are the Favourites.</summary>
+	private bool FavouritesBarShown() => Flag("showFavouritesBar") && Setting("tabBarPosition") == "top";
 
 	private int RailWidth() => _app.Settings.Get("verticalTabWidth")?.GetValue<int>() ?? throw new InvalidDataException("Setting verticalTabWidth is missing");
 
@@ -267,7 +276,11 @@ public sealed class ChromeApi : IDisposable
 	/// <summary>Opens the first tab, or brings back a saved session.</summary>
 	public void Start(IReadOnlyList<SessionTab> restored, string? startUrl)
 	{
-		if (restored.Count > 0) Tabs.Restore(restored);
+		if (restored.Count > 0)
+		{
+			Tabs.Restore(restored);
+			Saved.AdoptPinnedTabs();
+		}
 		else Tabs.Open(startUrl ?? HomepageUrl());
 		Shell.Start();
 	}
@@ -306,6 +319,7 @@ public sealed class ChromeApi : IDisposable
 		Ordering.Dispose();
 		Lifecycle.Dispose();
 		_unsubscribeLibrary();
+		Saved.Dispose();
 		Tabs.Destroy();
 	}
 
@@ -490,7 +504,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		library = _app.Library.Snapshot,
 		panel = _libraryPanel,
-		favouritesBar = Flag("showFavouritesBar"),
+		favouritesBar = FavouritesBarShown(),
 		offset = Shell.PinnedWidth,
 	};
 
@@ -500,7 +514,8 @@ public sealed class ChromeApi : IDisposable
 		var tab = Tabs.Get(id);
 		if (!tab.Url.StartsWith("http:", StringComparison.OrdinalIgnoreCase) && !tab.Url.StartsWith("https:", StringComparison.OrdinalIgnoreCase)) return NotApplicable;
 		var title = string.IsNullOrWhiteSpace(tab.Title) ? new Uri(tab.Url).Host : tab.Title.Trim();
-		var outcome = favourite ? _app.Library.AddFavourite(title, tab.Url) : _app.Library.AddReading(title, tab.Url);
+		// A favourite is a saved tab: this tab becomes the item's own (SavedTabs).
+		var outcome = favourite ? Saved.Favourite(id) : _app.Library.AddReading(title, tab.Url);
 		var where = favourite ? "Favourites" : "Reading List";
 		_host.Notify(outcome == AddOutcome.Added ? $"Added to {where}." : $"Already in {where}.");
 		return Done;

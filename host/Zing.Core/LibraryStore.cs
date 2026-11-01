@@ -21,6 +21,9 @@ public sealed record NewFolderAction(IReadOnlyList<string> Ids) : LibraryAction;
 
 public sealed record MoveAction(string Id, int To) : LibraryAction;
 
+/// <summary>Moves a bookmark into a folder (its own or another), before the child now at `To` there.</summary>
+public sealed record MoveIntoAction(string Id, string Parent, int To) : LibraryAction;
+
 public sealed record SetReadAction(string Id, bool Read) : LibraryAction;
 
 public enum AddOutcome
@@ -95,6 +98,9 @@ public sealed class LibraryStore
 			case MoveAction move:
 				ApplyMove(move.Id, move.To);
 				return null;
+			case MoveIntoAction moveInto:
+				Set(Snapshot with { Bookmarks = MoveInto(Snapshot.Bookmarks, moveInto.Id, moveInto.Parent, moveInto.To) });
+				return null;
 			case SetReadAction setRead:
 				var time = _now();
 				Set(Snapshot with { ReadingList = Snapshot.ReadingList.Select(i => i.Id == setRead.Id ? i with { IsRead = setRead.Read, UpdatedAt = time } : i).ToList() });
@@ -103,6 +109,28 @@ public sealed class LibraryStore
 				throw new InvalidLibraryActionException($"unhandled action {action.GetType().Name}");
 		}
 	}
+
+	/// <summary>Adds a link to a folder at a position (clamped to its children), and returns its id: a tab saved to the rail.</summary>
+	/// <exception cref="InvalidLibraryActionException">The parent isn't a folder.</exception>
+	public string AddLink(string parent, int at, string title, string url)
+	{
+		if (Library.Find(parent, Snapshot.Bookmarks) is not BookmarkFolder) throw new InvalidLibraryActionException($"{parent} is not a folder");
+		var link = Library.Link(_newId(), title, url, _now());
+		Set(Snapshot with { Bookmarks = Insert(Snapshot.Bookmarks, parent, at, link) });
+		return link.Id;
+	}
+
+	/// <summary>Points a link at a new page, keeping its place and id: "save this page here" for a saved tab.</summary>
+	public void SetLink(string id, string title, string url)
+	{
+		if (Library.Find(id, Snapshot.Bookmarks) is not BookmarkLink) throw new InvalidLibraryActionException($"{id} is not a link");
+		var time = _now();
+		Set(Snapshot with { Bookmarks = Replace(Snapshot.Bookmarks, id, node => ((BookmarkLink)node) with { Title = title, Url = url, UpdatedAt = time }) });
+	}
+
+	/// <summary>Whether a node sits in Favourites or Pinned, at any depth: a saved tab's item.</summary>
+	public bool IsSavedTab(string id) =>
+		Library.Find(id, [.. Library.Favourites(Snapshot), .. Library.Pinned(Snapshot)]) is BookmarkLink;
 
 	/// <summary>Where a bookmark or reading list item points.</summary>
 	public string? UrlOf(string id)
@@ -158,6 +186,31 @@ public sealed class LibraryStore
 		foreach (var listener in _listeners.ToList()) listener(next);
 	}
 
+	/// <summary>Takes a node out of wherever it is and puts it into a folder before the child now at `to`. Fixed folders stay put, and a folder never goes inside itself.</summary>
+	public static IReadOnlyList<BookmarkNode> MoveInto(IReadOnlyList<BookmarkNode> nodes, string id, string parent, int to)
+	{
+		if (Library.IsFixedFolder(id)) throw new InvalidLibraryActionException("a fixed folder can't be moved");
+		var node = Library.Find(id, nodes) ?? throw new InvalidLibraryActionException($"no bookmark {id}");
+		if (Library.Find(parent, nodes) is not BookmarkFolder target) throw new InvalidLibraryActionException($"{parent} is not a folder");
+		if (node is BookmarkFolder moving && (moving.Id == parent || Library.Find(parent, moving.Children) is not null)) throw new InvalidLibraryActionException("a folder can't go inside itself");
+		// The place counts the node itself when it is already in that folder before the place.
+		var from = target.Children.ToList().FindIndex(n => n.Id == id);
+		var at = from >= 0 && from < to ? to - 1 : to;
+		return Insert(Library.Remove(new HashSet<string> { id }, nodes), parent, at, node);
+	}
+
+	private static IReadOnlyList<BookmarkNode> Insert(IReadOnlyList<BookmarkNode> nodes, string parent, int at, BookmarkNode node) =>
+		Replace(nodes, parent, found =>
+		{
+			var folder = (BookmarkFolder)found;
+			var children = folder.Children.ToList();
+			children.Insert(Math.Clamp(at, 0, children.Count), node);
+			return folder with { Children = children };
+		});
+
+	private static IReadOnlyList<BookmarkNode> Replace(IReadOnlyList<BookmarkNode> nodes, string id, Func<BookmarkNode, BookmarkNode> change) =>
+		nodes.Select(n => n.Id == id ? change(n) : n is BookmarkFolder f ? f with { Children = Replace(f.Children, id, change) } : n).ToList();
+
 	/// <summary>`to` is an insertion point in the node's own sibling list (the `Move` convention). Null when `id` is not in `nodes`.</summary>
 	public static IReadOnlyList<BookmarkNode>? MoveNode(IReadOnlyList<BookmarkNode> nodes, string id, int to)
 	{
@@ -175,7 +228,7 @@ public sealed class LibraryStore
 		return null;
 	}
 
-	/// <summary>Throws InvalidDataException naming the first malformed field; the Favourites folder is restored if the file lacks it.</summary>
+	/// <summary>Throws InvalidDataException naming the first malformed field; a fixed folder the file lacks (Favourites, Pinned) is added.</summary>
 	public static BrowserLibrary ParseLibrary(JsonElement raw, long now)
 	{
 		if (raw.ValueKind != JsonValueKind.Object
@@ -187,7 +240,7 @@ public sealed class LibraryStore
 		var bookmarks = bookmarkList.EnumerateArray().Select((n, i) => Library.ParseNode(n, $"bookmarks[{i}]")).ToList();
 		var reading = readingList.EnumerateArray().Select((n, i) => Library.ParseReading(n, $"readingList[{i}]")).ToList();
 		var library = new BrowserLibrary(bookmarks, reading);
-		return bookmarks.Any(n => n.Id == Library.FavouritesId) ? library : Library.WithFavourites(library, [], now);
+		return Library.WithFixedFolders(library, now);
 	}
 
 	/// <summary>No file means first run. Anything unreadable is an error, never a silent empty library that would overwrite it.</summary>
@@ -235,6 +288,10 @@ public sealed class LibraryStore
 				if (Library.Str(raw, "id") is not { } moveId || !TryInteger(raw, "to", out var to))
 					throw new InvalidLibraryActionException("move needs id and an integer to");
 				return new MoveAction(moveId, to);
+			case "moveInto":
+				if (Library.Str(raw, "id") is not { } intoId || Library.Str(raw, "parent") is not { } parent || !TryInteger(raw, "to", out var intoAt))
+					throw new InvalidLibraryActionException("moveInto needs id, parent and an integer to");
+				return new MoveIntoAction(intoId, parent, intoAt);
 			case "setRead":
 				if (Library.Str(raw, "id") is not { } readId || !Library.TryBool(raw, "read", out var read))
 					throw new InvalidLibraryActionException("setRead needs id and read");

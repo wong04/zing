@@ -5,6 +5,12 @@
 			"title": "Favourites",
 			"children": [],
 			"updatedAt": 0
+		},
+		{
+			"id": "fab00000-0000-4000-8000-000000000002",
+			"title": "Pinned",
+			"children": [],
+			"updatedAt": 0
 		}
 	],
 	"readingList": []

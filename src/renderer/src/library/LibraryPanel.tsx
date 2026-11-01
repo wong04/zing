@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { CHROME_LAYOUT, LIBRARY_PANEL_WIDTH, type LibraryPanel as PanelKind } from '@shared/ipc'
-import { FAVOURITES_ID, isFolder, visibleRows, type BookmarkNode, type BrowserLibrary } from '@shared/library/library'
+import { FAVOURITES_ID, isFixedFolder, isFolder, visibleRows, type BookmarkNode, type BrowserLibrary } from '@shared/library/library'
 import { zing } from '../api'
 
 interface Row {
@@ -88,9 +88,9 @@ export function LibraryPanel({ library, panel, favouritesBar, offset }: LibraryP
 		if (panel === 'readingList') void zing.applyLibrary({ type: 'setRead', id: row.id, read: true })
 	}
 	const targets = (id: string): string[] => (selected.has(id) ? [...selected] : [id])
-	const remove = (ids: string[]): void => void zing.applyLibrary({ type: 'remove', ids: ids.filter((id) => id !== FAVOURITES_ID) })
+	const remove = (ids: string[]): void => void zing.applyLibrary({ type: 'remove', ids: ids.filter((id) => !isFixedFolder(id)) })
 	const newFolder = async (): Promise<void> => {
-		const id = await zing.applyLibrary({ type: 'newFolder', ids: [...selected].filter((s) => s !== FAVOURITES_ID) })
+		const id = await zing.applyLibrary({ type: 'newFolder', ids: [...selected].filter((s) => !isFixedFolder(s)) })
 		if (!id) return
 		setExpanded((current) => new Set(current).add(id))
 		setSelected(new Set([id]))
@@ -175,7 +175,7 @@ export function LibraryPanel({ library, panel, favouritesBar, offset }: LibraryP
 						aria-expanded={row.folder ? expanded.has(row.id) : undefined}
 						className={['library-row', selected.has(row.id) && 'selected', focused === row.id && 'focused', row.read && 'read'].filter(Boolean).join(' ')}
 						style={{ paddingLeft: 8 + row.depth * 16 }}
-						draggable={row.id !== FAVOURITES_ID}
+						draggable={!isFixedFolder(row.id)}
 						onDragStart={() => setDragged(row.id)}
 						onDragOver={(e) => dragged && e.preventDefault()}
 						onDrop={() => dropOnRow(row)}
@@ -231,7 +231,7 @@ export function LibraryPanel({ library, panel, favouritesBar, offset }: LibraryP
 									○
 								</button>
 							)}
-							{row.id === FAVOURITES_ID ? null : (
+							{isFixedFolder(row.id) ? null : (
 								<button
 									type="button"
 									aria-label={`Delete ${row.title}`}

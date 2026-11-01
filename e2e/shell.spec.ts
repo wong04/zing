@@ -107,6 +107,8 @@ test('the pinned sidebar sits flush with the window’s top, left and bottom edg
 
 test('the empty favourites bar’s Ctrl+D hint closes, and stays closed after a relaunch', async () => {
 	const zing = await launchZing()
+	// The bar shows with tabs on top.
+	await zing.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'top'))
 	const hint = zing.chrome.locator('.fav-hint')
 	await expect(hint).toBeVisible()
 	await hint.getByRole('button', { name: 'Hide this hint' }).click()

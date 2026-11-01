@@ -60,13 +60,34 @@ public static class Library
 
 	public const string FavouritesTitle = "Favourites";
 
+	/// <summary>The tab rail's pinned items, in folders (docs/phase-4.md): saved tabs, as Favourites are.</summary>
+	public const string PinnedId = "fab00000-0000-4000-8000-000000000002";
+
+	public const string PinnedTitle = "Pinned";
+
+	/// <summary>Folders that always exist: they can be renamed but never removed, moved or grouped away.</summary>
+	public static bool IsFixedFolder(string id) => id is FavouritesId or PinnedId;
+
 	public static BookmarkLink Link(string id, string title, string url, long now) => new(id, title, url, now);
 
 	public static BookmarkFolder Folder(string id, string title, IReadOnlyList<BookmarkNode> children, long now) => new(id, title, children, now);
 
 	public static ReadingItem Reading(string id, string title, string url, long now) => new(id, title, url, now, false, now);
 
-	public static BrowserLibrary EmptyLibrary(long now) => new([Folder(FavouritesId, FavouritesTitle, [], now)], []);
+	public static BrowserLibrary EmptyLibrary(long now) => new([Folder(FavouritesId, FavouritesTitle, [], now), Folder(PinnedId, PinnedTitle, [], now)], []);
+
+	public static IReadOnlyList<BookmarkNode> Pinned(BrowserLibrary library) =>
+		library.Bookmarks.FirstOrDefault(n => n.Id == PinnedId) is BookmarkFolder pinned ? pinned.Children : [];
+
+	/// <summary>Adds whichever fixed folder a library lacks (one saved before it existed), Favourites first, then Pinned after it.</summary>
+	public static BrowserLibrary WithFixedFolders(BrowserLibrary library, long now)
+	{
+		var withFavourites = library.Bookmarks.Any(n => n.Id == FavouritesId) ? library : WithFavourites(library, [], now);
+		if (withFavourites.Bookmarks.Any(n => n.Id == PinnedId)) return withFavourites;
+		var bookmarks = withFavourites.Bookmarks.ToList();
+		bookmarks.Insert(bookmarks.FindIndex(n => n.Id == FavouritesId) + 1, Folder(PinnedId, PinnedTitle, [], now));
+		return withFavourites with { Bookmarks = bookmarks };
+	}
 
 	public static IReadOnlyList<BookmarkNode> Favourites(BrowserLibrary library) =>
 		library.Bookmarks.FirstOrDefault(n => n.Id == FavouritesId) is BookmarkFolder fav ? fav.Children : [];
@@ -82,13 +103,13 @@ public static class Library
 		return library with { Bookmarks = bookmarks };
 	}
 
-	/// <summary>Removes every node whose id is in `ids`, at any depth. The Favourites folder can't be removed: the bar would have nowhere to live.</summary>
+	/// <summary>Removes every node whose id is in `ids`, at any depth. The fixed folders can't be removed: the bar and the rail would have nowhere to live.</summary>
 	public static IReadOnlyList<BookmarkNode> Remove(IReadOnlySet<string> ids, IReadOnlyList<BookmarkNode> nodes)
 	{
 		var result = new List<BookmarkNode>();
 		foreach (var node in nodes)
 		{
-			if (ids.Contains(node.Id) && node.Id != FavouritesId) continue;
+			if (ids.Contains(node.Id) && !IsFixedFolder(node.Id)) continue;
 			result.Add(node is BookmarkFolder folder ? folder with { Children = Remove(ids, folder.Children) } : node);
 		}
 		return result;
@@ -139,7 +160,7 @@ public static class Library
 	/// </summary>
 	public static GroupResult GroupIntoFolder(IReadOnlySet<string> ids, string title, IReadOnlyList<BookmarkNode> nodes, string newId, long now)
 	{
-		var selected = Collect(ids, nodes).Where(n => n.Id != FavouritesId).ToList();
+		var selected = Collect(ids, nodes).Where(n => !IsFixedFolder(n.Id)).ToList();
 		if (selected.Count == 0) return new GroupResult(nodes, null);
 		var wrapper = Folder(newId, title, selected, now);
 		var placed = false;
@@ -148,7 +169,7 @@ public static class Library
 			var result = new List<BookmarkNode>();
 			foreach (var node in list)
 			{
-				if (ids.Contains(node.Id) && node.Id != FavouritesId)
+				if (ids.Contains(node.Id) && !IsFixedFolder(node.Id))
 				{
 					if (!placed)
 					{

@@ -31,14 +31,22 @@ export interface ReadingItem {
 }
 
 export interface BrowserLibrary {
-	// The first node is always the Favourites folder, whose children are what
-	// the Favourites bar shows.
+	// The first two nodes are the fixed folders: Favourites (the bar, and the
+	// tiles at the top of the tab rail) and Pinned (the rail's pinned items).
 	bookmarks: BookmarkNode[]
 	readingList: ReadingItem[]
 }
 
 // Fixed so the Favourites folder can always be found, renamed or not.
 export const FAVOURITES_ID = 'fab00000-0000-4000-8000-000000000001'
+
+// The tab rail's pinned items, in folders (docs/phase-4.md): saved tabs, as Favourites are.
+export const PINNED_ID = 'fab00000-0000-4000-8000-000000000002'
+
+// Folders that always exist: they can be renamed but never removed, moved or grouped away.
+export function isFixedFolder(id: string): boolean {
+	return id === FAVOURITES_ID || id === PINNED_ID
+}
 
 export function isFolder(node: BookmarkNode): node is BookmarkFolder {
 	return 'children' in node
@@ -57,7 +65,13 @@ export function readingItem(title: string, url: string, now = Date.now()): Readi
 }
 
 export function emptyLibrary(): BrowserLibrary {
-	return { bookmarks: [folder('Favourites', [], FAVOURITES_ID)], readingList: [] }
+	return { bookmarks: [folder('Favourites', [], FAVOURITES_ID), folder('Pinned', [], PINNED_ID)], readingList: [] }
+}
+
+export function pinned(library: BrowserLibrary): BookmarkNode[] {
+	const node = library.bookmarks.find((n) => n.id === PINNED_ID)
+	if (!node || !isFolder(node)) return []
+	return node.children
 }
 
 export function favourites(library: BrowserLibrary): BookmarkNode[] {
@@ -76,12 +90,12 @@ export function withFavourites(library: BrowserLibrary, children: BookmarkNode[]
 	return { ...library, bookmarks }
 }
 
-// Removes every node whose id is in `ids`, at any depth. The Favourites folder
-// itself can't be removed: the bar would have nowhere to live.
+// Removes every node whose id is in `ids`, at any depth. The fixed folders
+// can't be removed: the bar and the rail would have nowhere to live.
 export function remove(ids: ReadonlySet<string>, nodes: BookmarkNode[]): BookmarkNode[] {
 	const out: BookmarkNode[] = []
 	for (const node of nodes) {
-		if (ids.has(node.id) && node.id !== FAVOURITES_ID) continue
+		if (ids.has(node.id) && !isFixedFolder(node.id)) continue
 		out.push(isFolder(node) ? { ...node, children: remove(ids, node.children) } : node)
 	}
 	return out
@@ -123,14 +137,14 @@ export function collect(ids: ReadonlySet<string>, nodes: BookmarkNode[]): Bookma
 // was (Safari's Option-click on New Folder). Selected items in different
 // folders are gathered together; the folder lands in the parent of the first.
 export function groupIntoFolder(ids: ReadonlySet<string>, title: string, nodes: BookmarkNode[]): { nodes: BookmarkNode[]; folderId: string | undefined } {
-	const selected = collect(ids, nodes).filter((node) => node.id !== FAVOURITES_ID)
+	const selected = collect(ids, nodes).filter((node) => !isFixedFolder(node.id))
 	if (selected.length === 0) return { nodes, folderId: undefined }
 	const wrapper = folder(title, selected)
 	let placed = false
 	const rebuild = (list: BookmarkNode[]): BookmarkNode[] => {
 		const out: BookmarkNode[] = []
 		for (const node of list) {
-			if (ids.has(node.id) && node.id !== FAVOURITES_ID) {
+			if (ids.has(node.id) && !isFixedFolder(node.id)) {
 				if (!placed) {
 					out.push(wrapper)
 					placed = true

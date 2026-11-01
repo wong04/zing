@@ -57,15 +57,18 @@ public sealed class CommandsTests : IDisposable
 	}
 
 	[Fact]
-	public void The_tab_menu_pins_copies_and_disables_closing_a_pinned_tab()
+	public void The_tab_menu_copies_and_pins_a_tab_as_a_saved_tab_that_still_closes()
 	{
 		var id = _api.Tabs.ActiveId!;
-		var menu = Menus.Tab(_api.Tabs, id, _host.Shell);
+		var menu = Menus.Tab(_api.Tabs, _api.Saved, id, _host.Shell);
 		menu.Single(m => m.Label == "Copy Address").Click!();
 		Assert.Equal(["https://example.com/"], _host.FakeShell.Copied);
 		menu.Single(m => m.Label == "Pin Tab").Click!();
-		Assert.False(Menus.Tab(_api.Tabs, id, _host.Shell).Single(m => m.Label == "Close Tab").Enabled);
-		Assert.Contains(Menus.Tab(_api.Tabs, id, _host.Shell), m => m.Label == "Unpin Tab");
+		var pinned = Menus.Tab(_api.Tabs, _api.Saved, id, _host.Shell);
+		Assert.Contains(pinned, m => m.Label == "Unpin Tab");
+		// Closing a saved tab keeps its item, so it isn't disabled; it is still on its saved page.
+		Assert.True(pinned.Single(m => m.Label == "Close Tab").Enabled);
+		Assert.False(pinned.Single(m => m.Label == "Back to Saved Page").Enabled);
 	}
 }
 
