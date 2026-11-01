@@ -20,6 +20,8 @@ export interface Launched {
 	readonly chrome: Page
 	/** Where this run kept settings and the library; pass it to the next launch to test a relaunch. */
 	readonly userDataDir: string
+	/** The menus the host opened, oldest first, as their labels (a separator is null); test runs never show them. */
+	menus(): (string | null)[][]
 	/** Starts Zing again on the same profile, as a link click from another app would, and resolves with its exit code. */
 	launchAgain(args: readonly string[]): Promise<number | null>
 	close(): Promise<void>
@@ -51,7 +53,9 @@ async function freePort(): Promise<string> {
 export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOptions = {}): Promise<Launched> {
 	if (!existsSync(HOST_EXE)) throw new HostProcessError(`No host build at ${HOST_EXE}: run npm run build:host`)
 	const port = await freePort()
-	const errors = join(await mkdtemp(join(tmpdir(), 'zing-host-e2e-')), 'errors.log')
+	const scratch = await mkdtemp(join(tmpdir(), 'zing-host-e2e-'))
+	const errors = join(scratch, 'errors.log')
+	const menus = join(scratch, 'menus.jsonl')
 	// Never the user's real profile: every run gets its own folder unless a test relaunches into one.
 	const userData = userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-host-data-')))
 	const hostEnv = {
@@ -59,6 +63,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		ZING_E2E: '1',
 		ZING_CDP_PORT: port,
 		ZING_ERRORS_FILE: errors,
+		ZING_MENUS_FILE: menus,
 		ZING_RENDERER_DIR: join(ROOT, 'out', 'renderer'),
 		ZING_USER_DATA: userData,
 		ZING_DOWNLOADS_DIR: join(userData, 'downloads'),
@@ -76,6 +81,13 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		browser,
 		chrome,
 		userDataDir: userData,
+		menus: () =>
+			existsSync(menus)
+				? readFileSync(menus, 'utf8')
+						.split('\n')
+						.filter((line) => line.length > 0)
+						.map((line) => JSON.parse(line) as (string | null)[])
+				: [],
 		launchAgain: (again) =>
 			new Promise((resolve, reject) => {
 				const second = spawn(HOST_EXE, [...again], { env: hostEnv, stdio: 'ignore' })

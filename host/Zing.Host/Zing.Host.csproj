@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-	<!-- The Zing app: a WinUI 3 window hosting WebView2s. Logic lives in Zing.Core. -->
+	<!-- The Zing app: a plain Win32 window hosting WebView2s, with WinUI's windowing API for the title bar. Logic lives in Zing.Core. -->
 	<PropertyGroup>
 		<OutputType>WinExe</OutputType>
 		<AssemblyName>Zing</AssemblyName>

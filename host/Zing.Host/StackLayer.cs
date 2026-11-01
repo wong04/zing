@@ -1,5 +1,3 @@
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
 
@@ -11,7 +9,7 @@ namespace Zing.Host;
 /// overview (#overlay-overview, over the page). A click outside its content
 /// lands on its backdrop, never on the page beneath. Created on first use.
 /// </summary>
-public sealed class CoveringLayer(Panel parent, CoreWebView2Environment environment, Bridge bridge, string hash, Func<Rect> content, Func<double> top, Action<RendererView> created)
+public sealed class CoveringLayer(HostWindow window, CoreWebView2Environment environment, Bridge bridge, string hash, Func<Rect> content, Func<double> top, Action<RendererView> created)
 {
 	private Task<RendererView>? _ready;
 	private bool _open;
@@ -31,7 +29,7 @@ public sealed class CoveringLayer(Panel parent, CoreWebView2Environment environm
 			var area = content();
 			var y = top();
 			view.Place(new Rect(0, y, area.Width, Math.Max(0, area.Height - y)));
-			Layers.Raise(parent, view.View);
+			view.View.Raise();
 		}
 		view.Visible = _open;
 	}
@@ -45,12 +43,12 @@ public sealed class CoveringLayer(Panel parent, CoreWebView2Environment environm
 		var view = await (_ready ??= CreateAsync());
 		Layout();
 		// Keys (arrows, Enter, Escape) go to the layer, not the page underneath.
-		if (_open) view.View.Focus(FocusState.Programmatic);
+		if (_open) view.View.Focus();
 	}
 
 	private async Task<RendererView> CreateAsync()
 	{
-		var view = await RendererView.CreateAsync(parent, environment, bridge, hash, transparent: true);
+		var view = await RendererView.CreateAsync(window, environment, bridge, hash, overlay: true);
 		created(view);
 		return view;
 	}

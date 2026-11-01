@@ -1,5 +1,3 @@
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
 
@@ -18,6 +16,10 @@ public sealed class WebView2Page : IPage
 	private readonly IPageFeatureHost _features;
 	private readonly bool _persistent;
 	private readonly List<Action<CoreWebView2>> _queued = [];
+	private readonly HostWindow _window;
+	private HostedView? _view;
+	private Rect _bounds;
+	private bool _visible;
 	private CoreWebView2? _core;
 	private string? _findTerm;
 	private int _textSize = Zing.Core.TextSize.Default;
@@ -30,19 +32,35 @@ public sealed class WebView2Page : IPage
 		return (File.ReadAllText(Path.Combine(dir, "reader.js")), File.ReadAllText(Path.Combine(dir, "reader.css")));
 	});
 
-	public WebView2Page(WebView2 view, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, Func<string> theme, IPageFeatureHost features, bool persistent)
+	public WebView2Page(HostWindow window, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, Func<string> theme, IPageFeatureHost features, bool persistent)
 	{
-		View = view;
+		_window = window;
 		_events = events;
 		_serveStartPage = serveStartPage;
 		_theme = theme;
 		_features = features;
 		_persistent = persistent;
 		Ready = StartAsync(environment);
-		_ = Ready.ContinueWith(t => TestHooks.Record("page", t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+		// A page whose window closed while it started is gone, not broken.
+		TestHooks.Background(Ready, "page");
 	}
 
-	public WebView2 View { get; }
+	/// <summary>Where the page is in the window's content, in DIPs; kept for when the view exists.</summary>
+	public void Place(Rect bounds)
+	{
+		_bounds = bounds;
+		_view?.Place(bounds);
+	}
+
+	public bool Visible
+	{
+		get => _visible;
+		set
+		{
+			_visible = value;
+			if (_view is not null) _view.Visible = value;
+		}
+	}
 
 	/// <summary>Completes once the engine has a CoreWebView2 for this page; a popup hands it to the opener's request.</summary>
 	public Task Ready { get; }
@@ -64,7 +82,7 @@ public sealed class WebView2Page : IPage
 	public void GoForward() => Run(core => core.GoForward());
 	public void Reload() => Run(core => core.Reload());
 	public void Stop() => Run(core => core.Stop());
-	public void Focus() => View.Focus(FocusState.Programmatic);
+	public void Focus() => Run(_ => _view!.Focus());
 	public void Run(string script) => Run(core => _ = core.ExecuteScriptAsync(script));
 
 	public void Find(string query, FindDirection direction, FindMode mode) => Run(core =>
@@ -186,7 +204,7 @@ public sealed class WebView2Page : IPage
 		IsOpen = false;
 		_features.Left(this);
 		_queued.Clear();
-		View.Close();
+		_view?.Close();
 	}
 
 	private void Run(Action<CoreWebView2> action)
@@ -202,9 +220,15 @@ public sealed class WebView2Page : IPage
 		// Keeps nothing by default: an in-memory profile, as Electron's non-persistent partition was.
 		options.IsInPrivateModeEnabled = !_persistent;
 		options.ProfileName = _persistent ? "zing" : "zing-private";
-		await View.EnsureCoreWebView2Async(environment, options);
-		if (!IsOpen) return;
-		_core = View.CoreWebView2;
+		_view = await HostedView.CreateAsync(_window, environment, options, "page", overlay: false);
+		if (!IsOpen)
+		{
+			_view.Close();
+			return;
+		}
+		_view.Visible = _visible;
+		_view.Place(_bounds);
+		_core = _view.Core;
 		_core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);

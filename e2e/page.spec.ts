@@ -58,7 +58,6 @@ test('find in page shows a match count and steps through matches', async () => {
 	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getPageUi())).find ?? null).toBeNull()
 	await zing.close()
 })
-
 test('a download lands in the downloads folder, shows in the list and numbers on collision', async () => {
 	const zing = await launchZing()
 	const directory = join(zing.userDataDir, 'downloads')

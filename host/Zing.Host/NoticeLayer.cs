@@ -1,5 +1,4 @@
 using Microsoft.UI.Dispatching;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
 
@@ -10,7 +9,7 @@ namespace Zing.Host;
 /// pages, hidden whenever it shows nothing and sized to what it shows, so it
 /// never takes clicks meant for the page.
 /// </summary>
-public sealed class NoticeLayer(Panel parent, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, DispatcherQueue dispatcher)
+public sealed class NoticeLayer(HostWindow window, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, DispatcherQueue dispatcher)
 {
 	private const int NoticeMs = 4000;
 	private const double NoticeWidth = 480;
@@ -26,7 +25,7 @@ public sealed class NoticeLayer(Panel parent, CoreWebView2Environment environmen
 		var view = await (_ready ??= CreateAsync());
 		view.Place(Bounds());
 		view.Send(Bridge.Event("overlay:notice", new { id = _nextId++, text }));
-		Layers.Raise(parent, view.View);
+		view.View.Raise();
 		view.Visible = true;
 		_hideTimer ??= CreateTimer();
 		_hideTimer.Stop();
@@ -48,7 +47,7 @@ public sealed class NoticeLayer(Panel parent, CoreWebView2Environment environmen
 
 	public void Raise()
 	{
-		if (Ready() is { } view) Layers.Raise(parent, view.View);
+		if (Ready() is { } view) view.View.Raise();
 	}
 
 	public void Destroy()
@@ -68,8 +67,7 @@ public sealed class NoticeLayer(Panel parent, CoreWebView2Environment environmen
 
 	private async Task<RendererView> CreateAsync()
 	{
-		var view = await RendererView.CreateAsync(parent, environment, bridge, "overlay", transparent: true);
-		view.Visible = false;
+		var view = await RendererView.CreateAsync(window, environment, bridge, "overlay", overlay: true);
 		return view;
 	}
 
@@ -83,13 +81,3 @@ public sealed class NoticeLayer(Panel parent, CoreWebView2Environment environmen
 	}
 }
 
-/// <summary>Stacking in the window's root panel: later children paint above earlier ones.</summary>
-public static class Layers
-{
-	public static void Raise(Panel parent, Microsoft.UI.Xaml.UIElement element)
-	{
-		var index = parent.Children.IndexOf(element);
-		var top = parent.Children.Count - 1;
-		if (index >= 0 && index != top) parent.Children.Move((uint)index, (uint)top);
-	}
-}

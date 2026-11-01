@@ -1,6 +1,6 @@
 namespace Zing.Core;
 
-/// <summary>A tab's live page. The WinUI host implements it over a WebView2; tests use a fake.</summary>
+/// <summary>A tab's live page. The Win32 host implements it over a WebView2; tests use a fake.</summary>
 public interface IPage
 {
 	string Url { get; }

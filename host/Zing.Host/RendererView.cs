@@ -1,6 +1,3 @@
-using Microsoft.UI;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
 
@@ -17,31 +14,29 @@ public sealed class RendererView
 
 	private readonly Bridge _bridge;
 	private readonly string _hash;
-	private Panel _parent = null!;
+	private readonly HostWindow _window;
 
-	public WebView2 View { get; } = new();
-
-	private RendererView(Bridge bridge, string hash)
+	private RendererView(HostedView view, Bridge bridge, string hash, HostWindow window)
 	{
+		View = view;
 		_bridge = bridge;
 		_hash = hash;
+		_window = window;
 	}
 
-	public bool IsReady => View.CoreWebView2 is not null;
+	public HostedView View { get; }
 
-	/// <summary>Creates the view in <paramref name="parent"/> and starts loading its root.</summary>
-	public static async Task<RendererView> CreateAsync(Panel parent, CoreWebView2Environment environment, Bridge bridge, string hash, bool transparent)
+	/// <summary>Creates the view in <paramref name="window"/> and loads its root; an <paramref name="overlay"/> is transparent and floats above the window.</summary>
+	public static async Task<RendererView> CreateAsync(HostWindow window, CoreWebView2Environment environment, Bridge bridge, string hash, bool overlay)
 	{
-		var renderer = new RendererView(bridge, hash) { _parent = parent };
-		if (transparent) renderer.View.DefaultBackgroundColor = Microsoft.UI.Colors.Transparent;
-		parent.Children.Add(renderer.View);
 		// Zing's own UI keeps nothing either, as Electron's zing-chrome partition did: no cache, no storage, no autofill on disk.
 		var options = environment.CreateCoreWebView2ControllerOptions();
 		options.IsInPrivateModeEnabled = true;
 		options.ProfileName = "zing-chrome";
-		await renderer.View.EnsureCoreWebView2Async(environment, options);
-		// The window may have closed while the engine started; that is an expected outcome, not a crash.
-		var core = renderer.View.CoreWebView2 ?? throw new ViewGoneException(hash);
+		// The window may close while the engine starts; that is an expected outcome (ViewGoneException), not a crash.
+		var view = await HostedView.CreateAsync(window, environment, options, hash, overlay);
+		var renderer = new RendererView(view, bridge, hash, window);
+		var core = view.Core;
 		core.Settings.IsNonClientRegionSupportEnabled = hash == "chrome";
 		core.Settings.AreDefaultContextMenusEnabled = false;
 		core.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
@@ -62,32 +57,21 @@ public sealed class RendererView
 
 	public void Send(string eventJson)
 	{
-		if (!IsClosed) View.CoreWebView2?.PostWebMessageAsJson(eventJson);
+		if (!IsClosed) View.Core.PostWebMessageAsJson(eventJson);
 	}
 
 	/// <summary>Places the view at a rectangle of the window's content, in DIPs.</summary>
-	public void Place(Rect bounds)
-	{
-		View.HorizontalAlignment = HorizontalAlignment.Left;
-		View.VerticalAlignment = VerticalAlignment.Top;
-		View.Margin = new Thickness(bounds.X, bounds.Y, 0, 0);
-		View.Width = Math.Max(0, bounds.Width);
-		View.Height = Math.Max(0, bounds.Height);
-	}
+	public void Place(Rect bounds) => View.Place(bounds);
 
 	public bool Visible
 	{
-		get => View.Visibility == Visibility.Visible;
-		set => View.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+		get => View.Visible;
+		set => View.Visible = value;
 	}
 
-	public bool IsClosed { get; private set; }
+	public bool IsClosed => View.IsClosed;
 
-	public void Close()
-	{
-		IsClosed = true;
-		View.Close();
-	}
+	public void Close() => View.Close();
 
 	private async void OnMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e)
 	{
@@ -97,7 +81,7 @@ public sealed class RendererView
 			TestHooks.Record("bridge", new UnauthorizedAccessException($"Message from {e.Source} refused in #{_hash}"));
 			return;
 		}
-		if (TestHooks.TryHandle(e.WebMessageAsJson, _parent)) return;
+		if (TestHooks.TryHandle(e.WebMessageAsJson, _window)) return;
 		try
 		{
 			var reply = await _bridge.HandleAsync(e.WebMessageAsJson);
@@ -137,4 +121,3 @@ public sealed class RendererView
 public sealed class ViewGoneException(string hash) : Exception($"Zing's #{hash} view went with its window");
 
 public sealed class RendererLoadException(string hash, string status) : Exception($"Zing's #{hash} view failed to load: {status}");
-

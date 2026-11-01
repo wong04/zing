@@ -1,20 +1,19 @@
 using System.Text.Json;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
 
 namespace Zing.Host;
 
 /// <summary>
-/// One browser window (zing-window.ts): the chrome renderer at the bottom, the
-/// active tab's page above it, then the settings surface and the notice layer.
-/// Later children of the root grid paint above earlier ones.
+/// One browser window (zing-window.ts): the chrome renderer filling the window, the
+/// active tab's page over it, and above them the overlays, each in a popup of its own
+/// (the settings surface, notices, page UI, the stack dropdown and the overview).
 /// </summary>
-public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHost
+public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 {
 	private readonly ZingApp _app;
-	private readonly Grid _root = new();
+	private readonly HostWindow _window;
+	private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
 	private readonly Bridge _bridge = new();
 	private readonly List<RendererView> _renderers = [];
 	private RendererView? _chrome;
@@ -30,25 +29,29 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	private DispatcherScheduler? _scheduler;
 	private Rect? _surfaceRegion;
 	private Task? _surfaceReady;
+	private bool _surfaceWantsFocus;
 	private IDisposable? _themeSubscription;
 
 	public MainWindow(ZingApp app)
 	{
 		_app = app;
-		Title = "Zing";
-		SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop();
-		ExtendsContentIntoTitleBar = true;
-		Content = _root;
-		Place();
-		_root.SizeChanged += (_, _) => Relayout();
-		// Keys from every view of the window, web pages included: WebView2 raises accelerator keys as KeyDown.
-		_root.AddHandler(UIElement.KeyDownEvent, new Microsoft.UI.Xaml.Input.KeyEventHandler(OnKeyDown), handledEventsToo: false);
-		Closed += (_, _) => OnClosed();
-		Activated += (_, e) =>
+		_window = new HostWindow("Zing", 1280, 820);
+		if (TestHooks.IsEndToEndRun)
 		{
-			if (e.WindowActivationState != WindowActivationState.Deactivated) _app.Focused(this);
-		};
+			AppWindow.Move(new Windows.Graphics.PointInt32(-20000, -20000));
+			AppWindow.IsShownInSwitchers = false;
+		}
+		_window.Resized += Relayout;
+		// Keys from every view of the window, web pages included, before the page sees them.
+		_window.KeyPressed += OnKey;
+		_window.Destroyed += OnClosed;
+		_window.Activated += () => _app.Focused(this);
 	}
+
+	public Microsoft.UI.Windowing.AppWindow AppWindow => _window.AppWindow;
+
+	/// <summary>Shows the window; test runs never take focus (AGENTS.md).</summary>
+	public void Show() => _window.Show(activate: !TestHooks.IsEndToEndRun);
 
 	public ChromeApi? Api { get; private set; }
 
@@ -61,24 +64,16 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	public CoreWebView2? AnyLivePage() =>
 		Api?.Tabs.Records.Select(r => Api.Tabs.PageOf(r.Id)).OfType<WebView2Page>().FirstOrDefault(p => p.IsOpen && p.IsStarted)?.Core;
 
-	private void Place()
-	{
-		AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
-		if (!TestHooks.IsEndToEndRun) return;
-		AppWindow.Move(new Windows.Graphics.PointInt32(-20000, -20000));
-		AppWindow.IsShownInSwitchers = false;
-	}
-
 	// Construction order (AGENTS.md): every field exists before anything can call back into the window.
 	private async Task StartAsync()
 	{
 		_environment = await _app.Environment;
-		// The chrome view joins the grid at once, under every page; its API must be registered before it loads and asks for state.
-		var chrome = RendererView.CreateAsync(_root, _environment, _bridge, "chrome", transparent: false);
-		_notices = new NoticeLayer(_root, _environment, _bridge, ContentRect, DispatcherQueue);
-		_stacks = new CoveringLayer(_root, _environment, _bridge, "overlay-stack", ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add);
-		_overview = new CoveringLayer(_root, _environment, _bridge, "overlay-overview", ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
-		_pageUi = new PageUiLayer(_root, _environment, _bridge, ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
+		// The chrome view is created first, under every page; its API must be registered before it loads and asks for state.
+		var chrome = RendererView.CreateAsync(_window, _environment, _bridge, "chrome", overlay: false);
+		_notices = new NoticeLayer(_window, _environment, _bridge, ContentRect, _dispatcher);
+		_stacks = new CoveringLayer(_window, _environment, _bridge, "overlay-stack", ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add);
+		_overview = new CoveringLayer(_window, _environment, _bridge, "overlay-overview", ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
+		_pageUi = new PageUiLayer(_window, _environment, _bridge, ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add);
 		_bridge.Register("default-browser:open-settings", _ =>
 		{
 			Shell.OpenExternal("ms-settings:defaultapps");
@@ -101,6 +96,9 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		_app.Ready(this);
 		_chrome = await chrome;
 		_renderers.Add(_chrome);
+		// It fills the window, so the pages (which may have started first) go over it.
+		_chrome.View.SendToBack();
+		_chrome.Place(ContentRect());
 		ReserveCaptionButtons();
 	}
 
@@ -112,37 +110,34 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	private void ReserveCaptionButtons()
 	{
 		if (_chrome is null) return;
-		var inset = AppWindow.TitleBar.RightInset / (_root.XamlRoot?.RasterizationScale ?? 1);
+		var inset = AppWindow.TitleBar.RightInset / Scale;
 		var px = Math.Ceiling(inset).ToString(System.Globalization.CultureInfo.InvariantCulture);
-		_ = _chrome.View.CoreWebView2?.ExecuteScriptAsync($"document.documentElement.style.setProperty('--caption-inset', '{px}px')");
+		_ = _chrome.View.Core.ExecuteScriptAsync($"document.documentElement.style.setProperty('--caption-inset', '{px}px')");
 	}
 
 	// MARK: IPageHost
 
 	public IPage Create(IPageEvents events)
 	{
-		var view = new WebView2 { Visibility = Visibility.Collapsed };
-		// Pages go just above the chrome renderer, under every layer.
-		_root.Children.Insert(Math.Min(1, _root.Children.Count), view);
 		var settings = _app.Services.Settings;
-		return new WebView2Page(view, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), () => settings.Get("theme")!.GetValue<string>(), this, _app.PersistentProfile);
+		// Created after the chrome view, so above it; overlays are popups above both.
+		return new WebView2Page(_window, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), () => settings.Get("theme")!.GetValue<string>(), this, _app.PersistentProfile);
 	}
 
 	public void Show(IPage page)
 	{
 		var shown = (WebView2Page)page;
-		if (_shown is not null && _shown != shown) _shown.View.Visibility = Visibility.Collapsed;
+		if (_shown is not null && _shown != shown) _shown.Visible = false;
 		_shown = shown;
 		PlacePage(shown);
-		shown.View.Visibility = Visibility.Visible;
+		shown.Visible = true;
 	}
 
 	public void Hide(IPage page)
 	{
 		var hidden = (WebView2Page)page;
-		hidden.View.Visibility = Visibility.Collapsed;
+		hidden.Visible = false;
 		if (_shown == hidden) _shown = null;
-		if (!hidden.IsOpen) _root.Children.Remove(hidden.View);
 	}
 
 	// MARK: IWindowHost
@@ -154,16 +149,16 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		{
 			foreach (var renderer in _renderers) renderer.Send(json);
 		}
-		if (DispatcherQueue.HasThreadAccess) Send();
-		else DispatcherQueue.TryEnqueue(Send);
+		if (_dispatcher.HasThreadAccess) Send();
+		else _dispatcher.TryEnqueue(Send);
 	}
 
 	/// <summary>Any thread may report something; the notice is drawn on the window's own.</summary>
 	public void Notify(string text)
 	{
-		if (!DispatcherQueue.HasThreadAccess)
+		if (!_dispatcher.HasThreadAccess)
 		{
-			DispatcherQueue.TryEnqueue(() => Notify(text));
+			_dispatcher.TryEnqueue(() => Notify(text));
 			return;
 		}
 		if (_notices is null || _closed) return;
@@ -173,12 +168,13 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	public void NewWindow() => _app.NewWindow();
 
 	// Not inside the bridge call that asked: the window takes its renderer views with it.
-	public void CloseWindow() => DispatcherQueue.TryEnqueue(Close);
+	public void CloseWindow() => _dispatcher.TryEnqueue(_window.Close);
 
 	public void Relayout()
 	{
 		// The buttons' width changes with the DPI and between maximised and restored.
 		ReserveCaptionButtons();
+		_chrome?.Place(ContentRect());
 		if (_shown is not null) PlacePage(_shown);
 		_notices?.Layout();
 		_pageUi?.Layout();
@@ -188,15 +184,14 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		Api?.LayoutChanged();
 	}
 
-	public ContentSize ContentSize => new(_root.ActualWidth, _root.ActualHeight);
+	public ContentSize ContentSize => _window.ClientSize;
 
 	/// <summary>The content's top-left on screen in DIPs, the units of the renderer's screen points.</summary>
 	public Point ContentOrigin
 	{
 		get
 		{
-			var origin = new Native.POINT();
-			Native.ClientToScreen(WinRT.Interop.WindowNative.GetWindowHandle(this), ref origin);
+			var origin = _window.ClientOrigin;
 			var scale = Scale;
 			return new Point(origin.X / scale, origin.Y / scale);
 		}
@@ -208,8 +203,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		get
 		{
 			if (TestHooks.IsEndToEndRun) return null;
-			var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-			if (Native.GetForegroundWindow() != hwnd || !Native.GetCursorPos(out var cursor)) return null;
+			if (Native.GetForegroundWindow() != _window.Hwnd || !Native.GetCursorPos(out var cursor)) return null;
 			var origin = ContentOrigin;
 			var scale = Scale;
 			var point = new Point(cursor.X / scale - origin.X, cursor.Y / scale - origin.Y);
@@ -218,7 +212,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		}
 	}
 
-	private double Scale => _root.XamlRoot?.RasterizationScale ?? 1;
+	private double Scale => _window.Scale;
 
 	public void SurfaceRegionChanged(Rect? region)
 	{
@@ -237,13 +231,22 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	/// <summary>Brings the window forward; test runs never take focus (AGENTS.md).</summary>
 	public void Reveal()
 	{
-		if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Minimized } presenter) presenter.Restore();
-		if (!TestHooks.IsEndToEndRun) Activate();
+		_window.Restore();
+		if (!TestHooks.IsEndToEndRun) _window.Show(activate: true);
 	}
 
-	public void FocusChrome() => _chrome?.View.Focus(FocusState.Programmatic);
+	public void FocusChrome() => _chrome?.View.Focus();
 
-	public void FocusSurface() => _surface?.View.Focus(FocusState.Programmatic);
+	/// <summary>Focuses the surface once it shows: it is asked as it opens, and a hidden window can't take the keyboard.</summary>
+	public void FocusSurface()
+	{
+		if (_surface is { Visible: true } surface)
+		{
+			surface.View.Focus();
+			return;
+		}
+		_surfaceWantsFocus = true;
+	}
 
 	public void PageUiChanged(PageUiState state) => _pageUi?.Changed(state);
 
@@ -331,38 +334,44 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 
 	public IShellActions Shell { get; } = new WindowsShell();
 
-	public IScheduler Scheduler => _scheduler ??= new DispatcherScheduler(DispatcherQueue);
+	public IScheduler Scheduler => _scheduler ??= new DispatcherScheduler(_dispatcher);
 
 	public void ShowMenu(IReadOnlyList<Zing.Core.MenuItem> items, double x, double y)
 	{
-		var flyout = new MenuFlyout();
-		foreach (var item in items) flyout.Items.Add(NativeMenus.Build(item));
-		flyout.ShowAt(_root, new Windows.Foundation.Point(x, y));
+		// A menu would show on the person's screen even for the off-screen test window (AGENTS.md).
+		if (TestHooks.IsEndToEndRun)
+		{
+			TestHooks.RecordMenu(items);
+			return;
+		}
+		// Not inside the bridge call that asked: a menu runs its own message loop until it closes.
+		_dispatcher.TryEnqueue(() => NativeMenus.Show(_window, items, x, y));
 	}
 
-	private void OnKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+	/// <summary>Zing's shortcuts win over the page's and the engine's own (Ctrl+F is Zing's find, not Edge's).</summary>
+	private void OnKey(HostedView view, CoreWebView2AcceleratorKeyPressedEventArgs e)
 	{
-		if (Api is null || Commands.CodeOf((int)e.Key) is not { } code) return;
-		static bool Down(Windows.System.VirtualKey key) =>
-			Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
-		var input = new KeyInput(code, Down(Windows.System.VirtualKey.Control), Down(Windows.System.VirtualKey.Shift), Down(Windows.System.VirtualKey.Menu));
+		if (e.KeyEventKind is not (CoreWebView2KeyEventKind.KeyDown or CoreWebView2KeyEventKind.SystemKeyDown)) return;
+		if (Api is null || Commands.CodeOf((int)e.VirtualKey) is not { } code) return;
+		const int VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
+		var input = new KeyInput(code, Native.IsDown(VK_CONTROL), Native.IsDown(VK_SHIFT), Native.IsDown(VK_MENU));
 		if (Api.HandleKey(input)) e.Handled = true;
 	}
 
 	// MARK: Layout
 
-	private Rect ContentRect() => new(0, 0, _root.ActualWidth, _root.ActualHeight);
+	private Rect ContentRect()
+	{
+		var size = _window.ClientSize;
+		return new(0, 0, size.Width, size.Height);
+	}
 
 	private void PlacePage(WebView2Page page)
 	{
 		if (Api is null) return;
 		var insets = Api.Insets();
 		var content = ContentRect();
-		page.View.HorizontalAlignment = HorizontalAlignment.Left;
-		page.View.VerticalAlignment = VerticalAlignment.Top;
-		page.View.Margin = new Thickness(insets.Left, insets.Top, 0, 0);
-		page.View.Width = Math.Max(0, content.Width - insets.Left - insets.Right);
-		page.View.Height = Math.Max(0, content.Height - insets.Top);
+		page.Place(new Rect(insets.Left, insets.Top, Math.Max(0, content.Width - insets.Left - insets.Right), Math.Max(0, content.Height - insets.Top)));
 	}
 
 	/// <summary>The surface floats above the page and chrome, sized to what it shows, so it never takes the page's clicks.</summary>
@@ -379,14 +388,17 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 			return;
 		}
 		_surface.Place(region);
-		Layers.Raise(_root, _surface.View);
+		_surface.View.Raise();
 		_notices?.Raise();
 		_surface.Visible = true;
+		if (!_surfaceWantsFocus) return;
+		_surfaceWantsFocus = false;
+		_surface.View.Focus();
 	}
 
 	private async Task CreateSurfaceAsync()
 	{
-		_surface = await RendererView.CreateAsync(_root, _environment!, _bridge, "surface", transparent: true);
+		_surface = await RendererView.CreateAsync(_window, _environment!, _bridge, "surface", overlay: true);
 		_renderers.Add(_surface);
 		// It may have missed the state pushed while it loaded.
 		if (Api is not null) _surface.Send(Bridge.Event("shell:state", Api.Shell.State()));
