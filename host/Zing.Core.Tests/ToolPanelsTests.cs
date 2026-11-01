@@ -134,6 +134,7 @@ public sealed class ToolPanelsTests
 			i.GetProperty("gated").GetBoolean(),
 			i.GetProperty("settingsOpen").GetBoolean(),
 			i.GetProperty("sidebarRevealed").GetBoolean(),
+			Layout.SidebarColumnWidth,
 			i.GetProperty("panelFrames").EnumerateArray().Select(PanelLayoutTests.ToRect).ToList(),
 			i.GetProperty("dragging").GetBoolean());
 		var want = c.GetProperty("want");

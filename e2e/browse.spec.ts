@@ -41,6 +41,8 @@ test('typing an address loads it in the page and the tab shows its title', async
 test('back and forward go through the page history', async () => {
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/one` } })
 	await pageWhere(zing.browser, (p) => p.url() === `${base}/one`)
+	// The chrome draws its first tab a moment after the page loads; typing before then has no tab to go to.
+	await expect(zing.chrome.locator('[role="tab"]')).toContainText('Page one')
 	const address = zing.chrome.getByRole('textbox', { name: 'Address and search bar' })
 	await address.click()
 	await address.fill(`${base}/two`)
@@ -58,10 +60,12 @@ test('back and forward go through the page history', async () => {
 	await zing.close()
 })
 
-test('the tab strip leaves room for the window buttons', async () => {
+test('the top band leaves room for the window buttons, with tabs on the side or on top', async () => {
 	const zing = await launchZing()
-	const padding = () => zing.chrome.locator('.tabstrip').evaluate((el) => parseFloat((globalThis as unknown as { getComputedStyle(e: unknown): { paddingRight: string } }).getComputedStyle(el).paddingRight))
-	// Minimise, maximise and close take about 138 DIPs; nothing of the strip may sit under them.
-	await expect.poll(padding).toBeGreaterThan(100)
+	const padding = (selector: string) => () => zing.chrome.locator(selector).evaluate((el) => parseFloat((globalThis as unknown as { getComputedStyle(e: unknown): { paddingRight: string } }).getComputedStyle(el).paddingRight))
+	// Minimise, maximise and close take about 138 DIPs; nothing of the band may sit under them.
+	await expect.poll(padding('.toolbar')).toBeGreaterThan(100)
+	await zing.chrome.evaluate(() => (globalThis as unknown as { zing: { setSetting(k: string, v: unknown): Promise<void> } }).zing.setSetting('tabBarPosition', 'top'))
+	await expect.poll(padding('.tabstrip')).toBeGreaterThan(100)
 	await zing.close()
 })

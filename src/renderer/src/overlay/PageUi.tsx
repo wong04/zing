@@ -1,20 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { EMPTY_PAGE_UI, hasVisiblePageUi, type DownloadEntry, type PageUiState, type PermissionKind } from '@shared/browser/pageUi'
+import { followHostState } from '../hostState'
 import { zing } from '../api'
 import './pageui.css'
 
 function usePageUiState(): PageUiState {
 	const [state, setState] = useState<PageUiState>(EMPTY_PAGE_UI)
 	useEffect(() => {
-		let pushed = false
-		const off = zing.onPageUiState((next) => {
-			pushed = true
-			setState(next)
-		})
-		void zing.getPageUi().then((initial) => {
-			if (!pushed) setState(initial)
-		})
-		return off
+		return followHostState(zing.onPageUiState, zing.getPageUi, setState)
 	}, [])
 	return state
 }

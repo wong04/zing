@@ -139,8 +139,8 @@ test('Zing’s own chrome view comes back after its renderer dies', async () => 
 
 	crash(session)
 
-	// A fresh document (the marker is gone) that drew the tab strip from the host's state.
-	await expect.poll(() => probe('window.__beforeCrash !== true && document.querySelectorAll(\'.tabs > [role="tab"]\').length'), { timeout: 20_000 }).toBe(1)
+	// A fresh document (the marker is gone) that drew the tabs from the host's state.
+	await expect.poll(() => probe('window.__beforeCrash !== true && document.querySelectorAll(\'[role="tab"]\').length'), { timeout: 20_000 }).toBe(1)
 	// Playwright gave up on the crashed page, so close() can't reach the window through it: close it over the session as close() starts.
 	const closing = zing.close()
 	await probe('window.zing.runCommand("window.close")')

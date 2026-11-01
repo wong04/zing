@@ -20,7 +20,12 @@ public sealed class EdgeReveal(Action<bool> onChange, double edge = EdgeReveal.D
 
 	public const double DefaultPeekMs = 1400;
 
-	private readonly double _hideBeyond = hideBeyond ?? Layout.SidebarColumnWidth + 36;
+	/// <summary>How far past the sidebar the cursor may wander before it is put away.</summary>
+	public const double HideMargin = 36;
+
+	/// <summary>The cursor beyond this puts a revealed sidebar away; it follows the sidebar's width (<see cref="SidebarReveal.SetWidth"/>).</summary>
+	public double HideBeyond { get; set; } = hideBeyond ?? Layout.SidebarColumnWidth + HideMargin;
+
 	private double? _dwellStart;
 	private double? _peekUntil;
 
@@ -69,7 +74,7 @@ public sealed class EdgeReveal(Action<bool> onChange, double edge = EdgeReveal.D
 	{
 		if (_peekUntil is { } until && sample.Now < until) return;
 		_peekUntil = null;
-		if (sample.InWindow && sample.X <= _hideBeyond) return;
+		if (sample.InWindow && sample.X <= HideBeyond) return;
 		Set(false);
 	}
 
@@ -108,6 +113,9 @@ public sealed class SidebarReveal : IDisposable
 		_scheduler = scheduler;
 		_reveal = new EdgeReveal(revealed => Changed?.Invoke(revealed));
 	}
+
+	/// <summary>The revealed sidebar's width: the app sidebar's, or the tab rail's when tabs are on the left.</summary>
+	public void SetWidth(double width) => _reveal.HideBeyond = width + EdgeReveal.HideMargin;
 
 	/// <summary>Raised with the new value whenever the sidebar is revealed or put away.</summary>
 	public event Action<bool>? Changed;

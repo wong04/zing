@@ -1,0 +1,278 @@
+/*
+ * The side rail (TabRail). Pinned, it is a column of the chrome, flush with the window's edges, and the host
+ * places the page beside it (verticalTabWidth). Floating, the surface view draws it as a card over the page.
+ */
+
+.rail-slot {
+	flex: none;
+	height: 100%;
+}
+
+.rail {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	height: 100%;
+	padding: 0 8px 8px;
+	background: var(--bg);
+	color: var(--text);
+	overflow: hidden;
+}
+
+.rail.pinned.left {
+	border-right: 1px solid var(--separator);
+}
+
+.rail.pinned.right {
+	border-left: 1px solid var(--separator);
+}
+
+.rail.floating {
+	position: fixed;
+	top: 8px;
+	bottom: 8px;
+	left: 8px;
+	height: auto;
+	border: 1px solid var(--separator);
+	border-radius: 12px;
+	background: color-mix(in srgb, var(--surface) 55%, transparent);
+	backdrop-filter: blur(24px) saturate(1.4);
+	box-shadow: var(--elevation-strong);
+	animation: rail-in 0.18s ease-out;
+}
+
+@keyframes rail-in {
+	from {
+		opacity: 0;
+		transform: translateX(-16px);
+	}
+}
+
+/* The head drags the window, as the tab strip does on top; its buttons opt out. */
+.rail-head {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex: none;
+	height: var(--toolbar-height, 40px);
+	-webkit-app-region: drag;
+}
+
+.rail-drag {
+	flex: 1;
+	align-self: stretch;
+}
+
+.rail-icon-button {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 28px;
+	height: 26px;
+	padding: 0;
+	border: 0;
+	border-radius: var(--control-radius);
+	background: transparent;
+	color: var(--text-secondary, var(--text));
+	-webkit-app-region: no-drag;
+}
+
+.rail-icon-button:hover {
+	background: color-mix(in srgb, var(--text) 7%, transparent);
+	color: var(--text);
+}
+
+.rail-tools {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+	flex: none;
+	padding-bottom: 4px;
+	border-bottom: 1px solid var(--separator);
+	margin-bottom: 4px;
+}
+
+/* Pinned tabs: icons in a grid, as many per row as the width fits. */
+.rail-pinned {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+	gap: 6px;
+	flex: none;
+	padding-bottom: 8px;
+	margin-bottom: 4px;
+	border-bottom: 1px solid var(--separator);
+}
+
+.rail-tile {
+	display: grid;
+	place-items: center;
+	height: 40px;
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--text) 6%, transparent);
+	touch-action: none;
+}
+
+.rail-tile:hover {
+	background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.rail-tile.active {
+	background: var(--surface);
+	box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+.rail-tabs {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+.rail-row {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	flex: none;
+	height: 32px;
+	padding: 0 4px 0 9px;
+	border: 0;
+	border-radius: var(--control-radius);
+	background: transparent;
+	color: var(--text);
+	font: inherit;
+	font-size: 13px;
+	text-align: left;
+	touch-action: none;
+	user-select: none;
+}
+
+.rail-row:hover {
+	background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.rail-row.active {
+	background: var(--surface);
+	box-shadow: var(--elevation, 0 1px 2px rgb(0 0 0 / 0.12));
+}
+
+.rail-row.nested {
+	padding-left: 24px;
+}
+
+.rail-row-icon {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 16px;
+	height: 16px;
+}
+
+.rail-row-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.rail-close {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: inherit;
+	visibility: hidden;
+}
+
+.rail-tab:hover .rail-close,
+.rail-tab.active .rail-close {
+	visibility: visible;
+}
+
+.rail-close:hover {
+	background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.rail-new-tab {
+	color: var(--text-secondary, var(--text));
+}
+
+.rail-group-count {
+	flex: none;
+	min-width: 18px;
+	padding: 0 5px;
+	border-radius: 9px;
+	background: color-mix(in srgb, var(--text) 8%, transparent);
+	font-size: 11px;
+	text-align: center;
+}
+
+.rail-chevron {
+	flex: none;
+	width: 16px;
+	text-align: center;
+	transition: transform 0.12s ease-out;
+}
+
+.rail-chevron.open {
+	transform: rotate(90deg);
+}
+
+.rail-row.dragging,
+.rail-group.dragging {
+	position: relative;
+	z-index: 2;
+	background: var(--surface);
+	box-shadow: var(--elevation-strong);
+}
+
+/* The others slide aside while a row is held. Off otherwise, so a drop never animates twice. */
+.rail-tabs[data-dragging] > :not(.dragging) {
+	transition: transform 150ms ease-out;
+}
+
+.rail-row:focus-visible,
+.rail-tile:focus-visible,
+.rail-icon-button:focus-visible {
+	outline: 2px solid var(--accent-ink);
+	outline-offset: -2px;
+}
+
+/* The inner edge resizes the rail. */
+.rail-resize {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 6px;
+	cursor: col-resize;
+	touch-action: none;
+	-webkit-app-region: no-drag;
+}
+
+.rail-resize.left {
+	right: 0;
+}
+
+.rail-resize.right {
+	left: 0;
+}
+
+/* With tabs on the side the toolbar is the window's top band: it drags the window and leaves room for its buttons. */
+.chrome.side .toolbar {
+	padding-right: calc(var(--caption-inset, 0px) + 8px);
+	-webkit-app-region: drag;
+}
+
+.chrome.side .toolbar button,
+.chrome.side .toolbar input {
+	-webkit-app-region: no-drag;
+}

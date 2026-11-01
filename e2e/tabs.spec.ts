@@ -23,6 +23,14 @@ test.afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())
 
 const url = (host: string, title: string): string => `http://${host}.localhost:${port}/${encodeURIComponent(title)}`
 
+/** These tests are about the top strip; tabs are on the side by default (docs/phase-4.md). */
+async function launchWithStrip() {
+	const zing = await launchZing()
+	await zing.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'top'))
+	await expect(zing.chrome.locator('.tabstrip')).toBeVisible()
+	return zing
+}
+
 /** Opens a tab on a page with this title and waits until the strip shows it. */
 async function openPage(chrome: Page, host: string, title: string): Promise<string> {
 	await chrome.evaluate(() => window.zing.runCommand('tab.new'))
@@ -35,7 +43,7 @@ async function openPage(chrome: Page, host: string, title: string): Promise<stri
 const titles = (chrome: Page) => chrome.locator('.tabs > [role="tab"]').evaluateAll((els) => els.map((e) => e.getAttribute('title')))
 
 test('dragging a tab along the strip moves it, and the order is the tabs’ own', async () => {
-	const zing = await launchZing()
+	const zing = await launchWithStrip()
 	await openPage(zing.chrome, 'one', 'Zebra')
 	await openPage(zing.chrome, 'two', 'Apple')
 	await openPage(zing.chrome, 'three', 'Mango')
@@ -54,7 +62,7 @@ test('dragging a tab along the strip moves it, and the order is the tabs’ own'
 })
 
 test('arrangements sort the strip', async () => {
-	const zing = await launchZing()
+	const zing = await launchWithStrip()
 	await openPage(zing.chrome, 'one', 'Zebra')
 	await openPage(zing.chrome, 'two', 'Apple')
 	await openPage(zing.chrome, 'three', 'Mango')
@@ -68,7 +76,7 @@ test('arrangements sort the strip', async () => {
 })
 
 test('Dropdown style stacks a site and lists its pages in the overlay', async () => {
-	const zing = await launchZing()
+	const zing = await launchWithStrip()
 	const first = await openPage(zing.chrome, 'a.site', 'Inbox')
 	await openPage(zing.chrome, 'b.site', 'Docs')
 	await openPage(zing.chrome, 'solo', 'Alone')

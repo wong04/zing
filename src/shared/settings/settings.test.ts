@@ -68,8 +68,8 @@ describe('SettingsStore', () => {
 		const store = new SettingsStore()
 		const seen: string[] = []
 		store.subscribe((_, key) => seen.push(key))
-		store.set('tabBarPosition', 'left')
-		expect(store.get('tabBarPosition')).toBe('left')
+		store.set('tabBarPosition', 'right')
+		expect(store.get('tabBarPosition')).toBe('right')
 		expect(seen).toEqual(['tabBarPosition'])
 		for (const { key, value, unchanged } of vectors.storeRejects) {
 			expect(() => store.set(key as SettingKey, value as never)).toThrow(InvalidSettingError)

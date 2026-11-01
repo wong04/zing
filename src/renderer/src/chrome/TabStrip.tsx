@@ -7,6 +7,7 @@ import { PlusIcon } from './icons'
 import { dragOffsetFor, keysAfterDrop } from './tabs/dragGeometry'
 import { isPinnedSlot, slotHoldsTab, slotMetrics, TAB_GAP } from './tabs/layout'
 import { StackChip, TabChip, type ChipFrame } from './tabs/SlotChips'
+import { commitMove } from './tabs/commitMove'
 import { useSlotDrag, type Dropped } from './tabs/useSlotDrag'
 import './tabs/tabs.css'
 import { commandTooltip } from './tooltip'
@@ -39,13 +40,6 @@ function sortedBy(slots: readonly Slot[], keys: readonly string[] | undefined): 
 	return [...slots].sort((a, b) => rank(a) - rank(b))
 }
 
-async function commit(slot: Slot, to: number, pinnedCount: number, dropdowns: boolean): Promise<void> {
-	if (slot.kind === 'stack') return zing.moveStack(slot.key, to)
-	if (slot.pinned) return zing.moveTab(slot.id, to)
-	if (dropdowns) return zing.moveStack(slot.key, to)
-	return zing.moveTab(slot.id, pinnedCount + to)
-}
-
 export function TabStrip({ state }: { state: TabsState | undefined }) {
 	const tabs = useMemo(() => state?.tabs ?? [], [state?.tabs])
 	const activeId = state?.activeId
@@ -75,7 +69,7 @@ export function TabStrip({ state }: { state: TabsState | undefined }) {
 		const looseKeys = displayed.filter((s) => !isPinnedSlot(s)).map((s) => s.key)
 		setHeldKeys(isPinnedSlot(slot) ? [...section, ...looseKeys] : [...pinnedKeys, ...section])
 		const release = (): void => void setTimeout(() => setHeldKeys(undefined), SETTLE_MS)
-		commit(slot, to, pinnedKeys.length, dropdowns).then(release, (error: unknown) => {
+		commitMove(slot, to, pinnedKeys.length, dropdowns).then(release, (error: unknown) => {
 			setHeldKeys(undefined)
 			throw error
 		})

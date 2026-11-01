@@ -136,6 +136,8 @@ Also dropped:
 | T3 | Fold app sidebar into a left tab rail | new | App/Sidebar.swift | [#64](https://github.com/wong04/zing/issues/64) | Open |
 | T4 | Virtualized tab list | new | - | [#65](https://github.com/wong04/zing/issues/65) | Open |
 | T5 | Split view | new | - | [#66](https://github.com/wong04/zing/issues/66) | Open |
+| T6 | Favourite tiles in the tab rail (saved tabs) | new | - | - | Open |
+| T7 | Pinned items in folders (saved tabs) | new | - | - | Open |
 
 ## M5 Themes
 

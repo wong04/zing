@@ -5,6 +5,8 @@ import { PanelHost } from '../panels/PanelHost'
 import { SettingsSheet } from '../settings/SettingsSheet'
 import { useAccentTheme } from '../settings/useAccentTheme'
 import { useSettings } from '../settings/useSettings'
+import { useTabsState } from '../chrome/useTabsState'
+import { TabRail } from '../rail/TabRail'
 import { Sidebar } from '../sidebar/Sidebar'
 
 /**
@@ -18,11 +20,14 @@ export function Surface() {
 	const panels = useToolPanels()
 	const account = useAccount()
 	const settings = useSettings()
+	const tabs = useTabsState()
 	if (!shell || !account) return null
 	if (shell.gated) return <AuthView account={account} />
 	return (
 		<>
-			{shell.sidebarRevealed ? <Sidebar variant="floating" /> : null}
+			{shell.sidebarRevealed ? (
+				settings?.settings.tabBarPosition === 'left' ? <TabRail state={tabs} variant="floating" side="left" /> : <Sidebar variant="floating" />
+			) : null}
 			<PanelHost state={panels} origin={shell.origin} />
 			{shell.settingsOpen && settings ? (
 				<SettingsSheet handle={settings} initialCategory={shell.settingsCategory} version={shell.appVersion} />

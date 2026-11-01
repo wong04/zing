@@ -292,6 +292,7 @@ public sealed record SurfaceInput(
 	bool Gated,
 	bool SettingsOpen,
 	bool SidebarRevealed,
+	double SidebarWidth,
 	IReadOnlyList<Rect> PanelFrames,
 	bool Dragging);
 
@@ -311,7 +312,7 @@ public static class SurfaceRegion
 		var content = input.Content;
 		if (input.Gated || input.SettingsOpen) return new Rect(0, 0, content.Width, content.Height);
 		var parts = new List<Rect>();
-		if (input.SidebarRevealed) parts.Add(new Rect(0, 0, Layout.SidebarColumnWidth, content.Height));
+		if (input.SidebarRevealed) parts.Add(new Rect(0, 0, input.SidebarWidth, content.Height));
 		if (input.Dragging) parts.Add(input.Page);
 		else
 			foreach (var f in input.PanelFrames)

@@ -1,6 +1,7 @@
 // The Settings sheet as data (Krackn SettingsView.swift panes). Every key in
 // SETTINGS_SCHEMA must appear here: a setting with no control is the bug
 // Krackn's AppSettings exists to prevent, and rows.test.ts enforces it.
+import { VERTICAL_TABS } from '@shared/layout/chrome'
 import { tabOrganizationDetail, tabOrganizationLabel } from '@shared/browser/tabOrganizer'
 import {
 	ACCENTS,
@@ -195,6 +196,14 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 			key: 'tabBarPosition',
 			title: 'Tab bar position',
 			control: { kind: 'segmented', width: 200, options: options(TAB_BAR_POSITIONS, POSITION_LABELS) },
+		},
+		{
+			type: 'setting',
+			key: 'verticalTabWidth',
+			title: 'Tab sidebar width',
+			detail: 'You can also drag the sidebar’s edge.',
+			visible: (s) => s.tabBarPosition !== 'top',
+			control: { kind: 'slider', min: VERTICAL_TABS.minWidth, max: VERTICAL_TABS.maxWidth, step: 4, unit: 'px' },
 		},
 		toggle('autoCloseEnabled', 'Close inactive tabs', { detail: "Pinned tabs and the one you're on are always kept." }),
 		{

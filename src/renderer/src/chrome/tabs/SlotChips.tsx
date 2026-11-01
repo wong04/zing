@@ -29,7 +29,7 @@ function classes(...names: (string | false)[]): string {
 	return names.filter(Boolean).join(' ')
 }
 
-function Icon({ tab }: { tab: TabView }) {
+export function TabIconView({ tab }: { tab: TabView }) {
 	// A crashed or hung page shows a marker in place of its icon; a page stuck mid-load would otherwise spin forever.
 	if (tab.pageState) {
 		return (
@@ -109,7 +109,7 @@ export function TabChip({ tab, active, frame }: { tab: TabView; active: boolean;
 					<CloseIcon />
 				</button>
 			)}
-			<Icon tab={tab} />
+			<TabIconView tab={tab} />
 			{iconOnly ? null : <span className="tab-title">{title}</span>}
 		</div>
 	)
@@ -178,7 +178,7 @@ export function StackChip({ stackKey, name, tabs, activeId, open, frame }: Stack
 			}}
 			onDragLeave={springLoad.onDragLeave}
 		>
-			<Icon tab={lead} />
+			<TabIconView tab={lead} />
 			{frame.compact ? null : <span className="tab-title">{active ? tabTitle(lead) : name}</span>}
 			<span className="stack-count" aria-label={`${tabs.length} tabs`}>
 				{tabs.length}
