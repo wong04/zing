@@ -139,7 +139,7 @@ public static class UserData
 
 	/// <summary>The file exceptions wrap the reason; a bare one is its own reason.</summary>
 	private static Exception Cause(Exception error) =>
-		error is SettingsFileException or LibraryFileException or SessionFileException && error.InnerException is { } inner ? inner : error;
+		error is SettingsFileException or LibraryFileException or SessionFileException or AccountFileException && error.InnerException is { } inner ? inner : error;
 }
 
 /// <summary>Runs an action after a delay; injectable so tests need no real waiting.</summary>

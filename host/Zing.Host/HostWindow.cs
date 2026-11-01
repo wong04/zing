@@ -151,7 +151,7 @@ public sealed class HostWindow
 				break;
 			case Native.WM_SETFOCUS:
 				// After the queued messages, so a click that activated the window places focus itself first.
-				window._dispatcher.TryEnqueue(window.PassFocus);
+				Faults.Enqueue(window._dispatcher, window.PassFocus, "passing focus");
 				break;
 			case Native.WM_DPICHANGED:
 				var suggested = System.Runtime.InteropServices.Marshal.PtrToStructure<Native.RECT>(lParam);

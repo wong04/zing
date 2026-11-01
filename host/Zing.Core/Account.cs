@@ -106,19 +106,62 @@ public sealed class AccountStore
 	private readonly string _dir;
 	private readonly ISecretCipher _cipher;
 	private readonly List<Action<AccountState>> _listeners = [];
+	private readonly bool _readOnly;
 	private StoredAccount? _account;
 	private bool _signedIn;
 
+	/// <summary>Strict: a profile that can't be read throws <see cref="AccountFileException"/>. Startup uses <see cref="Open"/>.</summary>
 	/// <param name="startAsGuest">Starts signed in as a guest. Only for development and tests.</param>
 	public AccountStore(string dir, ISecretCipher cipher, bool startAsGuest = false)
+		: this(dir, cipher, LoadProfile(Path.Combine(dir, ProfileFile)), readOnly: false, startAsGuest)
+	{
+	}
+
+	private AccountStore(string dir, ISecretCipher cipher, StoredAccount? account, bool readOnly, bool startAsGuest)
 	{
 		_dir = dir;
 		_cipher = cipher;
-		_account = Load();
+		_account = account;
+		_readOnly = readOnly;
 		// A returning user is signed in automatically unless they asked for a lock.
 		var unlocked = _account is { RequirePassword: false } && !NeedsReset();
 		_signedIn = startAsGuest || unlocked;
 	}
+
+	/// <summary>
+	/// The account for this launch; a bad account file never stops Zing starting (docs/architecture-review.md W-3).
+	/// An invalid profile is moved aside (UserData.Load) and Zing starts with no account, signed out, so the gate offers
+	/// a new account or "Skip for now". A profile or password check that can't be read (locked, access denied) is left
+	/// in place and Zing also starts with no account, but read-only: nothing is written or deleted this launch, so the
+	/// files, which may be fine, survive for the next one.
+	///
+	/// Why no account rather than a locked gate: the gate is a convenience lock, not encryption. Nothing on disk is sealed
+	/// with the password, the gate always offers "Skip for now", and deleting account.json already gives the same result,
+	/// so starting fresh opens nothing that a person at this PC couldn't already open. It never treats the unreadable
+	/// account as one with "no password required": that account is not loaded at all, and the person starts signed out.
+	/// </summary>
+	public static Loaded<AccountStore> Open(string dir, ISecretCipher cipher, DateTime stamp, bool startAsGuest = false)
+	{
+		var profile = Path.Combine(dir, ProfileFile);
+		var loaded = UserData.Load<StoredAccount?>(profile, () => LoadProfile(profile), () => null, stamp);
+		if (loaded.Problem is { } problem)
+			return new Loaded<AccountStore>(new AccountStore(dir, cipher, null, readOnly: problem.OriginalInPlace, startAsGuest), problem);
+		try
+		{
+			var store = new AccountStore(dir, cipher, loaded.Value, readOnly: false, startAsGuest);
+			// Read the password check now, so a locked one is found at launch rather than by the first State() the gate asks for.
+			_ = store.NeedsReset();
+			return new Loaded<AccountStore>(store, null);
+		}
+		catch (AccountFileException error)
+		{
+			// The password check couldn't be read. Without it the account can't be unlocked, and it may be fine, so leave both files alone.
+			return new Loaded<AccountStore>(new AccountStore(dir, cipher, null, readOnly: true, startAsGuest), new LoadProblem(error.Path, null, error));
+		}
+	}
+
+	/// <summary>The account files are still in place but couldn't be read at launch, so this launch never writes them.</summary>
+	public bool ReadOnly => _readOnly;
 
 	public AccountState State()
 	{
@@ -139,7 +182,8 @@ public sealed class AccountStore
 
 	public void SignUp(string username, string displayName, string email, string password)
 	{
-		if (_account is not null) Fail(AccountErrorCode.AccountExists);
+		// An account file that couldn't be read is still there: a new account would overwrite it.
+		if (_account is not null || _readOnly) Fail(AccountErrorCode.AccountExists);
 		var user = username.Trim();
 		if (user == "" || password == "") Fail(AccountErrorCode.EmptyField);
 		if (password.Length < MinPasswordLength) Fail(AccountErrorCode.WeakPassword);
@@ -208,6 +252,7 @@ public sealed class AccountStore
 
 	public void DeleteAccount()
 	{
+		if (_readOnly) Fail(AccountErrorCode.NoAccount);
 		File.Delete(Path.Combine(_dir, ProfileFile));
 		File.Delete(Path.Combine(_dir, VerifierFile));
 		_account = null;
@@ -233,6 +278,7 @@ public sealed class AccountStore
 
 	private void StoreVerifier(string password, byte[] salt)
 	{
+		if (_readOnly) throw new InvalidOperationException("The account files couldn't be read at launch, so they aren't written");
 		Directory.CreateDirectory(_dir);
 		WriteAtomic(VerifierFile, _cipher.Encrypt(Scrypt.Derive(password, salt)));
 	}
@@ -266,9 +312,8 @@ public sealed class AccountStore
 
 	private bool NeedsReset() => _account is not null && ReadVerifier() is null;
 
-	private StoredAccount? Load()
+	private static StoredAccount? LoadProfile(string path)
 	{
-		var path = Path.Combine(_dir, ProfileFile);
 		string raw;
 		try
 		{
@@ -294,6 +339,7 @@ public sealed class AccountStore
 
 	private void Save(StoredAccount account)
 	{
+		if (_readOnly) throw new InvalidOperationException("The account files couldn't be read at launch, so they aren't written");
 		JsonFiles.WriteJsonAtomic(Path.Combine(_dir, ProfileFile), account);
 		_account = account;
 	}
