@@ -564,6 +564,22 @@ public class TabLifecycleTests
 	}
 
 	[Fact]
+	public void A_tab_that_closes_while_it_is_inspected_for_sleep_is_gone_not_an_error()
+	{
+		var w = new Wired();
+		// Auto-close (or the person) closes the tab while the sleeper is reading its page.
+		w.Tabs.Pages["b"].OnProbe = () =>
+		{
+			w.Tabs.Pages["b"].ProbeFails = true;
+			w.Tabs.Close("b");
+		};
+		w.Time.Advance(31 * Minute);
+		Assert.Equal(["b"], w.Tabs.Closed);
+		Assert.Empty(w.Tabs.Slept);
+		Assert.Empty(w.Errors);
+	}
+
+	[Fact]
 	public void TabLifecycleRecomputesAfterTheClockJumps()
 	{
 		var w = new Wired();

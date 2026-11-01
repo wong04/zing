@@ -33,6 +33,7 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script) => Task.FromResult(ProbeResult);
 	public void RunWhenLoaded(string script) => Calls.Add($"when loaded {script}");
 	public int TextSize { get; set; } = Zing.Core.TextSize.Default;
+	public double Zoom { get; set; } = Zing.Core.Zoom.Default;
 	public void Print() => Calls.Add("print");
 	public string? Picture { get; set; } = "data:image/jpeg;base64,AA==";
 	public Task<string?> CaptureAsync() => Task.FromResult(Picture);

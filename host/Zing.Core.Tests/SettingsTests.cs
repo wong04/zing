@@ -14,11 +14,13 @@ public class SettingsTests
 	private static string[] Strings(string name) => V.GetProperty(name).EnumerateArray().Select(e => e.GetString()!).ToArray();
 
 	[Fact]
-	public void HasAllKracknKeysPlusZingKeys()
+	public void HasAllKracknKeysPlusZingKeysLessRetired()
 	{
 		var krackn = Strings("kracknKeys");
+		var retired = Strings("retiredKeys");
 		Assert.Equal(30, krackn.Length);
-		Assert.Equal(krackn.Concat(Strings("zingKeys")).Order(), SettingsSchema.Keys.Order());
+		Assert.Equal(retired, SettingsSchema.Retired);
+		Assert.Equal(krackn.Concat(Strings("zingKeys")).Except(retired).Order(), SettingsSchema.Keys.Order());
 	}
 
 	[Fact]
@@ -50,6 +52,8 @@ public class SettingsTests
 			var parsed = Settings.Parse(Node(c.GetProperty("input")));
 			foreach (var p in c.GetProperty("expectSubset").EnumerateObject())
 				Assert.True(JsonNode.DeepEquals(Node(p.Value), parsed[p.Name]), $"{c.GetProperty("name")} {p.Name}");
+			if (c.TryGetProperty("expectAbsent", out var absent))
+				foreach (var key in absent.EnumerateArray()) Assert.False(parsed.ContainsKey(key.GetString()!), $"{c.GetProperty("name")} {key}");
 		}
 	}
 

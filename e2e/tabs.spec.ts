@@ -34,6 +34,25 @@ async function openPage(chrome: Page, host: string, title: string): Promise<stri
 
 const titles = (chrome: Page) => chrome.locator('.tabs > [role="tab"]').evaluateAll((els) => els.map((e) => e.getAttribute('title')))
 
+test('dragging a tab along the strip moves it, and the order is the tabs’ own', async () => {
+	const zing = await launchZing()
+	await openPage(zing.chrome, 'one', 'Zebra')
+	await openPage(zing.chrome, 'two', 'Apple')
+	await openPage(zing.chrome, 'three', 'Mango')
+	const named = async () => (await titles(zing.chrome)).filter((t) => t !== 'New Tab')
+	await expect.poll(named).toEqual(['Zebra', 'Apple', 'Mango'])
+	const from = (await zing.chrome.locator('.tabs > [role="tab"][title="Zebra"]').boundingBox())!
+	const to = (await zing.chrome.locator('.tabs > [role="tab"][title="Mango"]').boundingBox())!
+	// Pointer events in the chrome's own view, in steps, so the strip sees a drag rather than a click.
+	await zing.chrome.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+	await zing.chrome.mouse.down()
+	await zing.chrome.mouse.move(to.x + to.width - 4, to.y + to.height / 2, { steps: 12 })
+	await zing.chrome.mouse.up()
+	await expect.poll(named).toEqual(['Apple', 'Mango', 'Zebra'])
+	expect((await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.map((t) => t.title).filter((t) => t !== 'New Tab')).toEqual(['Apple', 'Mango', 'Zebra'])
+	await zing.close()
+})
+
 test('arrangements sort the strip', async () => {
 	const zing = await launchZing()
 	await openPage(zing.chrome, 'one', 'Zebra')

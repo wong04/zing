@@ -39,9 +39,6 @@
 	"blockTrackers": {
 		"type": "flag"
 	},
-	"confirmQuit": {
-		"type": "flag"
-	},
 	"defaultQuality": {
 		"type": "integer",
 		"min": 10,

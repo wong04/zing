@@ -83,7 +83,6 @@ export const SETTINGS_SCHEMA = {
 	startShortcuts: startShortcuts(),
 	searchEngine: oneOf(SEARCH_ENGINES, 'google'),
 	blockTrackers: flag(true),
-	confirmQuit: flag(false),
 	defaultQuality: integerIn(10, 100, 80),
 	preserveOriginals: flag(true),
 	dohProvider: oneOf(DOH_PROVIDERS, 'cloudflare'),
@@ -129,6 +128,13 @@ export const SETTING_KEYS = Object.keys(SETTINGS_SCHEMA) as SettingKey[]
 export const DEFAULT_SETTINGS: Settings = Object.freeze(
 	Object.fromEntries(SETTING_KEYS.map((k) => [k, SETTINGS_SCHEMA[k].default])) as unknown as Settings,
 )
+
+/**
+ * Keys Zing once had and dropped. A stored file may still hold one (it was written while the key
+ * existed), so reading skips it instead of failing the whole file as unknown; the next save leaves it out.
+ * confirmQuit: Krackn's "Confirm before quitting" switch, which Krackn never read either.
+ */
+export const RETIRED_SETTING_KEYS: readonly string[] = ['confirmQuit']
 
 export function isSettingKey(key: string): key is SettingKey {
 	return Object.hasOwn(SETTINGS_SCHEMA, key)

@@ -103,6 +103,43 @@ test('a permission request is asked in the page UI and denied when Deny is click
 	await zing.close()
 })
 
+test('Allow grants a notification, and the camera and microphone, each asked in turn', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/perm` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/perm`)
+	await page.waitForLoadState('domcontentloaded')
+	const result = () => page.evaluate(() => (globalThis as unknown as { result?: string }).result)
+
+	await page.evaluate(() => {
+		const g = globalThis as unknown as { result?: string; Notification: { requestPermission(): Promise<string> } }
+		g.result = 'pending'
+		void g.Notification.requestPermission().then((r) => (g.result = r))
+	})
+	// The page UI's view starts with the first prompt.
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(ui.getByText('wants to show notifications')).toBeVisible()
+	await ui.getByRole('button', { name: 'Allow' }).click()
+	await expect.poll(result).toBe('granted')
+
+	await page.evaluate(() => {
+		const g = globalThis as unknown as {
+			result?: string
+			navigator: { mediaDevices: { getUserMedia(c: object): Promise<{ getTracks(): { kind: string }[] }> } }
+		}
+		g.result = 'pending'
+		g.navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(
+			(stream) => (g.result = stream.getTracks().map((t) => t.kind).sort().join(' ')),
+			(error: Error) => (g.result = error.name),
+		)
+	})
+	// The engine asks for each device on its own; both prompts name the site.
+	await expect(ui.getByText(/wants to use your (camera|microphone)/)).toBeVisible()
+	await ui.getByRole('button', { name: 'Allow' }).click()
+	await expect.poll(async () => (await result()) !== 'pending' || (await ui.getByText(/wants to use your (camera|microphone)/).isVisible())).toBe(true)
+	if ((await result()) === 'pending') await ui.getByRole('button', { name: 'Allow' }).click()
+	await expect.poll(result).toBe('audio video')
+	await zing.close()
+})
+
 test("a page's icon reaches its tab as an in-memory image", async () => {
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/iconic` } })
 	await expect
@@ -120,6 +157,48 @@ test('bigger text scales type in this tab and survives its next page', async () 
 	await expect.poll(fontSize).toBe('17.6px')
 	await page.reload()
 	await expect.poll(fontSize).toBe('17.6px')
+	await zing.close()
+})
+
+test('Print opens the print preview for the page on screen', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
+	await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)
+	expect(await zing.chrome.evaluate(() => window.zing.runCommand('page.print'))).toMatchObject({ status: 'done' })
+	await expect.poll(() => zing.dialogs()).toEqual([{ kind: 'print', url: `${base}/find` }])
+	await zing.close()
+})
+
+test('a fullscreen element gives the page the whole window, and leaving puts the chrome back', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)
+	await page.waitForLoadState('load')
+	const shown = async () => (await layers(zing.chrome)).find((l) => l.url === `${base}/find` && l.visible)
+	const inChrome = await shown()
+	expect(inChrome!.y).toBeGreaterThan(0)
+	// Playwright's evaluate counts as a user gesture, which requestFullscreen needs.
+	await page.evaluate(() => (globalThis as unknown as { document: { documentElement: { requestFullscreen(): Promise<void> } } }).document.documentElement.requestFullscreen())
+	await expect.poll(async () => (await shown())?.y).toBe(0)
+	expect((await shown())!.x).toBe(0)
+	expect((await shown())!.height).toBeGreaterThan(inChrome!.height)
+	await page.evaluate(() => (globalThis as unknown as { document: { exitFullscreen(): Promise<void> } }).document.exitFullscreen())
+	await expect.poll(async () => (await shown())?.y).toBe(inChrome!.y)
+	expect((await shown())!.height).toBe(inChrome!.height)
+	await zing.close()
+})
+
+test('zoom steps the whole page in this tab, survives its next page, and actual size resets it', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)
+	// Page zoom scales CSS pixels, so the ratio of device to CSS pixels grows with it.
+	const ratio = () => page.evaluate(() => (globalThis as unknown as { devicePixelRatio: number }).devicePixelRatio)
+	await page.waitForLoadState('load')
+	const actual = await ratio()
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.zoomIn'))
+	await expect.poll(async () => (await ratio()) / actual).toBeCloseTo(1.1, 2)
+	await page.goto(`${base}/short`)
+	await expect.poll(async () => (await ratio()) / actual).toBeCloseTo(1.1, 2)
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.actualSize'))
+	await expect.poll(ratio).toBeCloseTo(actual, 2)
 	await zing.close()
 })
 

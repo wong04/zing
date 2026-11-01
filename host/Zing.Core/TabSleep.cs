@@ -250,6 +250,11 @@ public sealed class TabSleeper
 		{
 			probe = await _tabs.ProbeAsync(id);
 		}
+		catch (PageUnavailableException) when (Find(id) is null || !_tabs.HasPage(id))
+		{
+			// The tab closed (auto-close, the person) or lost its page while it was read: nothing left to sleep.
+			return;
+		}
 		catch (PageUnavailableException error)
 		{
 			// The page navigated or crashed mid-probe; its state is unknown, so it stays awake.

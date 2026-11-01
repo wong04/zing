@@ -5,7 +5,6 @@
 	"startShortcuts": null,
 	"searchEngine": "google",
 	"blockTrackers": true,
-	"confirmQuit": false,
 	"defaultQuality": 80,
 	"preserveOriginals": true,
 	"dohProvider": "cloudflare",

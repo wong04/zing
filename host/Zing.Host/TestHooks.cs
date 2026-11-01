@@ -27,6 +27,8 @@ public static class TestHooks
 		if (!IsEndToEndRun) return "";
 		var args = new List<string>();
 		if (DebuggingPort is { } port) args.Add($"--remote-debugging-port={port}");
+		// A granted camera or microphone gets the engine's fake devices, never the PC's own.
+		args.Add("--use-fake-device-for-media-stream");
 		if (Environment.GetEnvironmentVariable("ZING_E2E_OFFLINE") == "1") args.Add("--proxy-server=127.0.0.1:9 --proxy-bypass-list=<-loopback>");
 		return string.Join(' ', args);
 	}
@@ -131,6 +133,17 @@ public static class TestHooks
 		var file = Environment.GetEnvironmentVariable("ZING_MENUS_FILE");
 		if (string.IsNullOrEmpty(file)) throw new InvalidOperationException("e2e runs need ZING_MENUS_FILE to record menus");
 		File.AppendAllText(file, System.Text.Json.JsonSerializer.Serialize(items.Select(i => i.Label)) + "\n");
+	}
+
+	/// <summary>
+	/// e2e runs never open a dialog (AGENTS.md), Edge's print preview included. What would have opened goes to
+	/// ZING_DIALOGS_FILE instead, one JSON object per line: its kind and the address of the page it was for.
+	/// </summary>
+	public static void RecordDialog(string kind, string url)
+	{
+		var file = Environment.GetEnvironmentVariable("ZING_DIALOGS_FILE");
+		if (string.IsNullOrEmpty(file)) throw new InvalidOperationException("e2e runs need ZING_DIALOGS_FILE to record dialogs");
+		File.AppendAllText(file, System.Text.Json.JsonSerializer.Serialize(new { kind, url }) + "\n");
 	}
 
 	/// <summary>

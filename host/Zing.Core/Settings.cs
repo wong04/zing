@@ -26,6 +26,7 @@ public static class SettingsSchema
 {
 	private static readonly Lazy<JsonObject> DefaultsNode = new(() => ZingJson.LoadDefaults("settings.json").AsObject());
 	private static readonly Lazy<JsonObject> Rules = new(() => ZingJson.LoadDefaults("settings-schema.json").AsObject());
+	private static readonly Lazy<string[]> RetiredKeys = new(() => [.. ZingJson.LoadDefaults("settings-retired.json").AsArray().Select(k => k!.GetValue<string>())]);
 
 	public static IReadOnlyList<string> Keys => Rules.Value.Select(p => p.Key).ToArray();
 
@@ -33,6 +34,9 @@ public static class SettingsSchema
 	public static JsonObject Defaults() => (JsonObject)DefaultsNode.Value.DeepClone();
 
 	public static bool IsSettingKey(string key) => Rules.Value.ContainsKey(key);
+
+	/// <summary>Keys Zing dropped (schema.ts RETIRED_SETTING_KEYS): a stored file may still hold one, and reading skips it.</summary>
+	public static IReadOnlyList<string> Retired => RetiredKeys.Value;
 
 	public static bool AcceptsValue(string key, JsonNode? value)
 	{
@@ -93,8 +97,8 @@ public static class Settings
 {
 	/// <summary>
 	/// Builds a full settings object from stored JSON. Absent keys take their
-	/// default; present keys must be known and valid, or this throws rather
-	/// than quietly replacing what the user chose.
+	/// default; retired keys are skipped; present keys must be known and valid,
+	/// or this throws rather than quietly replacing what the user chose.
 	/// </summary>
 	public static JsonObject Parse(JsonNode? stored)
 	{
@@ -102,6 +106,7 @@ public static class Settings
 		var values = SettingsSchema.Defaults();
 		foreach (var (key, value) in obj)
 		{
+			if (SettingsSchema.Retired.Contains(key)) continue;
 			if (!SettingsSchema.IsSettingKey(key)) throw new UnknownSettingException(key);
 			if (!SettingsSchema.AcceptsValue(key, value)) throw new InvalidSettingException(key, value);
 			values[key] = value?.DeepClone();

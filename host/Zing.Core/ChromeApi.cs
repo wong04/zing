@@ -337,8 +337,9 @@ public sealed class ChromeApi : IDisposable
 			"tabs.overview" => Act(true, () => _host.Background(Overview.ToggleAsync(), "tab overview")),
 			"page.textBigger" => Act(page is not null, () => page!.TextSize = TextSize.Bigger(page.TextSize)),
 			"page.textSmaller" => Act(page is not null, () => page!.TextSize = TextSize.Smaller(page.TextSize)),
-			// The host has no zoom of its own yet, but the engine zooms on these keys itself: let them through.
-			"page.zoomIn" or "page.zoomOut" or "page.actualSize" => NotApplicable,
+			"page.zoomIn" => Act(page is not null, () => page!.Zoom = Zoom.In(page.Zoom)),
+			"page.zoomOut" => Act(page is not null, () => page!.Zoom = Zoom.Out(page.Zoom)),
+			"page.actualSize" => Act(page is not null, () => page!.Zoom = Zoom.Default),
 			"page.findNext" => Act(page is not null, () => Find.Step(FindDirection.Next)),
 			"page.findPrevious" => Act(page is not null, () => Find.Step(FindDirection.Previous)),
 			"page.stop" => Act(page is { IsLoading: true }, () => page!.Stop()),

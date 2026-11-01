@@ -96,7 +96,9 @@ public sealed class HostedView
 		{
 			controller = await environment.CreateCoreWebView2ControllerAsync(CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)hwnd), options);
 		}
-		catch (COMException) when (window.IsClosed || scope.IsClosed)
+		// Closing a window destroys its owned popups before the window's own WM_DESTROY, so an overlay still
+		// starting is aborted (E_ABORT) while the window doesn't count as closed yet: its own window is gone, though.
+		catch (COMException) when (window.IsClosed || scope.IsClosed || !Native.IsWindow(hwnd))
 		{
 			tracked.Dispose();
 			throw new ViewGoneException(name);

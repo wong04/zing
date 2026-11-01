@@ -13,6 +13,8 @@ public interface IPageFeatureHost
 	void PermissionRequested(WebView2Page page, CoreWebView2PermissionRequestedEventArgs e);
 	/// <summary>The page went to a new document or closed: its session-only grants and queued prompts go.</summary>
 	void Left(WebView2Page page);
+	/// <summary>An element of the page entered or left fullscreen (a video's fullscreen button, requestFullscreen).</summary>
+	void FullScreenChanged(WebView2Page page);
 }
 
 /// <summary>

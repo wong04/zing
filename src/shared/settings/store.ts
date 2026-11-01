@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, SETTING_KEYS, acceptsValue, isSettingKey, type SettingKey, type Settings } from './schema'
+import { DEFAULT_SETTINGS, RETIRED_SETTING_KEYS, SETTING_KEYS, acceptsValue, isSettingKey, type SettingKey, type Settings } from './schema'
 
 export class InvalidSettingError extends Error {
 	constructor(
@@ -19,8 +19,8 @@ export class UnknownSettingError extends Error {
 
 /**
  * Builds a full settings object from stored JSON. Keys that are absent take
- * their default; keys that are present must be known and valid, or this
- * throws rather than quietly replacing what the user chose.
+ * their default; retired keys are skipped; keys that are present must be known
+ * and valid, or this throws rather than quietly replacing what the user chose.
  */
 export function parseSettings(stored: unknown): Settings {
 	if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) {
@@ -28,6 +28,7 @@ export function parseSettings(stored: unknown): Settings {
 	}
 	const values: Record<string, unknown> = { ...DEFAULT_SETTINGS }
 	for (const [key, value] of Object.entries(stored)) {
+		if (RETIRED_SETTING_KEYS.includes(key)) continue
 		if (!isSettingKey(key)) throw new UnknownSettingError(key)
 		if (!acceptsValue(key, value)) throw new InvalidSettingError(key, value)
 		values[key] = value

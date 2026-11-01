@@ -27,6 +27,8 @@ public interface IPage
 	void RunWhenLoaded(string script);
 	/// <summary>The tab's text size in percent; the page keeps it across its own navigations.</summary>
 	int TextSize { get; set; }
+	/// <summary>The tab's page zoom factor (1 is actual size); the engine's Ctrl+wheel changes it too.</summary>
+	double Zoom { get; set; }
 	void Print();
 	/// <summary>A JPEG data URL of what the page shows now, or null when there is nothing to show.</summary>
 	Task<string?> CaptureAsync();

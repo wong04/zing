@@ -124,11 +124,25 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
-	public async Task Text_size_steps_per_tab_and_zoom_keys_are_left_to_the_engine()
+	public async Task Text_size_steps_per_tab()
 	{
 		Value(await Invoke("command:run", "page.textBigger"));
 		Assert.Equal(110, ActivePage.TextSize);
-		Assert.Equal("not-applicable", Value(await Invoke("command:run", "page.zoomIn")).GetProperty("status").GetString());
+	}
+
+	[Fact]
+	public async Task Zoom_commands_step_the_tab_and_actual_size_resets_it()
+	{
+		Assert.Equal("done", Value(await Invoke("command:run", "page.zoomIn")).GetProperty("status").GetString());
+		Assert.Equal(1.1, ActivePage.Zoom);
+		Value(await Invoke("command:run", "page.zoomIn"));
+		Assert.Equal(1.25, ActivePage.Zoom);
+		Value(await Invoke("command:run", "page.zoomOut"));
+		Value(await Invoke("command:run", "page.zoomOut"));
+		Value(await Invoke("command:run", "page.zoomOut"));
+		Assert.Equal(0.9, ActivePage.Zoom);
+		Value(await Invoke("command:run", "page.actualSize"));
+		Assert.Equal(1.0, ActivePage.Zoom);
 	}
 
 	[Fact]
