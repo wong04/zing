@@ -192,11 +192,13 @@ public sealed class ZingApp
 		_onQuit.Add(() => libraryWriter?.Flush());
 		// A persistent profile exists so sign-ins survive closing a tab and quitting; purging would undo exactly that.
 		PersistentProfile = settings.Get("persistentProfile")?.GetValue<bool>() ?? throw new InvalidDataException("Setting persistentProfile is missing");
-		var siteData = PersistentProfile ? null : new SiteDataKeeper(new WebViewSitePurger(AnyLivePage, () => _windows.Count > 0), (domain, error) => TestHooks.Record($"purge {domain}", error));
+		// One purger for both jobs: a site's data when its last tab closes, and Settings' Clear session (all of it).
+		var purger = new WebViewSitePurger(AnyLivePage, () => _windows.Count > 0);
+		var siteData = PersistentProfile ? null : new SiteDataKeeper(purger, (domain, error) => TestHooks.Record($"purge {domain}", error));
 		// Test runs skip the gate unless a test is about the gate; a real launch never does.
 		var skipGate = TestHooks.IsEndToEndRun && System.Environment.GetEnvironmentVariable("ZING_SKIP_ACCOUNT_GATE") == "1";
 		var account = new AccountStore(Path.Combine(AppPaths.UserData, "account"), new DpapiCipher(), skipGate);
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData);
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData, purger);
 	}
 
 	private CoreWebView2? AnyLivePage() => _windows.Select(w => w.AnyLivePage()).FirstOrDefault(core => core is not null);
