@@ -112,6 +112,12 @@ Each workstream ends with a guard (test, analyzer or harness rule) so its class 
   - Split the `MainWindow` god-class (426 lines, three host interfaces) into `WindowLayout`, `OverlayHost`, `DownloadHost` (+ MOTW) and `PermissionHost`.
   - Add a real-input smoke tier: a few tests marked `@real-input` that place the window on-screen and use `SendInput`. They run manually or on a dedicated runner, never in normal CI, and cover accelerators, focus after tab close, and dropdown clicks.
 
+**Decision (2026-11-01): keep owned popups.**
+- Overlays stay owned popup windows. `OverlayHost` holds them to one stacking order and one focus policy.
+- Phase 4 builds split view's dividers and drop zones as new `OverlayHost` levels.
+- Why: the popup model passes every e2e test and the real-input tier on Windows. The visual-hosting spike passed 5 of 6 automated checks, but a switch would cost 4–6 weeks with Narrator, IME and drag-drop unproven.
+- Revisit only if split view brings the overlay bug class (G) back. `spikes/visual-hosting/README.md` records where to start.
+
 ### Order and why
 1. **W-0 and W-1** (days): every later bug becomes visible and survivable instead of a crash.
 2. **W-2 and W-3** (≈1 week): remove the races that cause most flakes and the startup bricking.
@@ -145,9 +151,8 @@ Everything below is on `claude/funny-lovelace-vzz8lv`. It is checked on Linux (v
 | W-3 | Saves run on the UI thread, flushed to disk. Corrupt settings, library, session and account files are set aside and the first window says so (`e2e/userdata.spec.ts`). | – |
 | W-4 | `ProcessFailed`: a crashed page keeps its tab with a Reload affordance, Zing's own views reload themselves, and a failed browser process rebuilds the engine with the primary window's tabs. Runtime check at startup, and an engine-update notice (`e2e/crash.spec.ts`). | The rebuild path has no e2e (it would need killing the engine's browser process) |
 | W-5 | `channels.json` generated from `ipc.ts` and checked both ways (`ChannelContractTests`). `shell:clear-session` restored. Vectors for text size, start shortcuts, page UI and palette, which found one drift: JS-style upper-casing of tile initials. | Generated C# record shapes (optional) |
-| W-6 | `OverlayHost` owns the popups' stacking order. `MainWindow` is split into `WindowLayout`, `DownloadHost` and `PermissionHost`. The sidebar's cursor check counts owned overlays. A real-input tier (`npm run test:e2e:real-input`); all 3 tests passed on a Windows runner ([run 41290988995](https://github.com/wong04/zing/actions/runs/41290988995)), including a real click on a stack dropdown row, the hand check open since W3d. The visual-hosting spike is in `spikes/visual-hosting`, and its README is the decision record. | **The decision is yours.** The spike's automated checks ran on Windows: 5 of 6 pass, and the cursor check fails on the known projection gap (see its README). Still needed: its hand checks (IME, file drop, Narrator, DPI, real mouse), about half a day. The spike leans towards switching before Phase 4 if Narrator works. |
+| W-6 | `OverlayHost` owns the popups' stacking order. `MainWindow` is split into `WindowLayout`, `DownloadHost` and `PermissionHost`. The sidebar's cursor check counts owned overlays. A real-input tier (`npm run test:e2e:real-input`); all 3 tests passed on a Windows runner ([run 41290988995](https://github.com/wong04/zing/actions/runs/41290988995)), including a real click on a stack dropdown row, the hand check open since W3d. The visual-hosting spike is in `spikes/visual-hosting`, and its README is the decision record. | – (decided: keep popups; see §4 W-6). The spike's results are its README's record: 5 of 6 automated checks pass on Windows, and the cursor check fails on the projection gap. |
 
 **Hand checks still to do:**
 - Settings → Clear session signs out of sites.
 - A popup that fails to start: `window.open` returns null (before, an Edge window opened).
-- The spike's hand-check list.

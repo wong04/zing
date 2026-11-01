@@ -1,6 +1,8 @@
 # W-6 spike: visual hosting (decision record)
 
-> **Status: automated checks run on Windows CI, hand checks still to do.** On `windows-latest` ([w6-checks run 41290750480](https://github.com/wong04/zing/actions/runs/41290750480)), 5 of the 6 checks in `checks.spec.ts` pass:
+> **Decision (2026-11-01): not adopted; this spike is kept as the record.** Zing keeps owned popups, with their order and focus held by `OverlayHost` (`docs/architecture-review.md` §4 W-6). The popup model passes every e2e test and the real-input tier on Windows. Switching would cost 4–6 weeks, with Narrator, IME and drag-drop unproven, and the hand checks below were never run. Revisit only if Phase 4's split view brings the overlay bugs back.
+>
+> **Automated checks, run on Windows CI:** On `windows-latest` ([w6-checks run 41290750480](https://github.com/wong04/zing/actions/runs/41290750480)), 5 of the 6 checks in `checks.spec.ts` pass:
 > - the layout;
 > - the overlay draws over the page and is see-through where it has no content (window pixels);
 > - **a DevTools click on an overlay row reaches the overlay's DOM** (today's popup model fails this);
@@ -166,7 +168,7 @@ Keep windowed page controllers and put only the overlays in a topmost `DesktopWi
 
 ## Recommendation
 
-**Not decided yet. Run the hand checks first (about half a day on Windows), then pick using this rule:**
+**Decided 2026-11-01: keep owned popups (see the status at the top).** The rule below is kept for a future revisit, which would start with the hand checks:
 
 - **Go (visual hosting)** if real clicks, keys after focus moves, IME placement, file drop and the cursor all pass, and Narrator reads the focused overlay through the minimal root. Do the UIA fragment root (item 6 above) **first**, as its own gated step, because it is the unproven part. If Narrator can't walk all the views in one tree after about a week on that step, stop and go to no-go.
 - **No-go (keep popups, centralise them in one `OverlayHost`)** if IME placement, drag-drop or Narrator fails in a way the interop can't fix. The popup model passes those criteria today.
