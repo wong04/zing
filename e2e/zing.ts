@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
 import type { AddressInfo } from 'node:net'
-import { closeSync, existsSync, openSync, readFileSync } from 'node:fs'
+import { closeSync, copyFileSync, existsSync, openSync, readFileSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -87,12 +87,16 @@ async function collect(testInfo: TestInfo): Promise<void> {
 		if (failed) {
 			for (const [i, page] of pages(zing.browser).entries()) {
 				const name = `zing${n + 1}-view${i + 1}-${page.url().replace(/^.*[#/]/, '') || 'blank'}.png`
-				const shot = await page.screenshot({ timeout: 5_000 }).catch(() => undefined)
-				if (shot) await testInfo.attach(name, { body: shot, contentType: 'image/png' })
+				// Written into the test's own folder: an attachment's body alone stays in the report, and CI uploads the folder.
+				const path = testInfo.outputPath(name)
+				if (await page.screenshot({ path, timeout: 5_000 }).then(() => true, () => false)) await testInfo.attach(name, { path, contentType: 'image/png' })
 			}
-			const faults = join(zing.userData, 'logs', 'faults.log')
-			if (existsSync(zing.errors)) await testInfo.attach(`zing${n + 1}-errors.log`, { path: zing.errors, contentType: 'text/plain' })
-			if (existsSync(faults)) await testInfo.attach(`zing${n + 1}-faults.log`, { path: faults, contentType: 'text/plain' })
+			for (const [log, from] of [[`zing${n + 1}-errors.log`, zing.errors], [`zing${n + 1}-faults.log`, join(zing.userData, 'logs', 'faults.log')]] as const) {
+				if (!existsSync(from)) continue
+				const path = testInfo.outputPath(log)
+				copyFileSync(from, path)
+				await testInfo.attach(log, { path, contentType: 'text/plain' })
+			}
 		}
 		if (zing.browser.isConnected()) await zing.browser.close().catch(() => undefined)
 		if (zing.host.exitCode === null) zing.host.kill()
