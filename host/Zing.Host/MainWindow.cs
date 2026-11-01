@@ -29,6 +29,7 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 	private bool _closed;
 	private DispatcherScheduler? _scheduler;
 	private Rect? _surfaceRegion;
+	private Task? _surfaceReady;
 	private IDisposable? _themeSubscription;
 
 	public MainWindow(ZingApp app)
@@ -348,22 +349,31 @@ public sealed class MainWindow : Window, IWindowHost, IPageHost, IPageFeatureHos
 		page.View.Height = Math.Max(0, content.Height - insets.Top);
 	}
 
-	/// <summary>The settings sheet covers the whole window while it is open (panels.ts surfaceRegion).</summary>
 	/// <summary>The surface floats above the page and chrome, sized to what it shows, so it never takes the page's clicks.</summary>
 	private async Task ShowSurfaceAsync()
 	{
-		if (_surface is null)
+		// One view, however many layout passes ask for it while it loads: a second one was left on
+		// top when the first was hidden, and covered the window after "Skip for now".
+		await (_surfaceReady ??= CreateSurfaceAsync());
+		// The region may have gone (gate passed, sheet closed) while the view loaded.
+		if (_closed || _surface is null) return;
+		if (_surfaceRegion is not { } region)
 		{
-			_surface = await RendererView.CreateAsync(_root, _environment!, _bridge, "surface", transparent: true);
-			_renderers.Add(_surface);
-			// It may have missed the state pushed while it loaded.
-			if (Api is not null) _surface.Send(Bridge.Event("shell:state", Api.Shell.State()));
+			_surface.Visible = false;
+			return;
 		}
-		if (_closed || _surfaceRegion is not { } region) return;
 		_surface.Place(region);
 		Layers.Raise(_root, _surface.View);
 		_notices?.Raise();
 		_surface.Visible = true;
+	}
+
+	private async Task CreateSurfaceAsync()
+	{
+		_surface = await RendererView.CreateAsync(_root, _environment!, _bridge, "surface", transparent: true);
+		_renderers.Add(_surface);
+		// It may have missed the state pushed while it loaded.
+		if (Api is not null) _surface.Send(Bridge.Event("shell:state", Api.Shell.State()));
 	}
 
 	private void OnClosed()

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, pageWhere } from './zing'
+import { launchZing, layers, pages, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -50,6 +50,17 @@ test('Settings opens over the window, a changed toggle survives a relaunch, and 
 	const second = await launchZing({ userDataDir: first.userDataDir })
 	expect((await second.chrome.evaluate(() => window.zing.getSettings())).restoreTabs).toBe(true)
 	await second.close()
+})
+
+test('Skip for now takes the gate away and leaves the browser showing', async () => {
+	const zing = await launchZing({ env: { ZING_SKIP_ACCOUNT_GATE: '' } })
+	const gate = await pageWhere(zing.browser, (p) => isSurface(p.url()))
+	await gate.getByRole('button', { name: 'Skip for now' }).click()
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getShell())).gated).toBe(false)
+	// One surface view only, and hidden: a second one left on top covered the whole window in gray.
+	expect(pages(zing.browser).filter((p) => isSurface(p.url()))).toHaveLength(1)
+	await expect.poll(async () => (await layers(zing.chrome)).filter((l) => isSurface(l.url) && l.visible)).toEqual([])
+	await zing.close()
 })
 
 test('the account gate covers the window, stores no plaintext secret on disk, and remembers the user', async () => {

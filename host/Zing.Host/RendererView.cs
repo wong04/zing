@@ -17,6 +17,7 @@ public sealed class RendererView
 
 	private readonly Bridge _bridge;
 	private readonly string _hash;
+	private Panel _parent = null!;
 
 	public WebView2 View { get; } = new();
 
@@ -31,7 +32,7 @@ public sealed class RendererView
 	/// <summary>Creates the view in <paramref name="parent"/> and starts loading its root.</summary>
 	public static async Task<RendererView> CreateAsync(Panel parent, CoreWebView2Environment environment, Bridge bridge, string hash, bool transparent)
 	{
-		var renderer = new RendererView(bridge, hash);
+		var renderer = new RendererView(bridge, hash) { _parent = parent };
 		if (transparent) renderer.View.DefaultBackgroundColor = Microsoft.UI.Colors.Transparent;
 		parent.Children.Add(renderer.View);
 		// Zing's own UI keeps nothing either, as Electron's zing-chrome partition did: no cache, no storage, no autofill on disk.
@@ -96,7 +97,7 @@ public sealed class RendererView
 			TestHooks.Record("bridge", new UnauthorizedAccessException($"Message from {e.Source} refused in #{_hash}"));
 			return;
 		}
-		if (TestHooks.TryHandle(e.WebMessageAsJson)) return;
+		if (TestHooks.TryHandle(e.WebMessageAsJson, _parent)) return;
 		try
 		{
 			var reply = await _bridge.HandleAsync(e.WebMessageAsJson);

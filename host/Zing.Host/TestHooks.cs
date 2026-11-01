@@ -30,18 +30,36 @@ public static class TestHooks
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms}.
 	/// </summary>
-	public static bool TryHandle(string json)
+	public static bool TryHandle(string json, Microsoft.UI.Xaml.Controls.Panel window)
 	{
 		if (!IsEndToEndRun) return false;
 		using var message = System.Text.Json.JsonDocument.Parse(json);
 		var root = message.RootElement;
 		if (!root.TryGetProperty("kind", out var kind) || kind.GetString() != "test") return false;
 		var action = root.GetProperty("action").GetString();
+		if (action == "layers")
+		{
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(Layers(window)));
+			return true;
+		}
 		if (action != "advance-clock") throw new InvalidOperationException($"Unknown test action {action}");
 		if (Clock is not Zing.Core.OffsetClock clock) throw new InvalidOperationException("advance-clock needs ZING_TEST_CLOCK=1");
 		clock.Advance(root.GetProperty("ms").GetInt64());
 		return true;
 	}
+
+	/// <summary>
+	/// What the window actually shows, bottom to top: each WebView2 with its address and whether it is
+	/// visible. Page-side signals (document.visibilityState) don't follow a collapsed view.
+	/// </summary>
+	private static List<object> Layers(Microsoft.UI.Xaml.Controls.Panel window) =>
+		[.. window.Children.OfType<Microsoft.UI.Xaml.Controls.WebView2>().Select(v => new
+		{
+			url = v.CoreWebView2?.Source ?? "",
+			visible = v.Visibility == Microsoft.UI.Xaml.Visibility.Visible,
+			width = v.ActualWidth,
+			height = v.ActualHeight,
+		})];
 
 	/// <summary>Work nobody awaits: its failures are recorded, except a view that went with its closing window.</summary>
 	public static void Background(Task task, string what) =>
