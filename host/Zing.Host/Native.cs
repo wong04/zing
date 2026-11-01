@@ -24,6 +24,15 @@ internal static class Native
 	}
 
 	[StructLayout(LayoutKind.Sequential)]
+	public struct MONITORINFO
+	{
+		public uint Size;
+		public RECT Monitor;
+		public RECT Work;
+		public uint Flags;
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
 	public struct MSG
 	{
 		public nint Hwnd;
@@ -139,10 +148,20 @@ internal static class Native
 	public static extern nint GetForegroundWindow();
 
 	[DllImport("user32.dll")]
+	public static extern nint MonitorFromWindow(nint hwnd, uint flags);
+
+	[DllImport("user32.dll")]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool GetMonitorInfoW(nint monitor, ref MONITORINFO info);
+
+	[DllImport("user32.dll")]
 	public static extern nint GetFocus();
 
 	[DllImport("user32.dll")]
 	public static extern nint GetWindow(nint hwnd, uint command);
+
+	[DllImport("user32.dll")]
+	public static extern nint SendMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
 
 	[DllImport("user32.dll")]
 	public static extern short GetKeyState(int virtualKey);

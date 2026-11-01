@@ -30,7 +30,7 @@ public sealed class HostWindow
 		if (Hwnd == 0) throw new NativeCallException("CreateWindowEx");
 		Open[Hwnd] = this;
 		AppWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(Hwnd));
-		AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(width * Scale), (int)(height * Scale)));
+		AppWindow.Resize(FitToScreen(width, height));
 		AppWindow.TitleBar.ExtendsContentIntoTitleBar = true;
 		PassThroughTitleBar();
 		const uint DWMWA_SYSTEMBACKDROP_TYPE = 38;
@@ -175,6 +175,18 @@ public sealed class HostWindow
 	{
 		Native.GetClientRect(Hwnd, out var client);
 		Microsoft.UI.Input.InputNonClientPointerSource.GetForWindowId(AppWindow.Id).SetRegionRects(Microsoft.UI.Input.NonClientRegionKind.Passthrough, [new Windows.Graphics.RectInt32(0, 0, client.Right, client.Bottom)]);
+	}
+
+	/// <summary>A size in DIPs, in pixels for this window's screen, at most 90% of its work area so it opens whole.</summary>
+	private Windows.Graphics.SizeInt32 FitToScreen(int width, int height)
+	{
+		const uint MONITOR_DEFAULTTONEAREST = 2;
+		var info = new Native.MONITORINFO { Size = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.MONITORINFO>() };
+		if (!Native.GetMonitorInfoW(Native.MonitorFromWindow(Hwnd, MONITOR_DEFAULTTONEAREST), ref info)) throw new NativeCallException("GetMonitorInfo");
+		var work = info.Work;
+		return new Windows.Graphics.SizeInt32(
+			(int)Math.Min(width * Scale, (work.Right - work.Left) * 0.9),
+			(int)Math.Min(height * Scale, (work.Bottom - work.Top) * 0.9));
 	}
 
 	/// <summary>Whether this window or one of its overlays is the one in front.</summary>

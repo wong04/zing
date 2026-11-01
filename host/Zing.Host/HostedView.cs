@@ -15,7 +15,8 @@ public sealed class HostedView
 {
 	private const string ChildClass = "ZingView";
 	private const string PopupClass = "ZingOverlay";
-	private static readonly Native.WndProc Proc = Native.DefWindowProcW;
+	private static readonly Native.WndProc ChildProc = Native.DefWindowProcW;
+	private static readonly Native.WndProc PopupProc = OnPopupMessage;
 	private static bool _registered;
 
 	private readonly HostWindow _window;
@@ -162,12 +163,25 @@ public sealed class HostedView
 		Controller.Bounds = new Windows.Foundation.Rect(0, 0, width, height);
 	}
 
+	/// <summary>
+	/// A drag on an overlay's CSS app-region:drag (the sign-in screen's top, the revealed sidebar) reaches the
+	/// overlay's popup as a system command (SC_MOVE), which would move the popup off the window. An overlay has
+	/// no system commands of its own, so Zing's window carries them out (move, maximise on a double-click) and
+	/// the overlays follow it.
+	/// </summary>
+	private static nint OnPopupMessage(nint hwnd, uint msg, nint wParam, nint lParam)
+	{
+		const uint WM_SYSCOMMAND = 0x0112, GW_OWNER = 4;
+		if (msg != WM_SYSCOMMAND) return Native.DefWindowProcW(hwnd, msg, wParam, lParam);
+		return Native.SendMessageW(Native.GetWindow(hwnd, GW_OWNER), msg, wParam, lParam);
+	}
+
 	private static nint CreateHost(nint window, bool overlay)
 	{
 		if (!_registered)
 		{
-			Native.RegisterClass(ChildClass, Proc);
-			Native.RegisterClass(PopupClass, Proc);
+			Native.RegisterClass(ChildClass, ChildProc);
+			Native.RegisterClass(PopupClass, PopupProc);
 			_registered = true;
 		}
 		const uint WS_CHILD = 0x40000000, WS_POPUP = 0x80000000, WS_CLIPSIBLINGS = 0x04000000, WS_CLIPCHILDREN = 0x02000000;

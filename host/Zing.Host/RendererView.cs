@@ -37,7 +37,8 @@ public sealed class RendererView
 		var view = await HostedView.CreateAsync(window, environment, options, hash, overlay);
 		var renderer = new RendererView(view, bridge, hash, window);
 		var core = view.Core;
-		core.Settings.IsNonClientRegionSupportEnabled = hash == "chrome";
+		// CSS app-region:drag moves the window from the chrome, the sign-in screen and the revealed sidebar.
+		core.Settings.IsNonClientRegionSupportEnabled = hash is "chrome" or "surface";
 		core.Settings.AreDefaultContextMenusEnabled = false;
 		core.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
 		core.WebMessageReceived += renderer.OnMessage;
