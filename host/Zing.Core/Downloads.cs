@@ -40,6 +40,23 @@ public static partial class DownloadNames
 		return candidate;
 	}
 
+	/// <summary>
+	/// The name the server suggests (Content-Disposition, then the URL's last segment), as Electron's
+	/// `getFilename()` gave. Never the engine's own proposal, which is already numbered against whatever
+	/// is in the user's Downloads folder ("report (1).bin").
+	/// </summary>
+	public static string Suggested(string? contentDisposition, string url)
+	{
+		if (!string.IsNullOrWhiteSpace(contentDisposition)
+			&& System.Net.Http.Headers.ContentDispositionHeaderValue.TryParse(contentDisposition, out var header)
+			&& (header.FileNameStar ?? header.FileName) is { } named
+			&& named.Trim('"', ' ') is { Length: > 0 } fromHeader)
+			return fromHeader;
+		if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && Uri.UnescapeDataString(uri.Segments[^1]).Trim('/') is { Length: > 0 } fromUrl)
+			return fromUrl;
+		return "download";
+	}
+
 	public static string SafeFileBase(string name)
 	{
 		var printable = new string([.. name.Where(ch => ch >= 0x20 && !ForbiddenInWindows.Contains(ch))]);

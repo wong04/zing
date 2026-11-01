@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, test } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, pageWhere } from './zing'
+import { launchZing, layers, pages, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -47,6 +47,9 @@ test('find in page shows a match count and steps through matches', async () => {
 	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
 	await ui.getByRole('textbox', { name: 'Find in page' }).fill('needle')
 	await expect(ui.getByText('1 of 3')).toBeVisible()
+	// The DOM had the bar all along; what was missing is a view tall enough to show it.
+	await expect.poll(async () => (await layers(zing.chrome)).find((l) => l.url.endsWith('#pageui'))).toMatchObject({ visible: true })
+	expect((await layers(zing.chrome)).find((l) => l.url.endsWith('#pageui'))!.height).toBeGreaterThan(20)
 	await zing.chrome.evaluate(() => window.zing.runCommand('page.findNext'))
 	await expect(ui.getByText('2 of 3')).toBeVisible()
 	await zing.chrome.evaluate(() => window.zing.runCommand('page.findPrevious'))
@@ -75,6 +78,9 @@ test('a download lands in the downloads folder, shows in the list and numbers on
 	await expect(ui.getByRole('button', { name: 'Show in folder' })).toBeVisible()
 	await download()
 	await expect.poll(() => readdirSync(directory).sort()).toEqual(['report 2.bin', 'report.bin'])
+	// A navigation that became a download isn't a failed load: no "Couldn't load … (ConnectionAborted)".
+	const notice = pages(zing.browser).find((p) => p.url().endsWith('#overlay'))
+	if (notice) expect(await notice.locator('body').innerText()).not.toContain("Couldn't load")
 	await zing.close()
 })
 
@@ -90,6 +96,7 @@ test('a permission request is asked in the page UI and denied when Deny is click
 	})
 	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
 	await expect(ui.getByText('wants to show notifications')).toBeVisible()
+	await expect.poll(async () => (await layers(zing.chrome)).find((l) => l.url.endsWith('#pageui'))?.height ?? 0).toBeGreaterThan(20)
 	expect(await result()).toBe('pending')
 	await ui.getByRole('button', { name: 'Deny' }).click()
 	await expect.poll(result).toBe('denied')

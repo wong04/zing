@@ -111,7 +111,8 @@ public sealed class FakeWindowHost : IWindowHost
 
 	public List<PageUiState> PageUiStates { get; } = [];
 	public void PageUiChanged(PageUiState state) => PageUiStates.Add(state);
-	public void SetPageUiHeight(int height) { }
+	public List<int> PageUiHeights { get; } = [];
+	public void SetPageUiHeight(int height) => PageUiHeights.Add(height);
 	public void FocusPageUi() { }
 
 	public string DownloadsDirectory => Path.GetTempPath();

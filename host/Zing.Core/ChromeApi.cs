@@ -210,7 +210,8 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("library:folder-menu", args => Do(() => Menu(Menus.LibraryFolder(app.Library, Text(args, 0), id => OpenLibraryItem(id, "current"), OpenAll), args, 1)));
 		bridge.Register("library:item-menu", args => Do(() => Menu(Menus.LibraryItem(app.Library, Text(args, 0), OpenLibraryItem, OpenAll), args, 1)));
 		bridge.Register("pageui:get", _ => PageUi.State);
-		bridge.Register("pageui:height", args => Do(() => host.SetPageUiHeight(Int(args, 0))));
+		// A CSS height, fractional on a scaled display (52.5 at 150%); the view takes whole DIPs, rounded up.
+		bridge.Register("pageui:height", args => Do(() => host.SetPageUiHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("find:update", args => Do(() => Find.Update(Text(args, 0))));
 		bridge.Register("find:step", args => Do(() => Find.Step(FindDirections.Parse(Text(args, 0)))));
 		bridge.Register("find:close", _ => Do(Find.Close));

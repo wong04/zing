@@ -304,3 +304,14 @@ public sealed class ZoneIdentifierTests
 		Assert.Null(ZoneIdentifier.Parse("[ZoneTransfer]\nZoneId=three"));
 	}
 }
+
+public sealed class SuggestedNameTests
+{
+	[Theory]
+	[InlineData("attachment; filename=\"report.bin\"", "https://x.test/file.bin", "report.bin")]
+	[InlineData("attachment; filename*=UTF-8''r%C3%A9sum%C3%A9.pdf", "https://x.test/a", "résumé.pdf")]
+	[InlineData(null, "https://x.test/path/notes%20v2.txt", "notes v2.txt")]
+	[InlineData("", "https://x.test/", "download")]
+	public void The_server_names_the_download_not_the_engine(string? disposition, string url, string expected) =>
+		Assert.Equal(expected, DownloadNames.Suggested(disposition, url));
+}
