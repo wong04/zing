@@ -203,8 +203,6 @@ const stackModes: readonly [string, boolean][] = [
 	['dark', true],
 ]
 
-const slots = [0, 1, 2] as const
-
 function stackPairs(tokens: StackTokens): [string, string, string][] {
 	return [
 		['window', tokens.windowInk, tokens.window],
@@ -212,8 +210,9 @@ function stackPairs(tokens: StackTokens): [string, string, string][] {
 		['field', tokens.fieldInk, tokens.field],
 		['page', tokens.pageInk, tokens.page],
 		['more', tokens.moreInk, tokens.more],
-		...slots.map((i): [string, string, string] => [`card ${i}`, tokens.cardInks[i], tokens.cards[i]]),
-		...slots.map((i): [string, string, string] => [`ribbon ${i}`, tokens.ribbonInks[i], tokens.ribbons[i]]),
+		['card', tokens.cardInk, tokens.card],
+		['ribbon', tokens.ribbonInk, tokens.ribbon],
+		['plain', tokens.plainInk, tokens.plain],
 	]
 }
 
@@ -232,7 +231,10 @@ describe('the active card stands out', () => {
 	const cases = stackSubjects.flatMap(({ name, profile }) =>
 		stackModes.flatMap(([mode, dark]) => {
 			const tokens = stackTokens(profile, dark)
-			return tokens.cards.map((card, i) => [`${name} ${mode} card ${i}`, tokens.page, card] as const)
+			return [
+				[`${name} ${mode} card`, tokens.page, tokens.card] as const,
+				[`${name} ${mode} plain`, tokens.page, tokens.plain] as const,
+			]
 		}),
 	)
 	it.each(cases)('%s', (_name, page, card) => {

@@ -12,7 +12,8 @@ Other browsers mostly tint the same grey window. Zing should be recognisable at 
 
 - **The look is Stack.** Tabs in the sidebar are coloured cards that overlap slightly. The active card sits on top and merges into the page.
 - **Favourites are hanging ribbons** along the top of the sidebar, with a "+N" ribbon that opens a panel holding the rest.
-- **Dark is pastel on dark,** chosen at the hand check: light ribbons with dark text, dim cards, and a window close to black. The hues sit 25 degrees apart rather than light's 45.
+- **Dark is pastel on dark,** chosen at the hand check: light ribbons with dark text, dim cards, and a window close to black.
+- **One colour, or none.** At the hand check the owner dropped the three hues. Cards and ribbons take one colour from the theme, and Settings has a Tab colours row whose None makes them neutral.
 - **Light by design:** no tilted cards, and only the active card has a shadow.
 - **Layout stays a normal browser's:** sidebar, toolbar, address bar and page, in their usual places.
 
@@ -22,18 +23,17 @@ The owner also approved these in the description of the design:
 - **The panel** shows icons with names. Dragging between the panel and the ribbons chooses which favourites stay visible.
 - **With no favourites,** one faint outlined ribbon replaces the "Drag a tab here" box.
 - **Pinned folders stay normal rows.** Only tabs become cards.
-- **Cards cycle through three related shades** of the theme colour, softened so 30 tabs don't look like a rainbow.
 - **8–10 presets and a custom colour,** all in the Stack look, each in light and dark.
 - **Sidebar on the right** mirrors the left. **Collapsed,** cards become small coloured icon chips. **Tabs on top** become folder tabs, mocked up for the owner before they're built.
 - **Windows contrast themes** drop all the colour; cards become plain outlined rows.
-- **Mica comes last.** Solid cards mostly cover it, so it either gets a small visible area or a written reason in the README's Known differences.
+- **No Mica.** Tried on the finished sidebar and dropped by the owner; the reason is in the README's Known differences.
 
 ## Goals
 
 - TH1: every chrome surface takes its colour from the theme: sidebar, toolbar, Settings, overlays, menus drawn by Zing, and the start page.
 - TH2: 8–10 presets in total. Ocean, Sunset, Forest, Grape, Candy, Midnight and Mono come from the plan. The builder adds one to three more.
 - TH3: a custom theme from one colour, through the existing generator.
-- TH4: Windows contrast themes respected; Mica resolved as above.
+- TH4: Windows contrast themes respected; Mica dropped as above.
 - TH5: switching theme never reloads a tab, closes a panel or loses a scroll position.
 
 ## Non-goals
@@ -91,7 +91,6 @@ This is part of Phase 5 and has a gate: the folder-tab mock-up goes to the owner
 - Final colour values and the remaining preset names, subject to the AA test.
 - How the panel is hosted, as long as dragging between it and the ribbons works. The plan draws it inside the sidebar (`docs/phase-5-plan.md`).
 - The order of PRs. Suggested: theme model and presets, then the Stack sidebar, then ribbons and the panel, then the custom colour and contrast themes, then tabs on top once approved, with Mica last.
-- Whether Mica gets a small visible area or a written reason, after seeing it on the finished sidebar.
 
 ## Evidence so far
 

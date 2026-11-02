@@ -287,6 +287,54 @@ async function pageKeeps(view: Page): Promise<{ scrollY: number; timeOrigin: num
 	})
 }
 
+test('letters take the ink of the card or ribbon they sit on', async () => {
+	const zing = await launchZing()
+	const chrome = zing.chrome
+	await chrome.evaluate(() => window.zing.runCommand('tab.new'))
+	const { activeId } = await chrome.evaluate(() => window.zing.getTabs())
+	await chrome.evaluate(([id, url]) => window.zing.navigateTab(id!, url!), [activeId!, `${base}/Mail`])
+	await expect.poll(async () => (await chrome.evaluate(() => window.zing.getTabs())).tabs.find((t) => t.id === activeId)?.title).toBe('Mail')
+	const card = chrome.locator(`.rail-tabs [data-tab-id="${activeId}"]`)
+	const cardInk = await card.evaluate((el: unknown) => (globalThis as unknown as ViewGlobals).getComputedStyle(el).getPropertyValue('color'))
+	await expect(card.locator('.tab-icon')).toHaveCSS('color', cardInk)
+
+	await chrome.evaluate(() => window.zing.runCommand('library.addFavourite'))
+	await chrome.evaluate((id) => window.zing.closeTab(id), activeId!)
+
+	const ribbon = chrome.locator('.rail-favourites > .rail-ribbon.unloaded')
+	await expect(ribbon).toHaveCount(1)
+	const letter = ribbon.locator('.rail-letter')
+	await expect(letter).toHaveCSS('opacity', '1')
+	const ink = await styleOf(chrome, ':root', '--ribbon-ink')
+	await expect(letter).toHaveCSS('color', rgb(ink.trim()))
+	await zing.close()
+})
+
+test('the Tab colours setting paints cards and ribbons in the theme colour or none', async () => {
+	const zing = await launchZing()
+	const chrome = zing.chrome
+	await chrome.evaluate(() => window.zing.runCommand('tab.new'))
+	const { activeId } = await chrome.evaluate(() => window.zing.getTabs())
+	await chrome.evaluate(([id, url]) => window.zing.navigateTab(id!, url!), [activeId!, `${base}/Mail`])
+	await expect.poll(async () => (await chrome.evaluate(() => window.zing.getTabs())).tabs.find((t) => t.id === activeId)?.title).toBe('Mail')
+	await chrome.evaluate(() => window.zing.runCommand('library.addFavourite'))
+	await chrome.evaluate(() => window.zing.runCommand('tab.new'))
+	await chrome.evaluate(() => window.zing.runCommand('tab.new'))
+
+	const ribbon = chrome.locator('.rail-favourites > .rail-ribbon').first()
+	const card = chrome.locator('.rail-tabs .rail-tab:not(.active)').first()
+	const paintOf = async (variable: string) => rgb((await styleOf(chrome, ':root', variable)).trim())
+	await expect(ribbon).toHaveCSS('background-color', await paintOf('--colour-ribbon'))
+	await expect(card).toHaveCSS('background-color', await paintOf('--colour-card'))
+
+	await chrome.evaluate(() => window.zing.setSetting('tabColours', 'none'))
+	await expect(ribbon).toHaveCSS('background-color', await paintOf('--plain'))
+	await expect(ribbon).toHaveCSS('color', await paintOf('--plain-ink'))
+	await expect(card).toHaveCSS('background-color', await paintOf('--plain'))
+	await expect(card).toHaveCSS('color', await paintOf('--plain-ink'))
+	await zing.close()
+})
+
 test('switching theme keeps everything', async () => {
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/Long` } })
 	const long = await pageWhere(zing.browser, (p) => p.url() === `${base}/Long`)

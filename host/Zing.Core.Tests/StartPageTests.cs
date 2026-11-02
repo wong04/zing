@@ -155,11 +155,9 @@ public sealed class StartPageTests
 					("page ink on page", stack.PageInk, stack.Page),
 					("more ink on more", stack.MoreInk, stack.More),
 				};
-				for (var i = 0; i < stack.Cards.Count; i++)
-				{
-					pairs.Add(($"card {i} ink", stack.CardInks[i], stack.Cards[i]));
-					pairs.Add(($"ribbon {i} ink", stack.RibbonInks[i], stack.Ribbons[i]));
-				}
+				pairs.Add(("card ink", stack.CardInk, stack.Card));
+				pairs.Add(("ribbon ink", stack.RibbonInk, stack.Ribbon));
+				pairs.Add(("plain ink", stack.PlainInk, stack.Plain));
 				foreach (var pair in pairs) data.Add($"{name} {mode} {pair.Label}", pair.Label, pair.Fg, pair.Bg);
 			}
 		}
@@ -175,7 +173,7 @@ public sealed class StartPageTests
 	}
 
 	[Fact]
-	public void LegibilityCoversEveryPair() => Assert.Equal(572, LegibilityPairs().Count());
+	public void LegibilityCoversEveryPair() => Assert.Equal(494, LegibilityPairs().Count());
 
 	[Fact]
 	public void ASelectedSegmentReadsAsRaisedNotSunken()

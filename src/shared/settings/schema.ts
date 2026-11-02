@@ -80,6 +80,7 @@ export const DOH_PROVIDERS = ['cloudflare', 'cloudflare-security', 'google', 'qu
 export const TAB_ORGANIZATIONS = ['manual', 'domain', 'alphabetical', 'recentlyUsed', 'newest'] as const
 export const AUTO_CLOSE_RULES = ['hour', 'day', 'week', 'custom'] as const
 export const TAB_BAR_POSITIONS = ['top', 'left', 'right'] as const
+export const TAB_COLOURS = ['colour', 'none'] as const
 
 export const SETTINGS_SCHEMA = {
 	/** Krackn's `appTheme`: Auto / Light / Dark. Every view is forced to it by the host (`HostedView.FollowTheme`). */
@@ -122,6 +123,8 @@ export const SETTINGS_SCHEMA = {
 	tabDropdowns: flag(false),
 	/** Zing: where the tabs sit. On the side by default, as in Arc and Dia (docs/phase-4.md). */
 	tabBarPosition: oneOf(TAB_BAR_POSITIONS, 'left'),
+	/** Zing: tab cards and favourites in the theme's colour, or neutral. */
+	tabColours: oneOf(TAB_COLOURS, 'colour'),
 	/** Zing: the side rail's width in DIPs; dragging its edge sets it (clampRailWidth). */
 	verticalTabWidth: integerIn(VERTICAL_TABS.minWidth, VERTICAL_TABS.maxWidth, VERTICAL_TABS.defaultWidth),
 	/** Zing: the side rail as a column of icons; on the left the full rail slides out while the pointer is over it. */
