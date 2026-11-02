@@ -98,6 +98,9 @@ export interface Notice {
 
 export interface TitleBarColors {
 	readonly symbolColor: string
+	readonly background: string
+	readonly hover: string
+	readonly pressed: string
 }
 
 /** A point in the chrome renderer's CSS pixels, where a native menu should open. */
@@ -113,9 +116,10 @@ export interface MenuAnchor {
  * resampled (Krackn's pixel-alignment gotcha).
  */
 export const CHROME_LAYOUT = {
-	tabStripHeight: 40,
-	toolbarHeight: 40,
-	/** Only present while the Favourites bar shows; 80 + 28 = 108 is still a multiple of 4. */
+	// Windows draws its caption buttons 32 or 48 tall, and they share a row with these.
+	tabStripHeight: 48,
+	toolbarHeight: 48,
+	/** Only present while the Favourites bar shows; 96 + 28 = 124 is still a multiple of 4. */
 	favouritesBarHeight: 28,
 } as const
 

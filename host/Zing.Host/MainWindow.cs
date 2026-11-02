@@ -111,7 +111,19 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		});
 		_bridge.Register("chrome:titlebar-colors", (JsonElement[] args) =>
 		{
-			AppWindow.TitleBar.ButtonForegroundColor = ParseColor(args[0].GetProperty("symbolColor").GetString()!);
+			var ink = ParseColor(args[0].GetProperty("symbolColor").GetString()!);
+			var background = ParseColor(args[0].GetProperty("background").GetString()!);
+			var hover = ParseColor(args[0].GetProperty("hover").GetString()!);
+			var pressed = ParseColor(args[0].GetProperty("pressed").GetString()!);
+			var bar = AppWindow.TitleBar;
+			bar.ButtonForegroundColor = ink;
+			bar.ButtonInactiveForegroundColor = ink;
+			bar.ButtonHoverForegroundColor = ink;
+			bar.ButtonPressedForegroundColor = ink;
+			bar.ButtonBackgroundColor = background;
+			bar.ButtonInactiveBackgroundColor = background;
+			bar.ButtonHoverBackgroundColor = hover;
+			bar.ButtonPressedBackgroundColor = pressed;
 			return (object?)null;
 		});
 		Api = new ChromeApi(_bridge, _app.Services, this, typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "0");

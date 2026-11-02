@@ -33,10 +33,8 @@ public sealed class HostWindow
 		AppWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(Hwnd));
 		AppWindow.Resize(FitToScreen(width, height));
 		AppWindow.TitleBar.ExtendsContentIntoTitleBar = true;
+		AppWindow.TitleBar.PreferredHeightOption = Microsoft.UI.Windowing.TitleBarHeightOption.Tall;
 		PassThroughTitleBar();
-		const uint DWMWA_SYSTEMBACKDROP_TYPE = 38;
-		var mica = 2;
-		Marshal(Native.DwmSetWindowAttribute(Hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref mica, sizeof(int)), "DwmSetWindowAttribute");
 	}
 
 	public nint Hwnd { get; }
@@ -246,9 +244,5 @@ public sealed class HostWindow
 		target?.Focus();
 	}
 
-	private static void Marshal(int hresult, string call)
-	{
-		if (hresult < 0) throw new System.Runtime.InteropServices.COMException($"{call} failed", hresult);
-	}
 }
 

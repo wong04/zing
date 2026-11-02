@@ -252,8 +252,8 @@ export function stackTokens(profile: HueProfile, dark: boolean): StackTokens {
 	const page = dark ? hexFromHSL(hue, 0.15 * saturation, 0.065) : hexFromHSL(hue, 0.3 * saturation, 0.99)
 	const band = mix(window, dark ? '#000000' : hexFromHSL(hue, 0.6 * saturation, 0.3), dark ? 0.25 : 0.22)
 	const field = mix(band, '#FFFFFF', dark ? 0.1 : 0.62)
-	const ribbon = hexFromHSL(hue, 0.75 * saturation, dark ? 0.76 : 0.45)
-	const card = mix(window, ribbon, dark ? 0.22 : 0.62)
+	const ribbon = hexFromHSL(hue, 0.75 * saturation, dark ? 0.76 : 0.72)
+	const card = dark ? mix(window, ribbon, 0.22) : hexFromHSL(hue, 0.6 * saturation, 0.9)
 	const plain = mix(window, '#FFFFFF', dark ? 0.14 : 0.55)
 	const more = mix(window, inkOn(window), dark ? 0.3 : 0.78)
 

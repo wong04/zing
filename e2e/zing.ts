@@ -312,6 +312,20 @@ export async function layers(chrome: Page): Promise<Layer[]> {
 	return JSON.parse(readFileSync(file, 'utf8')) as Layer[]
 }
 
+/** The colours the host gave Windows' caption buttons, as channels, and their height in DIPs. */
+export async function captionColours(chrome: Page): Promise<{ background: Channels | null; ink: Channels | null; height: number }> {
+	const file = join(await mkdtemp(join(tmpdir(), 'zing-caption-')), 'caption.json')
+	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'caption', file: path }), file)
+	await expect.poll(() => existsSync(file)).toBe(true)
+	return JSON.parse(readFileSync(file, 'utf8')) as { background: Channels | null; ink: Channels | null; height: number }
+}
+
+export interface Channels {
+	readonly R: number
+	readonly G: number
+	readonly B: number
+}
+
 export interface LiveCounts {
 	/** Zing windows not yet destroyed. */
 	readonly windows: number

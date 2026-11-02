@@ -85,6 +85,20 @@ function resolvedColor(chrome: Page, css: string): Promise<Resolved> {
 	}, css)
 }
 
+test('the rail keeps its buttons at its foot, below the tabs', async () => {
+	const zing = await launchZing()
+	const rail = zing.chrome.getByRole('navigation', { name: 'Tab rail' })
+	const foot = rail.locator('.rail-foot')
+	for (const name of ['Toolbox', 'Settings', 'Collapse the tab sidebar to icons', 'Hide sidebar (Ctrl+S)']) await expect(foot.getByRole('button', { name })).toBeVisible()
+	await expect(rail.locator('.rail-head button')).toHaveCount(0)
+	const railBox = (await rail.boundingBox())!
+	const footBox = (await foot.boundingBox())!
+	const tabsBox = (await rail.locator('.rail-tabs').boundingBox())!
+	expect(footBox.y).toBeGreaterThanOrEqual(tabsBox.y + tabsBox.height - 1)
+	expect(railBox.y + railBox.height - (footBox.y + footBox.height)).toBeLessThan(20)
+	await zing.close()
+})
+
 test('tabs sit in a rail on the left by default, with the page beside it', async () => {
 	const zing = await launchZing()
 	await openPage(zing.chrome, 'Alpha')
