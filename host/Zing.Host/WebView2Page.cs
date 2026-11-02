@@ -313,13 +313,14 @@ public sealed class WebView2Page : IPage
 		_core.WebResourceRequested += OnWebResourceRequested;
 		FollowTheme();
 		Wire(_core);
-		// A click into a split pane gives it the keyboard; its tab becomes the active one. The event can arrive late (from
-		// a focus moved before the split was made), so it counts only while this page really has the keyboard.
+		// A click into a split pane makes its tab the active one. The engine also moves the keyboard on its own (a page
+		// shown again, the window coming back to the front); those must not change the active tab, so only a focus that
+		// comes with a mouse button down counts. Panes are separate windows, so the keyboard alone never moves between them.
 		_view.Controller.GotFocus += (_, _) =>
 		{
-			Faults.Warning("PROBE gotfocus " + Url + " keyboard=" + _view.HasKeyboard + " " + Environment.StackTrace, "x");
-			if (_view.HasKeyboard) _events.Focused();
+			if (_view.HasKeyboard && Native.MouseButtonDown()) _events.Focused();
 		};
+
 		foreach (var action in _queued) action(_core);
 		_queued.Clear();
 	}
