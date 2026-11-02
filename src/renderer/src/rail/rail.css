@@ -235,7 +235,7 @@
 	user-select: none;
 }
 
-.rail-row:hover {
+.rail-row:not(.rail-tab):hover {
 	background: color-mix(in srgb, var(--window-ink) 6%, transparent);
 }
 
@@ -265,6 +265,10 @@
 	color: var(--card-ink);
 }
 
+.rail-tab:not(.active):hover {
+	background: color-mix(in srgb, var(--card) 92%, var(--card-ink));
+}
+
 /* Three card shades repeat down the list; a group's tabs repeat them from the group's heading. */
 .rail-tabs > :nth-child(3n+1),
 .rail-group > .rail-tab:nth-child(3n+1) {
@@ -288,9 +292,11 @@
 .rail.pinned .rail-tab.active {
 	position: relative;
 	z-index: 1;
-	height: 42px;
-	margin-block: -2px -10px;
+	height: 36px;
+	margin-block: -2px -4px;
 	margin-right: -8px;
+	align-items: center;
+	padding-top: 0;
 	border-radius: 10px 0 0 10px;
 	border-top: 0;
 	background: var(--page);
@@ -371,11 +377,17 @@
 	z-index: 2;
 	background: var(--surface);
 	box-shadow: var(--elevation-strong);
+	color: var(--text);
+}
+
+.rail-group.dragging > .rail-group-head {
+	color: var(--text);
 }
 
 .rail-tab.dragging {
 	background: var(--card);
 	box-shadow: var(--elevation-strong);
+	color: var(--card-ink);
 }
 
 /* The others slide aside while a row is held. Off otherwise, so a drop never animates twice. */

@@ -44,36 +44,44 @@ interface RowLook {
 	readonly height: number
 	readonly right: number
 	readonly background: string
+	readonly color: string
 	readonly shadow: string
 }
 
 async function rowLooks(chrome: Page): Promise<RowLook[]> {
 	return rows(chrome).evaluateAll((els) => {
 		const dom = globalThis as unknown as {
-			getComputedStyle(e: unknown): { backgroundColor: string; boxShadow: string }
+			getComputedStyle(e: unknown): { backgroundColor: string; color: string; boxShadow: string }
 		}
 		const nodes = els as unknown as { getAttribute(name: string): string | null; getBoundingClientRect(): { top: number; height: number; right: number } }[]
 		return nodes.map((el) => {
 			const box = el.getBoundingClientRect()
 			const style = dom.getComputedStyle(el)
-			return { active: el.getAttribute('aria-selected') === 'true', top: box.top, height: box.height, right: box.right, background: style.backgroundColor, shadow: style.boxShadow }
+			return { active: el.getAttribute('aria-selected') === 'true', top: box.top, height: box.height, right: box.right, background: style.backgroundColor, color: style.color, shadow: style.boxShadow }
 		})
 	})
 }
 
-/** A CSS colour as the browser computes it, so a token and the rgb() it paints with compare equal. */
-function resolvedColor(chrome: Page, css: string): Promise<string> {
+/** A CSS value as the browser computes it as a background and as text, so a token and the rgb() it paints with compare equal. */
+interface Resolved {
+	readonly background: string
+	readonly color: string
+}
+
+function resolvedColor(chrome: Page, css: string): Promise<Resolved> {
 	return chrome.evaluate((value) => {
 		const dom = globalThis as unknown as {
-			document: { body: { append(node: unknown): void }; createElement(tag: string): { style: { backgroundColor: string }; remove(): void } }
-			getComputedStyle(node: unknown): { backgroundColor: string }
+			document: { body: { append(node: unknown): void }; createElement(tag: string): { style: { backgroundColor: string; color: string }; remove(): void } }
+			getComputedStyle(node: unknown): { backgroundColor: string; color: string }
 		}
 		const probe = dom.document.createElement('div')
 		probe.style.backgroundColor = value
+		probe.style.color = value
 		dom.document.body.append(probe)
-		const color = dom.getComputedStyle(probe).backgroundColor
+		const style = dom.getComputedStyle(probe)
+		const resolved = { background: style.backgroundColor, color: style.color }
 		probe.remove()
-		return color
+		return resolved
 	}, css)
 }
 
@@ -198,21 +206,36 @@ test('tab rows are overlapping cards', async () => {
 	}
 	for (let i = 0; i < looks.length; i++) {
 		if (looks[i]!.active) continue
-		expect(looks[i]!.background).toBe(await resolvedColor(zing.chrome, `var(--card-${(i % 3) + 1})`))
+		expect(looks[i]!.background).toBe((await resolvedColor(zing.chrome, `var(--card-${(i % 3) + 1})`)).background)
 	}
 	await zing.close()
 })
 
 test('the active card reaches the page', async () => {
 	const zing = await launchZing()
-	await openPage(zing.chrome, 'Alpha')
-	await openPage(zing.chrome, 'Beta')
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	await rows(zing.chrome).nth(2).click({ position: { x: 20, y: 15 } })
+	await expect(rows(zing.chrome).nth(2)).toHaveAttribute('aria-selected', 'true')
 	const looks = await rowLooks(zing.chrome)
-	const active = looks.find((row) => row.active)
-	expect(active).toBeDefined()
-	await expect.poll(async () => (await shownPage(zing.chrome, 'Beta'))?.x).toBe(active!.right)
-	expect(active!.background).toBe(await resolvedColor(zing.chrome, 'var(--page)'))
+	const active = looks[2]!
+	expect(active.active).toBe(true)
+	await expect.poll(async () => (await shownPage(zing.chrome, 'Beta'))?.x).toBe(active.right)
+	expect(active.background).toBe((await resolvedColor(zing.chrome, 'var(--page)')).background)
 	expect(looks.map((row) => row.shadow !== 'none')).toEqual(looks.map((row) => row.active))
+	const activeBox = (await rows(zing.chrome).nth(2).boundingBox())!
+	const nextIcon = (await rows(zing.chrome).nth(3).locator('.rail-row-icon').boundingBox())!
+	expect(nextIcon.y).toBeGreaterThanOrEqual(activeBox.y + activeBox.height)
+	await zing.close()
+})
+
+test('a hovered card keeps its shade and ink', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma', 'Delta']) await openPage(zing.chrome, title)
+	await expect(rows(zing.chrome)).toHaveCount(5)
+	await rows(zing.chrome).nth(1).hover()
+	const hovered = (await rowLooks(zing.chrome))[1]!
+	expect(hovered.background).toBe((await resolvedColor(zing.chrome, 'color-mix(in srgb, var(--card-2) 92%, var(--card-ink-2))')).background)
+	expect(hovered.color).toBe((await resolvedColor(zing.chrome, 'var(--card-ink-2)')).color)
 	await zing.close()
 })
 
