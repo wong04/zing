@@ -226,8 +226,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private async Task HideAfterPictureAsync(WebView2Page page, Task capture)
 	{
 		await Task.WhenAny(capture, Task.Delay(LeavingPictureWait));
-		// Shown again meanwhile, or gone with its tab or window: nothing to hide.
-		if (_scope.IsClosed || !page.IsOpen || _shown == page) return;
+		// Shown again meanwhile (in front, or as a pane of a split), or gone with its tab or window: nothing to hide.
+		if (_scope.IsClosed || !page.IsOpen || _shown == page || _panes.Contains(page)) return;
 		page.Visible = false;
 	}
 
