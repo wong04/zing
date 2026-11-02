@@ -2,11 +2,11 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, type Locator, type Page } from '@playwright/test'
-import type { ZingApi } from '../src/shared/ipc'
+import { CHROME_LAYOUT, type ZingApi } from '../src/shared/ipc'
 import { DEFAULT_CUSTOM_COLOR } from '../src/shared/settings'
 import { accentLabel, accentThemes } from '../src/shared/theme/accent'
 import { accentVariables } from '../src/shared/theme/accentVariables'
-import { launchZing, test, pageWhere } from './zing'
+import { captionColours, launchZing, test, pageWhere, type Channels } from './zing'
 import { expectAccent, viewAccent, type ViewGlobals } from './theme-helpers'
 
 declare const window: { readonly zing: ZingApi }
@@ -332,6 +332,31 @@ test('the Tab colours setting paints cards and ribbons in the theme colour or no
 	await expect(ribbon).toHaveCSS('color', await paintOf('--plain-ink'))
 	await expect(card).toHaveCSS('background-color', await paintOf('--plain'))
 	await expect(card).toHaveCSS('color', await paintOf('--plain-ink'))
+	await zing.close()
+})
+
+test('the caption buttons match what they sit on, whatever the theme and tab position', async () => {
+	const zing = await launchZing()
+	const chrome = zing.chrome
+	const channels = (colour: Channels | null) => colour && `rgb(${colour.R}, ${colour.G}, ${colour.B})`
+	const token = async (name: string) => rgb((await styleOf(chrome, ':root', name)).trim())
+	// Read together on each try: a switch reaches the tokens and the caption a moment apart.
+	const expectCaption = (surface: string) =>
+		expect
+			.poll(async () => {
+				const { background, ink } = await captionColours(chrome)
+				return channels(background) === (await token(`--${surface}`)) && channels(ink) === (await token(`--${surface}-ink`))
+			})
+			.toBe(true)
+	await expectCaption('band')
+	expect((await captionColours(chrome)).height).toBe(CHROME_LAYOUT.toolbarHeight)
+	await chrome.evaluate(() => window.zing.setSetting('accent', 'blue'))
+	await expectAccent(chrome, 'blue')
+	await expectCaption('band')
+	await chrome.evaluate(() => window.zing.setSetting('theme', 'dark'))
+	await expectCaption('band')
+	await chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'top'))
+	await expectCaption('window')
 	await zing.close()
 })
 

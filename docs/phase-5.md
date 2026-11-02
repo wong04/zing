@@ -13,9 +13,10 @@ Other browsers mostly tint the same grey window. Zing should be recognisable at 
 - **The look is Stack.** Tabs in the sidebar are coloured cards that overlap slightly. The active card sits on top and merges into the page.
 - **Favourites are hanging ribbons** along the top of the sidebar, with a "+N" ribbon that opens a panel holding the rest.
 - **Dark is pastel on dark,** chosen at the hand check: light ribbons with dark text, dim cards, and a window close to black.
-- **One colour, or none.** At the hand check the owner dropped the three hues. Cards and ribbons take one colour from the theme, and Settings has a Tab colours row whose None makes them neutral.
+- **One colour, or none.** At the hand check the owner dropped the three hues. Cards and ribbons take one colour from the theme, and Settings has a Tab colours row whose None makes them neutral. In light, the colour is pale so that dark text sits naturally on it: cards are lighter than the window.
 - **Light by design:** no tilted cards, and only the active card has a shadow.
 - **Layout stays a normal browser's:** sidebar, toolbar, address bar and page, in their usual places.
+- **The rail's buttons sit at its foot,** chosen at the hand check: Toolbox, Settings, recent tools, collapse and hide.
 
 The owner also approved these in the description of the design:
 

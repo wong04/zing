@@ -284,8 +284,8 @@ public static class Palette
 		var page = dark ? Colors.HexFromHsl(hue, 0.15 * saturation, 0.065) : Colors.HexFromHsl(hue, 0.3 * saturation, 0.99);
 		var band = Colors.Mix(window, dark ? "#000000" : Colors.HexFromHsl(hue, 0.6 * saturation, 0.3), dark ? 0.25 : 0.22);
 		var field = Colors.Mix(band, "#FFFFFF", dark ? 0.1 : 0.62);
-		var ribbon = Colors.HexFromHsl(hue, 0.75 * saturation, dark ? 0.76 : 0.45);
-		var card = Colors.Mix(window, ribbon, dark ? 0.22 : 0.62);
+		var ribbon = Colors.HexFromHsl(hue, 0.75 * saturation, dark ? 0.76 : 0.72);
+		var card = dark ? Colors.Mix(window, ribbon, 0.22) : Colors.HexFromHsl(hue, 0.6 * saturation, 0.9);
 		var plain = Colors.Mix(window, "#FFFFFF", dark ? 0.14 : 0.55);
 		var more = Colors.Mix(window, InkOn(window), dark ? 0.3 : 0.78);
 		return new StackTokens(

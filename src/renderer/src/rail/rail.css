@@ -42,14 +42,28 @@
 	}
 }
 
-/* The head drags the window, as the tab strip does on top; its buttons opt out. */
+/* The head drags the window, as the tab strip does on top. On the right it clears the caption buttons. */
 .rail-head {
+	display: flex;
+	flex: none;
+	height: var(--toolbar-height, 40px);
+	-webkit-app-region: drag;
+}
+
+.rail.left .rail-head {
+	height: 12px;
+}
+
+.rail-foot {
 	display: flex;
 	align-items: center;
 	gap: 2px;
 	flex: none;
-	height: var(--toolbar-height, 40px);
-	-webkit-app-region: drag;
+	padding-top: 6px;
+}
+
+.rail-foot-gap {
+	flex: 1;
 }
 
 .rail-drag {
@@ -81,9 +95,9 @@
 	flex-wrap: wrap;
 	gap: 2px;
 	flex: none;
-	padding-bottom: 4px;
-	border-bottom: 1px solid var(--separator);
-	margin-bottom: 4px;
+	padding-top: 4px;
+	border-top: 1px solid var(--separator);
+	margin-top: 4px;
 }
 
 /* The Favourites as ribbons hanging along the top of the rail: as many as the width fits, the rest behind "+N". */
@@ -639,11 +653,11 @@
 	padding: 0 6px 8px;
 }
 
-.rail.collapsed .rail-head {
+.rail.collapsed .rail-foot {
 	justify-content: center;
 }
 
-.rail.collapsed .rail-drag {
+.rail.collapsed .rail-foot-gap {
 	display: none;
 }
 

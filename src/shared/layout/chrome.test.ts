@@ -4,13 +4,13 @@ import { chromeInsets, clampRailWidth, VERTICAL_TABS } from './chrome'
 const base = { favouritesBar: false, railWidth: 240, leftDock: 0 }
 
 describe('chrome insets', () => {
-	it('top tabs: tab strip + toolbar above the page', () => expect(chromeInsets({ ...base, position: 'top' })).toEqual({ top: 80, left: 0, right: 0 }))
+	it('top tabs: tab strip + toolbar above the page', () => expect(chromeInsets({ ...base, position: 'top' })).toEqual({ top: 96, left: 0, right: 0 }))
 	it('the Favourites bar adds its height in every position', () => {
-		expect(chromeInsets({ ...base, position: 'top', favouritesBar: true }).top).toBe(120)
-		expect(chromeInsets({ ...base, position: 'left', favouritesBar: true }).top).toBe(80)
+		expect(chromeInsets({ ...base, position: 'top', favouritesBar: true }).top).toBe(136)
+		expect(chromeInsets({ ...base, position: 'left', favouritesBar: true }).top).toBe(88)
 	})
-	it('left tabs: only the toolbar on top, the rail on the left', () => expect(chromeInsets({ ...base, position: 'left' })).toEqual({ top: 40, left: 240, right: 0 }))
-	it('right tabs: the rail on the right', () => expect(chromeInsets({ ...base, position: 'right' })).toEqual({ top: 40, left: 0, right: 240 }))
+	it('left tabs: only the toolbar on top, the rail on the left', () => expect(chromeInsets({ ...base, position: 'left' })).toEqual({ top: 48, left: 240, right: 0 }))
+	it('right tabs: the rail on the right', () => expect(chromeInsets({ ...base, position: 'right' })).toEqual({ top: 48, left: 0, right: 240 }))
 	it('a docked panel adds to the left in every position', () => {
 		expect(chromeInsets({ ...base, position: 'left', leftDock: 320 }).left).toBe(560)
 		expect(chromeInsets({ ...base, position: 'right', leftDock: 320 }).left).toBe(320)

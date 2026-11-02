@@ -44,7 +44,7 @@ public static class TestHooks
 	/// <summary>
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
-	/// "layers" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
+	/// "layers", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
 	public static bool TryHandle(string json, HostWindow window)
@@ -57,6 +57,12 @@ public static class TestHooks
 		if (action == "layers")
 		{
 			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(Layers(window)));
+			return true;
+		}
+		if (action == "caption")
+		{
+			var bar = window.AppWindow.TitleBar;
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { background = bar.ButtonBackgroundColor, ink = bar.ButtonForegroundColor, height = bar.Height / window.Scale }));
 			return true;
 		}
 		if (action == "live-counts")

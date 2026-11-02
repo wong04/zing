@@ -6,6 +6,7 @@ import { LibraryChrome } from './library/LibraryChrome'
 import { Toolbar } from './chrome/Toolbar'
 import { useTabsState } from './chrome/useTabsState'
 import { TabRail } from './rail/TabRail'
+import { useTitleBarColors } from './chrome/titlebar'
 import { useAccentTheme } from './settings/useAccentTheme'
 import { useSettings } from './settings/useSettings'
 import { Sidebar } from './sidebar/Sidebar'
@@ -28,6 +29,7 @@ export function App() {
 	const sidebarPinned = settings?.sidebarPinned ?? true
 	const position = settings?.tabBarPosition ?? 'left'
 	useAccentTheme()
+	useTitleBarColors(position, settings?.accent, settings?.customColor)
 	const shownSplit = state?.shownSplit
 	const split = state?.splits?.find((s) => s.id === shownSplit?.id)
 	const appSidebar =
