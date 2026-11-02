@@ -20,6 +20,7 @@ public sealed class HostWindow
 	private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
 	private HostedView? _focused;
 	private HostedView? _backmost;
+	private string? _theme;
 
 	public HostWindow(string title, int width, int height)
 	{
@@ -75,6 +76,17 @@ public sealed class HostWindow
 		}
 	}
 
+	/// <summary>The Appearance setting, which every view of the window follows, now and from its creation. Set before the first view.</summary>
+	public string Theme
+	{
+		get => _theme ?? throw new InvalidOperationException("The window has no theme yet");
+		set
+		{
+			_theme = value;
+			foreach (var view in _views) view.FollowTheme(value);
+		}
+	}
+
 	/// <summary>The client area in DIPs.</summary>
 	public ContentSize ClientSize
 	{
@@ -117,6 +129,7 @@ public sealed class HostWindow
 	internal void Adopt(HostedView view)
 	{
 		_views.Add(view);
+		view.FollowTheme(Theme);
 		if (!view.IsOverlay) _backmost?.SendToBack();
 		view.Controller.GotFocus += (_, _) => _focused = view;
 		view.Controller.AcceleratorKeyPressed += (_, e) => KeyPressed?.Invoke(view, e);

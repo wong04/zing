@@ -91,6 +91,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_scope.Checkpoint("startup");
 		_environment = await _app.Environment;
 		_scope.Checkpoint("startup");
+		_window.Theme = Theme();
 		// The chrome view is created first, under every page; its API must be registered before it loads and asks for state.
 		var chrome = RendererView.CreateAsync(_window, _scope, _environment, _bridge, "chrome", overlay: false);
 		_notices = new NoticeLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, _dispatcher, _overlays);
@@ -117,9 +118,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		Api.TabsChanged += () => _app.TabsChanged(this);
 		var themeSubscription = _app.Services.Settings.Subscribe((_, key) =>
 		{
-			if (key != "theme") return;
-			foreach (var record in Api.Tabs.Records)
-				if (Api.Tabs.PageOf(record.Id) is WebView2Page page) page.FollowTheme();
+			if (key == "theme") _window.Theme = Theme();
 		});
 		_scope.Track(themeSubscription.Dispose);
 		Api.Start(_app.TakePendingRestore(), System.Environment.GetEnvironmentVariable("ZING_START_URL"));
@@ -154,13 +153,15 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		ReserveCaptionButtons();
 	}
 
+	private string Theme() => _app.Services.Settings.Get("theme")!.GetValue<string>();
+
 	// MARK: IPageHost
 
 	public IPage Create(IPageEvents events)
 	{
 		var settings = _app.Services.Settings;
 		// Created after the chrome view, so above it; overlays are popups above both.
-		return new WebView2Page(_window, _scope, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), () => settings.Get("theme")!.GetValue<string>(), this, _app.PersistentProfile);
+		return new WebView2Page(_window, _scope, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), this, _app.PersistentProfile);
 	}
 
 	public void Show(IPage page)

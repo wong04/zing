@@ -130,6 +130,36 @@ public sealed class HostedView
 		return view;
 	}
 
+	/// <summary>
+	/// Forces <c>prefers-color-scheme</c> to Zing's Appearance setting. An InPrivate profile ignores
+	/// PreferredColorScheme (only the persistent profile's pages obey it), so the DevTools override does the
+	/// forcing; it holds across navigations. The property stays for the engine's own dialogs.
+	/// </summary>
+	internal void FollowTheme(string theme)
+	{
+		var (scheme, media) = theme switch
+		{
+			"light" => (CoreWebView2PreferredColorScheme.Light, "light"),
+			"dark" => (CoreWebView2PreferredColorScheme.Dark, "dark"),
+			"system" => (CoreWebView2PreferredColorScheme.Auto, ""),
+			_ => throw new InvalidDataException($"Unknown theme {theme}"),
+		};
+		Core.Profile.PreferredColorScheme = scheme;
+		var request = System.Text.Json.JsonSerializer.Serialize(new { features = new[] { new { name = "prefers-color-scheme", value = media } } });
+		TestHooks.Background(WhileOpen(Core.CallDevToolsProtocolMethodAsync("Emulation.setEmulatedMedia", request).AsTask()), "colour scheme");
+	}
+
+	private async Task WhileOpen(Task task)
+	{
+		try
+		{
+			await task;
+		}
+		catch (Exception) when (IsClosed)
+		{
+		}
+	}
+
 	/// <summary>Places the view at a rectangle of the window's content, in DIPs.</summary>
 	public void Place(Rect bounds)
 	{

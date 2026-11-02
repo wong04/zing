@@ -57,7 +57,8 @@ async function freePort(): Promise<string> {
 /** A Zing this test started and hasn't closed yet; on a failure its views and logs go into the report. */
 interface Running {
 	readonly host: ChildProcess
-	readonly browser: Browser
+	/** None on a launchBare run. */
+	readonly browser?: Browser
 	readonly errors: string
 	readonly userData: string
 }
@@ -87,7 +88,7 @@ async function collect(testInfo: TestInfo): Promise<void> {
 	const failed = testInfo.status !== testInfo.expectedStatus
 	for (const [n, zing] of left.entries()) {
 		if (failed) {
-			for (const [i, page] of pages(zing.browser).entries()) {
+			for (const [i, page] of (zing.browser ? pages(zing.browser) : []).entries()) {
 				const name = `zing${n + 1}-view${i + 1}-${page.url().replace(/^.*[#/]/, '') || 'blank'}.png`
 				// Written into the test's own folder: an attachment's body alone stays in the report, and CI uploads the folder.
 				const path = testInfo.outputPath(name)
@@ -100,8 +101,21 @@ async function collect(testInfo: TestInfo): Promise<void> {
 				await testInfo.attach(log, { path, contentType: 'text/plain' })
 			}
 		}
-		if (zing.browser.isConnected()) await zing.browser.close().catch(() => undefined)
+		if (zing.browser?.isConnected()) await zing.browser.close().catch(() => undefined)
 		if (zing.host.exitCode === null) zing.host.kill()
+	}
+}
+
+function hostEnvironment(port: string, errors: string, userData: string): NodeJS.ProcessEnv {
+	return {
+		...process.env,
+		ZING_E2E: '1',
+		ZING_CDP_PORT: port,
+		ZING_ERRORS_FILE: errors,
+		ZING_RENDERER_DIR: join(ROOT, 'out', 'renderer'),
+		ZING_USER_DATA: userData,
+		ZING_DOWNLOADS_DIR: join(userData, 'downloads'),
+		ZING_SKIP_ACCOUNT_GATE: '1',
 	}
 }
 
@@ -114,19 +128,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 	const dialogs = join(scratch, 'dialogs.jsonl')
 	// Never the user's real profile: every run gets its own folder unless a test relaunches into one.
 	const userData = userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-host-data-')))
-	const hostEnv = {
-		...process.env,
-		ZING_E2E: '1',
-		ZING_CDP_PORT: port,
-		ZING_ERRORS_FILE: errors,
-		ZING_MENUS_FILE: menus,
-		ZING_DIALOGS_FILE: dialogs,
-		ZING_RENDERER_DIR: join(ROOT, 'out', 'renderer'),
-		ZING_USER_DATA: userData,
-		ZING_DOWNLOADS_DIR: join(userData, 'downloads'),
-		ZING_SKIP_ACCOUNT_GATE: '1',
-		...env,
-	}
+	const hostEnv = { ...hostEnvironment(port, errors, userData), ZING_MENUS_FILE: menus, ZING_DIALOGS_FILE: dialogs, ...env }
 	const host: ChildProcess = spawn(HOST_EXE, [...args], { env: hostEnv, stdio: 'ignore' })
 	let closing = false
 	// A host that goes before close() leaves the test only "target closed"; say how it went and what it logged.
@@ -191,6 +193,70 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 			if (!quit) throw new HostProcessError('Zing did not quit within 15 s of its last window closing')
 		},
 	}
+}
+
+export interface BareZing {
+	/** The URLs of every view, in no order. */
+	urls(): Promise<string[]>
+	/** Evaluates an expression in every view whose URL matches, in no order. */
+	evaluate(match: (url: string) => boolean, expression: string): Promise<unknown[]>
+	close(): Promise<void>
+}
+
+/**
+ * Zing with no Playwright attached, read over plain DevTools connections. Playwright emulates a colour
+ * scheme on every view it attaches to, and clearing that also clears the host's own override, so what a
+ * view gets from the host when it starts can only be seen without it.
+ */
+export async function launchBare(userDataDir: string): Promise<BareZing> {
+	const port = await freePort()
+	const errors = join(await mkdtemp(join(tmpdir(), 'zing-host-e2e-')), 'errors.log')
+	const host = spawn(HOST_EXE, [], { env: hostEnvironment(port, errors, userDataDir), stdio: 'ignore' })
+	const self: Running = { host, errors, userData: userDataDir }
+	running.add(self)
+	const exited = new Promise<void>((resolve) => host.once('exit', () => resolve()))
+	const targets = async () => {
+		const response = await fetch(`http://127.0.0.1:${port}/json/list`)
+		const all = (await response.json()) as { type: string; url: string; webSocketDebuggerUrl: string }[]
+		return all.filter((target) => target.type === 'page')
+	}
+	const bare: BareZing = {
+		urls: async () => (await targets()).map((target) => target.url),
+		evaluate: async (match, expression) => Promise.all((await targets()).filter((target) => match(target.url)).map((target) => evaluateOver(target.webSocketDebuggerUrl, expression))),
+		close: async () => {
+			running.delete(self)
+			// The window closing takes its view with it, so this may never answer; the host exiting is the answer.
+			void bare.evaluate((url) => url === CHROME_URL, "zing.runCommand('window.close')").catch(() => undefined)
+			const quit = await Promise.race([exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15_000))])
+			if (!quit) host.kill()
+			await engineReleased(userDataDir)
+			if (existsSync(errors)) throw new HostProcessError(`The host recorded errors during this test:
+
+${readFileSync(errors, 'utf8')}
+${hostLogs(undefined, userDataDir)}`)
+			if (!quit) throw new HostProcessError('Zing did not quit within 15 s of its last window closing')
+		},
+	}
+	await expect
+		.poll(async () => (await targets().catch(() => [])).some((target) => target.url === CHROME_URL), { timeout: 30_000 })
+		.toBe(true)
+	return bare
+}
+
+/** One Runtime.evaluate on a throwaway connection; a view that closes meanwhile fails it. */
+function evaluateOver(webSocketUrl: string, expression: string): Promise<unknown> {
+	return new Promise((resolve, reject) => {
+		const socket = new WebSocket(webSocketUrl)
+		socket.onopen = () => socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+		socket.onerror = () => reject(new HostProcessError(`No DevTools connection to ${webSocketUrl}`))
+		socket.onclose = () => reject(new HostProcessError(`The view at ${webSocketUrl} closed during an evaluate`))
+		socket.onmessage = (message) => {
+			const { result } = JSON.parse(String(message.data)) as { result: { result: { value: unknown }; exceptionDetails?: unknown } }
+			if (result.exceptionDetails) reject(new HostProcessError(`${expression} threw: ${JSON.stringify(result.exceptionDetails)}`))
+			else resolve(result.result.value)
+			socket.close()
+		}
+	})
 }
 
 /** The e2e run's own logs: the errors file (when given) and the scratch profile's fault log, warnings included. */
