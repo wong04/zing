@@ -49,9 +49,15 @@ export function accentVariables(accent: string, customColor: string, dark: boole
 	}
 }
 
-/** Windows' caption buttons match what they sit on: the toolbar when tabs are on the left, otherwise the window colour of the strip or the rail. */
-export function titleBarColors(position: string, accent: string, customColor: string, dark: boolean): TitleBarColors {
+export type CaptionSurface = 'band' | 'window'
+
+/** What Windows' caption buttons sit on: the toolbar with tabs on the left or a collapsed rail on the right (narrower than the buttons), otherwise the strip or the rail. */
+export function captionSurface(position: string, railCollapsed: boolean): CaptionSurface {
+	return position === 'left' || (position === 'right' && railCollapsed) ? 'band' : 'window'
+}
+
+export function titleBarColors(surface: CaptionSurface, accent: string, customColor: string, dark: boolean): TitleBarColors {
 	const stack = stackTokens(themeProfile(accent, customColor), dark)
-	const [background, ink] = position === 'left' ? [stack.band, stack.bandInk] : [stack.window, stack.windowInk]
+	const [background, ink] = surface === 'band' ? [stack.band, stack.bandInk] : [stack.window, stack.windowInk]
 	return { symbolColor: ink, background, hover: mix(background, ink, 0.1), pressed: mix(background, ink, 0.2) }
 }

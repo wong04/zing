@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
-import { CHROME_LAYOUT, LIBRARY_PANEL_WIDTH, type LibraryPanel as PanelKind } from '@shared/ipc'
+import { LIBRARY_PANEL_WIDTH, type LibraryPanel as PanelKind } from '@shared/ipc'
+import { chromeInsets, type TabBarPosition } from '@shared/layout/chrome'
 import { FAVOURITES_ID, isFixedFolder, isFolder, visibleRows, type BookmarkNode, type BrowserLibrary } from '@shared/library/library'
 import { zing } from '../api'
 
@@ -48,9 +49,10 @@ interface LibraryPanelProps {
 	readonly panel: PanelKind
 	readonly favouritesBar: boolean
 	readonly offset: number
+	readonly position: TabBarPosition
 }
 
-export function LibraryPanel({ library, panel, favouritesBar, offset }: LibraryPanelProps) {
+export function LibraryPanel({ library, panel, favouritesBar, offset, position }: LibraryPanelProps) {
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set([FAVOURITES_ID]))
 	const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
 	const [focused, setFocused] = useState<string | undefined>()
@@ -59,7 +61,7 @@ export function LibraryPanel({ library, panel, favouritesBar, offset }: LibraryP
 	const list = useRef<HTMLDivElement>(null)
 
 	const rows = panel === 'bookmarks' ? bookmarkRows(library, expanded) : readingRows(library)
-	const top = CHROME_LAYOUT.tabStripHeight + CHROME_LAYOUT.toolbarHeight + (favouritesBar ? CHROME_LAYOUT.favouritesBarHeight : 0)
+	const { top } = chromeInsets({ position, favouritesBar, railWidth: 0, leftDock: 0 })
 	const style: CSSProperties = { top, left: offset, width: LIBRARY_PANEL_WIDTH }
 
 	useEffect(() => list.current?.focus(), [panel])

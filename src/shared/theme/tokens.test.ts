@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CUSTOM_COLOR } from '../settings'
-import { accentVariables, titleBarColors } from './accentVariables'
+import { accentVariables, captionSurface, titleBarColors } from './accentVariables'
 import { statusColors } from './tokens'
 
 /** Fixed across accents, so the palette never themes them. */
@@ -10,11 +10,18 @@ const STATUS_VARIABLES = ['--positive', '--caution', '--danger']
 describe('titleBarColors', () => {
 	it('match the toolbar with tabs on the left, and the window colour otherwise, as full #RRGGBB', () => {
 		const vars = accentVariables('yellow', DEFAULT_CUSTOM_COLOR, true)
-		const left = titleBarColors('left', 'yellow', DEFAULT_CUSTOM_COLOR, true)
+		const left = titleBarColors('band', 'yellow', DEFAULT_CUSTOM_COLOR, true)
 		expect([left.background, left.symbolColor]).toEqual([vars['--band'], vars['--band-ink']])
-		const top = titleBarColors('top', 'yellow', DEFAULT_CUSTOM_COLOR, true)
+		const top = titleBarColors('window', 'yellow', DEFAULT_CUSTOM_COLOR, true)
 		expect([top.background, top.symbolColor]).toEqual([vars['--window'], vars['--window-ink']])
 		for (const colour of Object.values(left)) expect(colour).toMatch(/^#[0-9a-fA-F]{6}$/)
+	})
+
+	it('match the rail with tabs on the right, until it collapses and the buttons sit mostly on the toolbar', () => {
+		expect(captionSurface('right', false)).toBe('window')
+		expect(captionSurface('right', true)).toBe('band')
+		expect(captionSurface('left', false)).toBe('band')
+		expect(captionSurface('top', true)).toBe('window')
 	})
 })
 
