@@ -77,22 +77,21 @@ async function timeThemeSwitch(chrome: Page, theme: AccentTheme, expected: strin
 	)
 }
 
-/** Long tasks observed in the chrome view since it was installed, in ms. */
-async function installLongTasks(chrome: Page): Promise<void> {
-	await chrome.evaluate(() => {
-		const g = globalThis as unknown as {
-			PerformanceObserver: new (callback: (list: { getEntries(): { duration: number }[] }) => void) => { observe(options: object): void }
-			__zingLongTaskMs: number
-		}
-		g.__zingLongTaskMs = 0
-		new g.PerformanceObserver((list) => {
-			for (const entry of list.getEntries()) g.__zingLongTaskMs += entry.duration
-		}).observe({ type: 'longtask', buffered: false })
-	})
-}
-
-async function longTaskMs(chrome: Page): Promise<number> {
-	return chrome.evaluate(() => (globalThis as unknown as { __zingLongTaskMs: number }).__zingLongTaskMs)
+/** The main-thread work an action costs in the chrome view, in ms: DevTools' TaskDuration, as the table in docs/phase-5.md measures it. */
+async function workOf(chrome: Page, action: () => Promise<void>): Promise<number> {
+	const session = await chrome.context().newCDPSession(chrome)
+	await session.send('Performance.enable')
+	const taskSeconds = async (): Promise<number> => {
+		const { metrics } = await session.send('Performance.getMetrics')
+		const task = metrics.find((metric) => metric.name === 'TaskDuration')
+		if (!task) throw new Error('DevTools reported no TaskDuration')
+		return task.value
+	}
+	const before = await taskSeconds()
+	await action()
+	const after = await taskSeconds()
+	await session.detach()
+	return (after - before) * 1000
 }
 
 /** Seven samples: the middle one. */
@@ -131,28 +130,35 @@ test('switching tabs and themes is quick with 300 tabs and 16 favourites', async
 	const themeMedian = median(themeTimes)
 	expect(themeMedian).toBeLessThan(250)
 
-	await installLongTasks(chrome)
+	const list = chrome.locator('.rail-tabs')
+	await list.evaluate((el) => {
+		el.scrollTop = 0
+	})
+	const railBox = (await list.boundingBox())!
 	const row = rows(chrome)
+	const held = await row.nth(0).getAttribute('data-tab-id')
 	const from = (await row.nth(0).boundingBox())!
-	const to = (await row.nth(3).boundingBox())!
-	const beforeDrag = await longTaskMs(chrome)
-	await chrome.mouse.move(from.x + 40, from.y + from.height / 2)
-	await chrome.mouse.down()
-	await chrome.mouse.move(to.x + 40, to.y + to.height / 2, { steps: 12 })
-	await chrome.mouse.up()
-	const dragMs = (await longTaskMs(chrome)) - beforeDrag
+	const dragMs = await workOf(chrome, async () => {
+		await chrome.mouse.move(from.x + 40, from.y + from.height / 2)
+		await chrome.mouse.down()
+		await chrome.mouse.move(from.x + 40, railBox.y + railBox.height - 20, { steps: 60 })
+		await chrome.mouse.up()
+	})
+	await expect.poll(() => row.nth(0).getAttribute('data-tab-id')).not.toBe(held)
 
-	const railBox = (await chrome.locator('.rail-tabs').boundingBox())!
 	await chrome.mouse.move(railBox.x + railBox.width / 2, railBox.y + railBox.height / 2)
-	const beforeScroll = await longTaskMs(chrome)
-	for (let i = 0; i < 30; i++) await chrome.mouse.wheel(0, 300)
-	const scrollMs = (await longTaskMs(chrome)) - beforeScroll
+	const scrollMs = await workOf(chrome, async () => {
+		for (let i = 0; i < 30; i++) await chrome.mouse.wheel(0, 300)
+		await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+	})
 
-	test.info().annotations.push(
+	const annotations = [
 		{ type: 'tab switch median', description: `${tabMedian.toFixed(0)} ms (${tabTimes.map((t) => t.toFixed(0)).join(', ')})` },
 		{ type: 'theme switch median', description: `${themeMedian.toFixed(0)} ms (${themeTimes.map((t) => t.toFixed(0)).join(', ')})` },
-		{ type: 'drag long tasks', description: `${dragMs.toFixed(0)} ms` },
-		{ type: 'scroll long tasks', description: `${scrollMs.toFixed(0)} ms` },
-	)
+		{ type: 'drag work', description: `${dragMs.toFixed(0)} ms` },
+		{ type: 'scroll work', description: `${scrollMs.toFixed(0)} ms` },
+	]
+	test.info().annotations.push(...annotations)
+	console.log(annotations.map(({ type, description }) => `${type}: ${description}`).join('\n'))
 	await zing.close()
 })

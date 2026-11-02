@@ -133,6 +133,22 @@ test('the toolbar and Settings carry the theme', async () => {
 	await zing.close()
 })
 
+test('the app sidebar takes the theme', async () => {
+	const zing = await launchZing()
+	await zing.chrome.evaluate(() => {
+		void window.zing.setSetting('tabBarPosition', 'right')
+		void window.zing.setSetting('accent', 'blue')
+	})
+	await expectAccent(zing.chrome, 'blue')
+	await zing.chrome.locator('.sidebar-slot > .sidebar').waitFor()
+	const vars = accentVariables('blue', DEFAULT_CUSTOM_COLOR, (await viewAccent(zing.chrome)).dark)
+	expect(await styleOf(zing.chrome, '.sidebar-slot > .sidebar', 'background-color')).toBe(rgb(vars['--window']!))
+	expect(await styleOf(zing.chrome, '.side-row:not(.selected)', 'color')).toBe(rgb(vars['--window-ink']!))
+	expect(await styleOf(zing.chrome, '.side-row.selected', 'background-color')).toBe(rgb(vars['--page']!))
+	expect(await styleOf(zing.chrome, '.side-row.selected', 'color')).toBe(rgb(vars['--page-ink']!))
+	await zing.close()
+})
+
 test('the custom accent applies in the chrome view without an error', async () => {
 	const zing = await launchZing()
 	const errors: string[] = []

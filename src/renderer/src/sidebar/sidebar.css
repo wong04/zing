@@ -25,16 +25,20 @@
 	border: 0;
 	border-right: 1px solid var(--separator);
 	border-radius: 0;
+	background: var(--window);
 }
 
 .sidebar {
 	display: flex;
 	flex-direction: column;
+	--text: var(--window-ink);
+	--muted: var(--window-ink);
+	color: var(--window-ink);
 	width: 196px;
 	height: 100%;
 	border: 1px solid var(--separator);
 	border-radius: 12px;
-	background: color-mix(in srgb, var(--surface) 70%, transparent);
+	background: var(--window);
 	overflow: hidden;
 }
 
@@ -44,7 +48,7 @@
 	bottom: 8px;
 	left: 8px;
 	height: auto;
-	background: color-mix(in srgb, var(--surface) 55%, transparent);
+	background: color-mix(in srgb, var(--window) 85%, transparent);
 	backdrop-filter: blur(24px) saturate(1.4);
 	box-shadow: var(--elevation-strong);
 	animation: side-in 0.18s ease-out;
@@ -151,7 +155,8 @@
 }
 
 .side-row.selected {
-	background: color-mix(in srgb, var(--selection) 85%, transparent);
+	background: var(--page);
+	color: var(--page-ink);
 }
 
 .side-row.selected .side-row-icon {
