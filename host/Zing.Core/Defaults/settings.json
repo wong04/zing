@@ -1,6 +1,7 @@
 {
 	"theme": "system",
 	"accent": "yellow",
+	"customColor": "#D9B872",
 	"homepage": "",
 	"startShortcuts": null,
 	"searchEngine": "google",
@@ -30,6 +31,7 @@
 	"passwordAutofill": true,
 	"tabDropdowns": false,
 	"tabBarPosition": "left",
+	"tabColours": "colour",
 	"verticalTabWidth": 240,
 	"verticalTabsCollapsed": false,
 	"sleepingTabs": {

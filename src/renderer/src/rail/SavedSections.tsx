@@ -1,90 +1,75 @@
-import { useState, type KeyboardEvent, type MouseEvent } from 'react'
-import type { TabView } from '@shared/ipc'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { FAVOURITES_ID, PINNED_ID, isFolder, type BookmarkFolder, type BookmarkLink, type BookmarkNode } from '@shared/library/library'
 import { zing } from '../api'
 import { CloseIcon } from '../chrome/icons'
-import { TabIconView } from '../chrome/tabs/SlotChips'
 import { FolderIcon } from '../components/icons'
+import { ribbonLayout } from '@shared/layout/ribbons'
 import { AT_END } from './dropTarget'
-import type { ItemDragHandlers } from './useItemDrag'
+import { FavouritesPanel } from './FavouritesPanel'
+import { ItemIcon, itemMenu, open, savedFolderProps, savedItemProps, type SavedFrame } from './savedItem'
 
-/** What the saved sections need from the rail: the tabs that belong to items, and the item drag. */
-export interface SavedFrame {
-	readonly tabsByItem: ReadonlyMap<string, TabView>
-	readonly activeId: string | undefined
-	readonly drag: (id: string) => ItemDragHandlers
-	readonly endsDrag: () => boolean
-}
+const EMPTY_HINT = 'Drag a tab here, or press Ctrl+D'
 
-function itemMenu(id: string) {
-	return (e: MouseEvent): void => {
-		e.preventDefault()
-		void zing.openLibraryItemMenu(id, { x: e.clientX, y: e.clientY })
+/** The Favourites as ribbons hanging along the top of the rail: as many as the width fits, the rest behind "+N". Ctrl+D adds the page in front. */
+export function FavouriteRibbons({ nodes, frame, innerWidth }: { nodes: readonly BookmarkNode[]; frame: SavedFrame; innerWidth: number }) {
+	const { shown, more } = ribbonLayout(nodes.length, innerWidth)
+	const [expanded, setExpanded] = useState(false)
+	const moreButton = useRef<HTMLButtonElement>(null)
+	// Nothing hidden means no "+N" to hang the panel from, so a panel left open must not come back when they hide again.
+	if (more === 0 && expanded) setExpanded(false)
+	// Focus is on a row in the panel when it closes from the keyboard: it goes back to "+N", not nowhere.
+	const close = (): void => {
+		if (document.activeElement?.closest('.rail-favourites-panel')) moreButton.current?.focus()
+		setExpanded(false)
 	}
-}
-
-function open(frame: SavedFrame, id: string): void {
-	if (frame.endsDrag()) return
-	void zing.openSavedTab(id)
-}
-
-/** A saved item's icon: its tab's (favicons live in memory only), or its first letter until the tab has loaded. */
-function ItemIcon({ link, tab }: { link: BookmarkLink; tab: TabView | undefined }) {
-	if (tab) return <TabIconView tab={tab} />
-	const letter = (link.title.trim()[0] ?? '?').toUpperCase()
-	return (
-		<span className="tab-icon rail-letter" aria-hidden="true">
-			{letter}
-		</span>
-	)
-}
-
-/** The Favourites as tiles: as many per row as the width fits. Ctrl+D adds the page in front. */
-export function FavouriteTiles({ nodes, frame }: { nodes: readonly BookmarkNode[]; frame: SavedFrame }) {
+	// Opening a favourite from its ribbon closes the panel too.
+	const activate = (id: string): void => {
+		setExpanded(false)
+		void zing.openSavedTab(id)
+	}
+	const holdsActive = nodes.slice(shown).some((node) => {
+		const tab = frame.tabsByItem.get(node.id)
+		return tab !== undefined && tab.id === frame.activeId
+	})
 	return (
 		<div className="rail-favourites" role="list" aria-label="Favourites" data-drop-folder={FAVOURITES_ID}>
-			{nodes.length === 0 ? <p className="rail-hint">Drag a tab here, or press Ctrl+D</p> : null}
-			{nodes.map((node, index) => {
+			{nodes.length === 0 ? <div className="rail-ribbon empty" role="listitem" title={EMPTY_HINT} aria-label={EMPTY_HINT} /> : null}
+			{nodes.slice(0, shown).map((node, index) => {
 				const place = { 'data-drop-item': node.id, 'data-drop-parent': FAVOURITES_ID, 'data-drop-index': index, 'data-drop-axis': 'x' }
 				if (isFolder(node)) {
 					return (
-						<div
-							key={node.id}
-							role="listitem"
-							aria-label={node.title}
-							title={node.title}
-							className="rail-tile"
-							{...place}
-							{...frame.drag(node.id)}
-							onClick={(e) => {
-								if (!frame.endsDrag()) void zing.openFolderMenu(node.id, { x: e.clientX, y: e.clientY })
-							}}
-							onContextMenu={itemMenu(node.id)}
-						>
+						<div key={node.id} {...place} {...savedFolderProps(frame, node, 'rail-ribbon', (at) => void zing.openFolderMenu(node.id, at))}>
 							<FolderIcon size={16} />
 						</div>
 					)
 				}
-				const tab = frame.tabsByItem.get(node.id)
-				const active = tab !== undefined && tab.id === frame.activeId
 				return (
-					<div
-						key={node.id}
-						role="listitem"
-						aria-label={node.title}
-						aria-current={active ? 'page' : undefined}
-						title={node.title}
-						data-item-id={node.id}
-						className={['rail-tile', active && 'active', !tab && 'unloaded'].filter(Boolean).join(' ')}
-						{...place}
-						{...frame.drag(node.id)}
-						onClick={() => open(frame, node.id)}
-						onContextMenu={itemMenu(node.id)}
-					>
-						<ItemIcon link={node} tab={tab} />
+					<div key={node.id} data-item-id={node.id} {...place} {...savedItemProps(frame, node, 'rail-ribbon', () => activate(node.id))}>
+						<ItemIcon link={node} tab={frame.tabsByItem.get(node.id)} />
 					</div>
 				)
 			})}
+			{more > 0 ? (
+				<button
+					ref={moreButton}
+					type="button"
+					className={['rail-ribbon', 'more', holdsActive && 'holds-active'].filter(Boolean).join(' ')}
+					aria-label={`${more} more favourites`}
+					aria-expanded={expanded}
+					aria-controls="rail-favourites-panel"
+					title={`${more} more favourites`}
+					data-drop-item="more"
+					data-drop-parent={FAVOURITES_ID}
+					data-drop-index={shown}
+					data-drop-axis="x"
+					onClick={() => {
+						if (!frame.endsDrag()) setExpanded(!expanded)
+					}}
+				>
+					+{more}
+				</button>
+			) : null}
+			{expanded && more > 0 ? <FavouritesPanel nodes={nodes.slice(shown)} firstIndex={shown} frame={frame} onClose={close} /> : null}
 		</div>
 	)
 }

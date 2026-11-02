@@ -45,32 +45,39 @@ Also dropped:
 | S3 | Overlay layer for UI drawn over the page | parity | Features/Browser/WebViewHost.swift (shielded) | [#4](https://github.com/wong04/zing/issues/4) | Done |
 | S4 | Tab record model decoupled from webContents | new | Features/Browser/TabOrganizer.swift (TabSnapshot) | [#5](https://github.com/wong04/zing/issues/5) | Done |
 | S5 | In-memory session passed as a parameter | parity | Features/Browser/BrowserTab.swift | [#6](https://github.com/wong04/zing/issues/6) | Done |
-| S6 | Command registry + Windows shortcut map | parity | App/Commands.swift | [#7](https://github.com/wong04/zing/issues/7) | Open |
-| S7 | Typed settings store with registered defaults | parity | App/AppSettings.swift | [#8](https://github.com/wong04/zing/issues/8) | Open |
-| S8 | CSS theme tokens from Krackn's palette | parity | App/Theme.swift, App/Accent.swift | [#9](https://github.com/wong04/zing/issues/9) | Open |
-| S9 | CI on windows-latest | infra | run-tests.sh | [#10](https://github.com/wong04/zing/issues/10) | Open |
+| S6 | Command registry + Windows shortcut map | parity | App/Commands.swift | [#7](https://github.com/wong04/zing/issues/7) | Done |
+| S7 | Typed settings store with registered defaults | parity | App/AppSettings.swift | [#8](https://github.com/wong04/zing/issues/8) | Done |
+| S8 | CSS theme tokens from Krackn's palette | parity | App/Theme.swift, App/Accent.swift | [#9](https://github.com/wong04/zing/issues/9) | Done |
+| S9 | CI on windows-latest | infra | run-tests.sh | [#10](https://github.com/wong04/zing/issues/10) | Done |
 | S10 | Performance budget suite in CI | infra | - | [#11](https://github.com/wong04/zing/issues/11) | Open |
+
+**S rows, 2026-11-02:** S6–S9 re-verified against the code and tests. S10 is really open: there is no `test:perf` script, perf spec or CI step, only the budgets described in [docs/PLAN.md](docs/PLAN.md).
 
 ## M2 Pure logic port
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| L1 | Port TabOrganizer + SiteGroup | port-logic | Features/Browser/TabOrganizer.swift; Tests/taborg | [#12](https://github.com/wong04/zing/issues/12) | Open |
-| L2 | Port TabReorder drag geometry | port-logic | Features/Browser/TabReorder.swift; Tests/tabs | [#13](https://github.com/wong04/zing/issues/13) | Open |
-| L3 | Port AddressInput go-or-search rule | port-logic | Features/Browser/AddressInput.swift; Tests/unit | [#14](https://github.com/wong04/zing/issues/14) | Open |
-| L4 | Port ThreatModel heuristics | port-logic | Features/Security/ThreatModel.swift; Tests/security | [#15](https://github.com/wong04/zing/issues/15) | Open |
-| L5 | Port BlockDiagnostics.classify | port-logic | Features/Unblock/BlockDiagnostics.swift; Tests/unit | [#16](https://github.com/wong04/zing/issues/16) | Open |
-| L6 | Port Expression parser | port-logic | Features/Utilities/Expression.swift; Tests/calc | [#17](https://github.com/wong04/zing/issues/17) | Open |
-| L7 | Port GraphEngine | port-logic | Features/Utilities/GraphEngine.swift; Tests/graph | [#18](https://github.com/wong04/zing/issues/18) | Open |
-| L8 | Port PanelLayout collision resolution | port-logic | App/PanelLayout.swift; Tests/panels | [#19](https://github.com/wong04/zing/issues/19) | Open |
-| L9 | Port ToolboxSearch + keyword table | port-logic | App/ToolboxSearch.swift; Tests/toolbox | [#20](https://github.com/wong04/zing/issues/20) | Open |
-| L10 | Port StartShortcuts | port-logic | Features/Browser/StartShortcuts.swift; Tests/unit | [#21](https://github.com/wong04/zing/issues/21) | Open |
-| L11 | Port FaviconChoice | port-logic | Features/Browser/FaviconChoice.swift | [#22](https://github.com/wong04/zing/issues/22) | Open |
-| L12 | Port DownloadPolicy | port-logic | Features/Browser/DownloadPolicy.swift; Tests/download | [#23](https://github.com/wong04/zing/issues/23) | Open |
-| L13 | Port DevTools pure logic | port-logic | Features/Utilities/DevTools.swift, UtilityTools.swift | [#24](https://github.com/wong04/zing/issues/24) | Open |
-| L14 | Port accent generator + WCAG AA test | port-logic | App/Accent.swift; Tests/theme | [#25](https://github.com/wong04/zing/issues/25) | Open |
-| L15 | Port DropRouter | port-logic | App/DropRouter.swift; Tests/drop | [#26](https://github.com/wong04/zing/issues/26) | Open |
-| L16 | Port tracking-parameter stripper | port-logic | Features/Browser/BrowserTab.swift, UtilityTools.swift | [#27](https://github.com/wong04/zing/issues/27) | Open |
+| L1 | Port TabOrganizer + SiteGroup | port-logic | Features/Browser/TabOrganizer.swift; Tests/taborg | [#12](https://github.com/wong04/zing/issues/12) | Done |
+| L2 | Port TabReorder drag geometry | port-logic | Features/Browser/TabReorder.swift; Tests/tabs | [#13](https://github.com/wong04/zing/issues/13) | Done |
+| L3 | Port AddressInput go-or-search rule | port-logic | Features/Browser/AddressInput.swift; Tests/unit | [#14](https://github.com/wong04/zing/issues/14) | Done |
+| L4 | Port ThreatModel heuristics | port-logic | Features/Security/ThreatModel.swift; Tests/security | [#15](https://github.com/wong04/zing/issues/15) | Done |
+| L5 | Port BlockDiagnostics.classify | port-logic | Features/Unblock/BlockDiagnostics.swift; Tests/unit | [#16](https://github.com/wong04/zing/issues/16) | Done |
+| L6 | Port Expression parser | port-logic | Features/Utilities/Expression.swift; Tests/calc | [#17](https://github.com/wong04/zing/issues/17) | Done |
+| L7 | Port GraphEngine | port-logic | Features/Utilities/GraphEngine.swift; Tests/graph | [#18](https://github.com/wong04/zing/issues/18) | Done |
+| L8 | Port PanelLayout collision resolution | port-logic | App/PanelLayout.swift; Tests/panels | [#19](https://github.com/wong04/zing/issues/19) | Done |
+| L9 | Port ToolboxSearch + keyword table | port-logic | App/ToolboxSearch.swift; Tests/toolbox | [#20](https://github.com/wong04/zing/issues/20) | Done |
+| L10 | Port StartShortcuts | port-logic | Features/Browser/StartShortcuts.swift; Tests/unit | [#21](https://github.com/wong04/zing/issues/21) | Done |
+| L11 | Port FaviconChoice | port-logic | Features/Browser/FaviconChoice.swift | [#22](https://github.com/wong04/zing/issues/22) | Partial |
+| L12 | Port DownloadPolicy | port-logic | Features/Browser/DownloadPolicy.swift; Tests/download | [#23](https://github.com/wong04/zing/issues/23) | Partial |
+| L13 | Port DevTools pure logic | port-logic | Features/Utilities/DevTools.swift, UtilityTools.swift | [#24](https://github.com/wong04/zing/issues/24) | Done |
+| L14 | Port accent generator + WCAG AA test | port-logic | App/Accent.swift; Tests/theme | [#25](https://github.com/wong04/zing/issues/25) | Done |
+| L15 | Port DropRouter | port-logic | App/DropRouter.swift; Tests/drop | [#26](https://github.com/wong04/zing/issues/26) | Done |
+| L16 | Port tracking-parameter stripper | port-logic | Features/Browser/BrowserTab.swift, UtilityTools.swift | [#27](https://github.com/wong04/zing/issues/27) | Done |
+
+**L rows, 2026-11-02:** re-verified by reading each port and its tests; the shared suites passed locally (1,265 tests) and CI passed on `7edc3dd`. Done here means the logic is ported and tested, not that the app uses it yet:
+- **Waiting for the toolbox:** L4 (X11–X13), L5 (X3), L6 (X18), L7 (X17), L9 (X22), L13 (X19) and L15 (X23) have no caller until those rows are built. L4–L7, L9 and L13 exist only in TypeScript.
+- **L11, Partial:** `faviconChoice.ts` has no caller and no C# port. `WebView2Page` takes the engine's `FaviconUri`, so the best-icon rule isn't applied.
+- **L12, Partial:** `DownloadPolicy` is ported to both sides but nothing calls it. `DownloadHost` relies on the engine's own `DownloadStarting` decision. Either wire it in or confirm the engine decides the same way.
 
 ## M3 Browser parity
 

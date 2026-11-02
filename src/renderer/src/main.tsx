@@ -5,7 +5,6 @@ import './api'
 import './theme/tokens.css'
 import './base.css'
 import { App } from './App'
-import { syncTitleBarColors } from './chrome/titlebar'
 import { Overlay } from './overlay/Overlay'
 import { PageUi } from './overlay/PageUi'
 import { Surface } from './surface/Surface'
@@ -18,6 +17,5 @@ const isPageUi = location.hash === '#pageui'
 const isSurface = location.hash === '#surface'
 const isOverlay = location.hash.startsWith('#overlay') || isPageUi
 document.documentElement.dataset['view'] = isSurface ? 'surface' : isOverlay ? 'overlay' : 'chrome'
-if (!isOverlay && !isSurface) syncTitleBarColors()
 
 createRoot(root).render(<StrictMode>{isSurface ? <Surface /> : isPageUi ? <PageUi /> : isOverlay ? <Overlay /> : <App />}</StrictMode>)

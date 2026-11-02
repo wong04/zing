@@ -18,6 +18,7 @@ import {
 	RETIRED_SETTING_KEYS,
 	SEARCH_ENGINES,
 	TAB_BAR_POSITIONS,
+	TAB_COLOURS,
 	TAB_ORGANIZATIONS,
 	type SettingKey,
 } from '../src/shared/settings/schema'
@@ -29,6 +30,7 @@ export type SettingRule =
 	| { readonly type: 'flag' }
 	| { readonly type: 'number' | 'integer'; readonly min: number; readonly max: number }
 	| { readonly type: 'text' | 'textList' | 'startShortcuts' }
+	| { readonly type: 'hexColor' }
 	| { readonly type: 'sleep'; readonly min: number; readonly max: number }
 
 const oneOf = (values: readonly string[]): SettingRule => ({ type: 'enum', values })
@@ -44,6 +46,7 @@ const range = (type: 'number' | 'integer', min: number, max: number): SettingRul
 export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	theme: oneOf(APPEARANCES),
 	accent: oneOf(ACCENTS),
+	customColor: { type: 'hexColor' },
 	homepage: text,
 	startShortcuts: { type: 'startShortcuts' },
 	searchEngine: oneOf(SEARCH_ENGINES),
@@ -73,6 +76,7 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	passwordAutofill: flag,
 	tabDropdowns: flag,
 	tabBarPosition: oneOf(TAB_BAR_POSITIONS),
+	tabColours: oneOf(TAB_COLOURS),
 	verticalTabWidth: range('integer', VERTICAL_TABS.minWidth, VERTICAL_TABS.maxWidth),
 	verticalTabsCollapsed: flag,
 	sleepingTabs: { type: 'sleep', min: MIN_SLEEP_MINUTES, max: MAX_SLEEP_MINUTES },
@@ -95,6 +99,8 @@ export function ruleAccepts(rule: SettingRule, value: unknown): boolean {
 			return Number.isInteger(value) && isFiniteIn(value, rule.min, rule.max)
 		case 'text':
 			return typeof value === 'string'
+		case 'hexColor':
+			return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)
 		case 'textList':
 			return Array.isArray(value) && value.every((s) => typeof s === 'string')
 		case 'startShortcuts':

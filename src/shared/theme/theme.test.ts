@@ -1,8 +1,30 @@
 // Port of Krackn Tests/theme.
 import { describe, expect, it } from 'vitest'
-import { accentLabel, AccentTheme, accentThemes, darkTokens, lightTokens } from './accent'
-import { contrastRatio, hexFromHSL, hexFromRGB, InvalidHexColorError, relativeLuminance, rgbFromHex, wcagAA } from './color'
-import { accentInk, control, generatePalette, lightProfile, raised, type PaletteTokens } from './palette'
+import {
+	accentLabel,
+	AccentTheme,
+	accentThemes,
+	CUSTOM_ACCENT,
+	darkTokens,
+	hueProfile,
+	lightTokens,
+	seedProfile,
+	themeProfile,
+	themeTokens,
+} from './accent'
+import { contrastRatio, hexFromHSL, hexFromRGB, hslFromHex, InvalidHexColorError, relativeLuminance, rgbFromHex, wcagAA } from './color'
+import {
+	accentInk,
+	control,
+	generatePalette,
+	lightProfile,
+	raised,
+	referenceDark,
+	referenceLight,
+	stackTokens,
+	type PaletteTokens,
+	type StackTokens,
+} from './palette'
 
 const modes: readonly [string, (theme: AccentTheme) => PaletteTokens][] = [
 	['light', lightTokens],
@@ -29,31 +51,40 @@ describe('the reference palette is preserved exactly', () => {
 	})
 })
 
-describe('every family is legible in both modes', () => {
+// The seeds a user is likely to pick: black, white, grey, a pure yellow and a mid blue.
+const legibilitySeeds = ['#000000', '#FFFFFF', '#808080', '#FFFF00', '#3366CC']
+
+describe('every family and seed is legible in both modes', () => {
 	// WCAG AA is 4.5:1 for body text. Anything below that isn't a style
 	// choice, it's a bug — and a generated palette can drift there without
 	// anyone noticing.
-	const cases = accentThemes.flatMap((theme) =>
-		modes.flatMap(([mode, tokensFor]) => {
-			const tokens = tokensFor(theme)
-			const pairs: [string, string, string][] = [
-				['text on background', tokens.text, tokens.background],
-				['text on surface', tokens.text, tokens.surface],
-				['secondary on background', tokens.textSecondary, tokens.background],
-				['onAccent on accent', tokens.onAccent, tokens.accent],
-				['text on well', tokens.text, tokens.well],
-				// The accent used as a glyph/link colour — the original accent
-				// is under 2:1 here, which is why `accentInk` exists.
-				['accentInk on surface', accentInk(tokens), tokens.surface],
-				['accentInk on selection', accentInk(tokens), tokens.selection],
-				['text on control', tokens.text, control(tokens)],
-				['text on raised', tokens.text, raised(tokens)],
-			]
-			return pairs.map(([label, fg, bg]) => [`${accentLabel(theme)} ${mode} ${label}`, fg, bg] as const)
-		}),
-	)
-	it('covers 7 families × 2 modes × 9 pairs', () => {
-		expect(cases).toHaveLength(126)
+	const tokenSets = [
+		...accentThemes.flatMap((theme) => modes.map(([mode, tokensFor]) => [`${accentLabel(theme)} ${mode}`, tokensFor(theme)] as const)),
+		...legibilitySeeds.flatMap((seed) =>
+			[
+				['light', false],
+				['dark', true],
+			].map(([mode, dark]) => [`${seed} ${mode}`, themeTokens(CUSTOM_ACCENT, seed, dark as boolean)] as const),
+		),
+	]
+	const cases = tokenSets.flatMap(([name, tokens]) => {
+		const pairs: [string, string, string][] = [
+			['text on background', tokens.text, tokens.background],
+			['text on surface', tokens.text, tokens.surface],
+			['secondary on background', tokens.textSecondary, tokens.background],
+			['onAccent on accent', tokens.onAccent, tokens.accent],
+			['text on well', tokens.text, tokens.well],
+			// The accent used as a glyph/link colour — the original accent
+			// is under 2:1 here, which is why `accentInk` exists.
+			['accentInk on surface', accentInk(tokens), tokens.surface],
+			['accentInk on selection', accentInk(tokens), tokens.selection],
+			['text on control', tokens.text, control(tokens)],
+			['text on raised', tokens.text, raised(tokens)],
+		]
+		return pairs.map(([label, fg, bg]) => [`${name} ${label}`, fg, bg] as const)
+	})
+	it('covers 8 families and 5 seeds × 2 modes × 9 pairs', () => {
+		expect(cases).toHaveLength(234)
 	})
 	it.each(cases)('%s', (_name, fg, bg) => {
 		expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(wcagAA)
@@ -112,6 +143,21 @@ describe('HSL conversion', () => {
 	})
 })
 
+describe('HSL from hex', () => {
+	// Red-dominant hues can dip below zero before the modulo, so they must wrap to the top of the circle.
+	it('a red-dominant colour takes a hue near 330', () => {
+		expect(Math.abs(hslFromHex('#FF0080').hue - 330)).toBeLessThanOrEqual(1)
+	})
+	it('a grey has hue 0 and no saturation', () => {
+		const { hue, saturation } = hslFromHex('#808080')
+		expect(hue).toBe(0)
+		expect(saturation).toBe(0)
+	})
+	it('a green-dominant colour takes a hue near 150', () => {
+		expect(Math.abs(hslFromHex('#00FF80').hue - 150)).toBeLessThanOrEqual(1)
+	})
+})
+
 describe('hex parsing round-trips', () => {
 	it.each(['#F7F2E9', '#000000', '#FFFFFF', '#D9B872', '#1A1714'])('round-trip %s', (hex) => {
 		expect(hexFromRGB(rgbFromHex(hex))).toBe(hex)
@@ -143,5 +189,89 @@ describe('the generator', () => {
 	})
 	it('accepts a lower-case hex', () => {
 		expect(rgbFromHex('ffffff')).toEqual({ r: 1, g: 1, b: 1 })
+	})
+})
+
+// Stack tokens and seeds, for the Phase 5 themes work.
+const seeds = ['#000000', '#FFFFFF', '#808080', '#FFFF00', '#3366CC']
+const stackSubjects = [
+	...accentThemes.map((theme) => ({ name: accentLabel(theme), profile: hueProfile(theme) })),
+	...seeds.map((seed) => ({ name: seed, profile: seedProfile(seed) })),
+]
+const stackModes: readonly [string, boolean][] = [
+	['light', false],
+	['dark', true],
+]
+
+function stackPairs(tokens: StackTokens): [string, string, string][] {
+	return [
+		['window', tokens.windowInk, tokens.window],
+		['band', tokens.bandInk, tokens.band],
+		['field', tokens.fieldInk, tokens.field],
+		['page', tokens.pageInk, tokens.page],
+		['more', tokens.moreInk, tokens.more],
+		['card', tokens.cardInk, tokens.card],
+		['ribbon', tokens.ribbonInk, tokens.ribbon],
+		['plain', tokens.plainInk, tokens.plain],
+	]
+}
+
+describe('stack tokens are legible', () => {
+	const cases = stackSubjects.flatMap(({ name, profile }) =>
+		stackModes.flatMap(([mode, dark]) =>
+			stackPairs(stackTokens(profile, dark)).map(([label, fg, bg]) => [`${name} ${mode} ${label}`, fg, bg] as const),
+		),
+	)
+	it.each(cases)('%s', (_name, fg, bg) => {
+		expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(wcagAA)
+	})
+})
+
+describe('the active card stands out', () => {
+	const cases = stackSubjects.flatMap(({ name, profile }) =>
+		stackModes.flatMap(([mode, dark]) => {
+			const tokens = stackTokens(profile, dark)
+			return [
+				[`${name} ${mode} card`, tokens.page, tokens.card] as const,
+				[`${name} ${mode} plain`, tokens.page, tokens.plain] as const,
+			]
+		}),
+	)
+	it.each(cases)('%s', (_name, page, card) => {
+		expect(contrastRatio(page, card)).toBeGreaterThanOrEqual(1.1)
+	})
+})
+
+describe('seeds', () => {
+	it('a seed takes its hue', () => {
+		expect(Math.abs(seedProfile('#3366CC').hue - 220)).toBeLessThanOrEqual(1)
+	})
+	it('a grey seed keeps a saturation floor', () => {
+		expect(seedProfile('#000000').saturation).toBe(0.07)
+	})
+	it('refuses a bad seed', () => {
+		expect(() => seedProfile('blue')).toThrow(InvalidHexColorError)
+	})
+})
+
+describe('preset names', () => {
+	it('labels are the preset names', () => {
+		expect(accentLabel(AccentTheme.blue)).toBe('Ocean')
+		expect(accentLabel(AccentTheme.yellow)).toBe('Amber')
+		expect(accentLabel(AccentTheme.midnight)).toBe('Midnight')
+	})
+})
+
+describe('a theme resolves from a name or a seed', () => {
+	it('custom takes its profile from the seed', () => {
+		expect(themeProfile(CUSTOM_ACCENT, '#3366CC')).toEqual(seedProfile('#3366CC'))
+	})
+	it('an unknown accent is a RangeError', () => {
+		expect(() => themeProfile('pink', '#3366CC')).toThrow(RangeError)
+		expect(() => themeTokens('pink', '#3366CC', false)).toThrow(RangeError)
+	})
+	it('yellow stays the reference palette whatever the seed', () => {
+		expect(themeTokens(AccentTheme.yellow, '#3366CC', false)).toEqual(referenceLight)
+		expect(themeTokens(AccentTheme.yellow, '#3366CC', true)).toEqual(referenceDark)
 	})
 })

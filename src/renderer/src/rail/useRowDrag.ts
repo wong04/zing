@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, type PointerEvent } from 'react'
 import { clearDropMark, dropTargetAt, markDropTarget, type DropTarget } from './dropTarget'
+import { dragRoom } from './dragRoom'
 
 /** Below this, a press that moves is still a click. */
 const DRAG_THRESHOLD = 4
@@ -89,7 +90,7 @@ export function useRowDrag(
 			const dy = e.clientY - held.y
 			if (!held.dragging && Math.abs(dy) < DRAG_THRESHOLD) return
 			held.dragging = true
-			setDrag({ key: held.key, dy, to: targetOf(held, dy), room: (held.frames.get(held.key)?.height ?? 0) + 2 })
+			setDrag({ key: held.key, dy, to: targetOf(held, dy), room: dragRoom(keys, held.key, held.frames) })
 			markDropTarget(e.clientX, e.clientY, e.currentTarget)
 			onMove(held.key, { x: e.clientX, y: e.clientY })
 		},

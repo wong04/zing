@@ -71,11 +71,14 @@ public static class StartPage
 
 	// MARK: - Theme
 
-	public static StartPageTokens Tokens(PaletteTokens p) => new(
-		p.Background, p.Surface, p.Tint, p.Well, p.Outline, p.Accent, p.OnAccent, p.Text, p.TextSecondary,
+	/// <summary>The page's background is the stack's page token, so the start page sits on the same ground as the chrome.</summary>
+	public static StartPageTokens Tokens(PaletteTokens p, StackTokens stack) => new(
+		stack.Page, p.Surface, p.Tint, p.Well, p.Outline, p.Accent, p.OnAccent, p.Text, p.TextSecondary,
 		Palette.Control(p), Palette.Raised(p), Palette.AccentInk(p));
 
-	public static StartPageTheme Theme(string accent) => new(Tokens(Palette.LightTokens(accent)), Tokens(Palette.DarkTokens(accent)));
+	public static StartPageTheme Theme(string accent, string customColor) => new(
+		Tokens(Palette.ThemeTokens(accent, customColor, false), Palette.Stack(Palette.ThemeProfile(accent, customColor), false)),
+		Tokens(Palette.ThemeTokens(accent, customColor, true), Palette.Stack(Palette.ThemeProfile(accent, customColor), true)));
 
 	private static string CssValue(string name, string value)
 	{
@@ -211,7 +214,7 @@ public static class StartPage
 	public static string Html(JsonObject settings) => Html(new StartPageInput(
 		SearchFormAction(TextSetting(settings, "searchEngine")),
 		StartShortcuts.FromSetting(Setting(settings, "startShortcuts")),
-		Theme(TextSetting(settings, "accent"))));
+		Theme(TextSetting(settings, "accent"), TextSetting(settings, "customColor"))));
 
 	/// <summary>
 	/// The host of a zing: URL as the URL standard reads it: zing is not a special scheme, so the host keeps its

@@ -20,6 +20,8 @@ public sealed class SharedVectorTests
 
 	private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement;
 
+	private const string DefaultCustomColour = "#D9B872";
+
 	private static string? Text(JsonElement v, string key) => v.GetProperty(key).ValueKind == JsonValueKind.Null ? null : v.GetProperty(key).GetString();
 
 	// TextSize
@@ -156,6 +158,33 @@ public sealed class SharedVectorTests
 		Assert.Equal(v.GetProperty("control").GetString(), Palette.Control(tokens));
 		Assert.Equal(v.GetProperty("raised").GetString(), Palette.Raised(tokens));
 		Assert.Equal(v.GetProperty("isDark").GetBoolean(), Palette.IsDark(tokens));
+	}
+
+	/// <summary>A named accent's stack comes from its preset hue; the seed argument is unused for it.</summary>
+	[Theory]
+	[MemberData(nameof(Palettes))]
+	public void Stack_matches_the_TS(string json)
+	{
+		var v = Parse(json);
+		var accent = v.GetProperty("accent").GetString()!;
+		var dark = v.GetProperty("mode").GetString() == "dark";
+		var stack = Palette.Stack(Palette.ThemeProfile(accent, DefaultCustomColour), dark);
+		Assert.True(JsonNode.DeepEquals(JsonNode.Parse(v.GetProperty("stack").GetRawText()), JsonSerializer.SerializeToNode(stack, ZingJson.Options)));
+	}
+
+	public static TheoryData<string> Seeds() => Cases("src/shared/theme/palette.vectors.json", "seeds");
+
+	[Theory]
+	[MemberData(nameof(Seeds))]
+	public void Seed_matches_the_TS(string json)
+	{
+		var v = Parse(json);
+		var seed = v.GetProperty("seed").GetString()!;
+		var dark = v.GetProperty("mode").GetString() == "dark";
+		var tokens = Palette.ThemeTokens("custom", seed, dark);
+		Assert.True(JsonNode.DeepEquals(JsonNode.Parse(v.GetProperty("tokens").GetRawText()), JsonSerializer.SerializeToNode(tokens, ZingJson.Options)));
+		var stack = Palette.Stack(Palette.ThemeProfile("custom", seed), dark);
+		Assert.True(JsonNode.DeepEquals(JsonNode.Parse(v.GetProperty("stack").GetRawText()), JsonSerializer.SerializeToNode(stack, ZingJson.Options)));
 	}
 
 	[Fact]

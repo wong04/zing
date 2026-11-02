@@ -106,6 +106,9 @@ async function collect(testInfo: TestInfo): Promise<void> {
 	}
 }
 
+// A cold start on a CI runner has taken 29 s and more, while a warm one takes under 5.
+const LAUNCH_TIMEOUT = 60_000
+
 function hostEnvironment(port: string, errors: string, userData: string): NodeJS.ProcessEnv {
 	return {
 		...process.env,
@@ -138,7 +141,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		process.stderr.write(`Zing exited before close(), with ${how}.\n${hostLogs(errors, userData)}\n`)
 	})
 	await expect
-		.poll(async () => (await fetch(`http://127.0.0.1:${port}/json/version`).catch(() => undefined))?.ok ?? false, { timeout: 30_000 })
+		.poll(async () => (await fetch(`http://127.0.0.1:${port}/json/version`).catch(() => undefined))?.ok ?? false, { timeout: LAUNCH_TIMEOUT })
 		.toBe(true)
 	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
 	const self: Running = { host, browser, errors, userData }
@@ -238,7 +241,7 @@ ${hostLogs(undefined, userDataDir)}`)
 		},
 	}
 	await expect
-		.poll(async () => (await targets().catch(() => [])).some((target) => target.url === CHROME_URL), { timeout: 30_000 })
+		.poll(async () => (await targets().catch(() => [])).some((target) => target.url === CHROME_URL), { timeout: LAUNCH_TIMEOUT })
 		.toBe(true)
 	return bare
 }
@@ -307,6 +310,20 @@ export async function layers(chrome: Page): Promise<Layer[]> {
 	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'layers', file: path }), file)
 	await expect.poll(() => existsSync(file)).toBe(true)
 	return JSON.parse(readFileSync(file, 'utf8')) as Layer[]
+}
+
+/** The colours the host gave Windows' caption buttons, as channels, and their height in DIPs. */
+export async function captionColours(chrome: Page): Promise<{ background: Channels | null; ink: Channels | null; height: number }> {
+	const file = join(await mkdtemp(join(tmpdir(), 'zing-caption-')), 'caption.json')
+	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'caption', file: path }), file)
+	await expect.poll(() => existsSync(file)).toBe(true)
+	return JSON.parse(readFileSync(file, 'utf8')) as { background: Channels | null; ink: Channels | null; height: number }
+}
+
+export interface Channels {
+	readonly R: number
+	readonly G: number
+	readonly B: number
 }
 
 export interface LiveCounts {

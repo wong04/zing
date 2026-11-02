@@ -15,17 +15,9 @@
 	gap: 2px;
 	height: 100%;
 	padding: 0 8px 8px;
-	background: var(--bg);
-	color: var(--text);
+	background: var(--window);
+	color: var(--window-ink);
 	overflow: hidden;
-}
-
-.rail.pinned.left {
-	border-right: 1px solid var(--separator);
-}
-
-.rail.pinned.right {
-	border-left: 1px solid var(--separator);
 }
 
 .rail.floating {
@@ -37,6 +29,7 @@
 	border: 1px solid var(--separator);
 	border-radius: 12px;
 	background: color-mix(in srgb, var(--surface) 55%, transparent);
+	color: var(--text);
 	backdrop-filter: blur(24px) saturate(1.4);
 	box-shadow: var(--elevation-strong);
 	animation: rail-in 0.18s ease-out;
@@ -49,14 +42,28 @@
 	}
 }
 
-/* The head drags the window, as the tab strip does on top; its buttons opt out. */
+/* The head drags the window, as the tab strip does on top. On the right it clears the caption buttons. */
 .rail-head {
+	display: flex;
+	flex: none;
+	height: var(--toolbar-height, 40px);
+	-webkit-app-region: drag;
+}
+
+.rail.left .rail-head {
+	height: 12px;
+}
+
+.rail-foot {
 	display: flex;
 	align-items: center;
 	gap: 2px;
 	flex: none;
-	height: var(--toolbar-height, 40px);
-	-webkit-app-region: drag;
+	padding-top: 6px;
+}
+
+.rail-foot-gap {
+	flex: 1;
 }
 
 .rail-drag {
@@ -74,13 +81,13 @@
 	border: 0;
 	border-radius: var(--control-radius);
 	background: transparent;
-	color: var(--text-secondary, var(--text));
+	color: var(--window-ink);
 	-webkit-app-region: no-drag;
 }
 
 .rail-icon-button:hover {
-	background: color-mix(in srgb, var(--text) 7%, transparent);
-	color: var(--text);
+	background: color-mix(in srgb, var(--window-ink) 7%, transparent);
+	color: var(--window-ink);
 }
 
 .rail-tools {
@@ -88,49 +95,133 @@
 	flex-wrap: wrap;
 	gap: 2px;
 	flex: none;
-	padding-bottom: 4px;
-	border-bottom: 1px solid var(--separator);
-	margin-bottom: 4px;
+	padding-top: 4px;
+	border-top: 1px solid var(--separator);
+	margin-top: 4px;
 }
 
-/* The Favourites as tiles: as many per row as the width fits. */
+/* The Favourites as ribbons hanging along the top of the rail: as many as the width fits, the rest behind "+N". */
 .rail-favourites {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
-	gap: 6px;
+	display: flex;
+	gap: 4px;
+	position: relative;
 	flex: none;
-	padding: 2px 0 8px;
-	border-radius: 10px;
+	padding: 0 0 8px;
 }
 
-.rail-tile {
-	display: grid;
-	place-items: center;
-	height: 44px;
-	border-radius: 12px;
-	background: color-mix(in srgb, var(--text) 6%, transparent);
+/* clip-path cuts the ribbon's outline and shadow off, so state shows as fill, inset shadow or filter. */
+.rail-ribbon {
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	flex: none;
+	box-sizing: border-box;
+	width: 40px;
+	height: 54px;
+	margin: 0;
+	padding: 0 0 13px;
+	border: 0;
+	clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%);
+	color: var(--window-ink);
+	font: inherit;
 	touch-action: none;
 	user-select: none;
 }
 
-.rail-tile:hover {
-	background: color-mix(in srgb, var(--text) 10%, transparent);
+.rail-favourites > .rail-ribbon {
+	background: var(--ribbon);
+	color: var(--ribbon-ink);
 }
 
-.rail-tile.active {
-	background: var(--surface);
-	box-shadow: 0 0 0 1.5px var(--accent);
+.rail-favourites > .rail-ribbon.more {
+	background: var(--more);
+	color: var(--more-ink);
+	font-size: 12px;
+	font-weight: 800;
+}
+
+/* Nothing saved yet: a faint outline of where a ribbon will hang. The clip-path cuts a border off, so the outline is the faint fill
+   showing through a 1.5px inset of the window colour. */
+.rail-favourites > .rail-ribbon.empty {
+	position: relative;
+	background: color-mix(in srgb, var(--window-ink) 18%, transparent);
+}
+
+.rail-favourites > .rail-ribbon.empty::before {
+	content: '';
+	position: absolute;
+	inset: 1.5px;
+	clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%);
+	background: var(--window);
+}
+
+.rail-ribbon.active,
+.rail-ribbon.more.holds-active {
+	box-shadow: inset 0 3px 0 var(--page);
+}
+
+/* The rest of the Favourites, a list hanging under the ribbons. */
+.rail-favourites-panel {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	right: 0;
+	z-index: 6;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	max-height: 60vh;
+	overflow-y: auto;
+	padding: 10px;
+	border-radius: 10px;
+	background: var(--page);
+	color: var(--page-ink);
+	box-shadow: 0 8px 26px rgb(0 0 0 / 0.3);
+}
+
+/* A held row is not clipped by the list while it is dragged. */
+.rail-favourites-panel:has(.dragging) {
+	overflow: visible;
+}
+
+.rail-panel-head {
+	padding: 0 4px 4px;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	opacity: 0.7;
+}
+
+.rail-panel-row.dragging {
+	position: relative;
+	z-index: 5;
+	box-shadow: var(--elevation-strong);
+	background: var(--page);
+	color: var(--page-ink);
+}
+
+.rail.collapsed .rail-panel-head {
+	display: none;
 }
 
 /* A saved tab whose tab is closed: there, but not loaded. */
-.rail-tile.unloaded,
 .rail-item.unloaded {
-	color: var(--text-secondary, var(--text));
+	color: var(--window-ink);
 }
 
-.rail-tile.unloaded > *,
 .rail-item.unloaded .rail-row-icon {
-	opacity: 0.6;
+	opacity: 0.8;
+}
+
+.rail-ribbon .rail-letter {
+	background: transparent;
+	font-size: 12px;
+	font-weight: 800;
+}
+
+.rail-tabs .tab-icon:not(.fault, .loading) {
+	background: color-mix(in srgb, currentColor 14%, transparent);
+	color: inherit;
 }
 
 .rail-letter {
@@ -140,6 +231,7 @@
 	height: 16px;
 	border-radius: 4px;
 	background: color-mix(in srgb, var(--text) 12%, transparent);
+	color: inherit;
 	font-size: 10px;
 	font-weight: 600;
 }
@@ -150,7 +242,7 @@
 	padding: 10px 8px;
 	border: 1px dashed var(--separator);
 	border-radius: 10px;
-	color: var(--text-secondary, var(--text));
+	color: var(--window-ink);
 	font-size: 12px;
 	text-align: center;
 }
@@ -174,7 +266,7 @@
 	justify-content: space-between;
 	height: 24px;
 	padding: 0 2px 0 9px;
-	color: var(--text-secondary, var(--text));
+	color: var(--window-ink);
 	font-size: 11px;
 	font-weight: 600;
 	letter-spacing: 0.02em;
@@ -195,13 +287,18 @@
 	font: inherit;
 }
 
-.rail-tile.dragging,
 .rail-item.dragging,
 .rail-folder-head.dragging {
 	position: relative;
 	z-index: 5;
 	box-shadow: var(--elevation-strong);
 	background: var(--surface);
+}
+
+/* Keeps its colour: a shadow would be clipped with the ribbon. */
+.rail-ribbon.dragging {
+	position: relative;
+	z-index: 5;
 }
 
 /* Where a dragged tab or item would land. */
@@ -213,11 +310,15 @@
 .rail-tabs {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
+	gap: 0;
 	flex: 1;
 	min-height: 0;
+	margin-right: -8px;
+	padding-top: 4px;
+	padding-right: 8px;
 	overflow-y: auto;
 	overflow-x: hidden;
+	scrollbar-width: none;
 }
 
 .rail-row {
@@ -230,7 +331,7 @@
 	border: 0;
 	border-radius: var(--control-radius);
 	background: transparent;
-	color: var(--text);
+	color: inherit;
 	font: inherit;
 	font-size: 13px;
 	text-align: left;
@@ -238,17 +339,109 @@
 	user-select: none;
 }
 
-.rail-row:hover {
-	background: color-mix(in srgb, var(--text) 6%, transparent);
+.rail-row:not(.rail-tab):hover {
+	background: color-mix(in srgb, var(--window-ink) 6%, transparent);
 }
 
-.rail-row.active {
-	background: var(--surface);
+.rail-row.active:not(.rail-tab) {
+	background: var(--page);
 	box-shadow: var(--elevation, 0 1px 2px rgb(0 0 0 / 0.12));
+	color: var(--page-ink);
+}
+
+.rail-group-head.active {
+	box-shadow: none;
 }
 
 .rail-row.nested {
 	padding-left: 24px;
+}
+
+.rail-group-head {
+	color: var(--window-ink);
+}
+
+/* Each card is a tab, stacked over the one below: the next card covers this one's bottom 8px, so the row's content sits in the top 30px. */
+.rail-tab {
+	height: 38px;
+	margin-bottom: -8px;
+	align-items: flex-start;
+	padding-top: 6px;
+	border-radius: 8px 8px 0 0;
+	border-top: 1px solid color-mix(in srgb, var(--card) 80%, var(--card-ink));
+	background: var(--card);
+	color: var(--card-ink);
+}
+
+.rail-tab:not(.active):hover {
+	background: color-mix(in srgb, var(--card) 92%, var(--card-ink));
+}
+
+/* The active card takes the page's colour. */
+.rail.pinned .rail-tab.active {
+	position: relative;
+	z-index: 1;
+	align-items: center;
+	padding-top: 0;
+	border-top: 0;
+	background: var(--page);
+	color: var(--page-ink);
+	font-weight: 600;
+}
+
+/* Merged with the page, only where it sits in a column of cards: a collapsed chip or a split's box keeps its own. */
+.rail.pinned.left:not(.collapsed) :is(.rail-tabs, .rail-group) > .rail-tab.active {
+	height: 36px;
+	margin-block: -2px -4px;
+	margin-right: -8px;
+	border-radius: 10px 0 0 10px;
+	box-shadow: 0 -3px 8px rgb(0 0 0 / 0.2);
+}
+
+.rail.pinned.right:not(.collapsed) :is(.rail-tabs, .rail-group) > .rail-tab.active {
+	height: 36px;
+	margin-block: -2px -4px;
+	margin-left: -8px;
+	border-radius: 0 10px 10px 0;
+	box-shadow: 0 -3px 8px rgb(0 0 0 / 0.2);
+}
+
+/* On the right the page is on the left, so the cards mirror the left rail. */
+.rail.pinned.right .rail-tabs {
+	margin-right: 0;
+	margin-left: -8px;
+	padding-right: 0;
+	padding-left: 8px;
+}
+
+/* Floating, the rows keep their overlap; the active card stays inside the rail, so it is rounded on every corner. */
+.rail.floating .rail-tabs {
+	margin-right: 0;
+}
+
+.rail.floating .rail-tab.active {
+	position: relative;
+	z-index: 1;
+	height: 36px;
+	margin-block: -2px -4px;
+	align-items: center;
+	padding-top: 0;
+	border-radius: 8px;
+	border-top: 0;
+	background: var(--page);
+	color: var(--page-ink);
+	font-weight: 600;
+	box-shadow: 0 -3px 8px rgb(0 0 0 / 0.2);
+}
+
+/* The floating rail's surface is translucent, so text on it is --text rather than --window-ink. */
+.rail.floating .rail-group-head,
+.rail.floating .rail-hint,
+.rail.floating .rail-section-head,
+.rail.floating .rail-new-tab,
+.rail.floating .rail-icon-button,
+.rail.floating .rail-icon-button:hover {
+	color: var(--text);
 }
 
 .rail-row-icon {
@@ -293,7 +486,7 @@
 }
 
 .rail-new-tab {
-	color: var(--text-secondary, var(--text));
+	color: var(--window-ink);
 }
 
 .rail-group-count {
@@ -301,7 +494,7 @@
 	min-width: 18px;
 	padding: 0 5px;
 	border-radius: 9px;
-	background: color-mix(in srgb, var(--text) 8%, transparent);
+	background: color-mix(in srgb, var(--window-ink) 8%, transparent);
 	font-size: 11px;
 	text-align: center;
 }
@@ -321,8 +514,19 @@
 .rail-group.dragging {
 	position: relative;
 	z-index: 2;
-	background: var(--surface);
+	background: var(--page);
 	box-shadow: var(--elevation-strong);
+	color: var(--page-ink);
+}
+
+.rail-group.dragging > .rail-group-head {
+	color: var(--page-ink);
+}
+
+.rail-tab.dragging {
+	background: var(--card);
+	box-shadow: var(--elevation-strong);
+	color: var(--card-ink);
 }
 
 /* The others slide aside while a row is held. Off otherwise, so a drop never animates twice. */
@@ -331,10 +535,16 @@
 }
 
 .rail-row:focus-visible,
-.rail-tile:focus-visible,
 .rail-icon-button:focus-visible {
 	outline: 2px solid var(--accent-ink);
 	outline-offset: -2px;
+}
+
+/* An outline would be clipped with the ribbon, so focus and a drop target darken it instead. */
+.rail-ribbon:focus-visible,
+.rail-ribbon.drop-over {
+	outline: none;
+	filter: brightness(0.82);
 }
 
 /* The inner edge resizes the rail. */
@@ -369,13 +579,41 @@
 
 /* A split's tabs, together in one box (split view). */
 .rail-split {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
 	padding: 3px;
 	border: 1px solid var(--separator);
 	border-radius: calc(var(--control-radius) + 3px);
-	background: color-mix(in srgb, var(--text) 3%, transparent);
+	background: var(--window);
+}
+
+.rail.floating .rail-split {
+	background: var(--surface);
+}
+
+/* A split's rows sit in the box's gap rather than over one another, so the box holds them whole. */
+.rail-split > .rail-tab {
+	margin: 0;
+	height: 32px;
+	align-items: center;
+	padding-top: 0;
+	border-radius: var(--control-radius);
+	border-top: 0;
+	background: var(--card);
+	color: var(--card-ink);
+}
+
+/* Beats the merged card's rules in any variant: the active pane is a plain tab inside the box. */
+.rail .rail-split .rail-tab.active {
+	height: 32px;
+	margin: 0;
+	border-radius: var(--control-radius);
+	background: var(--page);
+	color: var(--page-ink);
+	font-weight: 600;
+	box-shadow: none;
 }
 
 /* The dividers between split panes, drawn by the chrome in the gaps the host leaves between them. */
@@ -415,11 +653,11 @@
 	padding: 0 6px 8px;
 }
 
-.rail.collapsed .rail-head {
+.rail.collapsed .rail-foot {
 	justify-content: center;
 }
 
-.rail.collapsed .rail-drag {
+.rail.collapsed .rail-foot-gap {
 	display: none;
 }
 
@@ -437,18 +675,31 @@
 	padding: 0 !important;
 }
 
-.rail.collapsed .rail-favourites {
-	grid-template-columns: 1fr;
-	gap: 4px;
-}
-
-.rail.collapsed .rail-tile {
-	height: 36px;
-	border-radius: 10px;
+.rail.collapsed .rail-ribbon {
+	width: 36px;
+	height: 40px;
+	padding-bottom: 9px;
 }
 
 .rail.collapsed .rail-split {
 	padding: 2px;
+}
+
+/* Chips in a column, 4px apart, with no overlap: the card rules above are for the full rail. */
+.rail.pinned.collapsed .rail-tabs {
+	gap: 4px;
+	margin-inline: 0;
+	padding-inline: 0;
+}
+
+.rail.pinned.collapsed .rail-tab {
+	height: 32px;
+	margin: 0;
+	padding: 0;
+	border-radius: 8px;
+	border-top: 0;
+	align-items: center;
+	justify-content: center;
 }
 
 /* Hundreds of tabs stay smooth: rows scrolled out of view skip layout and painting, and keep their size for scrolling and drags. */
@@ -456,5 +707,68 @@
 .rail-tabs > .rail-group,
 .rail-tabs > .rail-split {
 	content-visibility: auto;
-	contain-intrinsic-size: auto 32px;
+	contain-intrinsic-size: auto 38px;
+}
+
+/* Contrast themes drop the fills and shadows, so every card is an outlined 32px row. The overlap and merge rules are far more
+   specific than these, hence !important on the properties they set. */
+@media (forced-colors: active) {
+	.rail-tabs,
+	.rail.pinned.right .rail-tabs {
+		margin-inline: 0 !important;
+		padding-inline: 0 !important;
+	}
+
+	.rail-tab {
+		height: 32px !important;
+		margin: 0 !important;
+		border: 1px solid CanvasText !important;
+		box-shadow: none !important;
+	}
+
+	.rail-tab.active {
+		border-color: Highlight !important;
+	}
+
+	.rail-ribbon {
+		height: 32px !important;
+		clip-path: none;
+		border: 1px solid CanvasText;
+		box-shadow: none !important;
+	}
+
+	.rail-ribbon.active,
+	.rail-ribbon.more.holds-active {
+		border-color: Highlight;
+	}
+
+	.rail-favourites > .rail-ribbon.empty::before {
+		display: none;
+	}
+
+	.rail-favourites-panel {
+		border: 1px solid CanvasText;
+	}
+
+	.rail-ribbon:focus-visible {
+		outline: 2px solid Highlight;
+		outline-offset: -2px;
+	}
+
+	.rail-row.dragging,
+	.rail-group.dragging {
+		outline: 2px solid Highlight;
+		outline-offset: -2px;
+	}
+
+	.rail-row.active:not(.rail-tab) {
+		outline: 1px solid Highlight;
+		outline-offset: -1px;
+	}
+
+	.rail-tabs > .rail-row,
+	.rail-tabs > .rail-group,
+	.rail-tabs > .rail-split {
+		contain-intrinsic-size: auto 32px;
+	}
 }

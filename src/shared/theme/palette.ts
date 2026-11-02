@@ -3,6 +3,9 @@
 // from exactly the same numbers as the UI — no hand-copied values to drift.
 import { contrastRatio, gammaLuma, hexFromHSL, mix } from './color'
 
+/** Base hue in degrees, and how much of the reference palette's saturation to keep. */
+export type HueProfile = { readonly hue: number; readonly saturation: number }
+
 export type PaletteTokens = {
 	readonly background: string
 	readonly surface: string
@@ -212,4 +215,64 @@ export function control(tokens: PaletteTokens): string {
  */
 export function raised(tokens: PaletteTokens): string {
 	return isDark(tokens) ? mix(tokens.well, tokens.text, 0.13) : tokens.surface
+}
+
+// MARK: - Stack
+
+export type StackTokens = {
+	readonly window: string
+	readonly windowInk: string
+	readonly band: string
+	readonly bandInk: string
+	readonly field: string
+	readonly fieldInk: string
+	readonly page: string
+	readonly pageInk: string
+	readonly card: string
+	readonly cardInk: string
+	readonly ribbon: string
+	readonly ribbonInk: string
+	/** Cards and ribbons when the Tab colours setting is None. */
+	readonly plain: string
+	readonly plainInk: string
+	readonly more: string
+	readonly moreInk: string
+}
+
+/** Black or white, whichever reads better on `background`. Either clears 4.58:1 on any colour. */
+export function inkOn(background: string): string {
+	return contrastRatio('#000000', background) >= contrastRatio('#FFFFFF', background) ? '#000000' : '#FFFFFF'
+}
+
+/** The stacked chrome — window, band, field, page, cards and ribbons — tinted from one hue. */
+export function stackTokens(profile: HueProfile, dark: boolean): StackTokens {
+	const { hue } = profile
+	const saturation = profile.saturation * 0.75
+	const window = dark ? hexFromHSL(hue, 0.25 * saturation, 0.11) : hexFromHSL(hue, 0.55 * saturation, 0.82)
+	const page = dark ? hexFromHSL(hue, 0.15 * saturation, 0.065) : hexFromHSL(hue, 0.3 * saturation, 0.99)
+	const band = mix(window, dark ? '#000000' : hexFromHSL(hue, 0.6 * saturation, 0.3), dark ? 0.25 : 0.22)
+	const field = mix(band, '#FFFFFF', dark ? 0.1 : 0.62)
+	const ribbon = hexFromHSL(hue, 0.75 * saturation, dark ? 0.76 : 0.72)
+	const card = dark ? mix(window, ribbon, 0.22) : hexFromHSL(hue, 0.6 * saturation, 0.9)
+	const plain = mix(window, '#FFFFFF', dark ? 0.14 : 0.55)
+	const more = mix(window, inkOn(window), dark ? 0.3 : 0.78)
+
+	return {
+		window,
+		windowInk: inkOn(window),
+		band,
+		bandInk: inkOn(band),
+		field,
+		fieldInk: inkOn(field),
+		page,
+		pageInk: inkOn(page),
+		card,
+		cardInk: inkOn(card),
+		ribbon,
+		ribbonInk: inkOn(ribbon),
+		plain,
+		plainInk: inkOn(plain),
+		more,
+		moreInk: inkOn(more),
+	}
 }

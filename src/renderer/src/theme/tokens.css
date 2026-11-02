@@ -31,6 +31,30 @@
 	--raised: #fffdf8;
 	--accent-ink: #635538;
 
+	/* What cards and ribbons paint with: the theme colour, or neutral when the Tab colours setting is None. */
+	--card: var(--colour-card);
+	--card-ink: var(--colour-card-ink);
+	--ribbon: var(--colour-ribbon);
+	--ribbon-ink: var(--colour-ribbon-ink);
+
+	/* The stacked chrome: window, band, field, page, cards, ribbons and the more button, tinted from the accent. */
+	--window: #e4d6be;
+	--window-ink: #000000;
+	--band: #caba9d;
+	--band-ink: #000000;
+	--field: #ebe5da;
+	--field-ink: #000000;
+	--page: #fdfdfc;
+	--page-ink: #000000;
+	--colour-card: #f1e9da;
+	--colour-card-ink: #000000;
+	--colour-ribbon: #e0c28f;
+	--colour-ribbon-ink: #000000;
+	--plain: #f3ede2;
+	--plain-ink: #000000;
+	--more: #322f2a;
+	--more-ink: #ffffff;
+
 	/* Status colours stay fixed across accents: a "danger" that turns green with the theme would be dangerous. */
 	--positive: #4f7a3f;
 	--caution: #a86a2e;
@@ -45,6 +69,13 @@
 	--control-radius: 8px;
 
 	--font: 'Inter', 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+}
+
+:root[data-tab-colours='none'] {
+	--card: var(--plain);
+	--card-ink: var(--plain-ink);
+	--ribbon: var(--plain);
+	--ribbon-ink: var(--plain-ink);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -63,6 +94,23 @@
 		--control: #2c251e;
 		--raised: #453e36;
 		--accent-ink: #c9a45e;
+
+		--window: #211d17;
+		--window-ink: #ffffff;
+		--band: #191611;
+		--band-ink: #ffffff;
+		--field: #302d29;
+		--field-ink: #ffffff;
+		--page: #12110f;
+		--page-ink: #ffffff;
+		--colour-card: #4c4335;
+		--colour-card-ink: #ffffff;
+		--colour-ribbon: #e4cb9f;
+		--colour-ribbon-ink: #000000;
+		--plain: #403d37;
+		--plain-ink: #ffffff;
+		--more: #64615d;
+		--more-ink: #ffffff;
 
 		--positive: #8fbf7a;
 		--caution: #d9a05b;

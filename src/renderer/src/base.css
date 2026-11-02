@@ -179,8 +179,13 @@ input {
 	height: var(--toolbar-height);
 	flex: none;
 	padding: 0 8px;
-	background: var(--surface);
+	background: var(--band);
+	color: var(--band-ink);
 	border-bottom: 1px solid var(--separator);
+}
+
+.toolbar .icon-button {
+	color: var(--band-ink);
 }
 
 .address {
@@ -190,9 +195,14 @@ input {
 	padding: 0 12px;
 	border: 1px solid transparent;
 	border-radius: var(--control-radius);
-	background: var(--control);
+	background: var(--field);
+	color: var(--field-ink);
 	user-select: text;
 	cursor: text;
+}
+
+.address::placeholder {
+	color: var(--field-ink);
 }
 
 .address:focus {

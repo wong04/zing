@@ -37,6 +37,7 @@ npm start
 
 Anything Krackn does that Zing can't is listed here.
 
+- **Mica.** Solid tab cards cover the window, so Windows' Mica material isn't visible behind Zing's sidebar.
 - **User agent.** Krackn sent a cleaned Safari user agent. Zing runs on Edge's WebView2 and presents Edge's own, which sites (Google sign-in included) accept as it is.
 
 ## License

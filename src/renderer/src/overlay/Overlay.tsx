@@ -3,6 +3,7 @@ import type { Notice } from '@shared/ipc'
 import { zing } from '../api'
 import { StackDropdownView } from '../chrome/tabs/StackDropdownView'
 import { TabOverviewView } from '../overview/TabOverviewView'
+import { useAccentTheme } from '../settings/useAccentTheme'
 
 /** The notice layer: one short message near the bottom of the page. */
 function Notices() {
@@ -18,6 +19,7 @@ function Notices() {
 
 /** Root of a transparent overlay view main stacks above the page: the notice layer, or the stack dropdown. */
 export function Overlay() {
+	useAccentTheme()
 	if (location.hash === '#overlay-overview') return <TabOverviewView />
 	return location.hash === '#overlay-stack' ? <StackDropdownView /> : <Notices />
 }

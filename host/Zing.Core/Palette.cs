@@ -45,6 +45,25 @@ public sealed record Profile(
 	Role TextSecondary,
 	double InkDamping);
 
+/// <summary>The stacked chrome (src/shared/theme/palette.ts StackTokens): window, band, field, page, cards and ribbons.</summary>
+public sealed record StackTokens(
+	string Window,
+	string WindowInk,
+	string Band,
+	string BandInk,
+	string Field,
+	string FieldInk,
+	string Page,
+	string PageInk,
+	string Card,
+	string CardInk,
+	string Ribbon,
+	string RibbonInk,
+	string Plain,
+	string PlainInk,
+	string More,
+	string MoreInk);
+
 /// <summary>Colour maths (src/shared/theme/color.ts). Colours are <c>#RRGGBB</c> strings.</summary>
 public static class Colors
 {
@@ -81,6 +100,21 @@ public static class Colors
 			return p;
 		}
 		return HexFromBytes((int)JsRound(Channel(1.0 / 3) * 255), (int)JsRound(Channel(0) * 255), (int)JsRound(Channel(-1.0 / 3) * 255));
+	}
+
+	/// <summary>#RRGGBB to hue in degrees 0..360, saturation and lightness 0..1. Greys have hue 0.</summary>
+	public static (double Hue, double Saturation, double Lightness) HslFromHex(string hex)
+	{
+		var (r, g, b) = RgbFromHex(hex);
+		var max = Math.Max(r, Math.Max(g, b));
+		var min = Math.Min(r, Math.Min(g, b));
+		var lightness = (max + min) / 2;
+		var delta = max - min;
+		if (delta == 0) return (0, 0, lightness);
+
+		var saturation = delta / (1 - Math.Abs(2 * lightness - 1));
+		var sector = max == r ? (g - b) / delta : max == g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+		return ((sector * 60 + 360) % 360, saturation, lightness);
 	}
 
 	/// <summary>Parses <c>#RRGGBB</c> (the <c>#</c> is optional) into channels 0..1.</summary>
@@ -137,6 +171,9 @@ public static class Palette
 	private const int LiftMaxSteps = 40;
 	private const double InkStep = 0.05;
 
+	/// <summary>The accent name for a user-chosen seed colour, as opposed to a preset family.</summary>
+	public const string CustomAccent = "custom";
+
 	public static readonly PaletteTokens ReferenceLight = new(
 		"#F7F2E9", "#FFFDF8", "#EFE6D6", "#EBE1CF", "#DECFB6", "#2A2420", "#D9B872", "#2A2118", "#E6D3AC", "#241F19", "#6E6355");
 
@@ -153,7 +190,7 @@ public static class Palette
 		Border: new(0.16, 0.196), Outline: new(0.28, 0.727), Accent: new(0.498, 0.578), OnAccent: new(0.236, 0.082),
 		Selection: new(0.245, 0.192), Text: new(0.44, 0.894), TextSecondary: new(0.16, 0.584), InkDamping: 0.55);
 
-	public static readonly IReadOnlyList<string> Accents = ["yellow", "green", "blue", "magenta", "purple", "red", "mono"];
+	public static readonly IReadOnlyList<string> Accents = ["yellow", "green", "blue", "magenta", "purple", "red", "mono", "midnight"];
 
 	private static readonly Dictionary<string, (double Hue, double Saturation)> HueProfiles = new(StringComparer.Ordinal)
 	{
@@ -162,8 +199,9 @@ public static class Palette
 		["blue"] = (211, 0.88),
 		["magenta"] = (322, 0.8),
 		["purple"] = (272, 0.82),
-		["red"] = (6, 0.84),
+		["red"] = (14, 0.84),
 		["mono"] = (34, 0.07),
+		["midnight"] = (232, 0.7),
 	};
 
 	/// <summary>A full palette for one hue, holding the profile's lightness for every role.</summary>
@@ -214,6 +252,50 @@ public static class Palette
 		var (hue, saturation) = HueProfile(accent);
 		return accent == "yellow" ? ReferenceDark : Generate(DarkProfile, hue, saturation);
 	}
+
+	/// <summary>A hue and saturation from a seed colour. Saturation has a floor so a grey seed still gets a faint tint.</summary>
+	public static (double Hue, double Saturation) SeedProfile(string hex)
+	{
+		var (hue, saturation, _) = Colors.HslFromHex(hex);
+		return (hue, Math.Min(Math.Max(saturation, 0.07), 1));
+	}
+
+	/// <summary>The hue profile for a named accent, or for the seed when the accent is custom.</summary>
+	public static (double Hue, double Saturation) ThemeProfile(string accent, string customColor)
+	{
+		if (accent == CustomAccent) return SeedProfile(customColor);
+		return HueProfile(accent);
+	}
+
+	/// <summary>The palette for a named accent, or for the seed when the accent is custom.</summary>
+	public static PaletteTokens ThemeTokens(string accent, string customColor, bool dark)
+	{
+		if (accent != CustomAccent) return dark ? DarkTokens(accent) : LightTokens(accent);
+		var (hue, saturation) = SeedProfile(customColor);
+		return Generate(dark ? DarkProfile : LightProfile, hue, saturation);
+	}
+
+	/// <summary>The stacked chrome, tinted from one hue (src/shared/theme/palette.ts stackTokens).</summary>
+	public static StackTokens Stack((double Hue, double Saturation) profile, bool dark)
+	{
+		var (hue, baseSaturation) = profile;
+		var saturation = baseSaturation * 0.75;
+		var window = dark ? Colors.HexFromHsl(hue, 0.25 * saturation, 0.11) : Colors.HexFromHsl(hue, 0.55 * saturation, 0.82);
+		var page = dark ? Colors.HexFromHsl(hue, 0.15 * saturation, 0.065) : Colors.HexFromHsl(hue, 0.3 * saturation, 0.99);
+		var band = Colors.Mix(window, dark ? "#000000" : Colors.HexFromHsl(hue, 0.6 * saturation, 0.3), dark ? 0.25 : 0.22);
+		var field = Colors.Mix(band, "#FFFFFF", dark ? 0.1 : 0.62);
+		var ribbon = Colors.HexFromHsl(hue, 0.75 * saturation, dark ? 0.76 : 0.72);
+		var card = dark ? Colors.Mix(window, ribbon, 0.22) : Colors.HexFromHsl(hue, 0.6 * saturation, 0.9);
+		var plain = Colors.Mix(window, "#FFFFFF", dark ? 0.14 : 0.55);
+		var more = Colors.Mix(window, InkOn(window), dark ? 0.3 : 0.78);
+		return new StackTokens(
+			window, InkOn(window), band, InkOn(band), field, InkOn(field), page, InkOn(page),
+			card, InkOn(card), ribbon, InkOn(ribbon), plain, InkOn(plain), more, InkOn(more));
+	}
+
+	/// <summary>Black or white, whichever reads better on the background.</summary>
+	public static string InkOn(string background) =>
+		Colors.ContrastRatio("#000000", background) >= Colors.ContrastRatio("#FFFFFF", background) ? "#000000" : "#FFFFFF";
 
 	/// <summary>The accent as a foreground: walked toward the text colour until it is legible on the surface and selection plate.</summary>
 	public static string AccentInk(PaletteTokens tokens)

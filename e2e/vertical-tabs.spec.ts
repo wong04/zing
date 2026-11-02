@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, test, layers } from './zing'
+import { launchZing, test, layers, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -36,6 +36,68 @@ const rowTitles = async (chrome: Page) => (await rows(chrome).locator('.rail-row
 async function shownPage(chrome: Page, title: string) {
 	return (await layers(chrome)).find((l) => l.url === `${base}/${title}` && l.visible)
 }
+
+/** A row as the page lays it out and paints it. */
+interface RowLook {
+	readonly active: boolean
+	readonly top: number
+	readonly height: number
+	readonly right: number
+	readonly background: string
+	readonly color: string
+	readonly shadow: string
+}
+
+async function rowLooks(chrome: Page): Promise<RowLook[]> {
+	return rows(chrome).evaluateAll((els) => {
+		const dom = globalThis as unknown as {
+			getComputedStyle(e: unknown): { backgroundColor: string; color: string; boxShadow: string }
+		}
+		const nodes = els as unknown as { getAttribute(name: string): string | null; getBoundingClientRect(): { top: number; height: number; right: number } }[]
+		return nodes.map((el) => {
+			const box = el.getBoundingClientRect()
+			const style = dom.getComputedStyle(el)
+			return { active: el.getAttribute('aria-selected') === 'true', top: box.top, height: box.height, right: box.right, background: style.backgroundColor, color: style.color, shadow: style.boxShadow }
+		})
+	})
+}
+
+/** A CSS value as the browser computes it as a background and as text, so a token and the rgb() it paints with compare equal. */
+interface Resolved {
+	readonly background: string
+	readonly color: string
+}
+
+function resolvedColor(chrome: Page, css: string): Promise<Resolved> {
+	return chrome.evaluate((value) => {
+		const dom = globalThis as unknown as {
+			document: { body: { append(node: unknown): void }; createElement(tag: string): { style: { backgroundColor: string; color: string }; remove(): void } }
+			getComputedStyle(node: unknown): { backgroundColor: string; color: string }
+		}
+		const probe = dom.document.createElement('div')
+		probe.style.backgroundColor = value
+		probe.style.color = value
+		dom.document.body.append(probe)
+		const style = dom.getComputedStyle(probe)
+		const resolved = { background: style.backgroundColor, color: style.color }
+		probe.remove()
+		return resolved
+	}, css)
+}
+
+test('the rail keeps its buttons at its foot, below the tabs', async () => {
+	const zing = await launchZing()
+	const rail = zing.chrome.getByRole('navigation', { name: 'Tab rail' })
+	const foot = rail.locator('.rail-foot')
+	for (const name of ['Toolbox', 'Settings', 'Collapse the tab sidebar to icons', 'Hide sidebar (Ctrl+S)']) await expect(foot.getByRole('button', { name })).toBeVisible()
+	await expect(rail.locator('.rail-head button')).toHaveCount(0)
+	const railBox = (await rail.boundingBox())!
+	const footBox = (await foot.boundingBox())!
+	const tabsBox = (await rail.locator('.rail-tabs').boundingBox())!
+	expect(footBox.y).toBeGreaterThanOrEqual(tabsBox.y + tabsBox.height - 1)
+	expect(railBox.y + railBox.height - (footBox.y + footBox.height)).toBeLessThan(20)
+	await zing.close()
+})
 
 test('tabs sit in a rail on the left by default, with the page beside it', async () => {
 	const zing = await launchZing()
@@ -85,6 +147,26 @@ test('dragging a row up and down the rail moves its tab', async () => {
 	await zing.chrome.mouse.move(to.x + 40, to.y + to.height - 4, { steps: 12 })
 	await zing.chrome.mouse.up()
 	await expect.poll(named).toEqual(['Apple', 'Mango', 'Zebra'])
+	await zing.close()
+})
+
+test('a dragged card leaves a gap of one row spacing, and the neighbour slides into it', async () => {
+	const zing = await launchZing()
+	for (const title of ['Zebra', 'Apple', 'Mango']) await openPage(zing.chrome, title)
+	const named = async () => (await rowTitles(zing.chrome)).filter((t) => ['Zebra', 'Apple', 'Mango'].includes(t))
+	await expect.poll(named).toEqual(['Zebra', 'Apple', 'Mango'])
+	const box = async (title: string) => (await rows(zing.chrome).filter({ hasText: title }).boundingBox())!
+	const zebra = await box('Zebra')
+	const apple = await box('Apple')
+	// Zebra and Apple are inactive, so the rows sit exactly one spacing apart.
+	await zing.chrome.mouse.move(zebra.x + 40, zebra.y + zebra.height / 2)
+	await zing.chrome.mouse.down()
+	await zing.chrome.mouse.move(zebra.x + 40, apple.y + apple.height / 2 + 4, { steps: 12 })
+	// The slide is a 150 ms transform transition.
+	await zing.chrome.waitForTimeout(300)
+	expect(Math.abs(apple.y - (await box('Apple')).y - 30)).toBeLessThanOrEqual(3)
+	await zing.chrome.mouse.up()
+	await expect.poll(named).toEqual(['Apple', 'Zebra', 'Mango'])
 	await zing.close()
 })
 
@@ -143,5 +225,188 @@ test('three hundred tabs: every one is in the rail, rows out of view skip render
 	}, last)
 	// From the call to the rail showing the new tab: the bridge both ways plus a render of 301 rows (PLAN.md's switch budget is 50 ms for the page itself).
 	expect(elapsed).toBeLessThan(250)
+	await zing.close()
+})
+
+test('tab rows are overlapping cards', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma', 'Delta']) await openPage(zing.chrome, title)
+	await expect(rows(zing.chrome)).toHaveCount(5)
+	const looks = await rowLooks(zing.chrome)
+	for (const row of looks) if (!row.active) expect(row.height).toBe(38)
+	for (let i = 0; i + 1 < looks.length; i++) {
+		if (looks[i]!.active || looks[i + 1]!.active) continue
+		expect(looks[i + 1]!.top - looks[i]!.top).toBe(30)
+	}
+	for (let i = 0; i < looks.length; i++) {
+		if (looks[i]!.active) continue
+		expect(looks[i]!.background).toBe((await resolvedColor(zing.chrome, 'var(--card)')).background)
+	}
+	await zing.close()
+})
+
+test('the active card reaches the page', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	await rows(zing.chrome).nth(2).click({ position: { x: 20, y: 15 } })
+	await expect(rows(zing.chrome).nth(2)).toHaveAttribute('aria-selected', 'true')
+	const looks = await rowLooks(zing.chrome)
+	const active = looks[2]!
+	expect(active.active).toBe(true)
+	await expect.poll(async () => (await shownPage(zing.chrome, 'Beta'))?.x).toBe(active.right)
+	expect(active.background).toBe((await resolvedColor(zing.chrome, 'var(--page)')).background)
+	expect(looks.map((row) => row.shadow !== 'none')).toEqual(looks.map((row) => row.active))
+	const activeBox = (await rows(zing.chrome).nth(2).boundingBox())!
+	const nextIcon = (await rows(zing.chrome).nth(3).locator('.rail-row-icon').boundingBox())!
+	expect(nextIcon.y).toBeGreaterThanOrEqual(activeBox.y + activeBox.height)
+	await zing.close()
+})
+
+test('a hovered card keeps its shade and ink', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma', 'Delta']) await openPage(zing.chrome, title)
+	await expect(rows(zing.chrome)).toHaveCount(5)
+	await rows(zing.chrome).nth(1).hover()
+	const hovered = (await rowLooks(zing.chrome))[1]!
+	expect(hovered.background).toBe((await resolvedColor(zing.chrome, 'color-mix(in srgb, var(--card) 92%, var(--card-ink))')).background)
+	expect(hovered.color).toBe((await resolvedColor(zing.chrome, 'var(--card-ink)')).color)
+	await zing.close()
+})
+
+test('the tab list still scrolls with the active card merged', async () => {
+	const zing = await launchZing()
+	await zing.chrome.evaluate((url) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'add-tabs', count: 60, url }), `${base}/many-`)
+	await expect(rows(zing.chrome)).toHaveCount(61)
+	const last = (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.at(-1)!.id
+	await zing.chrome.evaluate((id) => window.zing.activateTab(id), last)
+	const list = zing.chrome.locator('.rail-tabs')
+	await list.hover()
+	await zing.chrome.mouse.wheel(0, 400)
+	await expect.poll(() => list.evaluate((el) => (el as unknown as { scrollTop: number }).scrollTop)).toBeGreaterThan(0)
+	expect(await list.evaluate((el) => {
+		const node = el as unknown as { scrollWidth: number; clientWidth: number }
+		return node.scrollWidth - node.clientWidth
+	})).toBe(0)
+	await zing.close()
+})
+
+test('switching tabs doesn\'t move the others', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma', 'Delta']) await openPage(zing.chrome, title)
+	await expect(rows(zing.chrome)).toHaveCount(5)
+	const before = await rowLooks(zing.chrome)
+	await rows(zing.chrome).nth(1).click({ position: { x: 20, y: 15 } })
+	await expect(rows(zing.chrome).nth(1)).toHaveAttribute('aria-selected', 'true')
+	const after = await rowLooks(zing.chrome)
+	for (const i of [0, 2, 3]) expect(after[i]!.top).toBe(before[i]!.top)
+	await zing.close()
+})
+
+test('on the right the active card merges leftward', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	await zing.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'right'))
+	await expect(zing.chrome.getByRole('navigation', { name: 'Tab rail' })).toBeVisible()
+	await rows(zing.chrome).nth(2).click({ position: { x: 20, y: 15 } })
+	await expect(rows(zing.chrome).nth(2)).toHaveAttribute('aria-selected', 'true')
+	const page = (await shownPage(zing.chrome, 'Beta'))!
+	const active = await rows(zing.chrome).nth(2).evaluate((el) => {
+		const box = (el as unknown as { getBoundingClientRect(): { left: number } }).getBoundingClientRect()
+		const style = (globalThis as unknown as { getComputedStyle(e: unknown): { borderRadius: string } }).getComputedStyle(el)
+		return { left: box.left, radius: style.borderRadius }
+	})
+	expect(active.left).toBe(page.x + page.width)
+	expect(active.radius).toBe('0px 10px 10px 0px')
+	await zing.close()
+})
+
+test('collapsed, cards are icon chips', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	await zing.chrome.getByRole('button', { name: 'Collapse the tab sidebar to icons' }).click()
+	await expect.poll(async () => (await shownPage(zing.chrome, 'Gamma'))?.x).toBe(48)
+	await rows(zing.chrome).nth(2).click({ position: { x: 18, y: 16 } })
+	await expect(rows(zing.chrome).nth(2)).toHaveAttribute('aria-selected', 'true')
+	const chips = await rows(zing.chrome).evaluateAll((els) => {
+		const dom = globalThis as unknown as { getComputedStyle(e: unknown): { backgroundColor: string; borderRadius: string } }
+		const nodes = els as unknown as { getAttribute(name: string): string | null; getBoundingClientRect(): { top: number; width: number; height: number } }[]
+		return nodes.map((el) => {
+			const box = el.getBoundingClientRect()
+			const style = dom.getComputedStyle(el)
+			return { active: el.getAttribute('aria-selected') === 'true', top: box.top, width: box.width, height: box.height, background: style.backgroundColor, radius: style.borderRadius }
+		})
+	})
+	for (const chip of chips) {
+		expect(chip.width).toBe(36)
+		expect(chip.height).toBe(32)
+	}
+	for (let i = 0; i + 1 < chips.length; i++) expect(chips[i + 1]!.top - chips[i]!.top).toBe(36)
+	for (let i = 0; i < chips.length; i++) {
+		const chip = chips[i]!
+		if (chip.active) {
+			expect(chip.background).toBe((await resolvedColor(zing.chrome, 'var(--page)')).background)
+			expect(chip.radius).toBe('8px')
+		} else {
+			expect(chip.background).toBe((await resolvedColor(zing.chrome, 'var(--card)')).background)
+		}
+	}
+	await expect(zing.chrome.getByRole('navigation', { name: 'Tab rail' }).locator('.rail-row-title').first()).toBeHidden()
+	await zing.close()
+})
+
+test('the floating rail’s active card stays inside it', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	// Unpinning from Settings peeks the sidebar out over the page, as the floating rail.
+	await zing.chrome.evaluate(() => window.zing.setSetting('sidebarPinned', false))
+	const surface = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	const floating = surface.locator('.rail.floating')
+	await expect(floating).toBeVisible()
+	const active = floating.locator('.rail-tab.active')
+	const looks = await active.evaluate((el) => {
+		const dom = globalThis as unknown as { getComputedStyle(e: unknown): { borderRadius: string } }
+		const railEl = (el as unknown as { closest(s: string): { getBoundingClientRect(): { right: number } } | null }).closest('.rail')!
+		const box = (el as unknown as { getBoundingClientRect(): { right: number } }).getBoundingClientRect()
+		return { right: box.right, railRight: railEl.getBoundingClientRect().right, radius: dom.getComputedStyle(el).borderRadius }
+	})
+	expect(looks.radius).toBe('8px')
+	expect(looks.right).toBeLessThanOrEqual(looks.railRight)
+	await zing.close()
+})
+
+test('on the left the active card merges rightward, as before', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	await rows(zing.chrome).nth(2).click({ position: { x: 20, y: 15 } })
+	await expect(rows(zing.chrome).nth(2)).toHaveAttribute('aria-selected', 'true')
+	const page = (await shownPage(zing.chrome, 'Beta'))!
+	const active = await rows(zing.chrome).nth(2).evaluate((el) => {
+		const box = (el as unknown as { getBoundingClientRect(): { right: number } }).getBoundingClientRect()
+		const style = (globalThis as unknown as { getComputedStyle(e: unknown): { borderRadius: string; marginRight: string } }).getComputedStyle(el)
+		return { right: box.right, radius: style.borderRadius, marginRight: style.marginRight }
+	})
+	expect(active.right).toBe(page.x)
+	expect(active.radius).toBe('10px 0px 0px 10px')
+	expect(active.marginRight).toBe('-8px')
+	await zing.close()
+})
+
+test('on the right, a collapsed active chip is a plain 8px chip with no merge', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	await zing.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'right'))
+	await zing.chrome.getByRole('button', { name: 'Collapse the tab sidebar to icons' }).click()
+	await rows(zing.chrome).nth(2).click({ position: { x: 18, y: 16 } })
+	await expect(rows(zing.chrome).nth(2)).toHaveAttribute('aria-selected', 'true')
+	const chip = await rows(zing.chrome).nth(2).evaluate((el) => {
+		const box = (el as unknown as { getBoundingClientRect(): { width: number; height: number } }).getBoundingClientRect()
+		const style = (globalThis as unknown as { getComputedStyle(e: unknown): { borderRadius: string; marginLeft: string; marginRight: string } }).getComputedStyle(el)
+		return { width: box.width, height: box.height, radius: style.borderRadius, marginLeft: style.marginLeft, marginRight: style.marginRight }
+	})
+	expect(chip.width).toBe(36)
+	expect(chip.height).toBe(32)
+	expect(chip.radius).toBe('8px')
+	expect(chip.marginLeft).toBe('0px')
+	expect(chip.marginRight).toBe('0px')
 	await zing.close()
 })

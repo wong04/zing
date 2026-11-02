@@ -520,7 +520,7 @@ public sealed class ChromeApi : IDisposable
 			Ordering.Reorganize();
 			OnTabsChanged();
 		}
-		if (key is "accent" or "theme") ForEachStartPage(page => page.Run(StartPage.RestyleScript(StartPage.Theme(Setting("accent")))));
+		if (key is "accent" or "theme" or "customColor") ForEachStartPage(page => page.Run(StartPage.RestyleScript(StartPage.Theme(Setting("accent"), Setting("customColor")))));
 		if (key is "startShortcuts" or "searchEngine") ForEachStartPage(page => page.Reload());
 		if (key is "showFavouritesBar") _host.Push("library:state", LibraryState());
 		if (key is "sidebarPinned") Shell.SetSidebarPinned(Flag("sidebarPinned"));

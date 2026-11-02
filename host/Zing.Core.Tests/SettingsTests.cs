@@ -58,6 +58,18 @@ public class SettingsTests
 	}
 
 	[Fact]
+	public void AStoredFileWithoutACustomColourReadsTheDefault()
+	{
+		var parsed = Settings.Parse(JsonNode.Parse("""{"accent":"red"}"""));
+		Assert.Equal("red", parsed["accent"]!.GetValue<string>());
+		Assert.Equal("#D9B872", parsed["customColor"]!.GetValue<string>());
+	}
+
+	[Fact]
+	public void ACustomColourThatIsNotHexIsRefused() =>
+		Assert.Throws<InvalidSettingException>(() => Settings.Parse(JsonNode.Parse("""{"customColor":"blue"}""")));
+
+	[Fact]
 	public void ParseRejectsInvalidValuesAndUnknownKeys()
 	{
 		foreach (var c in V.GetProperty("parseRejected").EnumerateArray())

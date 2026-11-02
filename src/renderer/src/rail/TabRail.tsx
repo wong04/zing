@@ -15,7 +15,8 @@ import { useSettings } from '../settings/useSettings'
 import { useLibraryState } from '../library/useLibraryState'
 import type { DropTarget } from './dropTarget'
 import { SplitGroup, StackGroup, TabRow, type RowFrame } from './RailRows'
-import { FavouriteTiles, PinnedSection, type SavedFrame } from './SavedSections'
+import { FavouriteRibbons, PinnedSection } from './SavedSections'
+import { type SavedFrame } from './savedItem'
 import { useItemDrag } from './useItemDrag'
 import { useRowDrag } from './useRowDrag'
 import './rail.css'
@@ -91,20 +92,8 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 		<nav className={`rail ${variant} ${side}${collapsed ? ' collapsed' : ''}`} aria-label="Tab rail" style={{ width: collapsed ? VERTICAL_TABS.collapsedWidth : width.value } as CSSProperties}>
 			<div className="rail-head">
 				<div className="rail-drag" />
-				{side === 'left' && !collapsed ? <AppButtons /> : null}
-				{variant === 'pinned' ? (
-					<button type="button" className="rail-icon-button rail-collapse" aria-label={collapseLabel} title={collapseLabel} aria-pressed={collapsed} onClick={() => handle?.set('verticalTabsCollapsed', !collapsed)}>
-						<CollapseIcon collapsed={collapsed} side={side} />
-					</button>
-				) : null}
-				{collapsed ? null : (
-					<button type="button" className="rail-icon-button" aria-label={hideLabel} title={hideLabel} aria-pressed={sidebarPinned} onClick={() => handle?.set('sidebarPinned', !sidebarPinned)}>
-					<SidebarIcon size={15} />
-				</button>
-				)}
 			</div>
-			{side === 'left' && !collapsed ? <RecentTools /> : null}
-			{library ? <FavouriteTiles nodes={favourites(library)} frame={saved} /> : null}
+			{library ? <FavouriteRibbons nodes={favourites(library)} frame={saved} innerWidth={collapsed ? VERTICAL_TABS.collapsedWidth - 12 : width.value - 16} /> : null}
 			{library ? <PinnedSection nodes={pinnedItems(library)} frame={saved} /> : null}
 			<button
 				type="button"
@@ -144,6 +133,21 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 					const members = slot.ids.flatMap((id) => byId.get(id) ?? [])
 					return <StackGroup key={slot.key} name={slot.name} tabs={members} activeId={activeId} frame={frame} />
 				})}
+			</div>
+			{side === 'left' && !collapsed ? <RecentTools /> : null}
+			<div className="rail-foot">
+				{side === 'left' && !collapsed ? <AppButtons /> : null}
+				<div className="rail-foot-gap" />
+				{variant === 'pinned' ? (
+					<button type="button" className="rail-icon-button rail-collapse" aria-label={collapseLabel} title={collapseLabel} aria-pressed={collapsed} onClick={() => handle?.set('verticalTabsCollapsed', !collapsed)}>
+						<CollapseIcon collapsed={collapsed} side={side} />
+					</button>
+				) : null}
+				{collapsed ? null : (
+					<button type="button" className="rail-icon-button" aria-label={hideLabel} title={hideLabel} aria-pressed={sidebarPinned} onClick={() => handle?.set('sidebarPinned', !sidebarPinned)}>
+					<SidebarIcon size={15} />
+				</button>
+				)}
 			</div>
 			{variant === 'pinned' && !collapsed ? <ResizeEdge side={side} width={width} /> : null}
 		</nav>
@@ -185,7 +189,7 @@ function CollapseIcon({ collapsed, side }: { collapsed: boolean; side: RailSide 
 	)
 }
 
-/** The app sidebar's own buttons, folded into the rail's head when tabs are on the left (T3). */
+/** The app sidebar's own buttons, folded into the rail's foot when tabs are on the left (T3). */
 function AppButtons() {
 	return (
 		<>
