@@ -29,6 +29,8 @@ test.afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())
 
 const tabsOf = (chrome: Page) => chrome.evaluate(() => window.zing.getTabs())
 const run = (chrome: Page, id: string) => chrome.evaluate((command) => window.zing.runCommand(command as never), id)
+/** A favourite on the bar is named by its title, not by text it shows: the ribbon is a letter. */
+const favouriteNamed = (chrome: Page, name: string) => chrome.getByRole('toolbar', { name: 'Favourites' }).getByRole('button', { name, exact: true })
 
 async function activeId(chrome: Page): Promise<string> {
 	const { activeId } = await tabsOf(chrome)
@@ -103,11 +105,11 @@ test('a favourite is on the Favourites bar and survives a relaunch', async () =>
 	await first.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'top'))
 	await visit(first.chrome, await activeId(first.chrome), 'saved')
 	await run(first.chrome, 'library.addFavourite')
-	await expect(first.chrome.locator('.favourites-bar .fav-title')).toHaveText('Page saved')
+	await expect(favouriteNamed(first.chrome, 'Page saved')).toBeVisible()
 	await first.close()
 
 	const second = await launchZing({ userDataDir: first.userDataDir })
-	await expect(second.chrome.locator('.favourites-bar .fav-title')).toHaveText('Page saved')
+	await expect(favouriteNamed(second.chrome, 'Page saved')).toBeVisible()
 	await second.close()
 })
 

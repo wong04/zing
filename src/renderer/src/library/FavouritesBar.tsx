@@ -1,9 +1,12 @@
-import { useState, type DragEvent, type MouseEvent } from 'react'
-import { favourites, isFolder, type BookmarkNode, type BrowserLibrary } from '@shared/library/library'
+import { useCallback, useRef, useState, type DragEvent, type MouseEvent } from 'react'
+import { FAVOURITES_ID, favourites, isFolder, type BookmarkNode, type BrowserLibrary } from '@shared/library/library'
+import { ribbonLayout, type Ribbon } from '@shared/layout/ribbons'
 import { zing } from '../api'
+import { FolderIcon } from '../components/icons'
 import { useSettings } from '../settings/useSettings'
 
 const MIDDLE_BUTTON = 1
+const BAR_RIBBON: Ribbon = { width: 30, gap: 5 }
 
 function Chip({ node, onDragOver, onDrop, dropSide }: {
 	node: BookmarkNode
@@ -38,6 +41,7 @@ function Chip({ node, onDragOver, onDrop, dropSide }: {
 			type="button"
 			className={['fav-chip', folder && 'folder', dropSide && `drop-${dropSide}`].filter(Boolean).join(' ')}
 			title={folder ? `${node.title} (Ctrl-click opens all)` : node.title}
+			aria-label={node.title}
 			draggable
 			onDragStart={(e) => e.dataTransfer.setData('text/x-zing-fav', node.id)}
 			onDragOver={onDragOver}
@@ -46,8 +50,7 @@ function Chip({ node, onDragOver, onDrop, dropSide }: {
 			onAuxClick={onAuxClick}
 			onContextMenu={onContextMenu}
 		>
-			<span className="fav-glyph" aria-hidden="true">{folder ? '▸' : node.title.slice(0, 1).toUpperCase()}</span>
-			<span className="fav-title">{node.title}</span>
+			{folder ? <FolderIcon size={14} /> : <span className="fav-glyph" aria-hidden="true">{node.title.slice(0, 1).toUpperCase()}</span>}
 		</button>
 	)
 }
@@ -56,6 +59,15 @@ export function FavouritesBar({ library }: { library: BrowserLibrary }) {
 	const items = favourites(library)
 	const showHint = useSettings()?.settings.favouritesHint ?? false
 	const [over, setOver] = useState<{ id: string; side: 'before' | 'after' } | undefined>()
+	const [innerWidth, setInnerWidth] = useState(0)
+	const observer = useRef<ResizeObserver | undefined>(undefined)
+	const measure = useCallback((element: HTMLDivElement | null): void => {
+		observer.current?.disconnect()
+		if (!element) return
+		observer.current = new ResizeObserver((entries) => setInnerWidth(entries[0]!.contentRect.width))
+		observer.current.observe(element)
+	}, [])
+	const { shown, more } = ribbonLayout(items.length, innerWidth, BAR_RIBBON)
 
 	const sideOf = (e: DragEvent<HTMLElement>): 'before' | 'after' => {
 		const rect = e.currentTarget.getBoundingClientRect()
@@ -69,9 +81,14 @@ export function FavouritesBar({ library }: { library: BrowserLibrary }) {
 		if (!id || index < 0) return
 		void zing.applyLibrary({ type: 'move', id, to: sideOf(e) === 'before' ? index : index + 1 })
 	}
+	// A panel would draw over the page from here, so the rest open as one native menu.
+	const openRest = (e: MouseEvent<HTMLButtonElement>): void => {
+		const rect = e.currentTarget.getBoundingClientRect()
+		void zing.openFolderMenu(FAVOURITES_ID, { x: rect.left, y: rect.bottom })
+	}
 
 	return (
-		<div className="favourites-bar" role="toolbar" aria-label="Favourites" onDragLeave={() => setOver(undefined)}>
+		<div ref={measure} className="favourites-bar" role="toolbar" aria-label="Favourites" onDragLeave={() => setOver(undefined)}>
 			{items.length === 0 && showHint ? (
 				<span className="fav-hint">
 					Press Ctrl+D to add this page to Favourites
@@ -80,7 +97,7 @@ export function FavouritesBar({ library }: { library: BrowserLibrary }) {
 					</button>
 				</span>
 			) : null}
-			{items.map((node) => (
+			{items.slice(0, shown).map((node) => (
 				<Chip
 					key={node.id}
 					node={node}
@@ -92,6 +109,11 @@ export function FavouritesBar({ library }: { library: BrowserLibrary }) {
 					onDrop={dropOn(node)}
 				/>
 			))}
+			{more > 0 ? (
+				<button type="button" className="fav-chip more" aria-label={`${more} more favourites`} title={`${more} more favourites`} onClick={openRest}>
+					+{more}
+				</button>
+			) : null}
 		</div>
 	)
 }

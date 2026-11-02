@@ -15,3 +15,20 @@ describe('ribbon layout', () => {
 		expect(ribbonLayout(count, width)).toEqual({ shown, more })
 	})
 })
+
+describe('favourites bar ribbon layout', () => {
+	const bar = { width: 30, gap: 5 } as const
+
+	it.each([
+		[0, 200, 0, 0],
+		[5, 200, 5, 0],
+		[6, 200, 4, 2],
+		[16, 200, 4, 12],
+		[1, 0, 1, 0],
+		[2, 0, 0, 2],
+		[2, 70, 2, 0],
+		[3, 70, 1, 2],
+	])('%i favourites in %i px', (count, width, shown, more) => {
+		expect(ribbonLayout(count, width, bar)).toEqual({ shown, more })
+	})
+})

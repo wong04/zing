@@ -115,8 +115,8 @@ export interface MenuAnchor {
 export const CHROME_LAYOUT = {
 	tabStripHeight: 40,
 	toolbarHeight: 40,
-	/** Only present while the Favourites bar shows; 80 + 28 = 108 is still a multiple of 4. */
-	favouritesBarHeight: 28,
+	/** Only present while the Favourites bar shows; 80 + 40 = 120 is still a multiple of 4. */
+	favouritesBarHeight: 40,
 } as const
 
 export const CHROME_HEIGHT = CHROME_LAYOUT.tabStripHeight + CHROME_LAYOUT.toolbarHeight

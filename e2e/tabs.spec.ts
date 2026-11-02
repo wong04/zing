@@ -1,10 +1,25 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
+import { FAVOURITES_ID } from '../src/shared/library/library'
 import { launchZing, test, layers, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
+
+/** The part of the page's DOM these tests read; this file has no DOM types, so the globals are reached through globalThis. */
+interface Dom {
+	readonly document: {
+		readonly body: { append(node: unknown): void }
+		createElement(tag: string): { style: { backgroundColor: string; color: string }; remove(): void }
+	}
+	getComputedStyle(element: unknown): { backgroundColor: string; color: string }
+}
+
+interface Painted {
+	readonly background: string
+	readonly color: string
+}
 
 let server: Server
 let port = 0
@@ -129,5 +144,151 @@ test('a reopened tab shows its page in front of the chrome', async () => {
 			return page !== undefined && chrome !== undefined && page.depth < chrome.depth
 		})
 		.toBe(true)
+	await zing.close()
+})
+
+/** The fill and ink a pair of theme variables paint, as the page computes them, to compare with toHaveCSS. */
+async function paintOf(chrome: Page, fill: string, ink: string): Promise<Painted> {
+	return chrome.evaluate(
+		([fillVar, inkVar]) => {
+			const dom = globalThis as unknown as Dom
+			const probe = dom.document.createElement('i')
+			probe.style.backgroundColor = `var(${fillVar})`
+			probe.style.color = `var(${inkVar})`
+			dom.document.body.append(probe)
+			const style = dom.getComputedStyle(probe)
+			const painted = { background: style.backgroundColor, color: style.color }
+			probe.remove()
+			return painted
+		},
+		[fill, ink] as const,
+	)
+}
+
+/** The shade a tab takes by its place among the strip's children (nth-child, 1-based), as the card set repeats. */
+const cardPaint = (chrome: Page, index: number) => paintOf(chrome, `--card-${(index % 3) + 1}`, `--card-ink-${(index % 3) + 1}`)
+
+async function expectPaint(tab: Locator, paint: Painted): Promise<void> {
+	await expect(tab).toHaveCSS('background-color', paint.background)
+	await expect(tab).toHaveCSS('color', paint.color)
+}
+
+const stripTabs = (chrome: Page) => chrome.locator('.tabs > [role="tab"]')
+
+test('tabs on top are folder tabs: the card shades repeat, and the active tab takes the band and meets the toolbar', async () => {
+	const zing = await launchWithStrip()
+	await openPage(zing.chrome, 'one', 'Zebra')
+	await openPage(zing.chrome, 'two', 'Apple')
+	await openPage(zing.chrome, 'three', 'Mango')
+	await expect.poll(() => stripTabs(zing.chrome).count()).toBeGreaterThanOrEqual(4)
+
+	const band = await paintOf(zing.chrome, '--band', '--band-ink')
+	const count = await stripTabs(zing.chrome).count()
+	for (let i = 0; i < count; i++) {
+		const tab = stripTabs(zing.chrome).nth(i)
+		const selected = (await tab.getAttribute('aria-selected')) === 'true'
+		await expectPaint(tab, selected ? band : await cardPaint(zing.chrome, i))
+	}
+
+	const active = zing.chrome.locator('.tabs > [role="tab"].active')
+	await expect(active).toHaveCount(1)
+	await expect(active).toHaveCSS('border-top-left-radius', '9px')
+	await expect(active).toHaveCSS('border-bottom-left-radius', '0px')
+	await expect(active).toHaveCSS('margin-right', '-5px')
+	await expect(zing.chrome.locator('.tabs > [role="tab"]:not(.active)').first()).toHaveCSS('box-shadow', 'none')
+	const tabBox = (await active.boundingBox())!
+	const toolbarBox = (await zing.chrome.locator('.toolbar').boundingBox())!
+	expect(Math.abs(tabBox.y + tabBox.height - toolbarBox.y)).toBeLessThan(1)
+	await zing.close()
+})
+
+test('pinned and stacked tabs take the same fills and stay inked', async () => {
+	const zing = await launchWithStrip()
+	await openPage(zing.chrome, 'a.site', 'Inbox')
+	await openPage(zing.chrome, 'b.site', 'Docs')
+	const solo = await openPage(zing.chrome, 'solo', 'Alone')
+	await zing.chrome.evaluate((id) => window.zing.pinTab(id), solo)
+	await zing.chrome.evaluate(() => window.zing.setTabDropdowns(true))
+	await expect(zing.chrome.locator('.tab.stack')).toHaveCount(1)
+	await expect(zing.chrome.locator('.tab.pinned')).toHaveCount(1)
+
+	// The pinned run's divider is a child too, so each tab's place is counted among all the children.
+	const children = zing.chrome.locator('.tabs > *')
+	const count = await children.count()
+	let tabs = 0
+	for (let i = 0; i < count; i++) {
+		const child = children.nth(i)
+		if ((await child.getAttribute('role')) !== 'tab') continue
+		tabs++
+		const selected = (await child.getAttribute('aria-selected')) === 'true'
+		await expectPaint(child, selected ? await paintOf(zing.chrome, '--band', '--band-ink') : await cardPaint(zing.chrome, i))
+	}
+	expect(tabs).toBeGreaterThanOrEqual(2)
+	await zing.close()
+})
+
+test('favourites on top are ribbons 30 by 34 px, named by their title and hung from the top of a 40 px bar', async () => {
+	const zing = await launchWithStrip()
+	await openPage(zing.chrome, 'mail', 'Mail')
+	await zing.chrome.evaluate(() => window.zing.runCommand('library.addFavourite'))
+	const bar = zing.chrome.getByRole('toolbar', { name: 'Favourites' })
+	await expect(bar).toHaveCSS('height', '40px')
+	await expect(bar).toHaveCSS('background-color', (await paintOf(zing.chrome, '--band', '--band-ink')).background)
+
+	const ribbon = bar.getByRole('button', { name: 'Mail', exact: true })
+	await expect(ribbon).toHaveClass(/fav-chip/)
+	await expect(ribbon).toHaveAttribute('title', 'Mail')
+	await expect(ribbon.locator('.fav-title')).toHaveCount(0)
+	await expect(ribbon).toHaveCSS('width', '30px')
+	await expect(ribbon).toHaveCSS('height', '34px')
+	await expectPaint(ribbon, await paintOf(zing.chrome, '--ribbon-1', '--ribbon-ink-1'))
+	const ribbonBox = (await ribbon.boundingBox())!
+	const barBox = (await bar.boundingBox())!
+	expect(Math.abs(ribbonBox.y - barBox.y)).toBeLessThan(1)
+	await zing.close()
+})
+
+test('favourites that do not fit fold into one "+N" button, which opens a menu of all of them', async () => {
+	const zing = await launchWithStrip()
+	const addTabs = (url: string) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'add-tabs', count: 60, url })
+	await zing.chrome.evaluate(addTabs, `http://127.0.0.1:${port}/many-`)
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.length).toBeGreaterThanOrEqual(60)
+	const ids = (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.map((t) => t.id)
+	await zing.chrome.evaluate(
+		async ([tabIds, folder]) => {
+			for (const [at, id] of tabIds.entries()) await window.zing.saveTab(id, folder, at)
+		},
+		[ids, FAVOURITES_ID] as const,
+	)
+
+	const bar = zing.chrome.getByRole('toolbar', { name: 'Favourites' })
+	const more = bar.locator('.fav-chip.more')
+	await expect(more).toBeVisible()
+	const shown = await bar.locator('.fav-chip:not(.more)').count()
+	const hidden = ids.length - shown
+	expect(hidden).toBeGreaterThan(0)
+	await expect(more).toHaveText(`+${hidden}`)
+	await expect(bar.getByRole('button', { name: `${hidden} more favourites`, exact: true })).toHaveAttribute('title', `${hidden} more favourites`)
+
+	await more.click()
+	await expect.poll(() => zing.menus().length).toBe(1)
+	// Every favourite, then a separator and "Open All in New Tabs".
+	expect(zing.menus()[0]).toHaveLength(ids.length + 2)
+	await zing.close()
+})
+
+test('contrast themes outline the tabs and ribbons instead of filling them', async () => {
+	const zing = await launchWithStrip()
+	await zing.chrome.emulateMedia({ forcedColors: 'active' })
+	await openPage(zing.chrome, 'one', 'Zebra')
+	await zing.chrome.evaluate(() => window.zing.runCommand('library.addFavourite'))
+
+	const active = zing.chrome.locator('.tabs > [role="tab"].active')
+	await expect(active).toHaveCSS('border-top-width', '1px')
+	await expect(active).toHaveCSS('background-color', /^rgba\(\d+, \d+, \d+, 0\)$/)
+	await expect(active).toHaveCSS('margin-right', '0px')
+	const ribbon = zing.chrome.getByRole('toolbar', { name: 'Favourites' }).getByRole('button', { name: 'Zebra', exact: true })
+	await expect(ribbon).toHaveCSS('clip-path', 'none')
+	await expect(ribbon).toHaveCSS('border-top-width', '1px')
 	await zing.close()
 })
