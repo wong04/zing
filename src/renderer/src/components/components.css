@@ -247,7 +247,7 @@
 	border-color: transparent;
 }
 
-/* White in every theme, so the thumb reads against the accent track. */
+/* White in every theme, with a ring so it still shows on a pale accent. */
 .pill-toggle-thumb {
 	position: absolute;
 	top: 1px;
@@ -262,6 +262,7 @@
 
 .pill-toggle.on .pill-toggle-thumb {
 	transform: translateX(14px);
+	box-shadow: 0 0 0 1px var(--on-accent), 0 0.5px 1.5px rgb(0 0 0 / 0.2);
 }
 
 .pill-toggle:disabled {
@@ -297,7 +298,7 @@
 	background: var(--accent);
 }
 
-/* White in every theme, so the knob reads against the accent track. */
+/* White in every theme, with a ring so it still shows on a pale accent. */
 .pill-slider-knob {
 	position: absolute;
 	top: 0;
@@ -306,6 +307,7 @@
 	border-radius: 50%;
 	background: #fff;
 	box-shadow:
+		0 0 0 1px var(--on-accent),
 		0 1px 2px rgb(0 0 0 / 0.18),
 		0 0 0 0.5px rgb(0 0 0 / 0.08);
 }

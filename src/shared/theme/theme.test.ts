@@ -12,7 +12,7 @@ import {
 	themeProfile,
 	themeTokens,
 } from './accent'
-import { contrastRatio, hexFromHSL, hexFromRGB, InvalidHexColorError, relativeLuminance, rgbFromHex, wcagAA } from './color'
+import { contrastRatio, hexFromHSL, hexFromRGB, hslFromHex, InvalidHexColorError, relativeLuminance, rgbFromHex, wcagAA } from './color'
 import {
 	accentInk,
 	control,
@@ -140,6 +140,21 @@ describe('HSL conversion', () => {
 		['negative hue wraps', -120, 1, 0.5, '#0000FF'],
 	])('%s', (_name, h, s, l, want) => {
 		expect(hexFromHSL(h, s, l)).toBe(want)
+	})
+})
+
+describe('HSL from hex', () => {
+	// Red-dominant hues can dip below zero before the modulo, so they must wrap to the top of the circle.
+	it('a red-dominant colour takes a hue near 330', () => {
+		expect(Math.abs(hslFromHex('#FF0080').hue - 330)).toBeLessThanOrEqual(1)
+	})
+	it('a grey has hue 0 and no saturation', () => {
+		const { hue, saturation } = hslFromHex('#808080')
+		expect(hue).toBe(0)
+		expect(saturation).toBe(0)
+	})
+	it('a green-dominant colour takes a hue near 150', () => {
+		expect(Math.abs(hslFromHex('#00FF80').hue - 150)).toBeLessThanOrEqual(1)
 	})
 })
 

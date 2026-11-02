@@ -73,7 +73,7 @@ function startShortcuts(): Setting<readonly StartShortcut[] | null> {
 
 export const APPEARANCES = ['system', 'light', 'dark'] as const
 export const ACCENTS = ['yellow', 'green', 'blue', 'magenta', 'purple', 'red', 'mono', 'midnight', 'custom'] as const
-/** The seed for the `custom` accent until the user picks one: the reference beige, so the default looks like Amber. */
+/** The seed for the `custom` accent until the user picks one: the reference beige, as the seed; the generated palette is greyer than Amber. */
 export const DEFAULT_CUSTOM_COLOR = '#D9B872'
 export const SEARCH_ENGINES = ['google', 'duckduckgo', 'bing', 'brave', 'kagi', 'startpage'] as const
 export const DOH_PROVIDERS = ['cloudflare', 'cloudflare-security', 'google', 'quad9'] as const

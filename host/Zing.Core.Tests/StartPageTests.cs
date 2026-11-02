@@ -123,19 +123,20 @@ public sealed class StartPageTests
 
 	private static readonly string[] Seeds = ["#000000", "#FFFFFF", "#808080", "#FFFF00", "#3366CC"];
 
-	private static IEnumerable<(string Name, PaletteTokens Light, PaletteTokens Dark)> Subjects() =>
-		Zing.Core.Palette.Accents.Select(a => (a, Zing.Core.Palette.LightTokens(a), Zing.Core.Palette.DarkTokens(a)))
-			.Concat(Seeds.Select(seed => ($"seed {seed}", Zing.Core.Palette.ThemeTokens("custom", seed, false), Zing.Core.Palette.ThemeTokens("custom", seed, true))));
+	private static IEnumerable<(string Name, (double Hue, double Saturation) Profile, PaletteTokens Light, PaletteTokens Dark)> Subjects() =>
+		Zing.Core.Palette.Accents.Select(a => (a, Zing.Core.Palette.ThemeProfile(a, "#D9B872"), Zing.Core.Palette.LightTokens(a), Zing.Core.Palette.DarkTokens(a)))
+			.Concat(Seeds.Select(seed => ($"seed {seed}", Zing.Core.Palette.ThemeProfile("custom", seed), Zing.Core.Palette.ThemeTokens("custom", seed, false), Zing.Core.Palette.ThemeTokens("custom", seed, true))));
 
 	public static TheoryData<string, string, string, string> LegibilityPairs()
 	{
 		var data = new TheoryData<string, string, string, string>();
-		foreach (var (name, light, dark) in Subjects())
+		foreach (var (name, profile, light, dark) in Subjects())
 		{
-			foreach (var (mode, tokens) in new[] { ("light", light), ("dark", dark) })
+			foreach (var (mode, tokens, isDark) in new[] { ("light", light, false), ("dark", dark, true) })
 			{
 				var ink = Zing.Core.Palette.AccentInk(tokens);
-				var pairs = new (string Label, string Fg, string Bg)[]
+				var stack = Zing.Core.Palette.Stack(profile, isDark);
+				var pairs = new List<(string Label, string Fg, string Bg)>
 				{
 					("text on background", tokens.Text, tokens.Background),
 					("text on surface", tokens.Text, tokens.Surface),
@@ -146,7 +147,19 @@ public sealed class StartPageTests
 					("accentInk on selection", ink, tokens.Selection),
 					("text on control", tokens.Text, Zing.Core.Palette.Control(tokens)),
 					("text on raised", tokens.Text, Zing.Core.Palette.Raised(tokens)),
+					("start text on page", tokens.Text, stack.Page),
+					("start secondary on page", tokens.TextSecondary, stack.Page),
+					("window ink on window", stack.WindowInk, stack.Window),
+					("band ink on band", stack.BandInk, stack.Band),
+					("field ink on field", stack.FieldInk, stack.Field),
+					("page ink on page", stack.PageInk, stack.Page),
+					("more ink on more", stack.MoreInk, stack.More),
 				};
+				for (var i = 0; i < stack.Cards.Count; i++)
+				{
+					pairs.Add(($"card {i} ink", stack.CardInks[i], stack.Cards[i]));
+					pairs.Add(($"ribbon {i} ink", stack.RibbonInks[i], stack.Ribbons[i]));
+				}
 				foreach (var pair in pairs) data.Add($"{name} {mode} {pair.Label}", pair.Label, pair.Fg, pair.Bg);
 			}
 		}
@@ -162,7 +175,7 @@ public sealed class StartPageTests
 	}
 
 	[Fact]
-	public void LegibilityCoversEveryPair() => Assert.Equal(234, LegibilityPairs().Count());
+	public void LegibilityCoversEveryPair() => Assert.Equal(572, LegibilityPairs().Count());
 
 	[Fact]
 	public void ASelectedSegmentReadsAsRaisedNotSunken()
