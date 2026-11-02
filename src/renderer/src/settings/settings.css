@@ -56,7 +56,7 @@
 	width: 204px;
 	padding: 0 10px;
 	border-right: 1px solid var(--separator);
-	background: color-mix(in srgb, var(--tint) 60%, transparent);
+	background: var(--band);
 }
 
 .sheet-nav-title {

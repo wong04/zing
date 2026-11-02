@@ -4,7 +4,6 @@
 import { VERTICAL_TABS } from '@shared/layout/chrome'
 import { tabOrganizationDetail, tabOrganizationLabel } from '@shared/browser/tabOrganizer'
 import {
-	ACCENTS,
 	AUTO_CLOSE_RULES,
 	DOH_PROVIDERS,
 	SEARCH_ENGINES,
@@ -118,8 +117,6 @@ const toggle = (key: SettingKey, title: string, extra: Partial<Omit<SettingRow, 
 	control: { kind: 'toggle' },
 	...extra,
 })
-
-export const ACCENT_IDS = ACCENTS
 
 export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = {
 	general: [

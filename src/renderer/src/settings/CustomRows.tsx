@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { defaults as defaultShortcuts, limit as shortcutLimit, make as makeShortcut } from '@shared/browser/startShortcuts'
 import { allInputs } from '@shared/convert/formatCatalog'
 import { MAX_SLEEP_MINUTES } from '@shared/session/sleepSettings'
-import { ACCENTS } from '@shared/settings'
-import { accentLabel, isAccentTheme, swatchHex } from '@shared/theme/accent'
+import { accentLabel, accentThemes, swatchHex } from '@shared/theme/accent'
 import { allItems } from '@shared/toolbox/catalog'
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField, PillSlider, Toggle } from '../components'
@@ -16,11 +15,11 @@ import type { SettingsHandle } from './useSettings'
 
 function AccentPicker({ handle }: { handle: SettingsHandle }) {
 	return (
-		<SettingRowShell title="Accent colour">
-			<div className="swatches" role="radiogroup" aria-label="Accent colour">
-				{ACCENTS.map((accent) => {
+		<SettingRowShell title="Theme">
+			<div className="swatches" role="radiogroup" aria-label="Theme">
+				{accentThemes.map((accent) => {
 					const selected = handle.settings.accent === accent
-					const label = isAccentTheme(accent) ? accentLabel(accent) : accent
+					const label = accentLabel(accent)
 					return (
 						<button
 							key={accent}
@@ -33,7 +32,7 @@ function AccentPicker({ handle }: { handle: SettingsHandle }) {
 							className={selected ? 'swatch selected' : 'swatch'}
 							onClick={() => handle.set('accent', accent)}
 						>
-							<span style={{ background: isAccentTheme(accent) ? swatchHex(accent) : undefined }} />
+							<span style={{ background: swatchHex(accent) }} />
 						</button>
 					)
 				})}
