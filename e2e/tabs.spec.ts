@@ -182,6 +182,8 @@ test('tabs on top are folder tabs: the card shades repeat, and the active tab ta
 	await openPage(zing.chrome, 'three', 'Mango')
 	await expect.poll(() => stripTabs(zing.chrome).count()).toBeGreaterThanOrEqual(4)
 
+	const window_ = await paintOf(zing.chrome, '--window', '--window-ink')
+	await expect(zing.chrome.locator('.tabstrip')).toHaveCSS('background-color', window_.background)
 	const band = await paintOf(zing.chrome, '--band', '--band-ink')
 	const count = await stripTabs(zing.chrome).count()
 	for (let i = 0; i < count; i++) {
