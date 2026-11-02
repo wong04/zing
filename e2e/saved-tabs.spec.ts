@@ -233,6 +233,8 @@ test('a favourite dragged from the panel onto a ribbon becomes visible', async (
 	await zing.chrome.mouse.move(onto.x + onto.width / 2, onto.y + onto.height / 2, { steps: 12 })
 	// A held row is not clipped by the panel while it is dragged.
 	await expect.poll(() => morePanel(zing.chrome).evaluate((el) => getComputedStyle(el).overflowY)).toBe('visible')
+	await zing.chrome.evaluate(() => globalThis.dispatchEvent(new Event('blur')))
+	await expect(morePanel(zing.chrome)).toBeVisible()
 	await zing.chrome.mouse.up()
 	await expect(favouriteRibbons(zing.chrome).first()).toHaveAttribute('aria-label', 'Fav16')
 	await expect(favouriteRibbons(zing.chrome)).toHaveCount(4)
@@ -311,5 +313,62 @@ test('Ctrl+D with a full row raises the count', async () => {
 	await zing.chrome.evaluate(() => window.zing.runCommand('library.addFavourite'))
 	await expect(moreButton(zing.chrome, 13)).toBeVisible()
 	await expect(favouriteRibbons(zing.chrome)).toHaveCount(4)
+	await zing.close()
+})
+
+test('a panel left open does not reopen when the rail widens to fit all and narrows again', async () => {
+	const zing = await launchZing()
+	for (let i = 1; i <= 6; i++) await addFavourite(zing.chrome, `Fav${i}`)
+	await zing.chrome.evaluate(() => window.zing.setSetting('verticalTabWidth', 240))
+	await moreButton(zing.chrome, 2).click()
+	await expect(morePanel(zing.chrome)).toBeVisible()
+	await zing.chrome.evaluate(() => window.zing.setSetting('verticalTabWidth', 480))
+	await expect(zing.chrome.getByRole('button', { name: /more favourites/ })).toHaveCount(0)
+	await zing.chrome.evaluate(() => window.zing.setSetting('verticalTabWidth', 240))
+	await expect(moreButton(zing.chrome, 2)).toBeVisible()
+	await expect(morePanel(zing.chrome)).toHaveCount(0)
+	await zing.close()
+})
+
+test('an empty favourites ribbon is outlined, not just filled', async () => {
+	const zing = await launchZing()
+	const empty = favourites(zing.chrome).locator('.rail-ribbon.empty')
+	await expect(empty).toBeVisible()
+	const outline = await empty.evaluate((el) => {
+		const style = getComputedStyle(el, '::before')
+		return { content: style.content, position: style.position }
+	})
+	expect(outline.content).not.toBe('none')
+	expect(outline.position).toBe('absolute')
+	await zing.close()
+})
+
+test('a ribbon opens its favourite from the keyboard, with Enter or Space', async () => {
+	const zing = await sixteenFavourites()
+	const ribbons = favouriteRibbons(zing.chrome)
+	await ribbons.nth(0).focus()
+	await zing.chrome.keyboard.press('Enter')
+	await expect.poll(() => activeTitle(zing.chrome)).toBe('Fav1')
+	await ribbons.nth(1).focus()
+	await zing.chrome.keyboard.press(' ')
+	await expect.poll(() => activeTitle(zing.chrome)).toBe('Fav2')
+	await zing.close()
+})
+
+test('a tab dropped on "+N" is saved as the first of the rest', async () => {
+	const zing = await sixteenFavourites()
+	await openPage(zing.chrome, 'Notes')
+	const row = zing.chrome.locator('.rail-tabs [role="tab"]').filter({ hasText: 'Notes' })
+	const from = (await row.boundingBox())!
+	const onto = (await moreButton(zing.chrome, 12).boundingBox())!
+	await zing.chrome.mouse.move(from.x + 40, from.y + from.height / 2)
+	await zing.chrome.mouse.down()
+	await zing.chrome.mouse.move(onto.x + onto.width / 2, onto.y + onto.height / 2, { steps: 12 })
+	await zing.chrome.mouse.up()
+	await expect(moreButton(zing.chrome, 13)).toBeVisible()
+	await expect(favouriteRibbons(zing.chrome)).toHaveCount(4)
+	await moreButton(zing.chrome, 13).click()
+	const rest = Array.from({ length: 12 }, (_, i) => `Fav${i + 5}`)
+	await expect.poll(() => panelTitles(zing.chrome)).toEqual(['Notes', ...rest])
 	await zing.close()
 })

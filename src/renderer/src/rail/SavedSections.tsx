@@ -6,7 +6,7 @@ import { FolderIcon } from '../components/icons'
 import { ribbonLayout } from '@shared/layout/ribbons'
 import { AT_END } from './dropTarget'
 import { FavouritesPanel } from './FavouritesPanel'
-import { ItemIcon, itemMenu, open, type SavedFrame } from './savedItem'
+import { ItemIcon, itemMenu, open, savedFolderProps, savedItemProps, type SavedFrame } from './savedItem'
 
 const EMPTY_HINT = 'Drag a tab here, or press Ctrl+D'
 
@@ -15,14 +15,15 @@ export function FavouriteRibbons({ nodes, frame, innerWidth }: { nodes: readonly
 	const { shown, more } = ribbonLayout(nodes.length, innerWidth)
 	const [expanded, setExpanded] = useState(false)
 	const moreButton = useRef<HTMLButtonElement>(null)
+	// Nothing hidden means no "+N" to hang the panel from, so a panel left open must not come back when they hide again.
+	if (more === 0 && expanded) setExpanded(false)
 	// Focus is on a row in the panel when it closes from the keyboard: it goes back to "+N", not nowhere.
 	const close = (): void => {
 		if (document.activeElement?.closest('.rail-favourites-panel')) moreButton.current?.focus()
 		setExpanded(false)
 	}
-	// Opening a favourite from its ribbon closes the panel too; a drag's release must not open or close anything.
+	// Opening a favourite from its ribbon closes the panel too.
 	const activate = (id: string): void => {
-		if (frame.endsDrag()) return
 		setExpanded(false)
 		void zing.openSavedTab(id)
 	}
@@ -37,40 +38,14 @@ export function FavouriteRibbons({ nodes, frame, innerWidth }: { nodes: readonly
 				const place = { 'data-drop-item': node.id, 'data-drop-parent': FAVOURITES_ID, 'data-drop-index': index, 'data-drop-axis': 'x' }
 				if (isFolder(node)) {
 					return (
-						<div
-							key={node.id}
-							role="listitem"
-							aria-label={node.title}
-							title={node.title}
-							className="rail-ribbon"
-							{...place}
-							{...frame.drag(node.id)}
-							onClick={(e) => {
-								if (!frame.endsDrag()) void zing.openFolderMenu(node.id, { x: e.clientX, y: e.clientY })
-							}}
-							onContextMenu={itemMenu(node.id)}
-						>
+						<div key={node.id} {...place} {...savedFolderProps(frame, node, 'rail-ribbon', (at) => void zing.openFolderMenu(node.id, at))}>
 							<FolderIcon size={16} />
 						</div>
 					)
 				}
-				const tab = frame.tabsByItem.get(node.id)
-				const active = tab !== undefined && tab.id === frame.activeId
 				return (
-					<div
-						key={node.id}
-						role="listitem"
-						aria-label={node.title}
-						aria-current={active ? 'page' : undefined}
-						title={node.title}
-						data-item-id={node.id}
-						className={['rail-ribbon', active && 'active', !tab && 'unloaded'].filter(Boolean).join(' ')}
-						{...place}
-						{...frame.drag(node.id)}
-						onClick={() => activate(node.id)}
-						onContextMenu={itemMenu(node.id)}
-					>
-						<ItemIcon link={node} tab={tab} />
+					<div key={node.id} data-item-id={node.id} {...place} {...savedItemProps(frame, node, 'rail-ribbon', () => activate(node.id))}>
+						<ItemIcon link={node} tab={frame.tabsByItem.get(node.id)} />
 					</div>
 				)
 			})}

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { FAVOURITES_ID, isFolder, type BookmarkNode } from '@shared/library/library'
 import { zing } from '../api'
 import { FolderIcon } from '../components/icons'
-import { ItemIcon, itemMenu, type SavedFrame } from './savedItem'
+import { ItemIcon, savedFolderProps, savedItemProps, type SavedFrame } from './savedItem'
 
 /** The favourites behind "+N": a list under the ribbons, opened by a click and dragged back among them. */
 export function FavouritesPanel({ nodes, firstIndex, frame, onClose }: { nodes: readonly BookmarkNode[]; firstIndex: number; frame: SavedFrame; onClose: () => void }) {
@@ -51,24 +51,7 @@ function PanelRow({ node, index, frame, onClose }: RowProps) {
 	const place = { 'data-drop-item': node.id, 'data-drop-parent': FAVOURITES_ID, 'data-drop-index': index, 'data-drop-axis': 'y' }
 	if (isFolder(node)) {
 		return (
-			<div
-				role="listitem"
-				tabIndex={0}
-				aria-label={node.title}
-				title={node.title}
-				className="rail-row rail-panel-row"
-				{...place}
-				{...frame.drag(node.id)}
-				onClick={(e) => {
-					if (!frame.endsDrag()) void zing.openFolderMenu(node.id, { x: e.clientX, y: e.clientY })
-				}}
-				onKeyDown={(e) => {
-					if (e.key !== 'Enter' && e.key !== ' ') return
-					const rect = e.currentTarget.getBoundingClientRect()
-					void zing.openFolderMenu(node.id, { x: rect.left, y: rect.bottom })
-				}}
-				onContextMenu={itemMenu(node.id)}
-			>
+			<div {...place} {...savedFolderProps(frame, node, 'rail-row rail-panel-row', (at) => void zing.openFolderMenu(node.id, at))}>
 				<span className="rail-row-icon">
 					<FolderIcon size={15} />
 				</span>
@@ -76,33 +59,14 @@ function PanelRow({ node, index, frame, onClose }: RowProps) {
 			</div>
 		)
 	}
-	const tab = frame.tabsByItem.get(node.id)
-	const active = tab !== undefined && tab.id === frame.activeId
 	const openItem = (): void => {
 		onClose()
 		void zing.openSavedTab(node.id)
 	}
 	return (
-		<div
-			role="listitem"
-			tabIndex={0}
-			aria-label={node.title}
-			aria-current={active ? 'page' : undefined}
-			title={node.title}
-			data-item-id={node.id}
-			className={['rail-row', 'rail-item', 'rail-panel-row', active && 'active', !tab && 'unloaded'].filter(Boolean).join(' ')}
-			{...place}
-			{...frame.drag(node.id)}
-			onClick={() => {
-				if (!frame.endsDrag()) openItem()
-			}}
-			onKeyDown={(e) => {
-				if (e.key === 'Enter' || e.key === ' ') openItem()
-			}}
-			onContextMenu={itemMenu(node.id)}
-		>
+		<div data-item-id={node.id} {...place} {...savedItemProps(frame, node, 'rail-row rail-item rail-panel-row', openItem)}>
 			<span className="rail-row-icon">
-				<ItemIcon link={node} tab={tab} />
+				<ItemIcon link={node} tab={frame.tabsByItem.get(node.id)} />
 			</span>
 			<span className="rail-row-title">{node.title}</span>
 		</div>
