@@ -1,7 +1,7 @@
 // Phase 5: every view writes the theme's colours as CSS variables, the overlay and page-UI views included.
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
 import { DEFAULT_CUSTOM_COLOR } from '../src/shared/settings'
 import { accentLabel, accentThemes } from '../src/shared/theme/accent'
@@ -66,6 +66,16 @@ async function styleOf(view: Page, selector: string, property: string): Promise<
 function rgb(hex: string): string {
 	const n = parseInt(hex.slice(1), 16)
 	return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
+}
+
+/** Sets a colour input as the colour popup does when it closes: the value, then `change`. The popup itself is never opened. */
+async function pickColour(field: Locator, hex: string): Promise<void> {
+	await field.evaluate((element: unknown, value: string) => {
+		const g = globalThis as unknown as { Event: new (type: string) => unknown }
+		const input = element as { value: string; dispatchEvent(event: unknown): boolean }
+		input.value = value
+		input.dispatchEvent(new g.Event('change'))
+	}, hex)
 }
 
 /** Opens a tab on a page with this title on `host.localhost` and waits until the strip shows it. */
@@ -141,7 +151,7 @@ test('the toolbar and Settings carry the theme', async () => {
 	expect(await styleOf(sheet, '.nav-row:not(.selected)', 'color')).toBe(rgb(sheetVars['--band-ink']!))
 
 	const picker = sheet.getByRole('radiogroup', { name: 'Theme' })
-	await expect(picker.getByRole('radio')).toHaveCount(accentThemes.length)
+	await expect(picker.getByRole('radio')).toHaveCount(accentThemes.length + 1)
 	for (const theme of accentThemes) await expect(picker.getByRole('radio', { name: accentLabel(theme), exact: true })).toHaveCount(1)
 	await zing.close()
 })
@@ -155,4 +165,36 @@ test('the custom accent applies in the chrome view without an error', async () =
 	await expectAccent(zing.chrome, 'custom', '#3366CC')
 	expect(errors).toEqual([])
 	await zing.close()
+})
+
+test('a custom colour themes everything', async () => {
+	const zing = await launchZing({ env: { ZING_E2E_OFFLINE: '1' } })
+	await zing.chrome.evaluate(() => window.zing.runCommand('app.settings'))
+	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	await expect(sheet.getByRole('dialog', { name: 'Settings' })).toBeVisible()
+	const custom = sheet.getByRole('radio', { name: 'Custom', exact: true })
+	const amber = sheet.getByRole('radio', { name: 'Amber', exact: true })
+	const field = sheet.getByLabel('Custom colour')
+	await expect(field).toHaveCount(0)
+
+	await custom.click()
+	await expect(custom).toHaveAttribute('aria-checked', 'true')
+	await expect(custom).toHaveClass(/\bselected\b/)
+	await expect(amber).toHaveAttribute('aria-checked', 'false')
+	await expect(amber).not.toHaveClass(/\bselected\b/)
+	await expect(field).toBeVisible()
+
+	await pickColour(field, '#3366CC')
+	await expect.poll(() => zing.chrome.evaluate(() => window.zing.getSettings())).toMatchObject({ accent: 'custom', customColor: '#3366cc' })
+	expect(await styleOf(sheet, '.swatches > .swatch:last-child > span', 'background-color')).toBe(rgb('#3366CC'))
+	await expectAccent(zing.chrome, 'custom', '#3366CC')
+	await expectAccent(sheet, 'custom', '#3366CC')
+	const start = await pageWhere(zing.browser, (p) => p.url() === 'zing://home' || p.url() === 'zing://home/')
+	await expectAccent(start, 'custom', '#3366CC')
+	await zing.close()
+
+	const again = await launchZing({ env: { ZING_E2E_OFFLINE: '1' }, userDataDir: zing.userDataDir })
+	await expect.poll(() => again.chrome.evaluate(() => window.zing.getSettings())).toMatchObject({ accent: 'custom', customColor: '#3366cc' })
+	await expectAccent(again.chrome, 'custom', '#3366CC')
+	await again.close()
 })

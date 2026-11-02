@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { defaults as defaultShortcuts, limit as shortcutLimit, make as makeShortcut } from '@shared/browser/startShortcuts'
 import { allInputs } from '@shared/convert/formatCatalog'
 import { MAX_SLEEP_MINUTES } from '@shared/session/sleepSettings'
-import { accentLabel, accentThemes, swatchHex } from '@shared/theme/accent'
+import { accentLabel, accentThemes, CUSTOM_ACCENT, swatchHex } from '@shared/theme/accent'
 import { allItems } from '@shared/toolbox/catalog'
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField, PillSlider, Toggle } from '../components'
@@ -13,30 +13,54 @@ import type { CustomId } from './rows'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
 
+function AccentSwatch({ label, hex, selected, onSelect }: { label: string; hex: string; selected: boolean; onSelect: () => void }) {
+	return (
+		<button
+			type="button"
+			role="radio"
+			aria-checked={selected}
+			aria-label={label}
+			title={label}
+			tabIndex={selected ? 0 : -1}
+			className={selected ? 'swatch selected' : 'swatch'}
+			onClick={onSelect}
+		>
+			<span style={{ background: hex }} />
+		</button>
+	)
+}
+
+/** Commits on `change`, not `input`: React's onChange also fires on every step of a drag in the colour popup. */
+function CustomColourInput({ handle }: { handle: SettingsHandle }) {
+	const field = useRef<HTMLInputElement>(null)
+	const { set } = handle
+	useEffect(() => {
+		const input = field.current
+		if (!input) throw new Error('The custom colour input is not mounted')
+		const commit = (): void => set('customColor', input.value)
+		input.addEventListener('change', commit)
+		return () => input.removeEventListener('change', commit)
+	}, [set])
+	return <input ref={field} type="color" className="custom-colour" aria-label="Custom colour" defaultValue={handle.settings.customColor} />
+}
+
 function AccentPicker({ handle }: { handle: SettingsHandle }) {
+	const { accent, customColor } = handle.settings
 	return (
 		<SettingRowShell title="Theme">
 			<div className="swatches" role="radiogroup" aria-label="Theme">
-				{accentThemes.map((accent) => {
-					const selected = handle.settings.accent === accent
-					const label = accentLabel(accent)
-					return (
-						<button
-							key={accent}
-							type="button"
-							role="radio"
-							aria-checked={selected}
-							aria-label={label}
-							title={label}
-							tabIndex={selected ? 0 : -1}
-							className={selected ? 'swatch selected' : 'swatch'}
-							onClick={() => handle.set('accent', accent)}
-						>
-							<span style={{ background: swatchHex(accent) }} />
-						</button>
-					)
-				})}
+				{accentThemes.map((theme) => (
+					<AccentSwatch
+						key={theme}
+						label={accentLabel(theme)}
+						hex={swatchHex(theme)}
+						selected={accent === theme}
+						onSelect={() => handle.set('accent', theme)}
+					/>
+				))}
+				<AccentSwatch label="Custom" hex={customColor} selected={accent === CUSTOM_ACCENT} onSelect={() => handle.set('accent', CUSTOM_ACCENT)} />
 			</div>
+			{accent === CUSTOM_ACCENT ? <CustomColourInput handle={handle} /> : null}
 		</SettingRowShell>
 	)
 }
