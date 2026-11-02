@@ -31,6 +31,7 @@
 	"tabDropdowns": false,
 	"tabBarPosition": "left",
 	"verticalTabWidth": 240,
+	"verticalTabsCollapsed": false,
 	"sleepingTabs": {
 		"enabled": true,
 		"afterMinutes": 30,

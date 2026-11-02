@@ -18,6 +18,7 @@ public static class Layout
 	public static int SidebarColumnWidth => Size("sidebarColumnWidth");
 	public static int LibraryPanelWidth => Size("libraryPanelWidth");
 	public static int RailDefaultWidth => Sizes.Value["verticalTabs"]!["defaultWidth"]!.GetValue<int>();
+	public static int RailCollapsedWidth => Sizes.Value["verticalTabs"]!["collapsedWidth"]!.GetValue<int>();
 
 	// With tabs on the side the tab strip row is gone: the toolbar becomes the
 	// top band and the rail takes a column on its side.

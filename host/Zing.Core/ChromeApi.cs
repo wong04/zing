@@ -135,6 +135,7 @@ public sealed class ChromeApi : IDisposable
 		Shell.SurfaceRegionChanged += host.SurfaceRegionChanged;
 		Shell.FocusSurfaceRequested += host.FocusSurface;
 		Shell.SetSidebarWidth(SidebarWidth());
+		Shell.SetCollapsedWidth(CollapsedSidebar());
 		Shell.FocusPageRequested += () =>
 		{
 			if (Tabs.ActiveId is { } id) Tabs.FocusPage(id);
@@ -275,7 +276,7 @@ public sealed class ChromeApi : IDisposable
 		var position = Setting("tabBarPosition");
 		var pinned = Flag("sidebarPinned");
 		// On the left the rail is the sidebar: Ctrl+S hides it like the app sidebar, and it slides out from the edge.
-		var rail = position == "left" && !pinned ? 0 : RailWidth();
+		var rail = position == "left" && !pinned ? 0 : Collapsed() ? Layout.RailCollapsedWidth : RailWidth();
 		var sidebar = position != "left" && pinned ? Layout.SidebarColumnWidth : 0;
 		var panel = _libraryPanel is null ? 0 : Layout.LibraryPanelWidth;
 		return Layout.Insets(position, FavouritesBarShown(), rail, sidebar + panel);
@@ -283,6 +284,12 @@ public sealed class ChromeApi : IDisposable
 
 	/// <summary>The Favourites bar shows with tabs on top only; on the side, the rail's tiles are the Favourites.</summary>
 	private bool FavouritesBarShown() => Flag("showFavouritesBar") && Setting("tabBarPosition") == "top";
+
+	/// <summary>The rail is a column of icons (tabs on the side).</summary>
+	private bool Collapsed() => Flag("verticalTabsCollapsed") && Setting("tabBarPosition") != "top";
+
+	/// <summary>On the left a collapsed rail keeps its icon column, and the full rail slides out over the page from it.</summary>
+	private int? CollapsedSidebar() => Collapsed() && Setting("tabBarPosition") == "left" ? Layout.RailCollapsedWidth : null;
 
 	private int RailWidth() => _app.Settings.Get("verticalTabWidth")?.GetValue<int>() ?? throw new InvalidDataException("Setting verticalTabWidth is missing");
 
@@ -519,7 +526,8 @@ public sealed class ChromeApi : IDisposable
 		if (key is "sidebarPinned") Shell.SetSidebarPinned(Flag("sidebarPinned"));
 		if (key is "recentFeatures") Shell.SetRecentFeatures(RecentFeatures());
 		if (key is "tabBarPosition" or "verticalTabWidth") Shell.SetSidebarWidth(SidebarWidth());
-		if (key is "sidebarPinned" or "showFavouritesBar" or "tabBarPosition" or "verticalTabWidth")
+		if (key is "tabBarPosition" or "verticalTabsCollapsed") Shell.SetCollapsedWidth(CollapsedSidebar());
+		if (key is "sidebarPinned" or "showFavouritesBar" or "tabBarPosition" or "verticalTabWidth" or "verticalTabsCollapsed")
 		{
 			_host.Relayout();
 			_host.Push("library:state", LibraryState());

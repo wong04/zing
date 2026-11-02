@@ -74,6 +74,7 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	tabDropdowns: flag,
 	tabBarPosition: oneOf(TAB_BAR_POSITIONS),
 	verticalTabWidth: range('integer', VERTICAL_TABS.minWidth, VERTICAL_TABS.maxWidth),
+	verticalTabsCollapsed: flag,
 	sleepingTabs: { type: 'sleep', min: MIN_SLEEP_MINUTES, max: MAX_SLEEP_MINUTES },
 }
 

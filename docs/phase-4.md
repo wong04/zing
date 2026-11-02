@@ -92,12 +92,17 @@ As built:
 - **Ways to undo one:** Remove from Split in the tab menu; closing a pane of a two-pane split dissolves it.
 - **Display.** The rail shows a split once, as a box of its tabs; the top strip underlines a split's tabs. Arrangements still sort a split's tabs one by one; keeping them together in every arrangement is left for later.
 
-### D. Polish (T4), PR 4
+### D. Polish (T4), PR 4: done
 
-- Collapse to icons at `VERTICAL_TABS.collapsedWidth`, expanding on hover.
-- New setting `verticalTabsCollapsed`.
-- The rail renders only the rows on screen, so 300 tabs stay smooth.
-- Light and dark screenshots of the left and right rail, and of a 2-pane and a 4-pane split, in `docs/screenshots/`.
+- **Collapse to icons.** New setting `verticalTabsCollapsed`, set from a button in the rail's head or a Settings row.
+  - Collapsed, the rail is a 48 px column of icons, with each title in its tooltip.
+  - On the left, pointing at the column slides the full rail out over the page. This is the edge reveal, with the icon column as its edge (`ShellModel.SetCollapsedWidth`).
+- **Many tabs.** Rows scrolled out of view skip layout and painting (`content-visibility: auto`) and keep their size for scrolling and drags. This is used instead of a windowed list, which would fight the row drag's measuring. `e2e/vertical-tabs.spec.ts` checks 300 tabs: every row is there, rows off screen skip rendering, and switching to the last tab shows in the rail quickly.
+- **Screenshots**, light and dark, in `docs/screenshots/phase4-*.png`:
+  - the rail on the left, collapsed, and on the right
+  - a 2-pane and a 4-pane split
+
+  Test windows are off-screen, so each picture is put together from the chrome's picture and each page's, placed where the window lays them out. The light or dark scheme is set per view, as Windows' own mode would set it.
 
 ## Verification
 
