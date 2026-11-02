@@ -359,3 +359,40 @@ test('the floating rail’s active card stays inside it', async () => {
 	expect(looks.right).toBeLessThanOrEqual(looks.railRight)
 	await zing.close()
 })
+
+test('on the left the active card merges rightward, as before', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	await rows(zing.chrome).nth(2).click({ position: { x: 20, y: 15 } })
+	await expect(rows(zing.chrome).nth(2)).toHaveAttribute('aria-selected', 'true')
+	const page = (await shownPage(zing.chrome, 'Beta'))!
+	const active = await rows(zing.chrome).nth(2).evaluate((el) => {
+		const box = (el as unknown as { getBoundingClientRect(): { right: number } }).getBoundingClientRect()
+		const style = (globalThis as unknown as { getComputedStyle(e: unknown): { borderRadius: string; marginRight: string } }).getComputedStyle(el)
+		return { right: box.right, radius: style.borderRadius, marginRight: style.marginRight }
+	})
+	expect(active.right).toBe(page.x)
+	expect(active.radius).toBe('10px 0px 0px 10px')
+	expect(active.marginRight).toBe('-8px')
+	await zing.close()
+})
+
+test('on the right, a collapsed active chip is a plain 8px chip with no merge', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	await zing.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'right'))
+	await zing.chrome.getByRole('button', { name: 'Collapse the tab sidebar to icons' }).click()
+	await rows(zing.chrome).nth(2).click({ position: { x: 18, y: 16 } })
+	await expect(rows(zing.chrome).nth(2)).toHaveAttribute('aria-selected', 'true')
+	const chip = await rows(zing.chrome).nth(2).evaluate((el) => {
+		const box = (el as unknown as { getBoundingClientRect(): { width: number; height: number } }).getBoundingClientRect()
+		const style = (globalThis as unknown as { getComputedStyle(e: unknown): { borderRadius: string; marginLeft: string; marginRight: string } }).getComputedStyle(el)
+		return { width: box.width, height: box.height, radius: style.borderRadius, marginLeft: style.marginLeft, marginRight: style.marginRight }
+	})
+	expect(chip.width).toBe(36)
+	expect(chip.height).toBe(32)
+	expect(chip.radius).toBe('8px')
+	expect(chip.marginLeft).toBe('0px')
+	expect(chip.marginRight).toBe('0px')
+	await zing.close()
+})

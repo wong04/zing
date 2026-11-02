@@ -288,35 +288,41 @@
 	--card-ink: var(--card-ink-3);
 }
 
-/* The active card takes the page's colour and reaches its left edge, so it reads as one piece with the page. */
+/* The active card takes the page's colour. */
 .rail.pinned .rail-tab.active {
 	position: relative;
 	z-index: 1;
-	height: 36px;
-	margin-block: -2px -4px;
-	margin-right: -8px;
 	align-items: center;
 	padding-top: 0;
-	border-radius: 10px 0 0 10px;
 	border-top: 0;
 	background: var(--page);
 	color: var(--page-ink);
 	font-weight: 600;
+}
+
+/* Merged with the page, only where it sits in a column of cards: a collapsed chip or a split's box keeps its own. */
+.rail.pinned.left:not(.collapsed) :is(.rail-tabs, .rail-group) > .rail-tab.active {
+	height: 36px;
+	margin-block: -2px -4px;
+	margin-right: -8px;
+	border-radius: 10px 0 0 10px;
 	box-shadow: 0 -3px 8px rgb(0 0 0 / 0.2);
 }
 
-/* On the right the page is on the left, so the cards mirror the left rail: the active card reaches the page's left edge. */
+.rail.pinned.right:not(.collapsed) :is(.rail-tabs, .rail-group) > .rail-tab.active {
+	height: 36px;
+	margin-block: -2px -4px;
+	margin-left: -8px;
+	border-radius: 0 10px 10px 0;
+	box-shadow: 0 -3px 8px rgb(0 0 0 / 0.2);
+}
+
+/* On the right the page is on the left, so the cards mirror the left rail. */
 .rail.pinned.right .rail-tabs {
 	margin-right: 0;
 	margin-left: -8px;
 	padding-right: 0;
 	padding-left: 8px;
-}
-
-.rail.pinned.right .rail-tab.active {
-	margin-right: 0;
-	margin-left: -8px;
-	border-radius: 0 10px 10px 0;
 }
 
 /* Floating, the rows keep their overlap; the active card stays inside the rail, so it is rounded on every corner. */
@@ -341,7 +347,11 @@
 
 /* The floating rail's surface is translucent, so text on it is --text rather than --window-ink. */
 .rail.floating .rail-group-head,
-.rail.floating .rail-hint {
+.rail.floating .rail-hint,
+.rail.floating .rail-section-head,
+.rail.floating .rail-new-tab,
+.rail.floating .rail-icon-button,
+.rail.floating .rail-icon-button:hover {
 	color: var(--text);
 }
 
@@ -474,13 +484,18 @@
 
 /* A split's tabs, together in one box (split view). */
 .rail-split {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
 	padding: 3px;
 	border: 1px solid var(--separator);
 	border-radius: calc(var(--control-radius) + 3px);
-	background: color-mix(in srgb, var(--text) 3%, transparent);
+	background: var(--window);
+}
+
+.rail.floating .rail-split {
+	background: var(--surface);
 }
 
 /* A split's rows sit in the box's gap rather than over one another, so the box holds them whole. */
@@ -594,7 +609,6 @@
 	border-top: 0;
 	align-items: center;
 	justify-content: center;
-	box-shadow: none;
 }
 
 /* Hundreds of tabs stay smooth: rows scrolled out of view skip layout and painting, and keep their size for scrolling and drags. */

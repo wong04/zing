@@ -23,8 +23,9 @@ describe('dragRoom', () => {
 		expect(dragRoom(['a', 'b', 'c'], 'a', frames)).toBe(60)
 	})
 
-	it('is 0 for a held row that has no frame', () => {
+	it('throws for a held row that has no frame, naming the key', () => {
 		const frames = new Map([['a', frame(0)], ['b', frame(30)]])
-		expect(dragRoom(['a', 'b', 'c'], 'c', frames)).toBe(0)
+		expect(() => dragRoom(['a', 'b', 'c'], 'c', frames)).toThrow(RangeError)
+		expect(() => dragRoom(['a', 'b', 'c'], 'c', frames)).toThrow('"c"')
 	})
 })

@@ -176,3 +176,24 @@ test('split tabs don\'t overlap, and the active one stays inside the box', async
 	expect(active.shadow).toBe('none')
 	await zing.close()
 })
+
+test('on the right, a split’s active pane stays inside the box', async () => {
+	const zing = await launchZing()
+	const left = await openPage(zing.chrome, 'Left')
+	const right = await openPage(zing.chrome, 'Right')
+	await zing.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'right'))
+	await zing.chrome.evaluate(([a, b]) => window.zing.splitWith(a!, b!), [left, right])
+	const group = zing.chrome.getByRole('group', { name: 'Split view' })
+	await expect(group.getByRole('tab')).toHaveCount(2)
+	const box = (await group.boundingBox())!
+	const active = await group.getByRole('tab', { selected: true }).evaluate((el) => {
+		const rect = (el as unknown as { getBoundingClientRect(): { left: number; right: number } }).getBoundingClientRect()
+		const style = (globalThis as unknown as { getComputedStyle(e: unknown): { marginLeft: string; marginRight: string } }).getComputedStyle(el)
+		return { left: rect.left, right: rect.right, marginLeft: style.marginLeft, marginRight: style.marginRight }
+	})
+	expect(active.left).toBeGreaterThanOrEqual(box.x)
+	expect(active.right).toBeLessThanOrEqual(box.x + box.width)
+	expect(active.marginLeft).toBe('0px')
+	expect(active.marginRight).toBe('0px')
+	await zing.close()
+})
