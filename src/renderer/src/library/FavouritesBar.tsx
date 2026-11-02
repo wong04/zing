@@ -64,6 +64,9 @@ export function FavouritesBar({ library }: { library: BrowserLibrary }) {
 	const measure = useCallback((element: HTMLDivElement | null): void => {
 		observer.current?.disconnect()
 		if (!element) return
+		// Measured now, so the first paint doesn't show one ribbon and a count.
+		const style = getComputedStyle(element)
+		setInnerWidth(element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight))
 		observer.current = new ResizeObserver((entries) => setInnerWidth(entries[0]!.contentRect.width))
 		observer.current.observe(element)
 	}, [])
@@ -72,6 +75,11 @@ export function FavouritesBar({ library }: { library: BrowserLibrary }) {
 	const sideOf = (e: DragEvent<HTMLElement>): 'before' | 'after' => {
 		const rect = e.currentTarget.getBoundingClientRect()
 		return e.clientX < rect.left + rect.width / 2 ? 'before' : 'after'
+	}
+	const dropOnRest = (e: DragEvent<HTMLElement>): void => {
+		e.preventDefault()
+		const id = e.dataTransfer.getData('text/x-zing-fav')
+		if (id) void zing.applyLibrary({ type: 'move', id, to: shown })
 	}
 	const dropOn = (target: BookmarkNode) => (e: DragEvent<HTMLElement>): void => {
 		e.preventDefault()
@@ -110,7 +118,7 @@ export function FavouritesBar({ library }: { library: BrowserLibrary }) {
 				/>
 			))}
 			{more > 0 ? (
-				<button type="button" className="fav-chip more" aria-label={`${more} more favourites`} title={`${more} more favourites`} onClick={openRest}>
+				<button type="button" className="fav-chip more" aria-label={`${more} more favourites`} title={`${more} more favourites`} onClick={openRest} onDragOver={(e) => e.preventDefault()} onDrop={dropOnRest}>
 					+{more}
 				</button>
 			) : null}

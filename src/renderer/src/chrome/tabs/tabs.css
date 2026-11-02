@@ -29,7 +29,8 @@
 	min-width: 0;
 	max-width: none;
 	height: 100%;
-	margin-right: -5px;
+	/* With the strip's 2px gap, tabs overlap by 5px. */
+	margin-right: -7px;
 	border-radius: 9px 9px 0 0;
 	background: var(--card);
 	color: var(--card-ink);
@@ -57,6 +58,10 @@
 	z-index: 1;
 	background: var(--band);
 	color: var(--band-ink);
+}
+
+.tabs > .tab.active:not(.in-split) {
+	box-shadow: none;
 }
 
 /* Hover shades the tab as the card rail does; the active tab keeps the band. */

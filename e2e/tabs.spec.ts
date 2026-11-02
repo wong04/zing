@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, type Locator, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { FAVOURITES_ID } from '../src/shared/library/library'
+import { favourites, FAVOURITES_ID } from '../src/shared/library/library'
 import { launchZing, test, layers, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
@@ -194,8 +194,11 @@ test('tabs on top are folder tabs: the card shades repeat, and the active tab ta
 	await expect(active).toHaveCount(1)
 	await expect(active).toHaveCSS('border-top-left-radius', '9px')
 	await expect(active).toHaveCSS('border-bottom-left-radius', '0px')
-	await expect(active).toHaveCSS('margin-right', '-5px')
+	const firstBox = (await stripTabs(zing.chrome).nth(0).boundingBox())!
+	const secondBox = (await stripTabs(zing.chrome).nth(1).boundingBox())!
+	expect(firstBox.x + firstBox.width - secondBox.x).toBeCloseTo(5, 0)
 	await expect(zing.chrome.locator('.tabs > [role="tab"]:not(.active)').first()).toHaveCSS('box-shadow', 'none')
+	await expect(active).toHaveCSS('box-shadow', 'none')
 	const tabBox = (await active.boundingBox())!
 	const toolbarBox = (await zing.chrome.locator('.toolbar').boundingBox())!
 	expect(Math.abs(tabBox.y + tabBox.height - toolbarBox.y)).toBeLessThan(1)
@@ -269,6 +272,17 @@ test('favourites that do not fit fold into one "+N" button, which opens a menu o
 	expect(hidden).toBeGreaterThan(0)
 	await expect(more).toHaveText(`+${hidden}`)
 	await expect(bar.getByRole('button', { name: `${hidden} more favourites`, exact: true })).toHaveAttribute('title', `${hidden} more favourites`)
+
+	// A ribbon dropped on "+N" leaves the row, and the next one takes its place.
+	const firstRibbon = bar.locator('.fav-chip:not(.more)').first()
+	const firstTitle = await firstRibbon.getAttribute('title')
+	await more.evaluate((element, id) => {
+		const g = globalThis as unknown as { DataTransfer: new () => { setData(type: string, value: string): void }; DragEvent: new (type: string, init: object) => unknown }
+		const dataTransfer = new g.DataTransfer()
+		dataTransfer.setData('text/x-zing-fav', id)
+		;(element as unknown as { dispatchEvent(event: unknown): void }).dispatchEvent(new g.DragEvent('drop', { bubbles: true, dataTransfer }))
+	}, favourites((await zing.chrome.evaluate(() => window.zing.getLibrary())).library)[0]!.id)
+	await expect(firstRibbon).not.toHaveAttribute('title', firstTitle!)
 
 	await more.click()
 	await expect.poll(() => zing.menus().length).toBe(1)
