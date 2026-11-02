@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, test, pages } from './zing'
+import { launchZing, test, pages, type Launched } from './zing'
 import { FAVOURITES_ID } from '../src/shared/library/library'
 
 declare const window: { readonly zing: ZingApi }
@@ -188,5 +188,128 @@ test('a folder ribbon shows the folder icon and still opens the folder menu, not
 	await ribbon.click()
 	await expect.poll(() => zing.menus().length).toBe(1)
 	expect((await tabsOf(zing.chrome)).tabs.length).toBe(tabs)
+	await zing.close()
+})
+
+const morePanel = (chrome: Page) => chrome.locator('#rail-favourites-panel')
+const panelTitles = (chrome: Page) => morePanel(chrome).locator('.rail-panel-row .rail-row-title').allInnerTexts()
+const panelRow = (chrome: Page, title: string) => morePanel(chrome).getByRole('listitem', { name: title, exact: true })
+async function activeTitle(chrome: Page): Promise<string | undefined> {
+	const { tabs, activeId } = await tabsOf(chrome)
+	return tabs.find((t) => t.id === activeId)?.title
+}
+
+async function sixteenFavourites(): Promise<Launched> {
+	const zing = await launchZing()
+	for (let i = 1; i <= 16; i++) await addFavourite(zing.chrome, `Fav${i}`)
+	await zing.chrome.evaluate(() => window.zing.setSetting('verticalTabWidth', 240))
+	return zing
+}
+
+test('the panel lists the rest with names: "+N" opens it, and each row opens its favourite', async () => {
+	const zing = await sixteenFavourites()
+	const more = moreButton(zing.chrome, 12)
+	await expect(more).toHaveAttribute('aria-expanded', 'false')
+	await more.click()
+	await expect(more).toHaveAttribute('aria-expanded', 'true')
+	const names = Array.from({ length: 12 }, (_, i) => `Fav${i + 5}`)
+	await expect.poll(() => panelTitles(zing.chrome)).toEqual(names)
+	for (const name of names) {
+		await panelRow(zing.chrome, name).click()
+		await expect(morePanel(zing.chrome)).toHaveCount(0)
+		await expect.poll(() => activeTitle(zing.chrome)).toBe(name)
+		await moreButton(zing.chrome, 12).click()
+	}
+	await zing.close()
+})
+
+test('a favourite dragged from the panel onto a ribbon becomes visible', async () => {
+	const zing = await sixteenFavourites()
+	await moreButton(zing.chrome, 12).click()
+	const from = (await panelRow(zing.chrome, 'Fav16').boundingBox())!
+	const onto = (await favouriteRibbons(zing.chrome).first().boundingBox())!
+	await zing.chrome.mouse.move(from.x + 40, from.y + from.height / 2)
+	await zing.chrome.mouse.down()
+	await zing.chrome.mouse.move(onto.x + onto.width / 2, onto.y + onto.height / 2, { steps: 12 })
+	// A held row is not clipped by the panel while it is dragged.
+	await expect.poll(() => morePanel(zing.chrome).evaluate((el) => getComputedStyle(el).overflowY)).toBe('visible')
+	await zing.chrome.mouse.up()
+	await expect(favouriteRibbons(zing.chrome).first()).toHaveAttribute('aria-label', 'Fav16')
+	await expect(favouriteRibbons(zing.chrome)).toHaveCount(4)
+	await expect(panelRow(zing.chrome, 'Fav4')).toBeVisible()
+	await expect(moreButton(zing.chrome, 12)).toBeVisible()
+	await zing.close()
+})
+
+test('a ribbon dragged into the panel leaves the ribbons', async () => {
+	const zing = await sixteenFavourites()
+	await moreButton(zing.chrome, 12).click()
+	const from = (await favouriteRibbons(zing.chrome).first().boundingBox())!
+	const into = (await morePanel(zing.chrome).boundingBox())!
+	await zing.chrome.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+	await zing.chrome.mouse.down()
+	await zing.chrome.mouse.move(into.x + into.width / 2, into.y + into.height - 4, { steps: 12 })
+	await zing.chrome.mouse.up()
+	await expect(favouriteRibbons(zing.chrome)).toHaveCount(4)
+	await expect(favouriteRibbons(zing.chrome).first()).toHaveAttribute('aria-label', 'Fav2')
+	await expect(panelRow(zing.chrome, 'Fav1')).toBeVisible()
+	await expect(moreButton(zing.chrome, 12)).toBeVisible()
+	await zing.close()
+})
+
+test('the panel closes on Escape, returning focus to "+N", and when the chrome loses focus', async () => {
+	const zing = await sixteenFavourites()
+	const more = moreButton(zing.chrome, 12)
+	await more.click()
+	await panelRow(zing.chrome, 'Fav5').focus()
+	await zing.chrome.keyboard.press('Escape')
+	await expect(morePanel(zing.chrome)).toHaveCount(0)
+	await expect(more).toBeFocused()
+
+	await more.click()
+	await expect(morePanel(zing.chrome)).toBeVisible()
+	await zing.chrome.evaluate(() => globalThis.dispatchEvent(new Event('blur')))
+	await expect(morePanel(zing.chrome)).toHaveCount(0)
+
+	await more.click()
+	await expect(morePanel(zing.chrome)).toBeVisible()
+	await zing.chrome.locator('.rail-head .rail-drag').click()
+	await expect(morePanel(zing.chrome)).toHaveCount(0)
+	await zing.close()
+})
+
+test('"+N" shows when it holds the active favourite', async () => {
+	const zing = await sixteenFavourites()
+	const more = moreButton(zing.chrome, 12)
+	await expect(more).toHaveClass(/holds-active/)
+	await favouriteRibbons(zing.chrome).first().click()
+	await expect(more).not.toHaveClass(/holds-active/)
+	await more.click()
+	await panelRow(zing.chrome, 'Fav16').click()
+	await expect(more).toHaveClass(/holds-active/)
+	await zing.close()
+})
+
+test('collapsed, the panel is an icon column with tooltips, and all favourites are reachable', async () => {
+	const zing = await sixteenFavourites()
+	await zing.chrome.evaluate(() => window.zing.setSetting('verticalTabsCollapsed', true))
+	await moreButton(zing.chrome, 16).click()
+	const rows = morePanel(zing.chrome).getByRole('listitem')
+	await expect(rows).toHaveCount(16)
+	await expect(rows.first()).toHaveAttribute('title', 'Fav1')
+	await expect(morePanel(zing.chrome).locator('.rail-row-title').first()).toBeHidden()
+	await expect(zing.chrome.locator('.rail-panel-head')).toBeHidden()
+	await panelRow(zing.chrome, 'Fav9').click()
+	await expect(morePanel(zing.chrome)).toHaveCount(0)
+	await expect.poll(() => activeTitle(zing.chrome)).toBe('Fav9')
+	await zing.close()
+})
+
+test('Ctrl+D with a full row raises the count', async () => {
+	const zing = await sixteenFavourites()
+	await openPage(zing.chrome, 'Fav17')
+	await zing.chrome.evaluate(() => window.zing.runCommand('library.addFavourite'))
+	await expect(moreButton(zing.chrome, 13)).toBeVisible()
+	await expect(favouriteRibbons(zing.chrome)).toHaveCount(4)
 	await zing.close()
 })
