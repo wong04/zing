@@ -18,6 +18,7 @@ import {
 	RETIRED_SETTING_KEYS,
 	SEARCH_ENGINES,
 	TAB_BAR_POSITIONS,
+	TAB_COLOURS,
 	TAB_ORGANIZATIONS,
 	type SettingKey,
 } from '../src/shared/settings/schema'
@@ -75,6 +76,7 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	passwordAutofill: flag,
 	tabDropdowns: flag,
 	tabBarPosition: oneOf(TAB_BAR_POSITIONS),
+	tabColours: oneOf(TAB_COLOURS),
 	verticalTabWidth: range('integer', VERTICAL_TABS.minWidth, VERTICAL_TABS.maxWidth),
 	verticalTabsCollapsed: flag,
 	sleepingTabs: { type: 'sleep', min: MIN_SLEEP_MINUTES, max: MAX_SLEEP_MINUTES },

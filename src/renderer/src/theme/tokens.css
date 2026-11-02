@@ -31,6 +31,12 @@
 	--raised: #fffdf8;
 	--accent-ink: #635538;
 
+	/* What cards and ribbons paint with: the theme colour, or neutral when the Tab colours setting is None. */
+	--card: var(--colour-card);
+	--card-ink: var(--colour-card-ink);
+	--ribbon: var(--colour-ribbon);
+	--ribbon-ink: var(--colour-ribbon-ink);
+
 	/* The stacked chrome: window, band, field, page, cards, ribbons and the more button, tinted from the accent. */
 	--window: #e4d6be;
 	--window-ink: #000000;
@@ -40,18 +46,12 @@
 	--field-ink: #000000;
 	--page: #fdfdfc;
 	--page-ink: #000000;
-	--card-1: #d9b984;
-	--card-2: #bed484;
-	--card-3: #d98d8c;
-	--card-ink-1: #000000;
-	--card-ink-2: #000000;
-	--card-ink-3: #000000;
-	--ribbon-1: #d2a860;
-	--ribbon-2: #a6d260;
-	--ribbon-3: #d2606d;
-	--ribbon-ink-1: #000000;
-	--ribbon-ink-2: #000000;
-	--ribbon-ink-3: #000000;
+	--colour-card: #c6a367;
+	--colour-card-ink: #000000;
+	--colour-ribbon: #b38432;
+	--colour-ribbon-ink: #000000;
+	--plain: #f3ede2;
+	--plain-ink: #000000;
 	--more: #322f2a;
 	--more-ink: #ffffff;
 
@@ -69,6 +69,13 @@
 	--control-radius: 8px;
 
 	--font: 'Inter', 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+}
+
+:root[data-tab-colours='none'] {
+	--card: var(--plain);
+	--card-ink: var(--plain-ink);
+	--ribbon: var(--plain);
+	--ribbon-ink: var(--plain-ink);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -96,19 +103,13 @@
 		--field-ink: #ffffff;
 		--page: #12110f;
 		--page-ink: #ffffff;
-		--card-1: #4c4335;
-		--card-2: #4b4935;
-		--card-3: #4c3d35;
-		--card-ink-1: #ffffff;
-		--card-ink-2: #ffffff;
-		--card-ink-3: #ffffff;
-		--ribbon-1: #e4cb9f;
-		--ribbon-2: #e1e49f;
-		--ribbon-3: #e4ae9f;
-		--ribbon-ink-1: #000000;
-		--ribbon-ink-2: #000000;
-		--ribbon-ink-3: #000000;
-		--more: #655a47;
+		--colour-card: #4c4335;
+		--colour-card-ink: #ffffff;
+		--colour-ribbon: #e4cb9f;
+		--colour-ribbon-ink: #000000;
+		--plain: #403d37;
+		--plain-ink: #ffffff;
+		--more: #64615d;
 		--more-ink: #ffffff;
 
 		--positive: #8fbf7a;

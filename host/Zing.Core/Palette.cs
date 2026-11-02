@@ -55,10 +55,12 @@ public sealed record StackTokens(
 	string FieldInk,
 	string Page,
 	string PageInk,
-	IReadOnlyList<string> Cards,
-	IReadOnlyList<string> CardInks,
-	IReadOnlyList<string> Ribbons,
-	IReadOnlyList<string> RibbonInks,
+	string Card,
+	string CardInk,
+	string Ribbon,
+	string RibbonInk,
+	string Plain,
+	string PlainInk,
 	string More,
 	string MoreInk);
 
@@ -282,25 +284,18 @@ public static class Palette
 		var page = dark ? Colors.HexFromHsl(hue, 0.15 * saturation, 0.065) : Colors.HexFromHsl(hue, 0.3 * saturation, 0.99);
 		var band = Colors.Mix(window, dark ? "#000000" : Colors.HexFromHsl(hue, 0.6 * saturation, 0.3), dark ? 0.25 : 0.22);
 		var field = Colors.Mix(band, "#FFFFFF", dark ? 0.1 : 0.62);
-		string Paint(double h) => Colors.HexFromHsl(h, 0.75 * saturation, dark ? 0.76 : 0.6);
-		// Dark ribbons are pastels, so a narrower spread and dim cards keep them from clashing or glaring.
-		var spread = dark ? 25 : 45;
-		var ribbons = Triad(hue, spread, Paint);
-		var cards = Triad(hue, spread, h => Colors.Mix(window, Paint(h), dark ? 0.22 : 0.62));
-		var more = dark ? Colors.Mix(window, ribbons[0], 0.35) : Colors.Mix(window, InkOn(window), 0.78);
+		var ribbon = Colors.HexFromHsl(hue, 0.75 * saturation, dark ? 0.76 : 0.45);
+		var card = Colors.Mix(window, ribbon, dark ? 0.22 : 0.62);
+		var plain = Colors.Mix(window, "#FFFFFF", dark ? 0.14 : 0.55);
+		var more = Colors.Mix(window, InkOn(window), dark ? 0.3 : 0.78);
 		return new StackTokens(
 			window, InkOn(window), band, InkOn(band), field, InkOn(field), page, InkOn(page),
-			cards, InksOn(cards), ribbons, InksOn(ribbons), more, InkOn(more));
+			card, InkOn(card), ribbon, InkOn(ribbon), plain, InkOn(plain), more, InkOn(more));
 	}
 
 	/// <summary>Black or white, whichever reads better on the background.</summary>
 	public static string InkOn(string background) =>
 		Colors.ContrastRatio("#000000", background) >= Colors.ContrastRatio("#FFFFFF", background) ? "#000000" : "#FFFFFF";
-
-	/// <summary>The base hue and the two either side of it, <paramref name="spread"/> degrees apart.</summary>
-	private static IReadOnlyList<string> Triad(double hue, double spread, Func<double, string> colour) => [colour(hue), colour(hue + spread), colour(hue - spread)];
-
-	private static IReadOnlyList<string> InksOn(IReadOnlyList<string> colours) => [InkOn(colours[0]), InkOn(colours[1]), InkOn(colours[2])];
 
 	/// <summary>The accent as a foreground: walked toward the text colour until it is legible on the surface and selection plate.</summary>
 	public static string AccentInk(PaletteTokens tokens)

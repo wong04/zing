@@ -151,6 +151,13 @@
 			"right"
 		]
 	},
+	"tabColours": {
+		"type": "enum",
+		"values": [
+			"colour",
+			"none"
+		]
+	},
 	"verticalTabWidth": {
 		"type": "integer",
 		"min": 160,

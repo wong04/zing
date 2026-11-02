@@ -114,19 +114,9 @@
 	user-select: none;
 }
 
-.rail-favourites > .rail-ribbon:nth-child(3n + 1) {
-	background: var(--ribbon-1);
-	color: var(--ribbon-ink-1);
-}
-
-.rail-favourites > .rail-ribbon:nth-child(3n + 2) {
-	background: var(--ribbon-2);
-	color: var(--ribbon-ink-2);
-}
-
-.rail-favourites > .rail-ribbon:nth-child(3n) {
-	background: var(--ribbon-3);
-	color: var(--ribbon-ink-3);
+.rail-favourites > .rail-ribbon {
+	background: var(--ribbon);
+	color: var(--ribbon-ink);
 }
 
 .rail-favourites > .rail-ribbon.more {
@@ -201,20 +191,23 @@
 }
 
 /* A saved tab whose tab is closed: there, but not loaded. */
-.rail-ribbon.unloaded,
 .rail-item.unloaded {
 	color: var(--window-ink);
 }
 
-.rail-ribbon.unloaded > *,
 .rail-item.unloaded .rail-row-icon {
-	opacity: 0.6;
+	opacity: 0.8;
 }
 
 .rail-ribbon .rail-letter {
 	background: transparent;
 	font-size: 12px;
 	font-weight: 800;
+}
+
+.rail-tabs .tab-icon:not(.fault, .loading) {
+	background: color-mix(in srgb, currentColor 14%, transparent);
+	color: inherit;
 }
 
 .rail-letter {
@@ -224,6 +217,7 @@
 	height: 16px;
 	border-radius: 4px;
 	background: color-mix(in srgb, var(--text) 12%, transparent);
+	color: inherit;
 	font-size: 10px;
 	font-weight: 600;
 }
@@ -367,25 +361,6 @@
 
 .rail-tab:not(.active):hover {
 	background: color-mix(in srgb, var(--card) 92%, var(--card-ink));
-}
-
-/* Three card shades repeat down the list; a group's tabs repeat them from the group's heading. */
-.rail-tabs > :nth-child(3n+1),
-.rail-group > .rail-tab:nth-child(3n+1) {
-	--card: var(--card-1);
-	--card-ink: var(--card-ink-1);
-}
-
-.rail-tabs > :nth-child(3n+2),
-.rail-group > .rail-tab:nth-child(3n+2) {
-	--card: var(--card-2);
-	--card-ink: var(--card-ink-2);
-}
-
-.rail-tabs > :nth-child(3n),
-.rail-group > .rail-tab:nth-child(3n) {
-	--card: var(--card-3);
-	--card-ink: var(--card-ink-3);
 }
 
 /* The active card takes the page's colour. */

@@ -226,7 +226,7 @@ test('tab rows are overlapping cards', async () => {
 	}
 	for (let i = 0; i < looks.length; i++) {
 		if (looks[i]!.active) continue
-		expect(looks[i]!.background).toBe((await resolvedColor(zing.chrome, `var(--card-${(i % 3) + 1})`)).background)
+		expect(looks[i]!.background).toBe((await resolvedColor(zing.chrome, 'var(--card)')).background)
 	}
 	await zing.close()
 })
@@ -254,8 +254,8 @@ test('a hovered card keeps its shade and ink', async () => {
 	await expect(rows(zing.chrome)).toHaveCount(5)
 	await rows(zing.chrome).nth(1).hover()
 	const hovered = (await rowLooks(zing.chrome))[1]!
-	expect(hovered.background).toBe((await resolvedColor(zing.chrome, 'color-mix(in srgb, var(--card-2) 92%, var(--card-ink-2))')).background)
-	expect(hovered.color).toBe((await resolvedColor(zing.chrome, 'var(--card-ink-2)')).color)
+	expect(hovered.background).toBe((await resolvedColor(zing.chrome, 'color-mix(in srgb, var(--card) 92%, var(--card-ink))')).background)
+	expect(hovered.color).toBe((await resolvedColor(zing.chrome, 'var(--card-ink)')).color)
 	await zing.close()
 })
 
@@ -333,7 +333,7 @@ test('collapsed, cards are icon chips', async () => {
 			expect(chip.background).toBe((await resolvedColor(zing.chrome, 'var(--page)')).background)
 			expect(chip.radius).toBe('8px')
 		} else {
-			expect(chip.background).toBe((await resolvedColor(zing.chrome, `var(--card-${(i % 3) + 1})`)).background)
+			expect(chip.background).toBe((await resolvedColor(zing.chrome, 'var(--card)')).background)
 		}
 	}
 	await expect(zing.chrome.getByRole('navigation', { name: 'Tab rail' }).locator('.rail-row-title').first()).toBeHidden()

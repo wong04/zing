@@ -8,6 +8,7 @@ import {
 	DOH_PROVIDERS,
 	SEARCH_ENGINES,
 	TAB_BAR_POSITIONS,
+	TAB_COLOURS,
 	TAB_ORGANIZATIONS,
 	type SettingKey,
 	type Settings,
@@ -98,6 +99,7 @@ const RULE_LABELS: Readonly<Record<(typeof AUTO_CLOSE_RULES)[number], string>> =
 	custom: 'Custom',
 }
 
+const TAB_COLOUR_LABELS: Readonly<Record<(typeof TAB_COLOURS)[number], string>> = { colour: 'One colour', none: 'None' }
 const POSITION_LABELS: Readonly<Record<(typeof TAB_BAR_POSITIONS)[number], string>> = {
 	top: 'Top',
 	left: 'Left',
@@ -135,6 +137,13 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 			},
 		},
 		{ type: 'custom', id: 'accent', keys: ['accent', 'customColor'] },
+		{
+			type: 'setting',
+			key: 'tabColours',
+			title: 'Tab colours',
+			detail: 'For tabs and favourites.',
+			control: { kind: 'segmented', width: 200, options: options(TAB_COLOURS, TAB_COLOUR_LABELS) },
+		},
 		{ type: 'custom', id: 'default-browser', keys: [] },
 		toggle('sidebarPinned', 'Keep the sidebar open', {
 			detail: (s) => (s.sidebarPinned ? undefined : 'Move to the left edge to show it. Ctrl+S pins it again.'),
