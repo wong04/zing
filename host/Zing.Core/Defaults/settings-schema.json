@@ -151,6 +151,9 @@
 		"min": 160,
 		"max": 480
 	},
+	"verticalTabsCollapsed": {
+		"type": "flag"
+	},
 	"sleepingTabs": {
 		"type": "sleep",
 		"min": 1,

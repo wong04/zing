@@ -64,6 +64,15 @@ public static class TestHooks
 			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(LiveCounts()));
 			return true;
 		}
+		if (action == "add-tabs")
+		{
+			// Tab records without pages, so a test can have hundreds of tabs without hundreds of engines.
+			var api = (Apis.TryGetValue(window, out var apiOf) ? apiOf() : null) ?? throw new InvalidOperationException("add-tabs needs a window with its chrome started");
+			var count = root.GetProperty("count").GetInt32();
+			var prefix = root.GetProperty("url").GetString()!;
+			for (var i = 0; i < count; i++) api.Tabs.Create($"{prefix}{i}");
+			return true;
+		}
 		if (action == "close-at")
 		{
 			var n = root.GetProperty("n").GetInt32();
@@ -105,6 +114,16 @@ public static class TestHooks
 		captures = WebView2Page.CapturesInFlight,
 		newest = new { serial = _windows, checkpoints = _newest?.Checkpoints ?? 0, started = _newestStarted, closed = _newest?.IsClosed ?? false },
 	};
+
+	/// <summary>Each window's chrome API, for test actions that change its tabs (add-tabs); e2e runs only.</summary>
+	private static readonly Dictionary<HostWindow, Func<Zing.Core.ChromeApi?>> Apis = [];
+
+	public static void Register(HostWindow window, Func<Zing.Core.ChromeApi?> api)
+	{
+		if (!IsEndToEndRun) return;
+		Apis[window] = api;
+		window.Destroyed += () => Apis.Remove(window);
+	}
 
 	/// <summary>A new window's scope, in an e2e run: counted, and closed at a checkpoint if a test asked (close-at).</summary>
 	public static void Watch(WindowScope scope, Action closeWindow)

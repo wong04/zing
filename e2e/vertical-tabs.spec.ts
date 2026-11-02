@@ -112,3 +112,36 @@ test('hiding the sidebar gives the rail’s column to the page', async () => {
 	await expect.poll(async () => (await shownPage(zing.chrome, 'Alpha'))?.x).toBe(240)
 	await zing.close()
 })
+
+test('collapsed, the rail is a column of icons and the page takes the rest', async () => {
+	const zing = await launchZing()
+	await openPage(zing.chrome, 'Alpha')
+	await zing.chrome.getByRole('button', { name: 'Collapse the tab sidebar to icons' }).click()
+	await expect.poll(async () => (await shownPage(zing.chrome, 'Alpha'))?.x).toBe(48)
+	const rail = zing.chrome.getByRole('navigation', { name: 'Tab rail' })
+	await expect.poll(async () => (await rail.boundingBox())?.width).toBe(48)
+	await expect(rail.locator('.rail-row-title').first()).toBeHidden()
+	// Each row is still there, as its icon, with its title in the tooltip.
+	await expect(zing.chrome.locator('.rail-tabs [role="tab"][title*="Alpha"]')).toHaveCount(1)
+	await zing.chrome.getByRole('button', { name: 'Expand the tab sidebar' }).click()
+	await expect.poll(async () => (await shownPage(zing.chrome, 'Alpha'))?.x).toBe(240)
+	await zing.close()
+})
+
+test('three hundred tabs: every one is in the rail, rows out of view skip rendering, and switching stays quick', async () => {
+	const zing = await launchZing()
+	await zing.chrome.evaluate((url) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'add-tabs', count: 300, url }), `${base}/many-`)
+	await expect(rows(zing.chrome)).toHaveCount(301)
+	expect(await rows(zing.chrome).last().evaluate((row) => (globalThis as unknown as { getComputedStyle(e: unknown): { contentVisibility: string } }).getComputedStyle(row).contentVisibility)).toBe('auto')
+	const last = (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.at(-1)!.id
+	const elapsed = await zing.chrome.evaluate(async (id) => {
+		const started = performance.now()
+		await window.zing.activateTab(id)
+		const doc = (globalThis as unknown as { document: { querySelector(s: string): { getAttribute(a: string): string | null } | null } }).document
+		while (doc.querySelector(`[data-tab-id="${id}"]`)?.getAttribute('aria-selected') !== 'true') await new Promise((r) => setTimeout(r, 5))
+		return performance.now() - started
+	}, last)
+	// From the call to the rail showing the new tab: the bridge both ways plus a render of 301 rows (PLAN.md's switch budget is 50 ms for the page itself).
+	expect(elapsed).toBeLessThan(250)
+	await zing.close()
+})

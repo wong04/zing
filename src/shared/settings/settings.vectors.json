@@ -1,6 +1,6 @@
 {
 	"kracknKeys": ["theme", "accent", "homepage", "startShortcuts", "searchEngine", "blockTrackers", "confirmQuit", "defaultQuality", "preserveOriginals", "dohProvider", "tabOrganization", "autoCloseEnabled", "autoCloseRule", "autoCloseCustomHours", "autoCloseAtTimeEnabled", "autoCloseHour", "autoCloseMinute", "persistentProfile", "defaultUserAgent", "acceleratedCanvas", "restoreTabs", "securityRealtime", "securityDownloadScan", "securityDomainBlocking", "securitySignatureCheck", "sidebarPinned", "recentFeatures", "showFavouritesBar", "passwordAutofill", "tabDropdowns"],
-	"zingKeys": ["tabBarPosition", "verticalTabWidth", "sleepingTabs", "favouritesHint"],
+	"zingKeys": ["tabBarPosition", "verticalTabWidth", "verticalTabsCollapsed", "sleepingTabs", "favouritesHint"],
 	"retiredKeys": ["confirmQuit"],
 	"defaultsSubset": {
 		"theme": "system", "accent": "yellow", "searchEngine": "google", "homepage": "", "startShortcuts": null,
@@ -8,7 +8,7 @@
 		"tabOrganization": "manual", "autoCloseRule": "day", "autoCloseCustomHours": 12, "autoCloseHour": 3, "autoCloseMinute": 0,
 		"acceleratedCanvas": true, "securityRealtime": true, "securityDownloadScan": true, "securityDomainBlocking": true,
 		"securitySignatureCheck": true, "sidebarPinned": true, "showFavouritesBar": true, "passwordAutofill": true,
-		"persistentProfile": false, "restoreTabs": false, "tabDropdowns": false, "tabBarPosition": "left", "verticalTabWidth": 240
+		"persistentProfile": false, "restoreTabs": false, "tabDropdowns": false, "tabBarPosition": "left", "verticalTabWidth": 240, "verticalTabsCollapsed": false
 	},
 	"parseAccepted": [
 		{ "name": "absent keys read as defaults", "input": { "restoreTabs": true }, "expectSubset": { "restoreTabs": true, "preserveOriginals": true, "blockTrackers": true } },

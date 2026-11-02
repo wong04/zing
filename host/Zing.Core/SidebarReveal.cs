@@ -20,6 +20,9 @@ public sealed class EdgeReveal(Action<bool> onChange, double edge = EdgeReveal.D
 
 	public const double DefaultPeekMs = 1400;
 
+	/// <summary>How near the left edge counts as touching it: the window's edge, or a collapsed rail's icon column.</summary>
+	public double Edge { get; set; } = edge;
+
 	/// <summary>How far past the sidebar the cursor may wander before it is put away.</summary>
 	public const double HideMargin = 36;
 
@@ -58,7 +61,7 @@ public sealed class EdgeReveal(Action<bool> onChange, double edge = EdgeReveal.D
 			UpdateRevealed(sample);
 			return;
 		}
-		var atEdge = sample.InWindow && sample.X <= edge && sample.Y > 0;
+		var atEdge = sample.InWindow && sample.X <= Edge && sample.Y > 0;
 		if (!atEdge)
 		{
 			_dwellStart = null;
@@ -116,6 +119,9 @@ public sealed class SidebarReveal : IDisposable
 
 	/// <summary>The revealed sidebar's width: the app sidebar's, or the tab rail's when tabs are on the left.</summary>
 	public void SetWidth(double width) => _reveal.HideBeyond = width + EdgeReveal.HideMargin;
+
+	/// <summary>What counts as reaching for the sidebar: the window's left edge, or the whole icon column of a collapsed rail.</summary>
+	public void SetEdge(double edge) => _reveal.Edge = edge;
 
 	/// <summary>Raised with the new value whenever the sidebar is revealed or put away.</summary>
 	public event Action<bool>? Changed;

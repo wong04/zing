@@ -55,6 +55,34 @@ public sealed class ShellModelTests
 	}
 
 	[Fact]
+	public void A_collapsed_rail_takes_its_icon_column_and_the_full_rail_slides_out_while_the_pointer_is_over_it()
+	{
+		var h = new Harness();
+		h.Model.SetSidebarWidth(260);
+		h.Model.SetCollapsedWidth(48);
+		Assert.Equal(48, h.Model.PinnedWidth);
+		Assert.False(h.Model.SidebarRevealed);
+		// Over the icon column, not just at the window's edge.
+		h.Cursor = new Point(30, 300);
+		h.Ticks(4);
+		Assert.True(h.Model.SidebarRevealed);
+		Assert.Equal(new Rect(0, 0, 260, 780), h.Model.Region);
+		// Over the full rail it stays; well past it, it goes.
+		h.Cursor = new Point(250, 300);
+		h.Ticks(2);
+		Assert.True(h.Model.SidebarRevealed);
+		h.Cursor = new Point(600, 300);
+		h.Ticks(2);
+		Assert.False(h.Model.SidebarRevealed);
+		// Expanded again, the rail is a full column and nothing slides out.
+		h.Model.SetCollapsedWidth(null);
+		Assert.Equal(260, h.Model.PinnedWidth);
+		h.Cursor = new Point(2, 300);
+		h.Ticks(4);
+		Assert.False(h.Model.SidebarRevealed);
+	}
+
+	[Fact]
 	public void A_split_drop_zone_shows_on_the_surface_until_it_is_cleared()
 	{
 		var h = new Harness();

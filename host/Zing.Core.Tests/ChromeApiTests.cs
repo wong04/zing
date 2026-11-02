@@ -248,6 +248,20 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
+	public void A_collapsed_rail_takes_its_icon_column_on_either_side()
+	{
+		_settings.Set("showFavouritesBar", false);
+		_settings.Set("tabBarPosition", "left");
+		_settings.Set("verticalTabsCollapsed", true);
+		Assert.Equal(new ChromeInsets(40, Layout.RailCollapsedWidth, 0), _api.Insets());
+		Assert.Equal(Layout.RailCollapsedWidth, _api.Shell.PinnedWidth);
+		_settings.Set("tabBarPosition", "right");
+		Assert.Equal(new ChromeInsets(40, Layout.SidebarColumnWidth, Layout.RailCollapsedWidth), _api.Insets());
+		// On the right the app sidebar is its own column again, at full width.
+		Assert.Equal(Layout.SidebarColumnWidth, _api.Shell.PinnedWidth);
+	}
+
+	[Fact]
 	public void The_sidebar_that_slides_out_is_as_wide_as_the_rail_when_tabs_are_on_the_left()
 	{
 		_settings.Set("tabBarPosition", "top");

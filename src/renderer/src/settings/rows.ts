@@ -200,11 +200,16 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 		{
 			type: 'setting',
 			key: 'verticalTabWidth',
+			// The width of the full rail: collapsed, it is a column of icons.
 			title: 'Tab sidebar width',
 			detail: 'You can also drag the sidebar’s edge.',
 			visible: (s) => s.tabBarPosition !== 'top',
 			control: { kind: 'slider', min: VERTICAL_TABS.minWidth, max: VERTICAL_TABS.maxWidth, step: 4, unit: 'px' },
 		},
+		toggle('verticalTabsCollapsed', 'Collapse the tab sidebar to icons', {
+			detail: (s) => (s.tabBarPosition === 'left' ? 'Point at the icons to slide the full sidebar out.' : undefined),
+			visible: (s) => s.tabBarPosition !== 'top',
+		}),
 		toggle('autoCloseEnabled', 'Close inactive tabs', { detail: "Pinned tabs and the one you're on are always kept." }),
 		{
 			type: 'setting',

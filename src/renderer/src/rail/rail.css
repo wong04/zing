@@ -409,3 +409,52 @@
 	pointer-events: none;
 	animation: rail-in 0.12s ease-out;
 }
+
+/* Collapsed: a column of icons. Titles, closes and headings go; every row is its icon, and its tooltip says the rest. */
+.rail.collapsed {
+	padding: 0 6px 8px;
+}
+
+.rail.collapsed .rail-head {
+	justify-content: center;
+}
+
+.rail.collapsed .rail-drag {
+	display: none;
+}
+
+.rail.collapsed .rail-row-title,
+.rail.collapsed .rail-close,
+.rail.collapsed .rail-group-count,
+.rail.collapsed .rail-chevron,
+.rail.collapsed .rail-section-head,
+.rail.collapsed .rail-hint {
+	display: none;
+}
+
+.rail.collapsed .rail-row {
+	justify-content: center;
+	padding: 0 !important;
+}
+
+.rail.collapsed .rail-favourites {
+	grid-template-columns: 1fr;
+	gap: 4px;
+}
+
+.rail.collapsed .rail-tile {
+	height: 36px;
+	border-radius: 10px;
+}
+
+.rail.collapsed .rail-split {
+	padding: 2px;
+}
+
+/* Hundreds of tabs stay smooth: rows scrolled out of view skip layout and painting, and keep their size for scrolling and drags. */
+.rail-tabs > .rail-row,
+.rail-tabs > .rail-group,
+.rail-tabs > .rail-split {
+	content-visibility: auto;
+	contain-intrinsic-size: auto 32px;
+}

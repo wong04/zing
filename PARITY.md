@@ -132,9 +132,9 @@ Also dropped:
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
 | T1 | Tab bar position setting: top / left / right | new | - | [#62](https://github.com/wong04/zing/issues/62) | Done |
-| T2 | Vertical tab strip | new | - | [#63](https://github.com/wong04/zing/issues/63) | Partial |
+| T2 | Vertical tab strip | new | - | [#63](https://github.com/wong04/zing/issues/63) | Done |
 | T3 | Fold app sidebar into a left tab rail | new | App/Sidebar.swift | [#64](https://github.com/wong04/zing/issues/64) | Done |
-| T4 | Virtualized tab list | new | - | [#65](https://github.com/wong04/zing/issues/65) | Open |
+| T4 | Virtualized tab list | new | - | [#65](https://github.com/wong04/zing/issues/65) | Done |
 | T5 | Split view | new | - | [#66](https://github.com/wong04/zing/issues/66) | Done |
 | T6 | Favourite tiles in the tab rail (saved tabs) | new | - | - | Done |
 | T7 | Pinned items in folders (saved tabs) | new | - | - | Done |

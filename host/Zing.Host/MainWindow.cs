@@ -62,6 +62,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_window.Activated += () => _app.Focused(this);
 		_window.DefaultFocus = () => _shown?.View ?? _chrome?.View;
 		TestHooks.Watch(_scope, () => Faults.Enqueue(_dispatcher, _window.Close, "test close"));
+		TestHooks.Register(_window, () => Api);
 	}
 
 	public Microsoft.UI.Windowing.AppWindow AppWindow => _window.AppWindow;

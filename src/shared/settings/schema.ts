@@ -116,6 +116,8 @@ export const SETTINGS_SCHEMA = {
 	tabBarPosition: oneOf(TAB_BAR_POSITIONS, 'left'),
 	/** Zing: the side rail's width in DIPs; dragging its edge sets it (clampRailWidth). */
 	verticalTabWidth: integerIn(VERTICAL_TABS.minWidth, VERTICAL_TABS.maxWidth, VERTICAL_TABS.defaultWidth),
+	/** Zing: the side rail as a column of icons; on the left the full rail slides out while the pointer is over it. */
+	verticalTabsCollapsed: flag(false),
 	/** Zing: discard idle tabs' renderers to save memory; the record and URL stay. */
 	sleepingTabs: { default: DEFAULT_SLEEPING_TABS, accepts: isSleepSettings },
 } as const

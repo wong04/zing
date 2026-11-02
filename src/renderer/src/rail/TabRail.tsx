@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { TabsState, TabView } from '@shared/ipc'
-import { clampRailWidth } from '@shared/layout/chrome'
+import { clampRailWidth, VERTICAL_TABS } from '@shared/layout/chrome'
 import { favourites, find, isFolder, pinned as pinnedItems } from '@shared/library/library'
 import { edgeDropAt, type DropPane, type EdgeDrop } from '@shared/layout/splitDrop'
 import { buildSlots, snapshotOf } from '@shared/tabs/slots'
@@ -83,17 +83,27 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 	const saved: SavedFrame = { tabsByItem, activeId, drag: itemDrag.handlersFor, endsDrag: itemDrag.consumeClick }
 	const sidebarPinned = handle?.settings.sidebarPinned ?? true
 	const hideLabel = sidebarPinned ? 'Hide sidebar (Ctrl+S)' : 'Keep sidebar open (Ctrl+S)'
+	// Collapsed, the rail in the chrome is a column of icons; the one that slides out over the page is always full.
+	const collapsed = variant === 'pinned' && (handle?.settings.verticalTabsCollapsed ?? false)
+	const collapseLabel = collapsed ? 'Expand the tab sidebar' : 'Collapse the tab sidebar to icons'
 
 	return (
-		<nav className={`rail ${variant} ${side}`} aria-label="Tab rail" style={{ width: width.value } as CSSProperties}>
+		<nav className={`rail ${variant} ${side}${collapsed ? ' collapsed' : ''}`} aria-label="Tab rail" style={{ width: collapsed ? VERTICAL_TABS.collapsedWidth : width.value } as CSSProperties}>
 			<div className="rail-head">
 				<div className="rail-drag" />
-				{side === 'left' ? <AppButtons /> : null}
-				<button type="button" className="rail-icon-button" aria-label={hideLabel} title={hideLabel} aria-pressed={sidebarPinned} onClick={() => handle?.set('sidebarPinned', !sidebarPinned)}>
+				{side === 'left' && !collapsed ? <AppButtons /> : null}
+				{variant === 'pinned' ? (
+					<button type="button" className="rail-icon-button rail-collapse" aria-label={collapseLabel} title={collapseLabel} aria-pressed={collapsed} onClick={() => handle?.set('verticalTabsCollapsed', !collapsed)}>
+						<CollapseIcon collapsed={collapsed} side={side} />
+					</button>
+				) : null}
+				{collapsed ? null : (
+					<button type="button" className="rail-icon-button" aria-label={hideLabel} title={hideLabel} aria-pressed={sidebarPinned} onClick={() => handle?.set('sidebarPinned', !sidebarPinned)}>
 					<SidebarIcon size={15} />
 				</button>
+				)}
 			</div>
-			{side === 'left' ? <RecentTools /> : null}
+			{side === 'left' && !collapsed ? <RecentTools /> : null}
 			{library ? <FavouriteTiles nodes={favourites(library)} frame={saved} /> : null}
 			{library ? <PinnedSection nodes={pinnedItems(library)} frame={saved} /> : null}
 			<button
@@ -135,7 +145,7 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 					return <StackGroup key={slot.key} name={slot.name} tabs={members} activeId={activeId} frame={frame} />
 				})}
 			</div>
-			{variant === 'pinned' ? <ResizeEdge side={side} width={width} /> : null}
+			{variant === 'pinned' && !collapsed ? <ResizeEdge side={side} width={width} /> : null}
 		</nav>
 	)
 }
@@ -163,6 +173,16 @@ async function dropItem(id: string, target: DropTarget, tabsByItem: ReadonlyMap<
 	if (!node || isFolder(node)) return
 	if (!tabsByItem.has(id)) await zing.openSavedTab(id)
 	await zing.applyLibrary({ type: 'remove', ids: [id] })
+}
+
+/** A chevron pointing the way the rail will go: in, to collapse it; out, to expand it. */
+function CollapseIcon({ collapsed, side }: { collapsed: boolean; side: RailSide }) {
+	const pointsLeft = collapsed === (side === 'right')
+	return (
+		<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+			<path d={pointsLeft ? 'M8.5 3.5 5 7l3.5 3.5' : 'M5.5 3.5 9 7l-3.5 3.5'} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+		</svg>
+	)
 }
 
 /** The app sidebar's own buttons, folded into the rail's head when tabs are on the left (T3). */

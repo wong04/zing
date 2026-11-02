@@ -108,7 +108,28 @@ public sealed class ShellModel : IDisposable
 	public IReadOnlyList<string> RecentFeatures => _recents;
 
 	/// <summary>The column a pinned sidebar takes from the chrome; zero when it is hidden.</summary>
-	public int PinnedWidth => _pinned ? SidebarWidth : 0;
+	public int PinnedWidth => !_pinned ? 0 : _collapsedWidth ?? SidebarWidth;
+
+	private int? _collapsedWidth;
+
+	/// <summary>
+	/// The tab rail collapsed to icons (tabs on the left): it keeps that narrow column, and the full rail slides out over
+	/// the page while the pointer is over the column, as a hidden sidebar does from the window's edge. Null when expanded.
+	/// </summary>
+	public void SetCollapsedWidth(int? width)
+	{
+		if (width == _collapsedWidth) return;
+		_collapsedWidth = width;
+		ApplyReveal();
+		RelayoutRequested?.Invoke();
+	}
+
+	/// <summary>The sidebar slides out when it is hidden, or collapsed to icons; reaching for it means the edge, or the icon column.</summary>
+	private void ApplyReveal()
+	{
+		_reveal.SetEdge(_pinned && _collapsedWidth is { } column ? column : EdgeReveal.DefaultEdge);
+		_reveal.SetEnabled(!_pinned || _collapsedWidth is not null);
+	}
 
 	/// <summary>The left sidebar's width: the app sidebar's column, or the tab rail's when tabs are on the left (the app sidebar folds into it).</summary>
 	public int SidebarWidth { get; private set; } = Layout.SidebarColumnWidth;
@@ -181,7 +202,7 @@ public sealed class ShellModel : IDisposable
 	{
 		if (_pinned == pinned) return;
 		_pinned = pinned;
-		_reveal.SetEnabled(!pinned);
+		ApplyReveal();
 		// The page view's left edge moves with the sidebar.
 		RelayoutRequested?.Invoke();
 		// Unpinning from Settings peeks, to show where the sidebar went. The toggle means "put it away":
