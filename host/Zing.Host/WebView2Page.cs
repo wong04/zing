@@ -313,8 +313,12 @@ public sealed class WebView2Page : IPage
 		_core.WebResourceRequested += OnWebResourceRequested;
 		FollowTheme();
 		Wire(_core);
-		// A click into a split pane gives it the keyboard; its tab becomes the active one.
-		_view.Controller.GotFocus += (_, _) => _events.Focused();
+		// A click into a split pane gives it the keyboard; its tab becomes the active one. The event can arrive late (from
+		// a focus moved before the split was made), so it counts only while this page really has the keyboard.
+		_view.Controller.GotFocus += (_, _) =>
+		{
+			if (_view.HasKeyboard) _events.Focused();
+		};
 		foreach (var action in _queued) action(_core);
 		_queued.Clear();
 	}

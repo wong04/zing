@@ -162,6 +162,17 @@ public sealed class HostedView
 
 	internal bool IsOverlayWindow(nint hwnd) => _overlay && hwnd == _hwnd;
 
+	/// <summary>Whether the keyboard is in this view right now (its window, or the engine's windows inside it).</summary>
+	public bool HasKeyboard
+	{
+		get
+		{
+			if (IsClosed) return false;
+			var focus = Native.GetFocus();
+			return focus != 0 && (focus == _hwnd || Native.IsChild(_hwnd, focus));
+		}
+	}
+
 	public void Close()
 	{
 		if (IsClosed) return;

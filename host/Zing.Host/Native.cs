@@ -162,6 +162,10 @@ internal static class Native
 	public static extern nint GetFocus();
 
 	[DllImport("user32.dll")]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool IsChild(nint parent, nint hwnd);
+
+	[DllImport("user32.dll")]
 	public static extern nint GetWindow(nint hwnd, uint command);
 
 	[DllImport("user32.dll")]
