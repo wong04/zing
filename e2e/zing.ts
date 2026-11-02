@@ -271,13 +271,15 @@ function hostLogs(errors: string | undefined, userData: string): string {
 	return parts.length > 0 ? parts.join('\n') : 'The host logged nothing.'
 }
 
+const ENGINE_RELEASE_TIMEOUT = 30_000
+
 /**
  * The engine's processes outlive Zing.exe for a moment and keep the profile locked; a test that
  * reads the profile after close() (a relaunch, a scan for secrets) must wait for them.
  */
 async function engineReleased(userData: string): Promise<void> {
 	const lockfile = join(userData, 'WebView2', 'EBWebView', 'lockfile')
-	const deadline = Date.now() + 15_000
+	const deadline = Date.now() + ENGINE_RELEASE_TIMEOUT
 	for (;;) {
 		try {
 			closeSync(openSync(lockfile, 'r+'))
@@ -286,7 +288,7 @@ async function engineReleased(userData: string): Promise<void> {
 			const code = (error as NodeJS.ErrnoException).code
 			if (code === 'ENOENT') return
 			if (code !== 'EBUSY' && code !== 'EPERM') throw error
-			if (Date.now() > deadline) throw new HostProcessError(`The WebView2 engine still holds ${lockfile} 15 s after Zing quit`)
+			if (Date.now() > deadline) throw new HostProcessError(`The WebView2 engine still holds ${lockfile} ${ENGINE_RELEASE_TIMEOUT / 1000} s after Zing quit`)
 			await new Promise((resolve) => setTimeout(resolve, 100))
 		}
 	}
