@@ -174,6 +174,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_shown = shown;
 		_split = null;
 		_panes = [];
+		_window.ForgetFocusedPage(IsPageView, shown.View);
 		PlaceShown();
 		shown.Visible = true;
 		// Over any page that is still drawn while its picture is taken (Hide).
@@ -184,6 +185,9 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	/// <summary>Longest a leaving page stays drawn under the next one for its overview picture (TabOverview's capture timeout).</summary>
 	private static readonly TimeSpan LeavingPictureWait = TimeSpan.FromMilliseconds(1500);
 
+	/// <summary>A tab's page, as opposed to the chrome or an overlay.</summary>
+	private bool IsPageView(HostedView view) => view != _chrome?.View && !view.IsOverlay;
+
 	/// <summary>A split's pages side by side; the tab service hides whatever is no longer shown.</summary>
 	public void ShowSplit(IReadOnlyList<IPage> pages, SplitLayout layout, IPage focused)
 	{
@@ -193,6 +197,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_shown = (WebView2Page)focused;
 		_split = layout;
 		_panes = panes;
+		// A pane that had the keyboard before another became active mustn't take it back (and with it the active tab).
+		_window.ForgetFocusedPage(IsPageView, _shown.View);
 		PlaceShown();
 		foreach (var pane in panes)
 		{

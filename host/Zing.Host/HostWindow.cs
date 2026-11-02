@@ -217,6 +217,15 @@ public sealed class HostWindow
 	/// on activation and when the focused view closes (Ctrl+W); like a dialog handing focus to a control, it
 	/// passes it on to the view that had it, else the default one.
 	/// </summary>
+	/// <summary>
+	/// The page that last had the keyboard isn't the one in front any more (another tab, or another pane of a split, became
+	/// active): when the window gets the keyboard back, it goes to <see cref="DefaultFocus"/> rather than to that page.
+	/// </summary>
+	public void ForgetFocusedPage(Func<HostedView, bool> isPage, HostedView? front)
+	{
+		if (_focused is { } last && last != front && isPage(last)) _focused = null;
+	}
+
 	private void PassFocus()
 	{
 		if (IsClosed || Native.GetFocus() != Hwnd) return;
