@@ -49,6 +49,15 @@ export interface TabsState extends TabList {
 	readonly splits?: readonly SplitView[]
 	/** The active tab's split on screen: where its panes are, in the window's content, in DIPs. */
 	readonly shownSplit?: ShownSplit
+	/** Where pages go in the window's content, in DIPs: a tab dragged there can split the page. */
+	readonly pageArea?: SplitRect
+}
+
+export interface SplitRect {
+	readonly x: number
+	readonly y: number
+	readonly width: number
+	readonly height: number
 }
 
 export interface SplitView {
@@ -61,7 +70,7 @@ export interface SplitView {
 
 export interface ShownSplit {
 	readonly id: string
-	readonly rects: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[]
+	readonly rects: readonly SplitRect[]
 }
 
 /** What the stack dropdown (drawn in the overlay view) shows. */
@@ -188,6 +197,8 @@ export interface InvokeContract {
 	/** A tab dropped on a page's edge: beside that page, on that side. */
 	'split:drop': { args: [target: TabId, dropped: TabId, edge: 'left' | 'right' | 'top' | 'bottom']; result: void }
 	'split:remove': { args: [id: TabId]; result: void }
+	/** Where a tab dragged over a page would land, highlighted by the surface view; null once the drag leaves or ends. */
+	'split:drop-zone': { args: [zone: SplitRect | null]; result: void }
 	/** New pane sizes (a divider dragged); `length` is the page area's along the split. */
 	'split:ratios': { args: [splitId: string, ratios: number[], length: number]; result: void }
 	/** Saves a tab into a folder of Favourites or Pinned before the child now at `at`, tied to it; a saved tab's item moves there. */
@@ -297,6 +308,7 @@ export interface ZingApi {
 	splitWith(id: TabId, other: TabId): Promise<void>
 	splitDrop(target: TabId, dropped: TabId, edge: 'left' | 'right' | 'top' | 'bottom'): Promise<void>
 	removeFromSplit(id: TabId): Promise<void>
+	setSplitDropZone(zone: SplitRect | null): Promise<void>
 	setSplitRatios(splitId: string, ratios: number[], length: number): Promise<void>
 	saveTab(id: TabId, folderId: string, at: number): Promise<void>
 	moveStack(key: string, index: number): Promise<void>

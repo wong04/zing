@@ -34,11 +34,21 @@ interface Pickup {
  * Vertical drag-to-reorder for the rail's rows (the strip's useSlotDrag works along X). The held row
  * follows the pointer; the others slide aside to show where it would land; release reports the place.
  */
+export interface Pointer {
+	readonly x: number
+	readonly y: number
+}
+
 /**
  * @param onDrop the held row's key and its new place among the rows, or where it landed outside them
- * (a folder of Favourites or Pinned) when it was dropped there
+ * (a folder of Favourites or Pinned) when it was dropped there, and where the pointer was let go
+ * @param onMove where the pointer is while a row is held, and undefined once the drag ends either way
  */
-export function useRowDrag(keys: readonly string[], onDrop: (key: string, to: number, outside: DropTarget | undefined) => void) {
+export function useRowDrag(
+	keys: readonly string[],
+	onDrop: (key: string, to: number, outside: DropTarget | undefined, at: Pointer) => void,
+	onMove: (key: string, at: Pointer | undefined) => void = () => undefined,
+) {
 	const elements = useRef(new Map<string, HTMLElement>())
 	const pickup = useRef<Pickup | undefined>(undefined)
 	const justDropped = useRef(false)
@@ -81,6 +91,7 @@ export function useRowDrag(keys: readonly string[], onDrop: (key: string, to: nu
 			held.dragging = true
 			setDrag({ key: held.key, dy, to: targetOf(held, dy), room: (held.frames.get(held.key)?.height ?? 0) + 2 })
 			markDropTarget(e.clientX, e.clientY, e.currentTarget)
+			onMove(held.key, { x: e.clientX, y: e.clientY })
 		},
 		onPointerUp: (e: PointerEvent<HTMLElement>): void => {
 			const held = pickup.current
@@ -90,10 +101,12 @@ export function useRowDrag(keys: readonly string[], onDrop: (key: string, to: nu
 			setDrag(undefined)
 			const landed = dropTargetAt(e.clientX, e.clientY, e.currentTarget)
 			clearDropMark()
-			onDrop(held.key, targetOf(held, e.clientY - held.y), landed?.kind === 'folder' ? landed : undefined)
+			onMove(held.key, undefined)
+			onDrop(held.key, targetOf(held, e.clientY - held.y), landed?.kind === 'folder' ? landed : undefined, { x: e.clientX, y: e.clientY })
 		},
 		onPointerCancel: (): void => {
 			clearDropMark()
+			if (pickup.current) onMove(pickup.current.key, undefined)
 			pickup.current = undefined
 			setDrag(undefined)
 		},

@@ -194,6 +194,10 @@
 			"args": 3
 		},
 		{
+			"channel": "split:drop-zone",
+			"args": 1
+		},
+		{
 			"channel": "split:ratios",
 			"args": 3
 		},

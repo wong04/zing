@@ -183,6 +183,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("split:with", args => Do(() => Tabs.SplitWith(Text(args, 0), Text(args, 1))));
 		bridge.Register("split:drop", args => Do(() => Tabs.SplitDrop(Text(args, 0), Text(args, 1), Text(args, 2))));
 		bridge.Register("split:remove", args => Do(() => Tabs.Unsplit(Text(args, 0))));
+		bridge.Register("split:drop-zone", args => Do(() => Shell.SetDropZone(Arg(args, 0) is { ValueKind: System.Text.Json.JsonValueKind.Object } zone ? new Rect(zone.GetProperty("x").GetDouble(), zone.GetProperty("y").GetDouble(), zone.GetProperty("width").GetDouble(), zone.GetProperty("height").GetDouble()) : null)));
 		bridge.Register("split:ratios", args => Do(() => Tabs.SetSplitRatios(Text(args, 0), [.. Arg(args, 1).EnumerateArray().Select(r => r.GetDouble())], Arg(args, 2).GetDouble())));
 		bridge.Register("tabs:save", args => Do(() => Saved.Save(Text(args, 0), Text(args, 1), Int(args, 2))));
 		bridge.Register("tabs:close-others", args => Do(() => Tabs.CloseOthers(Text(args, 0))));
@@ -247,8 +248,8 @@ public sealed class ChromeApi : IDisposable
 	public void LayoutChanged()
 	{
 		Shell.LayoutChanged();
-		// The dividers the chrome draws follow the panes.
-		if (Tabs.ActiveId is { } active && Tabs.Splits.Of(active) is not null) _host.Push("tabs:state", State());
+		// The dividers and the drop zones the chrome works out follow the page area.
+		_host.Push("tabs:state", State());
 	}
 
 	private Rect PageArea()
@@ -265,6 +266,7 @@ public sealed class ChromeApi : IDisposable
 		OpenStack = Stacks?.OpenKey,
 		Splits = Tabs.Splits.All,
 		ShownSplit = Tabs.ActiveId is { } active && Tabs.Splits.Of(active) is { } split ? new ShownSplit(split.Id, Split.PaneRects(PageArea(), split)) : null,
+		PageArea = PageArea(),
 	};
 
 	/// <summary>Where the chrome ends and the page begins. With tabs on the left the app sidebar folds into the rail.</summary>

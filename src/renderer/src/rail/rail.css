@@ -398,3 +398,14 @@
 .split-divider:hover {
 	background: var(--accent);
 }
+
+/* Where a tab dragged over a page would go in a split, drawn by the surface view over the page. */
+.split-drop-zone {
+	position: fixed;
+	box-sizing: border-box;
+	border: 2px solid var(--accent);
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--accent) 18%, transparent);
+	pointer-events: none;
+	animation: rail-in 0.12s ease-out;
+}

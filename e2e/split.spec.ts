@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, test, layers } from './zing'
+import { launchZing, test, layers, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -111,4 +111,37 @@ test('a pane on screen never sleeps, though it is not the active tab', async () 
 	expect((await tabsOf(zing.chrome)).tabs.find((t) => t.id === a)?.sleeping).not.toBe(true)
 	expect((await shownPages(zing.chrome)).length).toBe(2)
 	await zing.close()
+})
+
+test('dragging a tab onto the page’s right edge highlights that half, and letting go splits it there', async () => {
+	const zing = await launchZing()
+	const dragged = await openPage(zing.chrome, 'Dragged')
+	const page = await openPage(zing.chrome, 'Page')
+	const area = (await tabsOf(zing.chrome)).pageArea!
+	const row = (await zing.chrome.locator('.rail-tabs [role="tab"]').filter({ hasText: 'Dragged' }).boundingBox())!
+	await zing.chrome.mouse.move(row.x + 40, row.y + row.height / 2)
+	await zing.chrome.mouse.down()
+	await zing.chrome.mouse.move(area.x + area.width - 20, area.y + area.height / 2, { steps: 12 })
+	const surface = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	await expect(surface.locator('.split-drop-zone')).toBeVisible()
+	await zing.chrome.mouse.up()
+	await expect.poll(async () => (await tabsOf(zing.chrome)).splits?.[0]?.tabIds).toEqual([page, dragged])
+	await expect(surface.locator('.split-drop-zone')).toHaveCount(0)
+	await expect.poll(async () => (await shownPages(zing.chrome)).map((l) => l.url)).toEqual([`${base}/Page`, `${base}/Dragged`])
+	await zing.close()
+})
+
+test('with Reopen tabs on, a split comes back after a relaunch', async () => {
+	const first = await launchZing()
+	await first.chrome.evaluate(() => window.zing.setSetting('restoreTabs', true))
+	const a = await openPage(first.chrome, 'Left')
+	const b = await openPage(first.chrome, 'Right')
+	await first.chrome.evaluate(([x, y]) => window.zing.splitWith(x!, y!), [a, b])
+	await expect.poll(async () => (await tabsOf(first.chrome)).splits?.length).toBe(1)
+	await first.close()
+
+	const second = await launchZing({ userDataDir: first.userDataDir })
+	await expect.poll(async () => (await tabsOf(second.chrome)).splits?.[0]?.tabIds.length).toBe(2)
+	await expect.poll(async () => (await shownPages(second.chrome)).map((l) => l.url)).toEqual([`${base}/Left`, `${base}/Right`])
+	await second.close()
 })

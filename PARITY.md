@@ -135,7 +135,7 @@ Also dropped:
 | T2 | Vertical tab strip | new | - | [#63](https://github.com/wong04/zing/issues/63) | Partial |
 | T3 | Fold app sidebar into a left tab rail | new | App/Sidebar.swift | [#64](https://github.com/wong04/zing/issues/64) | Done |
 | T4 | Virtualized tab list | new | - | [#65](https://github.com/wong04/zing/issues/65) | Open |
-| T5 | Split view | new | - | [#66](https://github.com/wong04/zing/issues/66) | Open |
+| T5 | Split view | new | - | [#66](https://github.com/wong04/zing/issues/66) | Done |
 | T6 | Favourite tiles in the tab rail (saved tabs) | new | - | - | Done |
 | T7 | Pinned items in folders (saved tabs) | new | - | - | Done |
 

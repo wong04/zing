@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { TabsState, TabView } from '@shared/ipc'
 import { clampRailWidth } from '@shared/layout/chrome'
 import { favourites, find, isFolder, pinned as pinnedItems } from '@shared/library/library'
+import { edgeDropAt, type DropPane, type EdgeDrop } from '@shared/layout/splitDrop'
 import { buildSlots, snapshotOf } from '@shared/tabs/slots'
 import { zing } from '../api'
 import { PlusIcon } from '../chrome/icons'
@@ -45,9 +46,22 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 	const library = useLibraryState()?.library
 	const splitOf = useMemo(() => new Map((state?.splits ?? []).flatMap((s) => s.tabIds.map((id) => [id, s] as const))), [state?.splits])
 	const pinnedCount = tabs.filter((t) => t.pinned).length
+	const panes = dropPanes(state)
+	const zoneKey = useRef('')
+	// A row held over a page's edge: where it would split, highlighted over the page by the surface view.
+	const edgeDrop = (key: string, at: { x: number; y: number } | undefined): EdgeDrop | undefined => {
+		const slot = loose.find((s) => s.key === key)
+		return at && slot?.kind === 'tab' ? edgeDropAt(at.x, at.y, panes, slot.id) : undefined
+	}
+	const showZone = (drop: EdgeDrop | undefined): void => {
+		const next = drop ? `${drop.tabId}:${drop.edge}` : ''
+		if (next === zoneKey.current) return
+		zoneKey.current = next
+		void zing.setSplitDropZone(drop?.zone ?? null)
+	}
 	const rowDrag = useRowDrag(
 		loose.map((s) => s.key),
-		(key, to, outside) => {
+		(key, to, outside, at) => {
 			const slot = loose.find((s) => s.key === key)
 			if (!slot) return
 			// Out of the list into Favourites or Pinned: the tab becomes a saved tab there.
@@ -55,8 +69,15 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 				if (slot.kind === 'tab') void zing.saveTab(slot.id, outside.folder, outside.at)
 				return
 			}
+			// Onto a page's edge: a split, with the tab on that side.
+			const drop = edgeDrop(key, at)
+			if (drop && slot.kind === 'tab') {
+				void zing.splitDrop(drop.tabId, slot.id, drop.edge)
+				return
+			}
 			void commitMove(slot, to, pinnedCount, dropdowns)
 		},
+		(key, at) => showZone(edgeDrop(key, at)),
 	)
 	const itemDrag = useItemDrag((id, target) => void dropItem(id, target, tabsByItem))
 	const saved: SavedFrame = { tabsByItem, activeId, drag: itemDrag.handlersFor, endsDrag: itemDrag.consumeClick }
@@ -117,6 +138,15 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 			{variant === 'pinned' ? <ResizeEdge side={side} width={width} /> : null}
 		</nav>
 	)
+}
+
+/** The pages on screen a tab can be dropped beside: the split's panes, or the page in front. */
+function dropPanes(state: TabsState | undefined): DropPane[] {
+	if (!state?.activeId) return []
+	const shown = state.shownSplit
+	const split = state.splits?.find((s) => s.id === shown?.id)
+	if (shown && split) return split.tabIds.flatMap((tabId, i) => (shown.rects[i] ? [{ tabId, rect: shown.rects[i], panes: split.tabIds.length }] : []))
+	return state.pageArea ? [{ tabId: state.activeId, rect: state.pageArea, panes: 1 }] : []
 }
 
 /**

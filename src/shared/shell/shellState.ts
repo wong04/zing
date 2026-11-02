@@ -46,6 +46,8 @@ export interface ShellState {
 	readonly gated: boolean
 	readonly origin: Point
 	readonly appVersion: string
+	/** Where a tab dragged over a page would land in a split, while the drag lasts. */
+	readonly dropZone?: Rect | null
 }
 
 export interface ToolPanelView {

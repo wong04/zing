@@ -129,6 +129,34 @@ public sealed class SplitTests
 	}
 
 	[Fact]
+	public void A_split_is_saved_with_the_session_and_comes_back_with_its_panes_and_sizes()
+	{
+		var a = _tabs.Open("https://a.test/");
+		var b = _tabs.Create("https://b.test/");
+		var c = _tabs.Create("https://c.test/");
+		_tabs.SplitDrop(a.Id, b.Id, "bottom");
+		var split = _tabs.Splits.Of(a.Id)!;
+		_tabs.SetSplitRatios(split.Id, [0.3, 0.7], 1000);
+		var saved = Session.Decode(Session.Encode(Session.ToSessionTabs(_tabs.Records, _tabs.ActiveId, _tabs.Splits.All)));
+		Assert.Null(saved.Single(t => t.Url == c.Url).Split);
+
+		var restored = new TabService(new TabStore(Deterministic.Clock(), Deterministic.Ids()), new FakePageHost(), "about:blank", () => { }, (_, _) => { });
+		restored.Restore(saved);
+		var back = Assert.Single(restored.Splits.All);
+		Assert.Equal(["https://a.test/", "https://b.test/"], back.TabIds.Select(id => restored.Get(id).Url));
+		Assert.Equal("column", back.Orientation);
+		Assert.Equal([0.3, 0.7], back.Ratios.Select(r => Math.Round(r, 9)));
+	}
+
+	[Fact]
+	public void A_saved_split_missing_a_pane_comes_back_as_plain_tabs()
+	{
+		var lone = new SessionSplit("s", "row", 0, 0.5);
+		_tabs.Restore([new SessionTab("https://a.test/", "A", false, true, Split: lone), new SessionTab("https://b.test/", "B", false, false)]);
+		Assert.Empty(_tabs.Splits.All);
+	}
+
+	[Fact]
 	public void A_drop_on_a_page_edge_splits_with_the_dropped_tab_on_that_side()
 	{
 		var a = _tabs.Open("https://a.test/");

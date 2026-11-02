@@ -201,6 +201,7 @@ public sealed class TabService
 	{
 		var records = tabs.Select(t => _store.AddRestored(t.Url, string.IsNullOrEmpty(t.Title) ? TabStore.NewTabTitle : t.Title, t.Pinned, t.ItemId)).ToList();
 		if (records.Count == 0) return;
+		foreach (var split in Session.SplitsOf(tabs, [.. records.Select(r => r.Id)])) Splits.Put(split);
 		var front = tabs.ToList().FindIndex(t => t.Active);
 		Activate(records[Math.Max(0, front)].Id);
 	}

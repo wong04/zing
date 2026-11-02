@@ -23,6 +23,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		splitWith: (id, other) => invoke('split:with', id, other),
 		splitDrop: (target, dropped, edge) => invoke('split:drop', target, dropped, edge),
 		removeFromSplit: (id) => invoke('split:remove', id),
+		setSplitDropZone: (zone) => invoke('split:drop-zone', zone),
 		setSplitRatios: (splitId, ratios, length) => invoke('split:ratios', splitId, ratios, length),
 		saveTab: (id, folderId, at) => invoke('tabs:save', id, folderId, at),
 		moveStack: (key, index) => invoke('tabs:move-stack', key, index),

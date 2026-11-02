@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type MouseEvent, type PointerEvent } from 'react'
+import { useState, type CSSProperties, type MouseEvent } from 'react'
 import type { TabView } from '@shared/ipc'
 import { zing } from '../api'
 import { tabTitle, tabTooltip } from '../chrome/display'
@@ -23,9 +23,9 @@ function rowStyle(frame: RowFrame): CSSProperties | undefined {
 
 export function TabRow({ tab, active, frame, nested = false }: { tab: TabView; active: boolean; frame?: RowFrame; nested?: boolean }) {
 	const activate = (): void => void zing.activateTab(tab.id)
-	const onPointerDown = (e: PointerEvent<HTMLDivElement>): void => {
-		frame?.handlers.onPointerDown(e)
-		if (e.button === 0) activate()
+	// A click activates the tab; a press that turns into a drag does not, so a tab dragged onto the page can split it.
+	const onClick = (): void => {
+		if (!frame?.endsDrag()) activate()
 	}
 	const onAuxClick = (e: MouseEvent): void => {
 		if (e.button === MIDDLE_BUTTON) void zing.closeTab(tab.id)
@@ -51,7 +51,8 @@ export function TabRow({ tab, active, frame, nested = false }: { tab: TabView; a
 			data-page-state={tab.pageState}
 			className={['rail-row', 'rail-tab', active && 'active', nested && 'nested', frame?.dragging && 'dragging'].filter(Boolean).join(' ')}
 			style={frame ? rowStyle(frame) : undefined}
-			onPointerDown={onPointerDown}
+			onPointerDown={frame?.handlers.onPointerDown}
+			onClick={onClick}
 			onPointerMove={frame?.handlers.onPointerMove}
 			onPointerUp={frame?.handlers.onPointerUp}
 			onPointerCancel={frame?.handlers.onPointerCancel}
