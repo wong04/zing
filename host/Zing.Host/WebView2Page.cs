@@ -317,6 +317,7 @@ public sealed class WebView2Page : IPage
 		// a focus moved before the split was made), so it counts only while this page really has the keyboard.
 		_view.Controller.GotFocus += (_, _) =>
 		{
+			Faults.Warning("PROBE gotfocus " + Url + " keyboard=" + _view.HasKeyboard + " " + Environment.StackTrace, "x");
 			if (_view.HasKeyboard) _events.Focused();
 		};
 		foreach (var action in _queued) action(_core);
