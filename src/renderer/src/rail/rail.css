@@ -305,6 +305,46 @@
 	box-shadow: 0 -3px 8px rgb(0 0 0 / 0.2);
 }
 
+/* On the right the page is on the left, so the cards mirror the left rail: the active card reaches the page's left edge. */
+.rail.pinned.right .rail-tabs {
+	margin-right: 0;
+	margin-left: -8px;
+	padding-right: 0;
+	padding-left: 8px;
+}
+
+.rail.pinned.right .rail-tab.active {
+	margin-right: 0;
+	margin-left: -8px;
+	border-radius: 0 10px 10px 0;
+}
+
+/* Floating, the rows keep their overlap; the active card stays inside the rail, so it is rounded on every corner. */
+.rail.floating .rail-tabs {
+	margin-right: 0;
+}
+
+.rail.floating .rail-tab.active {
+	position: relative;
+	z-index: 1;
+	height: 36px;
+	margin-block: -2px -4px;
+	align-items: center;
+	padding-top: 0;
+	border-radius: 8px;
+	border-top: 0;
+	background: var(--page);
+	color: var(--page-ink);
+	font-weight: 600;
+	box-shadow: 0 -3px 8px rgb(0 0 0 / 0.2);
+}
+
+/* The floating rail's surface is translucent, so text on it is --text rather than --window-ink. */
+.rail.floating .rail-group-head,
+.rail.floating .rail-hint {
+	color: var(--text);
+}
+
 .rail-row-icon {
 	display: grid;
 	place-items: center;
@@ -443,6 +483,29 @@
 	background: color-mix(in srgb, var(--text) 3%, transparent);
 }
 
+/* A split's rows sit in the box's gap rather than over one another, so the box holds them whole. */
+.rail-split > .rail-tab {
+	margin: 0;
+	height: 32px;
+	align-items: center;
+	padding-top: 0;
+	border-radius: var(--control-radius);
+	border-top: 0;
+	background: var(--card);
+	color: var(--card-ink);
+}
+
+/* Beats the merged card's rules in any variant: the active pane is a plain tab inside the box. */
+.rail .rail-split .rail-tab.active {
+	height: 32px;
+	margin: 0;
+	border-radius: var(--control-radius);
+	background: var(--page);
+	color: var(--page-ink);
+	font-weight: 600;
+	box-shadow: none;
+}
+
 /* The dividers between split panes, drawn by the chrome in the gaps the host leaves between them. */
 .split-divider {
 	position: fixed;
@@ -514,6 +577,24 @@
 
 .rail.collapsed .rail-split {
 	padding: 2px;
+}
+
+/* Chips in a column, 4px apart, with no overlap: the card rules above are for the full rail. */
+.rail.pinned.collapsed .rail-tabs {
+	gap: 4px;
+	margin-inline: 0;
+	padding-inline: 0;
+}
+
+.rail.pinned.collapsed .rail-tab {
+	height: 32px;
+	margin: 0;
+	padding: 0;
+	border-radius: 8px;
+	border-top: 0;
+	align-items: center;
+	justify-content: center;
+	box-shadow: none;
 }
 
 /* Hundreds of tabs stay smooth: rows scrolled out of view skip layout and painting, and keep their size for scrolling and drags. */

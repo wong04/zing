@@ -145,3 +145,34 @@ test('with Reopen tabs on, a split comes back after a relaunch', async () => {
 	await expect.poll(async () => (await shownPages(second.chrome)).map((l) => l.url)).toEqual([`${base}/Left`, `${base}/Right`])
 	await second.close()
 })
+
+test('split tabs don\'t overlap, and the active one stays inside the box', async () => {
+	const zing = await launchZing()
+	const left = await openPage(zing.chrome, 'Left')
+	const right = await openPage(zing.chrome, 'Right')
+	await zing.chrome.evaluate(([a, b]) => window.zing.splitWith(a!, b!), [left, right])
+	const group = zing.chrome.getByRole('group', { name: 'Split view' })
+	await expect(group.getByRole('tab')).toHaveCount(2)
+	const box = (await group.boundingBox())!
+	const rows = await group.getByRole('tab').evaluateAll((els) => {
+		const dom = globalThis as unknown as { getComputedStyle(e: unknown): { marginTop: string; marginBottom: string; boxShadow: string } }
+		const nodes = els as unknown as { getAttribute(name: string): string | null; getBoundingClientRect(): { top: number; bottom: number; left: number; right: number } }[]
+		return nodes.map((el) => {
+			const rect = el.getBoundingClientRect()
+			const style = dom.getComputedStyle(el)
+			return { active: el.getAttribute('aria-selected') === 'true', top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, marginTop: style.marginTop, marginBottom: style.marginBottom, shadow: style.boxShadow }
+		})
+	})
+	for (const row of rows) {
+		expect(row.marginTop).toBe('0px')
+		expect(row.marginBottom).toBe('0px')
+		expect(row.top).toBeGreaterThanOrEqual(box.y)
+		expect(row.bottom).toBeLessThanOrEqual(box.y + box.height)
+		expect(row.left).toBeGreaterThanOrEqual(box.x)
+		expect(row.right).toBeLessThanOrEqual(box.x + box.width)
+	}
+	expect(rows[0]!.bottom).toBeLessThanOrEqual(rows[1]!.top)
+	const active = rows.find((row) => row.active)!
+	expect(active.shadow).toBe('none')
+	await zing.close()
+})

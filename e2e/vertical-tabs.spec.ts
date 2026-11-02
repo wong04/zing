@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, test, layers } from './zing'
+import { launchZing, test, layers, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -285,5 +285,77 @@ test('switching tabs doesn\'t move the others', async () => {
 	await expect(rows(zing.chrome).nth(1)).toHaveAttribute('aria-selected', 'true')
 	const after = await rowLooks(zing.chrome)
 	for (const i of [0, 2, 3]) expect(after[i]!.top).toBe(before[i]!.top)
+	await zing.close()
+})
+
+test('on the right the active card merges leftward', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	await zing.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'right'))
+	await expect(zing.chrome.getByRole('navigation', { name: 'Tab rail' })).toBeVisible()
+	await rows(zing.chrome).nth(2).click({ position: { x: 20, y: 15 } })
+	await expect(rows(zing.chrome).nth(2)).toHaveAttribute('aria-selected', 'true')
+	const page = (await shownPage(zing.chrome, 'Beta'))!
+	const active = await rows(zing.chrome).nth(2).evaluate((el) => {
+		const box = (el as unknown as { getBoundingClientRect(): { left: number } }).getBoundingClientRect()
+		const style = (globalThis as unknown as { getComputedStyle(e: unknown): { borderRadius: string } }).getComputedStyle(el)
+		return { left: box.left, radius: style.borderRadius }
+	})
+	expect(active.left).toBe(page.x + page.width)
+	expect(active.radius).toBe('0px 10px 10px 0px')
+	await zing.close()
+})
+
+test('collapsed, cards are icon chips', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	await zing.chrome.getByRole('button', { name: 'Collapse the tab sidebar to icons' }).click()
+	await expect.poll(async () => (await shownPage(zing.chrome, 'Gamma'))?.x).toBe(48)
+	await rows(zing.chrome).nth(2).click({ position: { x: 18, y: 16 } })
+	await expect(rows(zing.chrome).nth(2)).toHaveAttribute('aria-selected', 'true')
+	const chips = await rows(zing.chrome).evaluateAll((els) => {
+		const dom = globalThis as unknown as { getComputedStyle(e: unknown): { backgroundColor: string; borderRadius: string } }
+		const nodes = els as unknown as { getAttribute(name: string): string | null; getBoundingClientRect(): { top: number; width: number; height: number } }[]
+		return nodes.map((el) => {
+			const box = el.getBoundingClientRect()
+			const style = dom.getComputedStyle(el)
+			return { active: el.getAttribute('aria-selected') === 'true', top: box.top, width: box.width, height: box.height, background: style.backgroundColor, radius: style.borderRadius }
+		})
+	})
+	for (const chip of chips) {
+		expect(chip.width).toBe(36)
+		expect(chip.height).toBe(32)
+	}
+	for (let i = 0; i + 1 < chips.length; i++) expect(chips[i + 1]!.top - chips[i]!.top).toBe(36)
+	for (let i = 0; i < chips.length; i++) {
+		const chip = chips[i]!
+		if (chip.active) {
+			expect(chip.background).toBe((await resolvedColor(zing.chrome, 'var(--page)')).background)
+			expect(chip.radius).toBe('8px')
+		} else {
+			expect(chip.background).toBe((await resolvedColor(zing.chrome, `var(--card-${(i % 3) + 1})`)).background)
+		}
+	}
+	await expect(zing.chrome.getByRole('navigation', { name: 'Tab rail' }).locator('.rail-row-title').first()).toBeHidden()
+	await zing.close()
+})
+
+test('the floating rail’s active card stays inside it', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma']) await openPage(zing.chrome, title)
+	// Unpinning from Settings peeks the sidebar out over the page, as the floating rail.
+	await zing.chrome.evaluate(() => window.zing.setSetting('sidebarPinned', false))
+	const surface = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	const floating = surface.locator('.rail.floating')
+	await expect(floating).toBeVisible()
+	const active = floating.locator('.rail-tab.active')
+	const looks = await active.evaluate((el) => {
+		const dom = globalThis as unknown as { getComputedStyle(e: unknown): { borderRadius: string } }
+		const railEl = (el as unknown as { closest(s: string): { getBoundingClientRect(): { right: number } } | null }).closest('.rail')!
+		const box = (el as unknown as { getBoundingClientRect(): { right: number } }).getBoundingClientRect()
+		return { right: box.right, railRight: railEl.getBoundingClientRect().right, radius: dom.getComputedStyle(el).borderRadius }
+	})
+	expect(looks.radius).toBe('8px')
+	expect(looks.right).toBeLessThanOrEqual(looks.railRight)
 	await zing.close()
 })
