@@ -61,7 +61,7 @@
 
 .sheet-nav-title {
 	padding: 22px 10px 8px;
-	color: var(--muted);
+	color: var(--band-ink);
 	font-size: 12px;
 	font-weight: 500;
 }
@@ -75,21 +75,23 @@
 	border: 0;
 	border-radius: var(--control-radius);
 	background: transparent;
-	color: var(--text);
+	color: var(--band-ink);
 	font-size: 13px;
 	text-align: left;
 }
 
 .nav-row svg {
-	color: var(--muted);
+	color: var(--band-ink);
 }
 
 .nav-row:hover {
 	background: color-mix(in srgb, var(--text) 5%, transparent);
 }
 
+/* The selected row has its own --selection plate, so its text takes the plate's pair rather than the band's. */
 .nav-row.selected {
 	background: color-mix(in srgb, var(--selection) 85%, transparent);
+	color: var(--text);
 }
 
 .nav-row.selected svg {

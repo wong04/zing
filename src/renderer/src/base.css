@@ -201,6 +201,10 @@ input {
 	cursor: text;
 }
 
+.address::placeholder {
+	color: var(--field-ink);
+}
+
 .address:focus {
 	outline: none;
 	border-color: var(--accent);

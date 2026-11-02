@@ -247,6 +247,7 @@
 	border-color: transparent;
 }
 
+/* White in every theme, so the thumb reads against the accent track. */
 .pill-toggle-thumb {
 	position: absolute;
 	top: 1px;
@@ -296,6 +297,7 @@
 	background: var(--accent);
 }
 
+/* White in every theme, so the knob reads against the accent track. */
 .pill-slider-knob {
 	position: absolute;
 	top: 0;

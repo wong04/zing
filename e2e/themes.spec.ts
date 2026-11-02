@@ -51,12 +51,15 @@ async function expectAccent(view: Page, accent: string, customColor = DEFAULT_CU
 	await expect.poll(async () => (await viewAccent(view)).accent).toBe(accentVariables(accent, customColor, dark)['--accent'])
 }
 
-/** The background the first element matching `selector` computes to in this view, as the browser serialises it. */
-async function backgroundOf(view: Page, selector: string): Promise<string> {
-	return view.evaluate((sel) => {
-		const g = globalThis as unknown as ViewGlobals
-		return g.getComputedStyle(g.document.querySelector(sel)).getPropertyValue('background-color')
-	}, selector)
+/** A computed style of the first element matching `selector` in this view, as the browser serialises it. */
+async function styleOf(view: Page, selector: string, property: string): Promise<string> {
+	return view.evaluate(
+		([sel, prop]) => {
+			const g = globalThis as unknown as ViewGlobals
+			return g.getComputedStyle(g.document.querySelector(sel)).getPropertyValue(prop)
+		},
+		[selector, property] as const,
+	)
 }
 
 /** A #rrggbb colour as getComputedStyle reports it. */
@@ -126,14 +129,16 @@ test('the toolbar and Settings carry the theme', async () => {
 	await zing.chrome.evaluate(() => window.zing.setSetting('accent', 'blue'))
 	await expectAccent(zing.chrome, 'blue')
 	const chromeVars = accentVariables('blue', DEFAULT_CUSTOM_COLOR, (await viewAccent(zing.chrome)).dark)
-	expect(await backgroundOf(zing.chrome, '.toolbar')).toBe(rgb(chromeVars['--band']!))
-	expect(await backgroundOf(zing.chrome, '.address')).toBe(rgb(chromeVars['--field']!))
+	expect(await styleOf(zing.chrome, '.toolbar', 'background-color')).toBe(rgb(chromeVars['--band']!))
+	expect(await styleOf(zing.chrome, '.address', 'background-color')).toBe(rgb(chromeVars['--field']!))
 
 	await zing.chrome.evaluate(() => window.zing.runCommand('app.settings'))
 	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
 	await expect(sheet.getByRole('dialog', { name: 'Settings' })).toBeVisible()
 	const sheetVars = accentVariables('blue', DEFAULT_CUSTOM_COLOR, (await viewAccent(sheet)).dark)
-	expect(await backgroundOf(sheet, '.sheet-nav')).toBe(rgb(sheetVars['--band']!))
+	expect(await styleOf(sheet, '.sheet-nav', 'background-color')).toBe(rgb(sheetVars['--band']!))
+	expect(await styleOf(sheet, '.sheet-nav-title', 'color')).toBe(rgb(sheetVars['--band-ink']!))
+	expect(await styleOf(sheet, '.nav-row:not(.selected)', 'color')).toBe(rgb(sheetVars['--band-ink']!))
 
 	const picker = sheet.getByRole('radiogroup', { name: 'Theme' })
 	await expect(picker.getByRole('radio')).toHaveCount(accentThemes.length)
