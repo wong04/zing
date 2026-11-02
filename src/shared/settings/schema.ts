@@ -76,7 +76,7 @@ export const AUTO_CLOSE_RULES = ['hour', 'day', 'week', 'custom'] as const
 export const TAB_BAR_POSITIONS = ['top', 'left', 'right'] as const
 
 export const SETTINGS_SCHEMA = {
-	/** Krackn's `appTheme`: Auto / Light / Dark. Drives `nativeTheme.themeSource`. */
+	/** Krackn's `appTheme`: Auto / Light / Dark. Every view is forced to it by the host (`HostedView.FollowTheme`). */
 	theme: oneOf(APPEARANCES, 'system'),
 	accent: oneOf(ACCENTS, 'yellow'),
 	/** Empty means the local new-tab page, the only homepage that makes no network request. */

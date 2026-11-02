@@ -1,8 +1,9 @@
+import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, test, layers, pages, pageWhere } from './zing'
+import { launchBare, launchZing, test, layers, pages, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -119,4 +120,50 @@ test('the empty favourites bar’s Ctrl+D hint closes, and stays closed after a 
 	await expect(again.chrome.locator('.favourites-bar')).toBeVisible()
 	await expect(again.chrome.locator('.fav-hint')).toHaveCount(0)
 	await again.close()
+})
+
+/** Whether Windows has apps in dark mode: what a view reads when nothing overrides it. */
+function windowsIsDark(): boolean {
+	const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize'
+	return /AppsUseLightTheme\s+REG_DWORD\s+0x0\b/.test(execFileSync('reg', ['query', key, '/v', 'AppsUseLightTheme'], { encoding: 'utf8' }))
+}
+
+const readsDark = (view: Page) => view.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)
+
+test('Appearance forces the chrome, overlays and pages to its scheme whatever Windows is set to, and System follows Windows', async () => {
+	const zing = await launchZing()
+	await zing.chrome.evaluate(() => window.zing.runCommand('app.settings'))
+	const sheet = await pageWhere(zing.browser, (p) => isSurface(p.url()))
+	const home = await pageWhere(zing.browser, (p) => p.url().startsWith('zing://home'))
+	const views = [zing.chrome, sheet, home]
+	// Playwright emulates light on every page it attaches to, which would hide what the host does.
+	for (const view of views) await view.emulateMedia({ colorScheme: null })
+
+	for (const [theme, dark] of [['light', false], ['dark', true], ['light', false], ['system', windowsIsDark()]] as const) {
+		await zing.chrome.evaluate((value) => window.zing.setSetting('theme', value), theme)
+		for (const view of views) await expect.poll(() => readsDark(view), `${view.url()} on ${theme}`).toBe(dark)
+	}
+
+	// A chosen scheme survives a reload, and the tokens really change with it.
+	await zing.chrome.evaluate(() => window.zing.setSetting('theme', 'light'))
+	await home.reload()
+	await expect.poll(() => readsDark(home)).toBe(false)
+	await zing.chrome.evaluate(() => window.zing.setSetting('theme', 'dark'))
+	await expect.poll(() => zing.chrome.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim())).toBe('#1A1714')
+
+	// Views take the scheme from the start, on a relaunch and when created later, read with no Playwright to
+	// disturb them. The opposite of Windows' proves it.
+	const dark = !windowsIsDark()
+	await zing.chrome.evaluate((value) => window.zing.setSetting('theme', value), dark ? 'dark' : 'light')
+	await zing.close()
+
+	const bare = await launchBare(zing.userDataDir)
+	const everyViewReads = async (scheme: boolean) => (await bare.evaluate(() => true, "matchMedia('(prefers-color-scheme: dark)').matches")).every((matches) => matches === scheme)
+	await expect.poll(() => bare.urls()).toContainEqual(expect.stringContaining('zing://home'))
+	expect(await everyViewReads(dark)).toBe(true)
+	await bare.evaluate((url) => url.endsWith('#chrome'), "zing.runCommand('tab.new')")
+	await bare.evaluate((url) => url.endsWith('#chrome'), "zing.runCommand('app.settings')")
+	await expect.poll(async () => (await bare.urls()).filter((url) => url.startsWith('zing://home') || isSurface(url)).length).toBe(3)
+	expect(await everyViewReads(dark)).toBe(true)
+	await bare.close()
 })

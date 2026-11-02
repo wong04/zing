@@ -12,7 +12,6 @@ public sealed class WebView2Page : IPage
 
 	private readonly IPageEvents _events;
 	private readonly Func<string, StartPageResponse> _serveStartPage;
-	private readonly Func<string> _theme;
 	private readonly IPageFeatureHost _features;
 	private readonly bool _persistent;
 	private readonly List<Action<CoreWebView2>> _queued = [];
@@ -35,13 +34,12 @@ public sealed class WebView2Page : IPage
 		return (File.ReadAllText(Path.Combine(dir, "reader.js")), File.ReadAllText(Path.Combine(dir, "reader.css")));
 	});
 
-	public WebView2Page(HostWindow window, WindowScope scope, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, Func<string> theme, IPageFeatureHost features, bool persistent)
+	public WebView2Page(HostWindow window, WindowScope scope, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, IPageFeatureHost features, bool persistent)
 	{
 		_window = window;
 		_scope = scope;
 		_events = events;
 		_serveStartPage = serveStartPage;
-		_theme = theme;
 		_features = features;
 		_persistent = persistent;
 		Ready = StartAsync(environment);
@@ -267,14 +265,6 @@ public sealed class WebView2Page : IPage
 		core.Find.Stop();
 	});
 
-	/// <summary>The start page draws both palettes and picks one by prefers-color-scheme, which follows Zing's theme setting.</summary>
-	public void FollowTheme() => Run(core => core.Profile.PreferredColorScheme = _theme() switch
-	{
-		"light" => CoreWebView2PreferredColorScheme.Light,
-		"dark" => CoreWebView2PreferredColorScheme.Dark,
-		_ => CoreWebView2PreferredColorScheme.Auto,
-	});
-
 	public void Close()
 	{
 		if (!IsOpen) return;
@@ -311,7 +301,6 @@ public sealed class WebView2Page : IPage
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
 		_core.WebResourceRequested += OnWebResourceRequested;
-		FollowTheme();
 		Wire(_core);
 		// A click into a split pane makes its tab the active one. The engine also moves the keyboard on its own (a page
 		// shown again, the window coming back to the front); those must not change the active tab, so only a focus that
