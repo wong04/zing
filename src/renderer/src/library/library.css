@@ -78,19 +78,9 @@
 	touch-action: none;
 }
 
-.favourites-bar > .fav-chip:nth-child(3n + 1) {
-	background: var(--ribbon-1);
-	color: var(--ribbon-ink-1);
-}
-
-.favourites-bar > .fav-chip:nth-child(3n + 2) {
-	background: var(--ribbon-2);
-	color: var(--ribbon-ink-2);
-}
-
-.favourites-bar > .fav-chip:nth-child(3n) {
-	background: var(--ribbon-3);
-	color: var(--ribbon-ink-3);
+.favourites-bar > .fav-chip {
+	background: var(--ribbon);
+	color: var(--ribbon-ink);
 }
 
 .favourites-bar > .fav-chip.more {

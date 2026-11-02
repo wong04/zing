@@ -165,8 +165,7 @@ async function paintOf(chrome: Page, fill: string, ink: string): Promise<Painted
 	)
 }
 
-/** The shade a tab takes by its place among the strip's children (nth-child, 1-based), as the card set repeats. */
-const cardPaint = (chrome: Page, index: number) => paintOf(chrome, `--card-${(index % 3) + 1}`, `--card-ink-${(index % 3) + 1}`)
+const cardPaint = (chrome: Page) => paintOf(chrome, '--card', '--card-ink')
 
 async function expectPaint(tab: Locator, paint: Painted): Promise<void> {
 	await expect(tab).toHaveCSS('background-color', paint.background)
@@ -189,7 +188,7 @@ test('tabs on top are folder tabs: the card shades repeat, and the active tab ta
 	for (let i = 0; i < count; i++) {
 		const tab = stripTabs(zing.chrome).nth(i)
 		const selected = (await tab.getAttribute('aria-selected')) === 'true'
-		await expectPaint(tab, selected ? band : await cardPaint(zing.chrome, i))
+		await expectPaint(tab, selected ? band : await cardPaint(zing.chrome))
 	}
 
 	const active = zing.chrome.locator('.tabs > [role="tab"].active')
@@ -226,7 +225,7 @@ test('pinned and stacked tabs take the same fills and stay inked', async () => {
 		if ((await child.getAttribute('role')) !== 'tab') continue
 		tabs++
 		const selected = (await child.getAttribute('aria-selected')) === 'true'
-		await expectPaint(child, selected ? await paintOf(zing.chrome, '--band', '--band-ink') : await cardPaint(zing.chrome, i))
+		await expectPaint(child, selected ? await paintOf(zing.chrome, '--band', '--band-ink') : await cardPaint(zing.chrome))
 	}
 	expect(tabs).toBeGreaterThanOrEqual(2)
 	await zing.close()
@@ -246,7 +245,7 @@ test('favourites on top are ribbons 30 by 34 px, named by their title and hung f
 	await expect(ribbon.locator('.fav-title')).toHaveCount(0)
 	await expect(ribbon).toHaveCSS('width', '30px')
 	await expect(ribbon).toHaveCSS('height', '34px')
-	await expectPaint(ribbon, await paintOf(zing.chrome, '--ribbon-1', '--ribbon-ink-1'))
+	await expectPaint(ribbon, await paintOf(zing.chrome, '--ribbon', '--ribbon-ink'))
 	const ribbonBox = (await ribbon.boundingBox())!
 	const barBox = (await bar.boundingBox())!
 	expect(Math.abs(ribbonBox.y - barBox.y)).toBeLessThan(1)

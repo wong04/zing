@@ -38,21 +38,6 @@
 	will-change: transform;
 }
 
-.tabs > .tab:nth-child(3n + 1) {
-	--card: var(--card-1);
-	--card-ink: var(--card-ink-1);
-}
-
-.tabs > .tab:nth-child(3n + 2) {
-	--card: var(--card-2);
-	--card-ink: var(--card-ink-2);
-}
-
-.tabs > .tab:nth-child(3n) {
-	--card: var(--card-3);
-	--card-ink: var(--card-ink-3);
-}
-
 .tabs > .tab.active {
 	position: relative;
 	z-index: 1;
