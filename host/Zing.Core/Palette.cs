@@ -278,14 +278,16 @@ public static class Palette
 	{
 		var (hue, baseSaturation) = profile;
 		var saturation = baseSaturation * 0.75;
-		var window = dark ? Colors.HexFromHsl(hue, 0.4 * saturation, 0.15) : Colors.HexFromHsl(hue, 0.55 * saturation, 0.82);
-		var page = dark ? Colors.HexFromHsl(hue, 0.2 * saturation, 0.085) : Colors.HexFromHsl(hue, 0.3 * saturation, 0.99);
-		var band = Colors.Mix(window, dark ? "#000000" : Colors.HexFromHsl(hue, 0.6 * saturation, 0.3), dark ? 0.3 : 0.22);
+		var window = dark ? Colors.HexFromHsl(hue, 0.25 * saturation, 0.11) : Colors.HexFromHsl(hue, 0.55 * saturation, 0.82);
+		var page = dark ? Colors.HexFromHsl(hue, 0.15 * saturation, 0.065) : Colors.HexFromHsl(hue, 0.3 * saturation, 0.99);
+		var band = Colors.Mix(window, dark ? "#000000" : Colors.HexFromHsl(hue, 0.6 * saturation, 0.3), dark ? 0.25 : 0.22);
 		var field = Colors.Mix(band, "#FFFFFF", dark ? 0.1 : 0.62);
-		string Paint(double h) => Colors.HexFromHsl(h, 0.75 * saturation, dark ? 0.42 : 0.6);
-		var ribbons = Triad(hue, Paint);
-		var cards = Triad(hue, h => Colors.Mix(window, Paint(h), 0.62));
-		var more = Colors.Mix(window, InkOn(window), 0.78);
+		string Paint(double h) => Colors.HexFromHsl(h, 0.75 * saturation, dark ? 0.76 : 0.6);
+		// Dark ribbons are pastels, so a narrower spread and dim cards keep them from clashing or glaring.
+		var spread = dark ? 25 : 45;
+		var ribbons = Triad(hue, spread, Paint);
+		var cards = Triad(hue, spread, h => Colors.Mix(window, Paint(h), dark ? 0.22 : 0.62));
+		var more = dark ? Colors.Mix(window, ribbons[0], 0.35) : Colors.Mix(window, InkOn(window), 0.78);
 		return new StackTokens(
 			window, InkOn(window), band, InkOn(band), field, InkOn(field), page, InkOn(page),
 			cards, InksOn(cards), ribbons, InksOn(ribbons), more, InkOn(more));
@@ -295,8 +297,8 @@ public static class Palette
 	public static string InkOn(string background) =>
 		Colors.ContrastRatio("#000000", background) >= Colors.ContrastRatio("#FFFFFF", background) ? "#000000" : "#FFFFFF";
 
-	/// <summary>The base hue and the two either side of it, 45 degrees apart.</summary>
-	private static IReadOnlyList<string> Triad(double hue, Func<double, string> colour) => [colour(hue), colour(hue + 45), colour(hue - 45)];
+	/// <summary>The base hue and the two either side of it, <paramref name="spread"/> degrees apart.</summary>
+	private static IReadOnlyList<string> Triad(double hue, double spread, Func<double, string> colour) => [colour(hue), colour(hue + spread), colour(hue - spread)];
 
 	private static IReadOnlyList<string> InksOn(IReadOnlyList<string> colours) => [InkOn(colours[0]), InkOn(colours[1]), InkOn(colours[2])];
 

@@ -243,9 +243,9 @@ export function inkOn(background: string): string {
 	return contrastRatio('#000000', background) >= contrastRatio('#FFFFFF', background) ? '#000000' : '#FFFFFF'
 }
 
-/** The base hue and the two either side of it, 45 degrees apart. */
-function triad(hue: number, colour: (h: number) => string): Trio {
-	return [colour(hue), colour(hue + 45), colour(hue - 45)]
+/** The base hue and the two either side of it, `spread` degrees apart. */
+function triad(hue: number, spread: number, colour: (h: number) => string): Trio {
+	return [colour(hue), colour(hue + spread), colour(hue - spread)]
 }
 
 function inksOn(colours: Trio): Trio {
@@ -256,14 +256,16 @@ function inksOn(colours: Trio): Trio {
 export function stackTokens(profile: HueProfile, dark: boolean): StackTokens {
 	const { hue } = profile
 	const saturation = profile.saturation * 0.75
-	const window = dark ? hexFromHSL(hue, 0.4 * saturation, 0.15) : hexFromHSL(hue, 0.55 * saturation, 0.82)
-	const page = dark ? hexFromHSL(hue, 0.2 * saturation, 0.085) : hexFromHSL(hue, 0.3 * saturation, 0.99)
-	const band = mix(window, dark ? '#000000' : hexFromHSL(hue, 0.6 * saturation, 0.3), dark ? 0.3 : 0.22)
+	const window = dark ? hexFromHSL(hue, 0.25 * saturation, 0.11) : hexFromHSL(hue, 0.55 * saturation, 0.82)
+	const page = dark ? hexFromHSL(hue, 0.15 * saturation, 0.065) : hexFromHSL(hue, 0.3 * saturation, 0.99)
+	const band = mix(window, dark ? '#000000' : hexFromHSL(hue, 0.6 * saturation, 0.3), dark ? 0.25 : 0.22)
 	const field = mix(band, '#FFFFFF', dark ? 0.1 : 0.62)
-	const paint = (h: number): string => hexFromHSL(h, 0.75 * saturation, dark ? 0.42 : 0.6)
-	const ribbons = triad(hue, paint)
-	const cards = triad(hue, (h) => mix(window, paint(h), 0.62))
-	const more = mix(window, inkOn(window), 0.78)
+	const paint = (h: number): string => hexFromHSL(h, 0.75 * saturation, dark ? 0.76 : 0.6)
+	// Dark ribbons are pastels, so a narrower spread and dim cards keep them from clashing or glaring.
+	const spread = dark ? 25 : 45
+	const ribbons = triad(hue, spread, paint)
+	const cards = triad(hue, spread, (h) => mix(window, paint(h), dark ? 0.22 : 0.62))
+	const more = dark ? mix(window, ribbons[0], 0.35) : mix(window, inkOn(window), 0.78)
 
 	return {
 		window,
