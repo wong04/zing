@@ -14,8 +14,12 @@ import {
 	lightProfile,
 	referenceDark,
 	referenceLight,
+	type HueProfile,
 	type PaletteTokens,
 } from './palette'
+import { hslFromHex } from './color'
+
+export type { HueProfile }
 
 export const AccentTheme = {
 	yellow: 'yellow',
@@ -25,22 +29,24 @@ export const AccentTheme = {
 	purple: 'purple',
 	red: 'red',
 	mono: 'mono',
+	midnight: 'midnight',
 } as const
 export type AccentTheme = (typeof AccentTheme)[keyof typeof AccentTheme]
 
 export const accentThemes: readonly AccentTheme[] = Object.values(AccentTheme)
 
-/** Base hue in degrees, and how much of the reference palette's saturation to keep. */
-export type HueProfile = { readonly hue: number; readonly saturation: number }
+/** The accent name for a user-chosen seed colour, as opposed to a preset family. */
+export const CUSTOM_ACCENT = 'custom'
 
 const labels: Readonly<Record<AccentTheme, string>> = {
-	yellow: 'Yellow',
-	green: 'Green',
-	blue: 'Blue',
-	magenta: 'Magenta',
-	purple: 'Purple',
-	red: 'Red',
+	yellow: 'Amber',
+	green: 'Forest',
+	blue: 'Ocean',
+	magenta: 'Candy',
+	purple: 'Grape',
+	red: 'Sunset',
 	mono: 'Mono',
+	midnight: 'Midnight',
 }
 
 // Warmer hues carry saturation well; the cooler and more magenta ones read as
@@ -53,8 +59,9 @@ const hueProfiles: Readonly<Record<AccentTheme, HueProfile>> = {
 	blue: { hue: 211, saturation: 0.88 },
 	magenta: { hue: 322, saturation: 0.8 },
 	purple: { hue: 272, saturation: 0.82 },
-	red: { hue: 6, saturation: 0.84 },
+	red: { hue: 14, saturation: 0.84 },
 	mono: { hue: 34, saturation: 0.07 },
+	midnight: { hue: 232, saturation: 0.7 },
 }
 
 const accentThemeIds: readonly string[] = accentThemes
@@ -70,6 +77,33 @@ export function accentLabel(theme: AccentTheme): string {
 
 export function hueProfile(theme: AccentTheme): HueProfile {
 	return hueProfiles[theme]
+}
+
+/** A hue and saturation taken from a seed colour. Saturation has a floor so a grey seed still gets a faint tint. */
+export function seedProfile(hex: string): HueProfile {
+	const { hue, saturation } = hslFromHex(hex)
+	return { hue, saturation: Math.min(Math.max(saturation, 0.07), 1) }
+}
+
+function requireAccentTheme(accent: string): AccentTheme {
+	if (!isAccentTheme(accent)) throw new RangeError(`Unknown accent "${accent}"`)
+	return accent
+}
+
+/** The hue profile for a named accent, or for the seed when the accent is `custom`. */
+export function themeProfile(accent: string, customColor: string): HueProfile {
+	if (accent === CUSTOM_ACCENT) return seedProfile(customColor)
+	return hueProfiles[requireAccentTheme(accent)]
+}
+
+/** The palette for a named accent, or for the seed when the accent is `custom`. */
+export function themeTokens(accent: string, customColor: string, dark: boolean): PaletteTokens {
+	if (accent === CUSTOM_ACCENT) {
+		const { hue, saturation } = seedProfile(customColor)
+		return generatePalette(dark ? darkProfile : lightProfile, hue, saturation)
+	}
+	const theme = requireAccentTheme(accent)
+	return dark ? darkTokens(theme) : lightTokens(theme)
 }
 
 export function lightTokens(theme: AccentTheme): PaletteTokens {

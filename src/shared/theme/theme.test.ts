@@ -1,8 +1,30 @@
 // Port of Krackn Tests/theme.
 import { describe, expect, it } from 'vitest'
-import { accentLabel, AccentTheme, accentThemes, darkTokens, lightTokens } from './accent'
+import {
+	accentLabel,
+	AccentTheme,
+	accentThemes,
+	CUSTOM_ACCENT,
+	darkTokens,
+	hueProfile,
+	lightTokens,
+	seedProfile,
+	themeProfile,
+	themeTokens,
+} from './accent'
 import { contrastRatio, hexFromHSL, hexFromRGB, InvalidHexColorError, relativeLuminance, rgbFromHex, wcagAA } from './color'
-import { accentInk, control, generatePalette, lightProfile, raised, type PaletteTokens } from './palette'
+import {
+	accentInk,
+	control,
+	generatePalette,
+	lightProfile,
+	raised,
+	referenceDark,
+	referenceLight,
+	stackTokens,
+	type PaletteTokens,
+	type StackTokens,
+} from './palette'
 
 const modes: readonly [string, (theme: AccentTheme) => PaletteTokens][] = [
 	['light', lightTokens],
@@ -52,8 +74,8 @@ describe('every family is legible in both modes', () => {
 			return pairs.map(([label, fg, bg]) => [`${accentLabel(theme)} ${mode} ${label}`, fg, bg] as const)
 		}),
 	)
-	it('covers 7 families × 2 modes × 9 pairs', () => {
-		expect(cases).toHaveLength(126)
+	it('covers 8 families × 2 modes × 9 pairs', () => {
+		expect(cases).toHaveLength(144)
 	})
 	it.each(cases)('%s', (_name, fg, bg) => {
 		expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(wcagAA)
@@ -143,5 +165,87 @@ describe('the generator', () => {
 	})
 	it('accepts a lower-case hex', () => {
 		expect(rgbFromHex('ffffff')).toEqual({ r: 1, g: 1, b: 1 })
+	})
+})
+
+// Stack tokens and seeds, for the Phase 5 themes work.
+const seeds = ['#000000', '#FFFFFF', '#808080', '#FFFF00', '#3366CC']
+const stackSubjects = [
+	...accentThemes.map((theme) => ({ name: accentLabel(theme), profile: hueProfile(theme) })),
+	...seeds.map((seed) => ({ name: seed, profile: seedProfile(seed) })),
+]
+const stackModes: readonly [string, boolean][] = [
+	['light', false],
+	['dark', true],
+]
+
+const slots = [0, 1, 2] as const
+
+function stackPairs(tokens: StackTokens): [string, string, string][] {
+	return [
+		['window', tokens.windowInk, tokens.window],
+		['band', tokens.bandInk, tokens.band],
+		['field', tokens.fieldInk, tokens.field],
+		['page', tokens.pageInk, tokens.page],
+		['more', tokens.moreInk, tokens.more],
+		...slots.map((i): [string, string, string] => [`card ${i}`, tokens.cardInks[i], tokens.cards[i]]),
+		...slots.map((i): [string, string, string] => [`ribbon ${i}`, tokens.ribbonInks[i], tokens.ribbons[i]]),
+	]
+}
+
+describe('stack tokens are legible', () => {
+	const cases = stackSubjects.flatMap(({ name, profile }) =>
+		stackModes.flatMap(([mode, dark]) =>
+			stackPairs(stackTokens(profile, dark)).map(([label, fg, bg]) => [`${name} ${mode} ${label}`, fg, bg] as const),
+		),
+	)
+	it.each(cases)('%s', (_name, fg, bg) => {
+		expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(wcagAA)
+	})
+})
+
+describe('the active card stands out', () => {
+	const cases = stackSubjects.flatMap(({ name, profile }) =>
+		stackModes.flatMap(([mode, dark]) => {
+			const tokens = stackTokens(profile, dark)
+			return tokens.cards.map((card, i) => [`${name} ${mode} card ${i}`, tokens.page, card] as const)
+		}),
+	)
+	it.each(cases)('%s', (_name, page, card) => {
+		expect(contrastRatio(page, card)).toBeGreaterThanOrEqual(1.1)
+	})
+})
+
+describe('seeds', () => {
+	it('a seed takes its hue', () => {
+		expect(Math.abs(seedProfile('#3366CC').hue - 220)).toBeLessThanOrEqual(1)
+	})
+	it('a grey seed keeps a saturation floor', () => {
+		expect(seedProfile('#000000').saturation).toBe(0.07)
+	})
+	it('refuses a bad seed', () => {
+		expect(() => seedProfile('blue')).toThrow(InvalidHexColorError)
+	})
+})
+
+describe('preset names', () => {
+	it('labels are the preset names', () => {
+		expect(accentLabel(AccentTheme.blue)).toBe('Ocean')
+		expect(accentLabel(AccentTheme.yellow)).toBe('Amber')
+		expect(accentLabel(AccentTheme.midnight)).toBe('Midnight')
+	})
+})
+
+describe('a theme resolves from a name or a seed', () => {
+	it('custom takes its profile from the seed', () => {
+		expect(themeProfile(CUSTOM_ACCENT, '#3366CC')).toEqual(seedProfile('#3366CC'))
+	})
+	it('an unknown accent is a RangeError', () => {
+		expect(() => themeProfile('pink', '#3366CC')).toThrow(RangeError)
+		expect(() => themeTokens('pink', '#3366CC', false)).toThrow(RangeError)
+	})
+	it('yellow stays the reference palette whatever the seed', () => {
+		expect(themeTokens(AccentTheme.yellow, '#3366CC', false)).toEqual(referenceLight)
+		expect(themeTokens(AccentTheme.yellow, '#3366CC', true)).toEqual(referenceDark)
 	})
 })

@@ -3,6 +3,9 @@
 // from exactly the same numbers as the UI — no hand-copied values to drift.
 import { contrastRatio, gammaLuma, hexFromHSL, mix } from './color'
 
+/** Base hue in degrees, and how much of the reference palette's saturation to keep. */
+export type HueProfile = { readonly hue: number; readonly saturation: number }
+
 export type PaletteTokens = {
 	readonly background: string
 	readonly surface: string
@@ -212,4 +215,70 @@ export function control(tokens: PaletteTokens): string {
  */
 export function raised(tokens: PaletteTokens): string {
 	return isDark(tokens) ? mix(tokens.well, tokens.text, 0.13) : tokens.surface
+}
+
+// MARK: - Stack
+
+export type StackTokens = {
+	readonly window: string
+	readonly windowInk: string
+	readonly band: string
+	readonly bandInk: string
+	readonly field: string
+	readonly fieldInk: string
+	readonly page: string
+	readonly pageInk: string
+	readonly cards: readonly [string, string, string]
+	readonly cardInks: readonly [string, string, string]
+	readonly ribbons: readonly [string, string, string]
+	readonly ribbonInks: readonly [string, string, string]
+	readonly more: string
+	readonly moreInk: string
+}
+
+type Trio = readonly [string, string, string]
+
+/** Black or white, whichever reads better on `background`. Either clears 4.58:1 on any colour. */
+export function inkOn(background: string): string {
+	return contrastRatio('#000000', background) >= contrastRatio('#FFFFFF', background) ? '#000000' : '#FFFFFF'
+}
+
+/** The base hue and the two either side of it, 45 degrees apart. */
+function triad(hue: number, colour: (h: number) => string): Trio {
+	return [colour(hue), colour(hue + 45), colour(hue - 45)]
+}
+
+function inksOn(colours: Trio): Trio {
+	return [inkOn(colours[0]), inkOn(colours[1]), inkOn(colours[2])]
+}
+
+/** The stacked chrome — window, band, field, page, cards and ribbons — tinted from one hue. */
+export function stackTokens(profile: HueProfile, dark: boolean): StackTokens {
+	const { hue } = profile
+	const saturation = profile.saturation * 0.75
+	const window = dark ? hexFromHSL(hue, 0.4 * saturation, 0.15) : hexFromHSL(hue, 0.55 * saturation, 0.82)
+	const page = dark ? hexFromHSL(hue, 0.2 * saturation, 0.085) : hexFromHSL(hue, 0.3 * saturation, 0.99)
+	const band = mix(window, dark ? '#000000' : hexFromHSL(hue, 0.6 * saturation, 0.3), dark ? 0.3 : 0.22)
+	const field = mix(band, '#FFFFFF', dark ? 0.1 : 0.62)
+	const paint = (h: number): string => hexFromHSL(h, 0.75 * saturation, dark ? 0.42 : 0.6)
+	const ribbons = triad(hue, paint)
+	const cards = triad(hue, (h) => mix(window, paint(h), 0.62))
+	const more = mix(window, inkOn(window), 0.78)
+
+	return {
+		window,
+		windowInk: inkOn(window),
+		band,
+		bandInk: inkOn(band),
+		field,
+		fieldInk: inkOn(field),
+		page,
+		pageInk: inkOn(page),
+		cards,
+		cardInks: inksOn(cards),
+		ribbons,
+		ribbonInks: inksOn(ribbons),
+		more,
+		moreInk: inkOn(more),
+	}
 }

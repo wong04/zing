@@ -50,6 +50,20 @@ export function hexFromRGB({ r, g, b }: RGB): string {
 	return hexFromBytes(Math.round(r * 255), Math.round(g * 255), Math.round(b * 255))
 }
 
+/** `#RRGGBB` → HSL: hue in degrees 0…360, saturation and lightness 0…1. Greys have hue 0. */
+export function hslFromHex(hex: string): { hue: number; saturation: number; lightness: number } {
+	const { r, g, b } = rgbFromHex(hex)
+	const max = Math.max(r, g, b)
+	const min = Math.min(r, g, b)
+	const lightness = (max + min) / 2
+	const delta = max - min
+	if (delta === 0) return { hue: 0, saturation: 0, lightness }
+
+	const saturation = delta / (1 - Math.abs(2 * lightness - 1))
+	const sector = max === r ? (g - b) / delta : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4
+	return { hue: (sector * 60 + 360) % 360, saturation, lightness }
+}
+
 /** WCAG relative luminance. */
 export function relativeLuminance(hex: string): number {
 	const { r, g, b } = rgbFromHex(hex)
