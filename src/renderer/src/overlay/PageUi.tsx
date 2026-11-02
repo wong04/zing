@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import { EMPTY_PAGE_UI, hasVisiblePageUi, type DownloadEntry, type PageUiState, type PermissionKind } from '@shared/browser/pageUi'
 import { followHostState } from '../hostState'
 import { zing } from '../api'
+import { useAccentTheme } from '../settings/useAccentTheme'
 import './pageui.css'
 
 function usePageUiState(): PageUiState {
@@ -172,6 +173,7 @@ function PermissionPrompt({ state }: { state: PageUiState }) {
 
 /** Root of the page-UI view: a column of cards main sizes the view to. */
 export function PageUi() {
+	useAccentTheme()
 	const state = usePageUiState()
 	const root = useRef<HTMLDivElement>(null)
 	const visible = hasVisiblePageUi(state)

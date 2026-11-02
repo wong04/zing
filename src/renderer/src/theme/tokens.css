@@ -31,6 +31,30 @@
 	--raised: #fffdf8;
 	--accent-ink: #635538;
 
+	/* The stacked chrome: window, band, field, page, cards, ribbons and the more button, tinted from the accent. */
+	--window: #e4d6be;
+	--window-ink: #000000;
+	--band: #caba9d;
+	--band-ink: #000000;
+	--field: #ebe5da;
+	--field-ink: #000000;
+	--page: #fdfdfc;
+	--page-ink: #000000;
+	--card-1: #d9b984;
+	--card-2: #bed484;
+	--card-3: #d98d8c;
+	--card-ink-1: #000000;
+	--card-ink-2: #000000;
+	--card-ink-3: #000000;
+	--ribbon-1: #d2a860;
+	--ribbon-2: #a6d260;
+	--ribbon-3: #d2606d;
+	--ribbon-ink-1: #000000;
+	--ribbon-ink-2: #000000;
+	--ribbon-ink-3: #000000;
+	--more: #322f2a;
+	--more-ink: #ffffff;
+
 	/* Status colours stay fixed across accents: a "danger" that turns green with the theme would be dangerous. */
 	--positive: #4f7a3f;
 	--caution: #a86a2e;
@@ -63,6 +87,29 @@
 		--control: #2c251e;
 		--raised: #453e36;
 		--accent-ink: #c9a45e;
+
+		--window: #32291b;
+		--window-ink: #ffffff;
+		--band: #231d13;
+		--band-ink: #ffffff;
+		--field: #39342b;
+		--field-ink: #ffffff;
+		--page: #191712;
+		--page-ink: #ffffff;
+		--card-1: #7b5c27;
+		--card-2: #5e7727;
+		--card-3: #7b2d30;
+		--card-ink-1: #ffffff;
+		--card-ink-2: #ffffff;
+		--card-ink-3: #ffffff;
+		--ribbon-1: #a77b2f;
+		--ribbon-2: #79a72f;
+		--ribbon-3: #a72f3d;
+		--ribbon-ink-1: #000000;
+		--ribbon-ink-2: #000000;
+		--ribbon-ink-3: #ffffff;
+		--more: #d2d0cd;
+		--more-ink: #000000;
 
 		--positive: #8fbf7a;
 		--caution: #d9a05b;
