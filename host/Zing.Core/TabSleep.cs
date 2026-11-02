@@ -271,7 +271,7 @@ public sealed class TabSleeper
 		// Awaits above let the user come back to the tab, or the page die.
 		var after = Find(id);
 		if (after is null || after.LastActiveAt != before.LastActiveAt) return;
-		if (id == _tabs.ActiveId || !_tabs.HasPage(id) || _tabs.IsAudible(id)) return;
+		if (_tabs.IsShown(id) || !_tabs.HasPage(id) || _tabs.IsAudible(id)) return;
 		_scroll[id] = probe.ScrollY;
 		if (thumbnail is not null) Remember(id, thumbnail);
 		_tabs.Sleep(id);
@@ -295,8 +295,7 @@ public sealed class TabSleeper
 				t.LastActiveAt,
 				t.Pinned,
 				t.Id == _tabs.ActiveId,
-				// No split view yet; its owner flips this when splits land.
-				VisibleInSplit: false,
+				VisibleInSplit: t.Id != _tabs.ActiveId && _tabs.IsShown(t.Id),
 				_tabs.IsAudible(t.Id),
 				HasUnsavedForm: false,
 				Asleep: false))

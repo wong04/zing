@@ -180,6 +180,11 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("tabs:pin", args => Do(() => Saved.Pin(Text(args, 0))));
 		bridge.Register("tabs:unpin", args => Do(() => Saved.Unpin(Text(args, 0))));
 		bridge.Register("tabs:open-item", args => Do(() => Saved.Open(Text(args, 0))));
+		bridge.Register("split:with", args => Do(() => Tabs.SplitWith(Text(args, 0), Text(args, 1))));
+		bridge.Register("split:drop", args => Do(() => Tabs.SplitDrop(Text(args, 0), Text(args, 1), Text(args, 2))));
+		bridge.Register("split:remove", args => Do(() => Tabs.Unsplit(Text(args, 0))));
+		bridge.Register("split:drop-zone", args => Do(() => Shell.SetDropZone(Arg(args, 0) is { ValueKind: System.Text.Json.JsonValueKind.Object } zone ? new Rect(zone.GetProperty("x").GetDouble(), zone.GetProperty("y").GetDouble(), zone.GetProperty("width").GetDouble(), zone.GetProperty("height").GetDouble()) : null)));
+		bridge.Register("split:ratios", args => Do(() => Tabs.SetSplitRatios(Text(args, 0), [.. Arg(args, 1).EnumerateArray().Select(r => r.GetDouble())], Arg(args, 2).GetDouble())));
 		bridge.Register("tabs:save", args => Do(() => Saved.Save(Text(args, 0), Text(args, 1), Int(args, 2))));
 		bridge.Register("tabs:close-others", args => Do(() => Tabs.CloseOthers(Text(args, 0))));
 		bridge.Register("command:run", args => Run(Text(args, 0)));
@@ -240,7 +245,12 @@ public sealed class ChromeApi : IDisposable
 	public bool SettingsOpen => Shell.SettingsOpen;
 
 	/// <summary>The window resized or the page moved: panels and the surface follow.</summary>
-	public void LayoutChanged() => Shell.LayoutChanged();
+	public void LayoutChanged()
+	{
+		Shell.LayoutChanged();
+		// The dividers and the drop zones the chrome works out follow the page area.
+		_host.Push("tabs:state", State());
+	}
 
 	private Rect PageArea()
 	{
@@ -251,7 +261,13 @@ public sealed class ChromeApi : IDisposable
 
 	private List<string> RecentFeatures() => [.. (_app.Settings.Get("recentFeatures")?.AsArray() ?? []).Select(n => n!.GetValue<string>())];
 
-	public TabsState State() => Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")) with { OpenStack = Stacks?.OpenKey };
+	public TabsState State() => Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")) with
+	{
+		OpenStack = Stacks?.OpenKey,
+		Splits = Tabs.Splits.All,
+		ShownSplit = Tabs.ActiveId is { } active && Tabs.Splits.Of(active) is { } split ? new ShownSplit(split.Id, Split.PaneRects(PageArea(), split)) : null,
+		PageArea = PageArea(),
+	};
 
 	/// <summary>Where the chrome ends and the page begins. With tabs on the left the app sidebar folds into the rail.</summary>
 	public ChromeInsets Insets()
@@ -345,6 +361,7 @@ public sealed class ChromeApi : IDisposable
 			"tab.new" => Act(true, NewTab),
 			"tab.close" => Act(Tabs.ActiveId is not null, () => Tabs.Close(Tabs.ActiveId!)),
 			"tab.reopenClosed" => Tabs.ReopenClosed() is null ? NotApplicable : Done,
+			"tab.split" => Act(Tabs.ActiveId is not null, SplitWithNewTab),
 			"tab.next" => ActivateIfAny(Tabs.NextId()),
 			"tab.previous" => ActivateIfAny(Tabs.PreviousId()),
 			"window.new" => Act(true, _host.NewWindow),
@@ -407,6 +424,15 @@ public sealed class ChromeApi : IDisposable
 		var id = history.Entries;
 		Menu([.. items.Select(item => new MenuItem(item.Label, () => page.GoToHistoryEntry(id[item.Index].Id)))], args, 1);
 		return null;
+	}
+
+	/// <summary>Split with New Tab: a blank tab beside the one in front, with the keyboard in its address bar.</summary>
+	private void SplitWithNewTab()
+	{
+		var active = Tabs.ActiveId ?? throw new InvalidOperationException("No tab to split");
+		var created = Tabs.Create(BlankUrl);
+		Tabs.SplitWith(active, created.Id);
+		FocusAddress();
 	}
 
 	private void NewTab()
@@ -639,6 +665,7 @@ public sealed class ChromeApi : IDisposable
 internal sealed class LifecycleTabs(TabService tabs, TabOverview overview) : ILifecycleTabs
 {
 	public string? ActiveId => tabs.ActiveId;
+	public bool IsShown(string id) => tabs.IsShown(id);
 	public IReadOnlyList<TabRecord> Records => tabs.Records;
 	public bool HasPage(string id) => tabs.HasPage(id);
 	public bool IsAudible(string id) => tabs.PageOf(id)?.IsAudible ?? false;

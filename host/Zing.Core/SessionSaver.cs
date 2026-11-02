@@ -8,11 +8,11 @@ public sealed class SessionSaver : IDisposable
 {
 	private readonly string _path;
 	private readonly SettingsStore _settings;
-	private readonly Func<(IReadOnlyList<TabRecord> Records, string? ActiveId)> _source;
+	private readonly Func<IReadOnlyList<SessionTab>> _source;
 	private readonly DebouncedJsonWriter _writer;
 	private readonly IDisposable _subscription;
 
-	public SessionSaver(string path, SettingsStore settings, Func<(IReadOnlyList<TabRecord>, string?)> source, IScheduler scheduler, Action<Exception> onError)
+	public SessionSaver(string path, SettingsStore settings, Func<IReadOnlyList<SessionTab>> source, IScheduler scheduler, Action<Exception> onError)
 	{
 		_path = path;
 		_settings = settings;
@@ -32,8 +32,7 @@ public sealed class SessionSaver : IDisposable
 	public void Changed()
 	{
 		if (!Enabled) return;
-		var (records, activeId) = _source();
-		_writer.Write(Session.Prepare(Session.ToSessionTabs(records, activeId)));
+		_writer.Write(Session.Prepare(_source()));
 	}
 
 	/// <summary>On quit, so the last change inside the debounce window isn't lost.</summary>

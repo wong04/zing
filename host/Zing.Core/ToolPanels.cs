@@ -294,7 +294,8 @@ public sealed record SurfaceInput(
 	bool SidebarRevealed,
 	double SidebarWidth,
 	IReadOnlyList<Rect> PanelFrames,
-	bool Dragging);
+	bool Dragging,
+	Rect? DropZone = null);
 
 public static class SurfaceRegion
 {
@@ -313,6 +314,7 @@ public static class SurfaceRegion
 		if (input.Gated || input.SettingsOpen) return new Rect(0, 0, content.Width, content.Height);
 		var parts = new List<Rect>();
 		if (input.SidebarRevealed) parts.Add(new Rect(0, 0, input.SidebarWidth, content.Height));
+		if (input.DropZone is { } zone) parts.Add(zone);
 		if (input.Dragging) parts.Add(input.Page);
 		else
 			foreach (var f in input.PanelFrames)

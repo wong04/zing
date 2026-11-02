@@ -29,6 +29,13 @@ export function Surface() {
 				settings?.settings.tabBarPosition === 'left' ? <TabRail state={tabs} variant="floating" side="left" /> : <Sidebar variant="floating" />
 			) : null}
 			<PanelHost state={panels} origin={shell.origin} />
+			{shell.dropZone ? (
+				// Where a tab dragged over the page would go in a split.
+				<div
+					className="split-drop-zone"
+					style={{ left: shell.dropZone.x - shell.origin.x, top: shell.dropZone.y - shell.origin.y, width: shell.dropZone.width, height: shell.dropZone.height }}
+				/>
+			) : null}
 			{shell.settingsOpen && settings ? (
 				<SettingsSheet handle={settings} initialCategory={shell.settingsCategory} version={shell.appVersion} />
 			) : null}

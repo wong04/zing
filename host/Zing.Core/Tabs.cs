@@ -62,7 +62,11 @@ public static class PageFaults
 }
 
 /// <summary>src/shared/ipc.ts TabsState.</summary>
-public sealed record TabsState(IReadOnlyList<TabView> Tabs, string? ActiveId, string Organization, bool Dropdowns, string? OpenStack);
+/// <param name="Splits">This window's splits; <paramref name="ShownSplit"/> is the active tab's, with where its panes are.</param>
+public sealed record TabsState(IReadOnlyList<TabView> Tabs, string? ActiveId, string Organization, bool Dropdowns, string? OpenStack, IReadOnlyList<SplitLayout>? Splits = null, ShownSplit? ShownSplit = null, Rect? PageArea = null);
+
+/// <summary>The active tab's split on screen: its panes' places in the window's content, in DIPs.</summary>
+public sealed record ShownSplit(string Id, IReadOnlyList<Rect> Rects);
 
 /// <summary>Per-tab state that only exists while a page is attached.</summary>
 public sealed record PageState(bool Loading, bool CanGoBack, bool CanGoForward);

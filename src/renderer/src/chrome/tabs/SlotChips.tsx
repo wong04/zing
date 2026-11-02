@@ -45,7 +45,8 @@ export function TabIconView({ tab }: { tab: TabView }) {
 	)
 }
 
-export function TabChip({ tab, active, frame }: { tab: TabView; active: boolean; frame: ChipFrame }) {
+/** `inSplit`: the tab is a pane of a split view, which the strip marks so its tabs read as one. */
+export function TabChip({ tab, active, frame, inSplit = false }: { tab: TabView; active: boolean; frame: ChipFrame; inSplit?: boolean }) {
 	const springLoad = useSpringLoad(() => void zing.activateTab(tab.id))
 	const title = tabTitle(tab)
 	const iconOnly = tab.pinned || frame.compact
@@ -81,7 +82,7 @@ export function TabChip({ tab, active, frame }: { tab: TabView; active: boolean;
 			role="tab"
 			aria-selected={active}
 			tabIndex={active ? 0 : -1}
-			className={classes('tab', active && 'active', tab.pinned && 'pinned', iconOnly && 'icon-only', frame.dragging && 'dragging', tab.sleeping === true && 'sleeping', tab.pageState !== undefined && 'faulted')}
+			className={classes('tab', active && 'active', inSplit && 'in-split', tab.pinned && 'pinned', iconOnly && 'icon-only', frame.dragging && 'dragging', tab.sleeping === true && 'sleeping', tab.pageState !== undefined && 'faulted')}
 			style={chipStyle(frame)}
 			title={tabTooltip(tab)}
 			data-tab-id={tab.id}

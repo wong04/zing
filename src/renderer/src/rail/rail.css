@@ -366,3 +366,46 @@
 .chrome.side .toolbar input {
 	-webkit-app-region: no-drag;
 }
+
+/* A split's tabs, together in one box (split view). */
+.rail-split {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 3px;
+	border: 1px solid var(--separator);
+	border-radius: calc(var(--control-radius) + 3px);
+	background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+/* The dividers between split panes, drawn by the chrome in the gaps the host leaves between them. */
+.split-divider {
+	position: fixed;
+	z-index: 10;
+	touch-action: none;
+	background: var(--separator);
+	-webkit-app-region: no-drag;
+}
+
+.split-divider.row {
+	cursor: col-resize;
+}
+
+.split-divider.column {
+	cursor: row-resize;
+}
+
+.split-divider:hover {
+	background: var(--accent);
+}
+
+/* Where a tab dragged over a page would go in a split, drawn by the surface view over the page. */
+.split-drop-zone {
+	position: fixed;
+	box-sizing: border-box;
+	border: 2px solid var(--accent);
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--accent) 18%, transparent);
+	pointer-events: none;
+	animation: rail-in 0.12s ease-out;
+}

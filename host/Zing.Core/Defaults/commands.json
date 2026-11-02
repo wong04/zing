@@ -99,6 +99,19 @@
 		]
 	},
 	{
+		"id": "tab.split",
+		"label": "Split with New Tab",
+		"shortcuts": [
+			{
+				"code": "KeyE",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+E"
+			}
+		]
+	},
+	{
 		"id": "page.find",
 		"label": "Find…",
 		"shortcuts": [

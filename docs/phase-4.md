@@ -75,15 +75,22 @@ As built: `SavedTabs` (host/Zing.Core) ties tabs to items; Pin, Unpin and Ctrl+D
 - **Icons.** Favicons stay in memory only (B22). An unloaded item shows a letter tile until its page has loaded once in this run.
 - **Tests:** unit tests for binding (one tab per item, closing keeps the item, reset, update) and the library moves. e2e tests for pinning, a relaunch keeping the items but no pages, clicking a tile twice switching instead of opening a second tab, and the drag between sections.
 
-### C. Split view (T5), PR 3
+### C. Split view (T5), PR 3: done
 
-Unchanged from the earlier plan:
-- Each pane's page is laid out with `paneRects`.
-- The dividers and the drop zones on a page edge are new `OverlayHost` levels (W-6).
-- The focused pane drives the address bar.
-- Splits survive sleeping and session restore.
-- Ordering treats a split as one unit.
-- Ways to make one: "Split with new tab", "Add to split…", Ctrl+Shift+\\, and dragging a tab onto a page edge.
+As built:
+- **Model.** `Split` and `SplitSet` (host/Zing.Core/Split.cs, ported from `split.ts`) belong to the tab service. Activating a tab shows its whole split; moving between panes hides nothing.
+- **Layout.** The host lays out each pane's page with `Split.PaneRects` on whole pixels, with a 4 px gap.
+- **Dividers.** They are drawn by the chrome, not an `OverlayHost` level: the chrome's view lies under the pages, so the gap between two panes shows it. Drag one to resize its two neighbours; double-click it to make the panes equal.
+- **The drop zone** for a tab dragged onto a page's edge is drawn by the surface view, which is already an `OverlayHost` level, from the shell state's `DropZone`.
+- **Focus.** A click into a pane gives its page the keyboard, and its tab becomes the active one, so it drives the address bar.
+- **Sleep and auto-close** never take a pane that is on screen (`ILifecycleTabs.IsShown`).
+- **Restore.** With Reopen tabs on, each saved tab records its split (`SessionSplit`), and the split comes back. A split whose panes weren't all saved comes back as plain tabs.
+- **Ways to make one:**
+  - Split with New Tab (Ctrl+Shift+E; Ctrl+Shift+\\ was already the tab overview)
+  - Show Beside Current Tab, in the tab menu
+  - dragging a tab from the rail onto a page's edge
+- **Ways to undo one:** Remove from Split in the tab menu; closing a pane of a two-pane split dissolves it.
+- **Display.** The rail shows a split once, as a box of its tabs; the top strip underlines a split's tabs. Arrangements still sort a split's tabs one by one; keeping them together in every arrangement is left for later.
 
 ### D. Polish (T4), PR 4
 

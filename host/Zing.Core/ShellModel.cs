@@ -124,13 +124,25 @@ public sealed class ShellModel : IDisposable
 
 	public Rect PageRect() => _window.PageArea();
 
+	private Rect? _dropZone;
+
+	/// <summary>Where a tab dragged over a page would land in a split (split view), or null once the drag leaves or ends.</summary>
+	public void SetDropZone(Rect? zone)
+	{
+		if (zone == _dropZone) return;
+		_dropZone = zone;
+		Sync();
+		PushState();
+	}
+
 	public ShellState State() => new(
 		_settingsOpen,
 		_category,
 		_reveal.Revealed,
 		Gated,
 		new Point(_region?.X ?? 0, _region?.Y ?? 0),
-		_appVersion);
+		_appVersion,
+		_dropZone);
 
 	public ToolPanelsState PanelsState() => _panels.State();
 
@@ -338,7 +350,8 @@ public sealed class ShellModel : IDisposable
 			_reveal.Revealed,
 			SidebarWidth,
 			_panels.Visible.Select(p => p.Frame).ToList(),
-			_panels.Dragging));
+			_panels.Dragging,
+			_dropZone));
 		SurfaceRegionChanged?.Invoke(_region);
 	}
 

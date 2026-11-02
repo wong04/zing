@@ -55,6 +55,19 @@ public sealed class ShellModelTests
 	}
 
 	[Fact]
+	public void A_split_drop_zone_shows_on_the_surface_until_it_is_cleared()
+	{
+		var h = new Harness();
+		var zone = new Rect(600, 80, 400, 700);
+		h.Model.SetDropZone(zone);
+		Assert.Equal(zone, h.Model.State().DropZone);
+		Assert.Equal(zone, h.Model.Region);
+		h.Model.SetDropZone(null);
+		Assert.Null(h.Model.State().DropZone);
+		Assert.Null(h.Model.Region);
+	}
+
+	[Fact]
 	public void The_state_serialises_for_the_bridge()
 	{
 		var h = new Harness();

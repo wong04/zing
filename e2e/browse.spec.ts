@@ -29,6 +29,8 @@ test('the React chrome loads in WebView2 with one tab', async () => {
 
 test('typing an address loads it in the page and the tab shows its title', async () => {
 	const zing = await launchZing()
+	// The chrome draws its first tab a moment after it starts; typing before then has no tab to go to.
+	await expect(zing.chrome.locator('[role="tab"]')).toHaveCount(1)
 	const address = zing.chrome.getByRole('textbox', { name: 'Address and search bar' })
 	await address.click()
 	await address.fill(`${base}/one`)

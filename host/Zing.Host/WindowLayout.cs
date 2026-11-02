@@ -54,10 +54,16 @@ public sealed class WindowLayout(HostWindow window, Func<ChromeApi?> api)
 	/// <summary>The page goes inside the chrome's insets; nothing to do before the chrome's API exists.</summary>
 	public void PlacePage(WebView2Page page)
 	{
-		if (api() is not { } chrome) return;
+		if (PageRect() is { } rect) page.Place(rect);
+	}
+
+	/// <summary>Where pages go: inside the chrome's insets. Null before the chrome's API exists.</summary>
+	public Rect? PageRect()
+	{
+		if (api() is not { } chrome) return null;
 		var insets = chrome.Insets();
 		var content = ContentRect();
-		page.Place(new Rect(insets.Left, insets.Top, Math.Max(0, content.Width - insets.Left - insets.Right), Math.Max(0, content.Height - insets.Top)));
+		return new Rect(insets.Left, insets.Top, Math.Max(0, content.Width - insets.Left - insets.Right), Math.Max(0, content.Height - insets.Top));
 	}
 
 	/// <summary>The width the caption buttons take at the chrome's top-right, in whole CSS pixels.</summary>

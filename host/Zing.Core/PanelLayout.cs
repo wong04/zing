@@ -208,14 +208,18 @@ public static class ShellConstants
 	public static bool IsSettingsCategory(string? value) => value is not null && SettingsCategories.Contains(value);
 }
 
-/// <summary>The surface view's state. <c>Origin</c> is where that view sits in window content coordinates.</summary>
+/// <summary>
+/// The surface view's state. <c>Origin</c> is where that view sits in window content coordinates. <c>DropZone</c> is
+/// where a tab dragged over a page would go in a split, highlighted over the page while the drag lasts.
+/// </summary>
 public sealed record ShellState(
 	bool SettingsOpen,
 	string SettingsCategory,
 	bool SidebarRevealed,
 	bool Gated,
 	Point Origin,
-	string AppVersion);
+	string AppVersion,
+	Rect? DropZone = null);
 
 public sealed record ToolPanelView(string Id, string Content, string Title, Rect Frame, bool Minimized);
 

@@ -75,7 +75,7 @@ public sealed class ZingApp
 		// Any view can be the first to learn the engine's browser process died; the rebuild runs after its event returns.
 		EngineFailures.BrowserLost += () => Faults.Enqueue(dispatcher, LoseEngine, "engine rebuild");
 		_environment = OpenEnvironmentAsync();
-		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => (Primary?.Api?.Tabs.Records ?? [], Primary?.Api?.Tabs.ActiveId), _scheduler, e => TestHooks.Record("session write", e));
+		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => Primary?.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : [], _scheduler, e => TestHooks.Record("session write", e));
 		_onQuit.Add(_session.Flush);
 		if (Flag("restoreTabs"))
 		{
@@ -270,7 +270,7 @@ public sealed class ZingApp
 		if (_rebuild is not null) return;
 		TestHooks.Record("engine", new EngineStoppedException());
 		var tabs = Primary?.Api?.Tabs;
-		var rebuild = new EngineRebuild(tabs is null ? [] : Session.ToSessionTabs(tabs.Records, tabs.ActiveId));
+		var rebuild = new EngineRebuild(tabs is null ? [] : Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All));
 		_rebuild = rebuild;
 		_session?.Flush();
 		// If the engine never says it has exited, Zing still comes back rather than idling with no window.

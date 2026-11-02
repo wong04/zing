@@ -65,6 +65,7 @@ public sealed class FakeLifecycleTabs : ILifecycleTabs
 	private readonly List<TabRecord> _records = [];
 
 	public string? ActiveId { get; set; }
+	public bool IsShown(string id) => id == ActiveId;
 	public IReadOnlyList<TabRecord> Records => _records;
 	public Dictionary<string, PageSim> Pages { get; } = [];
 	public List<string> Slept { get; } = [];

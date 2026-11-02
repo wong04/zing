@@ -45,6 +45,32 @@ export interface TabsState extends TabList {
 	readonly dropdowns: boolean
 	/** Key of the stack whose dropdown is open. */
 	readonly openStack: string | undefined
+	/** This window's splits (split view), each a layout over tab ids. */
+	readonly splits?: readonly SplitView[]
+	/** The active tab's split on screen: where its panes are, in the window's content, in DIPs. */
+	readonly shownSplit?: ShownSplit
+	/** Where pages go in the window's content, in DIPs: a tab dragged there can split the page. */
+	readonly pageArea?: SplitRect
+}
+
+export interface SplitRect {
+	readonly x: number
+	readonly y: number
+	readonly width: number
+	readonly height: number
+}
+
+export interface SplitView {
+	readonly id: string
+	/** 'row' puts the panes side by side, 'column' one above the other. */
+	readonly orientation: 'row' | 'column'
+	readonly tabIds: readonly TabId[]
+	readonly ratios: readonly number[]
+}
+
+export interface ShownSplit {
+	readonly id: string
+	readonly rects: readonly SplitRect[]
 }
 
 /** What the stack dropdown (drawn in the overlay view) shows. */
@@ -166,6 +192,15 @@ export interface InvokeContract {
 	'tabs:unpin': { args: [id: TabId]; result: void }
 	/** Switches to a saved item's tab (Favourites, Pinned), or opens one at its address. */
 	'tabs:open-item': { args: [itemId: string]; result: void }
+	/** Puts `other` beside `id`: into its split, or a new side-by-side split of the two. */
+	'split:with': { args: [id: TabId, other: TabId]; result: void }
+	/** A tab dropped on a page's edge: beside that page, on that side. */
+	'split:drop': { args: [target: TabId, dropped: TabId, edge: 'left' | 'right' | 'top' | 'bottom']; result: void }
+	'split:remove': { args: [id: TabId]; result: void }
+	/** Where a tab dragged over a page would land, highlighted by the surface view; null once the drag leaves or ends. */
+	'split:drop-zone': { args: [zone: SplitRect | null]; result: void }
+	/** New pane sizes (a divider dragged); `length` is the page area's along the split. */
+	'split:ratios': { args: [splitId: string, ratios: number[], length: number]; result: void }
 	/** Saves a tab into a folder of Favourites or Pinned before the child now at `at`, tied to it; a saved tab's item moves there. */
 	'tabs:save': { args: [id: TabId, folderId: string, at: number]; result: void }
 	'tabs:move-stack': { args: [key: string, index: number]; result: void }
@@ -270,6 +305,11 @@ export interface ZingApi {
 	pinTab(id: TabId): Promise<void>
 	unpinTab(id: TabId): Promise<void>
 	openSavedTab(itemId: string): Promise<void>
+	splitWith(id: TabId, other: TabId): Promise<void>
+	splitDrop(target: TabId, dropped: TabId, edge: 'left' | 'right' | 'top' | 'bottom'): Promise<void>
+	removeFromSplit(id: TabId): Promise<void>
+	setSplitDropZone(zone: SplitRect | null): Promise<void>
+	setSplitRatios(splitId: string, ratios: number[], length: number): Promise<void>
 	saveTab(id: TabId, folderId: string, at: number): Promise<void>
 	moveStack(key: string, index: number): Promise<void>
 	moveWithinStack(id: TabId, key: string, index: number): Promise<void>

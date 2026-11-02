@@ -190,6 +190,26 @@
 			"args": 0
 		},
 		{
+			"channel": "split:drop",
+			"args": 3
+		},
+		{
+			"channel": "split:drop-zone",
+			"args": 1
+		},
+		{
+			"channel": "split:ratios",
+			"args": 3
+		},
+		{
+			"channel": "split:remove",
+			"args": 1
+		},
+		{
+			"channel": "split:with",
+			"args": 2
+		},
+		{
 			"channel": "stack:close",
 			"args": 0
 		},

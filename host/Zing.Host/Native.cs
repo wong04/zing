@@ -162,6 +162,20 @@ internal static class Native
 	public static extern nint GetFocus();
 
 	[DllImport("user32.dll")]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool IsChild(nint parent, nint hwnd);
+
+	[DllImport("user32.dll")]
+	private static extern short GetAsyncKeyState(int key);
+
+	/// <summary>Whether the left, right or middle mouse button is held down now.</summary>
+	public static bool MouseButtonDown()
+	{
+		const int VK_LBUTTON = 0x01, VK_RBUTTON = 0x02, VK_MBUTTON = 0x04;
+		return new[] { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON }.Any(key => (GetAsyncKeyState(key) & 0x8000) != 0);
+	}
+
+	[DllImport("user32.dll")]
 	public static extern nint GetWindow(nint hwnd, uint command);
 
 	[DllImport("user32.dll")]
