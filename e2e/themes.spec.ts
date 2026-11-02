@@ -198,3 +198,66 @@ test('a custom colour themes everything', async () => {
 	await expectAccent(again.chrome, 'custom', '#3366CC')
 	await again.close()
 })
+
+/** A rail element's box and paint, as the view computes them. */
+interface RailPaint {
+	readonly title: string | null
+	readonly height: string
+	readonly margin: string
+	readonly borderWidth: string
+	readonly boxShadow: string
+	readonly clipPath: string
+}
+
+async function railPaint(elements: Locator): Promise<RailPaint[]> {
+	return elements.evaluateAll((els) => {
+		const dom = globalThis as unknown as {
+			getComputedStyle(e: unknown): {
+				height: string
+				marginTop: string
+				marginRight: string
+				marginBottom: string
+				marginLeft: string
+				borderTopWidth: string
+				boxShadow: string
+				clipPath: string
+			}
+		}
+		const nodes = els as unknown as { getAttribute(name: string): string | null }[]
+		return nodes.map((el) => {
+			const style = dom.getComputedStyle(el)
+			return {
+				title: el.getAttribute('title'),
+				height: style.height,
+				margin: [style.marginTop, style.marginRight, style.marginBottom, style.marginLeft].join(' '),
+				borderWidth: style.borderTopWidth,
+				boxShadow: style.boxShadow,
+				clipPath: style.clipPath,
+			}
+		})
+	})
+}
+
+test('in a contrast theme cards are plain outlined rows', async () => {
+	const zing = await launchZing()
+	await openTab(zing.chrome, 'a.site', 'Alpha')
+	await openTab(zing.chrome, 'b.site', 'Beta')
+	// Beta is a favourite, so it hangs as a ribbon and leaves the card list.
+	await zing.chrome.evaluate(() => window.zing.runCommand('library.addFavourite'))
+	await zing.chrome.emulateMedia({ forcedColors: 'active' })
+
+	for (const side of ['left', 'right'] as const) {
+		await zing.chrome.evaluate((position) => window.zing.setSetting('tabBarPosition', position), side)
+		await expect(zing.chrome.locator(`.rail.pinned.${side}`)).toBeVisible()
+
+		const cards = await railPaint(zing.chrome.locator('.rail-tabs [role="tab"]'))
+		expect(cards.map((card) => card.title)).toContain('Alpha')
+		for (const card of cards) {
+			expect(card).toMatchObject({ height: '32px', margin: '0px 0px 0px 0px', borderWidth: '1px', boxShadow: 'none' })
+		}
+
+		const [ribbon] = await railPaint(zing.chrome.locator('.rail-favourites > .rail-ribbon:not(.empty)'))
+		expect(ribbon).toMatchObject({ height: '32px', clipPath: 'none', borderWidth: '1px', boxShadow: 'none' })
+	}
+	await zing.close()
+})

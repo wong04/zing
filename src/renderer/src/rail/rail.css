@@ -715,3 +715,50 @@
 	content-visibility: auto;
 	contain-intrinsic-size: auto 38px;
 }
+
+/* Contrast themes drop the fills and shadows, so every card is an outlined 32px row. The overlap and merge rules are far more
+   specific than these, hence !important on the properties they set. */
+@media (forced-colors: active) {
+	.rail-tabs,
+	.rail.pinned.right .rail-tabs {
+		margin-inline: 0 !important;
+		padding-inline: 0 !important;
+	}
+
+	.rail-tab {
+		height: 32px !important;
+		margin: 0 !important;
+		border: 1px solid CanvasText !important;
+		box-shadow: none !important;
+	}
+
+	.rail-tab.active {
+		border-color: Highlight !important;
+	}
+
+	.rail-ribbon {
+		height: 32px !important;
+		clip-path: none;
+		border: 1px solid CanvasText;
+		box-shadow: none !important;
+	}
+
+	.rail-ribbon.active,
+	.rail-ribbon.more.holds-active {
+		border-color: Highlight;
+	}
+
+	.rail-favourites > .rail-ribbon.empty::before {
+		display: none;
+	}
+
+	.rail-favourites-panel {
+		border: 1px solid CanvasText;
+	}
+
+	.rail-tabs > .rail-row,
+	.rail-tabs > .rail-group,
+	.rail-tabs > .rail-split {
+		contain-intrinsic-size: auto 32px;
+	}
+}
