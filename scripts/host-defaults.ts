@@ -29,6 +29,7 @@ export type SettingRule =
 	| { readonly type: 'flag' }
 	| { readonly type: 'number' | 'integer'; readonly min: number; readonly max: number }
 	| { readonly type: 'text' | 'textList' | 'startShortcuts' }
+	| { readonly type: 'hexColor' }
 	| { readonly type: 'sleep'; readonly min: number; readonly max: number }
 
 const oneOf = (values: readonly string[]): SettingRule => ({ type: 'enum', values })
@@ -44,6 +45,7 @@ const range = (type: 'number' | 'integer', min: number, max: number): SettingRul
 export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	theme: oneOf(APPEARANCES),
 	accent: oneOf(ACCENTS),
+	customColor: { type: 'hexColor' },
 	homepage: text,
 	startShortcuts: { type: 'startShortcuts' },
 	searchEngine: oneOf(SEARCH_ENGINES),
@@ -95,6 +97,8 @@ export function ruleAccepts(rule: SettingRule, value: unknown): boolean {
 			return Number.isInteger(value) && isFiniteIn(value, rule.min, rule.max)
 		case 'text':
 			return typeof value === 'string'
+		case 'hexColor':
+			return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)
 		case 'textList':
 			return Array.isArray(value) && value.every((s) => typeof s === 'string')
 		case 'startShortcuts':

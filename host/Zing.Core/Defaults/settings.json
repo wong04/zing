@@ -1,6 +1,7 @@
 {
 	"theme": "system",
 	"accent": "yellow",
+	"customColor": "#D9B872",
 	"homepage": "",
 	"startShortcuts": null,
 	"searchEngine": "google",

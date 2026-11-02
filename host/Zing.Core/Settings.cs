@@ -60,6 +60,8 @@ public static class SettingsSchema
 					&& Math.Floor(value.GetDouble()) == value.GetDouble();
 			case "text":
 				return value.ValueKind == JsonValueKind.String;
+			case "hexColor":
+				return value.ValueKind == JsonValueKind.String && IsHexColor(value.GetString()!);
 			case "textList":
 				return value.ValueKind == JsonValueKind.Array && value.EnumerateArray().All(s => s.ValueKind == JsonValueKind.String);
 			case "startShortcuts":
@@ -87,6 +89,9 @@ public static class SettingsSchema
 		return IsBool(value, "enabled") && IsBool(value, "sleepPinned")
 			&& value.TryGetProperty("afterMinutes", out var minutes) && InRange(minutes, min, max);
 	}
+
+	/// <summary>Exactly #RRGGBB: a length check, because a regex's end anchor would also accept a trailing newline.</summary>
+	private static bool IsHexColor(string text) => text.Length == 7 && text[0] == '#' && text[1..].All(char.IsAsciiHexDigit);
 
 	private static bool IsBool(JsonElement obj, string name) =>
 		obj.TryGetProperty(name, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False;

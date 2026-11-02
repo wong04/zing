@@ -16,8 +16,13 @@
 			"magenta",
 			"purple",
 			"red",
-			"mono"
+			"mono",
+			"midnight",
+			"custom"
 		]
+	},
+	"customColor": {
+		"type": "hexColor"
 	},
 	"homepage": {
 		"type": "text"

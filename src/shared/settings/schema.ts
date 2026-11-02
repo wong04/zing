@@ -42,6 +42,10 @@ function text(defaultValue: string): Setting<string> {
 	return { default: defaultValue, accepts: (v): v is string => typeof v === 'string' }
 }
 
+function hexColor(defaultValue: string): Setting<string> {
+	return { default: defaultValue, accepts: (v): v is string => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) }
+}
+
 function textList(): Setting<readonly string[]> {
 	return {
 		default: [],
@@ -68,7 +72,9 @@ function startShortcuts(): Setting<readonly StartShortcut[] | null> {
 }
 
 export const APPEARANCES = ['system', 'light', 'dark'] as const
-export const ACCENTS = ['yellow', 'green', 'blue', 'magenta', 'purple', 'red', 'mono'] as const
+export const ACCENTS = ['yellow', 'green', 'blue', 'magenta', 'purple', 'red', 'mono', 'midnight', 'custom'] as const
+/** The seed for the `custom` accent until the user picks one: the reference beige, so the default looks like Amber. */
+export const DEFAULT_CUSTOM_COLOR = '#D9B872'
 export const SEARCH_ENGINES = ['google', 'duckduckgo', 'bing', 'brave', 'kagi', 'startpage'] as const
 export const DOH_PROVIDERS = ['cloudflare', 'cloudflare-security', 'google', 'quad9'] as const
 export const TAB_ORGANIZATIONS = ['manual', 'domain', 'alphabetical', 'recentlyUsed', 'newest'] as const
@@ -79,6 +85,8 @@ export const SETTINGS_SCHEMA = {
 	/** Krackn's `appTheme`: Auto / Light / Dark. Every view is forced to it by the host (`HostedView.FollowTheme`). */
 	theme: oneOf(APPEARANCES, 'system'),
 	accent: oneOf(ACCENTS, 'yellow'),
+	/** Zing: the seed colour the `custom` accent is generated from, as #RRGGBB. */
+	customColor: hexColor(DEFAULT_CUSTOM_COLOR),
 	/** Empty means the local new-tab page, the only homepage that makes no network request. */
 	homepage: text(''),
 	startShortcuts: startShortcuts(),

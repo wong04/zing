@@ -137,7 +137,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 				],
 			},
 		},
-		{ type: 'custom', id: 'accent', keys: ['accent'] },
+		{ type: 'custom', id: 'accent', keys: ['accent', 'customColor'] },
 		{ type: 'custom', id: 'default-browser', keys: [] },
 		toggle('sidebarPinned', 'Keep the sidebar open', {
 			detail: (s) => (s.sidebarPinned ? undefined : 'Move to the left edge to show it. Ctrl+S pins it again.'),

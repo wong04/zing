@@ -105,7 +105,7 @@ public sealed class StartPageTests
 			Assert.Equal(Str(a.GetProperty("darkDerived"), "control"), Zing.Core.Palette.Control(dark));
 			Assert.Equal(Str(a.GetProperty("darkDerived"), "raised"), Zing.Core.Palette.Raised(dark));
 			Assert.Equal(Str(a.GetProperty("darkDerived"), "accentInk"), Zing.Core.Palette.AccentInk(dark));
-			Assert.Equal(Theme(a.GetProperty("startPageTheme")), StartPage.Theme(accent));
+			Assert.Equal(Theme(a.GetProperty("startPageTheme")), StartPage.Theme(accent, "#D9B872"));
 		}
 	}
 
@@ -121,11 +121,19 @@ public sealed class StartPageTests
 	[Fact]
 	public void AnUnknownAccentIsRefused() => Assert.Throws<UnknownAccentException>(() => Zing.Core.Palette.LightTokens("teal"));
 
+	private static readonly string[] Seeds = ["#000000", "#FFFFFF", "#808080", "#FFFF00", "#3366CC"];
+
+	private static IEnumerable<(string Name, PaletteTokens Light, PaletteTokens Dark)> Subjects() =>
+		Zing.Core.Palette.Accents.Select(a => (a, Zing.Core.Palette.LightTokens(a), Zing.Core.Palette.DarkTokens(a)))
+			.Concat(Seeds.Select(seed => ($"seed {seed}", Zing.Core.Palette.ThemeTokens("custom", seed, false), Zing.Core.Palette.ThemeTokens("custom", seed, true))));
+
 	public static TheoryData<string, string, string, string> LegibilityPairs()
 	{
 		var data = new TheoryData<string, string, string, string>();
-		foreach (var accent in Zing.Core.Palette.Accents) {
-			foreach (var (mode, tokens) in new[] { ("light", Zing.Core.Palette.LightTokens(accent)), ("dark", Zing.Core.Palette.DarkTokens(accent)) }) {
+		foreach (var (name, light, dark) in Subjects())
+		{
+			foreach (var (mode, tokens) in new[] { ("light", light), ("dark", dark) })
+			{
 				var ink = Zing.Core.Palette.AccentInk(tokens);
 				var pairs = new (string Label, string Fg, string Bg)[]
 				{
@@ -139,7 +147,7 @@ public sealed class StartPageTests
 					("text on control", tokens.Text, Zing.Core.Palette.Control(tokens)),
 					("text on raised", tokens.Text, Zing.Core.Palette.Raised(tokens)),
 				};
-				foreach (var pair in pairs) data.Add($"{accent} {mode} {pair.Label}", pair.Label, pair.Fg, pair.Bg);
+				foreach (var pair in pairs) data.Add($"{name} {mode} {pair.Label}", pair.Label, pair.Fg, pair.Bg);
 			}
 		}
 		return data;
@@ -154,7 +162,7 @@ public sealed class StartPageTests
 	}
 
 	[Fact]
-	public void LegibilityCoversEveryPair() => Assert.Equal(126, LegibilityPairs().Count());
+	public void LegibilityCoversEveryPair() => Assert.Equal(234, LegibilityPairs().Count());
 
 	[Fact]
 	public void ASelectedSegmentReadsAsRaisedNotSunken()
@@ -166,6 +174,31 @@ public sealed class StartPageTests
 					$"{accent} raised above control");
 			}
 		}
+	}
+
+	[Fact]
+	public void SeedsTakeTheirHueAndKeepASaturationFloor()
+	{
+		Assert.True(Math.Abs(Zing.Core.Palette.SeedProfile("#3366CC").Hue - 220) <= 1);
+		Assert.Equal(0.07, Zing.Core.Palette.SeedProfile("#000000").Saturation);
+		Assert.Throws<InvalidHexColorException>(() => Zing.Core.Palette.SeedProfile("blue"));
+	}
+
+	[Fact]
+	public void ThemeForACustomColourUsesTheSeed()
+	{
+		var theme = StartPage.Theme("custom", "#3366CC");
+		Assert.Equal(Zing.Core.Palette.ThemeTokens("custom", "#3366CC", false).Accent, theme.Light.Accent);
+		Assert.Equal(Zing.Core.Palette.Stack(Zing.Core.Palette.ThemeProfile("custom", "#3366CC"), false).Page, theme.Light.Background);
+		Assert.NotEqual(StartPage.Theme("yellow", "#D9B872").Light.Accent, theme.Light.Accent);
+	}
+
+	[Fact]
+	public void TheStartPageBackgroundIsThePageToken()
+	{
+		var theme = StartPage.Theme("yellow", "#D9B872");
+		Assert.Equal(Zing.Core.Palette.Stack(Zing.Core.Palette.ThemeProfile("yellow", "#D9B872"), false).Page, theme.Light.Background);
+		Assert.Equal(Zing.Core.Palette.Stack(Zing.Core.Palette.ThemeProfile("yellow", "#D9B872"), true).Page, theme.Dark.Background);
 	}
 
 	[Fact]
@@ -399,7 +432,7 @@ public sealed class StartPageTests
 	// MARK: - Behaviour pinned by startPage.test.ts
 
 	private static string Page(IReadOnlyList<StartShortcut>? shortcuts = null, string search = "https://www.google.com/search") =>
-		StartPage.Html(new StartPageInput(search, shortcuts ?? StartShortcuts.Defaults, StartPage.Theme("yellow")));
+		StartPage.Html(new StartPageInput(search, shortcuts ?? StartShortcuts.Defaults, StartPage.Theme("yellow", "#D9B872")));
 
 	private static int Count(string html, string needle) => html.Split(needle).Length - 1;
 
@@ -442,7 +475,7 @@ public sealed class StartPageTests
 	[Fact]
 	public void ATokenThatCouldEndTheStyleIsRefused()
 	{
-		var theme = StartPage.Theme("yellow");
+		var theme = StartPage.Theme("yellow", "#D9B872");
 		Assert.Throws<ThemeTokenException>(() => StartPage.ThemeCss(theme with { Light = theme.Light with { Accent = "red;}</style><script>alert(1)</script>" } }));
 		Assert.Throws<ThemeTokenException>(() => StartPage.ThemeCss(theme with { Dark = theme.Dark with { Text = " " } }));
 	}
@@ -450,15 +483,24 @@ public sealed class StartPageTests
 	[Fact]
 	public void FunctionalColoursAreFine()
 	{
-		var theme = StartPage.Theme("yellow");
+		var theme = StartPage.Theme("yellow", "#D9B872");
 		Assert.Contains("--accent: rgb(217 184 114 / 90%);", StartPage.ThemeCss(theme with { Light = theme.Light with { Accent = "rgb(217 184 114 / 90%)" } }));
 	}
 
 	[Fact]
 	public void ThePageAndTheRestyleScriptCarryTheSameCss()
 	{
-		var theme = StartPage.Theme("yellow");
+		var theme = StartPage.Theme("yellow", "#D9B872");
 		Assert.Contains($"<style id=\"zing-theme\">\n{StartPage.ThemeCss(theme)}\n</style>", Page());
+	}
+
+	[Fact]
+	public void TheCustomColourSettingReachesThePage()
+	{
+		var settings = SettingsSchema.Defaults();
+		settings["accent"] = "custom";
+		settings["customColor"] = "#3366CC";
+		Assert.Contains(StartPage.ThemeCss(StartPage.Theme("custom", "#3366CC")), StartPage.Html(settings));
 	}
 
 	[Fact]

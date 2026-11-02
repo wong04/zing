@@ -51,31 +51,40 @@ describe('the reference palette is preserved exactly', () => {
 	})
 })
 
-describe('every family is legible in both modes', () => {
+// The seeds a user is likely to pick: black, white, grey, a pure yellow and a mid blue.
+const legibilitySeeds = ['#000000', '#FFFFFF', '#808080', '#FFFF00', '#3366CC']
+
+describe('every family and seed is legible in both modes', () => {
 	// WCAG AA is 4.5:1 for body text. Anything below that isn't a style
 	// choice, it's a bug — and a generated palette can drift there without
 	// anyone noticing.
-	const cases = accentThemes.flatMap((theme) =>
-		modes.flatMap(([mode, tokensFor]) => {
-			const tokens = tokensFor(theme)
-			const pairs: [string, string, string][] = [
-				['text on background', tokens.text, tokens.background],
-				['text on surface', tokens.text, tokens.surface],
-				['secondary on background', tokens.textSecondary, tokens.background],
-				['onAccent on accent', tokens.onAccent, tokens.accent],
-				['text on well', tokens.text, tokens.well],
-				// The accent used as a glyph/link colour — the original accent
-				// is under 2:1 here, which is why `accentInk` exists.
-				['accentInk on surface', accentInk(tokens), tokens.surface],
-				['accentInk on selection', accentInk(tokens), tokens.selection],
-				['text on control', tokens.text, control(tokens)],
-				['text on raised', tokens.text, raised(tokens)],
-			]
-			return pairs.map(([label, fg, bg]) => [`${accentLabel(theme)} ${mode} ${label}`, fg, bg] as const)
-		}),
-	)
-	it('covers 8 families × 2 modes × 9 pairs', () => {
-		expect(cases).toHaveLength(144)
+	const tokenSets = [
+		...accentThemes.flatMap((theme) => modes.map(([mode, tokensFor]) => [`${accentLabel(theme)} ${mode}`, tokensFor(theme)] as const)),
+		...legibilitySeeds.flatMap((seed) =>
+			[
+				['light', false],
+				['dark', true],
+			].map(([mode, dark]) => [`${seed} ${mode}`, themeTokens(CUSTOM_ACCENT, seed, dark as boolean)] as const),
+		),
+	]
+	const cases = tokenSets.flatMap(([name, tokens]) => {
+		const pairs: [string, string, string][] = [
+			['text on background', tokens.text, tokens.background],
+			['text on surface', tokens.text, tokens.surface],
+			['secondary on background', tokens.textSecondary, tokens.background],
+			['onAccent on accent', tokens.onAccent, tokens.accent],
+			['text on well', tokens.text, tokens.well],
+			// The accent used as a glyph/link colour — the original accent
+			// is under 2:1 here, which is why `accentInk` exists.
+			['accentInk on surface', accentInk(tokens), tokens.surface],
+			['accentInk on selection', accentInk(tokens), tokens.selection],
+			['text on control', tokens.text, control(tokens)],
+			['text on raised', tokens.text, raised(tokens)],
+		]
+		return pairs.map(([label, fg, bg]) => [`${name} ${label}`, fg, bg] as const)
+	})
+	it('covers 8 families and 5 seeds × 2 modes × 9 pairs', () => {
+		expect(cases).toHaveLength(234)
 	})
 	it.each(cases)('%s', (_name, fg, bg) => {
 		expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(wcagAA)
