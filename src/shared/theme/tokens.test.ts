@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CUSTOM_COLOR } from '../settings'
 import { accentVariables } from './accentVariables'
+import { statusColors } from './tokens'
 
 /** Fixed across accents, so the palette never themes them. */
 const STATUS_VARIABLES = ['--positive', '--caution', '--danger']
@@ -26,6 +27,16 @@ describe('tokens.css', () => {
 			const actual = hexVariables(block)
 			expect(Object.keys(actual).sort(), mode).toEqual([...Object.keys(expected), ...STATUS_VARIABLES].sort())
 			for (const [name, value] of Object.entries(expected)) expect(actual[name]?.toLowerCase(), `${mode} ${name}`).toBe(value.toLowerCase())
+		}
+	})
+
+	it('holds the fixed status colours in both appearances', () => {
+		for (const [mode, block] of [
+			['light', blocks[0]!],
+			['dark', blocks[1]!],
+		] as const) {
+			const actual = hexVariables(block)
+			for (const [name, pair] of Object.entries(statusColors)) expect(actual[`--${name}`]?.toLowerCase(), `${mode} ${name}`).toBe(pair[mode].toLowerCase())
 		}
 	})
 })

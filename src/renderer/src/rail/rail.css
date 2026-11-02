@@ -192,7 +192,8 @@
 	position: relative;
 	z-index: 5;
 	box-shadow: var(--elevation-strong);
-	background: var(--surface);
+	background: var(--page);
+	color: var(--page-ink);
 }
 
 .rail.collapsed .rail-panel-head {
@@ -335,9 +336,13 @@
 }
 
 .rail-row.active:not(.rail-tab) {
-	background: var(--surface);
+	background: var(--page);
 	box-shadow: var(--elevation, 0 1px 2px rgb(0 0 0 / 0.12));
-	color: var(--text);
+	color: var(--page-ink);
+}
+
+.rail-group-head.active {
+	box-shadow: none;
 }
 
 .rail-row.nested {
@@ -520,13 +525,13 @@
 .rail-group.dragging {
 	position: relative;
 	z-index: 2;
-	background: var(--surface);
+	background: var(--page);
 	box-shadow: var(--elevation-strong);
-	color: var(--text);
+	color: var(--page-ink);
 }
 
 .rail-group.dragging > .rail-group-head {
-	color: var(--text);
+	color: var(--page-ink);
 }
 
 .rail-tab.dragging {
@@ -754,6 +759,22 @@
 
 	.rail-favourites-panel {
 		border: 1px solid CanvasText;
+	}
+
+	.rail-ribbon:focus-visible {
+		outline: 2px solid Highlight;
+		outline-offset: -2px;
+	}
+
+	.rail-row.dragging,
+	.rail-group.dragging {
+		outline: 2px solid Highlight;
+		outline-offset: -2px;
+	}
+
+	.rail-row.active:not(.rail-tab) {
+		outline: 1px solid Highlight;
+		outline-offset: -1px;
 	}
 
 	.rail-tabs > .rail-row,

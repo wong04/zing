@@ -267,6 +267,14 @@ test('in a contrast theme cards are plain outlined rows', async () => {
 
 		const [ribbon] = await railPaint(zing.chrome.locator('.rail-favourites > .rail-ribbon:not(.empty)'))
 		expect(ribbon).toMatchObject({ height: '32px', clipPath: 'none', borderWidth: '1px', boxShadow: 'none' })
+
+		const focused = zing.chrome.locator('.rail-favourites > .rail-ribbon:not(.empty)').first()
+		await focused.focus()
+		await zing.chrome.keyboard.press('Shift+Tab')
+		await zing.chrome.keyboard.press('Tab')
+		await expect(focused).toBeFocused()
+		await expect(focused).toHaveCSS('outline-style', 'solid')
+		await expect(focused).toHaveCSS('outline-width', '2px')
 	}
 	await zing.close()
 })
