@@ -7,15 +7,9 @@ import { DEFAULT_CUSTOM_COLOR } from '../src/shared/settings'
 import { accentLabel, accentThemes } from '../src/shared/theme/accent'
 import { accentVariables } from '../src/shared/theme/accentVariables'
 import { launchZing, test, pageWhere } from './zing'
+import { expectAccent, viewAccent, type ViewGlobals } from './theme-helpers'
 
 declare const window: { readonly zing: ZingApi }
-
-/** The globals a view's page has, typed here because this spec does not compile against the DOM lib. */
-interface ViewGlobals {
-	document: { documentElement: unknown; querySelector(selector: string): unknown }
-	getComputedStyle(element: unknown): { getPropertyValue(name: string): string }
-	matchMedia(query: string): { matches: boolean }
-}
 
 let server: Server
 let base = ''
@@ -33,23 +27,6 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())))
-
-/** The view's own --accent, and whether the view is in its dark appearance (which the palette depends on). */
-async function viewAccent(view: Page): Promise<{ accent: string; dark: boolean }> {
-	return view.evaluate(() => {
-		const g = globalThis as unknown as ViewGlobals
-		return {
-			accent: g.getComputedStyle(g.document.documentElement).getPropertyValue('--accent').trim(),
-			dark: g.matchMedia('(prefers-color-scheme: dark)').matches,
-		}
-	})
-}
-
-/** Waits until the view shows the accent that `accent` and `customColor` give in its own appearance. */
-async function expectAccent(view: Page, accent: string, customColor = DEFAULT_CUSTOM_COLOR): Promise<void> {
-	const { dark } = await viewAccent(view)
-	await expect.poll(async () => (await viewAccent(view)).accent).toBe(accentVariables(accent, customColor, dark)['--accent'])
-}
 
 /** A computed style of the first element matching `selector` in this view, as the browser serialises it. */
 async function styleOf(view: Page, selector: string, property: string): Promise<string> {
@@ -275,5 +252,59 @@ test('in a contrast theme cards are plain outlined rows', async () => {
 		const [ribbon] = await railPaint(zing.chrome.locator('.rail-favourites > .rail-ribbon:not(.empty)'))
 		expect(ribbon).toMatchObject({ height: '32px', clipPath: 'none', borderWidth: '1px', boxShadow: 'none' })
 	}
+	await zing.close()
+})
+
+/** What a page keeps through a theme switch: its scroll, when its document was made, and its window.name. */
+async function pageKeeps(view: Page): Promise<{ scrollY: number; timeOrigin: number; name: string }> {
+	return view.evaluate(() => {
+		const g = globalThis as unknown as { scrollY: number; name: string; performance: { timeOrigin: number } }
+		return { scrollY: g.scrollY, timeOrigin: g.performance.timeOrigin, name: g.name }
+	})
+}
+
+test('switching theme keeps everything', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/Long` } })
+	const long = await pageWhere(zing.browser, (p) => p.url() === `${base}/Long`)
+	await long.evaluate(() => {
+		const g = globalThis as unknown as {
+			document: { body: { insertAdjacentHTML(position: string, html: string): void } }
+			scrollTo(x: number, y: number): void
+			name: string
+		}
+		g.document.body.insertAdjacentHTML('beforeend', '<p>filler</p>'.repeat(400))
+		g.name = 'before-switch'
+		g.scrollTo(0, 800)
+	})
+	await expect.poll(async () => (await pageKeeps(long)).scrollY).toBe(800)
+
+	const { activeId: longId } = await zing.chrome.evaluate(() => window.zing.getTabs())
+	await zing.chrome.evaluate(() => window.zing.runCommand('tab.new'))
+	const start = await pageWhere(zing.browser, (p) => p.url() === 'zing://home' || p.url() === 'zing://home/')
+	const startKeeps = await pageKeeps(start)
+	const startAccent = (await viewAccent(start)).accent
+	await zing.chrome.evaluate((id) => window.zing.activateTab(id!), longId)
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).activeId).toBe(longId)
+	const tabCount = (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.length
+	const before = await pageKeeps(long)
+
+	await zing.chrome.evaluate(() => window.zing.runCommand('app.settings'))
+	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	await expect(sheet.getByRole('dialog', { name: 'Settings' })).toBeVisible()
+	await zing.chrome.evaluate(() => window.zing.runCommand('page.find'))
+	const find = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(find.getByRole('textbox', { name: 'Find in page' })).toBeVisible()
+
+	for (const theme of accentThemes) {
+		await zing.chrome.evaluate((accent) => window.zing.setSetting('accent', accent), theme)
+		for (const view of [zing.chrome, sheet, find, start]) await expectAccent(view, theme)
+	}
+
+	expect(await pageKeeps(long)).toEqual(before)
+	expect(await pageKeeps(start)).toEqual(startKeeps)
+	expect((await viewAccent(start)).accent).not.toBe(startAccent)
+	await expect(sheet.getByRole('dialog', { name: 'Settings' })).toBeVisible()
+	await expect(find.getByRole('textbox', { name: 'Find in page' })).toBeVisible()
+	expect((await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.length).toBe(tabCount)
 	await zing.close()
 })
