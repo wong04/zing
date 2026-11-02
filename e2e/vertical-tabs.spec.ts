@@ -136,6 +136,26 @@ test('dragging a row up and down the rail moves its tab', async () => {
 	await zing.close()
 })
 
+test('a dragged card leaves a gap of one row spacing, and the neighbour slides into it', async () => {
+	const zing = await launchZing()
+	for (const title of ['Zebra', 'Apple', 'Mango']) await openPage(zing.chrome, title)
+	const named = async () => (await rowTitles(zing.chrome)).filter((t) => ['Zebra', 'Apple', 'Mango'].includes(t))
+	await expect.poll(named).toEqual(['Zebra', 'Apple', 'Mango'])
+	const box = async (title: string) => (await rows(zing.chrome).filter({ hasText: title }).boundingBox())!
+	const zebra = await box('Zebra')
+	const apple = await box('Apple')
+	// Zebra and Apple are inactive, so the rows sit exactly one spacing apart.
+	await zing.chrome.mouse.move(zebra.x + 40, zebra.y + zebra.height / 2)
+	await zing.chrome.mouse.down()
+	await zing.chrome.mouse.move(zebra.x + 40, apple.y + apple.height / 2 + 4, { steps: 12 })
+	// The slide is a 150 ms transform transition.
+	await zing.chrome.waitForTimeout(300)
+	expect(Math.abs(apple.y - (await box('Apple')).y - 30)).toBeLessThanOrEqual(3)
+	await zing.chrome.mouse.up()
+	await expect.poll(named).toEqual(['Apple', 'Zebra', 'Mango'])
+	await zing.close()
+})
+
 test('dragging the rail’s edge resizes it, and the page follows', async () => {
 	const zing = await launchZing()
 	await openPage(zing.chrome, 'Alpha')
