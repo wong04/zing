@@ -226,6 +226,8 @@ test('the panel lists the rest with names: "+N" opens it, and each row opens its
 test('a favourite dragged from the panel onto a ribbon becomes visible', async () => {
 	const zing = await sixteenFavourites()
 	await moreButton(zing.chrome, 12).click()
+	// On a short window the panel scrolls, and the last row starts out of view.
+	await panelRow(zing.chrome, 'Fav16').scrollIntoViewIfNeeded()
 	const from = (await panelRow(zing.chrome, 'Fav16').boundingBox())!
 	const onto = (await favouriteRibbons(zing.chrome).first().boundingBox())!
 	await zing.chrome.mouse.move(from.x + 40, from.y + from.height / 2)
