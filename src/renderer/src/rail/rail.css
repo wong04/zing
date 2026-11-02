@@ -46,7 +46,7 @@
 .rail-head {
 	display: flex;
 	flex: none;
-	height: var(--toolbar-height, 40px);
+	height: var(--toolbar-height, 48px);
 	-webkit-app-region: drag;
 }
 

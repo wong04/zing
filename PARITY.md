@@ -49,7 +49,7 @@ Also dropped:
 | S7 | Typed settings store with registered defaults | parity | App/AppSettings.swift | [#8](https://github.com/wong04/zing/issues/8) | Done |
 | S8 | CSS theme tokens from Krackn's palette | parity | App/Theme.swift, App/Accent.swift | [#9](https://github.com/wong04/zing/issues/9) | Done |
 | S9 | CI on windows-latest | infra | run-tests.sh | [#10](https://github.com/wong04/zing/issues/10) | Done |
-| S10 | Performance budget suite in CI | infra | - | [#11](https://github.com/wong04/zing/issues/11) | Open |
+| S10 | Performance budget suite in CI | infra | - | [#11](https://github.com/wong04/zing/issues/11) | Open: the 300-tab test (`e2e/theme-speed.spec.ts`) is its first step |
 
 **S rows, 2026-11-02:** S6–S9 re-verified against the code and tests. S10 is really open: there is no `test:perf` script, perf spec or CI step, only the budgets described in [docs/PLAN.md](docs/PLAN.md).
 
@@ -150,11 +150,11 @@ Also dropped:
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| TH1 | Full theme model | new | App/Theme.swift, App/Accent.swift | [#67](https://github.com/wong04/zing/issues/67) | Open |
-| TH2 | Theme presets | new | - | [#68](https://github.com/wong04/zing/issues/68) | Open |
-| TH3 | Custom theme from a seed colour | new | App/Accent.swift | [#69](https://github.com/wong04/zing/issues/69) | Open |
-| TH4 | Mica tint + Windows contrast themes | new | - | [#70](https://github.com/wong04/zing/issues/70) | Open |
-| TH5 | Switch theme without rebuilding state | parity | App/KracknApp.swift (WindowSession), StartPage.swift (restyleStartPages) | [#71](https://github.com/wong04/zing/issues/71) | Open |
+| TH1 | Full theme model | new | App/Theme.swift, App/Accent.swift | [#67](https://github.com/wong04/zing/issues/67) | Done |
+| TH2 | Theme presets | new | - | [#68](https://github.com/wong04/zing/issues/68) | Done |
+| TH3 | Custom theme from a seed colour | new | App/Accent.swift | [#69](https://github.com/wong04/zing/issues/69) | Done |
+| TH4 | Mica tint + Windows contrast themes | new | - | [#70](https://github.com/wong04/zing/issues/70) | Partial: contrast themes are done; the owner dropped Mica (README, Known differences) |
+| TH5 | Switch theme without rebuilding state | parity | App/KracknApp.swift (WindowSession), StartPage.swift (restyleStartPages) | [#71](https://github.com/wong04/zing/issues/71) | Done |
 
 ## M6 Toolbox parity
 

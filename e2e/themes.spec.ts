@@ -254,6 +254,7 @@ test('in a contrast theme cards are plain outlined rows', async () => {
 	// Beta is a favourite, so it hangs as a ribbon and leaves the card list.
 	await zing.chrome.evaluate(() => window.zing.runCommand('library.addFavourite'))
 	await zing.chrome.emulateMedia({ forcedColors: 'active' })
+	await expect.poll(async () => (await captionColours(zing.chrome)).background).toBeNull()
 
 	for (const side of ['left', 'right'] as const) {
 		await zing.chrome.evaluate((position) => window.zing.setSetting('tabBarPosition', position), side)

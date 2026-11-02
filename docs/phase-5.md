@@ -56,7 +56,7 @@ The owner's stated worries were speed and favourites running out of room, which 
 
 ## Constraints
 
-- **WCAG AA stays enforced:** the existing test runs over every token pair, for every preset, in both appearances, in both vitest and xUnit through the shared vectors. Card shades and ribbon colours are included.
+- **WCAG AA stays enforced:** the existing test runs over every token pair, for every preset, in both appearances, in both vitest and xUnit through the shared vectors. Card and ribbon colours are included, with None.
 - **Pages are rectangular views above the chrome.** Cards, ribbons and shadows live in the sidebar and toolbar. Nothing can overlap a website except through the owned overlay windows.
 - **Speed (pass rule is my call):** with 300 tabs and the finished sidebar, ribbons included, the existing test's limit of 250 ms for switching tabs stays and fails CI. Switching theme gets the same limit. Drag and scroll work is logged in CI, not failed on, because it varies too much between runs, and is compared with the table below by hand before the sidebar PR merges. Rows keep `content-visibility: auto`. No constant blur or animation.
 - **Status colours stay fixed** across themes (`statusColors`).

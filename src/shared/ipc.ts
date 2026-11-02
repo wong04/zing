@@ -119,8 +119,8 @@ export const CHROME_LAYOUT = {
 	// Windows draws its caption buttons 32 or 48 tall, and they share a row with these.
 	tabStripHeight: 48,
 	toolbarHeight: 48,
-	/** Only present while the Favourites bar shows; 96 + 28 = 124 is still a multiple of 4. */
-	favouritesBarHeight: 28,
+	/** Only present while the Favourites bar shows; 96 + 40 = 136 is still a multiple of 4. */
+	favouritesBarHeight: 40,
 } as const
 
 export const CHROME_HEIGHT = CHROME_LAYOUT.tabStripHeight + CHROME_LAYOUT.toolbarHeight
@@ -219,7 +219,7 @@ export interface InvokeContract {
 	'stack:drag-presence': { args: [source: DragPresenceSource, inside: boolean]; result: void }
 	'chrome:stack-menu': { args: [key: string, anchor: MenuAnchor]; result: void }
 	'chrome:strip-menu': { args: [anchor: MenuAnchor]; result: void }
-	'chrome:titlebar-colors': { args: [colors: TitleBarColors]; result: void }
+	'chrome:titlebar-colors': { args: [colors: TitleBarColors | null]; result: void }
 	'chrome:app-menu': { args: [anchor: MenuAnchor]; result: void }
 	'chrome:tab-menu': { args: [id: TabId, anchor: MenuAnchor]; result: void }
 	/** Opens Windows' Default apps page; never sets the default itself. */
@@ -327,7 +327,8 @@ export interface ZingApi {
 	stackDragPresence(source: DragPresenceSource, inside: boolean): Promise<void>
 	openStackMenu(key: string, anchor: MenuAnchor): Promise<void>
 	openStripMenu(anchor: MenuAnchor): Promise<void>
-	setTitleBarColors(colors: TitleBarColors): Promise<void>
+	/** Null leaves the caption buttons to Windows. */
+	setTitleBarColors(colors: TitleBarColors | null): Promise<void>
 	openAppMenu(anchor: MenuAnchor): Promise<void>
 	openTabMenu(id: TabId, anchor: MenuAnchor): Promise<void>
 	openDefaultAppsSettings(): Promise<void>

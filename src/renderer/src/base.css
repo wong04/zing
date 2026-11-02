@@ -11,7 +11,7 @@ body,
 	margin: 0;
 }
 
-/* Transparent so Mica shows through the tab strip and the overlay view lets the page show through. */
+/* Transparent so the overlay view lets the page show through. */
 body {
 	background: transparent;
 	color: var(--text);
@@ -43,7 +43,10 @@ input {
 	height: var(--tabstrip-height);
 	flex: none;
 	gap: 4px;
-	background: var(--bg);
+	--text: var(--window-ink);
+	--muted: var(--window-ink);
+	background: var(--window);
+	color: var(--window-ink);
 	/* Room for the window's minimise/maximise/close buttons, which the host measures and sets. */
 	padding: 0 var(--caption-inset, 0px) 0 8px;
 	-webkit-app-region: drag;

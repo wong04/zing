@@ -1,5 +1,4 @@
 import { targetIndexDragging, type Rect } from '@shared/browser/tabReorder'
-import { TAB_GAP } from './layout'
 
 /** A chip being dragged within its own section (pinned run, or the loose tabs). */
 export interface DragView {
@@ -10,7 +9,7 @@ export interface DragView {
 	readonly target: number
 	/** How far the chip is drawn from where it began, already kept inside its section. */
 	readonly dx: number
-	/** Room a neighbour gives way by: the dragged chip's width plus the gap. */
+	/** Room a neighbour gives way by: the dragged chip's width plus the measured step between chips, negative where they overlap. */
 	readonly shift: number
 }
 
@@ -25,6 +24,8 @@ export function dragFrame(keys: readonly string[], startIndex: number, frames: r
 	const last = frames[frames.length - 1] as Rect
 	const own = frames[startIndex] as Rect
 	const dx = Math.min(Math.max(pointerDx, first.x - own.x), last.x + last.width - (own.x + own.width))
+	const second = frames[1]
+	const gap = second ? second.x - (first.x + first.width) : 0
 	return {
 		key: keys[startIndex] as string,
 		keys,
@@ -32,7 +33,7 @@ export function dragFrame(keys: readonly string[], startIndex: number, frames: r
 		dx,
 		// Judged from the unclamped pointer so the last slot is reachable: clamped, the centre only ever equals its midpoint.
 		target: targetIndexDragging(startIndex, own.x + own.width / 2 + pointerDx, frames),
-		shift: own.width + TAB_GAP,
+		shift: own.width + gap,
 	}
 }
 
