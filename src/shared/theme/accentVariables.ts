@@ -1,4 +1,6 @@
 import { themeProfile, themeTokens } from './accent'
+import type { TitleBarColors } from '../ipc'
+import { mix } from './color'
 import { accentInk, control, raised, stackTokens, type PaletteTokens, type StackTokens } from './palette'
 
 function stackVariables(s: StackTokens): Record<string, string> {
@@ -45,4 +47,11 @@ export function accentVariables(accent: string, customColor: string, dark: boole
 		'--accent-ink': accentInk(t),
 		...stackVariables(stackTokens(themeProfile(accent, customColor), dark)),
 	}
+}
+
+/** Windows' caption buttons match what they sit on: the toolbar when tabs are on the left, otherwise the window colour of the strip or the rail. */
+export function titleBarColors(position: string, accent: string, customColor: string, dark: boolean): TitleBarColors {
+	const stack = stackTokens(themeProfile(accent, customColor), dark)
+	const [background, ink] = position === 'left' ? [stack.band, stack.bandInk] : [stack.window, stack.windowInk]
+	return { symbolColor: ink, background, hover: mix(background, ink, 0.1), pressed: mix(background, ink, 0.2) }
 }

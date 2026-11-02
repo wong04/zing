@@ -1,33 +1,18 @@
 import { useEffect } from 'react'
-import { mix } from '@shared/theme/color'
+import { titleBarColors } from '@shared/theme/accentVariables'
 import { zing } from '../api'
 
-function readToken(name: string): string {
-	return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-}
-
 /**
- * The native caption buttons are drawn by Windows, not CSS, so their colours are pushed from the theme
- * tokens: CSS stays the one source of colour. They match what they sit on: the toolbar when tabs are on the
- * left, otherwise the window colour of the strip or the rail. A contrast theme leaves them to Windows, like the
- * rest of the chrome's colour. Call after useAccentTheme, which sets the tokens.
+ * The native caption buttons are drawn by Windows, not CSS, so their colours are pushed from the theme. A contrast
+ * theme leaves them to Windows, like the rest of the chrome's colour.
  */
 export function useTitleBarColors(position: string, accent: string | undefined, customColor: string | undefined): void {
 	useEffect(() => {
 		if (accent === undefined || customColor === undefined) return
-		const forced = matchMedia('(forced-colors: active)')
-		const send = (): void => {
-			if (forced.matches) {
-				void zing.setTitleBarColors(null)
-				return
-			}
-			const surface = position === 'left' ? 'band' : 'window'
-			const background = readToken(`--${surface}`)
-			const ink = readToken(`--${surface}-ink`)
-			void zing.setTitleBarColors({ symbolColor: ink, background, hover: mix(background, ink, 0.1), pressed: mix(background, ink, 0.2) })
-		}
-		send()
 		const query = matchMedia('(prefers-color-scheme: dark)')
+		const forced = matchMedia('(forced-colors: active)')
+		const send = (): void => void zing.setTitleBarColors(forced.matches ? null : titleBarColors(position, accent, customColor, query.matches))
+		send()
 		query.addEventListener('change', send)
 		forced.addEventListener('change', send)
 		return () => {
