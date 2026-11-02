@@ -18,8 +18,8 @@
 - Rows keep `content-visibility: auto`. No constant blur or animation. Only the active card has a shadow; no tilted cards.
 - Nothing draws over a website except the existing overlay windows. The page stays a rectangle.
 - Test runs stay off-screen with no focus or dialogs (`launchZing` does this). Never start Zing by hand without `ZING_E2E=1` and a scratch `ZING_USER_DATA`.
-- Before each PR: `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:host`, `npm run test:e2e`.
-- One branch and PR per group below. Commit messages short and lowercase, ending with the session's attribution line. Merge only when the owner says so.
+- Before each PR: `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:host`, `npm run test:e2e`. During tasks, run only the e2e specs a task names; the full e2e suite runs once per PR.
+- Two PRs, so CI runs e2e only on those: PR A is Tasks 1–12 on `phase-5/themes`, pushed once after the hand check; PR B is Tasks 13–15. Commit messages short and lowercase, ending with the session's attribution line. Merge only when the owner says so.
 
 ## Decisions this plan makes
 
@@ -42,7 +42,7 @@ For the owner to check:
 
 ---
 
-## PR 1: theme model
+## PR A, part 1: theme model
 
 ### Task 1: Presets and Stack tokens in TS
 
@@ -144,11 +144,11 @@ const more = mix(window, inkOn(window), 0.78)
 - [ ] **Step 2: Run it.** Expected: FAIL.
 - [ ] **Step 3: Implement.** Toolbar uses `--band` and `--band-ink`; the address field uses `--field` and `--field-ink`; Settings' header uses `--band`. The picker's title becomes "Theme" and it filters out `custom`. Run `rg -n "#[0-9a-fA-F]{3,8}\b" src/renderer/src --glob "*.{css,tsx}"` and move any colour outside `tokens.css` onto a token, unless a comment says it's fixed on purpose.
 - [ ] **Step 4: Run the test.** Expected: PASS.
-- [ ] **Step 5: Commit and open PR 1.** `feat: theme colour on the toolbar and settings`
+- [ ] **Step 5: Commit.** `feat: theme colour on the toolbar and settings`
 
 ---
 
-## PR 2: Stack sidebar
+## PR A, part 2: Stack sidebar
 
 ### Task 5: Cards that overlap and merge
 
@@ -203,11 +203,11 @@ const more = mix(window, inkOn(window), 0.78)
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.** Mirror margins, padding and radius under `.rail.pinned.right`. Under `.rail.collapsed` and `.rail-split`, reset the overlap and merge; `.rail-split` takes `--card` from its `nth-child` and its rows inherit it.
 - [ ] **Step 4: Run them.** Expected: PASS.
-- [ ] **Step 5: Commit and open PR 2.** `feat: stack cards on every side`
+- [ ] **Step 5: Commit.** `feat: stack cards on every side`
 
 ---
 
-## PR 3: ribbons and panel
+## PR A, part 3: ribbons and panel
 
 ### Task 8: Ribbons
 
@@ -273,11 +273,11 @@ it.each([
 	- The header says "12 more favourites". Rows are `data-drop-parent={FAVOURITES_ID}`, `data-drop-index={firstIndex + i}`, `data-drop-axis="y"`, and the panel root has `data-drop-folder={FAVOURITES_ID}`. Folder rows open the folder menu.
 	- Close on Escape and on window `blur`, but not during a drag.
 - [ ] **Step 4: Run them.** Expected: PASS.
-- [ ] **Step 5: Commit and open PR 3.** `feat: the more ribbon and its panel`
+- [ ] **Step 5: Commit.** `feat: the more ribbon and its panel`
 
 ---
 
-## PR 4: custom colour, contrast themes, switching and proof
+## PR A, part 4: custom colour, contrast themes, switching and proof
 
 ### Task 10: Custom colour in Settings
 
@@ -316,18 +316,18 @@ it.each([
 	- Log drag and scroll times (long task totals, as in the earlier test) with `test.info().annotations`, without asserting them.
 	- CI's existing e2e job picks this up with no workflow change.
 - [ ] **Step 3: Run both.** Expected: PASS. Compare the logged drag and scroll with the table in `docs/phase-5.md` and write the numbers into the PR body. If switching exceeds its limit, stop and report it; don't raise the limit.
-- [ ] **Step 4: Write `e2e/theme-screenshots.spec.ts`,** skipped unless `ZING_SCREENSHOTS=1`: for each preset, each of top, left and right, light and dark, with a split open and the "+N" panel closed, one `chrome` screenshot to `docs/screenshots/phase-5/<preset>-<position>-<mode>.png`. Run it. Expected: 48 files. Tabs on top will show the old strip until PR 5, so rerun it then.
+- [ ] **Step 4: Write `e2e/theme-screenshots.spec.ts`,** skipped unless `ZING_SCREENSHOTS=1`: for each preset, each of top, left and right, light and dark, with a split open and the "+N" panel closed, one `chrome` screenshot to `docs/screenshots/phase-5/<preset>-<position>-<mode>.png`. Run it. Expected: 48 files. Tabs on top will show the old strip until PR B, so rerun it then.
 - [ ] **Step 5: Hand check with the owner,** because off-screen tests can't judge these. Using the run copy and `relaunch.ps1`:
 	- dragging cards
 	- the merge at 100%, 125% and 150% scale
 	- a Windows contrast theme
 	- the "+N" panel over a page
 	- a custom colour in the popup
-- [ ] **Step 6: Commit and open PR 4.** `test: theme switching, speed and screenshots`
+- [ ] **Step 6: Commit, run the full e2e suite once, and open PR A.** `test: theme switching, speed and screenshots`
 
 ---
 
-## PR 5: tabs on top (gated)
+## PR B, part 1: tabs on top (gated)
 
 ### Task 13: Mock-up for the owner
 
@@ -347,11 +347,11 @@ it.each([
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement** in `tabs.css`; `useSlotDrag` measures positions at pickup, so only check it, don't change it.
 - [ ] **Step 4: Run them, then rerun the screenshots for `top`.** Expected: PASS.
-- [ ] **Step 5: Commit and open PR 5.** `feat: folder tabs on top`
+- [ ] **Step 5: Commit.** `feat: folder tabs on top`
 
 ---
 
-## PR 6: Mica and wrap-up
+## PR B, part 2: Mica and wrap-up
 
 ### Task 15: Resolve Mica, close the rows
 
@@ -363,4 +363,4 @@ it.each([
 - [ ] **Step 3: If it doesn't stay, revert Step 1 and add to README's Known differences:** "**Mica.** Solid tab cards cover the window, so Windows' Mica material isn't visible behind Zing's sidebar." Either way, note the result in `PARITY.md`.
 - [ ] **Step 4: Update `PARITY.md`:** TH1–TH5 to Done, or TH4 to Partial if Mica was dropped and the owner counts that as partial. S10 stays Open; add a note that the 300-tab test is its first step.
 - [ ] **Step 5: Run the whole suite from Global Constraints.** Expected: all pass (rerun on the known Playwright worker crash, exit 3221226505).
-- [ ] **Step 6: Commit and open PR 6.** `docs: close the theme parity rows`
+- [ ] **Step 6: Commit, run the full e2e suite once, and open PR B.** `docs: close the theme parity rows`
