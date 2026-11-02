@@ -174,7 +174,7 @@ async function expectPaint(tab: Locator, paint: Painted): Promise<void> {
 
 const stripTabs = (chrome: Page) => chrome.locator('.tabs > [role="tab"]')
 
-test('tabs on top are folder tabs: the card shades repeat, and the active tab takes the band and meets the toolbar', async () => {
+test('tabs on top are folder tabs: cards take the card colour, and the active tab takes the band and meets the toolbar', async () => {
 	const zing = await launchWithStrip()
 	await openPage(zing.chrome, 'one', 'Zebra')
 	await openPage(zing.chrome, 'two', 'Apple')
@@ -188,7 +188,9 @@ test('tabs on top are folder tabs: the card shades repeat, and the active tab ta
 	for (let i = 0; i < count; i++) {
 		const tab = stripTabs(zing.chrome).nth(i)
 		const selected = (await tab.getAttribute('aria-selected')) === 'true'
-		await expectPaint(tab, selected ? band : await cardPaint(zing.chrome))
+		const paint = selected ? band : await cardPaint(zing.chrome)
+		await expectPaint(tab, paint)
+		await expect(tab.locator('.tab-icon')).toHaveCSS('color', paint.color)
 	}
 
 	const active = zing.chrome.locator('.tabs > [role="tab"].active')

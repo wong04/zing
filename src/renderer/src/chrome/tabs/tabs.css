@@ -21,7 +21,7 @@
 }
 
 /*
- * Folder tabs: each takes a shade of the card set, repeated by its place, and the active one the band, so
+ * Folder tabs: each takes the card colour and the active one the band, so
  * it meets the toolbar. They fill the strip's height and overlap their neighbours, so the active one sits on top.
  */
 .tab {
@@ -84,8 +84,14 @@
 	border-left: 1px solid var(--separator);
 }
 
+.tab .tab-icon:not(.fault, .loading) {
+	background: color-mix(in srgb, currentColor 14%, transparent);
+	color: inherit;
+}
+
 /* The close button only shows on the tab you are on or are pointing at. */
 .tab .tab-close {
+	color: inherit;
 	opacity: 0;
 	pointer-events: none;
 }

@@ -18,7 +18,10 @@
 	flex: none;
 	padding: 0 8px;
 	overflow: hidden;
+	--text: var(--band-ink);
+	--muted: var(--band-ink);
 	background: var(--band);
+	color: var(--band-ink);
 	border-bottom: 1px solid var(--separator);
 }
 
@@ -57,7 +60,7 @@
 }
 
 /*
- * A favourite is a ribbon: a shade of the ribbon set, repeated by its place. clip-path cuts the notch off, so focus and
+ * A favourite is a ribbon. clip-path cuts the notch off, so focus and
  * a drop target darken the fill (as the rail's ribbons do) rather than outlining it.
  */
 .fav-chip {

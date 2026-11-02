@@ -11,7 +11,7 @@ body,
 	margin: 0;
 }
 
-/* Transparent so Mica shows through the tab strip and the overlay view lets the page show through. */
+/* Transparent so the overlay view lets the page show through. */
 body {
 	background: transparent;
 	color: var(--text);

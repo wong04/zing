@@ -9,12 +9,18 @@ function readToken(name: string): string {
 /**
  * The native caption buttons are drawn by Windows, not CSS, so their colours are pushed from the theme
  * tokens: CSS stays the one source of colour. They match what they sit on: the toolbar when tabs are on the
- * left, otherwise the window colour of the strip or the rail. Call after useAccentTheme, which sets the tokens.
+ * left, otherwise the window colour of the strip or the rail. A contrast theme leaves them to Windows, like the
+ * rest of the chrome's colour. Call after useAccentTheme, which sets the tokens.
  */
 export function useTitleBarColors(position: string, accent: string | undefined, customColor: string | undefined): void {
 	useEffect(() => {
 		if (accent === undefined || customColor === undefined) return
+		const forced = matchMedia('(forced-colors: active)')
 		const send = (): void => {
+			if (forced.matches) {
+				void zing.setTitleBarColors(null)
+				return
+			}
 			const surface = position === 'left' ? 'band' : 'window'
 			const background = readToken(`--${surface}`)
 			const ink = readToken(`--${surface}-ink`)
@@ -23,6 +29,10 @@ export function useTitleBarColors(position: string, accent: string | undefined, 
 		send()
 		const query = matchMedia('(prefers-color-scheme: dark)')
 		query.addEventListener('change', send)
-		return () => query.removeEventListener('change', send)
+		forced.addEventListener('change', send)
+		return () => {
+			query.removeEventListener('change', send)
+			forced.removeEventListener('change', send)
+		}
 	}, [position, accent, customColor])
 }
