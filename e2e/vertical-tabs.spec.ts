@@ -37,6 +37,46 @@ async function shownPage(chrome: Page, title: string) {
 	return (await layers(chrome)).find((l) => l.url === `${base}/${title}` && l.visible)
 }
 
+/** A row as the page lays it out and paints it. */
+interface RowLook {
+	readonly active: boolean
+	readonly top: number
+	readonly height: number
+	readonly right: number
+	readonly background: string
+	readonly shadow: string
+}
+
+async function rowLooks(chrome: Page): Promise<RowLook[]> {
+	return rows(chrome).evaluateAll((els) => {
+		const dom = globalThis as unknown as {
+			getComputedStyle(e: unknown): { backgroundColor: string; boxShadow: string }
+		}
+		const nodes = els as unknown as { getAttribute(name: string): string | null; getBoundingClientRect(): { top: number; height: number; right: number } }[]
+		return nodes.map((el) => {
+			const box = el.getBoundingClientRect()
+			const style = dom.getComputedStyle(el)
+			return { active: el.getAttribute('aria-selected') === 'true', top: box.top, height: box.height, right: box.right, background: style.backgroundColor, shadow: style.boxShadow }
+		})
+	})
+}
+
+/** A CSS colour as the browser computes it, so a token and the rgb() it paints with compare equal. */
+function resolvedColor(chrome: Page, css: string): Promise<string> {
+	return chrome.evaluate((value) => {
+		const dom = globalThis as unknown as {
+			document: { body: { append(node: unknown): void }; createElement(tag: string): { style: { backgroundColor: string }; remove(): void } }
+			getComputedStyle(node: unknown): { backgroundColor: string }
+		}
+		const probe = dom.document.createElement('div')
+		probe.style.backgroundColor = value
+		dom.document.body.append(probe)
+		const color = dom.getComputedStyle(probe).backgroundColor
+		probe.remove()
+		return color
+	}, css)
+}
+
 test('tabs sit in a rail on the left by default, with the page beside it', async () => {
 	const zing = await launchZing()
 	await openPage(zing.chrome, 'Alpha')
@@ -143,5 +183,64 @@ test('three hundred tabs: every one is in the rail, rows out of view skip render
 	}, last)
 	// From the call to the rail showing the new tab: the bridge both ways plus a render of 301 rows (PLAN.md's switch budget is 50 ms for the page itself).
 	expect(elapsed).toBeLessThan(250)
+	await zing.close()
+})
+
+test('tab rows are overlapping cards', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma', 'Delta']) await openPage(zing.chrome, title)
+	await expect(rows(zing.chrome)).toHaveCount(5)
+	const looks = await rowLooks(zing.chrome)
+	for (const row of looks) if (!row.active) expect(row.height).toBe(38)
+	for (let i = 0; i + 1 < looks.length; i++) {
+		if (looks[i]!.active || looks[i + 1]!.active) continue
+		expect(looks[i + 1]!.top - looks[i]!.top).toBe(30)
+	}
+	for (let i = 0; i < looks.length; i++) {
+		if (looks[i]!.active) continue
+		expect(looks[i]!.background).toBe(await resolvedColor(zing.chrome, `var(--card-${(i % 3) + 1})`))
+	}
+	await zing.close()
+})
+
+test('the active card reaches the page', async () => {
+	const zing = await launchZing()
+	await openPage(zing.chrome, 'Alpha')
+	await openPage(zing.chrome, 'Beta')
+	const looks = await rowLooks(zing.chrome)
+	const active = looks.find((row) => row.active)
+	expect(active).toBeDefined()
+	await expect.poll(async () => (await shownPage(zing.chrome, 'Beta'))?.x).toBe(active!.right)
+	expect(active!.background).toBe(await resolvedColor(zing.chrome, 'var(--page)'))
+	expect(looks.map((row) => row.shadow !== 'none')).toEqual(looks.map((row) => row.active))
+	await zing.close()
+})
+
+test('the tab list still scrolls with the active card merged', async () => {
+	const zing = await launchZing()
+	await zing.chrome.evaluate((url) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'add-tabs', count: 60, url }), `${base}/many-`)
+	await expect(rows(zing.chrome)).toHaveCount(61)
+	const last = (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.at(-1)!.id
+	await zing.chrome.evaluate((id) => window.zing.activateTab(id), last)
+	const list = zing.chrome.locator('.rail-tabs')
+	await list.hover()
+	await zing.chrome.mouse.wheel(0, 400)
+	await expect.poll(() => list.evaluate((el) => (el as unknown as { scrollTop: number }).scrollTop)).toBeGreaterThan(0)
+	expect(await list.evaluate((el) => {
+		const node = el as unknown as { scrollWidth: number; clientWidth: number }
+		return node.scrollWidth - node.clientWidth
+	})).toBe(0)
+	await zing.close()
+})
+
+test('switching tabs doesn\'t move the others', async () => {
+	const zing = await launchZing()
+	for (const title of ['Alpha', 'Beta', 'Gamma', 'Delta']) await openPage(zing.chrome, title)
+	await expect(rows(zing.chrome)).toHaveCount(5)
+	const before = await rowLooks(zing.chrome)
+	await rows(zing.chrome).nth(1).click({ position: { x: 20, y: 15 } })
+	await expect(rows(zing.chrome).nth(1)).toHaveAttribute('aria-selected', 'true')
+	const after = await rowLooks(zing.chrome)
+	for (const i of [0, 2, 3]) expect(after[i]!.top).toBe(before[i]!.top)
 	await zing.close()
 })

@@ -15,17 +15,9 @@
 	gap: 2px;
 	height: 100%;
 	padding: 0 8px 8px;
-	background: var(--bg);
-	color: var(--text);
+	background: var(--window);
+	color: var(--window-ink);
 	overflow: hidden;
-}
-
-.rail.pinned.left {
-	border-right: 1px solid var(--separator);
-}
-
-.rail.pinned.right {
-	border-left: 1px solid var(--separator);
 }
 
 .rail.floating {
@@ -37,6 +29,7 @@
 	border: 1px solid var(--separator);
 	border-radius: 12px;
 	background: color-mix(in srgb, var(--surface) 55%, transparent);
+	color: var(--text);
 	backdrop-filter: blur(24px) saturate(1.4);
 	box-shadow: var(--elevation-strong);
 	animation: rail-in 0.18s ease-out;
@@ -74,13 +67,13 @@
 	border: 0;
 	border-radius: var(--control-radius);
 	background: transparent;
-	color: var(--text-secondary, var(--text));
+	color: var(--window-ink);
 	-webkit-app-region: no-drag;
 }
 
 .rail-icon-button:hover {
-	background: color-mix(in srgb, var(--text) 7%, transparent);
-	color: var(--text);
+	background: color-mix(in srgb, var(--window-ink) 7%, transparent);
+	color: var(--window-ink);
 }
 
 .rail-tools {
@@ -108,13 +101,13 @@
 	place-items: center;
 	height: 44px;
 	border-radius: 12px;
-	background: color-mix(in srgb, var(--text) 6%, transparent);
+	background: color-mix(in srgb, var(--window-ink) 6%, transparent);
 	touch-action: none;
 	user-select: none;
 }
 
 .rail-tile:hover {
-	background: color-mix(in srgb, var(--text) 10%, transparent);
+	background: color-mix(in srgb, var(--window-ink) 10%, transparent);
 }
 
 .rail-tile.active {
@@ -125,7 +118,7 @@
 /* A saved tab whose tab is closed: there, but not loaded. */
 .rail-tile.unloaded,
 .rail-item.unloaded {
-	color: var(--text-secondary, var(--text));
+	color: var(--window-ink);
 }
 
 .rail-tile.unloaded > *,
@@ -150,7 +143,7 @@
 	padding: 10px 8px;
 	border: 1px dashed var(--separator);
 	border-radius: 10px;
-	color: var(--text-secondary, var(--text));
+	color: var(--window-ink);
 	font-size: 12px;
 	text-align: center;
 }
@@ -174,7 +167,7 @@
 	justify-content: space-between;
 	height: 24px;
 	padding: 0 2px 0 9px;
-	color: var(--text-secondary, var(--text));
+	color: var(--window-ink);
 	font-size: 11px;
 	font-weight: 600;
 	letter-spacing: 0.02em;
@@ -213,11 +206,15 @@
 .rail-tabs {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
+	gap: 0;
 	flex: 1;
 	min-height: 0;
+	margin-right: -8px;
+	padding-top: 4px;
+	padding-right: 8px;
 	overflow-y: auto;
 	overflow-x: hidden;
+	scrollbar-width: none;
 }
 
 .rail-row {
@@ -230,7 +227,7 @@
 	border: 0;
 	border-radius: var(--control-radius);
 	background: transparent;
-	color: var(--text);
+	color: inherit;
 	font: inherit;
 	font-size: 13px;
 	text-align: left;
@@ -239,16 +236,67 @@
 }
 
 .rail-row:hover {
-	background: color-mix(in srgb, var(--text) 6%, transparent);
+	background: color-mix(in srgb, var(--window-ink) 6%, transparent);
 }
 
-.rail-row.active {
+.rail-row.active:not(.rail-tab) {
 	background: var(--surface);
 	box-shadow: var(--elevation, 0 1px 2px rgb(0 0 0 / 0.12));
+	color: var(--text);
 }
 
 .rail-row.nested {
 	padding-left: 24px;
+}
+
+.rail-group-head {
+	color: var(--window-ink);
+}
+
+/* Each card is a tab, stacked over the one below: the next card covers this one's bottom 8px, so the row's content sits in the top 30px. */
+.rail-tab {
+	height: 38px;
+	margin-bottom: -8px;
+	align-items: flex-start;
+	padding-top: 6px;
+	border-radius: 8px 8px 0 0;
+	border-top: 1px solid color-mix(in srgb, var(--card) 80%, var(--card-ink));
+	background: var(--card);
+	color: var(--card-ink);
+}
+
+/* Three card shades repeat down the list; a group's tabs repeat them from the group's heading. */
+.rail-tabs > :nth-child(3n+1),
+.rail-group > .rail-tab:nth-child(3n+1) {
+	--card: var(--card-1);
+	--card-ink: var(--card-ink-1);
+}
+
+.rail-tabs > :nth-child(3n+2),
+.rail-group > .rail-tab:nth-child(3n+2) {
+	--card: var(--card-2);
+	--card-ink: var(--card-ink-2);
+}
+
+.rail-tabs > :nth-child(3n),
+.rail-group > .rail-tab:nth-child(3n) {
+	--card: var(--card-3);
+	--card-ink: var(--card-ink-3);
+}
+
+/* The active card takes the page's colour and reaches its left edge, so it reads as one piece with the page. */
+.rail.pinned .rail-tab.active {
+	position: relative;
+	z-index: 1;
+	height: 42px;
+	margin-block: -2px -10px;
+	margin-right: -8px;
+	border-radius: 10px 0 0 10px;
+	border-top: 0;
+	background: var(--page);
+	color: var(--page-ink);
+	font-weight: 600;
+	box-shadow: 0 -3px 8px rgb(0 0 0 / 0.2);
 }
 
 .rail-row-icon {
@@ -293,7 +341,7 @@
 }
 
 .rail-new-tab {
-	color: var(--text-secondary, var(--text));
+	color: var(--window-ink);
 }
 
 .rail-group-count {
@@ -301,7 +349,7 @@
 	min-width: 18px;
 	padding: 0 5px;
 	border-radius: 9px;
-	background: color-mix(in srgb, var(--text) 8%, transparent);
+	background: color-mix(in srgb, var(--window-ink) 8%, transparent);
 	font-size: 11px;
 	text-align: center;
 }
@@ -322,6 +370,11 @@
 	position: relative;
 	z-index: 2;
 	background: var(--surface);
+	box-shadow: var(--elevation-strong);
+}
+
+.rail-tab.dragging {
+	background: var(--card);
 	box-shadow: var(--elevation-strong);
 }
 
@@ -456,5 +509,5 @@
 .rail-tabs > .rail-group,
 .rail-tabs > .rail-split {
 	content-visibility: auto;
-	contain-intrinsic-size: auto 32px;
+	contain-intrinsic-size: auto 38px;
 }
