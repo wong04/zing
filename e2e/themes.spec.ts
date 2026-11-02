@@ -167,6 +167,22 @@ test('the custom accent applies in the chrome view without an error', async () =
 	await zing.close()
 })
 
+test('arrow keys move through the themes, Custom included', async () => {
+	const zing = await launchZing({ env: { ZING_E2E_OFFLINE: '1' } })
+	await zing.chrome.evaluate(() => window.zing.runCommand('app.settings'))
+	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	const custom = sheet.getByRole('radio', { name: 'Custom', exact: true })
+	const amber = sheet.getByRole('radio', { name: 'Amber', exact: true })
+	await amber.focus()
+	await sheet.keyboard.press('ArrowLeft')
+	await expect(custom).toHaveAttribute('aria-checked', 'true')
+	await expect(custom).toBeFocused()
+	await sheet.keyboard.press('ArrowRight')
+	await expect(amber).toHaveAttribute('aria-checked', 'true')
+	await expect(amber).toBeFocused()
+	await zing.close()
+})
+
 test('a custom colour themes everything', async () => {
 	const zing = await launchZing({ env: { ZING_E2E_OFFLINE: '1' } })
 	await zing.chrome.evaluate(() => window.zing.runCommand('app.settings'))

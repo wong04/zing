@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { defaults as defaultShortcuts, limit as shortcutLimit, make as makeShortcut } from '@shared/browser/startShortcuts'
 import { allInputs } from '@shared/convert/formatCatalog'
 import { MAX_SLEEP_MINUTES } from '@shared/session/sleepSettings'
@@ -46,9 +46,18 @@ function CustomColourInput({ handle }: { handle: SettingsHandle }) {
 
 function AccentPicker({ handle }: { handle: SettingsHandle }) {
 	const { accent, customColor } = handle.settings
+	const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+		const delta = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
+		if (delta === 0) return
+		e.preventDefault()
+		const themes: (typeof accent)[] = [...accentThemes, CUSTOM_ACCENT]
+		const next = (themes.indexOf(accent) + delta + themes.length) % themes.length
+		handle.set('accent', themes[next]!)
+		;(e.currentTarget.children[next] as HTMLElement).focus()
+	}
 	return (
 		<SettingRowShell title="Theme">
-			<div className="swatches" role="radiogroup" aria-label="Theme">
+			<div className="swatches" role="radiogroup" aria-label="Theme" onKeyDown={onKeyDown}>
 				{accentThemes.map((theme) => (
 					<AccentSwatch
 						key={theme}
