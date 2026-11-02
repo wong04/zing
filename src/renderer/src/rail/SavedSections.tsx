@@ -5,6 +5,7 @@ import { zing } from '../api'
 import { CloseIcon } from '../chrome/icons'
 import { TabIconView } from '../chrome/tabs/SlotChips'
 import { FolderIcon } from '../components/icons'
+import { ribbonLayout } from '@shared/layout/ribbons'
 import { AT_END } from './dropTarget'
 import type { ItemDragHandlers } from './useItemDrag'
 
@@ -39,12 +40,15 @@ function ItemIcon({ link, tab }: { link: BookmarkLink; tab: TabView | undefined 
 	)
 }
 
-/** The Favourites as tiles: as many per row as the width fits. Ctrl+D adds the page in front. */
-export function FavouriteTiles({ nodes, frame }: { nodes: readonly BookmarkNode[]; frame: SavedFrame }) {
+const EMPTY_HINT = 'Drag a tab here, or press Ctrl+D'
+
+/** The Favourites as ribbons hanging along the top of the rail: as many as the width fits, the rest behind "+N". Ctrl+D adds the page in front. */
+export function FavouriteRibbons({ nodes, frame, innerWidth }: { nodes: readonly BookmarkNode[]; frame: SavedFrame; innerWidth: number }) {
+	const { shown, more } = ribbonLayout(nodes.length, innerWidth)
 	return (
 		<div className="rail-favourites" role="list" aria-label="Favourites" data-drop-folder={FAVOURITES_ID}>
-			{nodes.length === 0 ? <p className="rail-hint">Drag a tab here, or press Ctrl+D</p> : null}
-			{nodes.map((node, index) => {
+			{nodes.length === 0 ? <div className="rail-ribbon empty" role="listitem" title={EMPTY_HINT} aria-label={EMPTY_HINT} /> : null}
+			{nodes.slice(0, shown).map((node, index) => {
 				const place = { 'data-drop-item': node.id, 'data-drop-parent': FAVOURITES_ID, 'data-drop-index': index, 'data-drop-axis': 'x' }
 				if (isFolder(node)) {
 					return (
@@ -53,7 +57,7 @@ export function FavouriteTiles({ nodes, frame }: { nodes: readonly BookmarkNode[
 							role="listitem"
 							aria-label={node.title}
 							title={node.title}
-							className="rail-tile"
+							className="rail-ribbon"
 							{...place}
 							{...frame.drag(node.id)}
 							onClick={(e) => {
@@ -75,7 +79,7 @@ export function FavouriteTiles({ nodes, frame }: { nodes: readonly BookmarkNode[
 						aria-current={active ? 'page' : undefined}
 						title={node.title}
 						data-item-id={node.id}
-						className={['rail-tile', active && 'active', !tab && 'unloaded'].filter(Boolean).join(' ')}
+						className={['rail-ribbon', active && 'active', !tab && 'unloaded'].filter(Boolean).join(' ')}
 						{...place}
 						{...frame.drag(node.id)}
 						onClick={() => open(frame, node.id)}
@@ -85,6 +89,20 @@ export function FavouriteTiles({ nodes, frame }: { nodes: readonly BookmarkNode[
 					</div>
 				)
 			})}
+			{more > 0 ? (
+				<button
+					type="button"
+					className="rail-ribbon more"
+					aria-label={`${more} more favourites`}
+					title={`${more} more favourites`}
+					data-drop-item="more"
+					data-drop-parent={FAVOURITES_ID}
+					data-drop-index={shown}
+					data-drop-axis="x"
+				>
+					+{more}
+				</button>
+			) : null}
 		</div>
 	)
 }

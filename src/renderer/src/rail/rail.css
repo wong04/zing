@@ -86,44 +86,80 @@
 	margin-bottom: 4px;
 }
 
-/* The Favourites as tiles: as many per row as the width fits. */
+/* The Favourites as ribbons hanging along the top of the rail: as many as the width fits, the rest behind "+N". */
 .rail-favourites {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
-	gap: 6px;
+	display: flex;
+	gap: 4px;
+	position: relative;
 	flex: none;
-	padding: 2px 0 8px;
-	border-radius: 10px;
+	padding: 0 0 8px;
 }
 
-.rail-tile {
-	display: grid;
-	place-items: center;
-	height: 44px;
-	border-radius: 12px;
-	background: color-mix(in srgb, var(--window-ink) 6%, transparent);
+/* clip-path cuts the ribbon's outline and shadow off, so state shows as fill, inset shadow or filter. */
+.rail-ribbon {
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	flex: none;
+	box-sizing: border-box;
+	width: 40px;
+	height: 54px;
+	margin: 0;
+	padding: 0 0 13px;
+	border: 0;
+	clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%);
+	color: var(--window-ink);
+	font: inherit;
 	touch-action: none;
 	user-select: none;
 }
 
-.rail-tile:hover {
-	background: color-mix(in srgb, var(--window-ink) 10%, transparent);
+.rail-favourites > .rail-ribbon:nth-child(3n + 1) {
+	background: var(--ribbon-1);
+	color: var(--ribbon-ink-1);
 }
 
-.rail-tile.active {
-	background: var(--surface);
-	box-shadow: 0 0 0 1.5px var(--accent);
+.rail-favourites > .rail-ribbon:nth-child(3n + 2) {
+	background: var(--ribbon-2);
+	color: var(--ribbon-ink-2);
+}
+
+.rail-favourites > .rail-ribbon:nth-child(3n) {
+	background: var(--ribbon-3);
+	color: var(--ribbon-ink-3);
+}
+
+.rail-favourites > .rail-ribbon.more {
+	background: var(--more);
+	color: var(--more-ink);
+	font-size: 12px;
+	font-weight: 800;
+}
+
+/* Nothing saved yet: a faint outline of where a ribbon will hang. */
+.rail-favourites > .rail-ribbon.empty {
+	background: color-mix(in srgb, var(--window-ink) 18%, transparent);
+}
+
+.rail-ribbon.active {
+	box-shadow: inset 0 3px 0 var(--page);
 }
 
 /* A saved tab whose tab is closed: there, but not loaded. */
-.rail-tile.unloaded,
+.rail-ribbon.unloaded,
 .rail-item.unloaded {
 	color: var(--window-ink);
 }
 
-.rail-tile.unloaded > *,
+.rail-ribbon.unloaded > *,
 .rail-item.unloaded .rail-row-icon {
 	opacity: 0.6;
+}
+
+.rail-ribbon .rail-letter {
+	background: transparent;
+	font-size: 12px;
+	font-weight: 800;
 }
 
 .rail-letter {
@@ -188,13 +224,18 @@
 	font: inherit;
 }
 
-.rail-tile.dragging,
 .rail-item.dragging,
 .rail-folder-head.dragging {
 	position: relative;
 	z-index: 5;
 	box-shadow: var(--elevation-strong);
 	background: var(--surface);
+}
+
+/* Keeps its colour: a shadow would be clipped with the ribbon. */
+.rail-ribbon.dragging {
+	position: relative;
+	z-index: 5;
 }
 
 /* Where a dragged tab or item would land. */
@@ -446,10 +487,16 @@
 }
 
 .rail-row:focus-visible,
-.rail-tile:focus-visible,
 .rail-icon-button:focus-visible {
 	outline: 2px solid var(--accent-ink);
 	outline-offset: -2px;
+}
+
+/* An outline would be clipped with the ribbon, so focus and a drop target darken it instead. */
+.rail-ribbon:focus-visible,
+.rail-ribbon.drop-over {
+	outline: none;
+	filter: brightness(0.82);
 }
 
 /* The inner edge resizes the rail. */
@@ -580,14 +627,10 @@
 	padding: 0 !important;
 }
 
-.rail.collapsed .rail-favourites {
-	grid-template-columns: 1fr;
-	gap: 4px;
-}
-
-.rail.collapsed .rail-tile {
-	height: 36px;
-	border-radius: 10px;
+.rail.collapsed .rail-ribbon {
+	width: 36px;
+	height: 40px;
+	padding-bottom: 9px;
 }
 
 .rail.collapsed .rail-split {

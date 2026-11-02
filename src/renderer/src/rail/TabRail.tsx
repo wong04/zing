@@ -15,7 +15,7 @@ import { useSettings } from '../settings/useSettings'
 import { useLibraryState } from '../library/useLibraryState'
 import type { DropTarget } from './dropTarget'
 import { SplitGroup, StackGroup, TabRow, type RowFrame } from './RailRows'
-import { FavouriteTiles, PinnedSection, type SavedFrame } from './SavedSections'
+import { FavouriteRibbons, PinnedSection, type SavedFrame } from './SavedSections'
 import { useItemDrag } from './useItemDrag'
 import { useRowDrag } from './useRowDrag'
 import './rail.css'
@@ -104,7 +104,7 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 				)}
 			</div>
 			{side === 'left' && !collapsed ? <RecentTools /> : null}
-			{library ? <FavouriteTiles nodes={favourites(library)} frame={saved} /> : null}
+			{library ? <FavouriteRibbons nodes={favourites(library)} frame={saved} innerWidth={collapsed ? VERTICAL_TABS.collapsedWidth - 12 : width.value - 16} /> : null}
 			{library ? <PinnedSection nodes={pinnedItems(library)} frame={saved} /> : null}
 			<button
 				type="button"
