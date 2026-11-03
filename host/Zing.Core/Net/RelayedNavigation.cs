@@ -25,7 +25,7 @@ public static class RelayedNavigation
 	public static NavigationDecision MainFrame(MainFrameNavigation navigation)
 	{
 		var toRelay = RelayedContent.IsRelayUrl(navigation.To);
-		if (navigation.IsRedirected) return toRelay && navigation.ChainIsRelay ? NavigationDecision.Allow : toRelay ? NavigationDecision.Cancel : RedirectOut(navigation);
+		if (navigation.IsRedirected) return Redirected(navigation, toRelay);
 		if (navigation.Origin is not NavigationOrigin.Page) return NavigationDecision.Allow;
 		var fromRelay = RelayedContent.IsRelayUrl(navigation.From);
 		if (toRelay) return fromRelay ? NavigationDecision.Allow : NavigationDecision.Cancel;
@@ -33,8 +33,12 @@ public static class RelayedNavigation
 		return StayInRelay(navigation.To);
 	}
 
-	/// <summary>A redirect that leaves a relay chain for another place can't come from Zing's own responses; refuse it.</summary>
-	private static NavigationDecision RedirectOut(MainFrameNavigation navigation) => navigation.ChainIsRelay ? NavigationDecision.Cancel : NavigationDecision.Allow;
+	/// <summary>A redirect onto the relay is Zing's own only inside a relay chain; one that leaves a relay chain can't come from Zing's responses, so it is refused.</summary>
+	private static NavigationDecision Redirected(MainFrameNavigation navigation, bool toRelay)
+	{
+		if (toRelay) return navigation.ChainIsRelay ? NavigationDecision.Allow : NavigationDecision.Cancel;
+		return navigation.ChainIsRelay ? NavigationDecision.Cancel : NavigationDecision.Allow;
+	}
 
 	/// <summary>An https link a relayed page builds at run time is pointed at the relay, as the rewriting does for the ones in its source; anything else is refused.</summary>
 	private static NavigationDecision StayInRelay(string to)

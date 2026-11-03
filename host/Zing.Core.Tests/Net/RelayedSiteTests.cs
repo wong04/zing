@@ -63,6 +63,23 @@ public sealed class RelayedSiteTests
 	}
 
 	[Fact]
+	public async Task A_final_address_the_relay_cannot_stand_for_is_an_error_not_a_silent_serve()
+	{
+		var transport = new FakeTransport { Plain = _ => Ok("x", "text/html", url: "http://example.com/downgraded") };
+		var response = await SiteFor(transport).ServeAsync("GET", "zing-relay://example.com/", isDocument: true, CancellationToken.None);
+		Assert.Equal(502, response.Status);
+		Assert.Contains("https", Text(response));
+	}
+
+	[Fact]
+	public async Task Responses_may_not_be_sniffed_into_another_type()
+	{
+		var transport = new FakeTransport { Plain = _ => Ok("body", "text/plain", url: "https://example.com/s") };
+		var response = await SiteFor(transport).ServeAsync("GET", "zing-relay://example.com/s", isDocument: false, CancellationToken.None);
+		Assert.Equal("nosniff", response.Headers["X-Content-Type-Options"]);
+	}
+
+	[Fact]
 	public async Task Without_consent_a_blocked_page_says_it_needs_an_OK_and_no_third_party_is_asked()
 	{
 		var transport = new FakeTransport();
@@ -72,15 +89,24 @@ public sealed class RelayedSiteTests
 		Assert.DoesNotContain(transport.Calls, c => c.Request.Url.Host is "r.jina.ai" or "archive.org");
 	}
 
-	[Fact]
-	public async Task A_subresource_of_the_own_network_never_goes_to_a_third_party_even_with_consent()
+	[Theory]
+	[InlineData("zing-relay://127.0.0.1/admin")]
+	[InlineData("zing-relay://localhost/")]
+	[InlineData("zing-relay://192.168.1.1/admin")]
+	[InlineData("zing-relay://100.64.0.9/")]
+	[InlineData("zing-relay://nas.lan/x")]
+	[InlineData("zing-relay://intranet/s.css")]
+	public async Task The_own_network_is_refused_for_a_document_or_a_file_before_any_fetch(string url)
 	{
 		var consent = new RelayConsent();
 		consent.Allow();
-		var transport = new FakeTransport();
-		var response = await SiteFor(transport, consent).ServeAsync("GET", "zing-relay://intranet/s.css", isDocument: false, CancellationToken.None);
-		Assert.Equal(502, response.Status);
-		Assert.DoesNotContain(transport.Calls, c => c.Request.Url.Host is "r.jina.ai" or "archive.org" or "web.archive.org");
+		foreach (var isDocument in new[] { true, false })
+		{
+			var transport = new FakeTransport();
+			var response = await SiteFor(transport, consent).ServeAsync("GET", url, isDocument, CancellationToken.None);
+			Assert.Equal(403, response.Status);
+			Assert.Empty(transport.Calls);
+		}
 	}
 
 	[Fact]

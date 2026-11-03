@@ -24,15 +24,29 @@ public sealed class LiveRelayTransport : IRelayTransport
 	private const int MaxRedirects = 5;
 
 	private readonly IDohClient _doh;
+	private readonly ConnectPolicy _policy;
 	private readonly PinnedHttp _pinned;
 	private readonly HttpClient _plain;
 
-	public LiveRelayTransport(IDohClient doh, PinnedHttp? pinned = null)
+	public LiveRelayTransport(IDohClient doh, PinnedHttp? pinned = null) : this(doh, ConnectPolicy.Unrestricted, pinned)
+	{
+	}
+
+	/// <param name="policy">Where this transport may connect; a transport for a relayed page's own requests passes <see cref="ConnectPolicy.PublicOnly"/>.</param>
+	public LiveRelayTransport(IDohClient doh, ConnectPolicy policy, PinnedHttp? pinned = null)
 	{
 		_doh = doh;
+		_policy = policy;
 		_pinned = pinned ?? new PinnedHttp();
 		// No cookie jar, so nothing a site sets is sent back to the next one.
-		_plain = new HttpClient(new SocketsHttpHandler { UseCookies = false, AutomaticDecompression = DecompressionMethods.All, AllowAutoRedirect = false });
+		var handler = new SocketsHttpHandler { UseCookies = false, AutomaticDecompression = DecompressionMethods.All, AllowAutoRedirect = false };
+		if (policy.ConnectCallback is { } connect)
+		{
+			handler.ConnectCallback = connect;
+			// Behind a proxy the callback's endpoint is the proxy's, not the site's, and there would be nothing to check.
+			handler.UseProxy = false;
+		}
+		_plain = new HttpClient(handler);
 	}
 
 	public async Task<RelayResponse> GetAsync(RelayRequest request, CancellationToken ct)
@@ -41,6 +55,7 @@ public sealed class LiveRelayTransport : IRelayTransport
 		var url = request.Url;
 		for (var hop = 0; hop <= MaxRedirects; hop++)
 		{
+			_policy.CheckHost(url.Host);
 			using var message = new HttpRequestMessage(HttpMethod.Get, url);
 			foreach (var (name, value) in request.Headers)
 				if (!message.Headers.TryAddWithoutValidation(name, value)) throw new ArgumentException($"{name} isn't a request header.", nameof(request));
@@ -66,7 +81,9 @@ public sealed class LiveRelayTransport : IRelayTransport
 		for (var hop = 0; hop <= MaxRedirects; hop++)
 		{
 			if (url.Scheme != Uri.UriSchemeHttps) throw new NotHttpsError();
+			_policy.CheckHost(url.Host);
 			var address = await AddressForAsync(url, dohProvider, ct);
+			_policy.CheckAddress(address);
 			using var response = await _pinned.GetAsync(url, address, ct, request.Headers);
 			if (!IsRedirect(response.StatusCode)) return await ReadAsync(response, url, ct);
 			url = NextHop(url, response);

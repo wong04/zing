@@ -36,7 +36,7 @@ public static class RelayRules
 		return host == "localhost" || host.EndsWith(".localhost", StringComparison.Ordinal) || host.EndsWith(".local", StringComparison.Ordinal) || !host.Contains('.');
 	}
 
-	private static bool IsPrivateAddress(IPAddress address)
+	public static bool IsPrivateAddress(IPAddress address)
 	{
 		if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
 		if (address.AddressFamily == AddressFamily.InterNetworkV6)

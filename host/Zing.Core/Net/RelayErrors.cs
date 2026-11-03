@@ -9,6 +9,9 @@ public sealed class BadURLError() : RelayError("That isn't an address Zing can o
 /// <summary>The relay scheme stands for https, so an address of another scheme can't be opened in a relayed tab.</summary>
 public sealed class RelayedAddressError() : RelayError("A relayed page needs an https address.");
 
+/// <summary>The fetch ended at an address the relay scheme can't stand for (it maps https only), so the page can't be shown where it is.</summary>
+public sealed class UnrelayableAddressError() : RelayError("The page moved to an address that isn't https, which a relayed page can't use.");
+
 /// <summary>An address with a user name and password in it would hand them to a relay.</summary>
 public sealed class CredentialsInURLError() : RelayError("That address has a user name or password in it, which Zing won't send to anyone. Remove it and try again.");
 

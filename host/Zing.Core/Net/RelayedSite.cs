@@ -14,8 +14,9 @@ public sealed record RelayedResponse(int Status, IReadOnlyDictionary<string, str
 public sealed class RelayedSite(IRelayTransport transport, Func<string> dohProvider, RelayConsent consent)
 {
 	/// <summary>
-	/// A relayed page runs its scripts but reaches nothing except the relay: no direct network (an address its scripts build
-	/// at run time, a stray http link), no frames of other schemes, no form posts elsewhere.
+	/// A relayed page runs its scripts, but loads, connects (fetch, XHR, WebSocket), frames and posts forms only within the
+	/// relay scheme, so an address its scripts build at run time or a stray http link can't reach the network directly.
+	/// This does not cover WebRTC, which a content security policy can't restrict.
 	/// </summary>
 	public const string Policy = "default-src zing-relay: data: blob: 'unsafe-inline' 'unsafe-eval'; connect-src zing-relay:; form-action zing-relay:; frame-ancestors zing-relay:";
 
@@ -27,14 +28,28 @@ public sealed class RelayedSite(IRelayTransport transport, Func<string> dohProvi
 		RelayResult result;
 		try
 		{
+			if (RelayedHosts.IsOwnNetworkHost(web.Host)) throw new OwnNetworkError();
 			result = isDocument ? await engine.OpenAsync(web.AbsoluteUri, consent, ct) : await engine.OpenResourceAsync(web, consent, ct);
+		}
+		catch (OwnNetworkError error)
+		{
+			return Failure(403, error.Message, isDocument);
 		}
 		catch (RelayError error)
 		{
 			return Failure(502, error.Message, isDocument);
 		}
 		if (result.Outcome == RelayOutcome.NeedsConsent) return Failure(403, "Needs your OK to send this address to a third party. Use Open a Link in the Toolbox to give it.", isDocument);
-		if (MovedTo(web, result) is { } moved) return new RelayedResponse(302, Headers(("Location", moved)), []);
+		string? moved;
+		try
+		{
+			moved = MovedTo(web, result);
+		}
+		catch (UnrelayableAddressError error)
+		{
+			return Failure(502, error.Message, isDocument);
+		}
+		if (moved is not null) return new RelayedResponse(302, Headers(("Location", moved)), []);
 		var type = result.ContentType ?? "application/octet-stream";
 		return new RelayedResponse(200, Headers(("Content-Type", type)), RelayedContent.Patch(result.Body, type));
 	}
@@ -44,7 +59,7 @@ public sealed class RelayedSite(IRelayTransport transport, Func<string> dohProvi
 	{
 		if (result.Strategy == RelayStrategy.ReaderRelay || result.FinalUrl is not { } final) return null;
 		if (!Uri.TryCreate(final, UriKind.Absolute, out var finalUri) || finalUri.AbsoluteUri == asked.AbsoluteUri) return null;
-		return RelayedContent.Encode(finalUri)?.AbsoluteUri;
+		return (RelayedContent.Encode(finalUri) ?? throw new UnrelayableAddressError()).AbsoluteUri;
 	}
 
 	private static Dictionary<string, string> Headers(params (string Name, string Value)[] more)
@@ -53,6 +68,7 @@ public sealed class RelayedSite(IRelayTransport transport, Func<string> dohProvi
 		{
 			["Content-Security-Policy"] = Policy,
 			["Cache-Control"] = "no-store",
+			["X-Content-Type-Options"] = "nosniff",
 		};
 		foreach (var (name, value) in more) headers[name] = value;
 		return headers;

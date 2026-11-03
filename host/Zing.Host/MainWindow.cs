@@ -172,7 +172,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	// MARK: IPageHost
 
 	private static RelayedSite RelayedSiteFor(AppServices services) =>
-		new((services.Net ?? NetServices.Live).RelayTransport, () => services.Settings.Get("dohProvider")?.GetValue<string>() ?? throw new InvalidDataException("Setting dohProvider is missing"), services.Consent);
+		new((services.Net ?? NetServices.Live).RelayedPageTransport, () => services.Settings.Get("dohProvider")?.GetValue<string>() ?? throw new InvalidDataException("Setting dohProvider is missing"), services.Consent);
 
 	public IPage Create(IPageEvents events)
 	{
