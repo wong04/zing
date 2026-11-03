@@ -30,6 +30,9 @@ public static partial class RelayedContent
 		return Uri.TryCreate("https:" + relay[Prefix.Length..], UriKind.Absolute, out var web) ? web : null;
 	}
 
+	/// <summary>An address from the library (an import can hold any text) is never opened onto the relay: only Zing's own relayed tabs are.</summary>
+	public static string RefuseRelayAddress(string url) => IsRelayUrl(url) ? throw new UnsupportedUrlException(url) : url;
+
 	/// <summary>The real address a relay URL stands for, and anything else as it is. What a saved session keeps.</summary>
 	public static string ToWebAddress(string url) => Decode(url)?.AbsoluteUri ?? url;
 

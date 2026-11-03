@@ -1,3 +1,5 @@
+using Zing.Core.Net;
+
 namespace Zing.Core;
 
 /// <summary>
@@ -40,7 +42,7 @@ public sealed class SavedTabs : IDisposable
 			_library.Apply(new MoveIntoAction(itemId, folderId, at));
 			return;
 		}
-		var id = _library.AddLink(folderId, at, TitleOf(tab), tab.Url);
+		var id = _library.AddLink(folderId, at, TitleOf(tab), RelayedContent.ToWebAddress(tab.Url));
 		_tabs.Bind(tabId, id);
 	}
 
@@ -62,7 +64,7 @@ public sealed class SavedTabs : IDisposable
 	{
 		var tab = _tabs.Get(tabId);
 		if (tab.ItemId is not null) return AddOutcome.Exists;
-		var existing = Library.Favourites(_library.Snapshot).OfType<BookmarkLink>().FirstOrDefault(l => l.Url == tab.Url);
+		var existing = Library.Favourites(_library.Snapshot).OfType<BookmarkLink>().FirstOrDefault(l => l.Url == RelayedContent.ToWebAddress(tab.Url));
 		if (existing is null)
 		{
 			Save(tabId, Library.FavouritesId, int.MaxValue);
@@ -76,7 +78,7 @@ public sealed class SavedTabs : IDisposable
 	public void Reset(string tabId)
 	{
 		if (_tabs.Get(tabId).ItemId is not { } itemId || _library.UrlOf(itemId) is not { } url) return;
-		_tabs.Navigate(tabId, url);
+		_tabs.Navigate(tabId, RelayedContent.RefuseRelayAddress(url));
 	}
 
 	/// <summary>Saves the tab's current page as its item's address and title.</summary>
@@ -84,12 +86,12 @@ public sealed class SavedTabs : IDisposable
 	{
 		var tab = _tabs.Get(tabId);
 		if (tab.ItemId is not { } itemId) return;
-		_library.SetLink(itemId, TitleOf(tab), tab.Url);
+		_library.SetLink(itemId, TitleOf(tab), RelayedContent.ToWebAddress(tab.Url));
 	}
 
 	/// <summary>Whether the tab has moved off its item's address, so Reset has somewhere to go.</summary>
 	public bool HasLeftItsAddress(string tabId) =>
-		_tabs.Get(tabId) is { ItemId: { } itemId } tab && _library.UrlOf(itemId) is { } url && url != tab.Url;
+		_tabs.Get(tabId) is { ItemId: { } itemId } tab && _library.UrlOf(itemId) is { } url && url != RelayedContent.ToWebAddress(tab.Url);
 
 	/// <summary>
 	/// Pinned tabs from a session saved before saved tabs existed become pinned items, so the rail shows them where

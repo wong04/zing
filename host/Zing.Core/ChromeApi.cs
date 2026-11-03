@@ -608,6 +608,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		if (target is not ("current" or "tab")) throw new ArgumentException($"Unknown library open target {target}");
 		if (_app.Library.UrlOf(id) is not { } url) return;
+		RelayedContent.RefuseRelayAddress(url);
 		if (target == "tab" || Tabs.ActiveId is null)
 		{
 			Tabs.Open(url);
@@ -619,7 +620,8 @@ public sealed class ChromeApi : IDisposable
 
 	private void OpenAll(string id)
 	{
-		foreach (var url in _app.Library.UrlsOf(id)) Tabs.Open(url);
+		var urls = _app.Library.UrlsOf(id).Select(RelayedContent.RefuseRelayAddress).ToList();
+		foreach (var url in urls) Tabs.Open(url);
 	}
 
 	private void ForEachStartPage(Action<IPage> act)

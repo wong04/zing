@@ -40,6 +40,12 @@ public sealed class PermissionBroker(PageUiStore ui)
 
 	public void Request(object page, string pageUrl, string permission, PermissionDetails details, IPermissionResolver resolver)
 	{
+		// A relayed page is untrusted and its origin is no one's to name in a prompt: nothing is asked and nothing is granted.
+		if (Net.RelayedContent.IsRelayUrl(details.RequestingUrl ?? pageUrl))
+		{
+			resolver.Resolve(false);
+			return;
+		}
 		if (AlwaysAllowed.Contains(permission))
 		{
 			resolver.Resolve(true);
@@ -65,6 +71,7 @@ public sealed class PermissionBroker(PageUiStore ui)
 
 	public bool Check(object? page, string permission, string origin, string? mediaType)
 	{
+		if (Net.RelayedContent.IsRelayUrl(origin)) return false;
 		if (AlwaysAllowed.Contains(permission)) return true;
 		if (page is null) return false;
 		var key = permission == "media" ? $"{origin}|media:{mediaType}" : $"{origin}|{permission}";

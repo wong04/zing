@@ -11,11 +11,12 @@ public sealed class ChromeApiTests : IDisposable
 	private readonly List<BrowserLibrary> _saved = [];
 	private readonly FakeBrowsingData _browsingData = new();
 	private readonly ChromeApi _api;
+	private readonly LibraryStore _library;
 
 	public ChromeApiTests()
 	{
-		var library = new LibraryStore(Library.EmptyLibrary(0), _saved.Add, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent(), BrowsingData: _browsingData), _host, "test");
+		_library = new LibraryStore(Library.EmptyLibrary(0), _saved.Add, Deterministic.Clock(), Deterministic.Ids("id-"));
+		_api = new ChromeApi(_bridge, new AppServices(_settings, _library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent(), BrowsingData: _browsingData), _host, "test");
 		_api.Start([], "about:blank");
 	}
 
@@ -38,6 +39,18 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	private static string ErrorName(JsonElement result) => result.GetProperty("error").GetProperty("name").GetString()!;
+
+	[Fact]
+	public async Task A_relay_address_in_the_library_is_not_opened_by_a_click_or_Open_All()
+	{
+		var link = _library.AddLink(Library.FavouritesId, 0, "Relayed", "zing-relay://example.com/a");
+		var before = _api.Tabs.Records.Count;
+		Assert.Equal(nameof(UnsupportedUrlException), ErrorName(await Invoke("library:open", link, "tab")));
+		Assert.Equal(nameof(UnsupportedUrlException), ErrorName(await Invoke("library:open", link, "current")));
+		Assert.Equal(nameof(UnsupportedUrlException), ErrorName(await Invoke("library:open-all", Library.FavouritesId)));
+		Assert.Equal(before, _api.Tabs.Records.Count);
+		Assert.DoesNotContain(_api.Tabs.Records, r => r.Url.StartsWith("zing-relay:", StringComparison.Ordinal));
+	}
 
 	[Fact]
 	public async Task Clear_session_clears_the_profile_and_says_so_and_keeps_the_tabs()
