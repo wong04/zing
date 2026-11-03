@@ -4,6 +4,7 @@ import { devTools } from './dev'
 import { linksTools } from './links'
 import { mathTools } from './math'
 import { textTools } from './text'
+import { webTools } from './web'
 
 /** Loads one tool's panel body on first use, so a tool that is never opened costs nothing. */
 export type ToolLoader = () => Promise<{ default: ComponentType }>
@@ -29,7 +30,7 @@ export function buildRegistry(groups: readonly ToolLoaders[]): ReadonlyMap<strin
 	return registry
 }
 
-const registry = buildRegistry([mathTools, devTools, textTools, linksTools])
+const registry = buildRegistry([mathTools, devTools, textTools, linksTools, webTools])
 
 /** The body of a tool's panel, or null while the tool has none (the panel then shows its empty state). */
 export function toolComponent(content: PanelContent): LazyExoticComponent<ComponentType> | null {

@@ -221,7 +221,7 @@ public sealed class ZingApp
 		var openedAccount = AccountStore.Open(Path.Combine(AppPaths.UserData, "account"), new DpapiCipher(), stamp, skipGate);
 		if (openedAccount.Problem is { } accountProblem) StartupProblem("account", "your Zing account", "without it", accountProblem);
 		var account = openedAccount.Value;
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData, purger);
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData, purger, TestHooks.NetServices());
 	}
 
 	/// <summary>Opens the engine and listens to it: a browser process that dies, and a runtime update waiting for the next launch.</summary>

@@ -36,6 +36,21 @@ public static class TestHooks
 	/// <summary>The app clock. ZING_TEST_CLOCK=1 in an e2e run gives one a test can move forward (test:advance-clock).</summary>
 	public static Zing.Core.IClock Clock { get; } = IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_TEST_CLOCK") == "1" ? new Zing.Core.OffsetClock() : new Zing.Core.SystemClock();
 
+	/// <summary>
+	/// The network Diagnose sees in an e2e run, so no test reaches the internet: ZING_E2E_DOH_URL is a local DoH server that every
+	/// provider is asked at, and ZING_E2E_PROBES is JSON {"system": [addresses], "tcp": bool, "tlsValid": bool} for what the probes find.
+	/// Null outside an e2e run, and when neither is set.
+	/// </summary>
+	public static Zing.Core.Net.NetServices? NetServices()
+	{
+		if (!IsEndToEndRun) return null;
+		var dohUrl = Environment.GetEnvironmentVariable("ZING_E2E_DOH_URL");
+		var probes = Environment.GetEnvironmentVariable("ZING_E2E_PROBES");
+		if (dohUrl is null && probes is null) return null;
+		if (dohUrl is null || probes is null) throw new InvalidOperationException("ZING_E2E_DOH_URL and ZING_E2E_PROBES go together");
+		return new Zing.Core.Net.NetServices(FixedProbes.FromJson(probes), new Zing.Core.Net.DohClient(new HttpClient(), _ => dohUrl));
+	}
+
 	private static int? _closeNextAt;
 	private static WindowScope? _newest;
 	private static int _windows;

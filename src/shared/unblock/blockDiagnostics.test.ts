@@ -58,7 +58,7 @@ describe('BlockDiagnostics.classify — all 32 combinations', () => {
 describe('BlockDiagnostics.classify — shared vectors', () => {
 	it('covers every combination once', () => {
 		expect(vectors.classify).toHaveLength(32)
-		expect(new Set(vectors.classify.map(({ kind: _kind, ...o }) => JSON.stringify(o))).size).toBe(32)
+		expect(new Set(vectors.classify.map((o) => JSON.stringify([o.systemTLSOK, o.sinkholed, o.systemAnswerEmpty, o.publicTCPOK, o.publicTLSOK]))).size).toBe(32)
 	})
 	it.each(vectors.classify)('sysTLS=$systemTLSOK sink=$sinkholed empty=$systemAnswerEmpty tcp=$publicTCPOK tls=$publicTLSOK -> $kind', ({ kind, ...observed }) => {
 		expect(classify(observed)).toBe(kind)

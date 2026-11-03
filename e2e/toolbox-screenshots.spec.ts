@@ -15,7 +15,6 @@ const OUT_DIR = join(import.meta.dirname, '..', 'docs', 'screenshots', 'phase-6'
 const MODES = ['light', 'dark'] as const
 const LATER_PHASE: readonly string[] = [
 	'section:Convert',
-	'section:Diagnose',
 	'section:Download',
 	'section:Files',
 	'section:Network & VPN',
