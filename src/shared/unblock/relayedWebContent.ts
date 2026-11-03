@@ -6,15 +6,15 @@
  * Maps real URLs onto a private scheme the browser hands to us, keeping the
  * host and path intact:
  *
- *     https://example.com/a/style.css  <->  aiorelay://example.com/a/style.css
+ *     https://example.com/a/style.css  <->  zing-relay://example.com/a/style.css
  *
  * Preserving the structure is what makes this work. Because the *document
- * itself* is loaded from `aiorelay://`, every relative reference (`/w/load.php`)
+ * itself* is loaded from `zing-relay://`, every relative reference (`/w/load.php`)
  * and every protocol-relative one (`//upload.example.org/x.png`) resolves back
  * into our scheme automatically, with no HTML rewriting at all. Only absolute
  * `https://` links need patching.
  */
-export const relayScheme = 'aiorelay'
+export const relayScheme = 'zing-relay'
 
 // WHATWG URL refuses to switch a special scheme (https) to a non-special one
 // through the `protocol` setter, so the scheme is swapped on the string.
@@ -24,7 +24,9 @@ function withScheme(url: URL, scheme: string): URL | undefined {
 	return new URL(swapped)
 }
 
+/** Only https maps onto the relay scheme, which decodes back to https; any other scheme would not round-trip. */
 export function encodeRelayURL(url: URL): URL | undefined {
+	if (url.protocol !== 'https:') return undefined
 	return withScheme(url, relayScheme)
 }
 
