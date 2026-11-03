@@ -1,0 +1,85 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import qrcode from 'qrcode-generator'
+import { InfoBanner, PillButton } from '../../components'
+import { ToolPage } from './parts'
+import './text.css'
+
+const quietZone = 4
+const pixelsPerModule = 8
+
+type Code = { readonly modules: readonly (readonly boolean[])[] } | { readonly error: string }
+
+function encode(text: string): Code {
+	try {
+		const code = qrcode(0, 'M')
+		code.addData(text)
+		code.make()
+		const size = code.getModuleCount()
+		const modules = Array.from({ length: size }, (_, row) => Array.from({ length: size }, (_, col) => code.isDark(row, col)))
+		return { modules }
+	} catch (error) {
+		// The library throws a bare Error ("code length overflow") for text too long to encode.
+		if (error instanceof Error) return { error: `That text does not fit in a QR code (${error.message}).` }
+		throw error
+	}
+}
+
+export default function QrCode() {
+	const [text, setText] = useState('')
+	const canvas = useRef<HTMLCanvasElement>(null)
+	const code = useMemo(() => (text === '' ? null : encode(text)), [text])
+	const modules = code && 'modules' in code ? code.modules : null
+	const [copyError, setCopyError] = useState<string | null>(null)
+
+	useEffect(() => {
+		const el = canvas.current
+		if (!el || !modules) return
+		const context = el.getContext('2d')
+		if (!context) throw new Error('A 2d canvas context is unavailable')
+		const side = (modules.length + quietZone * 2) * pixelsPerModule
+		el.width = side
+		el.height = side
+		context.fillStyle = '#fff'
+		context.fillRect(0, 0, side, side)
+		context.fillStyle = '#000'
+		modules.forEach((row, y) =>
+			row.forEach((dark, x) => {
+				if (dark) context.fillRect((x + quietZone) * pixelsPerModule, (y + quietZone) * pixelsPerModule, pixelsPerModule, pixelsPerModule)
+			}),
+		)
+	}, [modules])
+
+	const copyImage = async (): Promise<void> => {
+		const el = canvas.current
+		if (!el) return
+		try {
+			const blob = await new Promise<Blob>((resolve, reject) =>
+				el.toBlob((b) => (b ? resolve(b) : reject(new Error('The canvas produced no image'))), 'image/png'),
+			)
+			await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+			setCopyError(null)
+		} catch (error) {
+			setCopyError(error instanceof Error ? error.message : String(error))
+		}
+	}
+
+	return (
+		<ToolPage subtitle="Turn any text or link into a scannable code.">
+			<textarea className="text-tool-area" aria-label="Text" spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} />
+			{code && 'error' in code ? <InfoBanner kind="warning">{code.error}</InfoBanner> : null}
+			{modules ? (
+				<>
+					<div className="qr-frame">
+						<canvas ref={canvas} aria-label="QR code" />
+					</div>
+					<div>
+						<PillButton variant="outlined" size="small" onClick={() => void copyImage()}>
+							Copy image
+						</PillButton>
+					</div>
+					{copyError ? <InfoBanner kind="warning">{`Could not copy the image: ${copyError}`}</InfoBanner> : null}
+				</>
+			) : null}
+		</ToolPage>
+	)
+}
