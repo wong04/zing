@@ -10,7 +10,9 @@ class NoActiveTabError extends Error {
 	override name = 'NoActiveTabError'
 }
 
-async function openInNewTab(url: string): Promise<void> {
+/** The stored address is checked again here: settings.json can be edited by hand to hold something a tile must never open. */
+async function openInNewTab(stored: string): Promise<void> {
+	const url = parseToolLink(stored)
 	await zing.runCommand('tab.new')
 	const { activeId } = await zing.getTabs()
 	if (activeId === undefined) throw new NoActiveTabError('A new tab was opened but none is active')
@@ -25,6 +27,13 @@ export function LinksTool() {
 	const [problem, setProblem] = useState<string | null>(null)
 	if (!handle) return null
 	const links = handle.settings.toolLinks
+
+	const open = (url: string): void => {
+		openInNewTab(url).then(
+			() => setProblem(null),
+			(error: unknown) => setProblem(error instanceof Error ? error.message : String(error)),
+		)
+	}
 
 	const add = (): void => {
 		let url: string
@@ -51,7 +60,7 @@ export function LinksTool() {
 			<div className="links-tiles">
 				{links.map((link) => (
 					<div key={link.url} className="links-tile-wrap">
-						<button type="button" className="links-tile" data-testid="link-tile" title={link.url} onClick={() => void openInNewTab(link.url)}>
+						<button type="button" className="links-tile" data-testid="link-tile" title={link.url} onClick={() => open(link.url)}>
 							{link.title}
 						</button>
 						<button

@@ -122,6 +122,17 @@ test('an address that is not a web link is refused with a message', async () => 
 	await expect(surface.getByTestId('link-tile')).toHaveCount(6)
 	await zing.close()
 })
+
+test('a stored link that is not http or https shows an error and opens nothing', async () => {
+	const zing = await launchZing()
+	// settings.json can be edited by hand, so the tile checks the address again when it is clicked.
+	await zing.chrome.evaluate(() => window.zing.setSetting('toolLinks', [{ title: 'Bad', url: 'javascript://x/%0aalert(1)' }]))
+	const surface = await openLinks(zing)
+	await surface.getByTestId('link-tile').filter({ hasText: 'Bad' }).click()
+	await expect(surface.getByRole('alert')).toContainText('not a web link')
+	expect((await zing.chrome.evaluate(() => window.zing.getTabs())).tabs).toHaveLength(1)
+	await zing.close()
+})
 
 test('a link with an AI tag loses it on navigation', async () => {
 	const zing = await launchZing()

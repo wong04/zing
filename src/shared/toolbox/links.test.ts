@@ -22,3 +22,9 @@ describe('the default links', () => {
 		for (const link of DEFAULT_TOOL_LINKS) expect(parseToolLink(link.url)).toBe(link.url)
 	})
 })
+
+describe('parseToolLink on a stored address', () => {
+	it('names the scheme as the problem when the host would parse', () => {
+		expect(() => parseToolLink('javascript://x/%0aalert(1)')).toThrow('not a web link')
+	})
+})
