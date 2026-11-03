@@ -1,18 +1,17 @@
 {
 	"kracknKeys": ["theme", "accent", "homepage", "startShortcuts", "searchEngine", "blockTrackers", "confirmQuit", "defaultQuality", "preserveOriginals", "dohProvider", "tabOrganization", "autoCloseEnabled", "autoCloseRule", "autoCloseCustomHours", "autoCloseAtTimeEnabled", "autoCloseHour", "autoCloseMinute", "persistentProfile", "defaultUserAgent", "acceleratedCanvas", "restoreTabs", "securityRealtime", "securityDownloadScan", "securityDomainBlocking", "securitySignatureCheck", "sidebarPinned", "recentFeatures", "showFavouritesBar", "passwordAutofill", "tabDropdowns"],
 	"zingKeys": ["tabBarPosition", "tabColours", "customColor", "verticalTabWidth", "verticalTabsCollapsed", "sleepingTabs", "favouritesHint", "toolLinks"],
-	"retiredKeys": ["confirmQuit"],
+	"retiredKeys": ["confirmQuit", "securityDownloadScan", "securityDomainBlocking", "securitySignatureCheck"],
 	"defaultsSubset": {
 		"theme": "system", "accent": "yellow", "customColor": "#D9B872", "searchEngine": "google", "homepage": "", "startShortcuts": null,
 		"blockTrackers": true, "preserveOriginals": true, "defaultQuality": 80, "dohProvider": "cloudflare",
 		"tabOrganization": "manual", "autoCloseRule": "day", "autoCloseCustomHours": 12, "autoCloseHour": 3, "autoCloseMinute": 0,
-		"acceleratedCanvas": true, "securityRealtime": true, "securityDownloadScan": true, "securityDomainBlocking": true,
-		"securitySignatureCheck": true, "sidebarPinned": true, "showFavouritesBar": true, "passwordAutofill": true,
+		"acceleratedCanvas": true, "securityRealtime": true, "sidebarPinned": true, "showFavouritesBar": true, "passwordAutofill": true,
 		"persistentProfile": false, "restoreTabs": false, "tabDropdowns": false, "tabBarPosition": "left", "tabColours": "colour", "verticalTabWidth": 240, "verticalTabsCollapsed": false
 	},
 	"parseAccepted": [
 		{ "name": "absent keys read as defaults", "input": { "restoreTabs": true }, "expectSubset": { "restoreTabs": true, "preserveOriginals": true, "blockTrackers": true } },
-		{ "name": "a retired key is skipped, not refused", "input": { "confirmQuit": true, "restoreTabs": true }, "expectSubset": { "restoreTabs": true }, "expectAbsent": ["confirmQuit"] }
+		{ "name": "a retired key is skipped, not refused", "input": { "confirmQuit": true, "securityDownloadScan": false, "securityDomainBlocking": false, "securitySignatureCheck": false, "restoreTabs": true }, "expectSubset": { "restoreTabs": true }, "expectAbsent": ["confirmQuit", "securityDownloadScan", "securityDomainBlocking", "securitySignatureCheck"] }
 	],
 	"parseRejected": [
 		{ "input": { "defaultQuality": 400 }, "error": "InvalidSetting" },
