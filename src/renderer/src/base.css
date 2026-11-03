@@ -280,6 +280,12 @@ input {
 	min-width: 0;
 }
 
+.offer-detail {
+	color: var(--muted);
+	line-height: 1.35;
+	font-size: 0.9em;
+}
+
 .offer-address {
 	overflow: hidden;
 	text-overflow: ellipsis;

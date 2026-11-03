@@ -292,7 +292,7 @@ export interface InvokeContract {
 	/** A new tab on a page reached through the relay. Rejects an address that isn't https, which the relay scheme can't stand for. */
 	'tabs:open-relayed': { args: [url: string]; result: void }
 	/** A button of the failed-load offer: opens that tool with the failed address filled in. Starts nothing. */
-	'offer:choose': { args: [tool: OfferTool]; result: void }
+	'offer:choose': { args: [tool: OfferTool]; result: OpenPanelOutcome }
 	'offer:dismiss': { args: []; result: void }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
@@ -412,7 +412,7 @@ export interface ZingApi {
 	openLink(input: string, runId: string): Promise<RelayOpenResult>
 	allowRelayThirdParties(): Promise<void>
 	openRelayedTab(url: string): Promise<void>
-	chooseOffer(tool: OfferTool): Promise<void>
+	chooseOffer(tool: OfferTool): Promise<OpenPanelOutcome>
 	dismissOffer(): Promise<void>
 	onRelayAttempt(listener: (event: RelayAttemptEvent) => void): Unsubscribe
 	onShellState(listener: (state: ShellState) => void): Unsubscribe

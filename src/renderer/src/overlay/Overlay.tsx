@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { Notice } from '@shared/ipc'
+import type { Notice, OfferTool } from '@shared/ipc'
+import { PANELS_FULL_MESSAGE } from '@shared/shell/shellState'
 import { zing } from '../api'
 import { StackDropdownView } from '../chrome/tabs/StackDropdownView'
 import { TabOverviewView } from '../overview/TabOverviewView'
@@ -7,19 +8,27 @@ import { useAccentTheme } from '../settings/useAccentTheme'
 
 /** A page failed like a block would make it. Both buttons only open a tool with the address filled in; nothing is tried until a click there. */
 function UnblockOffer({ address }: { address: string }) {
+	const [problem, setProblem] = useState<string | null>(null)
+	const choose = async (tool: OfferTool): Promise<void> => {
+		const outcome = await zing.chooseOffer(tool)
+		setProblem(outcome.status === 'full' ? PANELS_FULL_MESSAGE : null)
+	}
 	return (
-		<div className="notice offer" role="group" aria-label="This page didn't load" data-testid="unblock-offer">
+		<div className="notice offer" role="status" data-testid="unblock-offer">
 			<div className="offer-text">
 				<strong>This page didn't load</strong>
 				<span className="offer-address" title={address} data-testid="offer-address">
 					{address}
 				</span>
+				<span className="offer-detail" data-testid="offer-detail">
+					{problem ?? 'Open a Link tries other ways to reach it. Diagnose finds where it is blocked. Nothing runs until you choose.'}
+				</span>
 			</div>
 			<div className="offer-actions">
-				<button type="button" className="pill-button filled small" onClick={() => void zing.chooseOffer('openLink')}>
+				<button type="button" className="pill-button filled small" onClick={() => void choose('openLink')}>
 					Open a Link
 				</button>
-				<button type="button" className="pill-button outlined small" onClick={() => void zing.chooseOffer('diagnose')}>
+				<button type="button" className="pill-button outlined small" onClick={() => void choose('diagnose')}>
 					Diagnose
 				</button>
 				<button type="button" className="pill-icon-button" aria-label="Dismiss" title="Dismiss" onClick={() => void zing.dismissOffer()}>

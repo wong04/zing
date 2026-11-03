@@ -3,6 +3,7 @@ import { panelId, section, Section } from '@shared/toolbox/panelContent'
 import { blockDetail, blockTitle, recommendedStrategies, type DiagnosticReport } from '@shared/unblock/blockDiagnostics'
 import { zing } from '../../api'
 import { InfoBanner, PillButton, PillField } from '../../components'
+import { PANELS_FULL_MESSAGE } from '@shared/shell/shellState'
 import { usePanelInput } from '../panelInput'
 import { ResultRow, TextArea, ToolPage } from '../parts'
 import './web.css'
@@ -51,7 +52,7 @@ export function DiagnoseTool() {
 	const openMethod = async (): Promise<void> => {
 		// Open a Link starts with the address filled in; it runs when it is clicked there.
 		const outcome = await zing.openPanelWithInput(panelId(section(Section.unblock)), diagnosed)
-		if (outcome.status === 'full') setProblem('Three tools are already open. Close one, then try again.')
+		if (outcome.status === 'full') setProblem(PANELS_FULL_MESSAGE)
 	}
 
 	const strategies = report === null ? [] : recommendedStrategies(report.kind)

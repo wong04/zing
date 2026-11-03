@@ -11,7 +11,7 @@ import './web.css'
 export const consentText =
 	"This asks an outside service to fetch the page for you, so that service sees the address, and for a reader relay the page too. Zing doesn't send it your cookies or sign-ins. If this network belongs to a school or employer, getting around its filter may break their rules. That's your call."
 
-const declinedText = "Stopped at the methods that need no outside service. Nothing was sent to one. Run it again and say yes if you change your mind."
+const declinedText = "Stopped at the methods that need no outside service. Nothing was sent to the reader relay or the archive. Run it again and say yes if you change your mind."
 
 /** An http address that needed a relay, and neither it nor its https form could be opened that way. */
 class UnrelayableAddressError extends Error {
@@ -31,12 +31,12 @@ function describeOpening(opening: Opening, result: RelayOpenResult): string {
 	return `${reason} ${method} worked. Pages that need a sign-in won't work this way, and web apps usually don't either.`
 }
 
-function Attempts({ attempts }: { attempts: readonly RelayAttempt[] }) {
+function Attempts({ attempts, label = 'Attempts' }: { attempts: readonly RelayAttempt[]; label?: string }) {
 	if (attempts.length === 0) return null
 	const pinnedMissed = attempts.some((a) => a.strategy === 'dohPinned' && a.status === 'failed')
 	return (
 		<>
-			<ol className="attempt-list" aria-label="Attempts">
+			<ol className="attempt-list" aria-label={label}>
 				{attempts.map((attempt) => (
 					<li key={attempt.strategy} className={`attempt ${attempt.status}`} data-testid="attempt" data-strategy={attempt.strategy} data-status={attempt.status}>
 						<span className="attempt-name">{strategyLabel(attempt.strategy)}</span>
@@ -57,6 +57,16 @@ function Attempts({ attempts }: { attempts: readonly RelayAttempt[] }) {
 function ConsentDialog({ onAllow, onDecline }: { onAllow: () => void; onDecline: () => void }) {
 	const declineButton = useRef<HTMLButtonElement>(null)
 	useEffect(() => declineButton.current?.focus(), [])
+	// On the document, not the dialog: a click on its text moves focus to the body, and Escape must still decline.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent): void => {
+			if (e.key !== 'Escape') return
+			e.stopPropagation()
+			onDecline()
+		}
+		document.addEventListener('keydown', onKey, true)
+		return () => document.removeEventListener('keydown', onKey, true)
+	}, [onDecline])
 	return (
 		<div
 			className="consent-dialog"
@@ -65,11 +75,6 @@ function ConsentDialog({ onAllow, onDecline }: { onAllow: () => void; onDecline:
 			aria-labelledby="consent-title"
 			aria-describedby="consent-text"
 			data-testid="consent-dialog"
-			onKeyDown={(e) => {
-				if (e.key !== 'Escape') return
-				e.stopPropagation()
-				onDecline()
-			}}
 		>
 			<strong id="consent-title">Ask an outside service?</strong>
 			<p id="consent-text">{consentText}</p>
@@ -90,14 +95,17 @@ export function OpenLinkTool() {
 	const [seenHandoff, setSeenHandoff] = useState(handoff?.serial)
 	const [phase, setPhase] = useState<Phase>('idle')
 	const [attempts, setAttempts] = useState<readonly RelayAttempt[]>([])
+	// How the http address went, kept in view while its https form is tried.
+	const [earlier, setEarlier] = useState<readonly RelayAttempt[]>([])
 	const [outcome, setOutcome] = useState<string | null>(null)
 	const [problem, setProblem] = useState<string | null>(null)
 	const [stopped, setStopped] = useState<string | null>(null)
 	// What the run the dialog is about was started for.
 	const [asked, setAsked] = useState('')
 
-	// An address handed over replaces the field; it never starts anything.
-	if (handoff && handoff.serial !== seenHandoff) {
+	// An address handed over replaces the field; it never starts anything. While a run or its question is open it waits,
+	// so "Allow" and the result are always about the address the field showed when Open was clicked.
+	if (handoff && handoff.serial !== seenHandoff && phase === 'idle') {
 		setSeenHandoff(handoff.serial)
 		setAddress(handoff.value)
 	}
@@ -147,7 +155,9 @@ export function OpenLinkTool() {
 		throw new Error('An opening that needs another try was not tried again')
 	}
 
-	const secondTry = async (httpAddress: string, httpsAddress: string, mine: number): Promise<RelayOpenResult | null> => {
+	const secondTry = async (first: RelayOpenResult, httpsAddress: string, mine: number): Promise<RelayOpenResult | null> => {
+		const httpAddress = first.address
+		setEarlier(collapseAttempts(first.attempts))
 		setOutcome("That address is http, which a relayed page can't use. Trying the https form of it once.")
 		let retried: RelayOpenResult | null
 		try {
@@ -165,6 +175,7 @@ export function OpenLinkTool() {
 		setOutcome(null)
 		setProblem(null)
 		setStopped(null)
+		setEarlier([])
 		try {
 			let result = await runOnce(input, mine)
 			if (!result) return
@@ -175,7 +186,7 @@ export function OpenLinkTool() {
 			}
 			let opening = planOpening(result)
 			if (opening.kind === 'retryHttps') {
-				const retried = await secondTry(result.address, opening.url, mine)
+				const retried = await secondTry(result, opening.url, mine)
 				if (!retried) return
 				result = retried
 				opening = planOpening(retried)
@@ -224,6 +235,13 @@ export function OpenLinkTool() {
 				<p className="tool-subtitle" data-testid="trying">
 					Trying {strategyLabel(trying.strategy)}…
 				</p>
+			)}
+			{earlier.length === 0 ? null : (
+				<>
+					<p className="tool-subtitle">First try, over http</p>
+					<Attempts attempts={earlier} label="Attempts over http" />
+					<p className="tool-subtitle">Second try, over https</p>
+				</>
 			)}
 			<Attempts attempts={attempts} />
 			{stopped === null ? null : (

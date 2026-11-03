@@ -198,4 +198,19 @@ public sealed class UnblockOfferTests : IDisposable
 		await Invoke("offer:choose", "openLink");
 		Assert.DoesNotContain("secret", Assert.Single(_api.Shell.PanelsState().Panels).Input!.Value);
 	}
+
+	[Fact]
+	public void A_second_failure_of_the_same_page_does_not_replace_the_offer_with_a_notice()
+	{
+		var tab = _api.Tabs.Open("https://blocked.test/page");
+		var events = ((FakePage)_api.Tabs.PageOf(tab.Id)!).Events;
+		events.LoadFailed("HostNameNotResolved");
+		events.LoadFailed("ConnectionAborted");
+		Assert.Empty(_host.Notices);
+		Assert.Equal(["https://blocked.test/page"], _host.Offers);
+		// Once the offer is gone, a failure is told as before.
+		_host.EndOffer();
+		events.LoadFailed("ConnectionAborted");
+		Assert.Single(_host.Notices);
+	}
 }

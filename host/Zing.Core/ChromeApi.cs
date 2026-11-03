@@ -82,6 +82,7 @@ public sealed class ChromeApi : IDisposable
 	private readonly RelayConsent _consent;
 	/// <summary>The address of the page the offer on screen is for.</summary>
 	private string? _offered;
+	private string? _offeredTab;
 	private readonly IWindowHost _host;
 
 	internal IWindowHost Host => _host;
@@ -490,6 +491,8 @@ public sealed class ChromeApi : IDisposable
 
 	private void LoadFailed(TabRecord tab, string description)
 	{
+		// The engine can report a second, vaguer failure for the same load (an abort after the name failed); it adds nothing the offer doesn't say.
+		if (_offered is not null && tab.Id == _offeredTab && LoadFailureOffer.For(tab.Url, description) is null) return;
 		// An offer for a page you aren't looking at would be about something else than what is on screen.
 		if (tab.Id != Tabs.ActiveId || LoadFailureOffer.For(tab.Url, description) is not { } address)
 		{
@@ -497,6 +500,7 @@ public sealed class ChromeApi : IDisposable
 			return;
 		}
 		_offered = address;
+		_offeredTab = tab.Id;
 		Shell.OfferedAddress = address;
 		_host.OfferUnblock(address);
 	}

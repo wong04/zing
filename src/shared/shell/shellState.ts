@@ -71,6 +71,9 @@ export interface ToolPanelsState {
 
 export const EMPTY_TOOL_PANELS: ToolPanelsState = { panels: [], frontId: undefined, dragging: false }
 
+/** What a tool says when it could not open a panel because three are already showing. */
+export const PANELS_FULL_MESSAGE = 'Three tools are already open. Close one, then try again.'
+
 export type OpenPanelOutcome =
 	| { readonly status: 'opened' | 'focused' | 'restored' }
 	/** Three are already showing; minimize or close one first. */

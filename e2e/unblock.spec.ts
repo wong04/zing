@@ -799,7 +799,7 @@ test('declining stops at the methods that need no third party', async () => {
 	// Escape declines.
 	await panel.page().keyboard.press('Escape')
 	await expect(dialog).toBeHidden()
-	await expect(panel.getByTestId('open-link-stopped')).toContainText('Nothing was sent')
+	await expect(panel.getByTestId('open-link-stopped')).toContainText('Nothing was sent to the reader relay or the archive.')
 	await settle(800)
 	expect(thirdPartyAsked(stand)).toEqual([])
 	expect(await tabUrls(zing)).toEqual(before)
@@ -861,6 +861,9 @@ test('an http address that needed a relay is tried once over https, else said pl
 	await panel.getByRole('alertdialog').getByRole('button', { name: 'Allow for this session' }).click()
 	await expect.poll(() => tabUrls(zing)).toContain('zing-relay://plain.test/x')
 	expect((await tabUrls(zing)).some((u) => u.startsWith('http://plain.test'))).toBe(false)
+	// How the http address went stays in view beside the https try.
+	await expect(panel.getByRole('list', { name: 'Attempts over http' }).getByTestId('attempt').first()).toBeVisible()
+	await expect(panel.getByRole('list', { name: 'Attempts', exact: true })).toBeVisible()
 	// Another one has no https form that answers: nothing opens, and the message says why.
 	const before = await tabUrls(zing)
 	await runLink(panel, 'http://nowhere.test/y')
@@ -881,6 +884,104 @@ test('a relayed page cannot grant the third-party consent', async () => {
 	await settle(500)
 	const asked = await zing.chrome.evaluate(() => window.zing.openLink('example.com', 'after-the-page-tried'))
 	expect(asked.outcome).toBe('needsConsent')
+	await zing.close()
+	await stand.close()
+})
+
+// ---- Fix round 1: the offer and the tool by keyboard, a full shell, Escape, handoffs while asking, and the https retry's rows.
+
+async function failedLoad(zing: Launched, address: string): Promise<{ overlay: Page; offer: Locator }> {
+	await navigateActive(zing, address)
+	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
+	const offer = overlay.getByTestId('unblock-offer')
+	await expect(offer.getByTestId('offer-address')).toHaveText(address)
+	return { overlay, offer }
+}
+
+test('the offer is a status a screen reader hears, and says what is on offer', async () => {
+	const stand = await methodsStand(blockedSite)
+	const zing = await launchWithoutDns(stand)
+	const { overlay } = await failedLoad(zing, 'https://blocked.test/a')
+	const status = overlay.getByRole('status')
+	await expect(status).toContainText("This page didn't load")
+	await expect(status).toContainText('Open a Link tries other ways to reach it')
+	await expect(status).toContainText('Nothing runs until you choose')
+	await zing.close()
+	await stand.close()
+})
+
+test('with the offer showing, a tool picked by keyboard from the sheet starts with the failed address and runs nothing', async () => {
+	const stand = await methodsStand(blockedSite)
+	const zing = await launchWithoutDns(stand)
+	await failedLoad(zing, 'https://blocked.test/a')
+	await zing.chrome.getByRole('button', { name: 'Toolbox' }).first().click()
+	const surface = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	await expect(surface.getByRole('searchbox', { name: 'Search tools' })).toBeFocused()
+	await surface.getByRole('searchbox', { name: 'Search tools' }).fill('open a link')
+	await surface.keyboard.press('Enter')
+	const panel = surface.getByRole('dialog', { name: 'Open a Link' })
+	await expect(panel.getByRole('textbox', { name: 'Address' })).toHaveValue('https://blocked.test/a')
+	await settle(800)
+	expect(stand.asked).toEqual([])
+	await expect(panel.getByTestId('attempt')).toHaveCount(0)
+	// Once the offer is dismissed, the tool starts empty.
+	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
+	await overlay.getByTestId('unblock-offer').getByRole('button', { name: 'Dismiss' }).click()
+	await panel.getByRole('button', { name: 'Close Open a Link' }).click()
+	await zing.chrome.getByRole('button', { name: 'Toolbox' }).first().click()
+	await surface.getByRole('searchbox', { name: 'Search tools' }).fill('open a link')
+	await surface.keyboard.press('Enter')
+	await expect(surface.getByRole('dialog', { name: 'Open a Link' }).getByRole('textbox', { name: 'Address' })).toHaveValue('')
+	await zing.close()
+	await stand.close()
+})
+
+test('with three tools open the offer stays and says to close one', async () => {
+	const stand = await methodsStand(blockedSite)
+	const zing = await launchWithoutDns(stand)
+	const { offer } = await failedLoad(zing, 'https://blocked.test/a')
+	for (const content of ['tool:Hashes', 'tool:HMAC', 'tool:JSON']) {
+		await zing.chrome.evaluate((id) => window.zing.openPanel(id, { x: 400, y: 300 }), content)
+	}
+	await offer.getByRole('button', { name: 'Open a Link' }).click()
+	await expect(offer.getByTestId('offer-detail')).toHaveText('Three tools are already open. Close one, then try again.')
+	await expect(offer).toBeVisible()
+	await zing.close()
+	await stand.close()
+})
+
+test('Escape declines even after a click on the dialog text moved focus off it', async () => {
+	const stand = await methodsStand(blockedSite)
+	const zing = await launchWithoutDns(stand)
+	const { panel } = await openLinkPanel(zing)
+	await runLink(panel, 'https://blocked.test/a/page')
+	const dialog = panel.getByRole('alertdialog')
+	await expect(dialog).toBeVisible()
+	await dialog.getByText('That’s your call.'.replace('’', "'")).click()
+	await expect.poll(() => dialog.evaluate((el) => el.contains(document.activeElement))).toBe(false)
+	await panel.page().keyboard.press('Escape')
+	await expect(dialog).toBeHidden()
+	expect(thirdPartyAsked(stand)).toEqual([])
+	await zing.close()
+	await stand.close()
+})
+
+test('an address handed over while the question is open waits, and Allow runs the address that was asked about', async () => {
+	const stand = await methodsStand(blockedSite)
+	const zing = await launchWithoutDns(stand)
+	const { panel } = await openLinkPanel(zing)
+	await runLink(panel, 'https://typed.test/')
+	const dialog = panel.getByRole('alertdialog')
+	await expect(dialog).toBeVisible()
+	const { overlay } = await failedLoad(zing, 'https://blocked.test/other')
+	await overlay.getByTestId('unblock-offer').getByRole('button', { name: 'Open a Link' }).click()
+	await settle(500)
+	await expect(panel.getByRole('textbox', { name: 'Address' })).toHaveValue('https://typed.test/')
+	await dialog.getByRole('button', { name: 'Allow for this session' }).click()
+	await expect.poll(() => tabUrls(zing)).toContain('zing-relay://typed.test/')
+	expect(stand.asked.some((a) => a.target.includes('blocked.test/other'))).toBe(false)
+	// Then the handed address fills the field.
+	await expect(panel.getByRole('textbox', { name: 'Address' })).toHaveValue('https://blocked.test/other')
 	await zing.close()
 	await stand.close()
 })
