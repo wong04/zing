@@ -96,6 +96,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		// The chrome view is created first, under every page; its API must be registered before it loads and asks for state.
 		var chrome = RendererView.CreateAsync(_window, _scope, _environment, _bridge, "chrome", overlay: false);
 		_notices = new NoticeLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, _dispatcher, _overlays);
+		_notices.OfferEnded += () => OfferEnded?.Invoke();
 		_stacks = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-stack", _layout.ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add, _overlays, OverlayLevel.StackDropdown);
 		_overview = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-overview", _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays, OverlayLevel.Overview);
 		_pageUi = new PageUiLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays);
@@ -280,6 +281,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		if (_notices is null || _scope.IsClosed) return;
 		TestHooks.Background(_notices.ShowAsync(text), "notice");
 	}
+
+	public event Action? OfferEnded;
 
 	public void OfferUnblock(string address)
 	{

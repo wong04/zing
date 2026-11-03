@@ -15,6 +15,8 @@ public interface IWindowHost
 	void OfferUnblock(string address);
 	/// <summary>Takes the offer down.</summary>
 	void DismissOffer();
+	/// <summary>The offer left the screen on its own: it timed out, or another notice replaced it.</summary>
+	event Action OfferEnded;
 	void NewWindow();
 	void CloseWindow();
 	/// <summary>The chrome insets or the surface changed; put the page and layers where they now go.</summary>
@@ -144,6 +146,7 @@ public sealed class ChromeApi : IDisposable
 		Tabs.Leaving += Overview.Leaving;
 		Tabs.Closed += Overview.Forget;
 		Shell = new ShellModel(appVersion, new ShellWindow(PageArea, () => host.ContentSize, () => host.ContentOrigin, () => host.Cursor), host.Scheduler, Flag("sidebarPinned"), !app.Account.State().SignedIn, RecentFeatures());
+		host.OfferEnded += EndOffer;
 		Shell.StateChanged += state => host.Push("shell:state", state);
 		Shell.PanelsChanged += state => host.Push("toolpanel:state", state);
 		Shell.SurfaceRegionChanged += host.SurfaceRegionChanged;
@@ -236,7 +239,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("relay:open", args => OpenLinkAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("relay:allow-third-parties", _ => Do(_consent.Allow));
 		bridge.Register("tabs:open-relayed", args => Do(() => OpenRelayedTab(Text(args, 0))));
-		bridge.Register("offer:choose", args => Do(() => ChooseOffer(Text(args, 0))));
+		bridge.Register("offer:choose", args => ChooseOffer(Text(args, 0)));
 		bridge.Register("offer:dismiss", _ => Do(DismissOffer));
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
@@ -371,6 +374,7 @@ public sealed class ChromeApi : IDisposable
 
 	public void Dispose()
 	{
+		_host.OfferEnded -= EndOffer;
 		foreach (var subscription in _subscriptions) subscription.Dispose();
 		Shell.Dispose();
 		Ordering.Dispose();
@@ -486,17 +490,19 @@ public sealed class ChromeApi : IDisposable
 
 	private void LoadFailed(TabRecord tab, string description)
 	{
-		if (LoadFailureOffer.For(tab.Url, description) is not { } address)
+		// An offer for a page you aren't looking at would be about something else than what is on screen.
+		if (tab.Id != Tabs.ActiveId || LoadFailureOffer.For(tab.Url, description) is not { } address)
 		{
 			_host.Notify($"Couldn't load {tab.Url} ({description})");
 			return;
 		}
 		_offered = address;
-		_host.OfferUnblock(LoadFailureOffer.Display(address));
+		Shell.OfferedAddress = address;
+		_host.OfferUnblock(address);
 	}
 
 	/// <summary>A click on one of the offer's buttons: the tool opens with the address filled in, and nothing starts until a click there.</summary>
-	private void ChooseOffer(string tool)
+	private OpenPanelOutcome ChooseOffer(string tool)
 	{
 		var address = _offered ?? throw new NoOfferError();
 		var panel = tool switch
@@ -505,14 +511,22 @@ public sealed class ChromeApi : IDisposable
 			"diagnose" => $"section:{PanelSection.Diagnose}",
 			_ => throw new UnknownOfferToolError(tool),
 		};
-		if (Shell.OpenPanelWithInput(panel, address) == OpenPanelOutcome.Full) return;
-		DismissOffer();
+		var outcome = Shell.OpenPanelWithInput(panel, address);
+		// Nothing opened: the offer stays, and the caller says why.
+		if (outcome != OpenPanelOutcome.Full) DismissOffer();
+		return outcome;
 	}
 
 	private void DismissOffer()
 	{
-		_offered = null;
+		EndOffer();
 		_host.DismissOffer();
+	}
+
+	private void EndOffer()
+	{
+		_offered = null;
+		Shell.OfferedAddress = null;
 	}
 
 	private async Task<object?> HistoryMenuAsync(string direction, JsonElement[] args)

@@ -182,6 +182,9 @@ public sealed class ToolPanels
 		_panels[index] = _panels[index] with { Input = new PanelInput(value, _nextInput++) };
 	}
 
+	/// <summary>Whether the open panel showing <paramref name="content"/> has no address handed to it yet.</summary>
+	public bool HasNoInput(PanelContent content) => _panels.FirstOrDefault(p => p.Content.Id == content.Id)?.Input is null;
+
 	public OpenPanelOutcome Open(PanelContent content, Point at, Rect area)
 	{
 		if (!content.IsTearable) throw new PanelNotTearableException(content.Id);

@@ -63,4 +63,21 @@ public sealed class BlockLikeTests
 	{
 		Assert.Null(LoadFailureOffer.For(url, status));
 	}
+
+	[Theory]
+	[InlineData("http://127.0.0.1:8080/")]
+	[InlineData("http://localhost/")]
+	[InlineData("http://192.168.1.5/admin")]
+	[InlineData("https://nas.local/")]
+	[InlineData("http://intranet/")]
+	public void Makes_no_offer_for_an_address_on_the_own_network_where_the_tool_cannot_help(string url)
+	{
+		Assert.Null(LoadFailureOffer.For(url, "CannotConnect"));
+	}
+
+	[Fact]
+	public void The_offered_address_has_no_user_name_or_password()
+	{
+		Assert.Equal("https://blocked.test/p", LoadFailureOffer.For("https://me:secret@blocked.test/p", "Timeout"));
+	}
 }

@@ -34,15 +34,14 @@ public static class LoadFailureOffer
 		if (address.Scheme != Uri.UriSchemeHttp && address.Scheme != Uri.UriSchemeHttps) return null;
 		// Zing's own renderer is served from a virtual https host.
 		if (address.Host == "app.zing") return null;
-		return address.AbsoluteUri;
+		// The tool never sends such an address anywhere, so it could only say it can't help.
+		if (RelayRules.IsPrivateHost(address)) return null;
+		return WithoutCredentials(address);
 	}
 
-	/// <summary>The address as the offer shows it: without a user name and password, which have no place on screen.</summary>
-	public static string Display(string address)
-	{
-		var uri = new Uri(address);
-		return uri.UserInfo == "" ? uri.AbsoluteUri : uri.GetComponents(UriComponents.AbsoluteUri & ~UriComponents.UserInfo, UriFormat.SafeUnescaped);
-	}
+	/// <summary>The address without a user name and password, which have no place on screen or in a field Zing fills in.</summary>
+	private static string WithoutCredentials(Uri address) =>
+		address.UserInfo == "" ? address.AbsoluteUri : address.GetComponents(UriComponents.AbsoluteUri & ~UriComponents.UserInfo, UriFormat.UriEscaped);
 }
 
 /// <summary>What <c>relay:open</c> answers: which way worked, for which address, and every attempt. Not the page, which is untrusted text the tool never shows.</summary>

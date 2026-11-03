@@ -142,4 +142,60 @@ public sealed class UnblockOfferTests : IDisposable
 		Assert.True((await Invoke("tabs:open-relayed", "https://example.com/")).GetProperty("ok").GetBoolean());
 		Assert.StartsWith("zing-relay://", _api.Tabs.Records[^1].Url);
 	}
+
+	[Fact]
+	public async Task A_full_shell_keeps_the_offer_and_says_so_without_a_notice()
+	{
+		Fail("https://blocked.test/page", "Timeout");
+		foreach (var tool in new[] { "tool:Hashes", "tool:HMAC", "tool:JSON" }) await Invoke("toolpanel:open", tool, new { x = 400, y = 300 });
+		var reply = await Invoke("offer:choose", "openLink");
+		Assert.Equal("full", reply.GetProperty("value").GetProperty("status").GetString());
+		Assert.Equal(0, _host.OfferDismissals);
+		Assert.Empty(_host.Notices);
+		await Invoke("toolpanel:close", _api.Shell.PanelsState().Panels[0].Id);
+		var again = await Invoke("offer:choose", "openLink");
+		Assert.Equal("opened", again.GetProperty("value").GetProperty("status").GetString());
+	}
+
+	[Theory]
+	[InlineData("section:Open a Link")]
+	[InlineData("section:Diagnose")]
+	public async Task While_the_offer_shows_the_tool_picked_from_the_sheet_starts_with_its_address_until_the_offer_ends(string panel)
+	{
+		Fail("https://blocked.test/page", "Timeout");
+		await Invoke("toolpanel:open", panel, new { x = 400, y = 300 });
+		Assert.Equal("https://blocked.test/page", Assert.Single(_api.Shell.PanelsState().Panels).Input!.Value);
+		Assert.Empty(_transport.Calls);
+		await Invoke("toolpanel:close", _api.Shell.PanelsState().Panels[0].Id);
+		_host.EndOffer();
+		await Invoke("toolpanel:open", panel, new { x = 400, y = 300 });
+		Assert.Null(Assert.Single(_api.Shell.PanelsState().Panels).Input);
+	}
+
+	[Fact]
+	public async Task A_dismissed_offer_hands_nothing_to_a_tool_opened_later()
+	{
+		Fail("https://blocked.test/page", "Timeout");
+		await Invoke("offer:dismiss");
+		await Invoke("toolpanel:open", "section:Diagnose", new { x = 400, y = 300 });
+		Assert.Null(Assert.Single(_api.Shell.PanelsState().Panels).Input);
+	}
+
+	[Fact]
+	public void Only_the_active_tabs_failure_gets_the_offer()
+	{
+		var background = _api.Tabs.Open("https://background.test/");
+		_api.Tabs.Open("https://front.test/");
+		((FakePage)_api.Tabs.PageOf(background.Id)!).Events.LoadFailed("Timeout");
+		Assert.Empty(_host.Offers);
+		Assert.Contains("background.test", Assert.Single(_host.Notices));
+	}
+
+	[Fact]
+	public async Task The_address_handed_to_the_tool_has_no_password()
+	{
+		Fail("https://me:secret@blocked.test/page", "Timeout");
+		await Invoke("offer:choose", "openLink");
+		Assert.DoesNotContain("secret", Assert.Single(_api.Shell.PanelsState().Panels).Input!.Value);
+	}
 }

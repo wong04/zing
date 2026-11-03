@@ -101,6 +101,8 @@ public sealed class FakeWindowHost : IWindowHost
 	public int OfferDismissals { get; private set; }
 	public void OfferUnblock(string address) => Offers.Add(address);
 	public void DismissOffer() => OfferDismissals++;
+	public event Action? OfferEnded;
+	public void EndOffer() => OfferEnded?.Invoke();
 	public void NewWindow() => NewWindows++;
 	public void CloseWindow() => Closes++;
 	public void Relayout() => Relayouts++;
