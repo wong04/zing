@@ -136,6 +136,14 @@ test('a link tile opens a tab, and an added link survives a relaunch', async () 
 	await expect
 		.poll(async () => (await first.chrome.evaluate(() => window.zing.getTabs())).tabs.map((t) => t.url))
 		.toContain(`${base}/linked`)
+	// The tile opens the tab at the address: a blank tab navigated afterwards would leave a Back entry behind it.
+	await expect
+		.poll(async () => {
+			const { tabs, activeId } = await first.chrome.evaluate(() => window.zing.getTabs())
+			const tab = tabs.find((t) => t.id === activeId)
+			return tab && !tab.loading && tab.url === `${base}/linked` ? tab.canGoBack : 'loading'
+		})
+		.toBe(false)
 	const { userDataDir } = first
 	await first.close()
 

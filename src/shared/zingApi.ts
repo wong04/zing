@@ -16,6 +16,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		activateTab: (id) => invoke('tabs:activate', id),
 		closeTab: (id) => invoke('tabs:close', id),
 		navigateTab: (id, url) => invoke('tabs:navigate', id, url),
+		openLinkInNewTab: (url) => invoke('tabs:open-link', url),
 		moveTab: (id, index) => invoke('tabs:move', id, index),
 		pinTab: (id) => invoke('tabs:pin', id),
 		unpinTab: (id) => invoke('tabs:unpin', id),

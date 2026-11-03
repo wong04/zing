@@ -219,6 +219,19 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
+	public async Task A_tool_link_opens_one_new_tab_at_its_address_and_refuses_a_non_web_address()
+	{
+		var before = _api.Tabs.Records.Count;
+		Value(await Invoke("tabs:open-link", "https://example.com/"));
+		Assert.Equal(before + 1, _api.Tabs.Records.Count);
+		var opened = _api.Tabs.Records[^1];
+		Assert.Equal("https://example.com/", opened.Url);
+		Assert.Equal(opened.Id, _api.Tabs.ActiveId);
+		Assert.Equal(nameof(UnsupportedUrlException), ErrorName(await Invoke("tabs:open-link", "javascript:alert(1)")));
+		Assert.Equal(before + 1, _api.Tabs.Records.Count);
+	}
+
+	[Fact]
 	public async Task New_window_and_close_window_go_to_the_host()
 	{
 		Value(await Invoke("command:run", "window.new"));

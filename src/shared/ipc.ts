@@ -191,6 +191,8 @@ export interface InvokeContract {
 	'tabs:activate': { args: [id: TabId]; result: void }
 	'tabs:close': { args: [id: TabId]; result: void }
 	'tabs:navigate': { args: [id: TabId, input: string]; result: void }
+	/** A new tab straight at a web address (a Toolbox link tile): no blank tab first, so Back has nothing behind it. */
+	'tabs:open-link': { args: [url: string]; result: void }
 	'tabs:move': { args: [id: TabId, index: number]; result: void }
 	'tabs:pin': { args: [id: TabId]; result: void }
 	'tabs:unpin': { args: [id: TabId]; result: void }
@@ -310,6 +312,7 @@ export interface ZingApi {
 	activateTab(id: TabId): Promise<void>
 	closeTab(id: TabId): Promise<void>
 	navigateTab(id: TabId, input: string): Promise<void>
+	openLinkInNewTab(url: string): Promise<void>
 	moveTab(id: TabId, index: number): Promise<void>
 	pinTab(id: TabId): Promise<void>
 	unpinTab(id: TabId): Promise<void>

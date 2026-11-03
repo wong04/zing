@@ -282,6 +282,10 @@
 			"args": 1
 		},
 		{
+			"channel": "tabs:open-link",
+			"args": 1
+		},
+		{
 			"channel": "tabs:pin",
 			"args": 1
 		},
