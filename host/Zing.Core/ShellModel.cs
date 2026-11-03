@@ -289,6 +289,19 @@ public sealed class ShellModel : IDisposable
 		return AfterOpen(contentId, _panels.Open(content, at, page));
 	}
 
+	/// <summary>
+	/// From the failed-load offer or another tool: opens (or raises) the panel with an address filled in. It only fills the field;
+	/// starting anything is the person's click.
+	/// </summary>
+	public OpenPanelOutcome OpenPanelWithInput(string contentId, string input)
+	{
+		var outcome = OpenPanelCentred(contentId);
+		if (outcome == OpenPanelOutcome.Full) return outcome;
+		_panels.Hand(Content(contentId), input);
+		PanelsUpdated();
+		return outcome;
+	}
+
 	public void ClosePanel(string id)
 	{
 		_panels.Close(id);

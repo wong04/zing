@@ -127,7 +127,7 @@ public sealed record PanelContent(PanelKind Kind, string Name)
 	};
 }
 
-public sealed record PanelRecord(string Id, PanelContent Content, Rect Frame, bool Minimized);
+public sealed record PanelRecord(string Id, PanelContent Content, Rect Frame, bool Minimized, PanelInput? Input = null);
 
 /// <summary>
 /// The floating tool panels (src/main/panels.ts, a port of Krackn's PanelStore). It works in window
@@ -149,6 +149,7 @@ public sealed class ToolPanels
 	private List<PanelRecord> _panels = [];
 	private string? _frontId;
 	private int _next = 1;
+	private int _nextInput = 1;
 
 	public IReadOnlyList<PanelRecord> Visible => _panels.Where(p => !p.Minimized).ToList();
 
@@ -159,7 +160,7 @@ public sealed class ToolPanels
 	public IReadOnlyList<PanelRecord> All => _panels;
 
 	public ToolPanelsState State() => new(
-		_panels.Select(p => new ToolPanelView(p.Id, p.Content.Id, p.Content.Title, p.Frame, p.Minimized)).ToList(),
+		_panels.Select(p => new ToolPanelView(p.Id, p.Content.Id, p.Content.Title, p.Frame, p.Minimized, p.Input)).ToList(),
 		_frontId,
 		Dragging);
 
@@ -171,6 +172,14 @@ public sealed class ToolPanels
 		return new Point(
 			Math.Min(Math.Max(point.X, area.X + GrabMargin - size.Width), maxX),
 			Math.Min(Math.Max(point.Y, area.Y + TopMargin), maxY));
+	}
+
+	/// <summary>Gives the open panel showing <paramref name="content"/> an address to start from. Kept in memory with the panel, so it goes when the panel does.</summary>
+	public void Hand(PanelContent content, string value)
+	{
+		var index = _panels.FindIndex(p => p.Content.Id == content.Id);
+		if (index < 0) throw new UnknownPanelException(content.Id);
+		_panels[index] = _panels[index] with { Input = new PanelInput(value, _nextInput++) };
 	}
 
 	public OpenPanelOutcome Open(PanelContent content, Point at, Rect area)

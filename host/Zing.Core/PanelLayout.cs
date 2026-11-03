@@ -222,7 +222,10 @@ public sealed record ShellState(
 	string AppVersion,
 	Rect? DropZone = null);
 
-public sealed record ToolPanelView(string Id, string Content, string Title, Rect Frame, bool Minimized);
+/// <summary>An address another part of Zing handed a panel to start from (the failed-load offer, Diagnose). <paramref name="Serial"/> changes with every handoff, so the same address handed twice still reads as new.</summary>
+public sealed record PanelInput(string Value, int Serial);
+
+public sealed record ToolPanelView(string Id, string Content, string Title, Rect Frame, bool Minimized, PanelInput? Input = null);
 
 public sealed record ToolPanelsState(IReadOnlyList<ToolPanelView> Panels, string? FrontId, bool Dragging)
 {
