@@ -435,7 +435,7 @@ export function GraphingTool() {
 							<Toggle checked={showPoints} onChange={setShowPoints} aria-label="Show key points" />
 						</div>
 						<div className="math-row">
-							<SegmentedControl options={angleOptions} value={angle} onChange={setAngle} aria-label="Angle unit" />
+							<SegmentedControl options={angleOptions} value={angle} onChange={setAngle} aria-label="Angle unit" width={120} />
 							<PillButton variant="ghost" size="small" onClick={reset}>
 								Reset
 							</PillButton>
