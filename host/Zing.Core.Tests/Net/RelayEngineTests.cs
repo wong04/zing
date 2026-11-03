@@ -276,6 +276,14 @@ public sealed class RelayEngineTests
 	}
 
 	[Fact]
+	public async Task A_programming_error_in_a_transport_is_not_hidden_as_a_failed_attempt()
+	{
+		var transport = new FakeTransport { Plain = _ => throw new InvalidOperationException("a bug") };
+		var (engine, _) = EngineFor(transport);
+		await Assert.ThrowsAsync<InvalidOperationException>(() => engine.OpenAsync("example.com/x", Allowed(), CancellationToken.None));
+	}
+
+	[Fact]
 	public void Consent_starts_off_and_is_in_memory_only()
 	{
 		var consent = new RelayConsent();

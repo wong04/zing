@@ -51,17 +51,54 @@ public sealed class LivePlainTransportTests
 	}
 
 	[Fact]
-	public async Task A_redirect_that_was_not_followed_is_an_error_not_a_page()
+	public async Task A_redirect_loop_is_an_error_not_a_page()
 	{
 		using var server = new PlainServer(_ => PlainServer.Redirect("/again"));
-		await Assert.ThrowsAsync<RedirectNotFollowedError>(() => Transport().GetAsync(To(server.To("/again")), CancellationToken.None));
+		await Assert.ThrowsAsync<TooManyRedirectsError>(() => Transport().GetAsync(To(server.To("/again")), CancellationToken.None));
 	}
 
 	[Fact]
 	public async Task A_redirect_with_nowhere_to_go_is_an_error()
 	{
 		using var server = new PlainServer(_ => PlainServer.Response("302 Found", "", []));
+		await Assert.ThrowsAsync<BadRedirectError>(() => Transport().GetAsync(To(server.To("/")), CancellationToken.None));
+	}
+
+	[Fact]
+	public async Task A_redirect_to_ftp_is_a_named_error()
+	{
+		using var server = new PlainServer(_ => PlainServer.Redirect("ftp://example.test/x"));
 		await Assert.ThrowsAsync<RedirectNotFollowedError>(() => Transport().GetAsync(To(server.To("/")), CancellationToken.None));
+	}
+
+	[Fact]
+	public async Task A_redirect_to_ftp_fails_that_attempt_and_the_engine_moves_on()
+	{
+		using var server = new PlainServer(_ => PlainServer.Redirect("ftp://example.test/x"));
+		var seen = new List<RelayAttempt>();
+		var engine = new RelayEngine(Transport(), "cloudflare", seen.Add);
+		var error = await Assert.ThrowsAsync<AllStrategiesFailedError>(() => engine.OpenAsync(server.To("/").AbsoluteUri, new RelayConsent(), CancellationToken.None));
+		Assert.Equal(["Direct:Trying", "Direct:Failed", "DohPinned:Trying", "DohPinned:Failed", "ReaderRelay:Skipped", "Wayback:Skipped"], seen.Select(a => $"{a.Strategy}:{a.Status}"));
+		Assert.Contains("redirected somewhere Zing wouldn't follow", seen[1].Reason);
+		Assert.NotEmpty(error.Attempts);
+	}
+
+	[Fact]
+	public async Task A_redirect_to_an_address_that_is_not_one_is_a_named_error()
+	{
+		using var server = new PlainServer(_ => PlainServer.Redirect("http://[bad/"));
+		await Assert.ThrowsAsync<BadRedirectError>(() => Transport().GetAsync(To(server.To("/")), CancellationToken.None));
+	}
+
+	[Fact]
+	public async Task A_reply_that_is_not_http_fails_the_attempt_and_the_engine_moves_on()
+	{
+		using var server = new PlainServer(_ => System.Text.Encoding.ASCII.GetBytes("this is not http\r\n\r\n"));
+		var seen = new List<RelayAttempt>();
+		var engine = new RelayEngine(Transport(), "cloudflare", seen.Add);
+		await Assert.ThrowsAsync<AllStrategiesFailedError>(() => engine.OpenAsync(server.To("/").AbsoluteUri, new RelayConsent(), CancellationToken.None));
+		Assert.Equal(AttemptStatus.Failed, seen[1].Status);
+		Assert.Equal(AttemptStatus.Trying, seen[2].Status);
 	}
 
 	[Fact]

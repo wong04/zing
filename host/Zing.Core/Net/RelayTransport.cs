@@ -32,16 +32,32 @@ public sealed class LiveRelayTransport : IRelayTransport
 		_doh = doh;
 		_pinned = pinned ?? new PinnedHttp();
 		// No cookie jar, so nothing a site sets is sent back to the next one.
-		_plain = new HttpClient(new SocketsHttpHandler { UseCookies = false, AutomaticDecompression = DecompressionMethods.All, MaxAutomaticRedirections = MaxRedirects });
+		_plain = new HttpClient(new SocketsHttpHandler { UseCookies = false, AutomaticDecompression = DecompressionMethods.All, AllowAutoRedirect = false });
 	}
 
 	public async Task<RelayResponse> GetAsync(RelayRequest request, CancellationToken ct)
 	{
-		using var message = new HttpRequestMessage(HttpMethod.Get, request.Url);
-		foreach (var (name, value) in request.Headers)
-			if (!message.Headers.TryAddWithoutValidation(name, value)) throw new ArgumentException($"{name} isn't a request header.", nameof(request));
-		using var response = await _plain.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, ct);
-		return await ReadAsync(response, response.RequestMessage?.RequestUri ?? request.Url, ct);
+		// Followed here, not by the handler: it would follow an ftp:// Location as if it were http on port 21.
+		var url = request.Url;
+		for (var hop = 0; hop <= MaxRedirects; hop++)
+		{
+			using var message = new HttpRequestMessage(HttpMethod.Get, url);
+			foreach (var (name, value) in request.Headers)
+				if (!message.Headers.TryAddWithoutValidation(name, value)) throw new ArgumentException($"{name} isn't a request header.", nameof(request));
+			using var response = await _plain.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, ct);
+			if (!IsRedirect(response.StatusCode)) return await ReadAsync(response, url, ct);
+			var next = NextHop(url, response);
+			var downgrade = url.Scheme == Uri.UriSchemeHttps && next.Scheme == Uri.UriSchemeHttp;
+			if ((next.Scheme != Uri.UriSchemeHttp && next.Scheme != Uri.UriSchemeHttps) || downgrade) throw new RedirectNotFollowedError();
+			url = next;
+		}
+		throw new TooManyRedirectsError();
+	}
+
+	private static Uri NextHop(Uri from, HttpResponseMessage response)
+	{
+		if (!response.Headers.TryGetValues("Location", out var values) || values.FirstOrDefault() is not { } location) throw new BadRedirectError();
+		return Uri.TryCreate(from, location, out var next) ? next : throw new BadRedirectError();
 	}
 
 	public async Task<RelayResponse> GetPinnedAsync(RelayRequest request, string dohProvider, CancellationToken ct)
@@ -53,7 +69,7 @@ public sealed class LiveRelayTransport : IRelayTransport
 			var address = await AddressForAsync(url, dohProvider, ct);
 			using var response = await _pinned.GetAsync(url, address, ct, request.Headers);
 			if (!IsRedirect(response.StatusCode)) return await ReadAsync(response, url, ct);
-			url = response.Headers.Location is { } next ? new Uri(url, next) : throw new BadRedirectError();
+			url = NextHop(url, response);
 		}
 		throw new TooManyRedirectsError();
 	}
