@@ -63,6 +63,9 @@ const absoluteReferences: readonly RegExp[] = [
 	/(,\s*)https:\/\//gi,
 ]
 
+/** Hints that make the browser connect or look up a host on its own, which the content policy can't stop. */
+const connectionHints = /<link\b[^>]*\brel\s*=\s*["']?(?:preconnect|dns-prefetch|prefetch|prerender)\b[^>]*>/gi
+
 /** A <base> tag would re-anchor every relative URL back at https and undo the whole arrangement. */
 const baseTag = /<base[^>]*>/gi
 
@@ -76,7 +79,7 @@ export function patchText(text: string): string {
 		(current, pattern) => current.replace(pattern, `$1${relayScheme}://`),
 		text,
 	)
-	return pointed.replace(baseTag, '')
+	return pointed.replace(baseTag, '').replace(connectionHints, '')
 }
 
 // Charsets whose ASCII characters aren't single ASCII bytes.

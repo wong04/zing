@@ -44,6 +44,18 @@
 		{
 			"in": "<p>Visit https://a.com today</p>",
 			"out": "<p>Visit https://a.com today</p>"
+		},
+		{
+			"in": "<link rel=\"preconnect\" href=\"https://a.com\"><link rel=stylesheet href=x.css>",
+			"out": "<link rel=stylesheet href=x.css>"
+		},
+		{
+			"in": "<LINK href='//b.com' REL='dns-prefetch'><p>t</p><link rel=\"prefetch\" href=\"/n\"><link rel=prerender href=/p>",
+			"out": "<p>t</p>"
+		},
+		{
+			"in": "<link rel=\"preload\" as=\"style\" href=\"/s.css\">",
+			"out": "<link rel=\"preload\" as=\"style\" href=\"/s.css\">"
 		}
 	],
 	"charset": [

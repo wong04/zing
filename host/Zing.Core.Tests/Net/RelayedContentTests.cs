@@ -70,6 +70,8 @@ public sealed class RelayedContentTests
 	public static TheoryData<string> HostileBodies() => new()
 	{
 		"<base",
+		"<link rel=prefetch",
+		"<link ",
 		"src" + new string(' ', 1000),
 		"url(" + new string(' ', 1000),
 		", ",

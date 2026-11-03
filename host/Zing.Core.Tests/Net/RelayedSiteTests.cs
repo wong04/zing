@@ -90,6 +90,15 @@ public sealed class RelayedSiteTests
 	}
 
 	[Fact]
+	public async Task Prefetching_is_switched_off_and_the_policy_fixes_the_base()
+	{
+		var transport = new FakeTransport { Plain = _ => Ok("x", "text/html", url: "https://example.com/") };
+		var response = await SiteFor(transport).ServeAsync("GET", "zing-relay://example.com/", isDocument: true, CancellationToken.None);
+		Assert.Equal("off", response.Headers["X-DNS-Prefetch-Control"]);
+		Assert.Contains("base-uri zing-relay:", response.Headers["Content-Security-Policy"]);
+	}
+
+	[Fact]
 	public async Task Responses_may_not_be_sniffed_into_another_type()
 	{
 		var transport = new FakeTransport { Plain = _ => Ok("body", "text/plain", url: "https://example.com/s") };
@@ -125,6 +134,26 @@ public sealed class RelayedSiteTests
 			Assert.Equal(403, response.Status);
 			Assert.Empty(transport.Calls);
 		}
+	}
+
+	[Fact]
+	public async Task A_public_name_that_resolves_to_the_own_network_gets_the_own_network_message()
+	{
+		var transport = new FakeTransport { Plain = _ => throw new HttpRequestException("connect", new OwnNetworkError()) };
+		var response = await SiteFor(transport, AllowedConsent()).ServeAsync("GET", "zing-relay://example.com/", isDocument: true, CancellationToken.None);
+		Assert.Equal(403, response.Status);
+		Assert.Contains("your own network", Text(response));
+		Assert.DoesNotContain("Every method failed", Text(response));
+		Assert.Single(transport.Calls);
+	}
+
+	[Fact]
+	public async Task A_failure_says_that_a_network_that_needs_a_proxy_cannot_be_used()
+	{
+		var failed = await SiteFor(new FakeTransport(), AllowedConsent()).ServeAsync("GET", "zing-relay://example.com/", isDocument: true, CancellationToken.None);
+		Assert.Equal(502, failed.Status);
+		Assert.Contains("Every method failed", Text(failed));
+		Assert.Contains("proxy", Text(failed));
 	}
 
 	[Fact]

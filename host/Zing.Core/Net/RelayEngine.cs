@@ -173,6 +173,12 @@ public sealed class RelayEngine(
 				Report(new RelayAttempt(strategy, AttemptStatus.Worked));
 				return Opened(strategy, fetched, attempts);
 			}
+			// Aimed at the user's own network (a name that resolves there): no other method would change that, and none may be tried.
+			catch (Exception e) when (OwnNetworkOf(e) is not null)
+			{
+				Report(new RelayAttempt(strategy, AttemptStatus.Failed, OwnNetworkOf(e)!.Message));
+				throw OwnNetworkOf(e)!;
+			}
 			catch (Exception e) when (IsAttemptFailure(e, run))
 			{
 				Report(new RelayAttempt(strategy, AttemptStatus.Failed, ReasonOf(e)));
@@ -181,6 +187,8 @@ public sealed class RelayEngine(
 		if (skipped) return new RelayResult(RelayOutcome.NeedsConsent, null, "", null, false, null, attempts);
 		throw new AllStrategiesFailedError(attempts);
 	}
+
+	private static OwnNetworkError? OwnNetworkOf(Exception e) => e as OwnNetworkError ?? (e as HttpRequestException)?.InnerException as OwnNetworkError;
 
 	/// <summary>A cancel or the run's deadline ends everything; only a problem with this one method moves on to the next.</summary>
 	private static bool IsAttemptFailure(Exception e, CancellationToken run) =>

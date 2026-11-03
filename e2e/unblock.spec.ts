@@ -508,7 +508,7 @@ test('a relayed page cannot reach loopback or the own network through the relay'
 
 const realRequests = (stand: Stand): string[] => stand.direct.filter((u) => u !== '/favicon.ico')
 
-test('trial: a popup of a relayed page cannot be sent to the network before it has loaded', async () => {
+test('a popup of a relayed page cannot be sent to the network before it has loaded', async () => {
 	const stand = await standIn()
 	const zing = await launchRelayed(stand)
 	const page = await openRelayed(zing, 'https://site.test/a/page.html')
@@ -530,7 +530,7 @@ test('trial: a popup of a relayed page cannot be sent to the network before it h
 	await stand.close()
 })
 
-test('trial: a download link on a relayed page cannot fetch from the network', async () => {
+test('a download link on a relayed page cannot fetch from the network', async () => {
 	const stand = await standIn()
 	const zing = await launchRelayed(stand)
 	const page = await openRelayed(zing, 'https://site.test/a/page.html')
@@ -551,7 +551,7 @@ test('trial: a download link on a relayed page cannot fetch from the network', a
 	await stand.close()
 })
 
-test('trial: a relay address with a fragment loads its content', async () => {
+test('a relay address with a fragment loads its content', async () => {
 	const stand = await standIn()
 	const zing = await launchRelayed(stand)
 	const relayed = await openRelayed(zing, 'https://site.test/a/page.html#sec')
@@ -560,7 +560,7 @@ test('trial: a relay address with a fragment loads its content', async () => {
 	await stand.close()
 })
 
-test('trial: a typed address with a fragment loads from a relayed tab', async () => {
+test('a typed address with a fragment loads from a relayed tab', async () => {
 	const stand = await standIn()
 	const zing = await launchRelayed(stand)
 	await openRelayed(zing, 'https://site.test/a/page.html')
@@ -571,7 +571,7 @@ test('trial: a typed address with a fragment loads from a relayed tab', async ()
 	await stand.close()
 })
 
-test('trial: a typed address that redirects loads from a relayed tab', async () => {
+test('a typed address that redirects loads from a relayed tab', async () => {
 	const stand = await standIn()
 	const zing = await launchRelayed(stand)
 	await openRelayed(zing, 'https://site.test/a/page.html')
@@ -582,7 +582,7 @@ test('trial: a typed address that redirects loads from a relayed tab', async () 
 	await stand.close()
 })
 
-test('trial: a file link on a relayed page downloads the bytes the relay fetched', async () => {
+test('a file link on a relayed page downloads the bytes the relay fetched', async () => {
 	const stand = await standIn()
 	const zing = await launchRelayed(stand)
 	const page = await openRelayed(zing, 'https://site.test/a/page.html')

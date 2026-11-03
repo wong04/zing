@@ -18,7 +18,7 @@ public sealed class RelayedSite(IRelayTransport transport, Func<string> dohProvi
 	/// relay scheme, so an address its scripts build at run time or a stray http link can't reach the network directly.
 	/// This does not cover WebRTC, which a content security policy can't restrict.
 	/// </summary>
-	public const string Policy = "default-src zing-relay: data: blob: 'unsafe-inline' 'unsafe-eval'; connect-src zing-relay:; form-action zing-relay:; frame-ancestors zing-relay:";
+	public const string Policy = "default-src zing-relay: data: blob: 'unsafe-inline' 'unsafe-eval'; connect-src zing-relay:; form-action zing-relay:; base-uri zing-relay:; frame-ancestors zing-relay:";
 
 	/// <summary>The window's thread asks; the fetch, the decoding and the patching of up to 16 MiB happen on the thread pool.</summary>
 	public Task<RelayedResponse> ServeAsync(string method, string url, bool isDocument, CancellationToken ct) =>
@@ -38,6 +38,10 @@ public sealed class RelayedSite(IRelayTransport transport, Func<string> dohProvi
 		catch (OwnNetworkError error)
 		{
 			return Failure(403, error.Message, isDocument);
+		}
+		catch (AllStrategiesFailedError error)
+		{
+			return Failure(502, error.Message + "\n\nA network that requires a proxy can't be used for relayed pages, which connect directly.", isDocument);
 		}
 		catch (RelayError error)
 		{
@@ -73,6 +77,7 @@ public sealed class RelayedSite(IRelayTransport transport, Func<string> dohProvi
 			["Content-Security-Policy"] = Policy,
 			["Cache-Control"] = "no-store",
 			["X-Content-Type-Options"] = "nosniff",
+			["X-DNS-Prefetch-Control"] = "off",
 		};
 		foreach (var (name, value) in more) headers[name] = value;
 		return headers;

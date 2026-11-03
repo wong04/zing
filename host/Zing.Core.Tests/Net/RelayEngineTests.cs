@@ -441,6 +441,32 @@ public sealed class RelayEngineTests
 	}
 
 	[Fact]
+	public async Task A_name_that_resolves_to_the_own_network_ends_the_run_with_that_error_and_asks_no_third_party()
+	{
+		var transport = new FakeTransport { Plain = _ => throw new HttpRequestException("connect", new OwnNetworkError()) };
+		var (engine, _) = EngineFor(transport);
+		await Assert.ThrowsAsync<OwnNetworkError>(() => engine.OpenAsync("example.com/x", Allowed(), CancellationToken.None));
+		Assert.Single(transport.Calls);
+	}
+
+	[Fact]
+	public async Task A_refusal_from_the_pinned_attempt_also_ends_the_run()
+	{
+		var transport = new FakeTransport { Pinned = _ => throw new OwnNetworkError() };
+		var (engine, _) = EngineFor(transport);
+		await Assert.ThrowsAsync<OwnNetworkError>(() => engine.OpenAsync("example.com/x", Allowed(), CancellationToken.None));
+		Assert.DoesNotContain(transport.Calls, c => IsRelay(c.Request) || IsArchive(c.Request));
+	}
+
+	[Fact]
+	public async Task When_every_method_fails_the_message_names_each_one_tried()
+	{
+		var (engine, _) = EngineFor(new FakeTransport());
+		var error = await Assert.ThrowsAsync<AllStrategiesFailedError>(() => engine.OpenAsync("example.com/x", Allowed(), CancellationToken.None));
+		foreach (var label in new[] { "Direct", "DoH + IP pinning", "Reader relay", "Wayback archive" }) Assert.Contains(label, error.Message);
+	}
+
+	[Fact]
 	public async Task A_resource_never_goes_to_the_reader_relay_which_answers_with_text()
 	{
 		var transport = new FakeTransport();

@@ -66,10 +66,13 @@ public static partial class RelayedContent
 	/// <summary>A base tag would re-anchor every relative URL back at https and undo the arrangement.</summary>
 	private static readonly Regex BaseTag = new("<base[^>]*>", Linear);
 
+	/// <summary>Hints that make the browser connect or look up a host on its own, which the content policy can't stop.</summary>
+	private static readonly Regex ConnectionHints = new(@"<link\b[^>]*\brel\s*=\s*[""']?(?:preconnect|dns-prefetch|prefetch|prerender)\b[^>]*>", Linear);
+
 	public static string PatchText(string text)
 	{
 		var pointed = AbsoluteReferences.Aggregate(text, (current, pattern) => pattern.Replace(current, "${1}" + Scheme + "://"));
-		return BaseTag.Replace(pointed, "");
+		return ConnectionHints.Replace(BaseTag.Replace(pointed, ""), "");
 	}
 
 	[GeneratedRegex("^(utf-?16|utf-?32|ucs-?2|ucs-?4)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
