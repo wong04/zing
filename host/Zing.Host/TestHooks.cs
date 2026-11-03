@@ -57,6 +57,14 @@ public static class TestHooks
 		return new Zing.Core.Net.NetServices(FixedProbes.FromJson(probes), new Zing.Core.Net.DohClient(Zing.Core.Net.DohClient.NewHttpClient(), _ => dohUrl));
 	}
 
+	private static readonly StubDnsSystem Dns = new();
+
+	/// <summary>
+	/// What the app reads and changes DNS through in an e2e run: a stub that touches nothing (StubDnsSystem). The real
+	/// DnsSetup, which would show a UAC prompt and change the machine's DNS, is never created in a test run. Null outside one.
+	/// </summary>
+	public static Zing.Core.Net.IDnsSystem? DnsSystem() => IsEndToEndRun ? Dns : null;
+
 	private static int? _closeNextAt;
 	private static WindowScope? _newest;
 	private static int _windows;
@@ -65,7 +73,7 @@ public static class TestHooks
 	/// <summary>
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
-	/// "layers", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
+	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
 	public static bool TryHandle(string json, HostWindow window)
@@ -110,6 +118,11 @@ public static class TestHooks
 		{
 			var api = (Apis.TryGetValue(window, out var consentApi) ? consentApi() : null) ?? throw new InvalidOperationException("relay-consent needs a window with its chrome started");
 			api.Consent.Allow();
+			return true;
+		}
+		if (action == "dns-stub")
+		{
+			Dns.Configure(root);
 			return true;
 		}
 		if (action == "close-at")
