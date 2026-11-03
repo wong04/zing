@@ -75,6 +75,15 @@ describe('gridlines', () => {
 	it('step for huge range', () => expect(tickStep(1e6)).toBeGreaterThan(0))
 	it('degenerate range is safe', () => expect(tickStep(0)).toBe(1))
 	it('ticks span range', () => expect(ticks(-10, 10, 5)).toEqual([-10, -5, 0, 5, 10]))
+	it('ticks end far from zero at maximum zoom, where adding the step would add nothing', () => {
+		const min = 1e9
+		const max = 1e9 + 1e-6
+		const step = 1e-8
+		expect(min + step).toBe(min)
+		const result = ticks(min, max, step)
+		expect(result.length).toBeLessThanOrEqual(1001)
+		expect(result.every((tick) => tick >= min - step && tick <= max + step)).toBe(true)
+	})
 	it('ticks bail on absurd counts', () => expect(ticks(0, 1e9, 1e-6)).toEqual([]))
 	it('label drops fp noise', () => expect(axisLabel(0.30000000000000004, 0.1)).toBe('0.3'))
 	it('zero label', () => expect(axisLabel(0, 1)).toBe('0'))
