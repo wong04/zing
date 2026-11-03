@@ -25,12 +25,11 @@ import {
 } from '@shared/math/graphEngine'
 import { evalMessage } from './evalMessage'
 import { CopyButton, ToolPage } from '../parts'
+import { angleOptions } from './angleOptions'
 import './math.css'
 
 /** Distinct hues legible on both the light and dark surfaces, in the order Desmos cycles its palette (Krackn `plotColors`). */
 const plotColors = ['#c7543d', '#3d73b8', '#4f8f54', '#99549e', '#d99929', '#4a949c'] as const
-
-const angleOptions = Object.values(AngleMode).map((value) => ({ value, label: value }))
 
 const ZOOM_IN = 0.8
 const ZOOM_OUT = 1.25

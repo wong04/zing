@@ -73,6 +73,11 @@ export function panelId(content: PanelContent): string {
 	return toolPrefix + content.tool
 }
 
+/** The stored recents that still name something: a stored id can name a feature since removed. */
+export function knownRecents(stored: readonly string[]): string[] {
+	return stored.filter((id) => panelContentFromId(id) !== null)
+}
+
 /** Round-trips `panelId`. Null for an id that names nothing (a tool removed since it was stored, say). */
 export function panelContentFromId(id: string): PanelContent | null {
 	if (id.startsWith(sectionPrefix)) {

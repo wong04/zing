@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { panelContentFromId, panelTitle } from '@shared/toolbox/panelContent'
+import { knownRecents, panelContentFromId, panelTitle } from '@shared/toolbox/panelContent'
 import type { Point, ToolPanelView } from '@shared/shell/shellState'
 import { zing } from '../api'
 import { GearIcon, GlobeIcon, GridIcon, SidebarIcon, WindowIcon } from '../components/icons'
@@ -90,8 +90,7 @@ export function Sidebar({ variant }: { variant: SidebarVariant }) {
 	const handle = useSettings()
 	const panels = useToolPanels()
 	const pinned = handle?.settings.sidebarPinned ?? true
-	// A stored id can name a feature since removed.
-	const recents = (handle?.settings.recentFeatures ?? []).filter((id) => panelContentFromId(id) !== null)
+	const recents = knownRecents(handle?.settings.recentFeatures ?? [])
 	const minimized = panels.panels.filter((p) => p.minimized)
 	const label = pinned ? 'Hide sidebar (Ctrl+Shift+S)' : 'Keep sidebar open (Ctrl+Shift+S)'
 

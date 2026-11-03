@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { PillButton, PillField, SectionCard, SegmentedControl } from '../../components'
 import { AngleMode, evaluate, EvalError, format } from '@shared/math/expression'
+import { angleOptions } from './angleOptions'
 import { evalMessage } from './evalMessage'
 import { CopyButton, ToolPage } from '../parts'
 import './math.css'
 
 type Preview = { readonly kind: 'result'; readonly text: string } | { readonly kind: 'error'; readonly message: string } | { readonly kind: 'empty' }
 
-const angleOptions = Object.values(AngleMode).map((value) => ({ value, label: value }))
 const keys = ['(', ')', '^', '√', 'π', 'e', '!', '%']
 const HISTORY_LIMIT = 25
 
