@@ -3,6 +3,7 @@ import { panelId, section, Section } from '@shared/toolbox/panelContent'
 import { blockDetail, blockTitle, recommendedStrategies, type DiagnosticReport } from '@shared/unblock/blockDiagnostics'
 import { zing } from '../../api'
 import { InfoBanner, PillButton, PillField } from '../../components'
+import { usePanelInput } from '../panelInput'
 import { ResultRow, TextArea, ToolPage } from '../parts'
 import './web.css'
 
@@ -12,7 +13,14 @@ function reportText(report: DiagnosticReport): string {
 
 /** Diagnose (X3): which layer a site is blocked at, found by comparing DNS answers and trying TCP and TLS. */
 export function DiagnoseTool() {
-	const [site, setSite] = useState('')
+	const handoff = usePanelInput()
+	const [site, setSite] = useState(handoff?.value ?? '')
+	const [seenHandoff, setSeenHandoff] = useState(handoff?.serial)
+	// An address handed over (the failed-load offer) replaces the field; it never starts a diagnosis.
+	if (handoff && handoff.serial !== seenHandoff) {
+		setSeenHandoff(handoff.serial)
+		setSite(handoff.value)
+	}
 	const [running, setRunning] = useState(false)
 	const [report, setReport] = useState<DiagnosticReport | null>(null)
 	// What the report is for, as it was typed: the address Open a Link starts from, with its path.

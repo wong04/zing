@@ -93,8 +93,11 @@ test('a DNS block shows the advice and a button that opens the recommended metho
 	await expect(panel.getByTestId('diagnose-recommended')).toHaveText('DoH + IP pinning, Reader relay')
 	expect(doh.asked).toEqual(['blocked.test'])
 	await panel.getByRole('button', { name: 'Open DoH + IP pinning in Open a Link' }).click()
-	// Open a Link arrives in a later task; its panel shows the empty state until then.
-	await expect(surface.getByRole('dialog', { name: 'Open a Link' })).toBeVisible()
+	const opened = surface.getByRole('dialog', { name: 'Open a Link' })
+	await expect(opened).toBeVisible()
+	// The address as it was typed, path and all, is filled in; running it is a click there.
+	await expect(opened.getByRole('textbox', { name: 'Address' })).toHaveValue('https://Blocked.test/some/page')
+	await expect(opened.getByTestId('attempt')).toHaveCount(0)
 	await zing.close()
 	await doh.close()
 })
@@ -591,6 +594,291 @@ test('a file link on a relayed page downloads the bytes the relay fetched', asyn
 	await expect.poll(() => (existsSync(folder) ? readdirSync(folder) : [])).toContain('file.zip')
 	expect(stand.fetched.map((f) => f.target)).toContain('https://site.test/a/file.zip')
 	expect(realRequests(stand)).toEqual([])
+	await zing.close()
+	await stand.close()
+})
+
+// ---- Open a Link (X1) and the offer after a failed load. A local server answers for every site, the reader relay and the
+// archive, per method, and records what the host asked it: nothing reaches the internet.
+
+interface Asked {
+	readonly target: string
+	readonly via: string
+}
+
+interface Reply {
+	readonly status?: number
+	readonly body?: string
+	readonly type?: string
+	/** Cuts the connection, as a filter's reset would. */
+	readonly cut?: boolean
+	/** Waits for this before answering. */
+	readonly after?: Promise<void>
+}
+
+interface Methods {
+	readonly asked: Asked[]
+	readonly origin: string
+	close(): Promise<void>
+}
+
+/** `answer` decides per request what the host's engine gets; a page the browser itself asks for is a plain page. */
+async function methodsStand(answer: (target: URL, via: string) => Reply): Promise<Methods> {
+	const asked: Asked[] = []
+	const server: Server = createServer((request, response) => {
+		const target = request.headers['x-relay-target']
+		if (typeof target !== 'string') {
+			response.setHeader('Content-Type', 'text/html')
+			response.end('<!doctype html><title>Plain</title><p>plain</p>')
+			return
+		}
+		const via = String(request.headers['x-relay-via'])
+		asked.push({ target, via })
+		const reply = answer(new URL(target), via)
+		void (reply.after ?? Promise.resolve()).then(() => {
+			if (reply.cut) {
+				response.socket?.destroy()
+				return
+			}
+			response.statusCode = reply.status ?? 200
+			response.setHeader('Content-Type', reply.type ?? 'text/html')
+			response.end(reply.body ?? '<!doctype html><title>Served</title><p>served</p>')
+		})
+	})
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+	const { port } = server.address() as AddressInfo
+	return { asked, origin: `http://127.0.0.1:${port}`, close: () => new Promise((resolve) => server.close(() => resolve())) }
+}
+
+/** The site is blocked for the engine's own two methods; the reader relay answers and the archive has nothing. */
+const blockedSite = (target: URL, via: string): Reply => {
+	if (target.host === 'r.jina.ai') return { type: 'text/plain', body: 'Title\n\nreader text '.repeat(10) }
+	if (target.host === 'archive.org') return { status: 404 }
+	return via === 'plain' || via === 'pinned' ? { cut: true } : { status: 404 }
+}
+
+const thirdPartyAsked = (stand: Methods): Asked[] => stand.asked.filter((a) => ['r.jina.ai', 'archive.org'].includes(new URL(a.target).host))
+
+/** The host's network is the stand; ZING_E2E_OFFLINE makes every page load of the engine fail, as a block would. */
+async function launchOffline(stand: Methods): Promise<Launched> {
+	return launchZing({ env: { ZING_E2E_RELAY_URL: stand.origin, ZING_E2E_OFFLINE: '1' } })
+}
+
+async function launchOnStand(stand: Methods): Promise<Launched> {
+	return launchZing({ env: { ZING_E2E_RELAY_URL: stand.origin } })
+}
+
+/** No name resolves in the engine, as when a network's DNS blocks them: a page load fails with HostNameNotResolved. */
+async function launchWithoutDns(stand: Methods): Promise<Launched> {
+	return launchZing({ env: { ZING_E2E_RELAY_URL: stand.origin, ZING_E2E_NO_DNS: '1' } })
+}
+
+async function openLinkPanel(zing: Launched): Promise<{ surface: Page; panel: Locator }> {
+	await zing.chrome.getByRole('button', { name: 'Toolbox' }).first().click()
+	const surface = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	await expect(surface.getByRole('dialog', { name: 'Toolbox' })).toBeVisible()
+	await surface.getByTestId('toolbox-tile').filter({ hasText: 'Open a Link' }).click()
+	const panel = surface.getByRole('dialog', { name: 'Open a Link' })
+	await expect(panel).toBeVisible()
+	return { surface, panel }
+}
+
+const tabUrls = (zing: Launched): Promise<string[]> => tabsOf(zing).then((state) => state.tabs.map((t) => t.url))
+
+async function runLink(panel: Locator, address: string): Promise<void> {
+	await panel.getByRole('textbox', { name: 'Address' }).fill(address)
+	await panel.getByRole('button', { name: 'Open', exact: true }).click()
+}
+
+const consentSentence =
+	"This asks an outside service to fetch the page for you, so that service sees the address, and for a reader relay the page too. Zing doesn't send it your cookies or sign-ins. If this network belongs to a school or employer, getting around its filter may break their rules. That's your call."
+
+test('a failed load offers Open a Link and Diagnose, and nothing runs without a click', async () => {
+	const stand = await methodsStand(blockedSite)
+	const zing = await launchWithoutDns(stand)
+	const address = 'https://blocked.test/a/page'
+	await navigateActive(zing, address)
+	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
+	const offer = overlay.getByTestId('unblock-offer')
+	await expect(offer).toBeVisible()
+	await expect(offer.getByTestId('offer-address')).toHaveText(address)
+	await expect(offer.getByRole('button', { name: 'Open a Link' })).toBeVisible()
+	await expect(offer.getByRole('button', { name: 'Diagnose' })).toBeVisible()
+	// Left alone, it stays an offer: neither the failure nor the offer made a request.
+	await settle(1500)
+	expect(stand.asked).toEqual([])
+	await offer.getByRole('button', { name: 'Open a Link' }).click()
+	const surface = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	const panel = surface.getByRole('dialog', { name: 'Open a Link' })
+	await expect(panel.getByRole('textbox', { name: 'Address' })).toHaveValue(address)
+	await expect(offer).toBeHidden()
+	// Opened with the address in, and still nothing tried: it takes a click in the tool.
+	await settle(1000)
+	expect(stand.asked).toEqual([])
+	await expect(panel.getByTestId('attempt')).toHaveCount(0)
+	await panel.getByRole('button', { name: 'Open', exact: true }).click()
+	await expect.poll(() => stand.asked.length).toBeGreaterThan(0)
+	await zing.close()
+	await stand.close()
+})
+
+test('the offer opens Diagnose with the address in and runs nothing either', async () => {
+	const stand = await methodsStand(blockedSite)
+	const zing = await launchWithoutDns(stand)
+	const address = 'https://blocked.test/'
+	await navigateActive(zing, address)
+	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
+	await overlay.getByTestId('unblock-offer').getByRole('button', { name: 'Diagnose' }).click()
+	const surface = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	const panel = surface.getByRole('dialog', { name: 'Diagnose' })
+	await expect(panel.getByRole('textbox', { name: 'Site' })).toHaveValue(address)
+	await settle(800)
+	await expect(panel.getByTestId('diagnose-verdict')).toHaveCount(0)
+	expect(stand.asked).toEqual([])
+	await zing.close()
+	await stand.close()
+})
+
+test('a failure that is not like a block gets the plain notice and no offer', async () => {
+	const stand = await methodsStand(blockedSite)
+	const zing = await launchOffline(stand)
+	await navigateActive(zing, 'https://blocked.test/a/page')
+	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
+	await expect(overlay.getByRole('status')).toContainText("Couldn't load https://blocked.test/a/page")
+	await expect(overlay.getByTestId('unblock-offer')).toHaveCount(0)
+	expect(stand.asked).toEqual([])
+	await zing.close()
+	await stand.close()
+})
+
+test('the first third-party method asks once per session and says why', async () => {
+	const stand = await methodsStand(blockedSite)
+	const zing = await launchOffline(stand)
+	const { panel } = await openLinkPanel(zing)
+	await runLink(panel, 'https://blocked.test/a/page')
+	const dialog = panel.getByRole('alertdialog')
+	await expect(dialog).toBeVisible()
+	await expect(dialog).toContainText(consentSentence)
+	// Focus lands on it, and the methods that need no outside service were already tried, in order, with their results.
+	await expect.poll(() => dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true)
+	const rows = panel.getByTestId('attempt')
+	await expect(rows).toHaveCount(4)
+	await expect(rows.nth(0)).toHaveAttribute('data-strategy', 'direct')
+	await expect(rows.nth(0)).toHaveAttribute('data-status', 'failed')
+	await expect(rows.nth(1)).toHaveAttribute('data-strategy', 'dohPinned')
+	await expect(rows.nth(1)).toHaveAttribute('data-status', 'failed')
+	// A filter cutting encrypted DNS is a usual result, and the wording says so.
+	await expect(panel.getByTestId('pinned-note')).toContainText('common')
+	await expect(rows.nth(2)).toHaveAttribute('data-status', 'skipped')
+	expect(thirdPartyAsked(stand)).toEqual([])
+
+	await dialog.getByRole('button', { name: 'Allow for this session' }).click()
+	await expect(dialog).toBeHidden()
+	await expect.poll(() => thirdPartyAsked(stand).length).toBeGreaterThan(0)
+	await expect(panel.getByTestId('open-link-outcome')).toContainText('through the relay')
+	await expect(rows.nth(2)).toHaveAttribute('data-status', 'worked')
+	// The page opened in a tab of its own, relayed (an ordinary tab would meet the same block).
+	await expect.poll(() => tabUrls(zing)).toContain('zing-relay://blocked.test/a/page')
+
+	// A second address in the same session goes straight through: it does not ask again.
+	await runLink(panel, 'https://also-blocked.test/')
+	await expect.poll(() => tabUrls(zing)).toContain('zing-relay://also-blocked.test/')
+	await expect(panel.getByRole('alertdialog')).toHaveCount(0)
+	await zing.close()
+	await stand.close()
+})
+
+test('declining stops at the methods that need no third party', async () => {
+	const stand = await methodsStand(blockedSite)
+	const zing = await launchOffline(stand)
+	const { panel } = await openLinkPanel(zing)
+	const before = await tabUrls(zing)
+	await runLink(panel, 'https://blocked.test/a/page')
+	const dialog = panel.getByRole('alertdialog')
+	await expect(dialog).toBeVisible()
+	// Escape declines.
+	await panel.page().keyboard.press('Escape')
+	await expect(dialog).toBeHidden()
+	await expect(panel.getByTestId('open-link-stopped')).toContainText('Nothing was sent')
+	await settle(800)
+	expect(thirdPartyAsked(stand)).toEqual([])
+	expect(await tabUrls(zing)).toEqual(before)
+	// Declining did not grant anything: the next try asks again, and the Don't allow button declines too.
+	await panel.getByRole('button', { name: 'Open', exact: true }).click()
+	await expect(dialog).toBeVisible()
+	await dialog.getByRole('button', { name: "Don't allow" }).click()
+	await expect(dialog).toBeHidden()
+	await settle(500)
+	expect(thirdPartyAsked(stand)).toEqual([])
+	await zing.close()
+	await stand.close()
+})
+
+test('a page that is reachable directly opens in an ordinary tab', async () => {
+	const stand = await methodsStand(() => ({ body: '<!doctype html><title>Fine</title><p>fine</p>' }))
+	const zing = await launchOnStand(stand)
+	const { panel } = await openLinkPanel(zing)
+	await runLink(panel, `${stand.origin}/fine`)
+	await expect(panel.getByTestId('open-link-outcome')).toContainText('loads as usual')
+	await expect(panel.getByTestId('attempt')).toHaveCount(1)
+	await expect.poll(() => tabUrls(zing)).toContain(`${stand.origin}/fine`)
+	expect(stand.asked.map((a) => a.via)).toEqual(['plain'])
+	await zing.close()
+	await stand.close()
+})
+
+test('a run that ends after its panel was closed opens nothing', async () => {
+	let release: () => void = () => undefined
+	const held = new Promise<void>((resolve) => {
+		release = resolve
+	})
+	const stand = await methodsStand(() => ({ after: held }))
+	const zing = await launchOnStand(stand)
+	const { panel } = await openLinkPanel(zing)
+	const before = await tabUrls(zing)
+	await runLink(panel, `${stand.origin}/slow`)
+	await expect.poll(() => stand.asked.length).toBe(1)
+	await panel.getByRole('button', { name: 'Close Open a Link' }).click()
+	await expect(panel).toBeHidden()
+	release()
+	await settle(1500)
+	expect(await tabUrls(zing)).toEqual(before)
+	await zing.close()
+	await stand.close()
+})
+
+test('an http address that needed a relay is tried once over https, else said plainly', async () => {
+	const stand = await methodsStand((target, via) => {
+		if (target.host === 'r.jina.ai') return target.pathname.startsWith('/https://plain.test') ? { type: 'text/plain', body: 'text '.repeat(20) } : { status: 404 }
+		return via === 'plain' || via === 'pinned' ? { cut: true } : { status: 404 }
+	})
+	const zing = await launchOffline(stand)
+	const { panel } = await openLinkPanel(zing)
+	// The first yes, then an http address that only the https form of can be relayed.
+	await runLink(panel, 'http://plain.test/x')
+	await panel.getByRole('alertdialog').getByRole('button', { name: 'Allow for this session' }).click()
+	await expect.poll(() => tabUrls(zing)).toContain('zing-relay://plain.test/x')
+	expect((await tabUrls(zing)).some((u) => u.startsWith('http://plain.test'))).toBe(false)
+	// Another one has no https form that answers: nothing opens, and the message says why.
+	const before = await tabUrls(zing)
+	await runLink(panel, 'http://nowhere.test/y')
+	await expect(panel.getByRole('alert')).toContainText("can't be relayed")
+	await expect(panel.getByRole('alert')).toContainText('http://nowhere.test/y')
+	expect(await tabUrls(zing)).toEqual(before)
+	await zing.close()
+	await stand.close()
+})
+
+test('a relayed page cannot grant the third-party consent', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	const page = await openRelayed(zing, 'https://site.test/a/page.html')
+	// A relayed page has no bridge, and a message it posts to the host is refused.
+	expect(await inPage(page, (g) => g.zing)).toBeUndefined()
+	await page.evaluate(`globalThis.chrome?.webview?.postMessage(${JSON.stringify({ kind: 'invoke', id: 1, channel: 'relay:allow-third-parties', args: [] })})`)
+	await settle(500)
+	const asked = await zing.chrome.evaluate(() => window.zing.openLink('example.com', 'after-the-page-tried'))
+	expect(asked.outcome).toBe('needsConsent')
 	await zing.close()
 	await stand.close()
 })

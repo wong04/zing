@@ -21,7 +21,7 @@ public static class TestHooks
 	/// <summary>Remote debugging port for Playwright; only honoured in e2e runs.</summary>
 	public static string? DebuggingPort => IsEndToEndRun ? Environment.GetEnvironmentVariable("ZING_CDP_PORT") : null;
 
-	/// <summary>Chromium switches for e2e runs: the debugging port, and with ZING_E2E_OFFLINE=1 a dead proxy so no test can reach a live site.</summary>
+	/// <summary>Chromium switches for e2e runs: the debugging port, and with ZING_E2E_OFFLINE=1 a dead proxy so no test can reach a live site, and with ZING_E2E_NO_DNS=1 names that do not resolve.</summary>
 	public static string BrowserArguments()
 	{
 		if (!IsEndToEndRun) return "";
@@ -30,6 +30,8 @@ public static class TestHooks
 		// A granted camera or microphone gets the engine's fake devices, never the PC's own.
 		args.Add("--use-fake-device-for-media-stream");
 		if (Environment.GetEnvironmentVariable("ZING_E2E_OFFLINE") == "1") args.Add("--proxy-server=127.0.0.1:9 --proxy-bypass-list=<-loopback>");
+		// Every name fails to resolve (HostNameNotResolved, as a DNS block gives), without asking any DNS server; this machine's own addresses still work.
+		if (Environment.GetEnvironmentVariable("ZING_E2E_NO_DNS") == "1") args.Add("--host-resolver-rules=\"MAP * ~NOTFOUND , EXCLUDE 127.0.0.1\"");
 		return string.Join(' ', args);
 	}
 
