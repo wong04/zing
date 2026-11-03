@@ -264,6 +264,10 @@ export interface InvokeContract {
 	'toolpanel:begin-drag': { args: [id: string]; result: void }
 	/** `origin` is the panel's top-left in window content coordinates. */
 	'toolpanel:end-drag': { args: [id: string, origin: Point]; result: void }
+	/** Lowercase hex digests. `algorithm` is a `HashAlgorithm` ("MD5", "SHA-1", "SHA-256", "SHA-512"); the host also answers MD5, which SubtleCrypto lacks. */
+	'hash:text': { args: [text: string, algorithm: string]; result: string }
+	'hash:file': { args: [path: string, algorithm: string]; result: string }
+	'hash:hmac': { args: [message: string, key: string, algorithm: string]; result: string }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
 	'account:sign-in': { args: [password: string]; result: AccountOutcome }
@@ -373,6 +377,9 @@ export interface ZingApi {
 	openShellMenu(kind: ShellMenuKind, id: string, anchor: MenuAnchor): Promise<void>
 	clearBrowsingSession(): Promise<void>
 	reportError(report: RendererErrorReport): Promise<void>
+	hashText(text: string, algorithm: string): Promise<string>
+	hashFile(path: string, algorithm: string): Promise<string>
+	hmac(message: string, key: string, algorithm: string): Promise<string>
 	onShellState(listener: (state: ShellState) => void): Unsubscribe
 	getToolPanels(): Promise<ToolPanelsState>
 	openPanel(content: string, at: Point): Promise<OpenPanelOutcome>

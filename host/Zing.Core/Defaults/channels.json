@@ -105,6 +105,18 @@
 			"args": 1
 		},
 		{
+			"channel": "hash:file",
+			"args": 2
+		},
+		{
+			"channel": "hash:hmac",
+			"args": 3
+		},
+		{
+			"channel": "hash:text",
+			"args": 2
+		},
+		{
 			"channel": "library:apply",
 			"args": 1
 		},

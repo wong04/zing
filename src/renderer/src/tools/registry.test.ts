@@ -6,7 +6,7 @@ const body = () => Promise.resolve({ default: () => null })
 
 describe('the tool registry', () => {
 	it('has no body for a tool nobody has registered yet', () => {
-		expect(toolComponent(tool(UtilityTool.hash))).toBeNull()
+		expect(toolComponent(tool(UtilityTool.tools))).toBeNull()
 	})
 	it('wraps each registered tool by its panel id', () => {
 		const registry = buildRegistry([{ 'tool:Hashes': body }, { 'tool:UUID': body }])

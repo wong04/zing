@@ -115,7 +115,7 @@ export const keywords: Readonly<Record<string, readonly string[]>> = {
 	'tool:Hashes': ['sha256', 'sha1', 'sha512', 'md5', 'checksum', 'hash', 'digest'],
 	'tool:HMAC': ['signature', 'sign', 'mac', 'sha256', 'webhook'],
 	'tool:JWT Decoder': ['jwt', 'token', 'bearer', 'auth', 'claims', 'decode token'],
-	'tool:JSON / YAML': ['json', 'yaml', 'format', 'pretty', 'prettify', 'minify', 'validate', 'beautify'],
+	'tool:JSON': ['json', 'format', 'pretty', 'prettify', 'minify', 'validate', 'beautify'],
 	'tool:Base64': ['base64', 'b64', 'encode', 'decode'],
 	'tool:URL Encoding': ['percent', 'encode', 'decode', 'escape', 'query string', 'urlencode'],
 	'tool:Regex Tester': ['regex', 'regexp', 'regular expression', 'pattern', 'match'],
