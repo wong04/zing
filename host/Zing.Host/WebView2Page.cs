@@ -1,5 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
+using Zing.Core.Net;
 
 namespace Zing.Host;
 
@@ -14,6 +15,13 @@ public sealed class WebView2Page : IPage
 	private readonly Func<string, StartPageResponse> _serveStartPage;
 	private readonly IPageFeatureHost _features;
 	private readonly bool _persistent;
+	private readonly RelayedSite _relay;
+	/// <summary>The address of the last navigation Zing itself started; the relay scheme loads in a tab only for such a navigation.</summary>
+	private string? _zingNavigation;
+	/// <summary>The relay address the main-frame load under way was allowed for, so only that document is served.</summary>
+	private string? _approvedDocument;
+	private bool _chainIsRelay;
+	private static readonly TimeSpan AppLikeWait = TimeSpan.FromMilliseconds(1500);
 	private readonly List<Action<CoreWebView2>> _queued = [];
 	private readonly HostWindow _window;
 	private readonly WindowScope _scope;
@@ -34,8 +42,9 @@ public sealed class WebView2Page : IPage
 		return (File.ReadAllText(Path.Combine(dir, "reader.js")), File.ReadAllText(Path.Combine(dir, "reader.css")));
 	});
 
-	public WebView2Page(HostWindow window, WindowScope scope, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, IPageFeatureHost features, bool persistent)
+	public WebView2Page(HostWindow window, WindowScope scope, IPageEvents events, CoreWebView2Environment environment, Func<string, StartPageResponse> serveStartPage, IPageFeatureHost features, bool persistent, RelayedSite relay)
 	{
+		_relay = relay;
 		_window = window;
 		_scope = scope;
 		_events = events;
@@ -88,7 +97,14 @@ public sealed class WebView2Page : IPage
 	public bool CanGoBack => _core?.CanGoBack ?? false;
 	public bool CanGoForward => _core?.CanGoForward ?? false;
 
-	public void Navigate(string url) => Run(core => core.Navigate(url));
+	public void Navigate(string url)
+	{
+		_zingNavigation = url;
+		Run(core => core.Navigate(url));
+	}
+
+	/// <summary>A popup a relayed page opened: the engine starts its first navigation, which Zing has already judged.</summary>
+	public void AllowFirstNavigation(string url) => _zingNavigation = url;
 	public void GoBack() => Run(core => core.GoBack());
 	public void GoForward() => Run(core => core.GoForward());
 	public void Reload() => Run(core => core.Reload());
@@ -297,9 +313,13 @@ public sealed class WebView2Page : IPage
 		_view.Visible = _visible;
 		_view.Place(_bounds);
 		_core = _view.Core;
+		// A page is not Zing's UI: no host object is reachable from it and it can't post to the host (a relayed page is untrusted).
+		_core.Settings.AreHostObjectsAllowed = false;
+		_core.Settings.IsWebMessageEnabled = false;
 		_core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+		_core.AddWebResourceRequestedFilter(RelayedContent.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
 		_core.WebResourceRequested += OnWebResourceRequested;
 		Wire(_core);
 		// A click into a split pane makes its tab the active one. The engine also moves the keyboard on its own (a page
@@ -318,6 +338,26 @@ public sealed class WebView2Page : IPage
 	{
 		core.NavigationStarting += (_, e) =>
 		{
+			var origin = e.NavigationKind switch
+			{
+				CoreWebView2NavigationKind.Reload => NavigationOrigin.Reload,
+				CoreWebView2NavigationKind.BackOrForward => NavigationOrigin.History,
+				_ => _zingNavigation is { } started && RelayedNavigation.Same(started, e.Uri) ? NavigationOrigin.Zing : NavigationOrigin.Page,
+			};
+			if (!e.IsRedirected) _zingNavigation = null;
+			var relayDecision = RelayedNavigation.MainFrame(new MainFrameNavigation(core.Source, e.Uri, origin, e.IsRedirected, _chainIsRelay));
+			if (relayDecision is NavigationDecision.Redirect inRelay)
+			{
+				e.Cancel = true;
+				_zingNavigation = inRelay.Url;
+				core.Navigate(inRelay.Url);
+				return;
+			}
+			if (relayDecision is NavigationDecision.Cancelled)
+			{
+				e.Cancel = true;
+				return;
+			}
 			// Links a page offers are cleaned at navigation time, server redirects included.
 			switch (_events.Navigating(core.Source, e.Uri))
 			{
@@ -330,15 +370,24 @@ public sealed class WebView2Page : IPage
 					return;
 			}
 			_navigation = e.NavigationId;
+			var toRelay = RelayedContent.IsRelayUrl(e.Uri);
+			if (!e.IsRedirected) _chainIsRelay = toRelay;
+			_approvedDocument = toRelay ? e.Uri : null;
 			// NavigationStarting is only raised for new documents; in-page navigations keep their grants.
 			_features.Left(this);
 			InReader = false;
 			IsLoading = true;
 			_events.StateChanged();
 		};
+		core.FrameNavigationStarting += (_, e) =>
+		{
+			// NavigationStarting doesn't see an iframe: one onto the relay from a web page would be served as a fetch on its say.
+			if (!RelayedNavigation.FrameAllowed(core.Source, e.Uri)) e.Cancel = true;
+		};
 		core.NavigationCompleted += (_, e) =>
 		{
 			IsLoading = false;
+			if (e.IsSuccess && RelayedContent.IsRelayUrl(core.Source)) Background(CheckForAppAsync(core, e.NavigationId), "relayed app check");
 			if (!e.IsSuccess && e.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled) ReportFailure(e.WebErrorStatus, e.NavigationId);
 			_events.StateChanged();
 		};
@@ -462,6 +511,11 @@ public sealed class WebView2Page : IPage
 	/// <summary>zing://home is generated by Zing; any other zing: page does not exist.</summary>
 	private void OnWebResourceRequested(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
 	{
+		if (RelayedContent.IsRelayUrl(e.Request.Uri))
+		{
+			ServeRelayed(sender, e);
+			return;
+		}
 		CoreWebView2WebResourceResponse response;
 		try
 		{
@@ -474,6 +528,68 @@ public sealed class WebView2Page : IPage
 			response = sender.Environment.CreateWebResourceResponse(null, 404, "Not Found", "");
 		}
 		e.Response = response;
+	}
+
+	/// <summary>
+	/// A relay-scheme request is served only for a relayed page's own files or the document Zing started; a web page's image,
+	/// fetch or frame gets nothing, and never makes Zing fetch for it. Answered under a deferral, never by blocking this thread.
+	/// </summary>
+	private void ServeRelayed(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
+	{
+		var isDocument = e.ResourceContext == CoreWebView2WebResourceContext.Document;
+		if (!RelayedNavigation.MayServe(sender.Source, e.Request.Uri, isDocument, _approvedDocument))
+		{
+			e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
+			return;
+		}
+		var deferral = e.GetDeferral();
+		Background(ServeRelayedAsync(sender, e, deferral, e.Request.Method, e.Request.Uri, isDocument), "relayed page");
+	}
+
+	private async Task ServeRelayedAsync(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e, Windows.Foundation.Deferral deferral, string method, string uri, bool isDocument)
+	{
+		try
+		{
+			RelayedResponse served;
+			try
+			{
+				served = await _relay.ServeAsync(method, uri, isDocument, CancellationToken.None);
+			}
+			catch (Exception)
+			{
+				if (IsOpen) e.Response = sender.Environment.CreateWebResourceResponse(null, 500, "Internal Server Error", "");
+				throw;
+			}
+			if (!IsOpen) return;
+			var headers = string.Concat(served.Headers.Select(h => $"{h.Key}: {h.Value}\r\n"));
+			e.Response = sender.Environment.CreateWebResourceResponse(new MemoryStream(served.Body).AsRandomAccessStream(), served.Status, StatusText(served.Status), headers);
+		}
+		finally
+		{
+			if (IsOpen) deferral.Complete();
+		}
+	}
+
+	private static string StatusText(int status) => status switch
+	{
+		200 => "OK",
+		302 => "Found",
+		400 => "Bad Request",
+		403 => "Forbidden",
+		405 => "Method Not Allowed",
+		502 => "Bad Gateway",
+		_ => throw new ArgumentOutOfRangeException(nameof(status), status, "No reason phrase for this relay status"),
+	};
+
+	/// <summary>Plenty of script and no text means a web app that died on what the relay can't give it; say so instead of leaving a blank page.</summary>
+	private async Task CheckForAppAsync(CoreWebView2 core, ulong navigation)
+	{
+		await Task.Delay(AppLikeWait);
+		if (!IsOpen || _navigation != navigation) return;
+		using var counts = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.ExecuteScriptAsync("[document.body ? document.body.innerText.length : 0, document.scripts.length]").AsTask()));
+		var (text, scripts) = (counts.RootElement[0].GetInt32(), counts.RootElement[1].GetInt32());
+		if (!RelayedContent.IsAppLikeFailure(text, scripts)) return;
+		_events.Notice($"{new Uri(core.Source).Host} is a web app, and web apps can't work through the relay. Open it in a normal tab if you can reach it.");
 	}
 
 	/// <summary>
@@ -508,8 +624,16 @@ public sealed class WebView2Page : IPage
 	/// loading the same URL, or window.opener is null and OAuth popups (Google,
 	/// Microsoft, payment pages) have nowhere to send their result.
 	/// </summary>
-	private void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs e) =>
+	private void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs e)
+	{
+		// A relayed page opens relayed windows only, and nothing else opens one onto the relay.
+		if (!RelayedNavigation.NewWindowAllowed(sender.Source, e.Uri))
+		{
+			e.Handled = true;
+			return;
+		}
 		Background(OpenPopupAsync(e), "popup");
+	}
 
 	private async Task OpenPopupAsync(CoreWebView2NewWindowRequestedEventArgs e)
 	{
@@ -517,6 +641,7 @@ public sealed class WebView2Page : IPage
 		try
 		{
 			var popup = (WebView2Page)_events.Popup(e.Uri, background: false);
+			if (RelayedContent.IsRelayUrl(e.Uri)) popup.AllowFirstNavigation(e.Uri);
 			await popup.Ready;
 			// The opener or the popup may have closed while the engine started it: then there is no window to hand over.
 			if (IsOpen && popup.IsOpen && popup.IsStarted) e.NewWindow = popup.Core;

@@ -46,6 +46,10 @@ public static class TestHooks
 		if (!IsEndToEndRun) return null;
 		var dohUrl = Environment.GetEnvironmentVariable("ZING_E2E_DOH_URL");
 		var probes = Environment.GetEnvironmentVariable("ZING_E2E_PROBES");
+		var relayUrl = Environment.GetEnvironmentVariable("ZING_E2E_RELAY_URL");
+		// Relayed pages' network: a local server stands in for every site and for the relay and archive.
+		if (relayUrl is not null)
+			return new Zing.Core.Net.NetServices(FixedProbes.FromJson(probes ?? LocalRelayTransport.NoProbes), new Zing.Core.Net.DohClient(Zing.Core.Net.DohClient.NewHttpClient(), _ => dohUrl ?? "http://127.0.0.1:9/dns-query"), new LocalRelayTransport(new Uri(relayUrl)));
 		if (dohUrl is null && probes is null) return null;
 		if (dohUrl is null || probes is null) throw new InvalidOperationException("ZING_E2E_DOH_URL and ZING_E2E_PROBES go together");
 		return new Zing.Core.Net.NetServices(FixedProbes.FromJson(probes), new Zing.Core.Net.DohClient(Zing.Core.Net.DohClient.NewHttpClient(), _ => dohUrl));
@@ -92,6 +96,18 @@ public static class TestHooks
 			var count = root.GetProperty("count").GetInt32();
 			var prefix = root.GetProperty("url").GetString()!;
 			for (var i = 0; i < count; i++) api.Tabs.Create($"{prefix}{i}");
+			return true;
+		}
+		if (action == "open-relayed")
+		{
+			var api = (Apis.TryGetValue(window, out var relayApi) ? relayApi() : null) ?? throw new InvalidOperationException("open-relayed needs a window with its chrome started");
+			api.Tabs.OpenRelayed(root.GetProperty("url").GetString()!);
+			return true;
+		}
+		if (action == "relay-consent")
+		{
+			var api = (Apis.TryGetValue(window, out var consentApi) ? consentApi() : null) ?? throw new InvalidOperationException("relay-consent needs a window with its chrome started");
+			api.Consent.Allow();
 			return true;
 		}
 		if (action == "close-at")

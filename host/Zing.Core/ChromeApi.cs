@@ -99,6 +99,9 @@ public sealed class ChromeApi : IDisposable
 
 	public TabLifecycle Lifecycle { get; }
 
+	/// <summary>Whether the reader relay and the archive may be asked this session.</summary>
+	public RelayConsent Consent => _consent;
+
 	public StackDropdown Stacks { get; }
 
 	public ShellModel Shell { get; }
