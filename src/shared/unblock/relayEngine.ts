@@ -14,6 +14,15 @@ export class BadURLError extends RelayError {
 	}
 }
 
+/** An address with a user name or password in it would hand them to a relay. */
+export class CredentialsInURLError extends BadURLError {
+	override name = 'CredentialsInURLError'
+	constructor(input: string) {
+		super(input)
+		this.message = "That address has a user name or password in it, which Zing won't send to anyone."
+	}
+}
+
 export class NXDomainError extends RelayError {
 	override name = 'NXDomainError'
 	constructor(readonly host: string) {
@@ -115,7 +124,36 @@ export function normalize(input: string): URL {
 	if (!text.includes('://')) text = 'https://' + text
 	const url = parseURL(text, input)
 	if (url.hostname === '') throw new BadURLError(input)
+	if (url.username !== '' || url.password !== '') throw new CredentialsInURLError(input)
 	return url
+}
+
+function isPrivateIPv4(text: string): boolean {
+	const [a = 0, b = 0] = text.split('.').map(Number)
+	return a === 0 || a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)
+}
+
+function isPrivateIPv6(text: string): boolean {
+	if (text === '::' || text === '::1') return true
+	const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(text)
+	if (mapped?.[1] !== undefined && mapped[2] !== undefined) {
+		const high = parseInt(mapped[1], 16)
+		const low = parseInt(mapped[2], 16)
+		return isPrivateIPv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`)
+	}
+	const first = text.split(':')[0] ?? ''
+	return /^f[cd]/.test(first) || /^fe[89ab]/.test(first)
+}
+
+/**
+ * Whether the address names something on the user's own network, judged from the text alone (no lookup): a loopback, private or
+ * link-local address, localhost, a .local name, or a single-label name. Such an address must not be sent to a third party.
+ */
+export function isPrivateHost(url: URL): boolean {
+	const host = url.hostname.toLowerCase().replace(/\.$/, '')
+	if (host.startsWith('[')) return isPrivateIPv6(host.slice(1, -1))
+	if (/^\d+(\.\d+){3}$/.test(host)) return isPrivateIPv4(host)
+	return host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || !host.includes('.')
 }
 
 /** Anything outside 200..<400 is a failed fetch; redirects were already followed. */

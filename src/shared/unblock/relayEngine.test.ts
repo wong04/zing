@@ -4,9 +4,12 @@ import { describe, expect, it } from 'vitest'
 import {
 	allRelayStrategies,
 	BadURLError,
+	CredentialsInURLError,
 	EmptyBodyError,
 	HTTPStatusError,
+	isPrivateHost,
 	normalize,
+	RelayError,
 	returnsLiveDocument,
 	RelayStrategy,
 	validateStatus,
@@ -44,7 +47,7 @@ describe('RelayEngine.normalize', () => {
 			try {
 				normalize(weird)
 			} catch (error) {
-				if (!(error instanceof BadURLError)) throw error
+				if (!(error instanceof RelayError)) throw error
 			}
 		}
 		expect(true).toBe(true)
@@ -89,6 +92,12 @@ describe('relay engine shared vectors', () => {
 	})
 	it.each(vectors.refused)("refuses '%s'", (input) => {
 		expect(() => normalize(input)).toThrow(BadURLError)
+	})
+	it.each(vectors.credentials)("refuses credentials in '%s'", (input) => {
+		expect(() => normalize(input)).toThrow(CredentialsInURLError)
+	})
+	it.each(vectors.privateHosts)("'$input' private: $private", ({ input, private: expected }) => {
+		expect(isPrivateHost(normalize(input))).toBe(expected)
 	})
 	it.each(vectors.status.ok)('status %s passes', (status) => {
 		expect(() => validateStatus(status)).not.toThrow()
