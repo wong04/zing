@@ -150,8 +150,23 @@ test('QR Copy image puts a PNG on the clipboard', async () => {
 	const panel = await openTool(zing, 'QR Code')
 	await panel.getByRole('textbox', { name: 'Text' }).fill('https://example.com')
 	await panel.getByRole('button', { name: 'Copy image' }).click()
-	await expect(panel.getByRole('alert')).toHaveCount(0)
+	await expect(panel.getByRole('button', { name: 'Copied' })).toBeVisible()
 	expect((await paste(panel.page())).fileTypes).toContain('image/png')
+	await zing.close()
+})
+
+test('QR Copy image says when it has copied, and not after the text changes', async () => {
+	const zing = await launchZing()
+	const panel = await openTool(zing, 'QR Code')
+	// The page's clipboard is replaced, so nothing reaches the system clipboard.
+	await panel.page().evaluate(() => {
+		Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write: () => Promise.resolve() } })
+	})
+	await panel.getByRole('textbox', { name: 'Text' }).fill('https://example.com')
+	await panel.getByRole('button', { name: 'Copy image' }).click()
+	await expect(panel.getByRole('button', { name: 'Copied' })).toBeVisible()
+	await panel.getByRole('textbox', { name: 'Text' }).fill('https://example.org')
+	await expect(panel.getByRole('button', { name: 'Copy image' })).toBeVisible()
 	await zing.close()
 })
 

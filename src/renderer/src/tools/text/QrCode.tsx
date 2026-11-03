@@ -24,6 +24,14 @@ export function QrCode() {
 	const code = useMemo(() => (text === '' ? null : encode(text)), [text])
 	const modules = code && 'modules' in code ? code.modules : null
 	const [copyError, setCopyError] = useState<string | null>(null)
+	const [copiedModules, setCopiedModules] = useState<typeof modules>(null)
+	const copied = modules !== null && copiedModules === modules
+
+	useEffect(() => {
+		if (!copiedModules) return
+		const timer = setTimeout(() => setCopiedModules(null), 2000)
+		return () => clearTimeout(timer)
+	}, [copiedModules])
 
 	useEffect(() => {
 		const el = canvas.current
@@ -52,7 +60,9 @@ export function QrCode() {
 			)
 			await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
 			setCopyError(null)
+			setCopiedModules(modules)
 		} catch (error) {
+			setCopiedModules(null)
 			setCopyError(error instanceof Error ? error.message : String(error))
 		}
 	}
@@ -68,7 +78,7 @@ export function QrCode() {
 					</div>
 					<div>
 						<PillButton variant="outlined" size="small" onClick={() => void copyImage()}>
-							Copy image
+							{copied ? 'Copied' : 'Copy image'}
 						</PillButton>
 					</div>
 					{copyError ? <InfoBanner kind="warning">{`Could not copy the image: ${copyError}`}</InfoBanner> : null}
