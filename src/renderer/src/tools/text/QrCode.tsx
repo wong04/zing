@@ -1,27 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import qrcode from 'qrcode-generator'
+import { encodeQr, QrTooLongError, type QrModules } from '@shared/devtools/qr'
 import { InfoBanner, PillButton } from '../../components'
 import { ToolPage } from './parts'
 import './text.css'
 
 const quietZone = 4
 const pixelsPerModule = 8
-const overflowMessage = 'code length overflow'
 
-type Code = { readonly modules: readonly (readonly boolean[])[] } | { readonly error: string }
+type Code = { readonly modules: QrModules } | { readonly error: string }
 
 function encode(text: string): Code {
 	try {
-		const code = qrcode(0, 'M')
-		code.addData(text)
-		code.make()
-		const size = code.getModuleCount()
-		const modules = Array.from({ length: size }, (_, row) => Array.from({ length: size }, (_, col) => code.isDark(row, col)))
-		return { modules }
+		return { modules: encodeQr(text) }
 	} catch (error) {
-		// The library throws bare strings; this one means the text is too long for any QR version.
-		if (typeof error === 'string' && error.startsWith(overflowMessage)) return { error: 'That text is too long to fit in a QR code.' }
-		throw new Error(`QR encoding failed: ${String(error)}`, { cause: error })
+		if (error instanceof QrTooLongError) return { error: error.message }
+		throw error
 	}
 }
 
