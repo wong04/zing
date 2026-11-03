@@ -213,6 +213,9 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("toolpanel:end-drag", args => Do(() => Shell.EndPanelDrag(Text(args, 0), PointArg(args, 1))));
 		bridge.Register("overview:get", _ => Overview.Current);
 		bridge.Register("overview:close", _ => Do(Overview.Close));
+		bridge.Register("hash:text", args => Hashing.Text(Text(args, 0), Text(args, 1)));
+		bridge.Register("hash:file", args => HashFileAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("hash:hmac", args => Hashing.Hmac(Text(args, 0), Text(args, 1), Text(args, 2)));
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
 		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
@@ -423,6 +426,8 @@ public sealed class ChromeApi : IDisposable
 		_host.Notify("Browsing session cleared");
 		return null;
 	}
+
+	private static async Task<object?> HashFileAsync(string path, string algorithm) => await Hashing.FileAsync(path, algorithm);
 
 	private async Task<object?> HistoryMenuAsync(string direction, JsonElement[] args)
 	{
