@@ -22,6 +22,11 @@
 		{"input": "http://127.5.5.5/", "private": true},
 		{"input": "127.1", "private": true},
 		{"input": "2130706433", "private": true},
+		{"input": "0x7f.0.0.1", "private": true},
+		{"input": "[FD00::1]", "private": true},
+		{"input": "[::ffff:10.0.0.1]", "private": true},
+		{"input": "[::127.0.0.1]", "private": true},
+		{"input": "[::ffff:8.8.8.8]", "private": false},
 		{"input": "0.0.0.0", "private": true},
 		{"input": "10.0.0.1", "private": true},
 		{"input": "172.16.0.1", "private": true},
@@ -45,6 +50,12 @@
 		{"input": "[2606:4700::1111]", "private": false},
 		{"input": "notlocal.com", "private": false},
 		{"input": "mylocal.example.org", "private": false}
+	],
+	"privateHostNames": [
+		{"host": "localhost..", "private": true},
+		{"host": "LOCALHOST", "private": true},
+		{"host": "printer.local..", "private": true},
+		{"host": "example.com..", "private": false}
 	],
 	"status": {
 		"ok": [200, 204, 302, 399],

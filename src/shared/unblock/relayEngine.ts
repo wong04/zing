@@ -135,7 +135,8 @@ function isPrivateIPv4(text: string): boolean {
 
 function isPrivateIPv6(text: string): boolean {
 	if (text === '::' || text === '::1') return true
-	const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(text)
+	// IPv4-mapped (::ffff:a.b.c.d) and the deprecated IPv4-compatible (::a.b.c.d) forms carry an IPv4 address in their last 32 bits.
+	const mapped = /^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(text)
 	if (mapped?.[1] !== undefined && mapped[2] !== undefined) {
 		const high = parseInt(mapped[1], 16)
 		const low = parseInt(mapped[2], 16)
@@ -150,7 +151,12 @@ function isPrivateIPv6(text: string): boolean {
  * link-local address, localhost, a .local name, or a single-label name. Such an address must not be sent to a third party.
  */
 export function isPrivateHost(url: URL): boolean {
-	const host = url.hostname.toLowerCase().replace(/\.$/, '')
+	return isPrivateHostName(url.hostname)
+}
+
+/** `isPrivateHost` for a host name as the URL parser gives it (an IPv6 address in brackets). Trailing dots are ignored. */
+export function isPrivateHostName(name: string): boolean {
+	const host = name.toLowerCase().replace(/\.+$/, '')
 	if (host.startsWith('[')) return isPrivateIPv6(host.slice(1, -1))
 	if (/^\d+(\.\d+){3}$/.test(host)) return isPrivateIPv4(host)
 	return host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || !host.includes('.')

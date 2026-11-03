@@ -8,6 +8,7 @@ import {
 	EmptyBodyError,
 	HTTPStatusError,
 	isPrivateHost,
+	isPrivateHostName,
 	normalize,
 	RelayError,
 	returnsLiveDocument,
@@ -98,6 +99,9 @@ describe('relay engine shared vectors', () => {
 	})
 	it.each(vectors.privateHosts)("'$input' private: $private", ({ input, private: expected }) => {
 		expect(isPrivateHost(normalize(input))).toBe(expected)
+	})
+	it.each(vectors.privateHostNames)("host name '$host' private: $private", ({ host, private: expected }) => {
+		expect(isPrivateHostName(host)).toBe(expected)
 	})
 	it.each(vectors.status.ok)('status %s passes', (status) => {
 		expect(() => validateStatus(status)).not.toThrow()

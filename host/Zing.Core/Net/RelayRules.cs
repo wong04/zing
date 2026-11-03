@@ -26,9 +26,12 @@ public static class RelayRules
 	/// Whether the address names something on the user's own network, judged from the text alone (no lookup): a loopback, private or
 	/// link-local address, localhost, a .local name, or a single-label name. Such an address must not be sent to a third party.
 	/// </summary>
-	public static bool IsPrivateHost(Uri url)
+	public static bool IsPrivateHost(Uri url) => IsPrivateHostName(url.Host);
+
+	/// <summary>The same for a host name as <see cref="Uri.Host"/> gives it (an IPv6 address in brackets). Trailing dots are ignored.</summary>
+	public static bool IsPrivateHostName(string name)
 	{
-		var host = url.Host.ToLowerInvariant().TrimEnd('.');
+		var host = name.ToLowerInvariant().TrimEnd('.');
 		if (IPAddress.TryParse(host.Trim('[', ']'), out var address)) return IsPrivateAddress(address);
 		return host == "localhost" || host.EndsWith(".localhost", StringComparison.Ordinal) || host.EndsWith(".local", StringComparison.Ordinal) || !host.Contains('.');
 	}
@@ -39,6 +42,8 @@ public static class RelayRules
 		if (address.AddressFamily == AddressFamily.InterNetworkV6)
 		{
 			var bytes = address.GetAddressBytes();
+			// The deprecated IPv4-compatible form (::a.b.c.d) carries an IPv4 address in its last 32 bits.
+			if (bytes[..12].All(b => b == 0) && !address.Equals(IPAddress.IPv6Any) && !address.Equals(IPAddress.IPv6Loopback)) return IsPrivateAddress(new IPAddress(bytes[12..]));
 			return address.Equals(IPAddress.IPv6Loopback) || address.Equals(IPAddress.IPv6Any) || (bytes[0] & 0xFE) == 0xFC || (bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80);
 		}
 		var b = address.GetAddressBytes();

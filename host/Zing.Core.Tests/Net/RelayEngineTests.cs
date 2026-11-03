@@ -380,6 +380,19 @@ public sealed class RelayEngineTests
 	}
 
 	[Fact]
+	public void Private_host_names_match_the_shared_vectors()
+	{
+		foreach (var v in Vectors.Load(VectorsPath).GetProperty("privateHostNames").EnumerateArray())
+			Assert.Equal(v.GetProperty("private").GetBoolean(), RelayRules.IsPrivateHostName(v.GetProperty("host").GetString()!));
+	}
+
+	[Fact]
+	public void An_address_with_an_empty_label_is_refused_rather_than_sent_anywhere()
+	{
+		Assert.Throws<BadURLError>(() => RelayRules.Normalize("localhost.."));
+	}
+
+	[Fact]
 	public void Credentials_in_an_address_match_the_shared_vectors()
 	{
 		foreach (var input in Vectors.Load(VectorsPath).GetProperty("credentials").EnumerateArray().Select(e => e.GetString()!))
