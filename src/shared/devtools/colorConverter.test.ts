@@ -45,6 +45,13 @@ describe('known answers', () => {
 		expect(convertColor('#+f0000')).toBeNull()
 		expect(convertColor('rgb(1, 2)')).toBeNull()
 	})
+	it.each(['rgb(999, 0, 0)', 'rgb(0, 256, 0)', 'rgb(0, 0, 255.5)', 'rgba(300, 300, 300, 1)'])('refuses %s, whose channel is past 255', (input) => {
+		expect(convertColor(input)).toBeNull()
+	})
+	it('accepts the edges of the range', () => {
+		expect(convertColor('rgb(255, 0, 0)')?.hex).toBe('#FF0000')
+		expect(convertColor('rgb(0, 0, 0)')?.hex).toBe('#000000')
+	})
 	it('white has no ink', () => {
 		expect(convertColor('#fff')?.cmyk).toBe('cmyk(0%, 0%, 0%, 0%)')
 	})

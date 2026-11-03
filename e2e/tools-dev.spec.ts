@@ -138,6 +138,15 @@ test('a cron line shows its next run', async () => {
 	await zing.close()
 })
 
+test('a cron line with unreadable fields shows only the error, not a description', async () => {
+	const zing = await launchZing()
+	const { panel } = await openTool(zing, 'Cron Parser')
+	await panel.getByRole('textbox', { name: 'Cron expression' }).fill('a b c d e')
+	await expect(panel.getByRole('alert')).toHaveCount(1)
+	await expect(panel.getByText('Runs at')).toHaveCount(0)
+	await zing.close()
+})
+
 test('a catastrophic regex gives up after 2 seconds and the tool still responds', async () => {
 	const zing = await launchZing()
 	const { panel } = await openTool(zing, 'Regex Tester')
