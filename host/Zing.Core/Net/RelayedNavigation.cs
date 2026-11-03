@@ -87,6 +87,9 @@ public static class RelayedNavigation
 		return approvedDocument is not null && Same(approvedDocument, request);
 	}
 
+	/// <summary>The same address, whatever the fragment: a fragment is never sent, so the request for a page has none.</summary>
 	public static bool Same(string a, string b) =>
-		Uri.TryCreate(a, UriKind.Absolute, out var x) && Uri.TryCreate(b, UriKind.Absolute, out var y) ? x.AbsoluteUri == y.AbsoluteUri : a == b;
+		Uri.TryCreate(a, UriKind.Absolute, out var x) && Uri.TryCreate(b, UriKind.Absolute, out var y) ? WithoutFragment(x) == WithoutFragment(y) : a == b;
+
+	private static string WithoutFragment(Uri uri) => uri.GetComponents(UriComponents.AbsoluteUri & ~UriComponents.Fragment, UriFormat.UriEscaped);
 }

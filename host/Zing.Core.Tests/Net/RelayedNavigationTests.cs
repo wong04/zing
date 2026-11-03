@@ -85,6 +85,15 @@ public sealed class RelayedNavigationTests
 	}
 
 	[Fact]
+	public void AFragmentIsNotPartOfTheRequestSoItDoesNotBreakTheMatch()
+	{
+		// The engine asks for the address without its fragment, while the navigation event carries it.
+		Assert.True(RelayedNavigation.MayRequestDocument(Relay, "https://news.example/page", approvedDocument: "https://news.example/page#sec"));
+		Assert.True(RelayedNavigation.MayServe(Web, "zing-relay://a.com/x", isDocument: true, approvedDocument: "zing-relay://a.com/x#frag"));
+		Assert.False(RelayedNavigation.MayRequestDocument(Relay, "https://news.example/other", approvedDocument: "https://news.example/page#sec"));
+	}
+
+	[Fact]
 	public void RelayRequestsAreServedOnlyForARelayedPageOrAnApprovedDocument()
 	{
 		Assert.True(RelayedNavigation.MayServe(Relay, "zing-relay://b.com/s.css", isDocument: false, approvedDocument: null));

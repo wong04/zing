@@ -1,3 +1,5 @@
+import { existsSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { createServer as createSocketServer, type AddressInfo } from 'node:net'
 import { expect, type Locator, type Page } from '@playwright/test'
@@ -169,6 +171,7 @@ const sites: Readonly<Record<string, (path: string) => { type: string; body: str
 			}
 		}
 		if (path === '/a/style.css') return { type: 'text/css', body: 'body{background:rgb(1,2,3)}' }
+		if (path === '/a/file.zip') return { type: 'application/zip', body: 'PK-not-really' }
 		return undefined
 	},
 	'other.test': (path) => ({ type: 'text/html', body: `<!doctype html><title>other ${path}</title><p>other</p>` }),
@@ -193,6 +196,12 @@ async function standIn(): Promise<Stand> {
 			if (request.url === '/redirect-to-relay') {
 				response.statusCode = 302
 				response.setHeader('Location', 'zing-relay://site.test/a/page.html')
+				response.end()
+				return
+			}
+			if (request.url === '/redirect-ordinary') {
+				response.statusCode = 302
+				response.setHeader('Location', '/typed-after-redirect')
 				response.end()
 				return
 			}
@@ -491,6 +500,97 @@ test('a relayed page cannot reach loopback or the own network through the relay'
 	await expect.poll(() => textOf(own)).toContain('your own network')
 	const hosts = stand.fetched.map((f) => new URL(f.target).host)
 	for (const forbidden of ['127.0.0.1', 'localhost', '192.168.1.1', 'printer.local', 'nas.lan', '100.64.0.1']) expect(hosts).not.toContain(forbidden)
+	await zing.close()
+	await stand.close()
+})
+
+// ---- Round 2 trials: each was written to find out whether the suspicion is real.
+
+const realRequests = (stand: Stand): string[] => stand.direct.filter((u) => u !== '/favicon.ico')
+
+test('trial: a popup of a relayed page cannot be sent to the network before it has loaded', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	const page = await openRelayed(zing, 'https://site.test/a/page.html')
+	await page.evaluate(`(async () => {
+		const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+		const w = window.open('zing-relay://other.test/pop')
+		try { w.location = ${JSON.stringify(stand.origin + '/loc')} } catch (e) {}
+		try { w.document.write('<p>x</p>') } catch (e) {}
+		try { w.location.href = ${JSON.stringify(stand.origin + '/href')} } catch (e) {}
+		const v = window.open('about:blank')
+		try { v.location = ${JSON.stringify(stand.origin + '/blank')} } catch (e) {}
+		await sleep(300)
+		try { w.location = ${JSON.stringify(stand.origin + '/late')} } catch (e) {}
+		await sleep(1500)
+	})()`)
+	await settle()
+	expect(realRequests(stand)).toEqual([])
+	await zing.close()
+	await stand.close()
+})
+
+test('trial: a download link on a relayed page cannot fetch from the network', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	const page = await openRelayed(zing, 'https://site.test/a/page.html')
+	await page.evaluate(`(() => {
+		for (const href of ['zing-relay://site.test/a/style.css?dl=1', ${JSON.stringify(stand.origin + '/dl')}]) {
+			const a = document.createElement('a')
+			a.href = href
+			a.download = 'f.bin'
+			document.body.append(a)
+			a.click()
+		}
+	})()`)
+	await settle(2000)
+	console.log('download trial: url', page.url(), 'direct', JSON.stringify(stand.direct), 'fetched', JSON.stringify(stand.fetched.map((f) => f.target)))
+	console.log('downloads on disk', JSON.stringify(existsSync(join(zing.userDataDir, 'downloads')) ? readdirSync(join(zing.userDataDir, 'downloads')) : 'no folder'))
+	expect(realRequests(stand)).toEqual([])
+	await zing.close()
+	await stand.close()
+})
+
+test('trial: a relay address with a fragment loads its content', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	const relayed = await openRelayed(zing, 'https://site.test/a/page.html#sec')
+	await expect.poll(() => inPage(relayed, (g) => g.document.title)).toBe('Relayed')
+	await zing.close()
+	await stand.close()
+})
+
+test('trial: a typed address with a fragment loads from a relayed tab', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	await openRelayed(zing, 'https://site.test/a/page.html')
+	await navigateActive(zing, `${stand.origin}/attack#sec`)
+	const web = await pageWhere(zing.browser, (p) => p.url() === `${stand.origin}/attack#sec`)
+	await expect.poll(() => inPage(web, (g) => g.document.title)).toBe('Attack')
+	await zing.close()
+	await stand.close()
+})
+
+test('trial: a typed address that redirects loads from a relayed tab', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	await openRelayed(zing, 'https://site.test/a/page.html')
+	await navigateActive(zing, `${stand.origin}/redirect-ordinary`)
+	const landed = await pageWhere(zing.browser, (p) => p.url() === `${stand.origin}/typed-after-redirect`)
+	await expect.poll(() => inPage(landed, (g) => g.document.title)).toBe('Attack')
+	await zing.close()
+	await stand.close()
+})
+
+test('trial: a file link on a relayed page downloads the bytes the relay fetched', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	const page = await openRelayed(zing, 'https://site.test/a/page.html')
+	await page.evaluate("setTimeout(() => { const a = document.createElement('a'); a.href = 'file.zip'; document.body.append(a); a.click() }, 0)")
+	const folder = join(zing.userDataDir, 'downloads')
+	await expect.poll(() => (existsSync(folder) ? readdirSync(folder) : [])).toContain('file.zip')
+	expect(stand.fetched.map((f) => f.target)).toContain('https://site.test/a/file.zip')
+	expect(realRequests(stand)).toEqual([])
 	await zing.close()
 	await stand.close()
 })

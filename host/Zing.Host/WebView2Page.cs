@@ -21,6 +21,8 @@ public sealed class WebView2Page : IPage
 	/// <summary>The relay address the main-frame load under way was allowed for, so only that document is served.</summary>
 	private string? _approvedDocument;
 	private bool _chainIsRelay;
+	/// <summary>A popup of a relayed page: relayed from its birth, while it is still on its blank first document.</summary>
+	private bool _bornRelayed;
 	private static readonly TimeSpan AppLikeWait = TimeSpan.FromMilliseconds(1500);
 	private readonly List<Action<CoreWebView2>> _queued = [];
 	private readonly HostWindow _window;
@@ -104,7 +106,18 @@ public sealed class WebView2Page : IPage
 	}
 
 	/// <summary>A popup a relayed page opened: the engine starts its first navigation, which Zing has already judged.</summary>
-	public void AllowFirstNavigation(string url) => _zingNavigation = url;
+	public void AllowFirstNavigation(string url)
+	{
+		_zingNavigation = url;
+		_bornRelayed = true;
+	}
+
+	/// <summary>
+	/// The address that decides what a page may do: the page's own, except that a relayed page's popup counts as relayed before its first
+	/// load commits. Its opener can already navigate it then, and it would otherwise look like any blank page.
+	/// </summary>
+	private string TopOf(CoreWebView2 core) =>
+		_bornRelayed && core.Source is "" or "about:blank" ? RelayedContent.Scheme + "://popup.invalid/" : core.Source;
 	public void GoBack() => Run(core => core.GoBack());
 	public void GoForward() => Run(core => core.GoForward());
 	public void Reload() => Run(core => core.Reload());
@@ -350,7 +363,7 @@ public sealed class WebView2Page : IPage
 				_ => _zingNavigation is { } started && RelayedNavigation.Same(started, e.Uri) ? NavigationOrigin.Zing : NavigationOrigin.Page,
 			};
 			if (!e.IsRedirected) _zingNavigation = null;
-			var relayDecision = RelayedNavigation.MainFrame(new MainFrameNavigation(core.Source, e.Uri, origin, e.IsRedirected, _chainIsRelay));
+			var relayDecision = RelayedNavigation.MainFrame(new MainFrameNavigation(TopOf(core), e.Uri, origin, e.IsRedirected, _chainIsRelay));
 			if (relayDecision is NavigationDecision.Redirect inRelay)
 			{
 				e.Cancel = true;
@@ -387,7 +400,7 @@ public sealed class WebView2Page : IPage
 		core.FrameNavigationStarting += (_, e) =>
 		{
 			// NavigationStarting doesn't see an iframe: one onto the relay from a web page would be served as a fetch on its say.
-			if (!RelayedNavigation.FrameAllowed(core.Source, e.Uri)) e.Cancel = true;
+			if (!RelayedNavigation.FrameAllowed(TopOf(core), e.Uri)) e.Cancel = true;
 		};
 		core.NavigationCompleted += (_, e) =>
 		{
@@ -523,7 +536,7 @@ public sealed class WebView2Page : IPage
 		}
 		if (e.Request.Uri.StartsWith("http", StringComparison.OrdinalIgnoreCase))
 		{
-			if (!RelayedNavigation.MayRequestDocument(sender.Source, e.Request.Uri, _approvedDocument)) e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
+			if (!RelayedNavigation.MayRequestDocument(TopOf(sender), e.Request.Uri, _approvedDocument)) e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
 			return;
 		}
 		CoreWebView2WebResourceResponse response;
@@ -547,7 +560,7 @@ public sealed class WebView2Page : IPage
 	private void ServeRelayed(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
 	{
 		var isDocument = e.ResourceContext == CoreWebView2WebResourceContext.Document;
-		if (!RelayedNavigation.MayServe(sender.Source, e.Request.Uri, isDocument, _approvedDocument))
+		if (!RelayedNavigation.MayServe(TopOf(sender), e.Request.Uri, isDocument, _approvedDocument))
 		{
 			e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
 			return;
@@ -637,7 +650,7 @@ public sealed class WebView2Page : IPage
 	private void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs e)
 	{
 		// A relayed page opens relayed windows only, and nothing else opens one onto the relay.
-		if (!RelayedNavigation.NewWindowAllowed(sender.Source, e.Uri))
+		if (!RelayedNavigation.NewWindowAllowed(TopOf(sender), e.Uri))
 		{
 			e.Handled = true;
 			return;
