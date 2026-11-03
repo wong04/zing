@@ -297,3 +297,14 @@ Run first, one report line per spike. **If one fails, stop that piece and bring 
 - [ ] **Step 3: Build.**
 - [ ] **Step 4: Run.** Expected: PASS. **Commit** `drag between tools and copy file`.
 - [ ] **Step 5: PR C.** Whole-branch review, all checks, screenshots, `PARITY.md` X6–X10, X15, X16, X23, X25 Done (X15 noting no 3D). README's Status and feature text match what shipped. Push and open. The owner checks by eye: a real iPhone HEIC and MOV, and a YouTube MP3 and MP4.
+
+---
+
+## Spike results (2026-11-03)
+
+These bind Tasks 8, 10, 12, 14, 17 and 21.
+
+- **S1:** pinned TLS works through `ConnectCallback`, and mismatches raise `HttpRequestException` over `AuthenticationException`. WebView2 ignored every DoH command-line switch on runtime 156, silently. So X4's provider applies to Open a Link and Diagnose only, and pages use Windows' DNS; Task 12 says so plainly. The owner's own network has a Fortinet filter that intercepts `cloudflare-dns.com` and blocks `1.1.1.1` and `dns.google`, so DoH failing must be a normal, explained result in Tasks 8 and 9, and PR B is checked on that network.
+- **S2:** the scheme works and each host gets its own origin. `postMessage` still reaches `WebMessageReceived`, so that handler must drop relay origins, and Task 10 must also cancel `FrameNavigationStarting`, because an iframe isn't caught by `NavigationStarting`. Register with the 5-argument `CoreWebView2EnvironmentOptions` constructor; `CustomSchemeRegistrations` is null otherwise.
+- **S3:** FFmpeg 9.0.2 essentials from gyan.dev (`ffmpeg-9.0.2-essentials_build.zip`, SHA-256 `60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba`) has libx265, libx264 and libmp3lame. A `<video src>` on a growing file doesn't work. Task 17 uses MediaSource fed by `Range` fetches from `view.zing`, with `-movflags frag_keyframe+empty_moov+default_base_moof`: first frame 5.8 s while a 2-minute file converts in 31–53 s. The handler returns 204 when no bytes are ready yet and 416 at the real end. A seek past the converted part clamps to the end of what's ready. Never block in a `WebResourceRequested` stream read: it freezes the UI thread. Native formats use a plain `<video src>` with ranges. FFmpeg can't write HEIC, so test fixtures come from elsewhere, and HEIC isn't natively displayable.
+- **S4:** `postMessageWithAdditionalObjects` gives `CoreWebView2File.Path` for a file input and for a synthetic drop's `dataTransfer.files`. A script-made `File` throws. A real Explorer drop is documented as the same mechanism but unverified, so the owner checks it by hand at PR C.
