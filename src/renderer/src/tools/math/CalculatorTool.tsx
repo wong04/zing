@@ -29,7 +29,7 @@ function preview(input: string, angle: AngleMode): Preview {
 	try {
 		return { kind: 'result', text: format(evaluate(input, angle)) }
 	} catch (error) {
-		if (error instanceof EvalError) return { kind: 'error', message: evalMessage(error, input) }
+		if (error instanceof EvalError) return { kind: 'error', message: evalMessage(error) }
 		throw error
 	}
 }

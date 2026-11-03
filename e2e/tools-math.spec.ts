@@ -31,10 +31,10 @@ test('an unbalanced expression shows its error and no result', async () => {
 	await zing.close()
 })
 
+/** Opens `menu` and returns the list. */
 async function choose(surface: Page, panel: Locator, menu: string, option: string): Promise<void> {
 	await panel.getByRole('button', { name: menu }).click()
-	// The list is fixed-positioned and can hang below the small test window, so click it without scrolling.
-	await surface.getByRole('option', { name: option, exact: true }).dispatchEvent('click')
+	await surface.getByRole('option', { name: option, exact: true }).click()
 }
 
 test('the unit converter turns 1 mi into km', async () => {
@@ -84,5 +84,24 @@ test('the graph draws x^2 and a wheel zoom changes the viewport', async () => {
 	await surface.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
 	await surface.mouse.wheel(0, -300)
 	await expect(label).not.toHaveText(before ?? '')
+	await zing.close()
+})
+
+test('a unit menu stays inside a small window, and a non-finite amount is refused', async () => {
+	const zing = await launchZing()
+	const { surface, panel } = await openTool(zing, 'Unit Converter')
+	await surface.setViewportSize({ width: 700, height: 420 })
+	await panel.getByRole('button', { name: 'From unit' }).click()
+	const list = surface.getByRole('listbox', { name: 'From unit' })
+	await expect(list).toBeVisible()
+	const box = await list.boundingBox()
+	const view = surface.viewportSize()
+	if (!box || !view) throw new Error('no geometry for the list')
+	expect(box.y).toBeGreaterThanOrEqual(0)
+	expect(box.y + box.height).toBeLessThanOrEqual(view.height)
+	await surface.keyboard.press('Escape')
+	await panel.getByRole('textbox', { name: 'Amount' }).fill('1e999')
+	await expect(panel.getByText('Enter a number to convert.')).toBeVisible()
+	await expect(panel.getByTestId('unit-result')).toHaveCount(0)
 	await zing.close()
 })

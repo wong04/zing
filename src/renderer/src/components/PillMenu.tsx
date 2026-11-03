@@ -11,11 +11,20 @@ export interface PillMenuProps<T extends SegmentValue> {
 
 interface Placement {
 	readonly left: number
-	readonly top: number
+	/** Set when the list opens downward; otherwise `bottom` is, and the list grows upward from the button. */
+	readonly top?: number
+	readonly bottom?: number
 	readonly minWidth: number
+	readonly maxHeight: number
 }
 
 const LIST_GAP = 4
+const LIST_MAX_HEIGHT = 280
+/** Kept between the list and the window edge. */
+const EDGE_MARGIN = 8
+/** Estimated, only to decide whether a short list fits below; the real height is the browser's. */
+const ROW_HEIGHT = 28
+const LIST_PADDING = 10
 
 /**
  * A dropdown drawn by hand (Krackn `PillMenu`): a recessed button that opens
@@ -44,7 +53,16 @@ export function PillMenu<T extends SegmentValue>({ options, value, onChange, 'ar
 	const show = (): void => {
 		const box = button.current?.getBoundingClientRect()
 		if (!box) return
-		setPlacement({ left: box.left, top: box.bottom + LIST_GAP, minWidth: box.width })
+		const below = window.innerHeight - box.bottom - LIST_GAP - EDGE_MARGIN
+		const above = box.top - LIST_GAP - EDGE_MARGIN
+		// Open downward unless the list would be cut short and there is more room above.
+		const up = below < Math.min(LIST_MAX_HEIGHT, options.length * ROW_HEIGHT + LIST_PADDING) && above > below
+		const maxHeight = Math.min(LIST_MAX_HEIGHT, up ? above : below)
+		setPlacement(
+			up
+				? { left: box.left, bottom: window.innerHeight - box.top + LIST_GAP, minWidth: box.width, maxHeight }
+				: { left: box.left, top: box.bottom + LIST_GAP, minWidth: box.width, maxHeight },
+		)
 		setActive(Math.max(selected, 0))
 	}
 	const close = (): void => {

@@ -68,7 +68,7 @@ function problemWith(text: string, angle: AngleMode): string | null {
 		evaluate(text, angle, { x: 1 })
 		return null
 	} catch (error) {
-		if (error instanceof EvalError) return evalMessage(error, text)
+		if (error instanceof EvalError) return evalMessage(error)
 		throw error
 	}
 }
@@ -316,6 +316,7 @@ export function GraphingTool() {
 		if (!el) return
 		const onWheel = (e: WheelEvent): void => {
 			e.preventDefault()
+			if (size.width === 0 || size.height === 0) return
 			const box = el.getBoundingClientRect()
 			const cursor = { x: e.clientX - box.left, y: e.clientY - box.top }
 			const factor = Math.pow(WHEEL_ZOOM_PER_PIXEL, e.deltaY)
@@ -331,6 +332,7 @@ export function GraphingTool() {
 	}
 
 	const selectNearest = (at: Point): void => {
+		if (size.width === 0 || size.height === 0) return
 		let best: { marker: Marker; distance: number } | null = null
 		for (const marker of markers) {
 			const distance = Math.hypot(screenX(marker.x, viewport, size) - at.x, screenY(marker.y, viewport, size) - at.y)
@@ -340,10 +342,12 @@ export function GraphingTool() {
 	}
 
 	const onPointerDown = (e: ReactPointerEvent<HTMLCanvasElement>): void => {
+		if (size.width === 0 || size.height === 0) return
 		e.currentTarget.setPointerCapture(e.pointerId)
 		drag.current = { start: local(e), origin: viewport, moved: false }
 	}
 	const onPointerMove = (e: ReactPointerEvent<HTMLCanvasElement>): void => {
+		if (size.width === 0 || size.height === 0) return
 		const at = local(e)
 		const d = drag.current
 		if (!d) {

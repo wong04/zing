@@ -23,7 +23,7 @@ function defaultPair(kind: UnitKind): { from: string; to: string } {
 function convert(amount: string, from: string, to: string, kind: UnitKind): string | null {
 	if (amount.trim() === '') return null
 	const value = Number(amount)
-	if (Number.isNaN(value)) return null
+	if (!Number.isFinite(value)) return null
 	const result = convertUnit(value, from, to, kind)
 	if (result === null) throw new UnitMismatchError(from, to, kind)
 	return `${formatUnitValue(result)} ${to}`

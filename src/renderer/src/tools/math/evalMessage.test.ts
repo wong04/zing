@@ -6,20 +6,20 @@ function messageFor(input: string): string {
 	try {
 		evaluate(input)
 	} catch (error) {
-		if (error instanceof EvalError) return evalMessage(error, input)
+		if (error instanceof EvalError) return evalMessage(error)
 		throw error
 	}
 	throw new Error(`${input} evaluated`)
 }
 
 describe('evalMessage', () => {
-	it('reports an unclosed bracket as unbalanced parentheses', () => {
-		expect(messageFor('sin(')).toBe('Unbalanced parentheses')
+	it.each([['sin('], ['(2+'], ['2*(3+(4']])('%s is unbalanced', (input) => {
+		expect(messageFor(input)).toBe('Unbalanced parentheses')
 	})
 	it('reports a dangling operator as incomplete', () => {
 		expect(messageFor('2+')).toBe('Incomplete expression')
 	})
-	it('keeps the parser message otherwise', () => {
-		expect(messageFor('foo(2)')).toBe("Unknown 'foo'")
+	it.each([['((2+)', "Unexpected ')'"], [')(2+', "Unexpected ')'"], ['foo(2)', "Unknown 'foo'"]])('%s -> %s', (input, message) => {
+		expect(messageFor(input)).toBe(message)
 	})
 })
