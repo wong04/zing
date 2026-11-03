@@ -341,11 +341,22 @@ export async function layers(chrome: Page): Promise<Layer[]> {
 }
 
 /** The colours the host gave Windows' caption buttons, as channels, and their height in DIPs. */
-export async function captionColours(chrome: Page): Promise<{ background: Channels | null; ink: Channels | null; height: number }> {
+export async function captionColours(chrome: Page): Promise<CaptionState> {
 	const file = join(await mkdtemp(join(tmpdir(), 'zing-caption-')), 'caption.json')
 	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'caption', file: path }), file)
 	await expect.poll(() => existsSync(file)).toBe(true)
-	return JSON.parse(readFileSync(file, 'utf8')) as { background: Channels | null; ink: Channels | null; height: number }
+	return JSON.parse(readFileSync(file, 'utf8')) as CaptionState
+}
+
+export interface CaptionState {
+	readonly background: Channels | null
+	readonly ink: Channels | null
+	readonly height: number
+	/** The buttons' size in pixels as Windows has it now, and as the window last left them out of the pass-through band. */
+	readonly buttonsHeight: number
+	readonly buttonsWidth: number
+	readonly passedBand: number
+	readonly passedButtons: number
 }
 
 export interface Channels {
