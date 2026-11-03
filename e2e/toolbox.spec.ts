@@ -122,7 +122,7 @@ test('an address that is not a web link is refused with a message', async () => 
 	await expect(surface.getByTestId('link-tile')).toHaveCount(6)
 	await zing.close()
 })
-
+
 test('a stored link that is not http or https shows an error and opens nothing', async () => {
 	const zing = await launchZing()
 	// settings.json can be edited by hand, so the tile checks the address again when it is clicked.
