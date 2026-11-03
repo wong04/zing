@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
 import type { AddressInfo } from 'node:net'
 import { closeSync, copyFileSync, existsSync, openSync, readFileSync } from 'node:fs'
@@ -272,6 +272,29 @@ function hostLogs(errors: string | undefined, userData: string): string {
 }
 
 const ENGINE_RELEASE_TIMEOUT = 30_000
+const SLOW_RELEASE = 2_000
+
+/** A release that took long but succeeded still shows how close CI runs to the limit. */
+function reportSlowRelease(started: number): void {
+	const took = Date.now() - started
+	if (took > SLOW_RELEASE) process.stderr.write(`The WebView2 engine took ${took} ms to release its profile.
+`)
+}
+
+/**
+ * Every process that still has this profile as its --user-data-dir, with its parent and age, so a
+ * stalled release shows what is alive (a browser process, a crashpad handler, a leftover renderer) and who owns it.
+ */
+function engineProcesses(userData: string): string {
+	const script = `$d = '${userData.replaceAll("'", "''")}'; Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($d) } | Sort-Object CreationDate | ForEach-Object { '{0} parent={1} started={2:HH:mm:ss.fff} {3}' -f $_.ProcessId, $_.ParentProcessId, $_.CreationDate, $_.CommandLine.Substring(0, [Math]::Min(220, $_.CommandLine.Length)) }`
+	try {
+		const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 20_000 }).trim()
+		return out.length > 0 ? `Processes using ${userData}:
+${out}` : `No process has ${userData} on its command line.`
+	} catch (error) {
+		return `Could not list the engine's processes: ${(error as Error).message}`
+	}
+}
 
 /**
  * The engine's processes outlive Zing.exe for a moment and keep the profile locked; a test that
@@ -279,16 +302,19 @@ const ENGINE_RELEASE_TIMEOUT = 30_000
  */
 async function engineReleased(userData: string): Promise<void> {
 	const lockfile = join(userData, 'WebView2', 'EBWebView', 'lockfile')
-	const deadline = Date.now() + ENGINE_RELEASE_TIMEOUT
+	const started = Date.now()
+	const deadline = started + ENGINE_RELEASE_TIMEOUT
 	for (;;) {
 		try {
 			closeSync(openSync(lockfile, 'r+'))
+			reportSlowRelease(started)
 			return
 		} catch (error) {
 			const code = (error as NodeJS.ErrnoException).code
-			if (code === 'ENOENT') return
+			if (code === 'ENOENT') return reportSlowRelease(started)
 			if (code !== 'EBUSY' && code !== 'EPERM') throw error
-			if (Date.now() > deadline) throw new HostProcessError(`The WebView2 engine still holds ${lockfile} ${ENGINE_RELEASE_TIMEOUT / 1000} s after Zing quit`)
+			if (Date.now() > deadline) throw new HostProcessError(`The WebView2 engine still holds ${lockfile} ${ENGINE_RELEASE_TIMEOUT / 1000} s after Zing quit
+${engineProcesses(userData)}`)
 			await new Promise((resolve) => setTimeout(resolve, 100))
 		}
 	}
