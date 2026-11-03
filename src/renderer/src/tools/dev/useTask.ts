@@ -26,7 +26,14 @@ export function useTask<Request extends object, Result>(
 	useEffect(() => {
 		if (request === null) return
 		const abort = new AbortController()
-		run(request, abort.signal).then(
+		// `run` may throw before it has a promise (a worker that can't be created); that is a failure to show, not a crash.
+		let pending: Promise<Result>
+		try {
+			pending = run(request, abort.signal)
+		} catch (error) {
+			pending = Promise.reject(error)
+		}
+		pending.then(
 			(value) => {
 				if (!abort.signal.aborted) setSettled({ request, outcome: { kind: 'done', value } })
 			},

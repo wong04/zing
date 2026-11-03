@@ -31,7 +31,7 @@ public static class PanelSection
 public static class PanelTool
 {
 	public const string Tools = "Engines";
-	public const string Json = "JSON / YAML";
+	public const string Json = "JSON";
 	public const string Base64 = "Base64";
 	public const string UrlCode = "URL Encoding";
 	public const string NumberBase = "Number Bases";

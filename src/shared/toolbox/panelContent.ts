@@ -24,7 +24,7 @@ export type Section = (typeof Section)[keyof typeof Section]
 /** Single tools, titled as the Toolbox shows them. */
 export const UtilityTool = {
 	tools: 'Engines',
-	json: 'JSON / YAML',
+	json: 'JSON',
 	base64: 'Base64',
 	urlCode: 'URL Encoding',
 	numberBase: 'Number Bases',

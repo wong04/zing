@@ -36,6 +36,7 @@ export function runInWorker<Request, Reply>(worker: Worker, request: Request, si
 		signal.addEventListener('abort', onAbort)
 		worker.onmessage = (event: MessageEvent<Reply>) => finish(() => resolve(event.data))
 		worker.onerror = (event) => finish(() => reject(new WorkerFailedError(event.message || 'The worker stopped unexpectedly')))
+		worker.onmessageerror = () => finish(() => reject(new WorkerFailedError('The worker answered with something that could not be read')))
 		worker.postMessage(request)
 	})
 }

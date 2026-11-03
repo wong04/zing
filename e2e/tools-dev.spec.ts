@@ -23,7 +23,7 @@ const base64url = (text: string): string => Buffer.from(text).toString('base64ur
 
 test('JSON formats {"a":1} and a bad document shows the line of the error', async () => {
 	const zing = await launchZing()
-	const { panel } = await openTool(zing, 'JSON / YAML')
+	const { panel } = await openTool(zing, 'JSON')
 	await panel.getByRole('textbox', { name: 'JSON input' }).fill('{"a":1}')
 	await expect(panel.getByRole('textbox', { name: 'JSON output' })).toHaveValue('{\n  "a": 1\n}')
 	await panel.getByRole('textbox', { name: 'JSON input' }).fill('{\n\t"a": 1,\n\t"b": }')
@@ -84,6 +84,8 @@ test('a JWT decodes its payload', async () => {
 	await panel.getByRole('textbox', { name: 'JWT' }).fill(token)
 	await expect(result(panel, 'Payload')).toContainText('"name": "Ada"')
 	await expect(result(panel, 'Header')).toContainText('"alg": "HS256"')
+	await expect(panel.getByText('Not verified: this only decodes the token')).toBeVisible()
+	await expect(result(panel, 'Signature (not checked)')).toContainText('c2ln')
 	await zing.close()
 })
 
@@ -111,28 +113,54 @@ test('a catastrophic regex gives up after 2 seconds and the tool still responds'
 	await zing.close()
 })
 
-test('a 5 MB JSON paste does not stop the chrome answering getTabs', async () => {
+test('a 5 MB JSON paste keeps the tool and the chrome responsive', async () => {
 	const zing = await launchZing()
-	const { surface, panel } = await openTool(zing, 'JSON / YAML')
-	const row = JSON.stringify({ id: 1234567, name: 'row of padding text', tags: ['alpha', 'beta', 'gamma'], nested: { ok: true, value: 3.14159 } })
-	const big = '[' + Array.from({ length: Math.ceil((5 * 1024 * 1024) / (row.length + 1)) }, () => row).join(',') + ']'
+	const { panel } = await openTool(zing, 'JSON')
+	// One object of 330,000 keys in reverse order: sorting them is the expensive part (~0.75 s of work), while the
+	// formatted text stays about the same size as the paste, so the cost measured is formatting and not display.
+	const keys = 330_000
+	const big = '{' + Array.from({ length: keys }, (_, i) => `"k${String(keys - i).padStart(6, '0')}":${i}`).join(',') + '}'
 	expect(big.length).toBeGreaterThan(5 * 1024 * 1024)
 
-	const input = panel.getByRole('textbox', { name: 'JSON input' })
-	const pasted = input.fill(big)
-	const slowest = { chrome: 0, surface: 0 }
+	// A timer in the tool's own page, ticking every 20 ms. While the tool says it is formatting, every tick that
+	// arrives is proof the page was free to run; the longest gap between those ticks is how long it was ever stuck.
+	// Formatting on the main thread would give no such ticks at all: the page is blocked until the result is ready.
+	const surface = panel.page()
+	await expect(panel.getByRole('textbox', { name: 'JSON output' })).toBeVisible()
+	await surface.evaluate(() => {
+		const output = document.querySelector<HTMLTextAreaElement>('textarea[readonly]')
+		if (!output) throw new Error('no output box')
+		const beat = { formattingTicks: 0, longestGap: 0 }
+		let previous: number | null = null
+		Object.assign(globalThis, { beat })
+		const timer = setInterval(() => {
+			const now = performance.now()
+			if (output.value !== '') {
+				clearInterval(timer)
+				return
+			}
+			const formatting = (document.body.textContent ?? '').includes('Formatting a large document')
+			if (formatting && previous !== null) beat.longestGap = Math.max(beat.longestGap, now - previous)
+			if (formatting) beat.formattingTicks++
+			previous = formatting ? now : null
+		}, 20)
+	})
+
+	const pasted = panel.getByRole('textbox', { name: 'JSON input' }).fill(big)
+	let slowestChrome = 0
 	for (let i = 0; i < 8; i++) {
-		const chromeStart = Date.now()
+		const started = Date.now()
 		await zing.chrome.evaluate(() => window.zing.getTabs())
-		slowest.chrome = Math.max(slowest.chrome, Date.now() - chromeStart)
-		const surfaceStart = Date.now()
-		await surface.evaluate(() => 1)
-		slowest.surface = Math.max(slowest.surface, Date.now() - surfaceStart)
+		slowestChrome = Math.max(slowestChrome, Date.now() - started)
 	}
 	await pasted
-	expect(slowest.chrome).toBeLessThan(1000)
 	await expect(panel.getByRole('textbox', { name: 'JSON output' })).not.toHaveValue('', { timeout: 30_000 })
 	await expect(panel.getByRole('alert')).toHaveCount(0)
+
+	const beat = await surface.evaluate(() => (globalThis as unknown as { beat: { formattingTicks: number; longestGap: number } }).beat)
+	expect(slowestChrome).toBeLessThan(1000)
+	expect(beat.formattingTicks).toBeGreaterThan(10)
+	expect(beat.longestGap).toBeLessThan(500)
 	await zing.close()
 })
 

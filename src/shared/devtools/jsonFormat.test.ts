@@ -23,4 +23,12 @@ describe('formatJSON', () => {
 	it('reports a missing value after a colon', () => {
 		expect(formatJSON('{\n\t"a": 1,\n\t"b": }', 'pretty')).toMatchObject({ ok: false, line: 3 })
 	})
+	it('locates an error under 200,000 levels of nesting without overflowing the stack', () => {
+		const text = '['.repeat(200_000) + '\n}'
+		expect(formatJSON(text, 'pretty')).toMatchObject({ ok: false, line: 2 })
+	})
+	it('locates an error after a deep but valid prefix', () => {
+		const text = '['.repeat(1000) + ']'.repeat(1000) + '\n]'
+		expect(formatJSON(text, 'pretty')).toMatchObject({ ok: false, line: 2 })
+	})
 })

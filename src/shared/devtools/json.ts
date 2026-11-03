@@ -63,53 +63,73 @@ const string = /"(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"/y
 const whitespace = /[ \t\n\r]*/y
 const literal = /true|false|null/y
 
-/** Where the strict JSON grammar first stops accepting `text`: the offset of the bad character, or its length if it ends too soon. */
+/**
+ * Where the strict JSON grammar first stops accepting `text`: the offset of the bad character, or its
+ * length if it ends too soon. Iterative with its own stack, so a deeply nested document can't overflow the call stack.
+ */
 function firstBadOffset(text: string): number {
 	const at = (pattern: RegExp, from: number): number => {
 		pattern.lastIndex = from
 		return pattern.test(text) ? pattern.lastIndex : -1
 	}
-	const skip = (from: number): number => at(whitespace, from)
-	// Returns the offset just past the value, or -(offset of the bad character) - 1.
-	const value = (from: number): number => {
-		const start = skip(from)
-		const char = text[start]
-		if (char === '{') return members(start + 1)
-		if (char === '[') return elements(start + 1)
-		const end = char === '"' ? at(string, start) : at(char === 't' || char === 'f' || char === 'n' ? literal : number, start)
-		return end < 0 ? -start - 1 : end
+	const scalarEnd = (from: number): number => {
+		const char = text[from]
+		if (char === '"') return at(string, from)
+		return at(char === 't' || char === 'f' || char === 'n' ? literal : number, from)
 	}
-	const members = (from: number): number => {
-		let position = skip(from)
-		if (text[position] === '}') return position + 1
-		for (;;) {
+	// What the next token must be: a value, a key, or (after a value) a comma or the container's close.
+	type Expect = 'value' | 'valueOrClose' | 'keyOrClose' | 'key' | 'after'
+	const open: string[] = []
+	let expect: Expect = 'value'
+	let position = 0
+	for (;;) {
+		position = at(whitespace, position)
+		const char = text[position]
+		if (expect === 'after') {
+			const container = open.at(-1)
+			if (container === undefined) return position
+			if (char === ',') {
+				expect = container === '{' ? 'key' : 'value'
+			} else if (char === (container === '{' ? '}' : ']')) {
+				open.pop()
+			} else {
+				return position
+			}
+			position++
+			continue
+		}
+		if (expect === 'key' || expect === 'keyOrClose') {
+			if (expect === 'keyOrClose' && char === '}') {
+				open.pop()
+				position++
+				expect = 'after'
+				continue
+			}
 			const keyEnd = at(string, position)
-			if (keyEnd < 0) return -position - 1
-			const colon = skip(keyEnd)
-			if (text[colon] !== ':') return -colon - 1
-			const end = value(colon + 1)
-			if (end < 0) return end
-			const next = skip(end)
-			if (text[next] === '}') return next + 1
-			if (text[next] !== ',') return -next - 1
-			position = skip(next + 1)
+			if (keyEnd < 0) return position
+			const colon = at(whitespace, keyEnd)
+			if (text[colon] !== ':') return colon
+			position = colon + 1
+			expect = 'value'
+			continue
 		}
-	}
-	const elements = (from: number): number => {
-		let position = skip(from)
-		if (text[position] === ']') return position + 1
-		for (;;) {
-			const end = value(position)
-			if (end < 0) return end
-			const next = skip(end)
-			if (text[next] === ']') return next + 1
-			if (text[next] !== ',') return -next - 1
-			position = skip(next + 1)
+		if (expect === 'valueOrClose' && char === ']') {
+			open.pop()
+			position++
+			expect = 'after'
+			continue
 		}
+		if (char === '{' || char === '[') {
+			open.push(char)
+			position++
+			expect = char === '{' ? 'keyOrClose' : 'valueOrClose'
+			continue
+		}
+		const end = scalarEnd(position)
+		if (end < 0) return position
+		position = end
+		expect = 'after'
 	}
-	const end = value(0)
-	if (end < 0) return -end - 1
-	return skip(end)
 }
 
 // Written out rather than `JSON.stringify(sorted, null, 2)`: a JS object always

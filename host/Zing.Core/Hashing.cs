@@ -35,7 +35,7 @@ public static class Hashing
 		await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true);
 		var buffer = new byte[1 << 16];
 		int read;
-		while ((read = await stream.ReadAsync(buffer)) > 0) hash.AppendData(buffer, 0, read);
+		while ((read = await stream.ReadAsync(buffer).ConfigureAwait(false)) > 0) hash.AppendData(buffer, 0, read);
 		return Convert.ToHexStringLower(hash.GetHashAndReset());
 	}
 

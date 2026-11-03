@@ -20,7 +20,7 @@ const order = [
 	'tool:Hashes',
 	'tool:HMAC',
 	'tool:JWT Decoder',
-	'tool:JSON / YAML',
+	'tool:JSON',
 	'tool:Base64',
 	'tool:URL Encoding',
 	'tool:Regex Tester',
@@ -75,8 +75,7 @@ describe('what people type finds the right thing first', () => {
 		['colour', 'Color Converter'],
 		['rgb', 'Color Converter'],
 		['remove background', 'Background Remover'],
-		['json', 'JSON / YAML'],
-		['yaml', 'JSON / YAML'],
+		['json', 'JSON'],
 		['plot', 'Graphing Calculator'],
 		['graph', 'Graphing Calculator'],
 		['calc', 'Scientific Calculator'],
@@ -92,8 +91,8 @@ describe('what people type finds the right thing first', () => {
 		['pdf', 'Files'],
 		['qr', 'QR Code'],
 	]
-	it('has all 32 real queries', () => {
-		expect(cases).toHaveLength(32)
+	it('has all 31 real queries', () => {
+		expect(cases).toHaveLength(31)
 	})
 	it.each(cases)('"%s" → %s', (query, want) => {
 		expect(top(query)).toBe(want)
