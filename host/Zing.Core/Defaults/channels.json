@@ -73,6 +73,18 @@
 			"args": 0
 		},
 		{
+			"channel": "dns:apply",
+			"args": 1
+		},
+		{
+			"channel": "dns:preview",
+			"args": 0
+		},
+		{
+			"channel": "dns:undo",
+			"args": 1
+		},
+		{
 			"channel": "downloads:cancel",
 			"args": 1
 		},

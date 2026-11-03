@@ -5,6 +5,7 @@ import type { TabId, TabRecord } from './model/tab'
 import type { TabOrganization } from './browser/tabOrganizer'
 import type { Settings, SettingKey } from './settings'
 import type { DiagnosticReport } from './unblock/blockDiagnostics'
+import type { DnsOutcome, DnsPreview } from './unblock/dnsSetup'
 import type { RelayAttemptEvent, RelayOpenResult } from './unblock/relayOpen'
 import type {
 	AccountOutcome,
@@ -282,6 +283,18 @@ export interface InvokeContract {
 	/** Runs the Diagnose ladder for a site name (or a pasted address) with the DoH provider chosen in Settings. Resolver failures are part of the report; a name that isn't a site is an error. */
 	'net:diagnose': { args: [host: string]; result: DiagnosticReport }
 	/**
+	 * The script that sets up encrypted DNS for this PC with the provider chosen in Settings, or, once it has been set up, the script that undoes it.
+	 * Reads the adapters; changes nothing and asks for nothing.
+	 */
+	'dns:preview': { args: []; result: DnsPreview }
+	/**
+	 * Runs the Apply script a preview showed, as administrator. `token` names that script: the host builds the script itself and, if it is
+	 * not the one shown (the adapters changed), runs nothing and answers 'changed' with the new one. The renderer never sends script text.
+	 */
+	'dns:apply': { args: [token: string]; result: DnsOutcome }
+	/** Runs the Undo script a preview showed, from the settings saved before Apply. Same `token` rule. */
+	'dns:undo': { args: [token: string]; result: DnsOutcome }
+	/**
 	 * Tries direct, DoH with IP pinning, the reader relay and the Wayback archive in order, pushing `relay:attempt` for each step
 	 * with `runId`, which the caller chooses so overlapping runs can be told apart. The reader relay and the archive wait for the
 	 * session's consent (`needsConsent`). Rejects when every method fails, when what was typed is not an address, and after 3 minutes.
@@ -409,6 +422,9 @@ export interface ZingApi {
 	hashFile(path: string, algorithm: string): Promise<string>
 	hmac(message: string, key: string, algorithm: string): Promise<string>
 	diagnose(host: string): Promise<DiagnosticReport>
+	previewDns(): Promise<DnsPreview>
+	applyDns(token: string): Promise<DnsOutcome>
+	undoDns(token: string): Promise<DnsOutcome>
 	openLink(input: string, runId: string): Promise<RelayOpenResult>
 	allowRelayThirdParties(): Promise<void>
 	openRelayedTab(url: string): Promise<void>

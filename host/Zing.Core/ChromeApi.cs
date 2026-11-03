@@ -60,8 +60,9 @@ public interface IWindowHost
 /// <param name="SiteData">Purges a site when its last tab closes; null with a persistent profile.</param>
 /// <param name="BrowsingData">Settings' Clear browsing session; null where the host has no engine to clear.</param>
 /// <param name="Net">The network checks Diagnose makes; null uses the real ones, a test passes fakes.</param>
+/// <param name="Dns">Encrypted DNS for the whole PC (Network &amp; VPN); null where the host can't change DNS.</param>
 /// <param name="Consent">Whether third parties may be asked to open a link, for the session and every window. One per app: required, so a window cannot end up with its own.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null)
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -237,6 +238,9 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("hash:file", args => HashFileAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("hash:hmac", args => Hashing.Hmac(Text(args, 0), Text(args, 1), Text(args, 2)));
 		bridge.Register("net:diagnose", args => DiagnoseAsync(Text(args, 0)));
+		bridge.Register("dns:preview", async _ => await DnsSetup().PreviewAsync(Setting("dohProvider")));
+		bridge.Register("dns:apply", async args => await DnsSetup().ApplyAsync(Setting("dohProvider"), Text(args, 0)));
+		bridge.Register("dns:undo", async args => await DnsSetup().UndoAsync(Text(args, 0)));
 		bridge.Register("relay:open", args => OpenLinkAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("relay:allow-third-parties", _ => Do(_consent.Allow));
 		bridge.Register("tabs:open-relayed", args => Do(() => OpenRelayedTab(Text(args, 0))));
@@ -463,6 +467,8 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	private static async Task<object?> HashFileAsync(string path, string algorithm) => await Hashing.FileAsync(path, algorithm);
+
+	private DnsService DnsSetup() => _app.Dns ?? throw new InvalidOperationException("This host can't change DNS");
 
 	private async Task<object?> DiagnoseAsync(string host)
 	{
