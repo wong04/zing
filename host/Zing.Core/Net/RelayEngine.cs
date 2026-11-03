@@ -115,14 +115,25 @@ public sealed class RelayEngine(
 
 	private sealed record Fetched(byte[] Body, string? ContentType, bool IsHtml, Uri FinalUrl);
 
-	public async Task<RelayResult> OpenAsync(string input, RelayConsent consent, CancellationToken ct)
+	public Task<RelayResult> OpenAsync(string input, RelayConsent consent, CancellationToken ct) =>
+		RunAsync(RelayRules.Normalize(input), consent, RelayStrategies.InOrder, ct);
+
+	/// <summary>
+	/// A file a relayed page asks for (style, script, image). The reader relay is left out: it answers with a text rendering,
+	/// not the file. Consent and the own-network rule apply as for a page.
+	/// </summary>
+	public Task<RelayResult> OpenResourceAsync(Uri url, RelayConsent consent, CancellationToken ct) =>
+		RunAsync(RelayRules.Normalize(url.AbsoluteUri), consent, ResourceStrategies, ct);
+
+	private static readonly IReadOnlyList<RelayStrategy> ResourceStrategies = [.. RelayStrategies.InOrder.Where(s => s != RelayStrategy.ReaderRelay)];
+
+	private async Task<RelayResult> RunAsync(Uri url, RelayConsent consent, IReadOnlyList<RelayStrategy> strategies, CancellationToken ct)
 	{
-		var url = RelayRules.Normalize(input);
 		using var overall = CancellationTokenSource.CreateLinkedTokenSource(ct);
 		overall.CancelAfter(_deadline);
 		try
 		{
-			return await TryEachAsync(url, consent, overall.Token);
+			return await TryEachAsync(url, consent, strategies, overall.Token);
 		}
 		catch (OperationCanceledException) when (!ct.IsCancellationRequested)
 		{
@@ -130,7 +141,7 @@ public sealed class RelayEngine(
 		}
 	}
 
-	private async Task<RelayResult> TryEachAsync(Uri url, RelayConsent consent, CancellationToken run)
+	private async Task<RelayResult> TryEachAsync(Uri url, RelayConsent consent, IReadOnlyList<RelayStrategy> strategies, CancellationToken run)
 	{
 		var attempts = new List<RelayAttempt>();
 		void Report(RelayAttempt attempt)
@@ -141,7 +152,7 @@ public sealed class RelayEngine(
 
 		var ownNetwork = RelayRules.IsPrivateHost(url);
 		var skipped = false;
-		foreach (var strategy in RelayStrategies.InOrder)
+		foreach (var strategy in strategies)
 		{
 			// Checked first: a yes would not help, because such an address is never sent.
 			if (RelayStrategies.NeedsConsent(strategy) && ownNetwork)

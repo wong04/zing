@@ -439,4 +439,40 @@ public sealed class RelayEngineTests
 		foreach (var answer in vectors.GetProperty("waybackEmpty").EnumerateArray())
 			Assert.Throws<EmptyBodyError>(() => RelayRules.WaybackSnapshot(answer));
 	}
+
+	[Fact]
+	public async Task A_resource_never_goes_to_the_reader_relay_which_answers_with_text()
+	{
+		var transport = new FakeTransport();
+		var (engine, _) = EngineFor(transport);
+		await Assert.ThrowsAsync<AllStrategiesFailedError>(() => engine.OpenResourceAsync(new Uri("https://example.com/a.css"), Allowed(), CancellationToken.None));
+		Assert.DoesNotContain(transport.Calls, c => IsRelay(c.Request));
+	}
+
+	[Fact]
+	public async Task A_resource_reaches_the_archive_only_with_consent()
+	{
+		var transport = new FakeTransport();
+		var (engine, seen) = EngineFor(transport);
+		var result = await engine.OpenResourceAsync(new Uri("https://example.com/a.css"), new RelayConsent(), CancellationToken.None);
+		Assert.Equal(RelayOutcome.NeedsConsent, result.Outcome);
+		Assert.DoesNotContain(transport.Calls, c => IsArchive(c.Request));
+		Assert.Contains("Wayback:Skipped", Describe(seen));
+	}
+
+	[Fact]
+	public async Task A_resource_on_the_own_network_never_reaches_a_third_party_even_with_consent()
+	{
+		var transport = new FakeTransport();
+		var (engine, _) = EngineFor(transport);
+		await Assert.ThrowsAsync<AllStrategiesFailedError>(() => engine.OpenResourceAsync(new Uri("https://intranet/a.css"), Allowed(), CancellationToken.None));
+		Assert.DoesNotContain(transport.Calls, c => IsArchive(c.Request) || IsRelay(c.Request));
+	}
+
+	[Fact]
+	public async Task A_resource_address_with_credentials_is_refused()
+	{
+		var (engine, _) = EngineFor(new FakeTransport());
+		await Assert.ThrowsAsync<CredentialsInURLError>(() => engine.OpenResourceAsync(new Uri("https://u:p@example.com/a.css"), Allowed(), CancellationToken.None));
+	}
 }
