@@ -122,3 +122,14 @@ test('an address that is not a web link is refused with a message', async () => 
 	await expect(surface.getByTestId('link-tile')).toHaveCount(6)
 	await zing.close()
 })
+
+test('a link with an AI tag loses it on navigation', async () => {
+	const zing = await launchZing()
+	await expect(zing.chrome.locator('[role="tab"]')).toHaveCount(1)
+	const { activeId } = await zing.chrome.evaluate(() => window.zing.getTabs())
+	await zing.chrome.evaluate(([id, url]) => window.zing.navigateTab(id!, url!), [activeId, `${base}/tagged?utm_source=chatgpt.com`])
+	await expect
+		.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.find((t) => t.id === activeId)?.url)
+		.toBe(`${base}/tagged`)
+	await zing.close()
+})
