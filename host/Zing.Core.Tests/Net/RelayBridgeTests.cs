@@ -27,7 +27,7 @@ public sealed class RelayBridgeTests : IDisposable
 	public RelayBridgeTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		var app = new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), Net: new NetServices(new NoProbes(), new NoDoh(), _transport), Consent: _consent);
+		var app = new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), _consent, Net: new NetServices(new NoProbes(), new NoDoh(), _transport));
 		_api = new ChromeApi(_bridge, app, _host, "test");
 	}
 

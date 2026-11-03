@@ -11,7 +11,7 @@ public sealed class CommandsTests : IDisposable
 	public CommandsTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(new Bridge(), new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), _host, "test");
+		_api = new ChromeApi(new Bridge(), new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent()), _host, "test");
 		_api.Start([], "https://example.com/");
 	}
 
@@ -80,7 +80,7 @@ public sealed class FindTests : IDisposable
 	public FindTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(new Bridge(), new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), _host, "test");
+		_api = new ChromeApi(new Bridge(), new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent()), _host, "test");
 		_api.Start([], "https://example.com/");
 	}
 
@@ -122,7 +122,7 @@ public sealed class StackDropdownTests : IDisposable
 	public StackDropdownTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(new Bridge(), new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), _host, "test");
+		_api = new ChromeApi(new Bridge(), new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent()), _host, "test");
 		_api.Start([], "https://news.example/a");
 		_api.Tabs.Open("https://news.example/b");
 		_api.Tabs.Open("https://other.test/");
@@ -172,7 +172,7 @@ public sealed class AccountGateTests
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
 		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-account-").FullName, new FakeCipher());
 		var bridge = new Bridge();
-		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), account), host, "test");
+		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), account, new Zing.Core.Net.RelayConsent()), host, "test");
 		api.Start([], "about:blank");
 		Assert.NotNull(host.SurfaceRegions[^1]);
 		await bridge.HandleAsync(System.Text.Json.JsonSerializer.Serialize(new { kind = "invoke", id = 1, channel = "account:continue-as-guest", args = Array.Empty<object>() }));
@@ -192,7 +192,7 @@ public sealed class PageUiHeightTests
 		public HeightHost()
 		{
 			var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-			Api = new ChromeApi(Bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), Host, "test");
+			Api = new ChromeApi(Bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent()), Host, "test");
 		}
 
 		public void Dispose() => Api.Dispose();

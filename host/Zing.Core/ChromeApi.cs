@@ -54,8 +54,8 @@ public interface IWindowHost
 /// <param name="SiteData">Purges a site when its last tab closes; null with a persistent profile.</param>
 /// <param name="BrowsingData">Settings' Clear browsing session; null where the host has no engine to clear.</param>
 /// <param name="Net">The network checks Diagnose makes; null uses the real ones, a test passes fakes.</param>
-/// <param name="Consent">Whether third parties may be asked to open a link, for the session and every window; null makes each window ask on its own.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, RelayConsent? Consent = null)
+/// <param name="Consent">Whether third parties may be asked to open a link, for the session and every window. One per app: required, so a window cannot end up with its own.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -111,7 +111,7 @@ public sealed class ChromeApi : IDisposable
 	public ChromeApi(Bridge bridge, AppServices app, IWindowHost host, string appVersion)
 	{
 		_app = app;
-		_consent = app.Consent ?? new RelayConsent();
+		_consent = app.Consent;
 		_host = host;
 		_appVersion = appVersion;
 		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, (tab, description) => host.Notify($"Couldn't load {tab.Url} ({description})"), InterceptNavigation, app.SiteData);

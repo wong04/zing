@@ -32,7 +32,7 @@ public sealed class NetBridgeTests : IDisposable
 	public NetBridgeTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), Net: new NetServices(new Probes(), _doh)), new FakeWindowHost(), "test");
+		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent(), Net: new NetServices(new Probes(), _doh)), new FakeWindowHost(), "test");
 	}
 
 	public void Dispose() => _api.Dispose();

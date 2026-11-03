@@ -15,7 +15,7 @@ public sealed class ChromeApiTests : IDisposable
 	public ChromeApiTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _saved.Add, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), BrowsingData: _browsingData), _host, "test");
+		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent(), BrowsingData: _browsingData), _host, "test");
 		_api.Start([], "about:blank");
 	}
 
@@ -62,7 +62,7 @@ public sealed class ChromeApiTests : IDisposable
 	{
 		var bridge = new Bridge();
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), new FakeWindowHost(), "test");
+		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent()), new FakeWindowHost(), "test");
 		var json = JsonSerializer.Serialize(new { kind = "invoke", id = 1, channel = "shell:clear-session", args = Array.Empty<object>() });
 		Assert.Equal(nameof(InvalidOperationException), ErrorName(JsonDocument.Parse(await bridge.HandleAsync(json)).RootElement));
 	}
