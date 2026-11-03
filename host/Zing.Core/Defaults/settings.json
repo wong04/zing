@@ -38,5 +38,31 @@
 		"enabled": true,
 		"afterMinutes": 30,
 		"sleepPinned": false
-	}
+	},
+	"toolLinks": [
+		{
+			"title": "Desmos",
+			"url": "https://www.desmos.com/calculator"
+		},
+		{
+			"title": "Figma",
+			"url": "https://www.figma.com/"
+		},
+		{
+			"title": "Notion",
+			"url": "https://www.notion.so/"
+		},
+		{
+			"title": "ChatGPT",
+			"url": "https://chatgpt.com/"
+		},
+		{
+			"title": "Claude",
+			"url": "https://claude.ai/"
+		},
+		{
+			"title": "Gemini",
+			"url": "https://gemini.google.com/"
+		}
+	]
 }

@@ -21,10 +21,11 @@ public static class PanelSection
 	public const string Unblock = "Open a Link";
 	public const string Diagnose = "Diagnose";
 	public const string Network = "Network & VPN";
+	public const string Links = "Links";
 	public const string Settings = "Settings";
 
 	public static readonly IReadOnlyList<string> All =
-		[Browser, Viewer, Convert, Utilities, Download, Unblock, Diagnose, Network, Settings];
+		[Browser, Viewer, Convert, Utilities, Download, Unblock, Diagnose, Network, Links, Settings];
 }
 
 /// <summary>Single tools, titled as the Toolbox shows them.</summary>

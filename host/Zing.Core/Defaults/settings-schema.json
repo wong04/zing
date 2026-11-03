@@ -170,5 +170,8 @@
 		"type": "sleep",
 		"min": 1,
 		"max": 10080
+	},
+	"toolLinks": {
+		"type": "linkList"
 	}
 }

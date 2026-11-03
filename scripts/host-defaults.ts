@@ -29,7 +29,7 @@ export type SettingRule =
 	| { readonly type: 'enum'; readonly values: readonly string[] }
 	| { readonly type: 'flag' }
 	| { readonly type: 'number' | 'integer'; readonly min: number; readonly max: number }
-	| { readonly type: 'text' | 'textList' | 'startShortcuts' }
+	| { readonly type: 'text' | 'textList' | 'startShortcuts' | 'linkList' }
 	| { readonly type: 'hexColor' }
 	| { readonly type: 'sleep'; readonly min: number; readonly max: number }
 
@@ -80,6 +80,7 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	verticalTabWidth: range('integer', VERTICAL_TABS.minWidth, VERTICAL_TABS.maxWidth),
 	verticalTabsCollapsed: flag,
 	sleepingTabs: { type: 'sleep', min: MIN_SLEEP_MINUTES, max: MAX_SLEEP_MINUTES },
+	toolLinks: { type: 'linkList' },
 }
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -108,6 +109,8 @@ export function ruleAccepts(rule: SettingRule, value: unknown): boolean {
 				value === null ||
 				(Array.isArray(value) && value.every((s) => isPlainObject(s) && typeof s.title === 'string' && typeof s.url === 'string'))
 			)
+		case 'linkList':
+			return Array.isArray(value) && value.every((s) => isPlainObject(s) && typeof s.title === 'string' && typeof s.url === 'string')
 		case 'sleep': {
 			if (!isPlainObject(value) || Object.keys(value).length !== 3) return false
 			return typeof value.enabled === 'boolean' && typeof value.sleepPinned === 'boolean' && isFiniteIn(value.afterMinutes, rule.min, rule.max)
