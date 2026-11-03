@@ -76,6 +76,16 @@ test('Enter on Close, reached by Tab from a search, closes the sheet and opens n
 	await zing.close()
 })
 
+test('a tool opened from a search has its first field focused', async () => {
+	const zing = await launchZing()
+	const surface = await openToolbox(zing)
+	await surface.getByRole('searchbox', { name: 'Search tools' }).fill('sha')
+	await expect(surface.getByTestId('toolbox-result').first()).toHaveText(/Hashes/)
+	await surface.keyboard.press('Enter')
+	await expect(surface.getByRole('textbox', { name: 'Text to hash' })).toBeFocused()
+	await zing.close()
+})
+
 test('opening a tool records it in recents', async () => {
 	const zing = await launchZing()
 	const surface = await openToolbox(zing)

@@ -33,6 +33,8 @@ test('clicking a field in a background panel keeps its focus, scroll and node', 
 	const back = await openTool(zing, 'Hashes')
 	const front = await openToolDirect(zing, back.surface, 'tool:HMAC', 'HMAC', 1500)
 	await expect(front).toHaveClass(/front/)
+	// A panel focuses its first field as it opens; wait for that, so it cannot land in the middle of the check.
+	await expect(front.getByRole('textbox', { name: 'Secret key' })).toBeFocused()
 	const field = back.panel.getByRole('textbox', { name: 'Text to hash' })
 	await field.fill(Array.from({ length: 80 }, (_, i) => `line ${i}`).join('\n'))
 	// React restores focus after it moves a node, so focus alone survives the bug: the node being re-inserted shows
