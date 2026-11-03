@@ -63,12 +63,14 @@ export function ToolboxSheet() {
 	}, [])
 
 	const close = (): void => void zing.closeToolbox()
-	const onKeyDown = (e: KeyboardEvent): void => {
-		if (e.key === 'Escape') {
-			e.preventDefault()
-			close()
-			return
-		}
+	// Escape works from anywhere in the sheet, so it lives on the backdrop.
+	const onSheetKeyDown = (e: KeyboardEvent): void => {
+		if (e.key !== 'Escape') return
+		e.preventDefault()
+		close()
+	}
+	// Arrows and Enter belong to the search field alone: on Close or a result, Enter must press that button.
+	const onSearchKeyDown = (e: KeyboardEvent): void => {
 		if (!searching) return
 		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
 			e.preventDefault()
@@ -84,9 +86,9 @@ export function ToolboxSheet() {
 	}
 
 	return (
-		<div className={shown ? 'sheet-backdrop shown' : 'sheet-backdrop'} onKeyDown={onKeyDown}>
+		<div className={shown ? 'sheet-backdrop shown' : 'sheet-backdrop'} onKeyDown={onSheetKeyDown}>
 			<div className="sheet-dismiss" onPointerDown={close} aria-hidden="true" />
-			<div className="sheet toolbox-sheet" role="dialog" aria-modal="true" aria-label="Toolbox">
+			<div className="sheet toolbox-sheet" role="dialog" aria-modal="true" aria-label="Toolbox" tabIndex={-1}>
 				<header className="toolbox-head">
 					<h2>Toolbox</h2>
 					<PillField
@@ -94,6 +96,7 @@ export function ToolboxSheet() {
 						aria-label="Search tools"
 						placeholder="Search tools: try checksum, unblock or json"
 						autoFocus
+						onKeyDown={onSearchKeyDown}
 						value={query}
 						onChange={(value) => {
 							setQuery(value)

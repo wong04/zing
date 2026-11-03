@@ -54,6 +54,28 @@ test('search finds a tool by keyword and Enter opens it', async () => {
 	await zing.close()
 })
 
+test('Escape closes the sheet after a click on a blank part of it', async () => {
+	const zing = await launchZing()
+	const surface = await openToolbox(zing)
+	await surface.getByRole('heading', { name: 'Toolbox' }).click()
+	await surface.keyboard.press('Escape')
+	await expect(surface.getByRole('dialog', { name: 'Toolbox' })).toHaveCount(0)
+	await zing.close()
+})
+
+test('Enter on Close, reached by Tab from a search, closes the sheet and opens no tool', async () => {
+	const zing = await launchZing()
+	const surface = await openToolbox(zing)
+	await surface.getByRole('searchbox', { name: 'Search tools' }).fill('sha')
+	await expect(surface.getByTestId('toolbox-result').first()).toHaveText(/Hashes/)
+	await surface.keyboard.press('Tab')
+	await expect(surface.getByRole('button', { name: /Close Toolbox/ })).toBeFocused()
+	await surface.keyboard.press('Enter')
+	await expect(surface.getByRole('dialog', { name: 'Toolbox' })).toHaveCount(0)
+	expect((await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels).toHaveLength(0)
+	await zing.close()
+})
+
 test('opening a tool records it in recents', async () => {
 	const zing = await launchZing()
 	const surface = await openToolbox(zing)
