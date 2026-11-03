@@ -41,7 +41,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 - **Popups/OAuth**: `setWindowOpenHandler` with `createWindow` so `window.opener` survives (Krackn gotcha).
 - **Unblock**: DoH via `fetch`; `PinnedHTTPClient` becomes Node `tls.connect({host: ip, servername})`, so no hand-rolled HTTP/1.1. `aiorelay://` may become a real https intercept.
 - **Network & VPN**: `.mobileconfig` is replaced by a generated PowerShell script (`Add-DnsClientDohServerAddress`, run as admin by the user), and `wg-quick` by WireGuard for Windows commands. The "honest" copy stays.
-- **Convert**: `sips` → sharp (HEIC needs libheif/ffmpeg, which sharp's prebuilt lacks); `textutil` → mammoth/pandoc; PDF via `printToPDF`; ffmpeg/yt-dlp installed via `winget` instead of `brew` (`Core/ToolInstaller.swift`). The 196-format catalog gets a coverage matrix, and any format Windows can't do is listed explicitly, not dropped silently.
+- **Convert**: `sips` → sharp (HEIC needs libheif/ffmpeg, which sharp's prebuilt lacks); `textutil` → mammoth/pandoc; PDF via `printToPDF`; ffmpeg/yt-dlp downloaded on first use instead of `brew` (`Core/ToolInstaller.swift`). The 196-format catalog gets a coverage matrix, and any format Windows can't do is listed explicitly, not dropped silently.
 - **Security**: Gatekeeper/notarization → Authenticode (`WinVerifyTrust`); quarantine → Mark-of-the-Web; XProtect → Defender status + `MpCmdRun` scan of the file; SIP/FileVault → Secure Boot/BitLocker/SmartScreen status. Add Windows executable types (.exe .scr .msi .lnk .ps1 .hta .vbs) to the disguised-file checks.
 - **Viewer**: SceneKit → three.js loaders; AVKit → `<video>`; QuickLook fallback → metadata + "open with default app".
 - **Background remover**: Vision → ONNX Runtime + a segmentation model. Check the model license (popular ones are AGPL or non-commercial).
@@ -68,7 +68,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 - **Following upstream Krackn.** Krackn is still active (last pushed today), and a rewrite can't `git merge` it. Record the baseline Krackn SHA in `PARITY.md`, and add a weekly GitHub Action that lists new Krackn commits since that SHA and opens a "port or skip" issue.
 - **Web-compat traps.** Google sign-in blocks some embedded browsers (needs a clean Chrome UA, tested in CI); Widevine DRM needs castlabs' Electron build plus free EVS signing; passkeys/WebAuthn through Windows Hello need verifying in Electron early.
 - **Windows polish people notice.** Accessibility (ARIA across all chrome, keyboard navigation, `forced-colors` so themes respect Windows contrast themes), per-monitor DPI, Win11 snap layouts, default-browser flow, winget manifest + optional MSIX/Microsoft Store, SmartScreen reputation (signing).
-- **Legal/notices.** Chromium/Electron credits page, ffmpeg (LGPL/GPL, so download it via winget rather than bundling), yt-dlp, model licenses, and a name check on "Zing". Keep Krackn's scope note about school/work filters.
+- **Legal/notices.** Chromium/Electron credits page, ffmpeg (LGPL/GPL, so download it on first use rather than bundling), yt-dlp, model licenses, and a name check on "Zing". Keep Krackn's scope note about school/work filters.
 - **Privacy stance vs. future features.** Krackn "keeps nothing". Sync, imported data, the vault and crash reporting all store something, so each has to be opt-in, flip the privacy banner, and (for sync) be end-to-end encrypted, with a Railway backend that only ever sees ciphertext.
 
 ## Efficiency (Electron's weak spot, so it's designed in, not tuned later)
@@ -102,7 +102,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 - Bundle with electron-vite/esbuild and enable the V8 compile cache for the main process. Code-split every Toolbox tool (graphing, ONNX, PDF) so it loads on first open.
 
 **Disk / install size**
-- Don't bundle ffmpeg or yt-dlp (get them via winget, which also avoids LGPL/GPL redistribution). The background-removal model downloads on first use from a GitHub Release with a SHA-256 check.
+- Don't bundle ffmpeg or yt-dlp (download them on first use from each project's own release, with a pinned SHA-256, which also avoids LGPL/GPL redistribution). The background-removal model downloads on first use from a GitHub Release with a SHA-256 check.
 - Use electron-builder `compression: maximum`, ASAR, prune devDependencies, and Electron fuses (disable `RunAsNode` etc., which also tightens security).
 - Debounced, atomic writes (temp file + rename) for `library.json`, session and vault, so there's no write per keystroke and no torn file on crash.
 

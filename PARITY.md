@@ -75,7 +75,7 @@ Also dropped:
 | L16 | Port tracking-parameter stripper | port-logic | Features/Browser/BrowserTab.swift, UtilityTools.swift | [#27](https://github.com/wong04/zing/issues/27) | Done |
 
 **L rows, 2026-11-02:** re-verified by reading each port and its tests; the shared suites passed locally (1,265 tests) and CI passed on `7edc3dd`. Done here means the logic is ported and tested, not that the app uses it yet:
-- **Waiting for the toolbox:** L4 (X11–X13), L5 (X3), L6 (X18), L7 (X17), L9 (X22), L13 (X19) and L15 (X23) have no caller until those rows are built. L4–L7, L9 and L13 exist only in TypeScript.
+- **Waiting for the toolbox:** L4 (X11–X13), L5 (X3) and L15 (X23) have no caller until those rows are built. L6, L7, L9 and L13 now have callers in the Toolbox. L4–L7, L9 and L13 exist only in TypeScript.
 - **L11, Partial:** `faviconChoice.ts` has no caller and no C# port. `WebView2Page` takes the engine's `FaviconUri`, so the best-icon rule isn't applied.
 - **L12, Partial:** `DownloadPolicy` is ported to both sides but nothing calls it. `DownloadHost` relies on the engine's own `DownloadStarting` decision. Either wire it in or confirm the engine decides the same way.
 
@@ -176,14 +176,15 @@ Also dropped:
 | X14 | System posture for Windows | parity | Features/Security/SecurityView.swift | [#85](https://github.com/wong04/zing/issues/85) | Dropped |
 | X15 | File viewer (3D models dropped) | parity | Features/Viewer/FileViewerView.swift, PreviewBackends.swift | [#86](https://github.com/wong04/zing/issues/86) | Open |
 | X16 | Background remover | parity | Features/Utilities/BackgroundRemover.swift; Tests/bgremove | [#87](https://github.com/wong04/zing/issues/87) | Open |
-| X17 | Graphing calculator | parity | Features/Utilities/GraphingCalculator.swift, GraphSurface.swift | [#88](https://github.com/wong04/zing/issues/88) | Open |
-| X18 | Calculator, units, number base | parity | Features/Utilities/UtilitiesView.swift | [#89](https://github.com/wong04/zing/issues/89) | Open |
-| X19 | Developer tools | parity | Features/Utilities/DevToolViews.swift | [#90](https://github.com/wong04/zing/issues/90) | Open |
-| X20 | Text & design tools | parity | Features/Utilities/UtilitiesView.swift | [#91](https://github.com/wong04/zing/issues/91) | Open |
-| X21 | Password generator + link cleaner | parity | Features/Utilities/UtilityTools.swift | [#92](https://github.com/wong04/zing/issues/92) | Open |
-| X22 | Toolbox page, search and recents | parity | App/Navigation.swift, ToolboxSearch.swift | [#93](https://github.com/wong04/zing/issues/93) | Open |
+| X17 | Graphing calculator | parity | Features/Utilities/GraphingCalculator.swift, GraphSurface.swift | [#88](https://github.com/wong04/zing/issues/88) | Done |
+| X18 | Calculator, units, number base | parity | Features/Utilities/UtilitiesView.swift | [#89](https://github.com/wong04/zing/issues/89) | Done |
+| X19 | Developer tools | parity | Features/Utilities/DevToolViews.swift | [#90](https://github.com/wong04/zing/issues/90) | Done |
+| X20 | Text & design tools | parity | Features/Utilities/UtilitiesView.swift | [#91](https://github.com/wong04/zing/issues/91) | Done |
+| X21 | Password generator + link cleaner | parity | Features/Utilities/UtilityTools.swift | [#92](https://github.com/wong04/zing/issues/92) | Done |
+| X22 | Toolbox page, search and recents | parity | App/Navigation.swift, ToolboxSearch.swift | [#93](https://github.com/wong04/zing/issues/93) | Done |
 | X23 | Drag files between tools | parity | App/DropRouter.swift, FileComponents.swift | [#94](https://github.com/wong04/zing/issues/94) | Open |
-| X24 | Links page | new | - | - | Open |
+| X24 | Links page | new | - | [#141](https://github.com/wong04/zing/issues/141) | Done |
+| X25 | PDF tools | new | - | [#142](https://github.com/wong04/zing/issues/142) | Open |
 
 ## M6b Password vault
 
