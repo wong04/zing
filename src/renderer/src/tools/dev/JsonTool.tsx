@@ -29,7 +29,7 @@ export function JsonTool() {
 			{slow.kind === 'failed' ? <InfoBanner kind="warning">{describeFailure(slow.error)}</InfoBanner> : null}
 			{outcome?.ok === false ? (
 				<InfoBanner kind="warning">
-					Line {outcome.line}: {outcome.message}
+					{outcome.line === null ? outcome.message : `Line ${outcome.line}: ${outcome.message}`}
 				</InfoBanner>
 			) : null}
 			{outcome?.ok === true && input !== '' ? <InfoBanner kind="info">Valid JSON.</InfoBanner> : null}

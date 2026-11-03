@@ -14,6 +14,16 @@ export class JSONProblem extends Error {
 	}
 }
 
+/** The document parses but is nested past what the writers here can recurse through. */
+export class JSONTooDeepError extends Error {
+	override name = 'JSONTooDeepError'
+	constructor() {
+		super(`Nested too deeply: this tool formats up to ${maxDepth} levels.`)
+	}
+}
+
+const maxDepth = 1000
+
 type JSONValue = null | boolean | number | string | JSONValue[] | { [key: string]: JSONValue }
 
 const indentUnit = '  '
@@ -25,12 +35,31 @@ export function validateJSON(text: string): void {
 
 /** Indented, with keys sorted so two documents can be compared by eye. */
 export function prettyJSON(text: string): string {
-	return writeSorted(parse(text), '')
+	return writeSorted(parsedWithinDepth(text), '')
 }
 
 /** One line, keys in their original order. */
 export function minifyJSON(text: string): string {
-	return JSON.stringify(parse(text))
+	return JSON.stringify(parsedWithinDepth(text))
+}
+
+function parsedWithinDepth(text: string): JSONValue {
+	const value = parse(text)
+	if (nestingOf(value) > maxDepth) throw new JSONTooDeepError()
+	return value
+}
+
+/** Walks with its own stack: the document may be deeper than the call stack allows. */
+function nestingOf(root: JSONValue): number {
+	let deepest = 0
+	const pending: [JSONValue, number][] = [[root, 1]]
+	for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+		const [value, depth] = next
+		if (value === null || typeof value !== 'object') continue
+		deepest = Math.max(deepest, depth)
+		for (const member of Object.values(value)) pending.push([member, depth + 1])
+	}
+	return deepest
 }
 
 function parse(text: string): JSONValue {

@@ -31,6 +31,16 @@ test('JSON formats {"a":1} and a bad document shows the line of the error', asyn
 	await zing.close()
 })
 
+test('valid JSON nested 20,000 deep shows a message instead of crashing the tool', async () => {
+	const zing = await launchZing()
+	const { panel } = await openTool(zing, 'JSON')
+	await panel.getByRole('textbox', { name: 'JSON input' }).fill('['.repeat(20_000) + ']'.repeat(20_000))
+	await expect(panel.getByRole('alert')).toContainText('Nested too deeply')
+	await panel.getByRole('textbox', { name: 'JSON input' }).fill('{"a":1}')
+	await expect(panel.getByRole('textbox', { name: 'JSON output' })).toHaveValue('{\n  "a": 1\n}')
+	await zing.close()
+})
+
 test('Base64 round-trips URL-safe input without padding', async () => {
 	const zing = await launchZing()
 	const { panel } = await openTool(zing, 'Base64')

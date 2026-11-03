@@ -68,3 +68,22 @@ test('a panel opened behind the Toolbox sheet is covered by it', async () => {
 	expect(covered).toBe(true)
 	await zing.close()
 })
+
+test('a tool that throws while rendering shows its message, and the rest of the surface survives', async () => {
+	const zing = await launchZing()
+	const { surface, panel } = await openTool(zing, 'Timestamps')
+	const other = await openToolDirect(zing, surface, 'tool:HMAC', 'HMAC', 1500)
+	// Real input, real render path: the tool formats its dates with toISOString on every render.
+	await surface.evaluate(() => {
+		Date.prototype.toISOString = () => {
+			throw new Error('Patched toISOString failure')
+		}
+	})
+	await panel.getByRole('textbox', { name: 'Timestamp' }).fill('1753800000')
+	await expect(panel.getByRole('alert')).toContainText('Patched toISOString failure')
+	await expect(other.getByRole('textbox', { name: 'Secret key' })).toBeVisible()
+	await panel.getByRole('button', { name: 'Close Timestamps' }).click()
+	await expect(panel).toHaveCount(0)
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels.map((p) => p.content)).toEqual(['tool:HMAC'])
+	await zing.close()
+})

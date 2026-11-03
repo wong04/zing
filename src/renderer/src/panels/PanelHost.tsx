@@ -5,6 +5,7 @@ import { zing } from '../api'
 import { ToolEmptyState } from '../components'
 import { CloseGlyph, MinusIcon } from '../components/icons'
 import { toolComponent } from '../tools/registry'
+import { PanelErrorBoundary } from './PanelErrorBoundary'
 import { PanelIcon } from './panelIcon'
 import './panels.css'
 
@@ -90,7 +91,9 @@ function PanelWindow({ panel, front, order, origin }: { panel: ToolPanelView; fr
 				</span>
 			</header>
 			<div className="float-body">
-				<PanelBody panel={panel} />
+				<PanelErrorBoundary>
+					<PanelBody panel={panel} />
+				</PanelErrorBoundary>
 			</div>
 		</section>
 	)
