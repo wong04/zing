@@ -26,6 +26,8 @@ async function openToolbox(zing: Launched): Promise<Page> {
 	await zing.chrome.getByRole('button', { name: 'Toolbox' }).first().click()
 	const surface = await pageWhere(zing.browser, (p) => isSurface(p.url()))
 	await expect(surface.getByRole('dialog', { name: 'Toolbox' })).toBeVisible()
+	// The sheet draws before the host gives its view the keyboard, and a key sent in between is lost.
+	await expect(surface.getByRole('searchbox', { name: 'Search tools' })).toBeFocused()
 	return surface
 }
 
