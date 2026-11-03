@@ -4,6 +4,7 @@ import type { Point, ToolPanelView, ToolPanelsState } from '@shared/shell/shellS
 import { zing } from '../api'
 import { ToolEmptyState } from '../components'
 import { CloseGlyph, MinusIcon } from '../components/icons'
+import { PanelInputContext } from '../tools/panelInput'
 import { toolComponent } from '../tools/registry'
 import { PanelErrorBoundary } from './PanelErrorBoundary'
 import { PanelIcon } from './panelIcon'
@@ -24,7 +25,9 @@ function PanelBody({ panel }: { panel: ToolPanelView }) {
 	const Body = content ? toolComponent(content) : null
 	if (!Body) return <EmptyBody panel={panel} />
 	return (
-		<Suspense fallback={null}>{createElement(Body)}</Suspense>
+		<PanelInputContext value={panel.input ?? null}>
+			<Suspense fallback={null}>{createElement(Body)}</Suspense>
+		</PanelInputContext>
 	)
 }
 

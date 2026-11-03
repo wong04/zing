@@ -15,6 +15,8 @@ export function DiagnoseTool() {
 	const [site, setSite] = useState('')
 	const [running, setRunning] = useState(false)
 	const [report, setReport] = useState<DiagnosticReport | null>(null)
+	// What the report is for, as it was typed: the address Open a Link starts from, with its path.
+	const [diagnosed, setDiagnosed] = useState('')
 	const [problem, setProblem] = useState<string | null>(null)
 	// A slower earlier run must not replace the report of a later one.
 	const latest = useRef(0)
@@ -25,7 +27,10 @@ export function DiagnoseTool() {
 		setProblem(null)
 		try {
 			const result = await zing.diagnose(site)
-			if (mine === latest.current) setReport(result)
+			if (mine === latest.current) {
+				setReport(result)
+				setDiagnosed(site)
+			}
 		} catch (error) {
 			if (mine !== latest.current) return
 			setReport(null)
@@ -36,8 +41,8 @@ export function DiagnoseTool() {
 	}
 
 	const openMethod = async (): Promise<void> => {
-		// The tool for each method arrives in a later task; until then its panel shows the empty state.
-		const outcome = await zing.openPanel(panelId(section(Section.unblock)), { x: window.screenX + 560, y: window.screenY + 160 })
+		// Open a Link starts with the address filled in; it runs when it is clicked there.
+		const outcome = await zing.openPanelWithInput(panelId(section(Section.unblock)), diagnosed)
 		if (outcome.status === 'full') setProblem('Three tools are already open. Close one, then try again.')
 	}
 

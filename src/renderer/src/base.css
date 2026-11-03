@@ -267,3 +267,29 @@ input {
 		outline: 2px solid Highlight;
 	}
 }
+
+.notice.offer {
+	gap: 12px;
+	justify-content: space-between;
+}
+
+.offer-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.offer-address {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--muted);
+}
+
+.offer-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: none;
+}

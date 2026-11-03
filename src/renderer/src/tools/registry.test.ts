@@ -9,7 +9,6 @@ const laterPhase: readonly string[] = [
 	'section:Download',
 	'section:Files',
 	'section:Network & VPN',
-	'section:Open a Link',
 	'tool:Background Remover',
 ]
 
