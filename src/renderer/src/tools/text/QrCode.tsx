@@ -6,6 +6,7 @@ import './text.css'
 
 const quietZone = 4
 const pixelsPerModule = 8
+const overflowMessage = 'code length overflow'
 
 type Code = { readonly modules: readonly (readonly boolean[])[] } | { readonly error: string }
 
@@ -18,9 +19,9 @@ function encode(text: string): Code {
 		const modules = Array.from({ length: size }, (_, row) => Array.from({ length: size }, (_, col) => code.isDark(row, col)))
 		return { modules }
 	} catch (error) {
-		// The library throws a bare Error ("code length overflow") for text too long to encode.
-		if (error instanceof Error) return { error: `That text does not fit in a QR code (${error.message}).` }
-		throw error
+		// The library throws bare strings; this one means the text is too long for any QR version.
+		if (typeof error === 'string' && error.startsWith(overflowMessage)) return { error: 'That text is too long to fit in a QR code.' }
+		throw new Error(`QR encoding failed: ${String(error)}`, { cause: error })
 	}
 }
 

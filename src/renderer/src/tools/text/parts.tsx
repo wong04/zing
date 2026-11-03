@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { CopyIcon, FadingScroll, PillButton } from '../../components'
 
 /** The frame every tool in this group shares: a scrolling page with a one-line subtitle. */
@@ -13,8 +13,15 @@ export function ToolPage({ subtitle, children }: { readonly subtitle: string; re
 	)
 }
 
+const resetAfterMs = 2000
+
 export function CopyButton({ text, label }: { readonly text: string; readonly label: string }) {
 	const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+	useEffect(() => {
+		if (state === 'idle') return
+		const timer = setTimeout(() => setState('idle'), resetAfterMs)
+		return () => clearTimeout(timer)
+	}, [state])
 	const copy = async (): Promise<void> => {
 		try {
 			await navigator.clipboard.writeText(text)
@@ -26,7 +33,7 @@ export function CopyButton({ text, label }: { readonly text: string; readonly la
 	}
 	const shown = state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : label
 	return (
-		<PillButton variant="ghost" size="small" icon={<CopyIcon size={13} />} aria-label={`Copy ${label}`} onClick={() => void copy()}>
+		<PillButton variant="ghost" size="small" icon={<CopyIcon size={13} />} aria-label={state === 'idle' ? `Copy ${label}` : shown} onClick={() => void copy()}>
 			{state === 'idle' ? null : shown}
 		</PillButton>
 	)
