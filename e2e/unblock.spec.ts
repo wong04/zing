@@ -1,4 +1,6 @@
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { createServer as createSocketServer, type AddressInfo } from 'node:net'
@@ -984,4 +986,134 @@ test('an address handed over while the question is open waits, and Allow runs th
 	await expect(panel.getByRole('textbox', { name: 'Address' })).toHaveValue('https://blocked.test/other')
 	await zing.close()
 	await stand.close()
+})
+
+// Network & VPN: the encrypted-DNS script. The host's DNS is a stub in every test run (Zing.Host/StubDnsSystem): no test reads
+// a real adapter, shows an admin prompt or changes the PC's DNS. What the stub was asked to run goes to dns-ran.jsonl in the profile.
+
+async function openNetwork(zing: Launched): Promise<{ surface: Page; panel: Locator }> {
+	await zing.chrome.getByRole('button', { name: 'Toolbox' }).first().click()
+	const surface = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	await expect(surface.getByRole('dialog', { name: 'Toolbox' })).toBeVisible()
+	await surface.getByTestId('toolbox-tile').filter({ hasText: 'Network & VPN' }).click()
+	const panel = surface.getByRole('dialog', { name: 'Network & VPN' })
+	await expect(panel).toBeVisible()
+	return { surface, panel }
+}
+
+const dnsScript = (panel: Locator): Locator => panel.getByRole('textbox', { name: 'Script that runs as administrator' })
+
+const dnsRan = (zing: Launched): string[] => {
+	const file = join(zing.userDataDir, 'dns-ran.jsonl')
+	if (!existsSync(file)) return []
+	return readFileSync(file, 'utf8')
+		.trim()
+		.split('\n')
+		.map((line) => (JSON.parse(line) as { script: string }).script)
+}
+
+const dnsBackup = (zing: Launched): string => join(zing.userDataDir, 'dns-before.json')
+
+test('the script is shown before it can run', async () => {
+	const zing = await launchZing()
+	const { panel } = await openNetwork(zing)
+	await expect(dnsScript(panel)).toHaveValue(/Set-DnsClientServerAddress -InterfaceAlias 'Ethernet' -ServerAddresses '1\.1\.1\.1', '1\.0\.0\.1', '2606:4700:4700::1111', '2606:4700:4700::1001'/)
+	await expect(dnsScript(panel)).toHaveValue(/Set-DnsClientServerAddress -InterfaceAlias 'Wi-Fi' -ServerAddresses '1\.1\.1\.1', '1\.0\.0\.1'\n/)
+	await expect(panel.getByTestId('dns-adapters')).toHaveText('Ethernet, Wi-Fi')
+	await expect(panel.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled()
+	// The page says what it did not manage, and what it keeps.
+	await expect(panel.getByTestId('dns-engine-note')).toContainText("pages use Windows' DNS")
+	await expect(panel.getByTestId('dns-keeps-note')).toContainText('until you Undo')
+	// Opening the page read the adapters and nothing else: no script ran and nothing was saved.
+	expect(dnsRan(zing)).toEqual([])
+	expect(existsSync(dnsBackup(zing))).toBe(false)
+	await zing.close()
+})
+
+test('Apply then Undo returns the page to its first state', async () => {
+	const zing = await launchZing()
+	const { panel } = await openNetwork(zing)
+	const first = await dnsScript(panel).inputValue()
+	await panel.getByRole('button', { name: 'Apply', exact: true }).click()
+	await expect(panel.getByTestId('dns-notice')).toContainText('Encrypted DNS is on')
+	// Exactly the script that was on show ran, and the old settings are kept for Undo.
+	expect(dnsRan(zing)).toEqual([first])
+	expect(JSON.parse(readFileSync(dnsBackup(zing), 'utf8')).adapters[0]).toMatchObject({ name: 'Ethernet', v4: ['10.0.0.1'] })
+	await expect(panel.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0)
+	await expect(dnsScript(panel)).toHaveValue(/-InterfaceAlias 'Ethernet' -ServerAddresses '10\.0\.0\.1'/)
+	const undoScript = await dnsScript(panel).inputValue()
+	await panel.getByRole('button', { name: 'Undo', exact: true }).click()
+	await expect(panel.getByTestId('dns-notice')).toContainText('Back to how it was')
+	expect(dnsRan(zing)).toEqual([first, undoScript])
+	expect(existsSync(dnsBackup(zing))).toBe(false)
+	await expect(panel.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0)
+	await expect(dnsScript(panel)).toHaveValue(first)
+	await zing.close()
+})
+
+test('saying no to the admin prompt is "Nothing changed", not an error', async () => {
+	const zing = await launchZing()
+	const { panel } = await openNetwork(zing)
+	await hook(zing, { action: 'dns-stub', run: 'declined' })
+	await panel.getByRole('button', { name: 'Apply', exact: true }).click()
+	await expect(panel.getByTestId('dns-notice')).toContainText('Nothing changed')
+	await expect(panel.getByRole('alert')).toHaveCount(0)
+	await expect(panel.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled()
+	expect(existsSync(dnsBackup(zing))).toBe(false)
+	await zing.close()
+})
+
+test('a script that fails says so, and Undo stays available because it may have changed some adapters', async () => {
+	const zing = await launchZing()
+	const { panel } = await openNetwork(zing)
+	await hook(zing, { action: 'dns-stub', run: 'fail' })
+	await panel.getByRole('button', { name: 'Apply', exact: true }).click()
+	await expect(panel.getByRole('alert')).toContainText('The script failed (exit code 3)')
+	await expect(panel.getByTestId('dns-notice')).toHaveCount(0)
+	await expect(panel.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled()
+	expect(existsSync(dnsBackup(zing))).toBe(true)
+	await zing.close()
+})
+
+test('adapters that changed after the script was shown give a new script to read, and run nothing', async () => {
+	const zing = await launchZing()
+	const { panel } = await openNetwork(zing)
+	const shown = await dnsScript(panel).inputValue()
+	const adapters = { adapters: [{ name: 'Docking station', v4: '', v6enabled: false, v6: null }], doh: [] }
+	await hook(zing, { action: 'dns-stub', adapters: JSON.stringify(adapters) })
+	await panel.getByRole('button', { name: 'Apply', exact: true }).click()
+	await expect(panel.getByTestId('dns-notice')).toContainText('changed since')
+	await expect(dnsScript(panel)).toHaveValue(/'Docking station'/)
+	expect(dnsRan(zing)).toEqual([])
+	expect(existsSync(dnsBackup(zing))).toBe(false)
+	// A second click runs the script that is now on show, not the first.
+	const second = await dnsScript(panel).inputValue()
+	expect(second).not.toBe(shown)
+	await panel.getByRole('button', { name: 'Apply', exact: true }).click()
+	await expect(panel.getByTestId('dns-notice')).toContainText('Encrypted DNS is on')
+	expect(dnsRan(zing)).toEqual([second])
+	await zing.close()
+})
+
+test('saved settings that can not be read are a named error naming the file', async () => {
+	const userDataDir = await mkdtemp(join(tmpdir(), 'zing-host-data-'))
+	writeFileSync(join(userDataDir, 'dns-before.json'), '{ not json')
+	const zing = await launchZing({ userDataDir })
+	const { panel } = await openNetwork(zing)
+	await expect(panel.getByRole('alert')).toContainText('dns-before.json')
+	await expect(panel.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0)
+	await expect(panel.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0)
+	await zing.close()
+})
+
+test('the VPN guide and the table of what beats what are on the page', async () => {
+	const zing = await launchZing()
+	const { panel } = await openNetwork(zing)
+	await expect(panel.getByTestId('vpn-guide')).toContainText("Zing can't be a VPN")
+	await expect(panel.getByRole('group', { name: 'Install WireGuard' })).toContainText('winget install WireGuard.WireGuard')
+	const rows = panel.getByTestId('beats-row')
+	await expect(rows).toHaveCount(4)
+	await expect(rows.first()).toContainText('DNS-level block')
+	await expect(rows.first()).toContainText('the script above')
+	await zing.close()
 })

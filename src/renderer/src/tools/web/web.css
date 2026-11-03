@@ -74,3 +74,28 @@
 	justify-content: flex-end;
 	gap: 8px;
 }
+
+.net-guide {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.net-beats {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.net-beats li {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.net-beats-block {
+	font-weight: 600;
+}
