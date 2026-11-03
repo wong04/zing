@@ -10,6 +10,9 @@ async function openTool(zing: Launched, title: string): Promise<Locator> {
 	return panel
 }
 
+// These tests replace whatever the person last copied, so they stay off on a developer's machine.
+const clipboardAllowed = Boolean(process.env.CI) || process.env.ZING_E2E_CLIPBOARD === '1'
+
 interface Pasted {
 	readonly text: string
 	readonly fileTypes: readonly string[]
@@ -128,6 +131,7 @@ test('Passwords honour a length above the minimum', async () => {
 })
 
 test('a password Copy button puts that password on the clipboard', async () => {
+	test.skip(!clipboardAllowed, 'writes the system clipboard: set ZING_E2E_CLIPBOARD=1 (CI sets it implicitly)')
 	const zing = await launchZing()
 	const panel = await openTool(zing, 'Passwords')
 	await panel.getByRole('button', { name: 'Generate 5' }).click()
@@ -141,6 +145,7 @@ test('a password Copy button puts that password on the clipboard', async () => {
 })
 
 test('QR Copy image puts a PNG on the clipboard', async () => {
+	test.skip(!clipboardAllowed, 'writes the system clipboard: set ZING_E2E_CLIPBOARD=1 (CI sets it implicitly)')
 	const zing = await launchZing()
 	const panel = await openTool(zing, 'QR Code')
 	await panel.getByRole('textbox', { name: 'Text' }).fill('https://example.com')
