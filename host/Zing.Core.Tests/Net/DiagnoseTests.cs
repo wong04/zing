@@ -12,10 +12,18 @@ public sealed class DiagnoseTests
 		public IReadOnlyList<string> Reachable { get; init; } = [];
 		/// <summary>Addresses that present a valid certificate for the host.</summary>
 		public IReadOnlyList<string> Valid { get; init; } = [];
+		public bool LookupTimesOut { get; init; }
+		/// <summary>Connections never complete; only the token ends them.</summary>
+		public bool Hangs { get; init; }
 
-		public Task<IReadOnlyList<string>> ResolveSystemAsync(string host, CancellationToken ct) => Task.FromResult(System);
+		public Task<IReadOnlyList<string>> ResolveSystemAsync(string host, CancellationToken ct) =>
+			LookupTimesOut ? Task.FromException<IReadOnlyList<string>>(new SystemLookupTimedOutError(host)) : Task.FromResult(System);
 
-		public Task<bool> TcpAsync(string ip, CancellationToken ct) => Task.FromResult(Reachable.Contains(ip));
+		public async Task<bool> TcpAsync(string ip, CancellationToken ct)
+		{
+			if (Hangs) await Task.Delay(Timeout.Infinite, ct);
+			return Reachable.Contains(ip);
+		}
 
 		public Task<TlsProbeResult> TlsAsync(string ip, string host, CancellationToken ct) =>
 			Task.FromResult(new TlsProbeResult(Valid.Contains(ip), Valid.Contains(ip), Valid.Contains(ip) ? null : "refused"));
@@ -153,6 +161,30 @@ public sealed class DiagnoseTests
 	[InlineData("a b.com")]
 	public async Task Refuses_what_is_not_a_site_name(string typed) =>
 		await Assert.ThrowsAsync<InvalidHostError>(() => Run(new FakeProbes(), Answers(), typed));
+
+	[Fact]
+	public async Task A_system_lookup_that_times_out_is_a_step_not_an_error()
+	{
+		var report = await Run(new FakeProbes { LookupTimesOut = true, Reachable = ["1.2.3.4"], Valid = ["1.2.3.4"] }, Answers("1.2.3.4"));
+		Assert.Equal(BlockKind.DnsTampering, report.Kind);
+		Assert.Contains(report.Steps, s => s.StartsWith("Network DNS: no answer in time"));
+	}
+
+	[Fact]
+	public async Task The_whole_diagnosis_has_a_deadline()
+	{
+		var diagnose = new Diagnose(new FakeProbes { Hangs = true, System = ["1.2.3.4"] }, Answers("1.2.3.4"), TimeSpan.FromMilliseconds(200));
+		await Assert.ThrowsAsync<DiagnosisTimedOutError>(() => diagnose.RunAsync("example.com", "cloudflare", CancellationToken.None));
+	}
+
+	[Fact]
+	public async Task A_cancelled_diagnosis_is_cancelled_not_timed_out()
+	{
+		using var cancel = new CancellationTokenSource();
+		await cancel.CancelAsync();
+		var diagnose = new Diagnose(new FakeProbes { Hangs = true, System = ["1.2.3.4"] }, Answers("1.2.3.4"));
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => diagnose.RunAsync("example.com", "cloudflare", cancel.Token));
+	}
 
 	[Fact]
 	public async Task The_report_serialises_in_the_shape_of_the_TS_DiagnosticReport()

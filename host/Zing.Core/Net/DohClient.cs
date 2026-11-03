@@ -23,6 +23,9 @@ public sealed class DohClient : IDohClient
 		["quad9"] = ("Quad9", "https://dns.quad9.net:5053/dns-query"),
 	};
 
+	/// <summary>An HttpClient for lookups: no cookies, so nothing a resolver sets is kept for the life of the process.</summary>
+	public static HttpClient NewHttpClient() => new(new SocketsHttpHandler { UseCookies = false });
+
 	private readonly HttpClient _http;
 	private readonly Func<string, string> _endpointOf;
 
@@ -82,6 +85,9 @@ public sealed class DohClient : IDohClient
 		}
 	}
 
+	private static bool IsIPv4(string text) =>
+		text.Count(c => c == '.') == 3 && System.Net.IPAddress.TryParse(text, out var address) && address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork;
+
 	private static List<(int Type, string Data)> ReadAnswers(JsonElement root)
 	{
 		if (!root.TryGetProperty("Answer", out var answers) || answers.ValueKind == JsonValueKind.Null) return [];
@@ -94,7 +100,10 @@ public sealed class DohClient : IDohClient
 				|| !answer.TryGetProperty("type", out var type) || !type.TryGetInt32(out var typeCode)
 				|| !answer.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.String)
 				throw new MalformedDoHResponseError("an answer is missing name, type or data");
-			read.Add((typeCode, data.GetString()!));
+			var text = data.GetString()!;
+			// The probes dial this address, so it has to be one.
+			if (typeCode == 1 && !IsIPv4(text)) throw new MalformedDoHResponseError($"an A record holds \"{text}\", which isn't an IPv4 address");
+			read.Add((typeCode, text));
 		}
 		return read;
 	}

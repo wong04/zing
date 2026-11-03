@@ -6,6 +6,17 @@ public abstract class NetError(string message, Exception? inner = null) : Except
 /// <summary>What was typed is not a site name.</summary>
 public sealed class InvalidHostError(string typed) : NetError(typed.Trim() == "" ? "Enter a site name, like example.com." : $"\"{typed.Trim()}\" isn't a site name. Enter one like example.com.");
 
+/// <summary>The system resolver gave no answer, not even a refusal, before the deadline.</summary>
+public sealed class SystemLookupTimedOutError(string host) : NetError($"Your network's DNS didn't answer for {host} in time.");
+
+/// <summary>The whole diagnosis took longer than its deadline.</summary>
+public sealed class DiagnosisTimedOutError : NetError
+{
+	public DiagnosisTimedOutError() : base("The diagnosis took too long and was stopped. Try again.")
+	{
+	}
+}
+
 /// <summary>The setting names a DoH provider Zing has no endpoint for.</summary>
 public sealed class UnknownDohProviderError(string provider) : NetError($"\"{provider}\" isn't an encrypted DNS provider Zing knows.");
 

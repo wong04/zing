@@ -48,7 +48,7 @@ public static class TestHooks
 		var probes = Environment.GetEnvironmentVariable("ZING_E2E_PROBES");
 		if (dohUrl is null && probes is null) return null;
 		if (dohUrl is null || probes is null) throw new InvalidOperationException("ZING_E2E_DOH_URL and ZING_E2E_PROBES go together");
-		return new Zing.Core.Net.NetServices(FixedProbes.FromJson(probes), new Zing.Core.Net.DohClient(new HttpClient(), _ => dohUrl));
+		return new Zing.Core.Net.NetServices(FixedProbes.FromJson(probes), new Zing.Core.Net.DohClient(Zing.Core.Net.DohClient.NewHttpClient(), _ => dohUrl));
 	}
 
 	private static int? _closeNextAt;

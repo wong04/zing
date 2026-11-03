@@ -90,6 +90,9 @@ public sealed class DohClientTests
 	[InlineData("""{"Answer":[]}""")]
 	[InlineData("""{"Status":0,"Answer":"x"}""")]
 	[InlineData("""{"Status":0,"Answer":[{"name":"a","type":1}]}""")]
+	[InlineData("""{"Status":0,"Answer":[{"name":"a","type":1,"data":"not-an-ip"}]}""")]
+	[InlineData("""{"Status":0,"Answer":[{"name":"a","type":1,"data":"10"}]}""")]
+	[InlineData("""{"Status":0,"Answer":[{"name":"a","type":1,"data":"2606:4700::1111"}]}""")]
 	public async Task Bad_JSON_is_a_MalformedDoHResponseError(string body)
 	{
 		var (client, _) = ClientAnswering(body);
@@ -119,5 +122,40 @@ public sealed class DohClientTests
 		using var cancel = new CancellationTokenSource();
 		await cancel.CancelAsync();
 		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.ResolveAsync("example.com", "cloudflare", cancel.Token));
+	}
+
+	[Fact]
+	public async Task Keeps_no_cookies_between_lookups()
+	{
+		var cookies = new List<string?>();
+		using var listener = new HttpListener();
+		var prefix = $"http://127.0.0.1:{FreePort()}/";
+		listener.Prefixes.Add(prefix);
+		listener.Start();
+		var serving = Task.Run(async () =>
+		{
+			for (var i = 0; i < 2; i++)
+			{
+				var context = await listener.GetContextAsync();
+				cookies.Add(context.Request.Headers["Cookie"]);
+				context.Response.AppendHeader("Set-Cookie", "a=b; Path=/");
+				await context.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes("""{"Status":0}"""));
+				context.Response.Close();
+			}
+		}, TestContext.Current.CancellationToken);
+		var client = new DohClient(DohClient.NewHttpClient(), _ => prefix);
+		await client.ResolveAsync("example.com", "cloudflare", TestContext.Current.CancellationToken);
+		await client.ResolveAsync("example.com", "cloudflare", TestContext.Current.CancellationToken);
+		await serving;
+		Assert.Equal([null, null], cookies);
+	}
+
+	private static int FreePort()
+	{
+		var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+		listener.Start();
+		var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+		listener.Stop();
+		return port;
 	}
 }

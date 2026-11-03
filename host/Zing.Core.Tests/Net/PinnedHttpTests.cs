@@ -1,9 +1,12 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Authentication;
 using Zing.Core.Net;
 
 namespace Zing.Core.Tests.Net;
 
+// Changes the process-wide default proxy for one test, so no other class may use HttpClient's default at the same time.
+[Collection("HttpDefaultProxy")]
 public sealed class PinnedHttpTests
 {
 	[Fact]
@@ -45,5 +48,27 @@ public sealed class PinnedHttpTests
 		using var response = await new PinnedHttp(pki.Trusted).GetAsync(new Uri($"https://example.test:{server.Port}/"), IPAddress.Loopback, CancellationToken.None);
 		Assert.Equal(HttpStatusCode.Found, response.StatusCode);
 		Assert.Equal("https://elsewhere.test/", response.Headers.Location!.ToString());
+	}
+
+	[Fact]
+	public async Task Does_not_go_through_the_system_proxy_because_the_dial_would_then_aim_at_the_proxy()
+	{
+		using var pki = new TestPki();
+		using var server = new TestServer(pki.IssueFor("example.test"));
+		var listener = new TcpListener(IPAddress.Loopback, 0);
+		listener.Start();
+		var deadProxyPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+		listener.Stop();
+		var before = HttpClient.DefaultProxy;
+		HttpClient.DefaultProxy = new WebProxy($"http://127.0.0.1:{deadProxyPort}");
+		try
+		{
+			using var response = await new PinnedHttp(pki.Trusted).GetAsync(new Uri($"https://example.test:{server.Port}/"), IPAddress.Loopback, CancellationToken.None);
+			Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		}
+		finally
+		{
+			HttpClient.DefaultProxy = before;
+		}
 	}
 }

@@ -35,11 +35,14 @@ public sealed class Probes : IProbes
 	private readonly int _port;
 	private readonly TimeSpan _deadline;
 	private readonly X509Certificate2Collection? _trustedRoots;
+	private readonly Func<string, CancellationToken, Task<IPAddress[]>> _lookup;
 
+	/// <param name="lookup">The system resolver; a test stands in for it.</param>
 	/// <param name="port">The port probed; a test points it at a local server.</param>
 	/// <param name="trustedRoots">Roots trusted in place of the system's; null uses the system's.</param>
-	public Probes(int port = 443, TimeSpan? deadline = null, X509Certificate2Collection? trustedRoots = null)
+	public Probes(int port = 443, TimeSpan? deadline = null, X509Certificate2Collection? trustedRoots = null, Func<string, CancellationToken, Task<IPAddress[]>>? lookup = null)
 	{
+		_lookup = lookup ?? ((host, ct) => Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork, ct));
 		_port = port;
 		_deadline = deadline ?? DefaultDeadline;
 		_trustedRoots = trustedRoots;
@@ -49,11 +52,16 @@ public sealed class Probes : IProbes
 	{
 		try
 		{
-			var addresses = await Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork, ct);
+			// WaitAsync because the lookup may ignore its token.
+			var addresses = await _lookup(host, ct).WaitAsync(_deadline, ct);
 			return [.. addresses.Select(a => a.ToString()).Distinct()];
 		}
-		// A resolver that refuses or has no answer is an empty answer; that is itself a signal. Anything else is raised.
-		catch (SocketException e) when (e.SocketErrorCode is SocketError.HostNotFound or SocketError.NoData or SocketError.TryAgain)
+		catch (TimeoutException)
+		{
+			throw new SystemLookupTimedOutError(host);
+		}
+		// A resolver that refuses, fails or has no answer gives an empty answer; that is itself a signal (as the TS twin did).
+		catch (SocketException)
 		{
 			return [];
 		}

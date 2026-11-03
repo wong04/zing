@@ -4,5 +4,5 @@ namespace Zing.Core.Net;
 public sealed record NetServices(IProbes Probes, IDohClient Doh)
 {
 	/// <summary>The real network. One HttpClient for every lookup, as HttpClient is meant to be used.</summary>
-	public static NetServices Live { get; } = new(new Probes(), new DohClient(new HttpClient()));
+	public static NetServices Live { get; } = new(new Probes(), new DohClient(DohClient.NewHttpClient()));
 }

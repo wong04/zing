@@ -31,6 +31,8 @@ public sealed class PinnedHttp
 		var handler = new SocketsHttpHandler
 		{
 			UseCookies = false,
+			// Behind a proxy the callback's endpoint is the proxy's, not the site's.
+			UseProxy = false,
 			AllowAutoRedirect = false,
 			ConnectCallback = (context, token) => ConnectAsync(address, context.DnsEndPoint.Port, token),
 		};

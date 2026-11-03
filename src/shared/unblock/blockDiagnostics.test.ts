@@ -65,52 +65,21 @@ describe('BlockDiagnostics.classify — shared vectors', () => {
 	})
 })
 
-// Beyond Krackn's suite: the helpers diagnose() feeds into classify.
+// Beyond Krackn's suite: the helpers diagnose() feeds into classify. Their cases are shared with the C# port too.
 describe('isSinkhole', () => {
-	it.each([
-		['0.0.0.0', true],
-		['127.0.0.1', true],
-		['10.1.2.3', true],
-		['192.168.0.1', true],
-		['172.16.5.5', true],
-		['93.184.216.34', false],
-		['172.17.0.1', true],
-		['172.31.255.255', true],
-		['172.15.255.255', false],
-		['172.32.0.1', false],
-		['127.0.0.53', true],
-		['0.1.2.3', true],
-		['169.254.169.254', true],
-		['169.253.0.1', false],
-		['192.169.0.1', false],
-		['11.0.0.1', false],
-		['100.64.0.1', false],
-		['::1', true],
-		['2606:4700::1111', false],
-		['not-an-ip', false],
-		['10.example.com', false],
-	])('%s -> %s', (ip, want) => {
+	it.each(vectors.isSinkhole)('%s -> %s', (ip, want) => {
 		expect(isSinkhole(ip)).toBe(want)
 	})
 })
 
 describe('answersDiffer', () => {
-	it('flags disjoint answers (normal for anycast CDNs, so only a note)', () => {
-		expect(answersDiffer(['157.240.1.35'], ['157.240.22.174'])).toBe(true)
-	})
-	it('any overlap means they agree', () => {
-		expect(answersDiffer(['1.1.1.1', '2.2.2.2'], ['2.2.2.2'])).toBe(false)
-	})
-	it('no system answer is not a disagreement', () => {
-		expect(answersDiffer([], ['1.1.1.1'])).toBe(false)
+	it.each(vectors.answersDiffer)('$system vs $public -> $differ', ({ system, public: publicDNS, differ }) => {
+		expect(answersDiffer(system, publicDNS)).toBe(differ)
 	})
 })
 
 describe('systemProbeTarget', () => {
-	it('skips sinkholes', () => {
-		expect(systemProbeTarget(['0.0.0.0', '93.184.216.34'])).toBe('93.184.216.34')
-	})
-	it('has nothing to probe when every answer is a sinkhole', () => {
-		expect(systemProbeTarget(['0.0.0.0', '10.0.0.1'])).toBeUndefined()
+	it.each(vectors.systemProbeTarget)('$system -> $target', ({ system, target }) => {
+		expect(systemProbeTarget(system)).toBe(target ?? undefined)
 	})
 })

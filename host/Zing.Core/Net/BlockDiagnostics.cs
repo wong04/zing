@@ -63,7 +63,8 @@ public static class BlockDiagnostics
 	{
 		// TryParse also takes shorthand like "10" (0.0.0.10), which no resolver answers with.
 		if (!IPAddress.TryParse(ip, out var address) || (!ip.Contains(':') && ip.Count(c => c == '.') != 3)) return false;
-		if (address.AddressFamily == AddressFamily.InterNetworkV6) return address.Equals(IPAddress.IPv6Any) || address.Equals(IPAddress.IPv6Loopback);
+		// Spelled as the TS twin does: A-record answers are IPv4, so longer spellings of ::1 are not worth parsing.
+		if (address.AddressFamily == AddressFamily.InterNetworkV6) return ip is "::" or "::1";
 		var bytes = address.GetAddressBytes();
 		return bytes[0] == 0
 			|| bytes[0] == 10

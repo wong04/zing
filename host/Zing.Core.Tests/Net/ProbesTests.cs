@@ -22,6 +22,36 @@ public sealed class ProbesTests
 		Assert.Contains("127.0.0.1", answers);
 	}
 
+	[Theory]
+	[InlineData(SocketError.HostNotFound)]
+	[InlineData(SocketError.NoData)]
+	[InlineData(SocketError.TryAgain)]
+	[InlineData(SocketError.ConnectionRefused)]
+	[InlineData(SocketError.ConnectionReset)]
+	[InlineData(SocketError.NoRecovery)]
+	public async Task Any_failed_system_lookup_is_an_empty_answer(SocketError error)
+	{
+		var probes = new Probes(lookup: (_, _) => throw new SocketException((int)error));
+		Assert.Empty(await probes.ResolveSystemAsync("blocked.test", CancellationToken.None));
+	}
+
+	[Fact]
+	public async Task A_system_lookup_that_never_answers_times_out_with_its_own_error()
+	{
+		var probes = new Probes(deadline: TimeSpan.FromMilliseconds(200), lookup: (_, _) => new TaskCompletionSource<IPAddress[]>().Task);
+		await Assert.ThrowsAsync<SystemLookupTimedOutError>(() => probes.ResolveSystemAsync("blocked.test", CancellationToken.None));
+	}
+
+	[Fact]
+	public async Task A_cancelled_system_lookup_is_cancelled_not_timed_out()
+	{
+		using var cancel = new CancellationTokenSource();
+		var probes = new Probes(lookup: (_, _) => new TaskCompletionSource<IPAddress[]>().Task);
+		var pending = probes.ResolveSystemAsync("blocked.test", cancel.Token);
+		await cancel.CancelAsync();
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+	}
+
 	[Fact]
 	public async Task Tcp_is_reachable_when_something_listens()
 	{

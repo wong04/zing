@@ -32,37 +32,44 @@ public sealed class BlockDiagnosticsTests
 		Assert.Equal(v.GetProperty("kind").GetString(), JsonSerializer.Serialize(BlockDiagnostics.Classify(observed), ZingJson.Options).Trim('"'));
 	}
 
+	private static JsonElement Section(string name) => Vectors.Load(VectorsPath).GetProperty(name);
+
+	private static TheoryData<string> Cases(string name)
+	{
+		var data = new TheoryData<string>();
+		foreach (var v in Section(name).EnumerateArray()) data.Add(v.GetRawText());
+		return data;
+	}
+
+	private static List<string> Strings(JsonElement list) => [.. list.EnumerateArray().Select(a => a.GetString()!)];
+
+	public static TheoryData<string> Sinkholes() => Cases("isSinkhole");
+
+	public static TheoryData<string> Differing() => Cases("answersDiffer");
+
+	public static TheoryData<string> Targets() => Cases("systemProbeTarget");
+
 	[Theory]
-	[InlineData("0.0.0.0", true)]
-	[InlineData("127.0.0.53", true)]
-	[InlineData("10.1.2.3", true)]
-	[InlineData("172.16.5.5", true)]
-	[InlineData("172.31.255.255", true)]
-	[InlineData("172.15.255.255", false)]
-	[InlineData("172.32.0.1", false)]
-	[InlineData("169.254.169.254", true)]
-	[InlineData("169.253.0.1", false)]
-	[InlineData("192.168.0.1", true)]
-	[InlineData("192.169.0.1", false)]
-	[InlineData("100.64.0.1", false)]
-	[InlineData("93.184.216.34", false)]
-	[InlineData("::1", true)]
-	[InlineData("2606:4700::1111", false)]
-	[InlineData("not-an-ip", false)]
-	public void Sinkhole_addresses(string ip, bool expected) => Assert.Equal(expected, BlockDiagnostics.IsSinkhole(ip));
+	[MemberData(nameof(Sinkholes))]
+	public void Sinkhole_addresses_agree_with_the_TS(string json)
+	{
+		var v = JsonDocument.Parse(json).RootElement;
+		Assert.Equal(v[1].GetBoolean(), BlockDiagnostics.IsSinkhole(v[0].GetString()!));
+	}
 
-	[Fact]
-	public void Answers_that_overlap_agree() => Assert.False(BlockDiagnostics.AnswersDiffer(["1.1.1.1", "2.2.2.2"], ["2.2.2.2"]));
+	[Theory]
+	[MemberData(nameof(Differing))]
+	public void Differing_answers_agree_with_the_TS(string json)
+	{
+		var v = JsonDocument.Parse(json).RootElement;
+		Assert.Equal(v.GetProperty("differ").GetBoolean(), BlockDiagnostics.AnswersDiffer(Strings(v.GetProperty("system")), Strings(v.GetProperty("public"))));
+	}
 
-	[Fact]
-	public void Disjoint_answers_differ() => Assert.True(BlockDiagnostics.AnswersDiffer(["157.240.1.35"], ["157.240.22.174"]));
-
-	[Fact]
-	public void No_system_answer_is_not_a_disagreement() => Assert.False(BlockDiagnostics.AnswersDiffer([], ["1.1.1.1"]));
-
-	[Fact]
-	public void The_system_probe_target_skips_sinkholes() => Assert.Equal("93.184.216.34", BlockDiagnostics.SystemProbeTarget(["0.0.0.0", "93.184.216.34"]));
-
-	[Fact]
-	public void Nothing_to_probe_when_every_answer_is_a_sinkhole() => Assert.Null(BlockDiagnostics.SystemProbeTarget(["0.0.0.0", "10.0.0.1"]));
+	[Theory]
+	[MemberData(nameof(Targets))]
+	public void The_system_probe_target_agrees_with_the_TS(string json)
+	{
+		var v = JsonDocument.Parse(json).RootElement;
+		Assert.Equal(v.GetProperty("target").GetString(), BlockDiagnostics.SystemProbeTarget(Strings(v.GetProperty("system"))));
+	}
 }

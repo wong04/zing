@@ -4,8 +4,13 @@ namespace Zing.Core.Net;
 /// The ladder: compare the network's DNS with a public resolver's, then test TCP, then test TLS. Each layer that works narrows down
 /// where the interference sits (port of src/platform/net/diagnose.ts).
 /// </summary>
-public sealed class Diagnose(IProbes probes, IDohClient doh)
+public sealed class Diagnose(IProbes probes, IDohClient doh, TimeSpan? deadline = null)
 {
+	/// <summary>The bridge cannot cancel a call, so a diagnosis stops itself: lookups 8 s and probes 6 s each, with room to spare.</summary>
+	public static readonly TimeSpan DefaultDeadline = TimeSpan.FromSeconds(45);
+
+	private readonly TimeSpan _deadline = deadline ?? DefaultDeadline;
+
 	private abstract record PublicAnswer;
 	private sealed record Addresses(IReadOnlyList<string> Found) : PublicAnswer;
 	private sealed record NxDomain : PublicAnswer;
@@ -15,13 +20,29 @@ public sealed class Diagnose(IProbes probes, IDohClient doh)
 	/// <param name="provider">The DoH provider setting's value.</param>
 	public async Task<DiagnosticReport> RunAsync(string typed, string provider, CancellationToken ct)
 	{
+		using var overall = CancellationTokenSource.CreateLinkedTokenSource(ct);
+		overall.CancelAfter(_deadline);
+		try
+		{
+			return await RunLadderAsync(typed, provider, overall.Token);
+		}
+		catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+		{
+			throw new DiagnosisTimedOutError();
+		}
+	}
+
+	private async Task<DiagnosticReport> RunLadderAsync(string typed, string provider, CancellationToken ct)
+	{
 		var host = HostOf(typed);
 		var steps = new List<string>();
-		var systemLookup = probes.ResolveSystemAsync(host, ct);
+		var systemLookup = LookUpSystemAsync(host, ct);
 		var publicLookup = LookUpPublicAsync(host, provider, ct);
 		await Task.WhenAll(systemLookup, publicLookup);
-		var systemDns = systemLookup.Result;
-		steps.Add(systemDns.Count == 0 ? "Network DNS: no answer (possible NXDOMAIN block)" : $"Network DNS: {string.Join(", ", systemDns)}");
+		var (systemDns, systemTimedOut) = systemLookup.Result;
+		steps.Add(systemTimedOut ? "Network DNS: no answer in time (a resolver that stays silent can be a block)"
+			: systemDns.Count == 0 ? "Network DNS: no answer (possible NXDOMAIN block)"
+			: $"Network DNS: {string.Join(", ", systemDns)}");
 
 		switch (publicLookup.Result)
 		{
@@ -34,6 +55,18 @@ public sealed class Diagnose(IProbes probes, IDohClient doh)
 				return await LadderAsync(host, systemDns, publicDns, steps, ct);
 			default:
 				throw new InvalidOperationException("Unhandled public DNS answer");
+		}
+	}
+
+	private async Task<(IReadOnlyList<string> Addresses, bool TimedOut)> LookUpSystemAsync(string host, CancellationToken ct)
+	{
+		try
+		{
+			return (await probes.ResolveSystemAsync(host, ct), false);
+		}
+		catch (SystemLookupTimedOutError)
+		{
+			return ([], true);
 		}
 	}
 
@@ -60,8 +93,8 @@ public sealed class Diagnose(IProbes probes, IDohClient doh)
 		steps.Add($"Public DoH: couldn't be used. {reason} Some networks block or rewrite encrypted DNS, so this says nothing about the site itself.");
 		var proven = await ProvesIdentityAsync(host, systemDns, steps, ct);
 		if (!proven) return new DiagnosticReport(host, BlockKind.Inconclusive, systemDns, [], false, false, steps);
-		var kind = BlockDiagnostics.Classify(new BlockObservations(true, false, false, true, true));
-		return new DiagnosticReport(host, kind, systemDns, [], true, true, steps);
+		// A valid certificate on the network's own address is proof the site is not being interfered with.
+		return new DiagnosticReport(host, BlockKind.NotBlocked, systemDns, [], true, true, steps);
 	}
 
 	private async Task<DiagnosticReport> LadderAsync(string host, IReadOnlyList<string> systemDns, IReadOnlyList<string> publicDns, List<string> steps, CancellationToken ct)
