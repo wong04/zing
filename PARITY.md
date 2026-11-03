@@ -15,10 +15,10 @@ These are macOS-only and have a Windows replacement tracked above:
 | Keychain AutoFill bridge | Built-in vault (V1–V3) |
 | `.mobileconfig` DNS profile | PowerShell DoH script (X5) |
 | `sips`, `textutil`, PDFKit | sharp, mammoth/pandoc, printToPDF (X6, X7) |
-| SceneKit, AVKit, QuickLook | three.js, `<video>`, metadata fallback (X15) |
+| AVKit, QuickLook | `<video>`, metadata fallback (X15; SceneKit and 3D models dropped) |
 | Vision background removal | ONNX Runtime (X16) |
 | Traffic-light placement | Frameless window + titleBarOverlay (S2) |
-| `brew install` | `winget install` (X10) |
+| `brew install` | Engines downloaded on first use (X10) |
 
 ## Dropped
 

@@ -99,7 +99,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 **Startup**
 - Show the window on `ready-to-show` with only the chrome bundle. Defer blocklist refresh, update check, import detection and toolbox modules until after first paint.
-- Bundle with electron-vite/esbuild and enable the V8 compile cache for the main process. Code-split every Toolbox tool (three.js, graphing, ONNX, PDF) so it loads on first open.
+- Bundle with electron-vite/esbuild and enable the V8 compile cache for the main process. Code-split every Toolbox tool (graphing, ONNX, PDF) so it loads on first open.
 
 **Disk / install size**
 - Don't bundle ffmpeg or yt-dlp (get them via winget, which also avoids LGPL/GPL redistribution). The background-removal model downloads on first use from a GitHub Release with a SHA-256 check.
@@ -130,7 +130,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 **5. Themes (new)**: move from "accent on grey" to full themes where background, surfaces, tab strip, sidebar and start page all carry colour. 8–10 presets (e.g. Ocean, Sunset, Forest, Grape, Candy, Midnight, plus Mono for current fans), each with light/dark, and a custom theme from one seed colour, extending the existing hue-rotation + contrast-lift generator. Win11 Mica tint follows the theme. Keep the WCAG AA test over every generated token pair.
 
-**6. Toolbox parity**: Open a Link (4 methods), Diagnose, Network & VPN (Windows), Convert + format matrix, Download (yt-dlp, Save page via relay), Security (Windows checks), Viewer, Utilities, Graphing calculator, Background remover, Tool setup (winget).
+**6. Toolbox parity**: Open a Link (4 methods), Diagnose, Network & VPN (Windows), Convert + format matrix, Download (yt-dlp, Save page via relay), Viewer, Utilities, Graphing calculator, Background remover, Engines downloaded on first use.
 
 **6b. Password vault (new, replaces Keychain autofill)**: `vault.zing` in userData, encrypted with `safeStorage` (DPAPI) and unlocked with Windows Hello (WinRT `UserConsentVerifier` through a small napi addon). If Hello isn't set up, the vault shows an explicit "set up Windows Hello" error rather than falling back silently. Includes the key icon in sign-in fields, a save prompt on submit, exact-origin matching (not registrable domain), CSV import from Chrome/Edge/Bitwarden, the existing password generator, and a manage page in Settings. Keeps the privacy model honest: when the vault holds entries, the Settings privacy banner turns from green to a warning, the same way `restoreTabs` does. Tests: origin matching, the cross-origin-frame refusal, encryption round-trip.
 
