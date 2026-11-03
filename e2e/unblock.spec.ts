@@ -105,6 +105,26 @@ test('encrypted DNS that the network blocks is explained in the report, not show
 	await zing.close()
 })
 
+test('not blocked without encrypted DNS says the verdict rests on the certificate', async () => {
+	const zing = await launchWith(await deadAddress(), { system: ['1.2.3.4'], tcp: true, tlsValid: true })
+	const { panel } = await openDiagnose(zing)
+	await diagnose(panel, 'local.test')
+	await expect(panel.getByTestId('diagnose-verdict')).toHaveText('Not blocked')
+	await expect(panel.getByTestId('diagnose-caveat')).toContainText("Encrypted DNS couldn't be checked on this network")
+	await zing.close()
+})
+
+test('a verdict that used encrypted DNS carries no caveat', async () => {
+	const doh = await serveDoh(['93.184.216.34'])
+	const zing = await launchWith(doh.url, { system: ['93.184.216.34'], tcp: true, tlsValid: true })
+	const { panel } = await openDiagnose(zing)
+	await diagnose(panel, 'local.test')
+	await expect(panel.getByTestId('diagnose-verdict')).toHaveText('Not blocked')
+	await expect(panel.getByTestId('diagnose-caveat')).toHaveCount(0)
+	await zing.close()
+	await doh.close()
+})
+
 test('something that is not a site name is refused with a reason', async () => {
 	const doh = await serveDoh(['1.2.3.4'])
 	const zing = await launchWith(doh.url, { system: [], tcp: false, tlsValid: false })

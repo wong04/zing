@@ -67,7 +67,7 @@ describe('BlockDiagnostics.classify — shared vectors', () => {
 
 // Beyond Krackn's suite: the helpers diagnose() feeds into classify. Their cases are shared with the C# port too.
 describe('isSinkhole', () => {
-	it.each(vectors.isSinkhole)('%s -> %s', (ip, want) => {
+	it.each(vectors.isSinkhole as [string, boolean][])('%s -> %s', (ip, want) => {
 		expect(isSinkhole(ip)).toBe(want)
 	})
 })

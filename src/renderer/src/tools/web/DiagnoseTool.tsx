@@ -62,6 +62,11 @@ export function DiagnoseTool() {
 					<p className="diagnose-detail" data-testid="diagnose-detail">
 						{blockDetail(report.kind)}
 					</p>
+					{report.kind === 'notBlocked' && report.publicDNS.length === 0 ? (
+						<p className="diagnose-detail" data-testid="diagnose-caveat">
+							Encrypted DNS couldn't be checked on this network, so this rests on the site's certificate alone.
+						</p>
+					) : null}
 					{report.kind === 'notBlocked' ? null : (
 						<>
 							<p className="diagnose-detail">
