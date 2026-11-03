@@ -76,6 +76,17 @@ public static class RelayedNavigation
 		return isDocument && approvedDocument is not null && Same(approvedDocument, request);
 	}
 
+	/// <summary>
+	/// Whether a page's document request (main frame or frame) to the network may go out. Cancelling a navigation does not stop the engine
+	/// sending its request first, so a relayed page that navigates to an address would still make Zing contact it: only the
+	/// navigation Zing itself allowed (the address bar, Back) may.
+	/// </summary>
+	public static bool MayRequestDocument(string top, string request, string? approvedDocument)
+	{
+		if (!RelayedContent.IsRelayUrl(top)) return true;
+		return approvedDocument is not null && Same(approvedDocument, request);
+	}
+
 	public static bool Same(string a, string b) =>
 		Uri.TryCreate(a, UriKind.Absolute, out var x) && Uri.TryCreate(b, UriKind.Absolute, out var y) ? x.AbsoluteUri == y.AbsoluteUri : a == b;
 }

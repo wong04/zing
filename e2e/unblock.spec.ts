@@ -256,6 +256,9 @@ async function navigateActive(zing: Launched, address: string): Promise<void> {
 	}, address)
 }
 
+/** The page's text, or nothing while the page is between documents. */
+const textOf = (page: Page): Promise<string> => page.evaluate('document.body ? document.body.innerText : ""').then(String, () => '')
+
 const settle = (ms = 800): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 test('a relayed page loads its stylesheet through the relay', async () => {
@@ -291,7 +294,7 @@ test('a relayed page is kept off the direct network and its links stay in the re
 	await expect.poll(() => pages(zing.browser).some((p) => p.url() === 'zing-relay://other.test/runtime')).toBe(true)
 	const relayed = pages(zing.browser).find((p) => p.url() === 'zing-relay://other.test/runtime')!
 	// Nor can it reach Zing's own pages, files or the network.
-	for (const target of ['zing://home', 'file:///c:/windows/win.ini', 'http://127.0.0.1:1/']) {
+	for (const target of ['zing://home', 'file:///c:/windows/win.ini', `${stand.origin}/nav`]) {
 		await relayed.evaluate(`globalThis.location.href = ${JSON.stringify(target)}`)
 		await settle(300)
 		expect(relayed.url()).toBe('zing-relay://other.test/runtime')
@@ -304,30 +307,88 @@ test('a relayed page is kept off the direct network and its links stay in the re
 	await stand.close()
 })
 
-test('a relayed page has no bridge, and what it posts has no effect', async () => {
+test('a relayed page cannot reach the network by fetch, image or script', async () => {
 	const stand = await standIn()
 	const zing = await launchRelayed(stand)
 	const page = await openRelayed(zing, 'https://site.test/a/page.html')
-	const seen = await inPage(page, (g) => {
-		const attempt = (f: () => unknown): string => {
-			try {
-				return `returned ${typeof f()}`
-			} catch (e) {
-				return `threw ${(e as Error).name}`
-			}
+	const outcome = await page.evaluate(`(async () => {
+		const direct = ${JSON.stringify(stand.origin)}
+		const seen = {}
+		seen.fetch = await fetch(direct + '/fetch').then(() => 'read', (e) => e.name)
+		seen.noCors = await fetch(direct + '/no-cors', { mode: 'no-cors' }).then(() => 'sent', (e) => e.name)
+		new Image().src = direct + '/image'
+		const script = document.createElement('script')
+		script.src = direct + '/script'
+		document.head.append(script)
+		await new Promise((resolve) => setTimeout(resolve, 800))
+		return seen
+	})()`)
+	// The content security policy on the relay's responses refuses these, so no request leaves the page.
+	expect(outcome).toEqual({ fetch: 'TypeError', noCors: 'TypeError' })
+	expect(stand.direct).toEqual([])
+	await zing.close()
+	await stand.close()
+})
+
+test('a relayed page reads its own origin’s files but not another relay host’s', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	const page = await openRelayed(zing, 'https://site.test/a/page.html')
+	const outcome = await page.evaluate(`(async () => ({
+		same: await fetch('zing-relay://site.test/a/style.css').then((r) => r.text(), (e) => e.name),
+		other: await fetch('zing-relay://other.test/x').then(() => 'read', (e) => e.name),
+	}))()`)
+	expect(outcome).toEqual({ same: 'body{background:rgb(1,2,3)}', other: 'TypeError' })
+	await zing.close()
+	await stand.close()
+})
+
+test('a relayed page’s iframe and popup stay in the relay', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	const page = await openRelayed(zing, 'https://site.test/a/page.html')
+	await page.evaluate(`(() => {
+		for (const src of ['zing-relay://other.test/frame', ${JSON.stringify(stand.origin + '/frame')}, 'zing://home', 'file:///c:/windows/win.ini']) {
+			const frame = document.createElement('iframe')
+			frame.src = src
+			document.body.append(frame)
 		}
-		return {
-			webview: typeof g.chrome?.webview,
-			post: attempt(() => g.chrome!.webview!.postMessage({ kind: 'invoke', id: 1, channel: 'tabs:get', args: [] })),
-			hostObject: attempt(() => g.chrome!.webview!.hostObjects!.sync!.zing),
-			zing: typeof g.zing,
-		}
-	})
+	})()`)
+	await expect.poll(() => page.frames().some((f) => f.url() === 'zing-relay://other.test/frame')).toBe(true)
+	await settle()
+	expect(page.frames().filter((f) => f !== page.mainFrame() && !/^(zing-relay:\/\/|about:|chrome-error:|$)/.test(f.url())).map((f) => f.url())).toEqual([])
+	// Popups: a relayed one opens as a relayed tab; an https one, a web one and Zing's own open nothing.
+	const before = (await tabsOf(zing)).tabs.length
+	await page.evaluate("globalThis.open('https://nowhere.test/'); globalThis.open(" + JSON.stringify(stand.origin + '/pop') + "); globalThis.open('zing://home'); globalThis.open('file:///c:/windows/win.ini')")
+	await settle()
+	expect((await tabsOf(zing)).tabs.length).toBe(before)
+	await page.evaluate("globalThis.open('zing-relay://other.test/pop')")
+	await expect.poll(async () => (await tabsOf(zing)).tabs.some((t) => t.url === 'zing-relay://other.test/pop')).toBe(true)
+	expect(stand.direct).toEqual([])
+	expect(stand.fetched.map((f) => f.target)).not.toContain('https://nowhere.test/')
+	await zing.close()
+	await stand.close()
+})
+
+test('a relayed page posting to the host changes nothing and no renderer receives it', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	const page = await openRelayed(zing, 'https://site.test/a/page.html')
+	const id = (await tabsOf(zing)).tabs.find((t) => t.url.startsWith('zing-relay://site.test'))!.id
+	// What the chrome would act on (and would close the tab for) if it were delivered to the bridge.
+	const seen = (await page.evaluate(`(() => {
+		const w = globalThis
+		const result = { webview: typeof w.chrome?.webview, zing: typeof w.zing, post: '', hostObject: '' }
+		try { w.chrome.webview.postMessage({ kind: 'invoke', id: 1, channel: 'tabs:close', args: [${JSON.stringify(id)}] }); result.post = 'returned' } catch (e) { result.post = 'threw ' + e.name }
+		try { result.hostObject = typeof w.chrome.webview.hostObjects.sync.zing } catch (e) { result.hostObject = 'threw ' + e.name }
+		return result
+	})()`)) as { zing: string; hostObject: string }
 	console.log('a relayed page sees', JSON.stringify(seen))
-	expect(seen.zing).toBe('undefined')
-	expect(seen.hostObject).not.toMatch(/returned (object|function)/)
-	// The window carries on, and the host recorded no unhandled error (close() fails the test on one).
-	expect((await tabsOf(zing)).tabs.length).toBeGreaterThan(0)
+	expect(seen).toMatchObject({ zing: 'undefined' })
+	expect(seen.hostObject).not.toBe('object')
+	await settle()
+	// Still open and still the same page; and no renderer got a reply or an event (an unhandled error would fail close()).
+	expect((await tabsOf(zing)).tabs.some((t) => t.id === id)).toBe(true)
 	await zing.close()
 	await stand.close()
 })
@@ -397,6 +458,39 @@ test('without the session\u2019s OK a blocked page is not sent to a third party,
 	await hook(zing, { action: 'relay-consent' })
 	await page.evaluate('globalThis.location.reload()')
 	await expect.poll(hosts).toContain('archive.org')
+	await zing.close()
+	await stand.close()
+})
+
+test('an address typed in a relayed tab still opens as an ordinary page, and Back returns to the relayed one', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	await openRelayed(zing, 'https://site.test/a/page.html')
+	await navigateActive(zing, `${stand.origin}/typed`)
+	const web = await pageWhere(zing.browser, (p) => p.url() === `${stand.origin}/typed`)
+	await expect.poll(() => inPage(web, (g) => g.document.title)).toBe('Attack')
+	expect(stand.direct.filter((u) => u !== '/favicon.ico')).toEqual(['/typed'])
+	await zing.chrome.evaluate(() => window.zing.runCommand('history.back'))
+	await pageWhere(zing.browser, (p) => p.url() === 'zing-relay://site.test/a/page.html')
+	await zing.close()
+	await stand.close()
+})
+
+test('a relayed page cannot reach loopback or the own network through the relay', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	const page = await openRelayed(zing, 'https://site.test/a/page.html')
+	await page.evaluate(`(async () => {
+		for (const address of ['zing-relay://127.0.0.1/', 'zing-relay://localhost/', 'zing-relay://192.168.1.1/admin', 'zing-relay://printer.local/', 'zing-relay://nas.lan/', 'zing-relay://100.64.0.1/'])
+			await fetch(address).catch(() => undefined)
+	})()`)
+	await page.evaluate("setTimeout(() => { globalThis.location.href = 'zing-relay://127.0.0.1/' }, 0)")
+	await expect.poll(() => textOf(page)).toContain('your own network')
+	// Opened by Zing as a relayed tab too.
+	const own = await openRelayed(zing, 'https://localhost/')
+	await expect.poll(() => textOf(own)).toContain('your own network')
+	const hosts = stand.fetched.map((f) => new URL(f.target).host)
+	for (const forbidden of ['127.0.0.1', 'localhost', '192.168.1.1', 'printer.local', 'nas.lan', '100.64.0.1']) expect(hosts).not.toContain(forbidden)
 	await zing.close()
 	await stand.close()
 })

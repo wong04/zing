@@ -313,13 +313,18 @@ public sealed class WebView2Page : IPage
 		_view.Visible = _visible;
 		_view.Place(_bounds);
 		_core = _view.Core;
-		// A page is not Zing's UI: no host object is reachable from it and it can't post to the host (a relayed page is untrusted).
+		// A page is not Zing's UI. Nothing here listens for a page's messages (only the renderer views do, and they refuse every origin
+		// but their own), and no host object is added; these two settings are belt and braces. chrome.webview itself stays on the page
+		// (the engine injects it) and postMessage still returns without error, as the relayed-page e2e observes.
 		_core.Settings.AreHostObjectsAllowed = false;
 		_core.Settings.IsWebMessageEnabled = false;
 		_core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
 		_core.AddWebResourceRequestedFilter(RelayedContent.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+		// A cancelled navigation has already sent its request by the time it is cancelled, so documents are held back here, before the network.
+		_core.AddWebResourceRequestedFilter("http://*", CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.All);
+		_core.AddWebResourceRequestedFilter("https://*", CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.All);
 		_core.WebResourceRequested += OnWebResourceRequested;
 		Wire(_core);
 		// A click into a split pane makes its tab the active one. The engine also moves the keyboard on its own (a page
@@ -372,7 +377,7 @@ public sealed class WebView2Page : IPage
 			_navigation = e.NavigationId;
 			var toRelay = RelayedContent.IsRelayUrl(e.Uri);
 			if (!e.IsRedirected) _chainIsRelay = toRelay;
-			_approvedDocument = toRelay ? e.Uri : null;
+			_approvedDocument = e.Uri;
 			// NavigationStarting is only raised for new documents; in-page navigations keep their grants.
 			_features.Left(this);
 			InReader = false;
@@ -514,6 +519,11 @@ public sealed class WebView2Page : IPage
 		if (RelayedContent.IsRelayUrl(e.Request.Uri))
 		{
 			ServeRelayed(sender, e);
+			return;
+		}
+		if (e.Request.Uri.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+		{
+			if (!RelayedNavigation.MayRequestDocument(sender.Source, e.Request.Uri, _approvedDocument)) e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
 			return;
 		}
 		CoreWebView2WebResourceResponse response;

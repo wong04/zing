@@ -75,6 +75,16 @@ public sealed class RelayedNavigationTests
 	}
 
 	[Fact]
+	public void ARelayedPageCausesNoDocumentRequestToTheNetworkExceptForANavigationZingAllowed()
+	{
+		const string Typed = "https://news.example/";
+		Assert.False(RelayedNavigation.MayRequestDocument(Relay, "http://127.0.0.1:5000/nav", approvedDocument: null));
+		Assert.False(RelayedNavigation.MayRequestDocument(Relay, "https://other.test/x", approvedDocument: Relay));
+		Assert.True(RelayedNavigation.MayRequestDocument(Relay, Typed, approvedDocument: Typed));
+		Assert.True(RelayedNavigation.MayRequestDocument(Web, "https://news.example/", approvedDocument: null));
+	}
+
+	[Fact]
 	public void RelayRequestsAreServedOnlyForARelayedPageOrAnApprovedDocument()
 	{
 		Assert.True(RelayedNavigation.MayServe(Relay, "zing-relay://b.com/s.css", isDocument: false, approvedDocument: null));
