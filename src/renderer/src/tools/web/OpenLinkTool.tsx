@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { attemptSummary, pinnedFilteredNote, planOpening, strategyLabel, withAttempt, type Opening } from '@shared/unblock/openLinkPlan'
+import { attemptSummary, collapseAttempts, pinnedFilteredNote, planOpening, strategyLabel, withAttempt, type Opening } from '@shared/unblock/openLinkPlan'
 import type { RelayAttempt, RelayOpenResult } from '@shared/unblock/relayOpen'
 import { zing } from '../../api'
 import { InfoBanner, PillButton, PillField } from '../../components'
@@ -137,7 +137,7 @@ export function OpenLinkTool() {
 		setAttempts([])
 		const result = await zing.openLink(input, runId)
 		if (!alive(mine)) return null
-		setAttempts(result.attempts)
+		setAttempts(collapseAttempts(result.attempts))
 		return result
 	}
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attemptSummary, httpsForm, planOpening, strategyLabel, withAttempt } from './openLinkPlan'
+import { attemptSummary, collapseAttempts, httpsForm, planOpening, strategyLabel, withAttempt } from './openLinkPlan'
 import type { RelayAttempt, RelayOpenResult, RelayStrategyName } from './relayOpen'
 
 const result = (strategy: RelayStrategyName, address: string): RelayOpenResult => ({ outcome: 'opened', strategy, address, attempts: [] })
@@ -32,6 +32,18 @@ describe('withAttempt', () => {
 		rows = withAttempt(rows, event('dohPinned', 'trying'))
 		expect(rows.map((r) => `${r.strategy}:${r.status}`)).toEqual(['direct:failed', 'dohPinned:trying'])
 		expect(rows[0]?.reason).toBe('no route')
+	})
+})
+
+describe('collapseAttempts', () => {
+	it('keeps one row per method, the last step of each, in order', () => {
+		const steps: RelayAttempt[] = [
+			{ strategy: 'direct', status: 'trying' },
+			{ strategy: 'direct', status: 'failed', reason: 'cut' },
+			{ strategy: 'dohPinned', status: 'trying' },
+			{ strategy: 'dohPinned', status: 'worked' },
+		]
+		expect(collapseAttempts(steps).map((r) => `${r.strategy}:${r.status}`)).toEqual(['direct:failed', 'dohPinned:worked'])
 	})
 })
 

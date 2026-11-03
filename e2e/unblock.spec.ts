@@ -849,7 +849,9 @@ test('a run that ends after its panel was closed opens nothing', async () => {
 
 test('an http address that needed a relay is tried once over https, else said plainly', async () => {
 	const stand = await methodsStand((target, via) => {
-		if (target.host === 'r.jina.ai') return target.pathname.startsWith('/https://plain.test') ? { type: 'text/plain', body: 'text '.repeat(20) } : { status: 404 }
+		// plain.test answers over either scheme; nowhere.test only as http, which a relayed tab can't show.
+		const reads = target.pathname.includes('://plain.test/') || target.pathname.startsWith('/http://nowhere.test/')
+		if (target.host === 'r.jina.ai') return reads ? { type: 'text/plain', body: 'text '.repeat(20) } : { status: 404 }
 		return via === 'plain' || via === 'pinned' ? { cut: true } : { status: 404 }
 	})
 	const zing = await launchOffline(stand)

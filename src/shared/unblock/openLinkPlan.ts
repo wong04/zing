@@ -34,6 +34,11 @@ export function withAttempt(attempts: readonly RelayAttempt[], event: RelayAttem
 	return attempts.map((a, i) => (i === index ? next : a))
 }
 
+/** The result lists every step of a method (trying, then how it ended); the tool shows one row per method, as the pushes build it. */
+export function collapseAttempts(steps: readonly RelayAttempt[]): readonly RelayAttempt[] {
+	return steps.reduce<readonly RelayAttempt[]>((rows, step) => withAttempt(rows, { ...step, runId: '' }), [])
+}
+
 /** What the tool says about an attempt. A method failing is ordinary on a filtered network, and never reads as something broken. */
 export function attemptSummary(attempt: RelayAttempt): string {
 	switch (attempt.status) {
