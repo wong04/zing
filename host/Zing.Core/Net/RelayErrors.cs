@@ -6,6 +6,9 @@ public abstract class RelayError(string message, Exception? inner = null) : NetE
 /// <summary>What was typed is not an address Zing can open. The message leaves out what was typed: it is nobody's business to keep.</summary>
 public sealed class BadURLError() : RelayError("That isn't an address Zing can open. Enter one like example.com or https://example.com/page.");
 
+/// <summary>The relay scheme stands for https, so an address of another scheme can't be opened in a relayed tab.</summary>
+public sealed class RelayedAddressError() : RelayError("A relayed page needs an https address.");
+
 /// <summary>An address with a user name and password in it would hand them to a relay.</summary>
 public sealed class CredentialsInURLError() : RelayError("That address has a user name or password in it, which Zing won't send to anyone. Remove it and try again.");
 
