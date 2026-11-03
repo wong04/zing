@@ -492,7 +492,7 @@ public sealed class ChromeApi : IDisposable
 	private void LoadFailed(TabRecord tab, string description)
 	{
 		// The engine can report a second, vaguer failure for the same load (an abort after the name failed); it adds nothing the offer doesn't say.
-		if (_offered is not null && tab.Id == _offeredTab && LoadFailureOffer.For(tab.Url, description) is null) return;
+		if (_offered is not null && tab.Id == _offeredTab && LoadFailureOffer.IsOffered(tab.Url, _offered) && LoadFailureOffer.For(tab.Url, description) is null) return;
 		// An offer for a page you aren't looking at would be about something else than what is on screen.
 		if (tab.Id != Tabs.ActiveId || LoadFailureOffer.For(tab.Url, description) is not { } address)
 		{

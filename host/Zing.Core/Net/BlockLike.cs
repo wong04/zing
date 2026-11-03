@@ -39,6 +39,10 @@ public static class LoadFailureOffer
 		return WithoutCredentials(address);
 	}
 
+	/// <summary>Whether a tab's address is the one an offer was made for.</summary>
+	public static bool IsOffered(string url, string offered) =>
+		Uri.TryCreate(url, UriKind.Absolute, out var address) && WithoutCredentials(address) == offered;
+
 	/// <summary>The address without a user name and password, which have no place on screen or in a field Zing fills in.</summary>
 	private static string WithoutCredentials(Uri address) =>
 		address.UserInfo == "" ? address.AbsoluteUri : address.GetComponents(UriComponents.AbsoluteUri & ~UriComponents.UserInfo, UriFormat.UriEscaped);

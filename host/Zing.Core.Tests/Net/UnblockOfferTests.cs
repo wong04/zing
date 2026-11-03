@@ -213,4 +213,15 @@ public sealed class UnblockOfferTests : IDisposable
 		events.LoadFailed("ConnectionAborted");
 		Assert.Single(_host.Notices);
 	}
+
+	[Fact]
+	public void A_failure_of_another_page_in_the_tab_is_told_while_an_offer_shows()
+	{
+		var tab = _api.Tabs.Open("https://blocked.test/page");
+		var events = ((FakePage)_api.Tabs.PageOf(tab.Id)!).Events;
+		events.LoadFailed("HostNameNotResolved");
+		events.Navigated("http://192.168.1.1/");
+		events.LoadFailed("CannotConnect");
+		Assert.Contains("192.168.1.1", Assert.Single(_host.Notices));
+	}
 }
