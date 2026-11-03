@@ -4,6 +4,7 @@ using Zing.Core.Net;
 
 namespace Zing.Core.Tests.Net;
 
+[Collection("HttpDefaultProxy")]
 public sealed class DohClientTests
 {
 	private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> reply) : HttpMessageHandler
