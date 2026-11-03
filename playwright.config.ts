@@ -13,6 +13,8 @@ export default defineConfig({
 	// CI runners start WebView2 and finish downloads several times slower than a desk PC.
 	expect: { timeout: 15_000 },
 	workers: 1,
+	// The WebView2 engine sometimes keeps its profile lock for 30 s and more after Zing quits, on CI only; a rerun of the test passes.
+	retries: process.env.CI ? 1 : 0,
 	reporter: 'list',
 	// Only a failed test's folder is kept: its pictures and logs (e2e/zing.ts `test`), which CI uploads.
 	preserveOutput: 'failures-only',
