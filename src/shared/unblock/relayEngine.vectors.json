@@ -1,0 +1,37 @@
+{
+	"normalize": [
+		{"input": "example.com", "href": "https://example.com/"},
+		{"input": "  example.com  ", "href": "https://example.com/"},
+		{"input": "<https://a.com/x>", "href": "https://a.com/x"},
+		{"input": "\"https://a.com/x\"", "href": "https://a.com/x"},
+		{"input": "http://a.com", "href": "http://a.com/"},
+		{"input": "https://a.com:8443/p?q=1", "href": "https://a.com:8443/p?q=1"},
+		{"input": "a.com/path with space", "href": "https://a.com/path%20with%20space"},
+		{"input": "a.com/x#frag", "href": "https://a.com/x#frag"},
+		{"input": "HTTPS://UPPER.COM", "href": "https://upper.com/"},
+		{"input": "sub.domain.co.uk/x", "href": "https://sub.domain.co.uk/x"}
+	],
+	"refused": ["", "   ", "<>", "\"\"", "'", "not a url", "a b c", "http://", "https://", "://x", "javascript:alert(1)", "file:///etc/passwd"],
+	"status": {
+		"ok": [200, 204, 302, 399],
+		"failed": [199, 400, 404, 503]
+	},
+	"waybackSnapshot": [
+		{
+			"answer": {"archived_snapshots": {"closest": {"available": true, "url": "http://web.archive.org/web/2024/http://example.com/"}}},
+			"href": "https://web.archive.org/web/2024/http://example.com/"
+		},
+		{
+			"answer": {"archived_snapshots": {"closest": {"available": true, "url": "https://web.archive.org/web/2023/https://a.com/x"}}},
+			"href": "https://web.archive.org/web/2023/https://a.com/x"
+		}
+	],
+	"waybackEmpty": [
+		{"archived_snapshots": {}},
+		{"archived_snapshots": {"closest": {"available": false, "url": "http://web.archive.org/x"}}},
+		{"archived_snapshots": {"closest": {"available": true}}},
+		{"archived_snapshots": {"closest": {"available": true, "url": 5}}},
+		"nope",
+		null
+	]
+}
