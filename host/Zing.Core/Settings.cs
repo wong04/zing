@@ -67,6 +67,8 @@ public static class SettingsSchema
 			case "startShortcuts":
 				return value.ValueKind == JsonValueKind.Null
 					|| (value.ValueKind == JsonValueKind.Array && value.EnumerateArray().All(IsShortcut));
+			case "linkList":
+				return value.ValueKind == JsonValueKind.Array && value.EnumerateArray().All(IsShortcut);
 			case "sleep":
 				return IsSleep(value, rule["min"]!.GetValue<double>(), rule["max"]!.GetValue<double>());
 			default:

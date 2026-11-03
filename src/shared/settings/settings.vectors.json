@@ -1,6 +1,6 @@
 {
 	"kracknKeys": ["theme", "accent", "homepage", "startShortcuts", "searchEngine", "blockTrackers", "confirmQuit", "defaultQuality", "preserveOriginals", "dohProvider", "tabOrganization", "autoCloseEnabled", "autoCloseRule", "autoCloseCustomHours", "autoCloseAtTimeEnabled", "autoCloseHour", "autoCloseMinute", "persistentProfile", "defaultUserAgent", "acceleratedCanvas", "restoreTabs", "securityRealtime", "securityDownloadScan", "securityDomainBlocking", "securitySignatureCheck", "sidebarPinned", "recentFeatures", "showFavouritesBar", "passwordAutofill", "tabDropdowns"],
-	"zingKeys": ["tabBarPosition", "tabColours", "customColor", "verticalTabWidth", "verticalTabsCollapsed", "sleepingTabs", "favouritesHint"],
+	"zingKeys": ["tabBarPosition", "tabColours", "customColor", "verticalTabWidth", "verticalTabsCollapsed", "sleepingTabs", "favouritesHint", "toolLinks"],
 	"retiredKeys": ["confirmQuit"],
 	"defaultsSubset": {
 		"theme": "system", "accent": "yellow", "customColor": "#D9B872", "searchEngine": "google", "homepage": "", "startShortcuts": null,
@@ -53,6 +53,11 @@
 		{ "key": "startShortcuts", "value": null, "ok": true },
 		{ "key": "startShortcuts", "value": [{ "title": "t", "url": "u" }], "ok": true },
 		{ "key": "startShortcuts", "value": [{ "title": "t" }], "ok": false },
+		{ "key": "toolLinks", "value": [], "ok": true },
+		{ "key": "toolLinks", "value": [{ "title": "t", "url": "https://u/" }], "ok": true },
+		{ "key": "toolLinks", "value": null, "ok": false },
+		{ "key": "toolLinks", "value": [{ "title": "t" }], "ok": false },
+		{ "key": "toolLinks", "value": [{ "title": 1, "url": "u" }], "ok": false },
 		{ "key": "sleepingTabs", "value": { "enabled": true, "afterMinutes": 1, "sleepPinned": false }, "ok": true },
 		{ "key": "sleepingTabs", "value": { "enabled": true, "afterMinutes": 0, "sleepPinned": false }, "ok": false },
 		{ "key": "sleepingTabs", "value": { "enabled": true, "afterMinutes": 10081, "sleepPinned": false }, "ok": false },

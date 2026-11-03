@@ -16,6 +16,7 @@ const order = [
 	'section:Diagnose',
 	'section:Network & VPN',
 	'tool:Link Cleaner',
+	'section:Links',
 	'tool:Passwords',
 	'tool:Hashes',
 	'tool:HMAC',

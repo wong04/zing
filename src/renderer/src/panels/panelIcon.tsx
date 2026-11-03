@@ -21,6 +21,7 @@ const SECTION_ICONS: Readonly<Partial<Record<string, (size: number) => React.JSX
 	[Section.unblock]: (s) => <LinkIcon size={s} />,
 	[Section.diagnose]: (s) => <WaveIcon size={s} />,
 	[Section.network]: (s) => <GlobeIcon size={s} />,
+	[Section.links]: (s) => <GlobeIcon size={s} />,
 }
 
 const TOOL_ICONS: Readonly<Partial<Record<string, (size: number) => React.JSX.Element>>> = {

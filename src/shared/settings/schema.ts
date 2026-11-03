@@ -1,4 +1,5 @@
 import { VERTICAL_TABS } from '../layout/chrome'
+import { DEFAULT_TOOL_LINKS, isToolLinkList } from '../toolbox/links'
 import { DEFAULT_SLEEPING_TABS, isSleepSettings } from '../session/sleepSettings'
 
 /**
@@ -131,6 +132,8 @@ export const SETTINGS_SCHEMA = {
 	verticalTabsCollapsed: flag(false),
 	/** Zing: discard idle tabs' renderers to save memory; the record and URL stay. */
 	sleepingTabs: { default: DEFAULT_SLEEPING_TABS, accepts: isSleepSettings },
+	/** Zing: the tiles on the Toolbox's Links page, kept like other settings since the user chose to edit them. */
+	toolLinks: { default: DEFAULT_TOOL_LINKS, accepts: isToolLinkList },
 } as const
 
 type Schema = typeof SETTINGS_SCHEMA

@@ -41,6 +41,7 @@ export type CustomId =
 	| 'accent'
 	| 'default-browser'
 	| 'shortcuts'
+	| 'tool-links'
 	| 'sleeping-tabs'
 	| 'privacy-banner'
 	| 'clear-session'
@@ -174,7 +175,10 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 			warning: (s) => s.restoreTabs,
 		}),
 	],
-	newTab: [{ type: 'custom', id: 'shortcuts', keys: ['startShortcuts'] }],
+	newTab: [
+		{ type: 'custom', id: 'shortcuts', keys: ['startShortcuts'] },
+		{ type: 'custom', id: 'tool-links', keys: ['toolLinks'] },
+	],
 	tabs: [
 		{
 			type: 'setting',

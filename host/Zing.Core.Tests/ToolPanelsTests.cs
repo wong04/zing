@@ -153,6 +153,13 @@ public sealed class ToolPanelsTests
 	}
 
 	[Fact]
+	public void The_links_page_is_a_tearable_section()
+	{
+		Assert.Equal(PanelContent.Section(PanelSection.Links), PanelContent.FromId("section:Links"));
+		Assert.True(PanelContent.Section(PanelSection.Links).IsTearable);
+	}
+
+	[Fact]
 	public void Browser_toolbox_and_settings_cannot_be_torn_off()
 	{
 		Assert.False(PanelContent.Section(PanelSection.Browser).IsTearable);

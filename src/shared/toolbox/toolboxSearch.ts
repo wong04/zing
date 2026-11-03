@@ -109,6 +109,7 @@ export const keywords: Readonly<Record<string, readonly string[]>> = {
 	'section:Open a Link': ['unblock', 'blocked', 'relay', 'proxy', 'bypass', 'reader', 'censored'],
 	'section:Diagnose': ['blocked', 'why', 'test site', 'censorship', 'firewall', 'dns', 'troubleshoot'],
 	'section:Network & VPN': ['vpn', 'dns', 'doh', 'wireguard', 'profile', 'encrypted dns', 'tunnel'],
+	'section:Links': ['sites', 'bookmarks', 'chatgpt', 'claude', 'gemini', 'figma', 'notion', 'desmos', 'ai', 'chatbot', 'shortcuts'],
 	'tool:Link Cleaner': ['tracking', 'utm', 'clean url', 'strip', 'shorten'],
 	'tool:Passwords': ['password', 'generate password', 'passphrase', 'random', 'strength'],
 	'tool:Hashes': ['sha256', 'sha1', 'sha512', 'md5', 'checksum', 'hash', 'digest'],

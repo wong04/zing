@@ -17,6 +17,7 @@ export const Section = {
 	unblock: 'Open a Link',
 	diagnose: 'Diagnose',
 	network: 'Network & VPN',
+	links: 'Links',
 	settings: 'Settings',
 } as const
 export type Section = (typeof Section)[keyof typeof Section]

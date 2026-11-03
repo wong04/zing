@@ -31,6 +31,7 @@ const groupItems: Readonly<Record<ToolboxGroup, readonly PanelContent[]>> = {
 		section(Section.diagnose),
 		section(Section.network),
 		tool(UtilityTool.linkCleaner),
+		section(Section.links),
 	],
 	[ToolboxGroup.security]: [
 		tool(UtilityTool.password),

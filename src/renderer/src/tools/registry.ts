@@ -1,6 +1,7 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
 import { panelId, type PanelContent } from '@shared/toolbox/panelContent'
 import { devTools } from './dev'
+import { linksTools } from './links'
 import { mathTools } from './math'
 import { textTools } from './text'
 
@@ -28,7 +29,7 @@ export function buildRegistry(groups: readonly ToolLoaders[]): ReadonlyMap<strin
 	return registry
 }
 
-const registry = buildRegistry([mathTools, devTools, textTools])
+const registry = buildRegistry([mathTools, devTools, textTools, linksTools])
 
 /** The body of a tool's panel, or null while the tool has none (the panel then shows its empty state). */
 export function toolComponent(content: PanelContent): LazyExoticComponent<ComponentType> | null {
