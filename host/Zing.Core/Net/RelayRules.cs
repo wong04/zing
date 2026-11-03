@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 
 namespace Zing.Core.Net;
@@ -18,6 +20,29 @@ public static class RelayRules
 		if (url.Host == "") throw new BadURLError();
 		if (url.UserInfo != "") throw new CredentialsInURLError();
 		return url;
+	}
+
+	/// <summary>
+	/// Whether the address names something on the user's own network, judged from the text alone (no lookup): a loopback, private or
+	/// link-local address, localhost, a .local name, or a single-label name. Such an address must not be sent to a third party.
+	/// </summary>
+	public static bool IsPrivateHost(Uri url)
+	{
+		var host = url.Host.ToLowerInvariant().TrimEnd('.');
+		if (IPAddress.TryParse(host.Trim('[', ']'), out var address)) return IsPrivateAddress(address);
+		return host == "localhost" || host.EndsWith(".localhost", StringComparison.Ordinal) || host.EndsWith(".local", StringComparison.Ordinal) || !host.Contains('.');
+	}
+
+	private static bool IsPrivateAddress(IPAddress address)
+	{
+		if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+		if (address.AddressFamily == AddressFamily.InterNetworkV6)
+		{
+			var bytes = address.GetAddressBytes();
+			return address.Equals(IPAddress.IPv6Loopback) || address.Equals(IPAddress.IPv6Any) || (bytes[0] & 0xFE) == 0xFC || (bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80);
+		}
+		var b = address.GetAddressBytes();
+		return b[0] is 0 or 10 or 127 || (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254);
 	}
 
 	/// <summary>Anything outside 200 to 399 is a failed fetch; redirects were already followed.</summary>

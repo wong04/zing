@@ -52,10 +52,10 @@ public sealed class RelayEngineTests
 		return consent;
 	}
 
-	private static (RelayEngine Engine, List<RelayAttempt> Seen) EngineFor(FakeTransport transport, TimeSpan? attemptTimeout = null, TimeSpan? deadline = null)
+	private static (RelayEngine Engine, List<RelayAttempt> Seen) EngineFor(FakeTransport transport, RelayTimeouts? timeouts = null, TimeSpan? deadline = null)
 	{
 		var seen = new List<RelayAttempt>();
-		return (new RelayEngine(transport, "cloudflare", seen.Add, attemptTimeout, deadline), seen);
+		return (new RelayEngine(transport, "cloudflare", seen.Add, timeouts, deadline), seen);
 	}
 
 	private static string[] Describe(IEnumerable<RelayAttempt> attempts) => [.. attempts.Select(a => $"{a.Strategy}:{a.Status}")];
@@ -244,7 +244,7 @@ public sealed class RelayEngineTests
 	public async Task A_hung_attempt_times_out_and_the_engine_moves_on()
 	{
 		var transport = new FakeTransport { Plain = Hangs, Pinned = _ => Ok(Page) };
-		var (engine, seen) = EngineFor(transport, attemptTimeout: TimeSpan.FromMilliseconds(50));
+		var (engine, seen) = EngineFor(transport, timeouts: new RelayTimeouts(TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50)));
 		var result = await engine.OpenAsync("example.com/x", new RelayConsent(), CancellationToken.None);
 		Assert.Equal(RelayStrategy.DohPinned, result.Strategy);
 		Assert.Equal("Didn't answer in time.", seen[1].Reason);
@@ -254,7 +254,7 @@ public sealed class RelayEngineTests
 	public async Task The_whole_run_has_a_deadline()
 	{
 		var transport = new FakeTransport { Plain = Hangs, Pinned = Hangs };
-		var (engine, _) = EngineFor(transport, attemptTimeout: TimeSpan.FromSeconds(30), deadline: TimeSpan.FromMilliseconds(100));
+		var (engine, _) = EngineFor(transport, timeouts: new RelayTimeouts(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30)), deadline: TimeSpan.FromMilliseconds(100));
 		await Assert.ThrowsAsync<RelayTimedOutError>(() => engine.OpenAsync("example.com/x", Allowed(), CancellationToken.None));
 	}
 
@@ -282,6 +282,100 @@ public sealed class RelayEngineTests
 		Assert.False(consent.ThirdPartiesAllowed);
 		consent.Allow();
 		Assert.True(consent.ThirdPartiesAllowed);
+	}
+
+	[Fact]
+	public void The_default_timeouts_are_35_seconds_for_pages_and_30_for_the_relay_and_archive_snapshot()
+	{
+		Assert.Equal(TimeSpan.FromSeconds(35), RelayTimeouts.Default.Page);
+		Assert.Equal(TimeSpan.FromSeconds(30), RelayTimeouts.Default.Relay);
+	}
+
+	[Fact]
+	public void The_worst_case_of_every_attempt_timing_out_fits_inside_the_run_deadline()
+	{
+		var t = RelayTimeouts.Default;
+		// direct, pinned, reader relay, then the archive's lookup and its snapshot.
+		var worst = t.Page + t.Page + t.Relay + t.Page + t.Relay;
+		Assert.True(worst < RelayEngine.DefaultDeadline, $"{worst} should be under {RelayEngine.DefaultDeadline}");
+	}
+
+	[Fact]
+	public async Task The_reader_relay_gets_the_relay_timeout_not_the_page_one()
+	{
+		var transport = new FakeTransport { Plain = request => IsRelay(request) ? Ok("text") : Hangs(request) };
+		var (engine, seen) = EngineFor(transport, new RelayTimeouts(TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(10)));
+		var result = await engine.OpenAsync("example.com/x", Allowed(), CancellationToken.None);
+		Assert.Equal(RelayStrategy.ReaderRelay, result.Strategy);
+		Assert.Equal("Didn't answer in time.", seen[1].Reason);
+	}
+
+	[Fact]
+	public async Task The_archive_lookup_has_the_page_timeout_and_the_snapshot_its_own_relay_timeout()
+	{
+		var lookupHangs = new FakeTransport { Plain = request => IsArchive(request) ? Hangs(request) : throw new HttpRequestException("blocked") };
+		var (slowLookup, _) = EngineFor(lookupHangs, new RelayTimeouts(TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(30)));
+		var watch = System.Diagnostics.Stopwatch.StartNew();
+		var lookupError = await Assert.ThrowsAsync<AllStrategiesFailedError>(() => slowLookup.OpenAsync("example.com/x", Allowed(), CancellationToken.None));
+		Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), "the lookup should have been cut off at the page timeout");
+		Assert.Contains("Wayback archive: Didn't answer in time.", lookupError.Message);
+
+		var snapshotHangs = new FakeTransport
+		{
+			Plain = request => request.Url.AbsolutePath == "/wayback/available" ? Ok(WaybackAnswer, "application/json")
+				: request.Url.Host == "web.archive.org" ? Hangs(request) : throw new HttpRequestException("blocked"),
+		};
+		var (slowSnapshot, _) = EngineFor(snapshotHangs, new RelayTimeouts(TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(100)));
+		watch.Restart();
+		var snapshotError = await Assert.ThrowsAsync<AllStrategiesFailedError>(() => slowSnapshot.OpenAsync("example.com/x", Allowed(), CancellationToken.None));
+		Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), "the snapshot should have been cut off at the relay timeout");
+		Assert.Contains("Wayback archive: Didn't answer in time.", snapshotError.Message);
+	}
+
+	[Theory]
+	[InlineData("http://192.168.1.5/x")]
+	[InlineData("localhost:3000")]
+	[InlineData("http://printer.local/")]
+	[InlineData("intranet/wiki")]
+	public async Task An_address_on_the_users_own_network_is_never_sent_to_a_third_party_even_with_consent(string input)
+	{
+		var transport = new FakeTransport();
+		var (engine, seen) = EngineFor(transport);
+		var error = await Assert.ThrowsAsync<AllStrategiesFailedError>(() => engine.OpenAsync(input, Allowed(), CancellationToken.None));
+		Assert.DoesNotContain(transport.Calls, c => IsRelay(c.Request) || IsArchive(c.Request));
+		Assert.Equal(["Direct:Trying", "Direct:Failed", "DohPinned:Trying", "DohPinned:Failed", "ReaderRelay:Skipped", "Wayback:Skipped"], Describe(seen));
+		Assert.Contains("your own network", seen[4].Reason);
+		Assert.DoesNotContain("Reader relay", error.Message);
+	}
+
+	[Fact]
+	public async Task An_address_on_the_users_own_network_does_not_ask_for_consent_that_would_not_help()
+	{
+		var (engine, _) = EngineFor(new FakeTransport());
+		await Assert.ThrowsAsync<AllStrategiesFailedError>(() => engine.OpenAsync("http://192.168.1.5/", new RelayConsent(), CancellationToken.None));
+	}
+
+	[Fact]
+	public async Task An_address_on_the_users_own_network_can_still_open_directly()
+	{
+		var transport = new FakeTransport { Plain = _ => Ok(Page) };
+		var (engine, _) = EngineFor(transport);
+		var result = await engine.OpenAsync("http://192.168.1.5/", Allowed(), CancellationToken.None);
+		Assert.Equal(RelayStrategy.Direct, result.Strategy);
+	}
+
+	[Fact]
+	public void Private_hosts_match_the_shared_vectors()
+	{
+		foreach (var v in Vectors.Load(VectorsPath).GetProperty("privateHosts").EnumerateArray())
+			Assert.Equal(v.GetProperty("private").GetBoolean(), RelayRules.IsPrivateHost(RelayRules.Normalize(v.GetProperty("input").GetString()!)));
+	}
+
+	[Fact]
+	public void Credentials_in_an_address_match_the_shared_vectors()
+	{
+		foreach (var input in Vectors.Load(VectorsPath).GetProperty("credentials").EnumerateArray().Select(e => e.GetString()!))
+			Assert.Throws<CredentialsInURLError>(() => RelayRules.Normalize(input));
 	}
 
 	public static TheoryData<string> Normalized()

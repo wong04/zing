@@ -56,6 +56,14 @@ public enum AttemptStatus
 
 public sealed class AttemptStatusConverter() : JsonStringEnumConverter<AttemptStatus>(JsonNamingPolicy.CamelCase);
 
+/// <summary>How long one request may take. Each request has its own, so the archive's lookup and its snapshot do not share one.</summary>
+/// <param name="Page">A page fetched direct or pinned, and the archive's lookup. Generous on purpose: a degraded origin behind a CDN can take 20 s to answer, and cutting it off reports a slow server as a blocked one.</param>
+/// <param name="Relay">The reader relay, which renders the page, and the archive's snapshot, which comes from cold storage.</param>
+public sealed record RelayTimeouts(TimeSpan Page, TimeSpan Relay)
+{
+	public static RelayTimeouts Default { get; } = new(TimeSpan.FromSeconds(35), TimeSpan.FromSeconds(30));
+}
+
 /// <param name="Reason">Why it failed or was skipped.</param>
 public sealed record RelayAttempt(RelayStrategy Strategy, AttemptStatus Status, string? Reason = null);
 
@@ -92,12 +100,9 @@ public sealed class RelayEngine(
 	IRelayTransport transport,
 	string dohProvider,
 	Action<RelayAttempt>? onAttempt = null,
-	TimeSpan? attemptTimeout = null,
+	RelayTimeouts? timeouts = null,
 	TimeSpan? deadline = null)
 {
-	/// <summary>Generous on purpose: a degraded origin behind a CDN can take 20 s to answer, and cutting it off reports a slow server as a blocked one.</summary>
-	public static readonly TimeSpan DefaultAttemptTimeout = TimeSpan.FromSeconds(35);
-
 	/// <summary>The bridge cannot cancel a call, so a run stops itself. Room for the worst case: two slow attempts and a two-step archive.</summary>
 	public static readonly TimeSpan DefaultDeadline = TimeSpan.FromSeconds(180);
 
@@ -105,7 +110,7 @@ public sealed class RelayEngine(
 	private const string RelayBase = "https://r.jina.ai/";
 	private const string HtmlAccept = "text/html,application/xhtml+xml,*/*";
 
-	private readonly TimeSpan _attemptTimeout = attemptTimeout ?? DefaultAttemptTimeout;
+	private readonly RelayTimeouts _timeouts = timeouts ?? RelayTimeouts.Default;
 	private readonly TimeSpan _deadline = deadline ?? DefaultDeadline;
 
 	private sealed record Fetched(byte[] Body, string? ContentType, bool IsHtml, Uri FinalUrl);
@@ -134,9 +139,16 @@ public sealed class RelayEngine(
 			onAttempt?.Invoke(attempt);
 		}
 
+		var ownNetwork = RelayRules.IsPrivateHost(url);
 		var skipped = false;
 		foreach (var strategy in RelayStrategies.InOrder)
 		{
+			// Checked first: a yes would not help, because such an address is never sent.
+			if (RelayStrategies.NeedsConsent(strategy) && ownNetwork)
+			{
+				Report(new RelayAttempt(strategy, AttemptStatus.Skipped, "That address is on your own network, so Zing doesn't send it to a third party."));
+				continue;
+			}
 			if (RelayStrategies.NeedsConsent(strategy) && !consent.ThirdPartiesAllowed)
 			{
 				Report(new RelayAttempt(strategy, AttemptStatus.Skipped, "Needs your OK to send the address to a third party."));
@@ -179,16 +191,21 @@ public sealed class RelayEngine(
 
 	private async Task<Fetched> FetchAsync(RelayStrategy strategy, Uri url, CancellationToken run)
 	{
-		using var attempt = CancellationTokenSource.CreateLinkedTokenSource(run);
-		attempt.CancelAfter(_attemptTimeout);
 		return strategy switch
 		{
-			RelayStrategy.Direct => await FetchPageAsync(url, attempt.Token),
-			RelayStrategy.DohPinned => await FetchPinnedPageAsync(url, attempt.Token),
-			RelayStrategy.ReaderRelay => await FetchReaderRelayAsync(url, attempt.Token),
-			RelayStrategy.Wayback => await FetchWaybackAsync(url, attempt.Token),
+			RelayStrategy.Direct => await FetchPageAsync(url, run),
+			RelayStrategy.DohPinned => await FetchPinnedPageAsync(url, run),
+			RelayStrategy.ReaderRelay => await FetchReaderRelayAsync(url, run),
+			RelayStrategy.Wayback => await FetchWaybackAsync(url, run),
 			_ => throw new ArgumentOutOfRangeException(nameof(strategy)),
 		};
+	}
+
+	private static async Task<RelayResponse> WithinAsync(TimeSpan limit, CancellationToken run, Func<CancellationToken, Task<RelayResponse>> request)
+	{
+		using var step = CancellationTokenSource.CreateLinkedTokenSource(run);
+		step.CancelAfter(limit);
+		return await request(step.Token);
 	}
 
 	/// <summary>No cookie, no credentials, and no pretending to be a browser: what an anonymous visitor named Zing would send.</summary>
@@ -197,14 +214,14 @@ public sealed class RelayEngine(
 
 	private async Task<Fetched> FetchPageAsync(Uri url, CancellationToken ct)
 	{
-		var response = await transport.GetAsync(Request(url, HtmlAccept), ct);
+		var response = await WithinAsync(_timeouts.Page, ct, token => transport.GetAsync(Request(url, HtmlAccept), token));
 		RelayRules.ValidateStatus(response.Status);
 		return Page(response, isHtml: true);
 	}
 
 	private async Task<Fetched> FetchPinnedPageAsync(Uri url, CancellationToken ct)
 	{
-		var response = await transport.GetPinnedAsync(Request(url, HtmlAccept), dohProvider, ct);
+		var response = await WithinAsync(_timeouts.Page, ct, token => transport.GetPinnedAsync(Request(url, HtmlAccept), dohProvider, token));
 		RelayRules.ValidateStatus(response.Status);
 		return Page(response, isHtml: true);
 	}
@@ -212,17 +229,17 @@ public sealed class RelayEngine(
 	// Jina's reader takes the address as a path suffix and answers with cleaned text.
 	private async Task<Fetched> FetchReaderRelayAsync(Uri url, CancellationToken ct)
 	{
-		var response = await transport.GetAsync(Request(new Uri(RelayBase + url.AbsoluteUri), "text/plain"), ct);
+		var response = await WithinAsync(_timeouts.Relay, ct, token => transport.GetAsync(Request(new Uri(RelayBase + url.AbsoluteUri), "text/plain"), token));
 		RelayRules.ValidateStatus(response.Status);
 		return Page(response, isHtml: false) with { ContentType = "text/plain; charset=utf-8", FinalUrl = url };
 	}
 
 	private async Task<Fetched> FetchWaybackAsync(Uri url, CancellationToken ct)
 	{
-		var lookup = await transport.GetAsync(Request(new Uri($"https://archive.org/wayback/available?url={Uri.EscapeDataString(url.AbsoluteUri)}"), "application/json"), ct);
+		var lookup = await WithinAsync(_timeouts.Page, ct, token => transport.GetAsync(Request(new Uri($"https://archive.org/wayback/available?url={Uri.EscapeDataString(url.AbsoluteUri)}"), "application/json"), token));
 		RelayRules.ValidateStatus(lookup.Status);
 		var snapshotUrl = RelayRules.WaybackSnapshot(ParseAnswer(lookup.Body));
-		var snapshot = await transport.GetAsync(Request(snapshotUrl, HtmlAccept), ct);
+		var snapshot = await WithinAsync(_timeouts.Relay, ct, token => transport.GetAsync(Request(snapshotUrl, HtmlAccept), token));
 		RelayRules.ValidateStatus(snapshot.Status);
 		return Page(snapshot, isHtml: true) with { FinalUrl = snapshotUrl };
 	}
