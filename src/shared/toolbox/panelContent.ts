@@ -17,7 +17,6 @@ export const Section = {
 	unblock: 'Open a Link',
 	diagnose: 'Diagnose',
 	network: 'Network & VPN',
-	security: 'Security',
 	settings: 'Settings',
 } as const
 export type Section = (typeof Section)[keyof typeof Section]
@@ -118,7 +117,6 @@ function sectionSize(value: Section): Size {
 		case Section.convert:
 			return { width: 520, height: 580 }
 		case Section.settings:
-		case Section.security:
 		case Section.network:
 			return { width: 540, height: 620 }
 		case Section.utilities:

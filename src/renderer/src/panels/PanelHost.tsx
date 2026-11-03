@@ -1,10 +1,31 @@
-import { useState, type PointerEvent } from 'react'
+import { createElement, Suspense, useState, type PointerEvent } from 'react'
+import { panelContentFromId } from '@shared/toolbox/panelContent'
 import type { Point, ToolPanelView, ToolPanelsState } from '@shared/shell/shellState'
 import { zing } from '../api'
 import { ToolEmptyState } from '../components'
 import { CloseGlyph, MinusIcon } from '../components/icons'
+import { toolComponent } from '../tools/registry'
 import { PanelIcon } from './panelIcon'
 import './panels.css'
+
+function EmptyBody({ panel }: { panel: ToolPanelView }) {
+	return (
+		<ToolEmptyState
+			icon={<PanelIcon content={panel.content} size={44} />}
+			title={panel.title}
+			message="This tool arrives in a later phase. The panel is the real window it will live in."
+		/>
+	)
+}
+
+function PanelBody({ panel }: { panel: ToolPanelView }) {
+	const content = panelContentFromId(panel.content)
+	const Body = content ? toolComponent(content) : null
+	if (!Body) return <EmptyBody panel={panel} />
+	return (
+		<Suspense fallback={null}>{createElement(Body)}</Suspense>
+	)
+}
 
 function PanelWindow({ panel, front, order, origin }: { panel: ToolPanelView; front: boolean; order: number; origin: Point }) {
 	// Where the pointer went since the grab, in screen pixels. The panel follows it locally and
@@ -69,11 +90,7 @@ function PanelWindow({ panel, front, order, origin }: { panel: ToolPanelView; fr
 				</span>
 			</header>
 			<div className="float-body">
-				<ToolEmptyState
-					icon={<PanelIcon content={panel.content} size={44} />}
-					title={panel.title}
-					message="This tool arrives in a later phase. The panel is the real window it will live in."
-				/>
+				<PanelBody panel={panel} />
 			</div>
 		</section>
 	)

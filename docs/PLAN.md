@@ -32,7 +32,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 **Other decisions:** public repo `wong04/zing`, MIT, crediting Krackn in the README. Password autofill becomes a **built-in vault** (Phase 6b).
 
-**v1 scope beyond parity:** split view (Phase 4) and import from other browsers (Phase 6c). The built-in ad/tracker blocker replaces Chrome extensions. **No AI, ever.** Browser sync comes later and will be E2E encrypted, so data gets stable IDs now. On the roadmap after v1: Spaces/profiles, Ctrl+K command bar, Chrome Web Store extensions, sync.
+**v1 scope beyond parity:** split view (Phase 4) and import from other browsers (Phase 6c). The built-in ad/tracker blocker replaces Chrome extensions. Browser sync comes later and will be E2E encrypted, so data gets stable IDs now. On the roadmap after v1: Spaces/profiles, Ctrl+K command bar, Chrome Web Store extensions, sync.
 
 ## macOS → Zing mapping (the risky items)
 
@@ -51,7 +51,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 ## Looking ahead: Arc, Dia, and what a remake has to plan for
 
-**Market moment.** Arc is being sunset on **Dec 22, 2026**, and The Browser Company (now owned by Atlassian) is all-in on Dia, an AI browser that is Mac-only with a Windows waitlist. That leaves Windows users of sidebar-tab browsers without a home right now. Zing's vertical tabs, split view and colour themes put it directly in that gap, and a no-AI, keeps-nothing browser is a clear contrast to Dia.
+**Market moment.** Arc is being sunset on **Dec 22, 2026**, and The Browser Company (now owned by Atlassian) is all-in on Dia, an AI browser that is Mac-only with a Windows waitlist. That leaves Windows users of sidebar-tab browsers without a home right now. Zing's vertical tabs, split view and colour themes put it directly in that gap, and a keeps-nothing browser is a clear contrast to Dia.
 
 **Lessons from Arc.** It died of complexity, a steep learning curve and no business model, not of bad engineering. Its Windows port took a year because they ported Swift to Windows (we avoid that). For Zing: keep a small core, make power features opt-in, and keep the first-run experience boring.
 

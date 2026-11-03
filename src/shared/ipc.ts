@@ -251,6 +251,7 @@ export interface InvokeContract {
 	'shell:open-settings': { args: [category?: SettingsCategoryId]; result: void }
 	'shell:close-settings': { args: []; result: void }
 	'shell:toolbox': { args: []; result: void }
+	'shell:close-toolbox': { args: []; result: void }
 	'shell:menu': { args: [kind: ShellMenuKind, id: string, anchor: MenuAnchor]; result: void }
 	'shell:clear-session': { args: []; result: void }
 	'toolpanel:get': { args: []; result: ToolPanelsState }
@@ -368,6 +369,7 @@ export interface ZingApi {
 	openSettings(category?: SettingsCategoryId): Promise<void>
 	closeSettings(): Promise<void>
 	openToolbox(): Promise<void>
+	closeToolbox(): Promise<void>
 	openShellMenu(kind: ShellMenuKind, id: string, anchor: MenuAnchor): Promise<void>
 	clearBrowsingSession(): Promise<void>
 	reportError(report: RendererErrorReport): Promise<void>

@@ -25,7 +25,6 @@ npm start
 - **Built-in password vault** (Windows Hello) instead of the macOS Keychain bridge
 - **Import** from Chrome, Edge, Brave, Dia and Arc
 - **Full ad and tracker blocking** (EasyList/EasyPrivacy)
-- **No AI.** Not now, not later.
 
 ## Docs
 

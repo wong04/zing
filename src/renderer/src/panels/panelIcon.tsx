@@ -9,7 +9,6 @@ import {
 	KeyIcon,
 	LinkIcon,
 	PaletteIcon,
-	ShieldIcon,
 	TextIcon,
 	ToolIcon,
 	WaveIcon,
@@ -22,7 +21,6 @@ const SECTION_ICONS: Readonly<Partial<Record<string, (size: number) => React.JSX
 	[Section.unblock]: (s) => <LinkIcon size={s} />,
 	[Section.diagnose]: (s) => <WaveIcon size={s} />,
 	[Section.network]: (s) => <GlobeIcon size={s} />,
-	[Section.security]: (s) => <ShieldIcon size={s} />,
 }
 
 const TOOL_ICONS: Readonly<Partial<Record<string, (size: number) => React.JSX.Element>>> = {

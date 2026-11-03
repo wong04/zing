@@ -14,8 +14,6 @@ These are macOS-only and have a Windows replacement tracked above:
 |---|---|
 | Keychain AutoFill bridge | Built-in vault (V1–V3) |
 | `.mobileconfig` DNS profile | PowerShell DoH script (X5) |
-| Gatekeeper, notarization, quarantine, XProtect | Authenticode, Mark-of-the-Web, Defender (X13) |
-| SIP, FileVault status | Secure Boot, BitLocker, SmartScreen (X14) |
 | `sips`, `textutil`, PDFKit | sharp, mammoth/pandoc, printToPDF (X6, X7) |
 | SceneKit, AVKit, QuickLook | three.js, `<video>`, metadata fallback (X15) |
 | Vision background removal | ONNX Runtime (X16) |
@@ -28,6 +26,8 @@ WebKit-only internals with no Chromium equivalent: `WebKitTuning.swift` (private
 
 Also dropped:
 - **B26 Confirm before quit.** Krackn has the `confirmQuit` switch but never reads it, so it never did anything. Zing removed it (2026-11-01); a settings file that still holds it is read without it (`RETIRED_SETTING_KEYS`).
+- **X12 Domain reputation via filtering DoH, X13 Download checks, X14 System posture.** The owner didn't choose them, and Windows does part of X13 itself. The Toolbox has no Security section; the link inspection switch (X11) is in Settings.
+- **X15, part: 3D models.** The viewer does not open 3D model files.
 - **B27 Clean user agent.** WebView2 presents Edge's own user agent, which Google accepts for sign-in, so there is nothing to clean. Listed under Known differences in the README.
 
 ## M0 Repo + tracking
@@ -169,12 +169,12 @@ Also dropped:
 | X7 | Convert documents | parity | Features/Convert/ConversionEngine.swift | [#78](https://github.com/wong04/zing/issues/78) | Open |
 | X8 | Convert audio/video + format matrix | parity | Features/Convert/FormatCatalog.swift, ConvertView.swift | [#79](https://github.com/wong04/zing/issues/79) | Open |
 | X9 | Media download + Save page | parity | Features/Download/DownloadView.swift, DownloadErrors.swift | [#80](https://github.com/wong04/zing/issues/80) | Open |
-| X10 | Tool setup via winget | parity | Core/ToolInstaller.swift, Features/Utilities/ToolSetupView.swift | [#81](https://github.com/wong04/zing/issues/81) | Open |
+| X10 | Engines on first use | parity | Core/ToolInstaller.swift, Features/Utilities/ToolSetupView.swift | [#81](https://github.com/wong04/zing/issues/81) | Open |
 | X11 | Link inspection before load | parity | Features/Security/ThreatScanner.swift (securityRealtime) | [#82](https://github.com/wong04/zing/issues/82) | Open |
-| X12 | Domain reputation via filtering DoH | parity | Features/Security/ThreatScanner.swift (securityDomainBlocking) | [#83](https://github.com/wong04/zing/issues/83) | Open |
-| X13 | Download checks for Windows | parity | Features/Security/ThreatScanner.swift (securityDownloadScan, securitySignatureCheck) | [#84](https://github.com/wong04/zing/issues/84) | Open |
-| X14 | System posture for Windows | parity | Features/Security/SecurityView.swift | [#85](https://github.com/wong04/zing/issues/85) | Open |
-| X15 | File viewer | parity | Features/Viewer/FileViewerView.swift, PreviewBackends.swift | [#86](https://github.com/wong04/zing/issues/86) | Open |
+| X12 | Domain reputation via filtering DoH | parity | Features/Security/ThreatScanner.swift (securityDomainBlocking) | [#83](https://github.com/wong04/zing/issues/83) | Dropped |
+| X13 | Download checks for Windows | parity | Features/Security/ThreatScanner.swift (securityDownloadScan, securitySignatureCheck) | [#84](https://github.com/wong04/zing/issues/84) | Dropped |
+| X14 | System posture for Windows | parity | Features/Security/SecurityView.swift | [#85](https://github.com/wong04/zing/issues/85) | Dropped |
+| X15 | File viewer (3D models dropped) | parity | Features/Viewer/FileViewerView.swift, PreviewBackends.swift | [#86](https://github.com/wong04/zing/issues/86) | Open |
 | X16 | Background remover | parity | Features/Utilities/BackgroundRemover.swift; Tests/bgremove | [#87](https://github.com/wong04/zing/issues/87) | Open |
 | X17 | Graphing calculator | parity | Features/Utilities/GraphingCalculator.swift, GraphSurface.swift | [#88](https://github.com/wong04/zing/issues/88) | Open |
 | X18 | Calculator, units, number base | parity | Features/Utilities/UtilitiesView.swift | [#89](https://github.com/wong04/zing/issues/89) | Open |
@@ -183,6 +183,7 @@ Also dropped:
 | X21 | Password generator + link cleaner | parity | Features/Utilities/UtilityTools.swift | [#92](https://github.com/wong04/zing/issues/92) | Open |
 | X22 | Toolbox page, search and recents | parity | App/Navigation.swift, ToolboxSearch.swift | [#93](https://github.com/wong04/zing/issues/93) | Open |
 | X23 | Drag files between tools | parity | App/DropRouter.swift, FileComponents.swift | [#94](https://github.com/wong04/zing/issues/94) | Open |
+| X24 | Links page | new | - | - | Open |
 
 ## M6b Password vault
 

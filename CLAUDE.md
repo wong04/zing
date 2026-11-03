@@ -7,7 +7,6 @@ Windows-only browser, a remake of Krackn (macOS, SwiftUI/WebKit). A C# host (`ho
 - When porting Krackn logic, port its tests from `reference/krackn/Tests/` with it; the Swift assertions are the spec.
 - Close a parity issue only with evidence: a test, or light + dark screenshots for UI.
 - Privacy model: keeps nothing by default. Anything that stores data (restore tabs, persistent profile, vault, import, future sync) is opt-in and flips the Settings privacy banner to a warning.
-- No AI features.
 - Weekly `upstream` issues list new Krackn commits; port or skip each, then update `reference/KRACKN_SHA`.
 - **Parallel agents: read `AGENTS.md` before launching any.** One worktree per agent (`scripts/agent-worktree.sh`), shared contracts landed first, integrate one branch at a time, full suite after each merge. It lists the Phase 3 failures and the rule that prevents each.
 - **Where logic lives:** app logic is C# in `host/Zing.Core` (no UI, xUnit-tested); `host/Zing.Host` is the thin Win32/WebView2 layer. Logic ported from TS is held to it by shared `*.vectors.json` test vectors (read by vitest and by `host/Zing.Core.Tests/Vectors.cs`).

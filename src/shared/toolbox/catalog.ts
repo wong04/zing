@@ -33,7 +33,6 @@ const groupItems: Readonly<Record<ToolboxGroup, readonly PanelContent[]>> = {
 		tool(UtilityTool.linkCleaner),
 	],
 	[ToolboxGroup.security]: [
-		section(Section.security),
 		tool(UtilityTool.password),
 		tool(UtilityTool.hash),
 		tool(UtilityTool.hmac),

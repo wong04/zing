@@ -71,6 +71,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		openSettings: (category) => invoke('shell:open-settings', category),
 		closeSettings: () => invoke('shell:close-settings'),
 		openToolbox: () => invoke('shell:toolbox'),
+		closeToolbox: () => invoke('shell:close-toolbox'),
 		openShellMenu: (kind, id, anchor) => invoke('shell:menu', kind, id, anchor),
 		clearBrowsingSession: () => invoke('shell:clear-session'),
 		reportError: (report) => invoke('app:report-error', report),

@@ -90,7 +90,8 @@ export function Sidebar({ variant }: { variant: SidebarVariant }) {
 	const handle = useSettings()
 	const panels = useToolPanels()
 	const pinned = handle?.settings.sidebarPinned ?? true
-	const recents = handle?.settings.recentFeatures ?? []
+	// A stored id can name a feature since removed.
+	const recents = (handle?.settings.recentFeatures ?? []).filter((id) => panelContentFromId(id) !== null)
 	const minimized = panels.panels.filter((p) => p.minimized)
 	const label = pinned ? 'Hide sidebar (Ctrl+Shift+S)' : 'Keep sidebar open (Ctrl+Shift+S)'
 

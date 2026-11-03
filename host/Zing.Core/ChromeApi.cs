@@ -200,6 +200,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("shell:open-settings", args => Do(() => Shell.OpenSettings(OptionalText(args, 0))));
 		bridge.Register("shell:close-settings", _ => Do(Shell.CloseSettings));
 		bridge.Register("shell:toolbox", _ => Do(Shell.OpenToolbox));
+		bridge.Register("shell:close-toolbox", _ => Do(Shell.CloseToolbox));
 		bridge.Register("shell:clear-session", _ => ClearBrowsingSessionAsync());
 		bridge.Register("shell:menu", args => Do(() => Menu([.. Shell.MenuItems(Text(args, 0), Text(args, 1)).Select(i => i.Invoke is null ? MenuItem.Separator : new MenuItem(i.Label, i.Invoke))], args, 2)));
 		bridge.Register("toolpanel:get", _ => Shell.PanelsState());

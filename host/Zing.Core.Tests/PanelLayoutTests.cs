@@ -109,9 +109,9 @@ public sealed class PanelLayoutTests
 	[Fact]
 	public void The_shell_shapes_serialise_like_the_typescript()
 	{
-		var state = new ShellState(false, "general", true, false, new Point(0, 0), "1.0.0");
+		var state = new ShellState(false, "general", false, true, false, new Point(0, 0), "1.0.0");
 		Assert.Equal(
-			"""{"settingsOpen":false,"settingsCategory":"general","sidebarRevealed":true,"gated":false,"origin":{"x":0,"y":0},"appVersion":"1.0.0"}""",
+			"""{"settingsOpen":false,"settingsCategory":"general","toolboxOpen":false,"sidebarRevealed":true,"gated":false,"origin":{"x":0,"y":0},"appVersion":"1.0.0"}""",
 			JsonSerializer.Serialize(state, ZingJson.Options));
 		Assert.Equal("""{"panels":[],"dragging":false}""", JsonSerializer.Serialize(ToolPanelsState.Empty, ZingJson.Options));
 		var panels = new ToolPanelsState([new ToolPanelView("panel-1", "tool:Hashes", "Hashes", new Rect(1, 2, 3, 4), false)], "panel-1", true);

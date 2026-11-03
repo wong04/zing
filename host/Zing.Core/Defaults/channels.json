@@ -173,6 +173,10 @@
 			"args": 0
 		},
 		{
+			"channel": "shell:close-toolbox",
+			"args": 0
+		},
+		{
 			"channel": "shell:get",
 			"args": 0
 		},

@@ -5,13 +5,14 @@ import { PanelHost } from '../panels/PanelHost'
 import { SettingsSheet } from '../settings/SettingsSheet'
 import { useAccentTheme } from '../settings/useAccentTheme'
 import { useSettings } from '../settings/useSettings'
+import { ToolboxSheet } from '../toolbox/ToolboxSheet'
 import { useTabsState } from '../chrome/useTabsState'
 import { TabRail } from '../rail/TabRail'
 import { Sidebar } from '../sidebar/Sidebar'
 
 /**
  * Root of the surface view main stacks above the page: the account gate, the
- * revealed sidebar, floating tool panels and the settings sheet. It is sized
+ * revealed sidebar, floating tool panels, and the settings and Toolbox sheets. It is sized
  * to whatever it shows and hidden when empty, so it never takes the page's clicks.
  */
 export function Surface() {
@@ -36,6 +37,7 @@ export function Surface() {
 					style={{ left: shell.dropZone.x - shell.origin.x, top: shell.dropZone.y - shell.origin.y, width: shell.dropZone.width, height: shell.dropZone.height }}
 				/>
 			) : null}
+			{shell.toolboxOpen ? <ToolboxSheet /> : null}
 			{shell.settingsOpen && settings ? (
 				<SettingsSheet handle={settings} initialCategory={shell.settingsCategory} version={shell.appVersion} />
 			) : null}

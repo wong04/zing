@@ -21,11 +21,10 @@ public static class PanelSection
 	public const string Unblock = "Open a Link";
 	public const string Diagnose = "Diagnose";
 	public const string Network = "Network & VPN";
-	public const string Security = "Security";
 	public const string Settings = "Settings";
 
 	public static readonly IReadOnlyList<string> All =
-		[Browser, Viewer, Convert, Utilities, Download, Unblock, Diagnose, Network, Security, Settings];
+		[Browser, Viewer, Convert, Utilities, Download, Unblock, Diagnose, Network, Settings];
 }
 
 /// <summary>Single tools, titled as the Toolbox shows them.</summary>
@@ -112,7 +111,7 @@ public sealed record PanelContent(PanelKind Kind, string Name)
 	private static PanelSize SectionSize(string name) => name switch
 	{
 		PanelSection.Viewer or PanelSection.Convert => new(520, 580),
-		PanelSection.Settings or PanelSection.Security or PanelSection.Network => new(540, 620),
+		PanelSection.Settings or PanelSection.Network => new(540, 620),
 		PanelSection.Utilities => new(520, 600),
 		_ => new(480, 540),
 	};
@@ -295,7 +294,8 @@ public sealed record SurfaceInput(
 	double SidebarWidth,
 	IReadOnlyList<Rect> PanelFrames,
 	bool Dragging,
-	Rect? DropZone = null);
+	Rect? DropZone = null,
+	bool ToolboxOpen = false);
 
 public static class SurfaceRegion
 {
@@ -304,14 +304,14 @@ public static class SurfaceRegion
 
 	/// <summary>
 	/// The surface view is sized to what it shows and hidden when it shows nothing (null), so it never
-	/// takes clicks meant for the page. It covers the whole window for the gate and the settings sheet,
+	/// takes clicks meant for the page. It covers the whole window for the gate and the settings and Toolbox sheets,
 	/// and the whole page while a panel is dragged (so the pointer stays inside it), and otherwise
 	/// hugs the revealed sidebar and the open panels.
 	/// </summary>
 	public static Rect? Compute(SurfaceInput input)
 	{
 		var content = input.Content;
-		if (input.Gated || input.SettingsOpen) return new Rect(0, 0, content.Width, content.Height);
+		if (input.Gated || input.SettingsOpen || input.ToolboxOpen) return new Rect(0, 0, content.Width, content.Height);
 		var parts = new List<Rect>();
 		if (input.SidebarRevealed) parts.Add(new Rect(0, 0, input.SidebarWidth, content.Height));
 		if (input.DropZone is { } zone) parts.Add(zone);

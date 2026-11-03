@@ -34,7 +34,6 @@ public sealed record ShellWindow(Func<Rect> PageArea, Func<ContentSize> ContentS
 /// </summary>
 public sealed class ShellModel : IDisposable
 {
-	public const string ToolboxNotice = "The Toolbox isn't implemented yet";
 	public const string FullNotice = "Three panels are open. Minimize or close one first";
 
 	private readonly string _appVersion;
@@ -42,6 +41,7 @@ public sealed class ShellModel : IDisposable
 	private readonly ToolPanels _panels = new();
 	private readonly SidebarReveal _reveal;
 	private bool _settingsOpen;
+	private bool _toolboxOpen;
 	private string _category = ShellConstants.DefaultCategory;
 	private bool _pinned;
 	/// <summary>The next unpin came from the toggle (Ctrl+S, the sidebar's button): put the sidebar away, no peek.</summary>
@@ -55,7 +55,7 @@ public sealed class ShellModel : IDisposable
 		_window = window;
 		Gated = gated;
 		_pinned = sidebarPinned;
-		_recents = [.. recentFeatures];
+		_recents = Known(recentFeatures);
 		_reveal = new SidebarReveal(window.Cursor, scheduler);
 		_reveal.Changed += _ =>
 		{
@@ -102,6 +102,8 @@ public sealed class ShellModel : IDisposable
 	public bool SidebarRevealed => _reveal.Revealed;
 
 	public bool SettingsOpen => _settingsOpen;
+
+	public bool ToolboxOpen => _toolboxOpen;
 
 	public Rect? Region => _region;
 
@@ -159,6 +161,7 @@ public sealed class ShellModel : IDisposable
 	public ShellState State() => new(
 		_settingsOpen,
 		_category,
+		_toolboxOpen,
 		_reveal.Revealed,
 		Gated,
 		new Point(_region?.X ?? 0, _region?.Y ?? 0),
@@ -212,7 +215,10 @@ public sealed class ShellModel : IDisposable
 	}
 
 	/// <summary>The <c>recentFeatures</c> setting changed elsewhere.</summary>
-	public void SetRecentFeatures(IReadOnlyList<string> recents) => _recents = [.. recents];
+	public void SetRecentFeatures(IReadOnlyList<string> recents) => _recents = Known(recents);
+
+	/// <summary>A stored id can name something that no longer exists (a removed section): it is dropped, not shown.</summary>
+	private static List<string> Known(IEnumerable<string> ids) => [.. ids.Where(id => PanelContent.FromId(id) is not null)];
 
 	// Settings sheet
 
@@ -246,7 +252,22 @@ public sealed class ShellModel : IDisposable
 		SidebarPinRequested?.Invoke(!_pinned);
 	}
 
-	public void OpenToolbox() => NoticeRaised?.Invoke(ToolboxNotice);
+	public void OpenToolbox()
+	{
+		_toolboxOpen = true;
+		Sync();
+		PushState();
+		FocusSurfaceRequested?.Invoke();
+	}
+
+	public void CloseToolbox()
+	{
+		if (!_toolboxOpen) return;
+		_toolboxOpen = false;
+		Sync();
+		PushState();
+		FocusPageRequested?.Invoke();
+	}
 
 	// Tool panels
 
@@ -329,6 +350,8 @@ public sealed class ShellModel : IDisposable
 			return outcome;
 		}
 		if (contentId is not null) Remember(contentId);
+		// The sheet is how a tool was picked; the panel it opened is on the surface view already.
+		_toolboxOpen = false;
 		PanelsUpdated();
 		return outcome;
 	}
@@ -357,7 +380,7 @@ public sealed class ShellModel : IDisposable
 
 	private void FocusSurfaceIfCovering()
 	{
-		if (!Gated && !_settingsOpen) return;
+		if (!Gated && !_settingsOpen && !_toolboxOpen) return;
 		FocusSurfaceRequested?.Invoke();
 	}
 
@@ -372,7 +395,8 @@ public sealed class ShellModel : IDisposable
 			SidebarWidth,
 			_panels.Visible.Select(p => p.Frame).ToList(),
 			_panels.Dragging,
-			_dropZone));
+			_dropZone,
+			_toolboxOpen));
 		SurfaceRegionChanged?.Invoke(_region);
 	}
 

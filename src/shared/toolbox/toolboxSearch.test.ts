@@ -16,7 +16,6 @@ const order = [
 	'section:Diagnose',
 	'section:Network & VPN',
 	'tool:Link Cleaner',
-	'section:Security',
 	'tool:Passwords',
 	'tool:Hashes',
 	'tool:HMAC',
@@ -85,8 +84,6 @@ describe('what people type finds the right thing first', () => {
 		['binary', 'Number Bases'],
 		['camelcase', 'Text Case'],
 		['word count', 'Text Stats'],
-		['malware', 'Security'],
-		['phishing', 'Security'],
 		['token', 'JWT Decoder'],
 		['guid', 'UUID'],
 		['utm', 'Link Cleaner'],
@@ -95,8 +92,8 @@ describe('what people type finds the right thing first', () => {
 		['pdf', 'Files'],
 		['qr', 'QR Code'],
 	]
-	it('has all 34 real queries', () => {
-		expect(cases).toHaveLength(34)
+	it('has all 32 real queries', () => {
+		expect(cases).toHaveLength(32)
 	})
 	it.each(cases)('"%s" → %s', (query, want) => {
 		expect(top(query)).toBe(want)
@@ -155,6 +152,8 @@ describe('the catalog', () => {
 	it('ids round-trip', () => {
 		expect(order.map((id) => panelContentFromId(id)).map((content) => content && panelId(content))).toEqual(order)
 		expect(panelContentFromId('tool:Nope')).toBeNull()
+		// Security is no longer a section; a stored recents row naming it names nothing.
+		expect(panelContentFromId('section:Security')).toBeNull()
 		expect(panelContentFromId('Hashes')).toBeNull()
 	})
 	it('engine setup lives in Settings, not the Toolbox', () => {
