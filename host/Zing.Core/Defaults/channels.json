@@ -145,6 +145,10 @@
 			"args": 1
 		},
 		{
+			"channel": "net:diagnose",
+			"args": 1
+		},
+		{
 			"channel": "overview:close",
 			"args": 0
 		},

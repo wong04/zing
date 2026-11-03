@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Zing.Core.Net;
 
 namespace Zing.Core;
 
@@ -52,7 +53,8 @@ public interface IWindowHost
 /// <param name="Clock">The app's clock; an e2e run swaps in an <see cref="OffsetClock"/> it can move forward.</param>
 /// <param name="SiteData">Purges a site when its last tab closes; null with a persistent profile.</param>
 /// <param name="BrowsingData">Settings' Clear browsing session; null where the host has no engine to clear.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null)
+/// <param name="Net">The network checks Diagnose makes; null uses the real ones, a test passes fakes.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -217,6 +219,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("hash:text", args => Hashing.Text(Text(args, 0), Text(args, 1)));
 		bridge.Register("hash:file", args => HashFileAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("hash:hmac", args => Hashing.Hmac(Text(args, 0), Text(args, 1), Text(args, 2)));
+		bridge.Register("net:diagnose", args => DiagnoseAsync(Text(args, 0)));
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
 		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
@@ -437,6 +440,12 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	private static async Task<object?> HashFileAsync(string path, string algorithm) => await Hashing.FileAsync(path, algorithm);
+
+	private async Task<object?> DiagnoseAsync(string host)
+	{
+		var net = _app.Net ?? NetServices.Live;
+		return await new Diagnose(net.Probes, net.Doh).RunAsync(host, Setting("dohProvider"), CancellationToken.None);
+	}
 
 	private async Task<object?> HistoryMenuAsync(string direction, JsonElement[] args)
 	{

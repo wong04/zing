@@ -4,6 +4,7 @@ import type { BrowserLibrary } from './library/library'
 import type { TabId, TabRecord } from './model/tab'
 import type { TabOrganization } from './browser/tabOrganizer'
 import type { Settings, SettingKey } from './settings'
+import type { DiagnosticReport } from './unblock/blockDiagnostics'
 import type {
 	AccountOutcome,
 	AccountState,
@@ -270,6 +271,8 @@ export interface InvokeContract {
 	'hash:text': { args: [text: string, algorithm: string]; result: string }
 	'hash:file': { args: [path: string, algorithm: string]; result: string }
 	'hash:hmac': { args: [message: string, key: string, algorithm: string]; result: string }
+	/** Runs the Diagnose ladder for a site name (or a pasted address) with the DoH provider chosen in Settings. Resolver failures are part of the report; a name that isn't a site is an error. */
+	'net:diagnose': { args: [host: string]; result: DiagnosticReport }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
 	'account:sign-in': { args: [password: string]; result: AccountOutcome }
@@ -383,6 +386,7 @@ export interface ZingApi {
 	hashText(text: string, algorithm: string): Promise<string>
 	hashFile(path: string, algorithm: string): Promise<string>
 	hmac(message: string, key: string, algorithm: string): Promise<string>
+	diagnose(host: string): Promise<DiagnosticReport>
 	onShellState(listener: (state: ShellState) => void): Unsubscribe
 	getToolPanels(): Promise<ToolPanelsState>
 	openPanel(content: string, at: Point): Promise<OpenPanelOutcome>
