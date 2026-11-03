@@ -42,14 +42,27 @@ public sealed class PinnedHttp
 			ConnectCallback = (context, token) => ConnectAsync(address, context.DnsEndPoint.Port, token),
 		};
 		if (_trustedRoots is { } roots) handler.SslOptions.RemoteCertificateValidationCallback = CustomTrust.Callback(roots);
-		using var http = new HttpClient(handler) { MaxResponseContentBufferSize = MaxBodyBytes };
+		using var http = new HttpClient(handler);
 		using var request = new HttpRequestMessage(HttpMethod.Get, url);
 		foreach (var (name, value) in headers ?? new Dictionary<string, string>())
 			if (!request.Headers.TryAddWithoutValidation(name, value)) throw new ArgumentException($"{name} isn't a request header.", nameof(headers));
 		try
 		{
-			// Buffered, so the response outlives the handler that is disposed here.
-			return await http.SendAsync(request, HttpCompletionOption.ResponseContentRead, ct);
+			var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+			try
+			{
+				// Buffered, so the response outlives the handler that is disposed here.
+				var buffered = new ByteArrayContent(await BoundedBody.ReadAsync(response.Content, ct));
+				foreach (var header in response.Content.Headers)
+					if (header.Key != "Content-Length") buffered.Headers.TryAddWithoutValidation(header.Key, header.Value);
+				response.Content = buffered;
+				return response;
+			}
+			catch
+			{
+				response.Dispose();
+				throw;
+			}
 		}
 		catch (HttpRequestException e) when (e.InnerException is AuthenticationException refused)
 		{
@@ -91,4 +104,23 @@ internal static class CustomTrust
 
 	public static RemoteCertificateValidationCallback Callback(X509Certificate2Collection roots) =>
 		(_, certificate, _, errors) => Accepts(roots, certificate, errors);
+}
+
+/// <summary>Reads a response body without letting a huge one fill memory.</summary>
+internal static class BoundedBody
+{
+	public static async Task<byte[]> ReadAsync(HttpContent content, CancellationToken ct)
+	{
+		if (content.Headers.ContentLength > PinnedHttp.MaxBodyBytes) throw new BodyTooLargeError();
+		await using var stream = await content.ReadAsStreamAsync(ct);
+		using var body = new MemoryStream();
+		var chunk = new byte[81920];
+		int read;
+		while ((read = await stream.ReadAsync(chunk, ct)) > 0)
+		{
+			if (body.Length + read > PinnedHttp.MaxBodyBytes) throw new BodyTooLargeError();
+			body.Write(chunk, 0, read);
+		}
+		return body.ToArray();
+	}
 }

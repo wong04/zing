@@ -23,6 +23,11 @@ public sealed class NoAddressError(string host) : RelayError($"Public DNS has no
 
 public sealed class TooManyRedirectsError() : RelayError("The site redirected too many times.");
 
+/// <summary>The answer was a redirect the client declined to follow (to another scheme, or past its limit), so there is no page in it.</summary>
+public sealed class RedirectNotFollowedError() : RelayError("The site redirected somewhere Zing wouldn't follow, so there was no page to show.");
+
+public sealed class BodyTooLargeError() : RelayError("The page is over 16 MiB, more than Zing will read.");
+
 /// <summary>A redirect that gives no place to go.</summary>
 public sealed class BadRedirectError() : RelayError("The site redirected to somewhere Zing can't follow.");
 

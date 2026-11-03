@@ -32,10 +32,7 @@ public sealed class LiveRelayTransport : IRelayTransport
 		_doh = doh;
 		_pinned = pinned ?? new PinnedHttp();
 		// No cookie jar, so nothing a site sets is sent back to the next one.
-		_plain = new HttpClient(new SocketsHttpHandler { UseCookies = false, AutomaticDecompression = DecompressionMethods.All, MaxAutomaticRedirections = MaxRedirects })
-		{
-			MaxResponseContentBufferSize = PinnedHttp.MaxBodyBytes,
-		};
+		_plain = new HttpClient(new SocketsHttpHandler { UseCookies = false, AutomaticDecompression = DecompressionMethods.All, MaxAutomaticRedirections = MaxRedirects });
 	}
 
 	public async Task<RelayResponse> GetAsync(RelayRequest request, CancellationToken ct)
@@ -43,7 +40,7 @@ public sealed class LiveRelayTransport : IRelayTransport
 		using var message = new HttpRequestMessage(HttpMethod.Get, request.Url);
 		foreach (var (name, value) in request.Headers)
 			if (!message.Headers.TryAddWithoutValidation(name, value)) throw new ArgumentException($"{name} isn't a request header.", nameof(request));
-		using var response = await _plain.SendAsync(message, ct);
+		using var response = await _plain.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, ct);
 		return await ReadAsync(response, response.RequestMessage?.RequestUri ?? request.Url, ct);
 	}
 
@@ -71,8 +68,13 @@ public sealed class LiveRelayTransport : IRelayTransport
 
 	private static bool IsRedirect(HttpStatusCode status) => status is HttpStatusCode.MovedPermanently or HttpStatusCode.Found or HttpStatusCode.SeeOther or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect;
 
-	private static async Task<RelayResponse> ReadAsync(HttpResponseMessage response, Uri finalUrl, CancellationToken ct) =>
-		new((int)response.StatusCode, await response.Content.ReadAsByteArrayAsync(ct), ContentType(response.Content.Headers.ContentType), finalUrl);
+	/// <summary>A 3xx that reaches here was not followed (another scheme, past the limit, no Location), so its body is not the page.</summary>
+	private static async Task<RelayResponse> ReadAsync(HttpResponseMessage response, Uri finalUrl, CancellationToken ct)
+	{
+		var status = (int)response.StatusCode;
+		if (status is >= 300 and < 400) throw new RedirectNotFollowedError();
+		return new RelayResponse(status, await BoundedBody.ReadAsync(response.Content, ct), ContentType(response.Content.Headers.ContentType), finalUrl);
+	}
 
 	private static string? ContentType(MediaTypeHeaderValue? type) => type?.ToString();
 }
