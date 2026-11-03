@@ -7,6 +7,8 @@
 .sheet-backdrop {
 	position: fixed;
 	inset: 0;
+	/* Above every panel's stacking order (a panel's z-index is its place in the list), below the pill menus' 50. */
+	z-index: 40;
 	display: grid;
 	place-items: center;
 	background: rgb(0 0 0 / 0);
