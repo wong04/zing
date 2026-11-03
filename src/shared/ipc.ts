@@ -5,6 +5,7 @@ import type { TabId, TabRecord } from './model/tab'
 import type { TabOrganization } from './browser/tabOrganizer'
 import type { Settings, SettingKey } from './settings'
 import type { DiagnosticReport } from './unblock/blockDiagnostics'
+import type { RelayAttemptEvent, RelayOpenResult } from './unblock/relayOpen'
 import type {
 	AccountOutcome,
 	AccountState,
@@ -273,6 +274,12 @@ export interface InvokeContract {
 	'hash:hmac': { args: [message: string, key: string, algorithm: string]; result: string }
 	/** Runs the Diagnose ladder for a site name (or a pasted address) with the DoH provider chosen in Settings. Resolver failures are part of the report; a name that isn't a site is an error. */
 	'net:diagnose': { args: [host: string]; result: DiagnosticReport }
+	/**
+	 * Tries direct, DoH with IP pinning, the reader relay and the Wayback archive in order, pushing `relay:attempt` for each step
+	 * with `runId`, which the caller chooses so overlapping runs can be told apart. The reader relay and the archive wait for the
+	 * session's consent (`needsConsent`). Rejects when every method fails, when what was typed is not an address, and after 3 minutes.
+	 */
+	'relay:open': { args: [input: string, runId: string]; result: RelayOpenResult }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
 	'account:sign-in': { args: [password: string]; result: AccountOutcome }
@@ -298,6 +305,7 @@ export interface EventContract {
 	'shell:state': ShellState
 	'toolpanel:state': ToolPanelsState
 	'account:state': AccountState
+	'relay:attempt': RelayAttemptEvent
 }
 
 export type InvokeChannel = keyof InvokeContract
@@ -387,6 +395,8 @@ export interface ZingApi {
 	hashFile(path: string, algorithm: string): Promise<string>
 	hmac(message: string, key: string, algorithm: string): Promise<string>
 	diagnose(host: string): Promise<DiagnosticReport>
+	openLink(input: string, runId: string): Promise<RelayOpenResult>
+	onRelayAttempt(listener: (event: RelayAttemptEvent) => void): Unsubscribe
 	onShellState(listener: (state: ShellState) => void): Unsubscribe
 	getToolPanels(): Promise<ToolPanelsState>
 	openPanel(content: string, at: Point): Promise<OpenPanelOutcome>

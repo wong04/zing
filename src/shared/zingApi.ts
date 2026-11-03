@@ -80,6 +80,8 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		hashFile: (path, algorithm) => invoke('hash:file', path, algorithm),
 		hmac: (message, key, algorithm) => invoke('hash:hmac', message, key, algorithm),
 		diagnose: (host) => invoke('net:diagnose', host),
+		openLink: (input, runId) => invoke('relay:open', input, runId),
+		onRelayAttempt: (listener) => listen('relay:attempt', listener),
 		onShellState: (listener) => listen('shell:state', listener),
 		getToolPanels: () => invoke('toolpanel:get'),
 		openPanel: (content, at) => invoke('toolpanel:open', content, at),

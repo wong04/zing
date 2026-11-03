@@ -74,6 +74,9 @@ internal sealed class TestServer : IDisposable
 		_ = Task.Run(AcceptAsync);
 	}
 
+	/// <summary>The last request's head, as the client sent it.</summary>
+	public string LastRequest { get; private set; } = "";
+
 	public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
 	private async Task AcceptAsync()
@@ -103,6 +106,7 @@ internal sealed class TestServer : IDisposable
 				if (read == 0) return;
 				seen.Append(Encoding.ASCII.GetString(buffer, 0, read));
 			}
+			LastRequest = seen.ToString();
 			await tls.WriteAsync(Encoding.ASCII.GetBytes(_response));
 		}
 		// A client that refuses the certificate drops the connection mid-handshake; that is what those tests are about.

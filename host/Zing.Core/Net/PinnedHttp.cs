@@ -13,6 +13,9 @@ namespace Zing.Core.Net;
 /// </summary>
 public sealed class PinnedHttp
 {
+	/// <summary>The most of a response that is read; a bigger one fails the request rather than filling memory.</summary>
+	public const long MaxBodyBytes = 16 * 1024 * 1024;
+
 	private readonly X509Certificate2Collection? _trustedRoots;
 
 	/// <param name="trustedRoots">Roots trusted in place of the system's; null uses the system's. Tests serve a local certificate this way.</param>
@@ -25,7 +28,8 @@ public sealed class PinnedHttp
 	/// A redirect is returned, not followed: it may name another host, which needs its own lookup and pin.
 	/// A certificate for the wrong name or from an untrusted issuer raises <see cref="AuthenticationException"/>.
 	/// </summary>
-	public async Task<HttpResponseMessage> GetAsync(Uri url, IPAddress address, CancellationToken ct)
+	/// <param name="headers">Sent as given and nothing else is added: no cookies, no credentials.</param>
+	public async Task<HttpResponseMessage> GetAsync(Uri url, IPAddress address, CancellationToken ct, IReadOnlyDictionary<string, string>? headers = null)
 	{
 		if (url.Scheme != Uri.UriSchemeHttps) throw new ArgumentException($"A pinned request must be HTTPS, not {url.Scheme}.", nameof(url));
 		var handler = new SocketsHttpHandler
@@ -34,14 +38,18 @@ public sealed class PinnedHttp
 			// Behind a proxy the callback's endpoint is the proxy's, not the site's.
 			UseProxy = false,
 			AllowAutoRedirect = false,
+			AutomaticDecompression = DecompressionMethods.All,
 			ConnectCallback = (context, token) => ConnectAsync(address, context.DnsEndPoint.Port, token),
 		};
 		if (_trustedRoots is { } roots) handler.SslOptions.RemoteCertificateValidationCallback = CustomTrust.Callback(roots);
-		using var http = new HttpClient(handler);
+		using var http = new HttpClient(handler) { MaxResponseContentBufferSize = MaxBodyBytes };
+		using var request = new HttpRequestMessage(HttpMethod.Get, url);
+		foreach (var (name, value) in headers ?? new Dictionary<string, string>())
+			if (!request.Headers.TryAddWithoutValidation(name, value)) throw new ArgumentException($"{name} isn't a request header.", nameof(headers));
 		try
 		{
 			// Buffered, so the response outlives the handler that is disposed here.
-			return await http.GetAsync(url, ct);
+			return await http.SendAsync(request, HttpCompletionOption.ResponseContentRead, ct);
 		}
 		catch (HttpRequestException e) when (e.InnerException is AuthenticationException refused)
 		{

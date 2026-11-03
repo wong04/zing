@@ -54,7 +54,8 @@ public interface IWindowHost
 /// <param name="SiteData">Purges a site when its last tab closes; null with a persistent profile.</param>
 /// <param name="BrowsingData">Settings' Clear browsing session; null where the host has no engine to clear.</param>
 /// <param name="Net">The network checks Diagnose makes; null uses the real ones, a test passes fakes.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null)
+/// <param name="Consent">Whether third parties may be asked to open a link, for the session and every window; null makes each window ask on its own.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, RelayConsent? Consent = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -72,6 +73,7 @@ public sealed class ChromeApi : IDisposable
 	private static readonly HashSet<string> NavigableSchemes = new(StringComparer.OrdinalIgnoreCase) { "http", "https", "about", "file" };
 
 	private readonly AppServices _app;
+	private readonly RelayConsent _consent;
 	private readonly IWindowHost _host;
 
 	internal IWindowHost Host => _host;
@@ -109,6 +111,7 @@ public sealed class ChromeApi : IDisposable
 	public ChromeApi(Bridge bridge, AppServices app, IWindowHost host, string appVersion)
 	{
 		_app = app;
+		_consent = app.Consent ?? new RelayConsent();
 		_host = host;
 		_appVersion = appVersion;
 		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, (tab, description) => host.Notify($"Couldn't load {tab.Url} ({description})"), InterceptNavigation, app.SiteData);
@@ -220,6 +223,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("hash:file", args => HashFileAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("hash:hmac", args => Hashing.Hmac(Text(args, 0), Text(args, 1), Text(args, 2)));
 		bridge.Register("net:diagnose", args => DiagnoseAsync(Text(args, 0)));
+		bridge.Register("relay:open", args => OpenLinkAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
 		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
@@ -445,6 +449,14 @@ public sealed class ChromeApi : IDisposable
 	{
 		var net = _app.Net ?? NetServices.Live;
 		return await new Diagnose(net.Probes, net.Doh).RunAsync(host, Setting("dohProvider"), CancellationToken.None);
+	}
+
+	/// <summary>The bridge cannot cancel a call and several runs can overlap, so each attempt is pushed with the id the caller gave this run.</summary>
+	private async Task<object?> OpenLinkAsync(string input, string runId)
+	{
+		var net = _app.Net ?? NetServices.Live;
+		var engine = new RelayEngine(net.RelayTransport, Setting("dohProvider"), attempt => _host.Push("relay:attempt", new RelayAttemptEvent(runId, attempt.Strategy, attempt.Status, attempt.Reason)));
+		return await engine.OpenAsync(input, _consent, CancellationToken.None);
 	}
 
 	private async Task<object?> HistoryMenuAsync(string direction, JsonElement[] args)

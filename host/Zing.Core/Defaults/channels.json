@@ -173,6 +173,10 @@
 			"args": 1
 		},
 		{
+			"channel": "relay:open",
+			"args": 2
+		},
+		{
 			"channel": "settings:get",
 			"args": 0
 		},
@@ -349,6 +353,7 @@
 		"overlay:notice",
 		"overlay:overview",
 		"pageui:state",
+		"relay:attempt",
 		"settings:changed",
 		"shell:state",
 		"stack:dropdown",
