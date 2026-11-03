@@ -172,7 +172,7 @@ test('a 5 MB JSON paste keeps the tool and the chrome responsive', async () => {
 		Object.assign(globalThis, { beat })
 		const timer = setInterval(() => {
 			const now = performance.now()
-			if (output.value !== '') {
+			if (output.value !== '' || (document.body.textContent ?? '').includes('too large to show')) {
 				clearInterval(timer)
 				return
 			}
@@ -191,13 +191,59 @@ test('a 5 MB JSON paste keeps the tool and the chrome responsive', async () => {
 		slowestChrome = Math.max(slowestChrome, Date.now() - started)
 	}
 	await pasted
-	await expect(panel.getByRole('textbox', { name: 'JSON output' })).not.toHaveValue('', { timeout: 30_000 })
-	await expect(panel.getByRole('alert')).toHaveCount(0)
+	// 330,000 lines is past what the tool puts in a text box, so the result is offered for copying instead.
+	await expect(panel.getByText(/too large to show/)).toBeVisible({ timeout: 30_000 })
 
 	const beat = await surface.evaluate(() => (globalThis as unknown as { beat: { formattingTicks: number; longestGap: number } }).beat)
 	expect(slowestChrome).toBeLessThan(1000)
 	expect(beat.formattingTicks).toBeGreaterThan(10)
 	expect(beat.longestGap).toBeLessThan(500)
+	await zing.close()
+})
+
+test('a 5 MB array that expands to millions of lines is not put in the textarea, and the page stays responsive', async () => {
+	const zing = await launchZing()
+	const { panel } = await openTool(zing, 'JSON')
+	const items = 2_500_000
+	const big = '[' + '1,'.repeat(items - 1) + '1]'
+	expect(big.length).toBeGreaterThanOrEqual(5_000_000)
+
+	// The same timer-tick method as above, but it keeps running after the result arrives, so a long block while the
+	// result is put on the page shows up as a long gap between two ticks.
+	const surface = panel.page()
+	await expect(panel.getByRole('textbox', { name: 'JSON output' })).toBeVisible()
+	await surface.evaluate(() => {
+		const beat = { ticks: 0, longestGap: 0, stop: false }
+		let previous: number | null = null
+		Object.assign(globalThis, { beat })
+		const timer = setInterval(() => {
+			const now = performance.now()
+			// Pasting 5 MB into the input is slow in itself and is not what is measured: counting starts once the tool is formatting.
+			if (previous === null && (document.body.textContent ?? '').includes('Formatting a large document')) previous = now
+			if (previous !== null) {
+				beat.longestGap = Math.max(beat.longestGap, now - previous)
+				beat.ticks++
+				previous = now
+			}
+			if (beat.stop) clearInterval(timer)
+		}, 20)
+	})
+	await panel.getByRole('textbox', { name: 'JSON input' }).fill(big)
+	await expect(panel.getByText(/too large to show/)).toBeVisible({ timeout: 60_000 })
+	await expect(panel.getByText(/12\.5 MB/)).toBeVisible()
+	await expect(panel.getByRole('textbox', { name: 'JSON output' })).toHaveCount(0)
+	await expect(panel.getByRole('button', { name: 'Copy JSON output' })).toBeEnabled()
+	// Let any late work on the page land before the timer is read.
+	await surface.waitForTimeout(1500)
+	const beat = await surface.evaluate(() => {
+		const b = (globalThis as unknown as { beat: { ticks: number; longestGap: number; stop: boolean } }).beat
+		b.stop = true
+		return { ticks: b.ticks, longestGap: b.longestGap }
+	})
+	expect(beat.ticks).toBeGreaterThan(10)
+	// Showing this result in a textarea blocked the page for 27 s when measured; the page's own cost of holding a 5 MB
+	// input (about 0.5 s of layout here) is in this number too, so the bound is generous and still far below that.
+	expect(beat.longestGap).toBeLessThan(1500)
 	await zing.close()
 })
 

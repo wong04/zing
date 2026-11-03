@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatJSON } from './jsonFormat'
+import { formatJSON, maxDisplayChars, maxDisplayLines, tooLargeToShow } from './jsonFormat'
 
 describe('formatJSON', () => {
 	it('formats {"a":1}', () => {
@@ -40,5 +40,14 @@ describe('formatJSON', () => {
 		const text = '['.repeat(500) + ']'.repeat(500)
 		expect(formatJSON(text, 'minify')).toEqual({ ok: true, text })
 		expect(formatJSON(text, 'pretty')).toMatchObject({ ok: true })
+	})
+})
+
+describe('tooLargeToShow', () => {
+	it('allows a result at the limits and refuses one past them', () => {
+		expect(tooLargeToShow('\n'.repeat(maxDisplayLines - 1))).toBe(false)
+		expect(tooLargeToShow('\n'.repeat(maxDisplayLines))).toBe(true)
+		expect(tooLargeToShow('x'.repeat(maxDisplayChars))).toBe(false)
+		expect(tooLargeToShow('x'.repeat(maxDisplayChars + 1))).toBe(true)
 	})
 })

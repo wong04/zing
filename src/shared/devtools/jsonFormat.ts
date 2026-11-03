@@ -20,3 +20,22 @@ export function formatJSON(text: string, mode: JSONMode): JSONOutcome {
 		throw error
 	}
 }
+
+/**
+ * What a result may weigh before the tool stops putting it in a text box. Measured in the app: setting a textarea
+ * costs about 5 ms per 1,000 lines and about 0.1 ms per 1,000 characters on one line, so these two limits keep the
+ * page blocked for roughly a quarter of a second at most.
+ */
+export const maxDisplayLines = 50_000
+export const maxDisplayChars = 2_000_000
+
+/** Stops counting at the limit: a result of millions of lines must not cost a second just to be refused. */
+export function tooLargeToShow(text: string): boolean {
+	if (text.length > maxDisplayChars) return true
+	let lines = 1
+	for (let at = text.indexOf('\n'); at !== -1; at = text.indexOf('\n', at + 1)) {
+		lines++
+		if (lines > maxDisplayLines) return true
+	}
+	return false
+}
