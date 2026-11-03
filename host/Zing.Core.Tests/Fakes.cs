@@ -97,6 +97,10 @@ public sealed class FakeWindowHost : IWindowHost
 
 	public void Push(string channel, object? payload) => Pushed.Add((channel, payload));
 	public void Notify(string text) => Notices.Add(text);
+	public List<string> Offers { get; } = [];
+	public int OfferDismissals { get; private set; }
+	public void OfferUnblock(string address) => Offers.Add(address);
+	public void DismissOffer() => OfferDismissals++;
 	public void NewWindow() => NewWindows++;
 	public void CloseWindow() => Closes++;
 	public void Relayout() => Relayouts++;

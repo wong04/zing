@@ -11,6 +11,10 @@ public interface IWindowHost
 	/// <summary>Sends an event to every Zing renderer view of this window.</summary>
 	void Push(string channel, object? payload);
 	void Notify(string text);
+	/// <summary>Shows the offer to open a link or diagnose a page that failed to load like a block, until it is chosen or dismissed. <paramref name="address"/> is what to show of the failed address.</summary>
+	void OfferUnblock(string address);
+	/// <summary>Takes the offer down.</summary>
+	void DismissOffer();
 	void NewWindow();
 	void CloseWindow();
 	/// <summary>The chrome insets or the surface changed; put the page and layers where they now go.</summary>
@@ -74,6 +78,8 @@ public sealed class ChromeApi : IDisposable
 
 	private readonly AppServices _app;
 	private readonly RelayConsent _consent;
+	/// <summary>The address of the page the offer on screen is for.</summary>
+	private string? _offered;
 	private readonly IWindowHost _host;
 
 	internal IWindowHost Host => _host;
@@ -117,7 +123,7 @@ public sealed class ChromeApi : IDisposable
 		_consent = app.Consent;
 		_host = host;
 		_appVersion = appVersion;
-		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, (tab, description) => host.Notify($"Couldn't load {tab.Url} ({description})"), InterceptNavigation, app.SiteData, (_, text) => host.Notify(text));
+		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text));
 		Saved = new SavedTabs(Tabs, app.Library);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
@@ -214,6 +220,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("shell:menu", args => Do(() => Menu([.. Shell.MenuItems(Text(args, 0), Text(args, 1)).Select(i => i.Invoke is null ? MenuItem.Separator : new MenuItem(i.Label, i.Invoke))], args, 2)));
 		bridge.Register("toolpanel:get", _ => Shell.PanelsState());
 		bridge.Register("toolpanel:open", args => Shell.OpenPanel(Text(args, 0), PointArg(args, 1)));
+		bridge.Register("toolpanel:open-with-input", args => Shell.OpenPanelWithInput(Text(args, 0), Text(args, 1)));
 		bridge.Register("toolpanel:close", args => Do(() => Shell.ClosePanel(Text(args, 0))));
 		bridge.Register("toolpanel:minimize", args => Do(() => Shell.MinimizePanel(Text(args, 0))));
 		bridge.Register("toolpanel:restore", args => Shell.RestorePanel(Text(args, 0)));
@@ -227,6 +234,10 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("hash:hmac", args => Hashing.Hmac(Text(args, 0), Text(args, 1), Text(args, 2)));
 		bridge.Register("net:diagnose", args => DiagnoseAsync(Text(args, 0)));
 		bridge.Register("relay:open", args => OpenLinkAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("relay:allow-third-parties", _ => Do(_consent.Allow));
+		bridge.Register("tabs:open-relayed", args => Do(() => OpenRelayedTab(Text(args, 0))));
+		bridge.Register("offer:choose", args => Do(() => ChooseOffer(Text(args, 0))));
+		bridge.Register("offer:dismiss", _ => Do(DismissOffer));
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
 		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
@@ -454,12 +465,54 @@ public sealed class ChromeApi : IDisposable
 		return await new Diagnose(net.Probes, net.Doh).RunAsync(host, Setting("dohProvider"), CancellationToken.None);
 	}
 
-	/// <summary>The bridge cannot cancel a call and several runs can overlap, so each attempt is pushed with the id the caller gave this run.</summary>
+	/// <summary>
+	/// The bridge cannot cancel a call and several runs can overlap, so each attempt is pushed with the id the caller gave this run.
+	/// The page itself stays here: it is someone else's text, and the tool only needs to know which way worked.
+	/// </summary>
 	private async Task<object?> OpenLinkAsync(string input, string runId)
 	{
 		var net = _app.Net ?? NetServices.Live;
+		var address = RelayRules.Normalize(input);
 		var engine = new RelayEngine(net.RelayTransport, Setting("dohProvider"), attempt => _host.Push("relay:attempt", new RelayAttemptEvent(runId, attempt.Strategy, attempt.Status, attempt.Reason)));
-		return await engine.OpenAsync(input, _consent, CancellationToken.None);
+		var result = await engine.OpenAsync(address.AbsoluteUri, _consent, CancellationToken.None);
+		return new OpenLinkResult(result.Outcome, result.Strategy, address.AbsoluteUri, result.Attempts);
+	}
+
+	private void OpenRelayedTab(string url)
+	{
+		var opened = Tabs.OpenRelayed(url);
+		Tabs.FocusPage(opened.Id);
+	}
+
+	private void LoadFailed(TabRecord tab, string description)
+	{
+		if (LoadFailureOffer.For(tab.Url, description) is not { } address)
+		{
+			_host.Notify($"Couldn't load {tab.Url} ({description})");
+			return;
+		}
+		_offered = address;
+		_host.OfferUnblock(LoadFailureOffer.Display(address));
+	}
+
+	/// <summary>A click on one of the offer's buttons: the tool opens with the address filled in, and nothing starts until a click there.</summary>
+	private void ChooseOffer(string tool)
+	{
+		var address = _offered ?? throw new NoOfferError();
+		var panel = tool switch
+		{
+			"openLink" => $"section:{PanelSection.Unblock}",
+			"diagnose" => $"section:{PanelSection.Diagnose}",
+			_ => throw new UnknownOfferToolError(tool),
+		};
+		if (Shell.OpenPanelWithInput(panel, address) == OpenPanelOutcome.Full) return;
+		DismissOffer();
+	}
+
+	private void DismissOffer()
+	{
+		_offered = null;
+		_host.DismissOffer();
 	}
 
 	private async Task<object?> HistoryMenuAsync(string direction, JsonElement[] args)

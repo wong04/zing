@@ -13,24 +13,36 @@ namespace Zing.Host;
 public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, DispatcherQueue dispatcher, OverlayHost overlays)
 {
 	private const int NoticeMs = 4000;
+	// Long enough to read and choose from; it is a question, not a status.
+	private const int OfferMs = 20000;
 	private const double NoticeWidth = 480;
 	private const double NoticeHeight = 56;
+	private const double OfferHeight = 96;
 	private const double NoticeMargin = 24;
 
 	private Task<RendererView>? _ready;
 	private DispatcherQueueTimer? _hideTimer;
 	private int _nextId = 1;
+	private double _height = NoticeHeight;
 
-	public async Task ShowAsync(string text)
+	public Task ShowAsync(string text) => ShowAsync(new { id = _nextId++, text }, NoticeHeight, NoticeMs);
+
+	/// <summary>The offer after a page failed like a block: buttons that open Open a Link or Diagnose. It waits for a click and starts nothing itself.</summary>
+	public Task ShowOfferAsync(string address) =>
+		ShowAsync(new { id = _nextId++, text = "This page didn't load", offer = new { address } }, OfferHeight, OfferMs);
+
+	private async Task ShowAsync(object notice, double height, int milliseconds)
 	{
 		var view = await (_ready ??= CreateAsync());
 		scope.Checkpoint("overlay");
+		_height = height;
 		view.Place(Bounds());
-		view.Send(Bridge.Event("overlay:notice", new { id = _nextId++, text }));
+		view.Send(Bridge.Event("overlay:notice", notice));
 		overlays.Show(OverlayLevel.Notices);
 		view.Visible = true;
 		_hideTimer ??= CreateTimer();
 		_hideTimer.Stop();
+		_hideTimer.Interval = TimeSpan.FromMilliseconds(milliseconds);
 		_hideTimer.Start();
 	}
 
@@ -56,7 +68,7 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 	{
 		var area = content();
 		var width = Math.Min(NoticeWidth, area.Width - 2 * NoticeMargin);
-		return new Rect(Math.Round((area.Width - width) / 2), area.Height - NoticeHeight - NoticeMargin, width, NoticeHeight);
+		return new Rect(Math.Round((area.Width - width) / 2), area.Height - _height - NoticeMargin, width, _height);
 	}
 
 	private async Task<RendererView> CreateAsync()
@@ -69,7 +81,6 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 	private DispatcherQueueTimer CreateTimer()
 	{
 		var timer = dispatcher.CreateTimer();
-		timer.Interval = TimeSpan.FromMilliseconds(NoticeMs);
 		timer.IsRepeating = false;
 		timer.Tick += (_, _) => Hide();
 		return timer;

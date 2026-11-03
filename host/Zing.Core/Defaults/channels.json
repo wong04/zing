@@ -149,6 +149,14 @@
 			"args": 1
 		},
 		{
+			"channel": "offer:choose",
+			"args": 1
+		},
+		{
+			"channel": "offer:dismiss",
+			"args": 0
+		},
+		{
 			"channel": "overview:close",
 			"args": 0
 		},
@@ -171,6 +179,10 @@
 		{
 			"channel": "permission:deny",
 			"args": 1
+		},
+		{
+			"channel": "relay:allow-third-parties",
+			"args": 0
 		},
 		{
 			"channel": "relay:open",
@@ -294,6 +306,10 @@
 			"args": 1
 		},
 		{
+			"channel": "tabs:open-relayed",
+			"args": 1
+		},
+		{
 			"channel": "tabs:pin",
 			"args": 1
 		},
@@ -339,6 +355,10 @@
 		},
 		{
 			"channel": "toolpanel:open",
+			"args": 2
+		},
+		{
+			"channel": "toolpanel:open-with-input",
 			"args": 2
 		},
 		{

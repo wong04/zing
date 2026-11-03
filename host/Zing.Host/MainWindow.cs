@@ -281,6 +281,27 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		TestHooks.Background(_notices.ShowAsync(text), "notice");
 	}
 
+	public void OfferUnblock(string address)
+	{
+		if (!_dispatcher.HasThreadAccess)
+		{
+			Faults.Enqueue(_dispatcher, () => OfferUnblock(address), "offer");
+			return;
+		}
+		if (_notices is null || _scope.IsClosed) return;
+		TestHooks.Background(_notices.ShowOfferAsync(address), "offer");
+	}
+
+	public void DismissOffer()
+	{
+		if (!_dispatcher.HasThreadAccess)
+		{
+			Faults.Enqueue(_dispatcher, DismissOffer, "offer");
+			return;
+		}
+		_notices?.Hide();
+	}
+
 	public void NewWindow() => _app.NewWindow();
 
 	// Not inside the bridge call that asked: the window takes its renderer views with it.

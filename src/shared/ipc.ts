@@ -93,9 +93,14 @@ export type CommandOutcome =
 	| { readonly status: 'not-applicable' }
 	| { readonly status: 'not-implemented'; readonly label: string }
 
+/** What the failed-load offer's buttons open. */
+export type OfferTool = 'openLink' | 'diagnose'
+
 export interface Notice {
 	readonly id: number
 	readonly text: string
+	/** Present for the offer after a page failed like a block: it stays until chosen or dismissed and carries the buttons. */
+	readonly offer?: { readonly address: string }
 }
 
 export interface TitleBarColors {
@@ -261,6 +266,8 @@ export interface InvokeContract {
 	'toolpanel:get': { args: []; result: ToolPanelsState }
 	/** `at` is in screen coordinates (a pointer event's screenX/screenY). */
 	'toolpanel:open': { args: [content: string, at: Point]; result: OpenPanelOutcome }
+	/** Opens (or raises) the panel in the middle of the page with an address filled in; the field is only filled, starting anything is a click in the tool. */
+	'toolpanel:open-with-input': { args: [content: string, input: string]; result: OpenPanelOutcome }
 	'toolpanel:close': { args: [id: string]; result: void }
 	'toolpanel:minimize': { args: [id: string]; result: void }
 	'toolpanel:restore': { args: [id: string]; result: OpenPanelOutcome }
@@ -280,6 +287,13 @@ export interface InvokeContract {
 	 * session's consent (`needsConsent`). Rejects when every method fails, when what was typed is not an address, and after 3 minutes.
 	 */
 	'relay:open': { args: [input: string, runId: string]; result: RelayOpenResult }
+	/** The person said yes to the reader relay and the archive seeing addresses. Holds for this session of the app, in memory only. */
+	'relay:allow-third-parties': { args: []; result: void }
+	/** A new tab on a page reached through the relay. Rejects an address that isn't https, which the relay scheme can't stand for. */
+	'tabs:open-relayed': { args: [url: string]; result: void }
+	/** A button of the failed-load offer: opens that tool with the failed address filled in. Starts nothing. */
+	'offer:choose': { args: [tool: OfferTool]; result: void }
+	'offer:dismiss': { args: []; result: void }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
 	'account:sign-in': { args: [password: string]; result: AccountOutcome }
@@ -396,10 +410,15 @@ export interface ZingApi {
 	hmac(message: string, key: string, algorithm: string): Promise<string>
 	diagnose(host: string): Promise<DiagnosticReport>
 	openLink(input: string, runId: string): Promise<RelayOpenResult>
+	allowRelayThirdParties(): Promise<void>
+	openRelayedTab(url: string): Promise<void>
+	chooseOffer(tool: OfferTool): Promise<void>
+	dismissOffer(): Promise<void>
 	onRelayAttempt(listener: (event: RelayAttemptEvent) => void): Unsubscribe
 	onShellState(listener: (state: ShellState) => void): Unsubscribe
 	getToolPanels(): Promise<ToolPanelsState>
 	openPanel(content: string, at: Point): Promise<OpenPanelOutcome>
+	openPanelWithInput(content: string, input: string): Promise<OpenPanelOutcome>
 	closePanel(id: string): Promise<void>
 	minimizePanel(id: string): Promise<void>
 	restorePanel(id: string): Promise<OpenPanelOutcome>

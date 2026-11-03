@@ -16,13 +16,12 @@ export interface RelayAttemptEvent extends RelayAttempt {
 	readonly runId: string
 }
 
+/** The page itself never crosses the bridge: it is someone else's text, and the tool only needs to know which way worked. */
 export interface RelayOpenResult {
 	/** `needsConsent`: the site was not reached, and the next methods are third parties the user has not agreed to yet. */
 	readonly outcome: 'opened' | 'needsConsent'
 	readonly strategy?: RelayStrategyName
-	readonly content: string
-	readonly contentType?: string
-	readonly isHtml: boolean
-	readonly finalUrl?: string
+	/** What was typed, made into an address (`https://` added to a bare name). */
+	readonly address: string
 	readonly attempts: readonly RelayAttempt[]
 }

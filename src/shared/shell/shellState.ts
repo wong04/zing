@@ -59,6 +59,8 @@ export interface ToolPanelView {
 	/** Window content coordinates. */
 	readonly frame: Rect
 	readonly minimized: boolean
+	/** An address another part of Zing handed the panel to start from. `serial` changes with each handoff, even of the same address. */
+	readonly input?: { readonly value: string; readonly serial: number }
 }
 
 export interface ToolPanelsState {

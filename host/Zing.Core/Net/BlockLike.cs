@@ -36,4 +36,19 @@ public static class LoadFailureOffer
 		if (address.Host == "app.zing") return null;
 		return address.AbsoluteUri;
 	}
+
+	/// <summary>The address as the offer shows it: without a user name and password, which have no place on screen.</summary>
+	public static string Display(string address)
+	{
+		var uri = new Uri(address);
+		return uri.UserInfo == "" ? uri.AbsoluteUri : uri.GetComponents(UriComponents.AbsoluteUri & ~UriComponents.UserInfo, UriFormat.SafeUnescaped);
+	}
 }
+
+/// <summary>What <c>relay:open</c> answers: which way worked, for which address, and every attempt. Not the page, which is untrusted text the tool never shows.</summary>
+public sealed record OpenLinkResult(RelayOutcome Outcome, RelayStrategy? Strategy, string Address, IReadOnlyList<RelayAttempt> Attempts);
+
+/// <summary>A button of an offer that is no longer on screen was pressed.</summary>
+public sealed class NoOfferError() : NetError("There is no offer to act on.");
+
+public sealed class UnknownOfferToolError(string tool) : NetError($"The offer has no tool called {tool}.");

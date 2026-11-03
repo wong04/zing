@@ -53,7 +53,7 @@ public sealed class RelayBridgeTests : IDisposable
 		var value = reply.GetProperty("value");
 		Assert.Equal("opened", value.GetProperty("outcome").GetString());
 		Assert.Equal("direct", value.GetProperty("strategy").GetString());
-		Assert.Equal("<p>hi</p>", value.GetProperty("content").GetString());
+		Assert.Equal("https://example.com/", value.GetProperty("address").GetString());
 		Assert.Equal(["direct:trying", "direct:worked"], Events("run-1").Select(e => $"{e.GetProperty("strategy").GetString()}:{e.GetProperty("status").GetString()}"));
 	}
 
