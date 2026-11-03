@@ -293,12 +293,14 @@ public sealed class ShellModel : IDisposable
 	{
 		_panels.Close(id);
 		PanelsUpdated();
+		FocusPageIfSurfaceHidden();
 	}
 
 	public void MinimizePanel(string id)
 	{
 		_panels.Minimize(id);
 		PanelsUpdated();
+		FocusPageIfSurfaceHidden();
 	}
 
 	public OpenPanelOutcome RestorePanel(string id) => AfterOpen(null, _panels.Restore(id, PageRect()));
@@ -376,6 +378,12 @@ public sealed class ShellModel : IDisposable
 		Sync();
 		PushState();
 		PushPanels();
+	}
+
+	/// <summary>A hidden view must not keep the keyboard: the panel that held it is gone.</summary>
+	private void FocusPageIfSurfaceHidden()
+	{
+		if (_region is null) FocusPageRequested?.Invoke();
 	}
 
 	private void FocusSurfaceIfCovering()

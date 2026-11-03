@@ -1,0 +1,98 @@
+/* The pieces every tool shares: page frame, text box, result row. A group's own css holds only what is specific to it. */
+
+.tool-page {
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	height: 100%;
+	padding: 14px;
+	overflow-y: auto;
+	color: var(--text);
+	font-size: 13px;
+}
+
+.tool-subtitle {
+	margin: 0;
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.tool-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.tool-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.tool-field-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	min-height: 26px;
+}
+
+.tool-label {
+	color: var(--muted);
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.tool-text {
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 80px;
+	padding: 8px 10px;
+	background: var(--control);
+	border: 1px solid var(--separator);
+	border-radius: var(--control-radius);
+	color: var(--text);
+	font: 12px/1.45 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
+	resize: vertical;
+	outline: none;
+	user-select: text;
+}
+
+.tool-text:focus {
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.tool-text::placeholder {
+	color: var(--muted);
+}
+
+.tool-text[readonly] {
+	background: var(--well);
+}
+
+.tool-result {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 5px 6px 5px 10px;
+	background: var(--well);
+	border-radius: 9px;
+}
+
+.tool-result-label {
+	flex: none;
+	width: 108px;
+	color: var(--muted);
+	font-size: 11px;
+}
+
+.tool-result-value {
+	flex: 1;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	user-select: text;
+}
+
+.tool-result-value.mono {
+	font: 12px 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
+}

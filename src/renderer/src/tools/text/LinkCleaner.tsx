@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { cleanLink, InvalidLinkError, type CleanedLink } from '@shared/browser/linkCleaner'
 import { InfoBanner, PillField } from '../../components'
-import { OutputRow, ToolPage } from './parts'
-import './text.css'
+import { ResultRow, ToolPage } from '../parts'
 
 type Outcome = { readonly cleaned: CleanedLink } | { readonly invalid: string }
 
@@ -15,7 +14,7 @@ function clean(input: string): Outcome {
 	}
 }
 
-export default function LinkCleaner() {
+export function LinkCleaner() {
 	const [input, setInput] = useState('')
 	const outcome = input.trim() === '' ? null : clean(input)
 	return (
@@ -24,7 +23,7 @@ export default function LinkCleaner() {
 			{outcome && 'invalid' in outcome ? <InfoBanner kind="warning">{outcome.invalid}</InfoBanner> : null}
 			{outcome && 'cleaned' in outcome ? (
 				<>
-					<OutputRow label="Clean link" value={outcome.cleaned.url} testId="cleaned-link" />
+					<ResultRow label="Clean link" value={outcome.cleaned.url} testId="cleaned-link" />
 					<InfoBanner kind="info">
 						{outcome.cleaned.removed.length === 0
 							? 'No tracking parameters found: already clean.'

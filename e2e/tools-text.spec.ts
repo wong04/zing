@@ -163,3 +163,12 @@ test('QR Code says so when the text is too long', async () => {
 	await expect(panel.locator('canvas')).toHaveCount(0)
 	await zing.close()
 })
+
+test('Color Converter refuses a channel past 255 with the banner', async () => {
+	const zing = await launchZing()
+	const panel = await openTool(zing, 'Color Converter')
+	await panel.getByRole('textbox', { name: 'Colour' }).fill('rgb(999,0,0)')
+	await expect(panel.getByRole('alert')).toBeVisible()
+	await expect(panel.getByTestId('color-hex')).toHaveCount(0)
+	await zing.close()
+})

@@ -310,6 +310,52 @@ public sealed class ShellModelTests
 	}
 
 	[Fact]
+	public void Closing_the_last_panel_returns_focus_to_the_page()
+	{
+		var h = new Harness();
+		h.Model.OpenPanel("tool:Hashes", new Point(800, 450));
+		h.Events.Clear();
+		h.Model.ClosePanel(h.Model.PanelsState().Panels[0].Id);
+		Assert.Null(h.Model.Region);
+		Assert.Equal(["focus page"], h.Events);
+	}
+
+	[Fact]
+	public void Minimizing_the_last_visible_panel_returns_focus_to_the_page()
+	{
+		var h = new Harness();
+		h.Model.OpenPanel("tool:Hashes", new Point(800, 450));
+		h.Events.Clear();
+		h.Model.MinimizePanel(h.Model.PanelsState().Panels[0].Id);
+		Assert.Null(h.Model.Region);
+		Assert.Equal(["focus page"], h.Events);
+	}
+
+	[Fact]
+	public void Closing_one_of_two_panels_leaves_the_focus_where_it_is()
+	{
+		var h = new Harness();
+		h.Model.OpenPanel("tool:Hashes", new Point(800, 450));
+		h.Model.OpenPanel("tool:HMAC", new Point(300, 200));
+		h.Events.Clear();
+		h.Model.ClosePanel(h.Model.PanelsState().Panels[0].Id);
+		Assert.NotNull(h.Model.Region);
+		Assert.Empty(h.Events);
+	}
+
+	[Fact]
+	public void Closing_a_panel_under_the_toolbox_does_not_pull_focus_from_the_sheet()
+	{
+		var h = new Harness();
+		h.Model.OpenPanel("tool:Hashes", new Point(800, 450));
+		h.Model.OpenToolbox();
+		h.Events.Clear();
+		h.Model.ClosePanel(h.Model.PanelsState().Panels[0].Id);
+		Assert.NotNull(h.Model.Region);
+		Assert.Empty(h.Events);
+	}
+
+	[Fact]
 	public void Opening_a_tool_from_the_toolbox_puts_the_sheet_away()
 	{
 		var h = new Harness();

@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { generatePassword } from '@shared/devtools/password'
 import { PillButton, PillSlider, Toggle } from '../../components'
-import { CopyButton, ToolPage } from './parts'
+import { ResultRow, ToolPage } from '../parts'
 import './text.css'
 
 const count = 5
 
-export default function Passwords() {
+export function Passwords() {
 	const [length, setLength] = useState(20)
 	const [uppercase, setUppercase] = useState(true)
 	const [digits, setDigits] = useState(true)
@@ -33,16 +33,11 @@ export default function Passwords() {
 			<div className="toggle-row">
 				Symbols <Toggle aria-label="Symbols" checked={symbols} onChange={setSymbols} />
 			</div>
-			<p className="text-tool-subtitle">Easily misread characters (0/O, 1/l/I) are left out so a password is safe to read aloud.</p>
+			<p className="tool-subtitle">Easily misread characters (0/O, 1/l/I) are left out so a password is safe to read aloud.</p>
 			<PillButton onClick={generate}>Generate {count}</PillButton>
-			<div className="text-tool-rows">
+			<div className="tool-rows">
 				{passwords.map((password, index) => (
-					<div className="output-row" key={index}>
-						<span className="output-row-value" data-testid="password">
-							{password}
-						</span>
-						<CopyButton text={password} label="password" />
-					</div>
+					<ResultRow key={index} label={`Password ${index + 1}`} value={password} testId="password" />
 				))}
 			</div>
 		</ToolPage>

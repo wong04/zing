@@ -8,6 +8,7 @@ import {
 	EvalError,
 	evaluate,
 	format,
+	NestedTooDeeplyError,
 	UnbalancedParenthesesError,
 	UnexpectedTokenError,
 	UnknownSymbolError,
@@ -123,5 +124,19 @@ describe('error types', () => {
 	})
 	it('a variable named like an Object method is not picked up from the prototype', () => {
 		expect(() => evaluate('constructor')).toThrow(UnknownSymbolError)
+	})
+})
+
+describe('nesting', () => {
+	it('refuses 5,000 nested parentheses with a typed error instead of overflowing the stack', () => {
+		const text = '('.repeat(5000) + '1' + ')'.repeat(5000)
+		expect(() => evaluate(text)).toThrow(NestedTooDeeplyError)
+	})
+	it('refuses a long chain of negations and powers the same way', () => {
+		expect(() => evaluate('-'.repeat(50_000) + '1')).toThrow(NestedTooDeeplyError)
+		expect(() => evaluate('2' + '^2'.repeat(50_000))).toThrow(NestedTooDeeplyError)
+	})
+	it('still evaluates 100 nested parentheses', () => {
+		expect(evaluate('('.repeat(100) + '7' + ')'.repeat(100))).toBe(7)
 	})
 })

@@ -113,7 +113,11 @@ export function ticks(min: number, max: number, step: number): number[] {
 	// Guard against a pathological step producing millions of lines.
 	if (!((max - min) / step <= 1000)) return []
 	const result: number[] = []
-	for (let value = Math.ceil(min / step) * step; value <= max; value += step) result.push(value)
+	// Counted, not stepped: far from zero a step below the float resolution adds nothing, and an index past 2^53 can't
+	// be incremented either, so the loop runs a fixed number of times instead.
+	const first = Math.ceil(min / step)
+	const count = Math.floor(max / step) - first
+	for (let offset = 0; offset <= count; offset++) result.push((first + offset) * step)
 	return result
 }
 

@@ -1,8 +1,8 @@
 // Port of `convertColor` from Krackn Features/Utilities/DevTools.swift.
 //
 // Converts a hex or `rgb()` colour into every notation a designer or
-// front-end engineer needs. Like Krackn, `rgb()` channels are taken as given
-// (not clamped), and fractional parts are truncated in the integer notations.
+// front-end engineer needs. Unlike Krackn, an `rgb()` channel past 255 is refused
+// instead of producing a hex such as #3E70000; fractional parts are truncated in the integer notations.
 
 export type ColorValues = {
 	readonly hex: string
@@ -47,6 +47,7 @@ function parseRGBFunction(text: string): RGB | null {
 		.map(Number)
 	const [r, g, b] = numbers
 	if (r === undefined || g === undefined || b === undefined) return null
+	if ([r, g, b].some((channel) => channel > 255)) return null
 	return { r, g, b }
 }
 

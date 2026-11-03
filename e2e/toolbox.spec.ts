@@ -54,6 +54,38 @@ test('search finds a tool by keyword and Enter opens it', async () => {
 	await zing.close()
 })
 
+test('Escape closes the sheet after a click on a blank part of it', async () => {
+	const zing = await launchZing()
+	const surface = await openToolbox(zing)
+	await surface.getByRole('heading', { name: 'Toolbox' }).click()
+	await surface.keyboard.press('Escape')
+	await expect(surface.getByRole('dialog', { name: 'Toolbox' })).toHaveCount(0)
+	await zing.close()
+})
+
+test('Enter on Close, reached by Tab from a search, closes the sheet and opens no tool', async () => {
+	const zing = await launchZing()
+	const surface = await openToolbox(zing)
+	await surface.getByRole('searchbox', { name: 'Search tools' }).fill('sha')
+	await expect(surface.getByTestId('toolbox-result').first()).toHaveText(/Hashes/)
+	await surface.keyboard.press('Tab')
+	await expect(surface.getByRole('button', { name: /Close Toolbox/ })).toBeFocused()
+	await surface.keyboard.press('Enter')
+	await expect(surface.getByRole('dialog', { name: 'Toolbox' })).toHaveCount(0)
+	expect((await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels).toHaveLength(0)
+	await zing.close()
+})
+
+test('a tool opened from a search has its first field focused', async () => {
+	const zing = await launchZing()
+	const surface = await openToolbox(zing)
+	await surface.getByRole('searchbox', { name: 'Search tools' }).fill('sha')
+	await expect(surface.getByTestId('toolbox-result').first()).toHaveText(/Hashes/)
+	await surface.keyboard.press('Enter')
+	await expect(surface.getByRole('textbox', { name: 'Text to hash' })).toBeFocused()
+	await zing.close()
+})
+
 test('opening a tool records it in recents', async () => {
 	const zing = await launchZing()
 	const surface = await openToolbox(zing)
@@ -104,6 +136,14 @@ test('a link tile opens a tab, and an added link survives a relaunch', async () 
 	await expect
 		.poll(async () => (await first.chrome.evaluate(() => window.zing.getTabs())).tabs.map((t) => t.url))
 		.toContain(`${base}/linked`)
+	// The tile opens the tab at the address: a blank tab navigated afterwards would leave a Back entry behind it.
+	await expect
+		.poll(async () => {
+			const { tabs, activeId } = await first.chrome.evaluate(() => window.zing.getTabs())
+			const tab = tabs.find((t) => t.id === activeId)
+			return tab && !tab.loading && tab.url === `${base}/linked` ? tab.canGoBack : 'loading'
+		})
+		.toBe(false)
 	const { userDataDir } = first
 	await first.close()
 

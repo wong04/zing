@@ -35,3 +35,8 @@ const registry = buildRegistry([mathTools, devTools, textTools, linksTools])
 export function toolComponent(content: PanelContent): LazyExoticComponent<ComponentType> | null {
 	return registry.get(panelId(content)) ?? null
 }
+
+/** Every id the real groups register, for tests that check the registry against the catalog. */
+export function registeredToolIds(): string[] {
+	return [...registry.keys()]
+}

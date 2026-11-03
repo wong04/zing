@@ -284,9 +284,6 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 	],
 	security: [
 		toggle('securityRealtime', 'Inspect links before they load', { detail: 'Warns about look-alike and deceptive addresses.' }),
-		toggle('securityDownloadScan', 'Check downloads', { detail: 'Looks at a file before you open it.' }),
-		toggle('securityDomainBlocking', 'Block known-bad domains', { detail: 'Asks a filtering resolver whether a site is reported.' }),
-		toggle('securitySignatureCheck', 'Check program signatures', { detail: 'Reports whether a downloaded program is signed.' }),
 	],
 	advanced: [
 		toggle('acceleratedCanvas', 'Draw canvas on the GPU', { detail: 'Faster on canvas-heavy pages. Relaunch to apply.' }),

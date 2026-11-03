@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatJSON } from './jsonFormat'
+import { formatJSON, maxDisplayChars, maxDisplayLines, tooLargeToShow } from './jsonFormat'
 
 describe('formatJSON', () => {
 	it('formats {"a":1}', () => {
@@ -30,5 +30,24 @@ describe('formatJSON', () => {
 	it('locates an error after a deep but valid prefix', () => {
 		const text = '['.repeat(1000) + ']'.repeat(1000) + '\n]'
 		expect(formatJSON(text, 'pretty')).toMatchObject({ ok: false, line: 2 })
+	})
+	it('says a valid document nested 20,000 deep is too deep, instead of throwing', () => {
+		const text = '['.repeat(20_000) + ']'.repeat(20_000)
+		expect(formatJSON(text, 'pretty')).toEqual({ ok: false, message: expect.stringContaining('Nested too deeply'), line: null })
+		expect(formatJSON(text, 'minify')).toEqual({ ok: false, message: expect.stringContaining('Nested too deeply'), line: null })
+	})
+	it('still formats a document nested 500 deep', () => {
+		const text = '['.repeat(500) + ']'.repeat(500)
+		expect(formatJSON(text, 'minify')).toEqual({ ok: true, text })
+		expect(formatJSON(text, 'pretty')).toMatchObject({ ok: true })
+	})
+})
+
+describe('tooLargeToShow', () => {
+	it('allows a result at the limits and refuses one past them', () => {
+		expect(tooLargeToShow('\n'.repeat(maxDisplayLines - 1))).toBe(false)
+		expect(tooLargeToShow('\n'.repeat(maxDisplayLines))).toBe(true)
+		expect(tooLargeToShow('x'.repeat(maxDisplayChars))).toBe(false)
+		expect(tooLargeToShow('x'.repeat(maxDisplayChars + 1))).toBe(true)
 	})
 })

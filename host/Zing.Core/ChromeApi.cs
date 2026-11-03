@@ -165,6 +165,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("tabs:activate", args => Do(() => Tabs.Activate(Text(args, 0))));
 		bridge.Register("tabs:close", args => Do(() => Tabs.Close(Text(args, 0))));
 		bridge.Register("tabs:navigate", args => Do(() => Navigate(Text(args, 0), Text(args, 1))));
+		bridge.Register("tabs:open-link", args => Do(() => OpenLinkInNewTab(Text(args, 0))));
 		bridge.Register("tabs:move", args => Do(() => Ordering.Move(Text(args, 0), Int(args, 1))));
 		bridge.Register("tabs:move-stack", args => Do(() => Ordering.MoveStack(Text(args, 0), Int(args, 1))));
 		bridge.Register("tabs:move-within", args => Do(() => Ordering.MoveWithin(Text(args, 0), Text(args, 1), Int(args, 2))));
@@ -318,6 +319,14 @@ public sealed class ChromeApi : IDisposable
 		AssertNavigable(url);
 		if (Tabs.Records is [var only] && (only.Url == TabStore.NewTabUrl || StartPage.IsStartPage(only.Url))) Navigate(only.Id, url);
 		else Tabs.Open(LinkCleaner.StripTrackers(url));
+	}
+
+	/// <summary>A link tile: one new tab at the address, so there is no blank page behind it in Back and the keyboard stays with the page.</summary>
+	private void OpenLinkInNewTab(string url)
+	{
+		AssertNavigable(url);
+		var opened = Tabs.Open(url);
+		Tabs.FocusPage(opened.Id);
 	}
 
 	/// <summary>

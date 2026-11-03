@@ -30,6 +30,16 @@ export class UnbalancedParenthesesError extends EvalError {
 	}
 }
 
+/** Past this the parser's own recursion would overflow the call stack, so the input is refused instead. */
+export const MAX_NESTING = 200
+
+export class NestedTooDeeplyError extends EvalError {
+	override name = 'NestedTooDeeplyError'
+	constructor() {
+		super('Nested too deeply')
+	}
+}
+
 export class UnknownSymbolError extends EvalError {
 	override name = 'UnknownSymbolError'
 	constructor(readonly symbol: string) {
@@ -133,6 +143,8 @@ class Parser {
 	private index = 0
 	/** Brackets opened and not yet closed, so running out of input inside one is reported as unbalanced. */
 	private depth = 0
+	/** Every nested bracket, negation and power goes through `power`, so this bounds the recursion. */
+	private nesting = 0
 
 	constructor(text: string, private readonly angle: AngleMode, private readonly variables: Variables) {
 		// Accept the symbols a calculator keypad produces alongside ASCII.
@@ -192,11 +204,17 @@ class Parser {
 
 	// power := unary ('^' power)?   — right associative, so 2^3^2 = 512
 	private power(): number {
+		this.nesting += 1
+		if (this.nesting > MAX_NESTING) throw new NestedTooDeeplyError()
 		const base = this.unary()
 		this.skipSpace()
-		if (this.peek() !== '^') return base
+		if (this.peek() !== '^') {
+			this.nesting -= 1
+			return base
+		}
 		this.index += 1
 		const exponent = this.power()
+		this.nesting -= 1
 		return cPow(base, exponent)
 	}
 

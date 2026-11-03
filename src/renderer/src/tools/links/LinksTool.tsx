@@ -4,19 +4,12 @@ import { defaultTitle, parseToolLink } from '@shared/toolbox/links'
 import { zing } from '../../api'
 import { CloseGlyph, InfoBanner, PillButton, PillField } from '../../components'
 import { useSettings } from '../../settings/useSettings'
+import { ToolPage } from '../parts'
 import './links.css'
-
-class NoActiveTabError extends Error {
-	override name = 'NoActiveTabError'
-}
 
 /** The stored address is checked again here: settings.json can be edited by hand to hold something a tile must never open. */
 async function openInNewTab(stored: string): Promise<void> {
-	const url = parseToolLink(stored)
-	await zing.runCommand('tab.new')
-	const { activeId } = await zing.getTabs()
-	if (activeId === undefined) throw new NoActiveTabError('A new tab was opened but none is active')
-	await zing.navigateTab(activeId, url)
+	await zing.openLinkInNewTab(parseToolLink(stored))
 }
 
 /** The Links page: tiles that open a site in a normal tab, which the user can add to and remove from. */
@@ -55,8 +48,7 @@ export function LinksTool() {
 	}
 
 	return (
-		<div className="links-tool">
-			<p className="links-note">Sites here sign you out when Zing closes, unless you turn on Stay signed in to sites in Settings.</p>
+		<ToolPage subtitle="Sites here sign you out when Zing closes, unless you turn on Stay signed in to sites in Settings.">
 			<div className="links-tiles">
 				{links.map((link) => (
 					<div key={link.url} className="links-tile-wrap">
@@ -82,6 +74,6 @@ export function LinksTool() {
 				</PillButton>
 			</div>
 			{problem === null ? null : <InfoBanner kind="warning">{problem}</InfoBanner>}
-		</div>
+		</ToolPage>
 	)
 }

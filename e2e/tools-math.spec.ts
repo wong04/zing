@@ -31,6 +31,24 @@ test('an unbalanced expression shows its error and no result', async () => {
 	await zing.close()
 })
 
+test('5,000 nested parentheses show a message in the calculator and the graph, and the tool stays usable', async () => {
+	const zing = await launchZing()
+	const nested = '('.repeat(5000) + '1' + ')'.repeat(5000)
+	const calculator = await openTool(zing, 'Scientific Calculator')
+	await calculator.panel.getByRole('textbox', { name: 'Expression' }).fill(nested)
+	await expect(calculator.panel.getByTestId('calc-error')).toHaveText('Nested too deeply')
+	await calculator.panel.getByRole('textbox', { name: 'Expression' }).fill('2+2')
+	await expect(calculator.panel.getByTestId('calc-result')).toHaveText('4')
+
+	await zing.chrome.getByRole('button', { name: 'Toolbox' }).first().click()
+	await expect(calculator.surface.getByRole('dialog', { name: 'Toolbox' })).toBeVisible()
+	await calculator.surface.getByTestId('toolbox-tile').filter({ hasText: 'Graphing Calculator' }).click()
+	const graph = calculator.surface.getByRole('dialog', { name: 'Graphing Calculator' })
+	await graph.getByRole('textbox', { name: 'Expression 1' }).fill(nested)
+	await expect(graph.getByText('Nested too deeply')).toBeVisible()
+	await zing.close()
+})
+
 /** Opens `menu` and returns the list. */
 async function choose(surface: Page, panel: Locator, menu: string, option: string): Promise<void> {
 	await panel.getByRole('button', { name: menu }).click()
