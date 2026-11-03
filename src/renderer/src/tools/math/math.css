@@ -1,21 +1,4 @@
-/* Shared by the four math tools. The panel body does not scroll, so each tool brings its own. */
-
-.math-tool {
-	display: flex;
-	flex-direction: column;
-	gap: 14px;
-	height: 100%;
-	padding: 14px;
-	overflow-y: auto;
-	color: var(--text);
-	font-size: 13px;
-}
-
-.math-subtitle {
-	margin: 0;
-	color: var(--muted);
-	font-size: 12px;
-}
+/* What only the math tools use; the shared pieces are in ../tools.css. */
 
 .math-row {
 	display: flex;
@@ -30,37 +13,6 @@
 
 .math-mono {
 	font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-}
-
-.math-result-row {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	padding: 9px 12px;
-	border-radius: var(--control-radius);
-	background: var(--control);
-}
-
-.math-result-label {
-	flex: none;
-	width: 96px;
-	color: var(--muted);
-	font-size: 11px;
-	font-weight: 600;
-}
-
-.math-result-value {
-	flex: 1;
-	min-width: 0;
-	overflow-wrap: anywhere;
-	user-select: text;
-	font-size: 12.5px;
-}
-
-.math-results {
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
 }
 
 /* Calculator */

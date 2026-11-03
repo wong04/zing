@@ -4,6 +4,7 @@ import { defaultTitle, parseToolLink } from '@shared/toolbox/links'
 import { zing } from '../../api'
 import { CloseGlyph, InfoBanner, PillButton, PillField } from '../../components'
 import { useSettings } from '../../settings/useSettings'
+import { ToolPage } from '../parts'
 import './links.css'
 
 class NoActiveTabError extends Error {
@@ -55,8 +56,7 @@ export function LinksTool() {
 	}
 
 	return (
-		<div className="links-tool">
-			<p className="links-note">Sites here sign you out when Zing closes, unless you turn on Stay signed in to sites in Settings.</p>
+		<ToolPage subtitle="Sites here sign you out when Zing closes, unless you turn on Stay signed in to sites in Settings.">
 			<div className="links-tiles">
 				{links.map((link) => (
 					<div key={link.url} className="links-tile-wrap">
@@ -82,6 +82,6 @@ export function LinksTool() {
 				</PillButton>
 			</div>
 			{problem === null ? null : <InfoBanner kind="warning">{problem}</InfoBanner>}
-		</div>
+		</ToolPage>
 	)
 }

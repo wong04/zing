@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { describeTimestamp } from '@shared/devtools/timestamp'
 import { InfoBanner, PillButton, PillField } from '../../components'
-import { DevTool, ResultRow } from './parts'
+import { ResultRow, ToolPage } from '../parts'
 
 type Reading = { readonly input: string; readonly now: Date }
 
@@ -20,7 +20,7 @@ export function TimestampTool() {
 	const rows = describeTimestamp(input, { now })
 
 	return (
-		<DevTool>
+		<ToolPage>
 			<div className="dev-row">
 				<PillField aria-label="Timestamp" value={input} onChange={(value) => setReading(readingAt(value))} placeholder="1753800000" />
 				<PillButton variant="outlined" size="small" onClick={() => setReading(readingAt(unixNow(new Date())))}>
@@ -28,11 +28,11 @@ export function TimestampTool() {
 				</PillButton>
 			</div>
 			{rows.length === 0 && input !== '' ? <InfoBanner kind="warning">That isn't a number.</InfoBanner> : null}
-			<div className="dev-list">
+			<div className="tool-rows">
 				{rows.map(([label, value]) => (
 					<ResultRow key={label} label={label} value={value} mono={label !== 'Local time' && label !== 'Relative'} />
 				))}
 			</div>
-		</DevTool>
+		</ToolPage>
 	)
 }

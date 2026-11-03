@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { InfoBanner, PillField, PillMenu } from '../../components'
 import { convertUnit, formatUnitValue, UnitKind, unitKinds, unitsOf } from '@shared/devtools/units'
-import { ResultRow } from './MathParts'
+import { ResultRow, ToolPage } from '../parts'
 import './math.css'
 
 export class UnitMismatchError extends Error {
@@ -42,8 +42,7 @@ export function UnitsTool() {
 	const result = convert(amount, pair.from, pair.to, kind)
 
 	return (
-		<div className="math-tool">
-			<p className="math-subtitle">Length, mass, temperature, data, pressure, energy and angle.</p>
+		<ToolPage subtitle="Length, mass, temperature, data, pressure, energy and angle.">
 			<div className="math-row">
 				<PillMenu options={kindOptions} value={kind} onChange={changeKind} aria-label="Unit kind" />
 			</div>
@@ -55,6 +54,6 @@ export function UnitsTool() {
 			</div>
 			{result !== null ? <ResultRow label="Result" value={result} testId="unit-result" /> : null}
 			{result === null && amount.trim() !== '' ? <InfoBanner kind="warning">Enter a number to convert.</InfoBanner> : null}
-		</div>
+		</ToolPage>
 	)
 }

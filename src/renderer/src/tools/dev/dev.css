@@ -1,62 +1,4 @@
-/* The developer tools' shared pieces, on the theme tokens (Krackn `ResultRow`, `wellSurface` editors). */
-
-.dev-tool {
-	box-sizing: border-box;
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-	height: 100%;
-	padding: 12px;
-	overflow-y: auto;
-	color: var(--text);
-	font-size: 12.5px;
-}
-
-.dev-field,
-.dev-code {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-}
-
-.dev-field-head {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	min-height: 26px;
-}
-
-.dev-label {
-	color: var(--muted);
-	font-size: 11px;
-	font-weight: 600;
-}
-
-.dev-text {
-	box-sizing: border-box;
-	width: 100%;
-	padding: 8px 10px;
-	background: var(--control);
-	border: 1px solid var(--separator);
-	border-radius: var(--control-radius);
-	color: var(--text);
-	font: 12px/1.45 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
-	resize: vertical;
-	outline: none;
-	user-select: text;
-}
-
-.dev-text:focus {
-	box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
-}
-
-.dev-text::placeholder {
-	color: var(--muted);
-}
-
-.dev-text[readonly] {
-	background: var(--well);
-}
+/* What only the developer tools use; the shared pieces are in ../tools.css. */
 
 .dev-pre {
 	box-sizing: border-box;
@@ -71,33 +13,6 @@
 	user-select: text;
 }
 
-.dev-result {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	padding: 5px 6px 5px 10px;
-	background: var(--well);
-	border-radius: 9px;
-}
-
-.dev-result-label {
-	flex: none;
-	width: 108px;
-	color: var(--muted);
-	font-size: 11px;
-}
-
-.dev-result-value {
-	flex: 1;
-	min-width: 0;
-	overflow-wrap: anywhere;
-	user-select: text;
-}
-
-.dev-result-value.mono {
-	font: 12px 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
-}
-
 .dev-row {
 	display: flex;
 	align-items: center;
@@ -106,12 +21,6 @@
 
 .dev-row > .pill-field {
 	flex: 1;
-}
-
-.dev-list {
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
 }
 
 .dev-toggle {

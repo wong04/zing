@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { InfoBanner, PillField, Toggle } from '../../components'
-import { DevTool, describeFailure, ResultRow, TextArea } from './parts'
+import { ResultRow, TextArea, ToolPage } from '../parts'
+import { describeFailure } from './parts'
 import type { RegexReply } from './regex.worker'
 import { WorkerTimeoutError } from './runInWorker'
 import { useTask, type TaskState } from './useTask'
@@ -16,7 +17,7 @@ export function RegexTool() {
 	const task = useTask(request, runRegex)
 
 	return (
-		<DevTool>
+		<ToolPage>
 			<PillField aria-label="Pattern" value={pattern} onChange={setPattern} placeholder="pattern" spellCheck={false} />
 			<span className="dev-toggle">
 				<Toggle checked={ignoreCase} onChange={setIgnoreCase} aria-label="Case insensitive" />
@@ -24,7 +25,7 @@ export function RegexTool() {
 			</span>
 			<TextArea label="Test string" value={subject} onChange={setSubject} rows={4} />
 			<Outcome task={task} />
-		</DevTool>
+		</ToolPage>
 	)
 }
 
@@ -42,10 +43,10 @@ function Outcome({ task }: { readonly task: TaskState<RegexReply> }) {
 	if (reply.matches.length === 0) return <InfoBanner kind="info">No matches.</InfoBanner>
 	return (
 		<>
-			<span className="dev-label">{reply.matches.length === 1 ? '1 match' : `${reply.matches.length} matches`}</span>
-			<div className="dev-list">
+			<span className="tool-label">{reply.matches.length === 1 ? '1 match' : `${reply.matches.length} matches`}</span>
+			<div className="tool-rows">
 				{reply.matches.map((match, index) => (
-					<div key={`${match.range}-${index}`} className="dev-list">
+					<div key={`${match.range}-${index}`} className="tool-rows">
 						<ResultRow label={`Match ${match.range}`} value={match.text} />
 						{match.groups.map((group, g) => (
 							<ResultRow key={g} label={`  group ${g + 1}`} value={group} />

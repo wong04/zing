@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { HashAlgorithm, hashAlgorithms } from '@shared/devtools/hashAlgorithm'
 import { InfoBanner, PillField, SegmentedControl } from '../../components'
 import { zing } from '../../api'
-import { DevTool, describeFailure, ResultRow, TextArea } from './parts'
+import { ResultRow, TextArea, ToolPage } from '../parts'
+import { describeFailure } from './parts'
 import { useTask } from './useTask'
 
 type Request = { readonly message: string; readonly key: string; readonly algorithm: HashAlgorithm }
@@ -19,12 +20,12 @@ export function HmacTool() {
 	const task = useTask(request, sign)
 
 	return (
-		<DevTool>
+		<ToolPage>
 			<SegmentedControl aria-label="Algorithm" options={options} value={algorithm} onChange={setAlgorithm} />
 			<PillField aria-label="Secret key" value={key} onChange={setKey} placeholder="Secret key" spellCheck={false} />
 			<TextArea label="Message" value={message} onChange={setMessage} rows={5} />
 			{task.kind === 'failed' ? <InfoBanner kind="warning">{describeFailure(task.error)}</InfoBanner> : null}
 			<ResultRow label={`HMAC-${algorithm}`} value={task.kind === 'done' ? task.value : ''} />
-		</DevTool>
+		</ToolPage>
 	)
 }

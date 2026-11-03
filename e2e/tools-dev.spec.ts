@@ -78,6 +78,33 @@ test('SHA-256 of abc, and of a file', async () => {
 	await zing.close()
 })
 
+test('a Copy button is off with nothing to copy, shows a refusal, and forgets its tick when the value changes', async () => {
+	const zing = await launchZing()
+	const { panel } = await openTool(zing, 'Hashes')
+	const surface = panel.page()
+	const copy = result(panel, 'Digest').getByRole('button')
+	await expect(copy).toBeDisabled()
+	await panel.getByRole('textbox', { name: 'Text to hash' }).fill('abc')
+	await expect(copy).toBeEnabled()
+	// The page's clipboard is replaced, so nothing reaches the system clipboard.
+	await surface.evaluate(() => {
+		Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.resolve() } })
+	})
+	await copy.click()
+	await expect(copy).toHaveAccessibleName('Copied')
+	await panel.getByRole('textbox', { name: 'Text to hash' }).fill('abcd')
+	await expect(copy).toHaveAccessibleName('Copy Digest')
+	await copy.click()
+	await expect(copy).toHaveAccessibleName('Copied')
+	await expect(copy).toHaveAccessibleName('Copy Digest', { timeout: 5000 })
+	await surface.evaluate(() => {
+		Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.reject(new Error('refused')) } })
+	})
+	await copy.click()
+	await expect(copy).toHaveAccessibleName('Copy failed')
+	await zing.close()
+})
+
 test('HMAC-SHA-256 of the quick brown fox', async () => {
 	const zing = await launchZing()
 	const { panel } = await openTool(zing, 'HMAC')

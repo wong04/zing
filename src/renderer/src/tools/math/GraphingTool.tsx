@@ -24,7 +24,7 @@ import {
 	type Viewport,
 } from '@shared/math/graphEngine'
 import { evalMessage } from './evalMessage'
-import { CopyButton } from './MathParts'
+import { CopyButton, ToolPage } from '../parts'
 import './math.css'
 
 /** Distinct hues legible on both the light and dark surfaces, in the order Desmos cycles its palette (Krackn `plotColors`). */
@@ -385,8 +385,7 @@ export function GraphingTool() {
 	const remove = (id: number): void => setPlots((all) => all.filter((p) => p.id !== id))
 
 	return (
-		<div className="math-tool">
-			<p className="math-subtitle">Scroll to zoom, drag to pan. Points of interest are marked automatically.</p>
+		<ToolPage subtitle="Scroll to zoom, drag to pan. Points of interest are marked automatically.">
 			<div className="graph-split">
 				<div className="graph-expressions">
 					<div className="graph-expressions-head">
@@ -482,13 +481,13 @@ export function GraphingTool() {
 						<span className="math-mono graph-selected">
 							({format(selected.x)}, {format(selected.y)})
 						</span>
-						<CopyButton text={`(${format(selected.x)}, ${format(selected.y)})`} label="Copy point" />
+						<CopyButton value={`(${format(selected.x)}, ${format(selected.y)})`} label="point" />
 						<PillButton variant="ghost" size="small" onClick={() => setSelected(null)}>
 							Dismiss
 						</PillButton>
 					</div>
 				</SectionCard>
 			) : null}
-		</div>
+		</ToolPage>
 	)
 }

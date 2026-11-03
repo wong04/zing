@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { encodeQr, QrTooLongError, type QrModules } from '@shared/devtools/qr'
 import { InfoBanner, PillButton } from '../../components'
-import { ToolPage } from './parts'
+import { TextArea, ToolPage } from '../parts'
 import './text.css'
 
 const quietZone = 4
@@ -18,7 +18,7 @@ function encode(text: string): Code {
 	}
 }
 
-export default function QrCode() {
+export function QrCode() {
 	const [text, setText] = useState('')
 	const canvas = useRef<HTMLCanvasElement>(null)
 	const code = useMemo(() => (text === '' ? null : encode(text)), [text])
@@ -59,7 +59,7 @@ export default function QrCode() {
 
 	return (
 		<ToolPage subtitle="Turn any text or link into a scannable code.">
-			<textarea className="text-tool-area" aria-label="Text" spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} />
+			<TextArea label="Text" value={text} onChange={setText} />
 			{code && 'error' in code ? <InfoBanner kind="warning">{code.error}</InfoBanner> : null}
 			{modules ? (
 				<>

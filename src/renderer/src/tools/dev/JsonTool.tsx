@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { formatJSON, workerThreshold, type JSONMode } from '@shared/devtools/jsonFormat'
 import { InfoBanner, SegmentedControl } from '../../components'
-import { DevTool, describeFailure, TextArea } from './parts'
+import { TextArea, ToolPage } from '../parts'
+import { describeFailure } from './parts'
 import { useTask } from './useTask'
 import { runJSON } from './workers'
 
@@ -22,7 +23,7 @@ export function JsonTool() {
 	const outcome = quick ?? (slow.kind === 'done' ? slow.value : null)
 
 	return (
-		<DevTool>
+		<ToolPage>
 			<SegmentedControl aria-label="Format" options={modes} value={mode} onChange={setMode} />
 			<TextArea label="JSON input" value={input} onChange={setInput} rows={7} placeholder='{"a": 1}' />
 			{slow.kind === 'running' ? <InfoBanner kind="info">Formatting a large document…</InfoBanner> : null}
@@ -34,6 +35,6 @@ export function JsonTool() {
 			) : null}
 			{outcome?.ok === true && input !== '' ? <InfoBanner kind="info">Valid JSON.</InfoBanner> : null}
 			<TextArea label="JSON output" value={outcome?.ok ? outcome.text : ''} rows={9} readOnly />
-		</DevTool>
+		</ToolPage>
 	)
 }

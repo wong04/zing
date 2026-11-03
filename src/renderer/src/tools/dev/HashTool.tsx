@@ -3,7 +3,8 @@ import { HashAlgorithm, hashAlgorithms, isLegacy } from '@shared/devtools/hashAl
 import { InfoBanner, PillButton, PillField, SegmentedControl } from '../../components'
 import { fileName } from '../../components/filePath'
 import { zing } from '../../api'
-import { DevTool, describeFailure, ResultRow, TextArea } from './parts'
+import { ResultRow, TextArea, ToolPage } from '../parts'
+import { describeFailure } from './parts'
 import { useTask } from './useTask'
 
 type TextRequest = { readonly text: string; readonly algorithm: HashAlgorithm }
@@ -27,7 +28,7 @@ export function HashTool() {
 	}
 
 	return (
-		<DevTool>
+		<ToolPage>
 			<SegmentedControl
 				aria-label="Algorithm"
 				options={options}
@@ -49,11 +50,11 @@ export function HashTool() {
 				<PillButton variant="outlined" size="small" disabled={path === ''} onClick={hashThePath}>
 					Hash file
 				</PillButton>
-				{fileRequest ? <span className="dev-label">{fileName(fileRequest.path)}</span> : null}
+				{fileRequest ? <span className="tool-label">{fileName(fileRequest.path)}</span> : null}
 			</div>
 			{fileTask.kind === 'failed' ? <InfoBanner kind="warning">{describeFailure(fileTask.error)}</InfoBanner> : null}
 			{fileTask.kind === 'running' ? <InfoBanner kind="info">Hashing…</InfoBanner> : null}
 			{fileTask.kind === 'done' ? <ResultRow label="File digest" value={fileTask.value} /> : null}
-		</DevTool>
+		</ToolPage>
 	)
 }

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { PillButton, PillField, SectionCard, SegmentedControl } from '../../components'
 import { AngleMode, evaluate, EvalError, format } from '@shared/math/expression'
 import { evalMessage } from './evalMessage'
-import { CopyButton } from './MathParts'
+import { CopyButton, ToolPage } from '../parts'
 import './math.css'
 
 type Preview = { readonly kind: 'result'; readonly text: string } | { readonly kind: 'error'; readonly message: string } | { readonly kind: 'empty' }
@@ -47,8 +47,7 @@ export function CalculatorTool() {
 	}
 
 	return (
-		<div className="math-tool">
-			<p className="math-subtitle">Type an expression. Functions, constants and factorials all work.</p>
+		<ToolPage subtitle="Type an expression. Functions, constants and factorials all work.">
 			<div className="math-row">
 				<PillField aria-label="Expression" placeholder="e.g. sin(pi/4) * sqrt(2)" spellCheck={false} value={input} onChange={setInput} onSubmit={commit} />
 				<SegmentedControl options={angleOptions} value={angle} onChange={setAngle} aria-label="Angle unit" width={120} />
@@ -61,7 +60,7 @@ export function CalculatorTool() {
 						<span className="calc-result math-mono" data-testid="calc-result">
 							{shown.text}
 						</span>
-						<CopyButton text={shown.text} label="Copy result" />
+						<CopyButton value={shown.text} label="result" />
 					</>
 				) : null}
 				{shown.kind === 'error' ? (
@@ -69,7 +68,7 @@ export function CalculatorTool() {
 						{shown.message}
 					</span>
 				) : null}
-				{shown.kind === 'empty' ? <span className="math-subtitle">Press Return to keep a result.</span> : null}
+				{shown.kind === 'empty' ? <span className="tool-subtitle">Press Return to keep a result.</span> : null}
 			</div>
 
 			<div className="math-row calc-keys">
@@ -106,6 +105,6 @@ export function CalculatorTool() {
 					</div>
 				))}
 			</SectionCard>
-		</div>
+		</ToolPage>
 	)
 }

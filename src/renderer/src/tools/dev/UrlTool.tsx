@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { MalformedPercentEncodingError, urlDecode, urlEncode } from '@shared/devtools/encoding'
 import { InfoBanner, SegmentedControl } from '../../components'
-import { DevTool, TextArea } from './parts'
+import { TextArea, ToolPage } from '../parts'
 
 const directions = [
 	{ value: 'encode', label: 'Encode' },
@@ -26,11 +26,11 @@ export function UrlTool() {
 	const { text, problem } = convert(input, direction)
 
 	return (
-		<DevTool>
+		<ToolPage>
 			<SegmentedControl aria-label="Direction" options={directions} value={direction} onChange={setDirection} />
 			<TextArea label="URL input" value={input} onChange={setInput} rows={6} />
 			{problem === null ? null : <InfoBanner kind="warning">{problem}</InfoBanner>}
 			<TextArea label="URL output" value={text} rows={6} readOnly />
-		</DevTool>
+		</ToolPage>
 	)
 }

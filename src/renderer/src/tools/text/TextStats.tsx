@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
 import { analyze } from '@shared/devtools/textStats'
-import { OutputRow, ToolPage } from './parts'
-import './text.css'
+import { ResultRow, TextArea, ToolPage } from '../parts'
 
-export default function TextStats() {
+export function TextStats() {
 	const [input, setInput] = useState('')
 	const stats = useMemo(() => analyze(input), [input])
 	const rows: readonly (readonly [string, string, string])[] = [
@@ -18,10 +17,10 @@ export default function TextStats() {
 	]
 	return (
 		<ToolPage subtitle="Counts for writing and for preparing training data.">
-			<textarea className="text-tool-area" aria-label="Text" spellCheck={false} value={input} onChange={(e) => setInput(e.target.value)} />
-			<div className="text-tool-rows">
+			<TextArea label="Text" value={input} onChange={setInput} />
+			<div className="tool-rows">
 				{rows.map(([label, key, value]) => (
-					<OutputRow key={key} label={label} value={value} testId={`stat-${key}`} />
+					<ResultRow key={key} label={label} value={value} testId={`stat-${key}`} />
 				))}
 			</div>
 		</ToolPage>
