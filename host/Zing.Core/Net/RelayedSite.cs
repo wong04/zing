@@ -20,7 +20,11 @@ public sealed class RelayedSite(IRelayTransport transport, Func<string> dohProvi
 	/// </summary>
 	public const string Policy = "default-src zing-relay: data: blob: 'unsafe-inline' 'unsafe-eval'; connect-src zing-relay:; form-action zing-relay:; frame-ancestors zing-relay:";
 
-	public async Task<RelayedResponse> ServeAsync(string method, string url, bool isDocument, CancellationToken ct)
+	/// <summary>The window's thread asks; the fetch, the decoding and the patching of up to 16 MiB happen on the thread pool.</summary>
+	public Task<RelayedResponse> ServeAsync(string method, string url, bool isDocument, CancellationToken ct) =>
+		Task.Run(() => ServeOffThreadAsync(method, url, isDocument, ct), ct);
+
+	private async Task<RelayedResponse> ServeOffThreadAsync(string method, string url, bool isDocument, CancellationToken ct)
 	{
 		if (method != "GET") return Failure(405, "Zing only fetches pages through the relay; it doesn't send forms or other requests.", isDocument);
 		if (RelayedContent.Decode(url) is not { } web) return Failure(400, "That isn't an address the relay can fetch.", isDocument);

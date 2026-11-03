@@ -53,21 +53,23 @@ public static partial class RelayedContent
 		return kind.Contains("html") || kind.Contains("css");
 	}
 
+	// A page is up to 16 MiB of someone else's text: these run in linear time whatever it holds.
+	private const RegexOptions Linear = RegexOptions.NonBacktracking | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
+
 	private static readonly Regex[] AbsoluteReferences =
 	[
-		new(@"((?:src|href|poster|data-src|srcset|action)\s*=\s*[""'])https://", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
-		new(@"(url\(\s*[""']?)https://", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
-		new(@"(,\s*)https://", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+		new(@"((?:src|href|poster|data-src|srcset|action)\s*=\s*[""'])https://", Linear),
+		new(@"(url\(\s*[""']?)https://", Linear),
+		new(@"(,\s*)https://", Linear),
 	];
 
 	/// <summary>A base tag would re-anchor every relative URL back at https and undo the arrangement.</summary>
-	[GeneratedRegex("<base[^>]*>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-	private static partial Regex BaseTag();
+	private static readonly Regex BaseTag = new("<base[^>]*>", Linear);
 
 	public static string PatchText(string text)
 	{
 		var pointed = AbsoluteReferences.Aggregate(text, (current, pattern) => pattern.Replace(current, "${1}" + Scheme + "://"));
-		return BaseTag().Replace(pointed, "");
+		return BaseTag.Replace(pointed, "");
 	}
 
 	[GeneratedRegex("^(utf-?16|utf-?32|ucs-?2|ucs-?4)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]

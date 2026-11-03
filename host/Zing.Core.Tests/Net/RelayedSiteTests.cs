@@ -72,6 +72,24 @@ public sealed class RelayedSiteTests
 	}
 
 	[Fact]
+	public void Fetching_and_patching_do_not_run_on_the_calling_thread_which_is_the_window_s()
+	{
+		// A thread of its own, standing for the window's: a pool thread could pick the work up itself and be the same one.
+		var caller = -1;
+		var transportThread = -1;
+		var transport = new FakeTransport { Plain = _ => { transportThread = Environment.CurrentManagedThreadId; return Ok("x", "text/html", url: "https://example.com/"); } };
+		var window = new Thread(() =>
+		{
+			caller = Environment.CurrentManagedThreadId;
+			SiteFor(transport).ServeAsync("GET", "zing-relay://example.com/", isDocument: true, CancellationToken.None).GetAwaiter().GetResult();
+		});
+		window.Start();
+		window.Join();
+		Assert.NotEqual(-1, transportThread);
+		Assert.NotEqual(caller, transportThread);
+	}
+
+	[Fact]
 	public async Task Responses_may_not_be_sniffed_into_another_type()
 	{
 		var transport = new FakeTransport { Plain = _ => Ok("body", "text/plain", url: "https://example.com/s") };

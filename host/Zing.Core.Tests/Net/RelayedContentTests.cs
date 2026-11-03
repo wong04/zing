@@ -67,6 +67,23 @@ public sealed class RelayedContentTests
 			Assert.Equal(c.GetProperty("failure").GetBoolean(), RelayedContent.IsAppLikeFailure(c.GetProperty("textLength").GetInt32(), c.GetProperty("scripts").GetInt32()));
 	}
 
+	public static TheoryData<string> HostileBodies() => new()
+	{
+		"<base",
+		"src" + new string(' ', 1000),
+		"url(" + new string(' ', 1000),
+		", ",
+	};
+
+	[Theory]
+	[MemberData(nameof(HostileBodies))]
+	public async Task A_hostile_16_MB_body_is_patched_in_bounded_time(string unit)
+	{
+		var body = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat(unit, 16 * 1024 * 1024 / unit.Length)));
+		var patched = await Task.Run(() => RelayedContent.Patch(body, "text/html"), TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+		Assert.Equal(body.Length, patched.Length);
+	}
+
 	[Fact]
 	public void ToWebAddressDecodesRelayUrlsAndLeavesOthers()
 	{
