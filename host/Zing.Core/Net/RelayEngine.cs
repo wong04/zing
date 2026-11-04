@@ -73,6 +73,8 @@ public enum RelayOutcome
 	Opened,
 	/// <summary>The site could not be reached directly, and the next methods are third parties the user hasn't agreed to yet.</summary>
 	NeedsConsent,
+	/// <summary>The address looked unsafe, so nothing was fetched and a warning was opened in a tab.</summary>
+	Warned,
 }
 
 public sealed class RelayOutcomeConverter() : JsonStringEnumConverter<RelayOutcome>(JsonNamingPolicy.CamelCase);

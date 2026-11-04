@@ -50,6 +50,9 @@ document.getElementById('back').addEventListener('click', () => location.replace
 	{
 		var reasons = string.Join('\n', verdict.Findings.Select(f => $"      <li><strong>{EscapeHtml(f.Title)}</strong><span>{EscapeHtml(f.Detail)}</span></li>"));
 		var relay = viaRelay ? "\n    <p class=\"note\">You asked to open it through Open a Link, and it will go that way.</p>" : "";
+		var contact = viaRelay
+			? "Nothing was sent anywhere by this check. If a redirect brought you here, the site may already have been asked for the page."
+			: "Nothing was sent anywhere, and the site has not been contacted.";
 		return Page(theme, "Check this address", $"""
     <h1>Check this address before you go</h1>
     <p class="host">{EscapeHtml(host)}</p>
@@ -58,7 +61,7 @@ document.getElementById('back').addEventListener('click', () => location.replace
     <ul>
 {reasons}
     </ul>
-    <p class="note">This is a guess from the address alone, so it can be wrong. Nothing was sent anywhere, and the site has not been contacted.</p>{relay}
+    <p class="note">This is a guess from the address alone, so it can be wrong. {contact}</p>{relay}
     <div class="actions">
       <button class="primary" id="back" type="button">Go back</button>
       <a class="minor" href="{EscapeHtml(visitUrl)}">Visit anyway</a>

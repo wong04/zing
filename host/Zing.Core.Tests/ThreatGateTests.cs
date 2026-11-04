@@ -100,6 +100,16 @@ public sealed partial class ThreatGateTests
 	}
 
 	[Fact]
+	public void A_relayed_warning_does_not_say_the_site_was_not_contacted_and_a_plain_one_does()
+	{
+		var relayed = Html(Serve(WarningUrlOf(Check("zing://home", "zing-relay://apple.com.secure-login.tk/verify"))));
+		Assert.DoesNotContain("has not been contacted", relayed);
+		Assert.Contains("may already have been asked", relayed);
+		var plain = Html(Serve(WarningUrlOf(Check(Page, Flagged))));
+		Assert.Contains("has not been contacted", plain);
+	}
+
+	[Fact]
 	public void Visiting_a_flagged_relayed_address_anyway_goes_back_through_the_relay()
 	{
 		var (warning, visit) = Warn("zing-relay://apple.com.secure-login.tk/verify", "zing://home");

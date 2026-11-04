@@ -13,6 +13,8 @@ export const consentText =
 
 const declinedText = "Stopped at the methods that need no outside service. Nothing was sent to the reader relay or the archive. Run it again and say yes if you change your mind."
 
+const warnedText = "This address looks unsafe, so nothing was sent to it or to any outside service. A warning is open in a new tab; Visit anyway there opens it through the relay."
+
 /** An http address that needed a relay, and neither it nor its https form could be opened that way. */
 class UnrelayableAddressError extends Error {
 	override name = 'UnrelayableAddressError'
@@ -179,6 +181,11 @@ export function OpenLinkTool() {
 		try {
 			let result = await runOnce(input, mine)
 			if (!result) return
+			if (result.outcome === 'warned') {
+				setOutcome(warnedText)
+				setPhase('idle')
+				return
+			}
 			if (result.outcome === 'needsConsent') {
 				setAsked(input)
 				setPhase('asking')

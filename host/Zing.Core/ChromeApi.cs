@@ -485,9 +485,18 @@ public sealed class ChromeApi : IDisposable
 	{
 		var net = _app.Net ?? NetServices.Live;
 		var address = RelayRules.Normalize(input);
+		if (_app.Threats?.WouldWarn(address) == true) return WarnBeforeFetching(address);
 		var engine = new RelayEngine(net.RelayTransport, Setting("dohProvider"), attempt => _host.Push("relay:attempt", new RelayAttemptEvent(runId, attempt.Strategy, attempt.Status, attempt.Reason)));
 		var result = await engine.OpenAsync(address.AbsoluteUri, _consent, CancellationToken.None);
 		return new OpenLinkResult(result.Outcome, result.Strategy, address.AbsoluteUri, result.Attempts);
+	}
+
+	/// <summary>The tab goes to the warning on its own: Visit anyway there is what opens the address through the relay.</summary>
+	private OpenLinkResult WarnBeforeFetching(Uri address)
+	{
+		if (RelayedContent.Encode(address) is null) Tabs.FocusPage(Tabs.Open(address.AbsoluteUri).Id);
+		else OpenRelayedTab(address.AbsoluteUri);
+		return new OpenLinkResult(RelayOutcome.Warned, null, address.AbsoluteUri, []);
 	}
 
 	private void OpenRelayedTab(string url)

@@ -77,6 +77,9 @@ public sealed class ThreatGate(Func<bool> enabled, Func<Uri, Uri>? inspectedAs =
 		return Warn(tab, from, destination.Address, destination.ViaRelay);
 	}
 
+	/// <summary>Whether <see cref="Check"/> would warn about this address if a tab went to it, so a tool can stop before it fetches anything.</summary>
+	public bool WouldWarn(Uri address) => enabled() && NeedsWarning(address);
+
 	private bool NeedsWarning(Uri address)
 	{
 		var inspected = Inspected(address);

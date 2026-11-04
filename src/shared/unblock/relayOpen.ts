@@ -18,8 +18,11 @@ export interface RelayAttemptEvent extends RelayAttempt {
 
 /** The page itself never crosses the bridge: it is someone else's text, and the tool only needs to know which way worked. */
 export interface RelayOpenResult {
-	/** `needsConsent`: the site was not reached, and the next methods are third parties the user has not agreed to yet. */
-	readonly outcome: 'opened' | 'needsConsent'
+	/**
+	 * `needsConsent`: the site was not reached, and the next methods are third parties the user has not agreed to yet.
+	 * `warned`: the address looked unsafe, so nothing was fetched and a warning is open in a new tab.
+	 */
+	readonly outcome: 'opened' | 'needsConsent' | 'warned'
 	readonly strategy?: RelayStrategyName
 	/** What was typed, made into an address (`https://` added to a bare name). */
 	readonly address: string

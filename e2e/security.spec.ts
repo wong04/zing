@@ -321,12 +321,14 @@ async function openRelayed(zing: Launched, address: string): Promise<void> {
 	)
 }
 
-test('a flagged address opened through Open a Link is warned about before the relay fetches it, and Visit anyway goes back through the relay', async () => {
+test('a flagged address given to Open a Link is warned about before anything fetches it, and Visit anyway goes through the relay', async () => {
 	const stand = await relayStand(() => ({ status: 200, body: '<!doctype html><title>Relayed flagged</title><p id="t">relayed ok</p>' }))
 	const zing = await launchZing({ env: { ZING_E2E_RELAY_URL: stand.origin } })
-	await openRelayed(zing, FLAGGED_SITE)
+	const result = await zing.chrome.evaluate((address) => window.zing.openLink(address, 'run-1'), FLAGGED_SITE)
+	expect(result.outcome).toBe('warned')
 	const warning = await pageWhere(zing.browser, isWarning)
 	await expect(warning.getByText('Open a Link')).toBeVisible()
+	await expect(warning.getByText('Nothing was sent anywhere by this check')).toBeVisible()
 	expect(stand.fetched).toEqual([])
 	await warning.getByRole('link', { name: 'Visit anyway' }).click()
 	const relayed = await pageWhere(zing.browser, (p) => p.url().startsWith('zing-relay://apple.com.secure-login.tk'))
