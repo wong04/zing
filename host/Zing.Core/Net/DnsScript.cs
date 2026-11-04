@@ -118,7 +118,7 @@ public static class DnsScript
 		return
 		[
 			.. plan.Adapters.Select(a => $"{DnsDisplay.Visible(a.Name)}: {(a.Servers.Count == 0 ? "automatic (DHCP)" : string.Join(", ", a.Servers))}"),
-			.. plan.Restored.Select(e => $"{e.Address}: restored to {e.Template} (UDP fallback {(e.AllowFallbackToUdp ? "allowed" : "not allowed")}, auto-upgrade {(e.AutoUpgrade ? "on" : "off")})"),
+			.. plan.Restored.Select(e => $"{e.Address}: restored to {DnsDisplay.Visible(e.Template)} (UDP fallback {(e.AllowFallbackToUdp ? "allowed" : "not allowed")}, auto-upgrade {(e.AutoUpgrade ? "on" : "off")})"),
 			.. plan.Removed.Select(server => $"{server}: removed from Windows' encrypted DNS list"),
 		];
 	}

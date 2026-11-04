@@ -254,6 +254,24 @@ public sealed class DnsScriptTests
 	}
 
 	[Fact]
+	public void The_undo_list_spells_out_hidden_characters_in_a_template()
+	{
+		var shown = DnsDisplay.Visible("https://cloudflare-dns.com/dns‮query");
+		Assert.Contains("\u202E", shown);
+		Assert.DoesNotContain('‮', shown);
+	}
+
+	[Theory]
+	[InlineData("https://cloudflare-dns.com/dns‮query")]
+	[InlineData("https://cloudflare-dns.com/dns​query")]
+	[InlineData("https://cloudflare-dns.com/dns⁦query")]
+	public void A_template_with_a_hidden_formatting_character_is_refused(string template)
+	{
+		Assert.Throws<InvalidDohTemplateError>(() => DnsScript.Undo([Dhcp("Ethernet")], [new DohEntry("1.1.1.1", template, false, false)], "cloudflare"));
+		Assert.Throws<InvalidDohTemplateError>(() => DnsAddresses.Template(template));
+	}
+
+	[Fact]
 	public void The_script_is_sent_as_an_encoded_command_and_one_too_long_for_a_command_line_is_refused()
 	{
 		var encoded = DnsScript.EncodedCommand("Write-Output 'hi'");

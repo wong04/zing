@@ -90,10 +90,10 @@ public static partial class DnsAddresses
 		return normal;
 	}
 
-	/// <summary>A DoH template is an https address; its quoting is the script's job, but a value that is not one is refused rather than quoted.</summary>
+	/// <summary>A DoH template is an https address; its quoting is the script's job, but a value that is not one is refused rather than quoted. So is one with a character that can't be seen (the Uri parser lets those through).</summary>
 	public static string Template(string value)
 	{
-		if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || value.Any(c => char.IsControl(c) || char.IsWhiteSpace(c))) throw new InvalidDohTemplateError(value);
+		if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || value.Any(c => char.IsWhiteSpace(c) || DnsDisplay.IsHidden(c))) throw new InvalidDohTemplateError(value);
 		return value;
 	}
 }

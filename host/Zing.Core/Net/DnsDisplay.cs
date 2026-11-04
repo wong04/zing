@@ -20,12 +20,12 @@ public static class DnsDisplay
 		var shown = new StringBuilder();
 		foreach (var c in text)
 		{
-			if (keep(c) || !Hidden(c)) shown.Append(c);
+			if (keep(c) || !IsHidden(c)) shown.Append(c);
 			else shown.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
 		}
 		return shown.ToString();
 	}
 
-	private static bool Hidden(char c) =>
+	public static bool IsHidden(char c) =>
 		char.GetUnicodeCategory(c) is UnicodeCategory.Control or UnicodeCategory.Format or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator;
 }
