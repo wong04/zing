@@ -543,7 +543,7 @@ public sealed class WebView2Page : IPage
 		}
 		if (e.Request.Uri.StartsWith("http", StringComparison.OrdinalIgnoreCase))
 		{
-			var warned = e.ResourceContext == CoreWebView2WebResourceContext.Document && _warnedDocument is not null && RelayedNavigation.Same(_warnedDocument, e.Request.Uri);
+			var warned = ThreatGate.IsWithheld(_warnedDocument, e.Request.Uri, e.ResourceContext == CoreWebView2WebResourceContext.Document);
 			if (warned || !RelayedNavigation.MayRequestDocument(TopOf(sender), e.Request.Uri, _approvedDocument)) e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
 			return;
 		}
@@ -568,7 +568,8 @@ public sealed class WebView2Page : IPage
 	private void ServeRelayed(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
 	{
 		var isDocument = e.ResourceContext == CoreWebView2WebResourceContext.Document;
-		if (!RelayedNavigation.MayServe(TopOf(sender), e.Request.Uri, isDocument, _approvedDocument))
+		// A relayed navigation that was sent to a warning is not fetched either, even from a relayed page.
+		if (ThreatGate.IsWithheld(_warnedDocument, e.Request.Uri, isDocument) || !RelayedNavigation.MayServe(TopOf(sender), e.Request.Uri, isDocument, _approvedDocument))
 		{
 			e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
 			return;

@@ -709,9 +709,9 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	/// <summary>Link inspection, then the start page's search and settings links, which are Zing's to handle; no web page may open Settings.</summary>
-	private NavigationDecision? InterceptNavigation(string from, string to)
+	private NavigationDecision? InterceptNavigation(string tabId, string from, string to)
 	{
-		if (_app.Threats?.Check(from, to) is { } inspected) return inspected;
+		if (_app.Threats?.Check(tabId, from, to) is { } inspected) return inspected;
 		switch (StartPage.ClassifyNavigation(from, to, Setting("searchEngine")))
 		{
 			case StartPageNavigation.Search search:

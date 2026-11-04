@@ -78,6 +78,8 @@
 		{ "url": "http://185.243.115.24/payload", "level": 2, "titles": ["Connects to a raw IP address"] },
 		{ "url": "http://172.32.0.1/", "level": 2, "titles": ["Connects to a raw IP address"] },
 		{ "url": "http://192.169.1.1/", "level": 2, "titles": ["Connects to a raw IP address"] },
+		{ "url": "http://[2001:4860:4860::8888]/", "level": 0, "titles": [] },
+		{ "url": "http://[::1]:8080/", "level": 0, "titles": [] },
 		{ "url": "https://8.8.8.8/", "level": 1, "titles": ["Connects to a raw IP address"] },
 		{ "url": "https://185.243.115.24/", "level": 1, "titles": ["Connects to a raw IP address"] },
 		{ "url": "https://invoice-march.zip/", "level": 2, "titles": ["High-risk domain ending (.zip)"] },

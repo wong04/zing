@@ -109,7 +109,7 @@ public sealed class TabService
 	private readonly string _blankUrl;
 	private readonly Action _changed;
 	private readonly Action<TabRecord, string> _loadFailed;
-	private readonly Func<string, string, NavigationDecision?> _intercept;
+	private readonly Func<string, string, string, NavigationDecision?> _intercept;
 	private readonly SiteDataKeeper? _siteData;
 	private readonly Action<TabRecord, string> _pageNotice;
 
@@ -132,11 +132,11 @@ public sealed class TabService
 
 	/// <param name="blankUrl">What a window that lost its last tab opens.</param>
 	/// <param name="intercept">The window's say over a navigation (the start page's search and settings links); null leaves it to tracker stripping.</param>
-	public TabService(TabStore store, IPageHost host, string blankUrl, Action changed, Action<TabRecord, string> loadFailed, Func<string, string, NavigationDecision?>? intercept = null, SiteDataKeeper? siteData = null, Action<TabRecord, string>? pageNotice = null)
+	public TabService(TabStore store, IPageHost host, string blankUrl, Action changed, Action<TabRecord, string> loadFailed, Func<string, string, string, NavigationDecision?>? intercept = null, SiteDataKeeper? siteData = null, Action<TabRecord, string>? pageNotice = null)
 	{
 		_pageNotice = pageNotice ?? ((_, _) => { });
 		_siteData = siteData;
-		_intercept = intercept ?? ((_, _) => null);
+		_intercept = intercept ?? ((_, _, _) => null);
 		_store = store;
 		_host = host;
 		_blankUrl = blankUrl;
@@ -520,7 +520,7 @@ public sealed class TabService
 
 		private NavigationDecision Decide(string from, string to)
 		{
-			if (service._intercept(from, to) is { } decision)
+			if (service._intercept(id, from, to) is { } decision)
 			{
 				// Like typing it: the tab shows where it is going even before (or if never) the page commits.
 				if (decision is NavigationDecision.Redirect redirect) service.Update(id, new TabContentPatch(Url: redirect.Url));

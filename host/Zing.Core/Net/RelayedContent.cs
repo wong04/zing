@@ -33,8 +33,8 @@ public static partial class RelayedContent
 	/// <summary>An address from the library (an import can hold any text) is never opened onto the relay: only Zing's own relayed tabs are.</summary>
 	public static string RefuseRelayAddress(string url) => IsRelayUrl(url) ? throw new UnsupportedUrlException(url) : url;
 
-	/// <summary>The real address a relay URL stands for, and anything else as it is. What a saved session keeps.</summary>
-	public static string ToWebAddress(string url) => Decode(url)?.AbsoluteUri ?? url;
+	/// <summary>The real address a relay URL or a link-inspection warning stands for, and anything else as it is. What a saved session or pinned tab keeps.</summary>
+	public static string ToWebAddress(string url) => Decode(url)?.AbsoluteUri ?? ThreatGate.WarningTarget(url) ?? url;
 
 	[GeneratedRegex("charset=([^;]*)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
 	private static partial Regex CharsetParameter();

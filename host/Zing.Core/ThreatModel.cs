@@ -146,10 +146,14 @@ public static class ThreatModel
 	/// <summary>Loopback, private (RFC 1918) and link-local addresses: a router page or a dev server, never a payload host.</summary>
 	private static bool IsLocalNetworkIPv4(string[] labels)
 	{
-		var first = int.Parse(labels[0].TrimStart('+'), System.Globalization.CultureInfo.InvariantCulture);
-		var second = int.Parse(labels[1].TrimStart('+'), System.Globalization.CultureInfo.InvariantCulture);
+		var first = Octet(labels[0]);
+		var second = Octet(labels[1]);
 		return first is 127 or 10 || (first == 192 && second == 168) || (first == 169 && second == 254) || (first == 172 && second is >= 16 and <= 31);
 	}
+
+	// -1 for anything that isn't a plain number, so no octet can match a local range if IsRawIPv4 ever accepts more.
+	private static int Octet(string label) =>
+		int.TryParse(label.TrimStart('+'), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var value) ? value : -1;
 
 	/// <summary>Whether <paramref name="word"/> stands alone as a label of the host, bounded by a dot or a hyphen.</summary>
 	private static bool HasLabel(string text, string word)

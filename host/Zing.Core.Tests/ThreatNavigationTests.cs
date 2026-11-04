@@ -8,12 +8,13 @@ public sealed class ThreatNavigationTests : IDisposable
 	private const string Flagged = "https://apple.com.secure-login.tk/verify";
 
 	private readonly SettingsStore _settings = new();
+	private readonly LibraryStore _library;
 	private readonly ChromeApi _api;
 
 	public ThreatNavigationTests()
 	{
-		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		var services = new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), Threats: ThreatGate.ForSettings(_settings));
+		_library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+		var services = new AppServices(_settings, _library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), Threats: ThreatGate.ForSettings(_settings));
 		_api = new ChromeApi(new Bridge(), services, new FakeWindowHost(), "test");
 		_api.Start([], "about:blank");
 	}
@@ -55,5 +56,23 @@ public sealed class ThreatNavigationTests : IDisposable
 	{
 		var decision = Assert.IsType<NavigationDecision.Redirect>(Events.Navigating("https://news.example.org/", Flagged));
 		Assert.Equal(decision.Url, _api.Tabs.Records.Single().Url);
+	}
+
+	[Fact]
+	public void A_tab_sitting_on_a_warning_is_saved_in_the_session_under_the_address_it_warns_about()
+	{
+		Events.Navigating("https://news.example.org/", Flagged);
+		var saved = Assert.Single(Session.ToSessionTabs(_api.Tabs.Records, _api.Tabs.ActiveId));
+		Assert.Equal(new Uri(Flagged).AbsoluteUri, saved.Url);
+		Assert.True(Session.IsRestorableUrl(saved.Url));
+	}
+
+	[Fact]
+	public void A_pinned_tab_sitting_on_a_warning_keeps_the_address_not_the_warning()
+	{
+		Events.Navigating("https://news.example.org/", Flagged);
+		_api.Saved.Pin(_api.Tabs.ActiveId!);
+		var itemId = Assert.Single(_api.Tabs.Records).ItemId!;
+		Assert.Equal(new Uri(Flagged).AbsoluteUri, _library.UrlOf(itemId));
 	}
 }

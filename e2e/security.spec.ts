@@ -286,3 +286,81 @@ test('an iframe onto a flagged address is not warned about', async () => {
 	expect(pages(zing.browser).some(isWarning)).toBe(false)
 	await zing.close()
 })
+
+// ---- Open a Link and relayed pages: a local server stands in for every site and for the relay (ZING_E2E_RELAY_URL).
+
+const FLAGGED_SITE = 'https://apple.com.secure-login.tk/verify'
+
+interface RelayStand {
+	readonly origin: string
+	/** The addresses the host's engine fetched on a relayed page's behalf. */
+	readonly fetched: string[]
+	close(): Promise<void>
+}
+
+async function relayStand(answer: (target: URL) => { status: number; body: string }): Promise<RelayStand> {
+	const fetched: string[] = []
+	const server = createServer((request, response) => {
+		const target = request.headers['x-relay-target']
+		if (typeof target !== 'string') return void response.end()
+		fetched.push(target)
+		const { status, body } = answer(new URL(target))
+		response.statusCode = status
+		response.setHeader('content-type', 'text/html')
+		response.end(body)
+	})
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+	const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+	return { origin, fetched, close: () => new Promise((resolve) => server.close(() => resolve())) }
+}
+
+async function openRelayed(zing: Launched, address: string): Promise<void> {
+	await zing.chrome.evaluate(
+		(url) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'open-relayed', url }),
+		address,
+	)
+}
+
+test('a flagged address opened through Open a Link is warned about before the relay fetches it, and Visit anyway goes back through the relay', async () => {
+	const stand = await relayStand(() => ({ status: 200, body: '<!doctype html><title>Relayed flagged</title><p id="t">relayed ok</p>' }))
+	const zing = await launchZing({ env: { ZING_E2E_RELAY_URL: stand.origin } })
+	await openRelayed(zing, FLAGGED_SITE)
+	const warning = await pageWhere(zing.browser, isWarning)
+	await expect(warning.getByText('Open a Link')).toBeVisible()
+	expect(stand.fetched).toEqual([])
+	await warning.getByRole('link', { name: 'Visit anyway' }).click()
+	const relayed = await pageWhere(zing.browser, (p) => p.url().startsWith('zing-relay://apple.com.secure-login.tk'))
+	await expect(relayed.locator('#t')).toHaveText('relayed ok')
+	expect(stand.fetched).toEqual([FLAGGED_SITE])
+	await zing.close()
+	await stand.close()
+})
+
+test('Visit anyway does not give the relay the session’s OK to ask a third party', async () => {
+	const stand = await relayStand(() => ({ status: 404, body: 'no such page' }))
+	const zing = await launchZing({ env: { ZING_E2E_RELAY_URL: stand.origin } })
+	await openRelayed(zing, FLAGGED_SITE)
+	await (await pageWhere(zing.browser, isWarning)).getByRole('link', { name: 'Visit anyway' }).click()
+	const relayed = await pageWhere(zing.browser, (p) => p.url().startsWith('zing-relay://apple.com.secure-login.tk'))
+	await expect.poll(() => relayed.evaluate('document.body ? document.body.innerText : ""').then(String, () => '')).toContain('Needs your OK')
+	expect([...new Set(stand.fetched.map((target) => new URL(target).host))]).toEqual(['apple.com.secure-login.tk'])
+	await zing.close()
+	await stand.close()
+})
+
+test('a relayed page linking to a flagged address is warned about, and the relay never fetches it', async () => {
+	const stand = await relayStand((target) => ({
+		status: 200,
+		body: target.host === 'site.test' ? `<!doctype html><title>Site</title><a id="go" href="${FLAGGED_SITE}">go</a>` : '<!doctype html><title>Flagged</title>x',
+	}))
+	const zing = await launchZing({ env: { ZING_E2E_RELAY_URL: stand.origin } })
+	await openRelayed(zing, 'https://site.test/')
+	const site = await pageWhere(zing.browser, (p) => p.url().startsWith('zing-relay://site.test'))
+	await press(site, '#go')
+	// The tab is on the warning (read from the tab list: the page left the relay scheme and the test's handle on it goes stale).
+	await expect.poll(async () => (await tabsOf(zing)).tabs.some((t) => t.url.startsWith('zing://warning'))).toBe(true)
+	await zing.chrome.waitForTimeout(800)
+	expect(stand.fetched.map((target) => new URL(target).host)).toEqual(['site.test'])
+	await zing.close()
+	await stand.close()
+})
