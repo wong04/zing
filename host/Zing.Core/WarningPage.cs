@@ -46,6 +46,19 @@ document.getElementById('back').addEventListener('click', () => {
 document.getElementById('back').addEventListener('click', () => location.replace('zing://home'));
 """;
 
+	/// <summary>Ctrl, Shift or the middle button on the link would open a window onto the visit address; the person meant to go on, so it goes on here.</summary>
+	public const string VisitScript = """
+const visit = document.getElementById('visit');
+const goOn = (e) => {
+  e.preventDefault();
+  location.assign(visit.href);
+};
+visit.addEventListener('click', goOn);
+visit.addEventListener('auxclick', (e) => {
+  if (e.button === 1) goOn(e);
+});
+""";
+
 	public static string Html(StartPageTheme theme, string to, string host, ThreatVerdict verdict, string visitUrl, bool viaRelay, bool fromHistory, string script)
 	{
 		var reasons = string.Join('\n', verdict.Findings.Select(f => $"      <li><strong>{EscapeHtml(f.Title)}</strong><span>{EscapeHtml(f.Detail)}</span></li>"));
@@ -65,9 +78,9 @@ document.getElementById('back').addEventListener('click', () => location.replace
     <p class="note">This is a guess from the address alone, so it can be wrong. {contact}</p>{relay}{history}
     <div class="actions">
       <button class="primary" id="back" type="button">Go back</button>
-      <a class="minor" href="{EscapeHtml(visitUrl)}">Visit anyway</a>
+      <a class="minor" id="visit" href="{EscapeHtml(visitUrl)}">Visit anyway</a>
     </div>
-""", script);
+""", script + "\n" + VisitScript);
 	}
 
 	public static string RefusalHtml(StartPageTheme theme, string message) =>

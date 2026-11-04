@@ -668,8 +668,8 @@ public sealed class WebView2Page : IPage
 	/// </summary>
 	private void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs e)
 	{
-		// A relayed page opens relayed windows only, and nothing else opens one onto the relay.
-		if (!RelayedNavigation.NewWindowAllowed(TopOf(sender), e.Uri))
+		// A relayed page opens relayed windows only, and nothing else opens one onto the relay; none opens onto Visit anyway.
+		if (!RelayedNavigation.NewWindowAllowed(TopOf(sender), e.Uri) || !ThreatGate.NewWindowAllowed(e.Uri))
 		{
 			e.Handled = true;
 			return;

@@ -198,9 +198,9 @@ for (const [name, id] of attempts) {
 		await zing.chrome.waitForTimeout(800)
 		// The tab is where it was, nothing was requested, and no tab shows the flagged site.
 		const { tabs, activeId } = await tabsOf(zing)
-		// window.open leaves an empty tab on the refused address; every other attempt leaves the page alone.
-		if (id === 'open') expect(tabs.map((t) => t.url.split('?')[0])).toEqual([`${cleanBase}/attacks`, 'zing://visit-anyway/'])
-		else expect(tabs.find((t) => t.id === activeId)?.url).toBe(`${cleanBase}/attacks`)
+		// Even window.open leaves no tab behind: the window is refused outright.
+		expect(tabs.map((t) => t.url)).toEqual([`${cleanBase}/attacks`])
+		expect(tabs.find((t) => t.id === activeId)?.url).toBe(`${cleanBase}/attacks`)
 		expect(tabs.some((t) => t.url.startsWith(flaggedBase))).toBe(false)
 		expect(flaggedHits).toEqual([])
 		console.log(`${id}: tabs afterwards ${JSON.stringify(tabs.map((t) => t.url))}`)
@@ -243,6 +243,18 @@ test('a page that opened the warning\x27s window cannot click Visit anyway for t
 	await opener.waitForTimeout(800)
 	expect(await warningTab()).toBeDefined()
 	expect(flaggedHits).toEqual([])
+	await zing.close()
+})
+
+test('Ctrl+click on Visit anyway goes on in the same tab and leaves no empty tab', async () => {
+	const zing = await launch()
+	await (await linksPage(zing)).locator('#flagged').click()
+	const warning = await pageWhere(zing.browser, isWarning)
+	await warning.getByRole('link', { name: 'Visit anyway' }).click({ modifiers: ['Control'] })
+	await pageWhere(zing.browser, (p) => p.url().startsWith(flaggedBase))
+	const { tabs } = await tabsOf(zing)
+	expect(tabs).toHaveLength(1)
+	expect(tabs[0]?.url.startsWith(flaggedBase)).toBe(true)
 	await zing.close()
 })
 

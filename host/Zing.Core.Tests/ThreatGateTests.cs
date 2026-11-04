@@ -464,6 +464,25 @@ public sealed partial class ThreatGateTests
 	}
 
 	[Fact]
+	public void No_window_opens_onto_visit_anyway_but_other_addresses_may()
+	{
+		Assert.False(ThreatGate.NewWindowAllowed("zing://visit-anyway/?to=x&k=1"));
+		Assert.False(ThreatGate.NewWindowAllowed("zing://visit-anyway?to=x&k=1"));
+		Assert.True(ThreatGate.NewWindowAllowed(Clean));
+		Assert.True(ThreatGate.NewWindowAllowed("zing://warning?to=x"));
+	}
+
+	[Fact]
+	public void The_visit_link_goes_on_in_the_same_tab_whatever_key_is_held()
+	{
+		var (warning, _) = Warn(Flagged);
+		var body = Html(Serve(warning));
+		Assert.Contains("addEventListener('click'", body);
+		Assert.Contains("addEventListener('auxclick'", body);
+		Assert.Contains("preventDefault", body);
+	}
+
+	[Fact]
 	public void A_withheld_document_is_the_one_that_was_sent_to_a_warning_and_only_as_a_document()
 	{
 		Assert.True(ThreatGate.IsWithheld(Flagged, Flagged + "#top", true));

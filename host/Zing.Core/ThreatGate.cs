@@ -57,6 +57,9 @@ public sealed class ThreatGate(Func<bool> enabled, Func<Uri, Uri>? inspectedAs =
 		return Web(to)?.AbsoluteUri;
 	}
 
+	/// <summary>No window opens onto the visit address: it is followed in place from the warning, and a window would only be a dead tab.</summary>
+	public static bool NewWindowAllowed(string target) => StartPage.ZingHost(target) != VisitAnywayHost;
+
 	/// <summary>Whether a request is for the document of a navigation that was sent to a warning: the engine still sends it, and it is refused.</summary>
 	public static bool IsWithheld(string? warnedDocument, string request, bool isDocument) =>
 		isDocument && warnedDocument is not null && RelayedNavigation.Same(warnedDocument, request);
