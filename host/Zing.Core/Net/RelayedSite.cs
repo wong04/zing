@@ -21,8 +21,23 @@ public sealed class RelayedSite(IRelayTransport transport, Func<string> dohProvi
 	public const string Policy = "default-src zing-relay: data: blob: 'unsafe-inline' 'unsafe-eval'; connect-src zing-relay:; form-action zing-relay:; base-uri zing-relay:; frame-ancestors zing-relay:";
 
 	/// <summary>The window's thread asks; the fetch, the decoding and the patching of up to 16 MiB happen on the thread pool.</summary>
-	public Task<RelayedResponse> ServeAsync(string method, string url, bool isDocument, CancellationToken ct) =>
-		Task.Run(() => ServeOffThreadAsync(method, url, isDocument, ct), ct);
+	public async Task<RelayedResponse> ServeAsync(string method, string url, bool isDocument, CancellationToken ct)
+	{
+		await _places.WaitAsync(ct);
+		try
+		{
+			return await Task.Run(() => ServeOffThreadAsync(method, url, isDocument, ct), ct);
+		}
+		finally
+		{
+			_places.Release();
+		}
+	}
+
+	/// <summary>As many at a time as a browser makes per host, so a page full of dead files doesn't start a run for each at once.</summary>
+	public const int FetchesAtATime = 6;
+
+	private readonly SemaphoreSlim _places = new(FetchesAtATime);
 
 	private async Task<RelayedResponse> ServeOffThreadAsync(string method, string url, bool isDocument, CancellationToken ct)
 	{

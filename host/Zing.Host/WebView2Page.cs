@@ -16,6 +16,7 @@ public sealed class WebView2Page : IPage
 	private readonly IPageFeatureHost _features;
 	private readonly bool _persistent;
 	private readonly RelayedSite _relay;
+	private readonly DocumentRuns _relayRuns = new();
 	/// <summary>The address of the last navigation Zing itself started; the relay scheme loads in a tab only for such a navigation.</summary>
 	private string? _zingNavigation;
 	/// <summary>The relay address the main-frame load under way was allowed for, so only that document is served.</summary>
@@ -302,6 +303,7 @@ public sealed class WebView2Page : IPage
 		IsOpen = false;
 		_features.Left(this);
 		_queued.Clear();
+		_relayRuns.Dispose();
 		_view?.Close();
 	}
 
@@ -395,6 +397,8 @@ public sealed class WebView2Page : IPage
 			// The warning page itself starts after the cancelled navigation and must not lift the refusal.
 			if (!e.Uri.StartsWith(StartPage.Scheme + "://", StringComparison.OrdinalIgnoreCase)) _warnedDocument = null;
 			_navigation = e.NavigationId;
+			// A new document: what the last one was still asking for is no longer wanted.
+			_relayRuns.LeaveDocument();
 			var toRelay = RelayedContent.IsRelayUrl(e.Uri);
 			if (!e.IsRedirected) _chainIsRelay = toRelay;
 			_approvedDocument = e.Uri;
@@ -575,17 +579,23 @@ public sealed class WebView2Page : IPage
 			return;
 		}
 		var deferral = e.GetDeferral();
-		Background(ServeRelayedAsync(sender, e, deferral, e.Request.Method, e.Request.Uri, isDocument), "relayed page");
+		Background(ServeRelayedAsync(sender, e, deferral, e.Request.Method, e.Request.Uri, isDocument, _relayRuns.Current), "relayed page");
 	}
 
-	private async Task ServeRelayedAsync(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e, Windows.Foundation.Deferral deferral, string method, string uri, bool isDocument)
+	private async Task ServeRelayedAsync(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e, Windows.Foundation.Deferral deferral, string method, string uri, bool isDocument, CancellationToken ct)
 	{
 		try
 		{
 			RelayedResponse served;
 			try
 			{
-				served = await _relay.ServeAsync(method, uri, isDocument, CancellationToken.None);
+				served = await _relay.ServeAsync(method, uri, isDocument, ct);
+			}
+			catch (OperationCanceledException) when (ct.IsCancellationRequested)
+			{
+				// The page left, or closed: nothing is waiting for this file.
+				if (IsOpen) e.Response = sender.Environment.CreateWebResourceResponse(null, 500, "Internal Server Error", "");
+				return;
 			}
 			catch (Exception)
 			{

@@ -170,6 +170,76 @@ public sealed class RelayedSiteTests
 		Assert.DoesNotContain("<b>boom", Text(failed));
 	}
 
+	[Fact]
+	public async Task Cancelling_stops_a_run_in_progress()
+	{
+		var started = new TaskCompletionSource();
+		var transport = new FakeTransport
+		{
+			Plain = async _ =>
+			{
+				started.SetResult();
+				await Task.Delay(Timeout.Infinite);
+				throw new InvalidOperationException("unreachable");
+			},
+		};
+		using var cancel = new CancellationTokenSource();
+		var run = SiteFor(transport, AllowedConsent()).ServeAsync("GET", "zing-relay://example.com/a.png", isDocument: false, cancel.Token);
+		await started.Task;
+		await cancel.CancelAsync();
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+		Assert.Single(transport.Calls);
+	}
+
+	[Fact]
+	public async Task Only_six_files_are_fetched_at_a_time_and_the_seventh_waits_for_one_to_finish()
+	{
+		var release = new TaskCompletionSource();
+		var transport = new FakeTransport
+		{
+			Plain = async request =>
+			{
+				await release.Task;
+				return await Ok("x", "text/css", url: request.Url.AbsoluteUri);
+			},
+		};
+		var site = SiteFor(transport, AllowedConsent());
+		var runs = Enumerable.Range(0, 7).Select(i => site.ServeAsync("GET", $"zing-relay://example.com/{i}.css", isDocument: false, CancellationToken.None)).ToList();
+		await WaitForAsync(() => transport.Calls.Count == 6);
+		await Task.Delay(150, TestContext.Current.CancellationToken);
+		Assert.Equal(6, transport.Calls.Count);
+		release.SetResult();
+		await Task.WhenAll(runs);
+		Assert.Equal(7, transport.Calls.Count);
+	}
+
+	[Fact]
+	public async Task A_run_waiting_for_a_place_stops_when_cancelled_without_fetching()
+	{
+		var release = new TaskCompletionSource();
+		var transport = new FakeTransport { Plain = async request => { await release.Task; return await Ok("x", "text/css", url: request.Url.AbsoluteUri); } };
+		var site = SiteFor(transport, AllowedConsent());
+		var running = Enumerable.Range(0, 6).Select(i => site.ServeAsync("GET", $"zing-relay://example.com/{i}.css", isDocument: false, CancellationToken.None)).ToList();
+		await WaitForAsync(() => transport.Calls.Count == 6);
+		using var cancel = new CancellationTokenSource();
+		var waiting = site.ServeAsync("GET", "zing-relay://example.com/late.css", isDocument: false, cancel.Token);
+		await cancel.CancelAsync();
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+		release.SetResult();
+		await Task.WhenAll(running);
+		Assert.Equal(6, transport.Calls.Count);
+	}
+
+	private static async Task WaitForAsync(Func<bool> condition)
+	{
+		var deadline = DateTime.UtcNow.AddSeconds(5);
+		while (!condition())
+		{
+			if (DateTime.UtcNow > deadline) throw new TimeoutException("The condition never became true");
+			await Task.Delay(10);
+		}
+	}
+
 	private static RelayConsent AllowedConsent()
 	{
 		var consent = new RelayConsent();
