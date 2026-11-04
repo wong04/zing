@@ -386,8 +386,8 @@ public sealed class WebView2Page : IPage
 					return;
 				case NavigationDecision.Redirect redirect:
 					e.Cancel = true;
-					// Visit anyway on a relayed address: Zing is sending the page back onto the relay, as the relay rule above does.
-					if (RelayedContent.IsRelayUrl(redirect.Url)) _zingNavigation = redirect.Url;
+					// The host's own decision (a cleaned address, the warning, Visit anyway), so a relayed top must not take it for the page's: the relay rule above already refused what the page started.
+					_zingNavigation = redirect.Url;
 					_warnedDocument = redirect.Url.StartsWith(StartPage.Scheme + "://", StringComparison.OrdinalIgnoreCase) ? e.Uri : null;
 					core.Navigate(redirect.Url);
 					return;

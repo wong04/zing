@@ -351,16 +351,45 @@ test('Visit anyway does not give the relay the session’s OK to ask a third par
 test('a relayed page linking to a flagged address is warned about, and the relay never fetches it', async () => {
 	const stand = await relayStand((target) => ({
 		status: 200,
-		body: target.host === 'site.test' ? `<!doctype html><title>Site</title><a id="go" href="${FLAGGED_SITE}">go</a>` : '<!doctype html><title>Flagged</title>x',
+		body: target.host === 'site.test' ? `<!doctype html><title>Site</title><a id="go" href="${FLAGGED_SITE}">go</a>` : '<!doctype html><title>Flagged</title><p id="t">flagged ok</p>',
 	}))
 	const zing = await launchZing({ env: { ZING_E2E_RELAY_URL: stand.origin } })
 	await openRelayed(zing, 'https://site.test/')
 	const site = await pageWhere(zing.browser, (p) => p.url().startsWith('zing-relay://site.test'))
 	await press(site, '#go')
-	// The tab is on the warning (read from the tab list: the page left the relay scheme and the test's handle on it goes stale).
-	await expect.poll(async () => (await tabsOf(zing)).tabs.some((t) => t.url.startsWith('zing://warning'))).toBe(true)
-	await zing.chrome.waitForTimeout(800)
+	// The engine itself must be on the warning: the tab list is updated whatever the engine does.
+	const warning = await pageWhere(zing.browser, isWarning)
 	expect(stand.fetched.map((target) => new URL(target).host)).toEqual(['site.test'])
+	await warning.getByRole('link', { name: 'Visit anyway' }).click()
+	const relayed = await pageWhere(zing.browser, (p) => p.url().startsWith('zing-relay://apple.com.secure-login.tk'))
+	await expect(relayed.locator('#t')).toHaveText('flagged ok')
 	await zing.close()
 	await stand.close()
+})
+
+test('a typed address in a relayed tab whose server redirect carries a tracker is cleaned and loaded', async () => {
+	const hits: string[] = []
+	const web = await listen((req, res) => {
+		hits.push(req.url ?? '')
+		if (req.url === '/short') {
+			res.statusCode = 302
+			res.setHeader('location', '/landing?utm_source=x&a=1')
+			return void res.end()
+		}
+		res.setHeader('content-type', 'text/html')
+		res.end('<!doctype html><title>Landing</title><p>landing</p>')
+	})
+	const stand = await relayStand(() => ({ status: 200, body: '<!doctype html><title>Site</title>hello' }))
+	const zing = await launchZing({ env: { ZING_E2E_RELAY_URL: stand.origin } })
+	await openRelayed(zing, 'https://site.test/')
+	await pageWhere(zing.browser, (p) => p.url().startsWith('zing-relay://site.test'))
+	const bar = zing.chrome.getByRole('textbox', { name: 'Address and search bar' })
+	await bar.click()
+	await bar.fill(`${web.base}/short`)
+	await bar.press('Enter')
+	await expect.poll(() => hits).toContain('/landing?a=1')
+	await expect.poll(() => pages(zing.browser).map((p) => p.url())).toContain(`${web.base}/landing?a=1`)
+	await zing.close()
+	await stand.close()
+	await new Promise<void>((resolve) => web.server.close(() => resolve()))
 })
