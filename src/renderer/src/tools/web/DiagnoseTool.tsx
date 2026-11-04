@@ -1,9 +1,12 @@
 import { useRef, useState } from 'react'
 import { panelId, section, Section } from '@shared/toolbox/panelContent'
 import { blockDetail, blockTitle, recommendedStrategies, type DiagnosticReport } from '@shared/unblock/blockDiagnostics'
+import { dohNotice } from '@shared/unblock/dohNotice'
 import { zing } from '../../api'
 import { InfoBanner, PillButton, PillField } from '../../components'
 import { PANELS_FULL_MESSAGE } from '@shared/shell/shellState'
+import { DOH_LABELS } from '../../settings/rows'
+import { useSettings } from '../../settings/useSettings'
 import { usePanelInput } from '../panelInput'
 import { ResultRow, TextArea, ToolPage } from '../parts'
 import './web.css'
@@ -15,6 +18,7 @@ function reportText(report: DiagnosticReport): string {
 /** Diagnose (X3): which layer a site is blocked at, found by comparing DNS answers and trying TCP and TLS. */
 export function DiagnoseTool() {
 	const handoff = usePanelInput()
+	const provider = useSettings()?.settings.dohProvider
 	const [site, setSite] = useState(handoff?.value ?? '')
 	const [seenHandoff, setSeenHandoff] = useState(handoff?.serial)
 	// An address handed over (the failed-load offer) replaces the field; it never starts a diagnosis.
@@ -60,6 +64,11 @@ export function DiagnoseTool() {
 
 	return (
 		<ToolPage subtitle="Finds where a site is being blocked: your network's DNS, the connection, or the encryption handshake.">
+			{provider === undefined ? null : (
+				<p className="tool-subtitle" data-testid="doh-notice">
+					{dohNotice(DOH_LABELS[provider])}
+				</p>
+			)}
 			<div className="diagnose-form">
 				<PillField label="Site" value={site} onChange={setSite} onSubmit={() => void run()} placeholder="example.com" />
 				<PillButton disabled={running || site.trim() === ''} onClick={() => void run()}>

@@ -156,8 +156,8 @@ public sealed class RelayEngine(
 		var skipped = false;
 		foreach (var strategy in strategies)
 		{
-			// Checked first: a yes would not help, because such an address is never sent.
-			if (RelayStrategies.NeedsConsent(strategy) && ownNetwork)
+			// Checked first: a yes would not help, because such an address is never sent. The pinned method asks a public DNS service for the name, which is sending it.
+			if ((RelayStrategies.NeedsConsent(strategy) || strategy == RelayStrategy.DohPinned) && ownNetwork)
 			{
 				Report(new RelayAttempt(strategy, AttemptStatus.Skipped, "That address is on your own network, so Zing doesn't send it to a third party."));
 				continue;

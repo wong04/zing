@@ -9,6 +9,15 @@ public sealed class LiveRelayTransportTests
 		public Task<IReadOnlyList<string>> ResolveAsync(string host, string provider, CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(addresses);
 	}
 
+	private sealed class RecordingDoh(List<string> asked) : IDohClient
+	{
+		public Task<IReadOnlyList<string>> ResolveAsync(string host, string provider, CancellationToken ct)
+		{
+			asked.Add(host);
+			return Task.FromResult<IReadOnlyList<string>>(["127.0.0.1"]);
+		}
+	}
+
 	private static readonly IReadOnlyDictionary<string, string> Headers = new Dictionary<string, string> { ["User-Agent"] = "Zing", ["Accept"] = "text/html" };
 
 	private static RelayRequest To(string url) => new(new Uri(url), Headers);
@@ -38,6 +47,17 @@ public sealed class LiveRelayTransportTests
 		var response = await transport.GetPinnedAsync(To($"https://example.test:{server.Port}/"), "cloudflare", CancellationToken.None);
 		Assert.Equal(200, response.Status);
 		Assert.Equal($"https://other.test:{target.Port}/there", response.FinalUrl.AbsoluteUri);
+	}
+
+	[Fact]
+	public async Task A_pinned_redirect_to_a_name_on_the_own_network_is_not_looked_up()
+	{
+		using var pki = new TestPki();
+		using var server = new TestServer(pki.IssueFor("example.test"), "HTTP/1.1 302 Found\r\nLocation: https://nas.local/there\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+		var asked = new List<string>();
+		var transport = new LiveRelayTransport(new RecordingDoh(asked), new PinnedHttp(pki.Trusted));
+		await Assert.ThrowsAsync<OwnNetworkError>(() => transport.GetPinnedAsync(To($"https://example.test:{server.Port}/"), "cloudflare", CancellationToken.None));
+		Assert.Equal(["example.test"], asked);
 	}
 
 	[Fact]

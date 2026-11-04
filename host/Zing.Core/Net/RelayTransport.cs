@@ -94,6 +94,8 @@ public sealed class LiveRelayTransport : IRelayTransport
 	private async Task<IPAddress> AddressForAsync(Uri url, string dohProvider, CancellationToken ct)
 	{
 		if (IPAddress.TryParse(url.IdnHost.Trim('[', ']'), out var literal)) return literal;
+		// A redirect can lead to such a name too; the name itself must not go to the provider.
+		if (RelayRules.IsPrivateHost(url)) throw new OwnNetworkError();
 		var found = await _doh.ResolveAsync(url.IdnHost, dohProvider, ct);
 		if (found.Count == 0) throw new NoAddressError(url.IdnHost);
 		return IPAddress.Parse(found[0]);

@@ -62,6 +62,18 @@ public sealed class DiagnoseTests
 		Assert.Contains("Network DNS: 93.184.216.34", report.Steps);
 	}
 
+	[Theory]
+	[InlineData("nas.local")]
+	[InlineData("fileserver")]
+	public async Task A_name_on_the_users_own_network_is_never_asked_of_the_public_resolver(string host)
+	{
+		var doh = new FakeDoh(_ => throw new InvalidOperationException("the public resolver was asked"));
+		var report = await Run(new FakeProbes { System = ["192.168.1.9"], Valid = ["192.168.1.9"], Reachable = ["192.168.1.9"] }, doh, host);
+		Assert.Null(doh.ProviderAsked);
+		Assert.Empty(report.PublicDNS);
+		Assert.Contains(report.Steps, s => s.StartsWith("Public DoH: not asked") && s.Contains("your own network"));
+	}
+
 	[Fact]
 	public async Task A_sinkholed_name_that_resolves_publicly_is_DNS_tampering()
 	{

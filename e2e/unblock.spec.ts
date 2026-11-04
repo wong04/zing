@@ -72,6 +72,7 @@ test('Diagnose reports a local server as not blocked', async () => {
 	const doh = await serveDoh(['93.184.216.34'])
 	const zing = await launchWith(doh.url, { system: ['93.184.216.34'], tcp: true, tlsValid: true })
 	const { panel } = await openDiagnose(zing)
+	await expect(panel.getByTestId('doh-notice')).toContainText("Cloudflare receives the site's name")
 	await diagnose(panel, 'local.test')
 	await expect(panel.getByTestId('diagnose-verdict')).toHaveText('Not blocked')
 	await expect(panel.getByRole('group', { name: 'Network DNS' })).toContainText('93.184.216.34')
@@ -794,6 +795,7 @@ test('declining stops at the methods that need no third party', async () => {
 	const stand = await methodsStand(blockedSite)
 	const zing = await launchOffline(stand)
 	const { panel } = await openLinkPanel(zing)
+	await expect(panel.getByTestId('doh-notice')).toContainText("Cloudflare receives the site's name")
 	const before = await tabUrls(zing)
 	await runLink(panel, 'https://blocked.test/a/page')
 	const dialog = panel.getByRole('alertdialog')
@@ -801,6 +803,7 @@ test('declining stops at the methods that need no third party', async () => {
 	// Escape declines.
 	await panel.page().keyboard.press('Escape')
 	await expect(dialog).toBeHidden()
+	await expect(panel.getByTestId('open-link-stopped')).toContainText('Cloudflare had already been asked for the site')
 	await expect(panel.getByTestId('open-link-stopped')).toContainText('Nothing was sent to the reader relay or the archive.')
 	await settle(800)
 	expect(thirdPartyAsked(stand)).toEqual([])

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import { declinedNotice, dohNotice } from '@shared/unblock/dohNotice'
 import { attemptSummary, collapseAttempts, pinnedFilteredNote, planOpening, strategyLabel, withAttempt, type Opening } from '@shared/unblock/openLinkPlan'
 import type { RelayAttempt, RelayOpenResult } from '@shared/unblock/relayOpen'
 import { zing } from '../../api'
 import { InfoBanner, PillButton, PillField } from '../../components'
+import { DOH_LABELS } from '../../settings/rows'
+import { useSettings } from '../../settings/useSettings'
 import { usePanelInput } from '../panelInput'
 import { ToolPage } from '../parts'
 import './web.css'
@@ -10,8 +13,6 @@ import './web.css'
 /** The words of the first-use dialog, as the design gives them. */
 export const consentText =
 	"This asks an outside service to fetch the page for you, so that service sees the address, and for a reader relay the page too. Zing doesn't send it your cookies or sign-ins. If this network belongs to a school or employer, getting around its filter may break their rules. That's your call."
-
-const declinedText = "Stopped at the methods that need no outside service. Nothing was sent to the reader relay or the archive. Run it again and say yes if you change your mind."
 
 const warnedText = "This address looks unsafe, so nothing was sent to it or to any outside service. A warning is open in a new tab; Visit anyway there opens it through the relay."
 
@@ -93,6 +94,7 @@ function ConsentDialog({ onAllow, onDecline }: { onAllow: () => void; onDecline:
 /** Open a Link (X1): tries each way of reaching a page in order, shows which worked, and opens it in a tab. */
 export function OpenLinkTool() {
 	const handoff = usePanelInput()
+	const provider = useSettings()?.settings.dohProvider
 	const [address, setAddress] = useState(handoff?.value ?? '')
 	const [seenHandoff, setSeenHandoff] = useState(handoff?.serial)
 	const [phase, setPhase] = useState<Phase>('idle')
@@ -223,7 +225,12 @@ export function OpenLinkTool() {
 
 	const decline = (): void => {
 		setPhase('idle')
-		setStopped(declinedText)
+		setStopped(declinedNotice(providerName()))
+	}
+
+	const providerName = (): string => {
+		if (provider === undefined) throw new Error('The encrypted DNS provider setting is not loaded')
+		return DOH_LABELS[provider]
 	}
 
 	const running = phase !== 'idle'
@@ -231,6 +238,11 @@ export function OpenLinkTool() {
 
 	return (
 		<ToolPage subtitle="Tries ways of reaching a page that your network doesn't let through, and says which one worked.">
+			{provider === undefined ? null : (
+				<p className="tool-subtitle" data-testid="doh-notice">
+					{dohNotice(DOH_LABELS[provider])}
+				</p>
+			)}
 			<div className="diagnose-form" ref={form} inert={phase === 'asking'}>
 				<PillField label="Address" value={address} onChange={setAddress} onSubmit={() => void start(address)} placeholder="example.com/page" disabled={running} />
 				<PillButton disabled={running || address.trim() === ''} onClick={() => void start(address)}>

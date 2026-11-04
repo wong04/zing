@@ -350,9 +350,10 @@ public sealed class RelayEngineTests
 		var transport = new FakeTransport();
 		var (engine, seen) = EngineFor(transport);
 		var error = await Assert.ThrowsAsync<AllStrategiesFailedError>(() => engine.OpenAsync(input, Allowed(), CancellationToken.None));
-		Assert.DoesNotContain(transport.Calls, c => IsRelay(c.Request) || IsArchive(c.Request));
-		Assert.Equal(["Direct:Trying", "Direct:Failed", "DohPinned:Trying", "DohPinned:Failed", "ReaderRelay:Skipped", "Wayback:Skipped"], Describe(seen));
-		Assert.Contains("your own network", seen[4].Reason);
+		Assert.DoesNotContain(transport.Calls, c => IsRelay(c.Request) || IsArchive(c.Request) || c.Via == "pinned");
+		Assert.Equal(["Direct:Trying", "Direct:Failed", "DohPinned:Skipped", "ReaderRelay:Skipped", "Wayback:Skipped"], Describe(seen));
+		Assert.Contains("your own network", seen[2].Reason);
+		Assert.Contains("your own network", seen[3].Reason);
 		Assert.DoesNotContain("Reader relay", error.Message);
 	}
 

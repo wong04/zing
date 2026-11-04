@@ -15,6 +15,7 @@ public sealed class Diagnose(IProbes probes, IDohClient doh, TimeSpan? deadline 
 	private sealed record Addresses(IReadOnlyList<string> Found) : PublicAnswer;
 	private sealed record NxDomain : PublicAnswer;
 	private sealed record Failed(string Reason) : PublicAnswer;
+	private sealed record NotAsked : PublicAnswer;
 
 	/// <param name="typed">A site name, or an address copied from the address bar.</param>
 	/// <param name="provider">The DoH provider setting's value.</param>
@@ -37,7 +38,8 @@ public sealed class Diagnose(IProbes probes, IDohClient doh, TimeSpan? deadline 
 		var host = HostOf(typed);
 		var steps = new List<string>();
 		var systemLookup = LookUpSystemAsync(host, ct);
-		var publicLookup = LookUpPublicAsync(host, provider, ct);
+		// Such a name is the user's own; asking a public service for it would tell that service what is on their network.
+		var publicLookup = RelayRules.IsPrivateHostName(host) ? Task.FromResult<PublicAnswer>(new NotAsked()) : LookUpPublicAsync(host, provider, ct);
 		await Task.WhenAll(systemLookup, publicLookup);
 		var (systemDns, systemTimedOut) = systemLookup.Result;
 		steps.Add(systemTimedOut ? "Network DNS: no answer in time (a resolver that stays silent can be a block)"
@@ -49,8 +51,12 @@ public sealed class Diagnose(IProbes probes, IDohClient doh, TimeSpan? deadline 
 			case NxDomain:
 				steps.Add("Public DoH: NXDOMAIN, the name genuinely doesn't exist");
 				return new DiagnosticReport(host, BlockKind.SiteDown, systemDns, [], false, false, steps);
+			case NotAsked:
+				steps.Add("Public DoH: not asked. This name is on your own network, so Zing doesn't send it to a public service.");
+				return await WithoutPublicDnsAsync(host, systemDns, steps, ct);
 			case Failed failed:
-				return await WithoutPublicDnsAsync(host, systemDns, failed.Reason, steps, ct);
+				steps.Add($"Public DoH: couldn't be used. {failed.Reason} Some networks block or rewrite encrypted DNS, so this says nothing about the site itself.");
+				return await WithoutPublicDnsAsync(host, systemDns, steps, ct);
 			case Addresses { Found: var publicDns }:
 				return await LadderAsync(host, systemDns, publicDns, steps, ct);
 			default:
@@ -88,9 +94,8 @@ public sealed class Diagnose(IProbes probes, IDohClient doh, TimeSpan? deadline 
 	}
 
 	/// <summary>Without a public answer the only proof available is a valid certificate on the address the network gave.</summary>
-	private async Task<DiagnosticReport> WithoutPublicDnsAsync(string host, IReadOnlyList<string> systemDns, string reason, List<string> steps, CancellationToken ct)
+	private async Task<DiagnosticReport> WithoutPublicDnsAsync(string host, IReadOnlyList<string> systemDns, List<string> steps, CancellationToken ct)
 	{
-		steps.Add($"Public DoH: couldn't be used. {reason} Some networks block or rewrite encrypted DNS, so this says nothing about the site itself.");
 		var proven = await ProvesIdentityAsync(host, systemDns, steps, ct);
 		if (!proven) return new DiagnosticReport(host, BlockKind.Inconclusive, systemDns, [], false, false, steps);
 		// A valid certificate on the network's own address is proof the site is not being interfered with.
