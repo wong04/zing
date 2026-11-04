@@ -46,9 +46,10 @@ document.getElementById('back').addEventListener('click', () => {
 document.getElementById('back').addEventListener('click', () => location.replace('zing://home'));
 """;
 
-	public static string Html(StartPageTheme theme, string to, string host, ThreatVerdict verdict, string visitUrl, bool viaRelay, string script)
+	public static string Html(StartPageTheme theme, string to, string host, ThreatVerdict verdict, string visitUrl, bool viaRelay, bool fromHistory, string script)
 	{
 		var reasons = string.Join('\n', verdict.Findings.Select(f => $"      <li><strong>{EscapeHtml(f.Title)}</strong><span>{EscapeHtml(f.Detail)}</span></li>"));
+		var history = fromHistory ? "\n    <p class=\"note\">You came back to this warning from history, so Visit anyway will connect directly, not through a relay.</p>" : "";
 		var relay = viaRelay ? "\n    <p class=\"note\">You asked to open it through Open a Link, and it will go that way.</p>" : "";
 		var contact = viaRelay
 			? "Nothing was sent anywhere by this check. If a redirect brought you here, the site may already have been asked for the page."
@@ -61,7 +62,7 @@ document.getElementById('back').addEventListener('click', () => location.replace
     <ul>
 {reasons}
     </ul>
-    <p class="note">This is a guess from the address alone, so it can be wrong. {contact}</p>{relay}
+    <p class="note">This is a guess from the address alone, so it can be wrong. {contact}</p>{relay}{history}
     <div class="actions">
       <button class="primary" id="back" type="button">Go back</button>
       <a class="minor" href="{EscapeHtml(visitUrl)}">Visit anyway</a>

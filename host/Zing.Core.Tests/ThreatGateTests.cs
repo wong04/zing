@@ -450,6 +450,20 @@ public sealed partial class ThreatGateTests
 	}
 
 	[Fact]
+	public void Back_to_an_expired_relayed_warning_says_that_visiting_anyway_connects_directly()
+	{
+		var plain = Html(Serve(WarningUrlOf(Check(Page, Flagged, "tab-2"))));
+		Assert.DoesNotContain("connect directly", plain);
+		var (warning, visit) = Warn("zing-relay://apple.com.secure-login.tk/verify", "zing://home");
+		Check(warning, visit);
+		var again = WarningUrlOf(Check("zing://home", warning));
+		var body = Html(Serve(again));
+		Assert.Contains("connect directly", body);
+		var direct = WebUtility.HtmlDecode(VisitLink().Match(body).Groups[1].Value);
+		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Redirect>(Check(again, direct)).Url);
+	}
+
+	[Fact]
 	public void A_withheld_document_is_the_one_that_was_sent_to_a_warning_and_only_as_a_document()
 	{
 		Assert.True(ThreatGate.IsWithheld(Flagged, Flagged + "#top", true));

@@ -27,7 +27,7 @@ public sealed class ThreatGate(Func<bool> enabled, Func<Uri, Uri>? inspectedAs =
 	/// A warning the host made for a tab. What the page says (a relay, an empty history) and the key Visit anyway needs live
 	/// here, set by the host alone: nothing in a page's query is believed.
 	/// </summary>
-	private sealed record Warning(string Id, string Key, string To, bool ViaRelay, bool BackHome);
+	private sealed record Warning(string Id, string Key, string To, bool ViaRelay, bool BackHome, bool FromHistory = false);
 
 	private sealed record Target(Uri Address, bool ViaRelay);
 
@@ -106,12 +106,13 @@ public sealed class ThreatGate(Func<bool> enabled, Func<Uri, Uri>? inspectedAs =
 		}
 		if (target is null || Web(target) is not { } address) return null;
 		if (ThreatModel.InspectUrl(Inspected(address)).Level < ThreatLevel.Suspicious) return null;
-		return Warn(tab, from, address, false);
+		// The warning this address came back from is gone, and with it whether it was for a relay; the page says so.
+		return Warn(tab, from, address, false, fromHistory: true);
 	}
 
-	private NavigationDecision.Redirect Warn(string tab, string from, Uri address, bool viaRelay)
+	private NavigationDecision.Redirect Warn(string tab, string from, Uri address, bool viaRelay, bool fromHistory = false)
 	{
-		var warning = new Warning(Token(), Token(), address.AbsoluteUri, viaRelay, !IsPage(from));
+		var warning = new Warning(Token(), Token(), address.AbsoluteUri, viaRelay, !IsPage(from), fromHistory);
 		lock (_lock)
 		{
 			if (!_warnings.ContainsKey(tab))
@@ -142,7 +143,7 @@ public sealed class ThreatGate(Func<bool> enabled, Func<Uri, Uri>? inspectedAs =
 			return Refusal(theme, "Zing found nothing to warn about in this address.");
 		var visit = $"zing://{VisitAnywayHost}?to={Uri.EscapeDataString(warning.To)}&k={warning.Key}";
 		var script = warning.BackHome ? WarningPage.HomeScript : WarningPage.BackScript;
-		return new StartPageResponse(200, "text/html; charset=utf-8", "no-store", WarningPage.Html(theme, warning.To, Inspected(address).IdnHost, verdict, visit, warning.ViaRelay, script));
+		return new StartPageResponse(200, "text/html; charset=utf-8", "no-store", WarningPage.Html(theme, warning.To, Inspected(address).IdnHost, verdict, visit, warning.ViaRelay, warning.FromHistory, script));
 	}
 
 	private NavigationDecision VisitAnyway(string tab, string from, string to)
