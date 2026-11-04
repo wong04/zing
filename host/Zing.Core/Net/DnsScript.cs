@@ -32,7 +32,7 @@ public static class DnsScript
 			[pscustomobject]@{
 				name = $adapter.Name
 				v4 = (Get-ItemProperty -LiteralPath "$v4Key\$($adapter.InterfaceGuid)" -Name NameServer -ErrorAction SilentlyContinue).NameServer
-				v6enabled = [bool](Get-NetAdapterBinding -Name $adapter.Name -ComponentID ms_tcpip6).Enabled
+				v6enabled = [bool](Get-NetAdapterBinding -Name ([WildcardPattern]::Escape($adapter.Name)) -ComponentID ms_tcpip6).Enabled
 				v6 = (Get-ItemProperty -LiteralPath "$v6Key\$($adapter.InterfaceGuid)" -Name NameServer -ErrorAction SilentlyContinue).NameServer
 			}
 		})

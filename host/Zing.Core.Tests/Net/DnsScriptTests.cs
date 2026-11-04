@@ -254,6 +254,13 @@ public sealed class DnsScriptTests
 	}
 
 	[Fact]
+	public void The_listing_asks_for_an_adapter_by_its_exact_name_because_Name_is_a_wildcard_pattern()
+	{
+		Assert.Contains("-Name ([WildcardPattern]::Escape($adapter.Name))", DnsScript.List);
+		Assert.DoesNotContain("-Name $adapter.Name", DnsScript.List);
+	}
+
+	[Fact]
 	public void The_undo_list_spells_out_hidden_characters_in_a_template()
 	{
 		var shown = DnsDisplay.Visible("https://cloudflare-dns.com/dns‮query");
