@@ -7,7 +7,6 @@ import { downloadNotice, ThreatLevel, verdictLevel } from './threatModel'
 import {
 	checkNavigation,
 	inspectDownload,
-	isRefusalAnswer,
 	pathExtension,
 	recordScan,
 	sniffType,
@@ -54,35 +53,19 @@ describe('inspectDownload', () => {
 	})
 })
 
-describe('isRefusalAnswer', () => {
-	it.each([
-		[[], true],
-		[['0.0.0.0'], true],
-		[['0.0.0.0', '::'], true],
-		[['93.184.216.34'], false],
-		[['0.0.0.0', '93.184.216.34'], false],
-	])('%j -> %s', (addresses, want) => {
-		expect(isRefusalAnswer(addresses)).toBe(want)
-	})
-})
-
 describe('checkNavigation', () => {
 	it('lets a clean site through', () => {
-		expect(checkNavigation(new URL('https://github.com/'), none, none)).toBeUndefined()
+		expect(checkNavigation(new URL('https://github.com/'), none)).toBeUndefined()
 	})
 	it('stops an impersonation', () => {
-		expect(checkNavigation(new URL('https://apple.com.secure-login.tk/'), none, none)).toBeDefined()
+		expect(checkNavigation(new URL('https://apple.com.secure-login.tk/'), none)).toBeDefined()
 	})
 	it('ignores non-web schemes', () => {
-		expect(checkNavigation(new URL('file:///C:/apple.com.secure-login.tk'), none, none)).toBeUndefined()
+		expect(checkNavigation(new URL('file:///C:/apple.com.secure-login.tk'), none)).toBeUndefined()
 	})
 	it('respects a host the user allowed', () => {
 		const allowed = new Set(['apple.com.secure-login.tk'])
-		expect(checkNavigation(new URL('https://apple.com.secure-login.tk/'), allowed, none)).toBeUndefined()
-	})
-	it('blocks a host the filtering resolvers refused', () => {
-		const verdict = checkNavigation(new URL('https://example.com/'), none, new Set(['example.com']))
-		expect(verdict && verdictLevel(verdict)).toBe(ThreatLevel.dangerous)
+		expect(checkNavigation(new URL('https://apple.com.secure-login.tk/'), allowed)).toBeUndefined()
 	})
 })
 
