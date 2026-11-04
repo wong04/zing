@@ -12,6 +12,7 @@ public sealed class StubDnsSystem : IDnsSystem
 {
 	private const string StartingAdapters = """
 		{"adapters":[{"name":"Ethernet","v4":"10.0.0.1","v6enabled":true,"v6":""},{"name":"Wi-Fi","v4":"","v6enabled":false,"v6":null}],
+		 "dohSupported":true,
 		 "doh":[{"address":"1.1.1.1","template":"https://cloudflare-dns.com/dns-query","allowFallbackToUdp":false,"autoUpgrade":false}]}
 		""";
 

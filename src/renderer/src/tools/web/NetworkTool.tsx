@@ -22,9 +22,9 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 function noticeFor(outcome: DnsOutcome, shown: DnsPreview): string {
 	switch (outcome.status) {
 		case 'applied':
-			return `Encrypted DNS is on (${shown.providerName}) for ${shown.adapters.join(', ')}. Pages may need a reload.`
+			return `Encrypted DNS is set up on ${shown.adapters.join(', ')}. Windows reported no errors. Pages may need a reload.`
 		case 'undone':
-			return 'Back to how it was: your previous DNS settings are restored.'
+			return 'The settings saved when you applied were put back. Windows reported no errors.'
 		case 'declined':
 			return 'Nothing changed. Windows asked for permission and it was refused.'
 		case 'changed':
@@ -96,14 +96,30 @@ export function NetworkTool() {
 					problem === null ? (
 						<p className="diagnose-detail">Reading your network adapters…</p>
 					) : null
+				) : !preview.applied && !preview.dohSupported ? (
+					<p className="diagnose-detail" data-testid="dns-unsupported">
+						This needs Windows 11. This version of Windows has no encrypted DNS commands, so there is nothing here to apply.
+					</p>
 				) : (
 					<>
 						<p className="diagnose-detail">
-							{preview.applied ? `Encrypted DNS (${preview.providerName}) is on. This undoes it for: ` : `${preview.providerName} (change it in Settings) will be set on: `}
+							{preview.applied
+								? `Encrypted DNS (${preview.providerName}) was set by Zing. Undo restores the settings saved when you applied, for: `
+								: `${preview.providerName} (change it in Settings) will be set on: `}
 							<span data-testid="dns-adapters">{preview.adapters.join(', ')}</span>
 							{preview.applied ? '' : '. Connected physical adapters only; VPN and virtual adapters are left alone.'}
 						</p>
-						<TextArea label="Script that runs as administrator" value={preview.script} readOnly rows={Math.min(14, preview.script.split('\n').length)} />
+						{preview.changes.length === 0 ? null : (
+							<>
+								<p className="diagnose-detail">Undo will set exactly this:</p>
+								<ul className="net-undo-list" data-testid="dns-undo-list">
+									{preview.changes.map((line) => (
+										<li key={line}>{line}</li>
+									))}
+								</ul>
+							</>
+						)}
+						<TextArea label="Script that runs as administrator" value={preview.scriptShown} readOnly rows={Math.min(14, preview.scriptShown.split('\n').length)} />
 						<p className="diagnose-detail" data-testid="dns-keeps-note">
 							Zing keeps nothing by default, but undoing a change to Windows needs your previous DNS settings, so they are kept in {preview.backupPath} until you Undo. Windows asks for permission first. If your network blocks {preview.providerName}'s servers, sites won't load until you Undo.
 						</p>
@@ -126,6 +142,9 @@ export function NetworkTool() {
 				<div className="net-guide" data-testid="vpn-guide">
 					<p className="diagnose-detail">
 						Zing can't be a VPN, but it can help you use one. A VPN is a server somewhere else that forwards your traffic; an app is only the part that dials it. Two ways to get one: a provider such as Mullvad, Proton or IVPN, which hands you a WireGuard config for a few dollars a month, or your own server, a small VPS running WireGuard (more setup, no subscription).
+					</p>
+					<p className="diagnose-detail">
+						A connected VPN usually uses its own DNS, so the encrypted DNS setting above doesn't apply to traffic that goes through it.
 					</p>
 					<p className="diagnose-detail">
 						Bringing a tunnel up changes your routing and needs administrator rights, so you run it yourself: in the WireGuard app choose Import tunnel(s) from file, or from an administrator PowerShell:

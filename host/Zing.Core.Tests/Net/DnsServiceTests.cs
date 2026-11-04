@@ -14,11 +14,15 @@ public sealed class DnsServiceTests : IDisposable
 
 		public Task<DnsSnapshot> ReadAsync(CancellationToken ct) => Task.FromResult(Now);
 
-		public Task<ElevatedRun> RunElevatedAsync(string script, CancellationToken ct)
+		/// <summary>The elevated process never ends, as one stuck behind a prompt nobody answers.</summary>
+		public bool Hangs { get; set; }
+
+		public async Task<ElevatedRun> RunElevatedAsync(string script, CancellationToken ct)
 		{
 			BeforeRun?.Invoke();
 			Ran.Add(script);
-			return Task.FromResult(Result);
+			if (Hangs) await Task.Delay(Timeout.Infinite, ct);
+			return Result;
 		}
 	}
 
@@ -221,6 +225,75 @@ public sealed class DnsServiceTests : IDisposable
 	{
 		_system.Now = new DnsSnapshot([], []);
 		await Assert.ThrowsAsync<NoDnsAdaptersError>(() => _service.PreviewAsync("cloudflare"));
+	}
+
+	[Fact]
+	public async Task A_windows_without_the_commands_is_said_before_anything_and_apply_is_refused()
+	{
+		_system.Now = _system.Now with { DohSupported = false };
+		var preview = await _service.PreviewAsync("cloudflare");
+		Assert.False(preview.DohSupported);
+		await Assert.ThrowsAsync<NoEncryptedDnsError>(() => _service.ApplyAsync("cloudflare", preview.Token));
+		Assert.Empty(_system.Ran);
+		Assert.False(File.Exists(BackupPath));
+	}
+
+	[Fact]
+	public async Task A_run_that_never_ends_is_given_up_on_with_the_outcome_unknown_and_undo_stays_available()
+	{
+		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, TimeSpan.FromMilliseconds(150));
+		_system.Hangs = true;
+		var preview = await service.PreviewAsync("cloudflare");
+		var error = await Assert.ThrowsAsync<DnsOutcomeUnknownError>(() => service.ApplyAsync("cloudflare", preview.Token));
+		Assert.Contains("check", error.Message, StringComparison.OrdinalIgnoreCase);
+		Assert.True(File.Exists(BackupPath));
+		// The lock was let go: the page can ask again, and sees Undo.
+		Assert.True((await service.PreviewAsync("cloudflare")).Applied);
+	}
+
+	[Fact]
+	public async Task An_undo_that_never_ends_keeps_the_saved_settings()
+	{
+		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, TimeSpan.FromMilliseconds(150));
+		var first = await service.PreviewAsync("cloudflare");
+		await service.ApplyAsync("cloudflare", first.Token);
+		_system.Hangs = true;
+		var undo = await service.PreviewAsync("cloudflare");
+		await Assert.ThrowsAsync<DnsOutcomeUnknownError>(() => service.UndoAsync(undo.Token));
+		Assert.True(File.Exists(BackupPath));
+	}
+
+	[Fact]
+	public async Task The_undo_preview_lists_what_undo_will_set_including_what_a_tampered_file_says()
+	{
+		var first = await _service.PreviewAsync("cloudflare");
+		await _service.ApplyAsync("cloudflare", first.Token);
+		// Valid-looking, but not what was saved: the list is built from the file as it is now, the same data the script is.
+		var saved = DnsBackup.Load(BackupPath);
+		DnsBackup.Save(BackupPath, saved with { Adapters = [new DnsAdapter("Ethernet", ["6.6.6.6"], []), saved.Adapters[1]] });
+		var preview = await _service.PreviewAsync("cloudflare");
+		Assert.Contains("Ethernet: 6.6.6.6", preview.Changes);
+		Assert.Contains("Wi-Fi: automatic (DHCP)", preview.Changes);
+		Assert.Contains("'6.6.6.6'", preview.Script);
+	}
+
+	[Fact]
+	public async Task The_apply_preview_has_no_undo_list()
+	{
+		Assert.Empty((await _service.PreviewAsync("cloudflare")).Changes);
+	}
+
+	[Fact]
+	public async Task Names_are_shown_with_hidden_characters_spelled_out_and_the_script_runs_with_the_real_ones()
+	{
+		_system.Now = new DnsSnapshot([new DnsAdapter("a\u202Eb", [], [])], []);
+		var preview = await _service.PreviewAsync("cloudflare");
+		Assert.Equal(["a\\u202Eb"], preview.Adapters);
+		Assert.Contains("\\u202E", preview.ScriptShown);
+		Assert.DoesNotContain("\u202E", preview.ScriptShown, StringComparison.Ordinal);
+		Assert.Contains("\u202E", preview.Script, StringComparison.Ordinal);
+		await _service.ApplyAsync("cloudflare", preview.Token);
+		Assert.Equal([preview.Script], _system.Ran);
 	}
 
 	[Fact]

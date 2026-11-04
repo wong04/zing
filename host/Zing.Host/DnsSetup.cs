@@ -62,7 +62,8 @@ public sealed class DnsSetup : IDnsSystem
 		Process? process;
 		try
 		{
-			process = Process.Start(start);
+			// Starting with runas waits for the answer to the prompt, so it runs off this thread and the caller's time limit can apply.
+			process = await Task.Run(() => Process.Start(start)).WaitAsync(ct);
 		}
 		catch (Win32Exception error) when (error.NativeErrorCode == PromptRefused)
 		{

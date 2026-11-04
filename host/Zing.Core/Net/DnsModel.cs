@@ -17,7 +17,9 @@ public sealed record DnsAdapter(string Name, IReadOnlyList<string> V4, IReadOnly
 public sealed record DohEntry(string Address, string Template, bool AllowFallbackToUdp, bool AutoUpgrade);
 
 /// <summary>The adapters and the encrypted-DNS table as Windows has them.</summary>
-public sealed record DnsSnapshot(IReadOnlyList<DnsAdapter> Adapters, IReadOnlyList<DohEntry> Doh)
+/// <param name="Doh">Only the entries for the providers' servers: an odd entry for any other server is none of this page's business.</param>
+/// <param name="DohSupported">This Windows has the encrypted-DNS commands (Windows 11); without them the script can only fail.</param>
+public sealed record DnsSnapshot(IReadOnlyList<DnsAdapter> Adapters, IReadOnlyList<DohEntry> Doh, bool DohSupported = true)
 {
 	/// <summary>Reads what <see cref="DnsScript.List"/> prints. Anything else is an error: a guess about a machine's DNS could be written back by Undo.</summary>
 	public static DnsSnapshot Parse(string json)
@@ -28,7 +30,8 @@ public sealed record DnsSnapshot(IReadOnlyList<DnsAdapter> Adapters, IReadOnlyLi
 			var root = document.RootElement;
 			return new DnsSnapshot(
 				[.. root.GetProperty("adapters").EnumerateArray().Select(ReadAdapter)],
-				[.. root.GetProperty("doh").EnumerateArray().Select(ReadEntry)]);
+				[.. root.GetProperty("doh").EnumerateArray().Where(IsProvidersServer).Select(ReadEntry)],
+				root.GetProperty("dohSupported").GetBoolean());
 		}
 		catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException or InvalidDnsAddressError or InvalidDohTemplateError)
 		{
@@ -50,6 +53,9 @@ public sealed record DnsSnapshot(IReadOnlyList<DnsAdapter> Adapters, IReadOnlyLi
 		value.ValueKind == JsonValueKind.Null
 			? []
 			: [.. (value.GetString() ?? "").Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(a => DnsAddresses.Normalize(a, family))];
+
+	private static bool IsProvidersServer(JsonElement item) =>
+		item.TryGetProperty("address", out var address) && address.ValueKind == JsonValueKind.String && DnsProviders.IsKnownServer(address.GetString()!);
 
 	private static DohEntry ReadEntry(JsonElement item)
 	{

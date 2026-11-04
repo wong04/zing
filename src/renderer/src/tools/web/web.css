@@ -99,3 +99,12 @@
 .net-beats-block {
 	font-weight: 600;
 }
+
+.net-undo-list {
+	margin: 0;
+	padding-left: 18px;
+	color: var(--text);
+	font-family: ui-monospace, Consolas, monospace;
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}

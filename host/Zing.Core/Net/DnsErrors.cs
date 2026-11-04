@@ -36,6 +36,14 @@ public sealed class NoEncryptedDnsError : NetError
 	}
 }
 
+/// <summary>The elevated script didn't finish in time, so what it did is not known. The saved settings are kept.</summary>
+public sealed class DnsOutcomeUnknownError : NetError
+{
+	public DnsOutcomeUnknownError() : base("Windows didn't report back in time, so it isn't known whether your DNS settings changed. Check them in Windows Settings (Network & internet, then your connection's DNS). Zing kept your previous settings, so Undo is still available.")
+	{
+	}
+}
+
 /// <summary>Apply was asked while the settings from an earlier Apply are still saved, which a second backup would overwrite with the encrypted ones.</summary>
 public sealed class DnsAlreadyAppliedError : NetError
 {

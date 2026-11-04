@@ -27,6 +27,7 @@ public static class DnsScript
 		$ErrorActionPreference = 'Stop'
 		$v4Key = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces'
 		$v6Key = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces'
+		$supported = [bool](Get-Command Add-DnsClientDohServerAddress -ErrorAction SilentlyContinue)
 		$adapters = @(foreach ($adapter in Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' }) {
 			[pscustomobject]@{
 				name = $adapter.Name
@@ -41,7 +42,7 @@ public static class DnsScript
 				[pscustomobject]@{ address = $_.ServerAddress; template = $_.DohTemplate; allowFallbackToUdp = [bool]$_.AllowFallbackToUdp; autoUpgrade = [bool]$_.AutoUpgrade }
 			})
 		}
-		ConvertTo-Json -Compress -Depth 4 -InputObject @{ adapters = $adapters; doh = $doh }
+		ConvertTo-Json -Compress -Depth 4 -InputObject @{ adapters = $adapters; doh = $doh; dohSupported = $supported }
 		""";
 
 	/// <summary>
@@ -68,7 +69,9 @@ public static class DnsScript
 		{
 			// IPv6 servers only where the adapter has IPv6; a family it lacks would fail the whole call.
 			var servers = adapter.V6 is null ? chosen.V4 : chosen.V4.Concat(chosen.V6).ToList();
-			script.Line($"Set-DnsClientServerAddress -InterfaceAlias {Quote(adapter.Name)} -ServerAddresses {QuotedList(servers)}", 1);
+			FindAdapter(script, adapter.Name, 1);
+			script.Line("if (-not $adapter) { throw 'An adapter that was shown is gone' }", 1);
+			script.Line($"Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses {QuotedList(servers)}", 1);
 		}
 		script.Line("Clear-DnsClientCache", 1);
 		script.Line($"}} catch {{ exit {FailedExit} }}");
@@ -82,33 +85,63 @@ public static class DnsScript
 	/// </summary>
 	public static string Undo(IReadOnlyList<DnsAdapter> before, IReadOnlyList<DohEntry> dohBefore, string provider)
 	{
-		var chosen = DnsProviders.Get(provider);
-		var restored = dohBefore.Select(entry => entry with { Address = DnsAddresses.Normalize(entry.Address), Template = DnsAddresses.Template(entry.Template) }).ToList();
-		var owned = chosen.Servers.ToHashSet();
-		if (restored.FirstOrDefault(entry => !owned.Contains(entry.Address)) is { } stray) throw new InvalidDnsAddressError(stray.Address);
+		var plan = PlanUndo(before, dohBefore, provider);
 		var script = new Script();
 		script.Line("$ErrorActionPreference = 'Stop'");
 		script.Line("try {");
-		foreach (var adapter in before)
+		foreach (var (name, servers) in plan.Adapters)
 		{
-			var name = Quote(adapter.Name);
-			var servers = adapter.V4.Select(a => DnsAddresses.Normalize(a, AddressFamily.InterNetwork)).Concat((adapter.V6 ?? []).Select(a => DnsAddresses.Normalize(a, AddressFamily.InterNetworkV6))).ToList();
-			script.Line($"if (Get-NetAdapter -Name {name} -ErrorAction SilentlyContinue) {{", 1);
+			FindAdapter(script, name, 1);
+			script.Line("if ($adapter) {", 1);
 			// Reset first: it clears both families, and a set below puts back only what was set by hand.
-			script.Line($"Set-DnsClientServerAddress -InterfaceAlias {name} -ResetServerAddresses", 2);
-			if (servers.Count > 0) script.Line($"Set-DnsClientServerAddress -InterfaceAlias {name} -ServerAddresses {QuotedList(servers)}", 2);
+			script.Line("Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ResetServerAddresses", 2);
+			if (servers.Count > 0) script.Line($"Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses {QuotedList(servers)}", 2);
 			script.Line("}", 1);
 		}
-		foreach (var entry in restored)
+		foreach (var entry in plan.Restored)
 			script.Line($"Set-DnsClientDohServerAddress -ServerAddress {Quote(entry.Address)} -DohTemplate {Quote(entry.Template)} -AllowFallbackToUdp {Bool(entry.AllowFallbackToUdp)} -AutoUpgrade {Bool(entry.AutoUpgrade)}", 1);
-		var kept = restored.Select(entry => entry.Address).ToHashSet();
-		foreach (var server in chosen.Servers.Where(s => !kept.Contains(s)))
+		foreach (var server in plan.Removed)
 			script.Line($"if (Get-DnsClientDohServerAddress -ServerAddress {Quote(server)} -ErrorAction SilentlyContinue) {{ Remove-DnsClientDohServerAddress -ServerAddress {Quote(server)} }}", 1);
 		script.Line("Clear-DnsClientCache", 1);
 		script.Line($"}} catch {{ exit {FailedExit} }}");
 		script.Line("exit 0");
 		return script.ToString();
 	}
+
+	/// <summary>
+	/// What <see cref="Undo"/> will set, one readable line each, from the same checked data the script is built from. The saved file can
+	/// be edited by anything running as the person, so this is what to read before pressing Undo.
+	/// </summary>
+	public static IReadOnlyList<string> UndoSummary(IReadOnlyList<DnsAdapter> before, IReadOnlyList<DohEntry> dohBefore, string provider)
+	{
+		var plan = PlanUndo(before, dohBefore, provider);
+		return
+		[
+			.. plan.Adapters.Select(a => $"{DnsDisplay.Visible(a.Name)}: {(a.Servers.Count == 0 ? "automatic (DHCP)" : string.Join(", ", a.Servers))}"),
+			.. plan.Restored.Select(e => $"{e.Address}: restored to {e.Template} (UDP fallback {(e.AllowFallbackToUdp ? "allowed" : "not allowed")}, auto-upgrade {(e.AutoUpgrade ? "on" : "off")})"),
+			.. plan.Removed.Select(server => $"{server}: removed from Windows' encrypted DNS list"),
+		];
+	}
+
+	private sealed record UndoPlanned(List<(string Name, List<string> Servers)> Adapters, List<DohEntry> Restored, List<string> Removed);
+
+	private static UndoPlanned PlanUndo(IReadOnlyList<DnsAdapter> before, IReadOnlyList<DohEntry> dohBefore, string provider)
+	{
+		var chosen = DnsProviders.Get(provider);
+		var restored = dohBefore.Select(entry => entry with { Address = DnsAddresses.Normalize(entry.Address), Template = DnsAddresses.Template(entry.Template) }).ToList();
+		var owned = chosen.Servers.ToHashSet();
+		if (restored.FirstOrDefault(entry => !owned.Contains(entry.Address)) is { } stray) throw new InvalidDnsAddressError(stray.Address);
+		var adapters = before.Select(adapter => (adapter.Name, Servers: adapter.V4.Select(a => DnsAddresses.Normalize(a, AddressFamily.InterNetwork)).Concat((adapter.V6 ?? []).Select(a => DnsAddresses.Normalize(a, AddressFamily.InterNetworkV6))).ToList())).ToList();
+		var kept = restored.Select(entry => entry.Address).ToHashSet();
+		return new UndoPlanned(adapters, restored, [.. chosen.Servers.Where(s => !kept.Contains(s))]);
+	}
+
+	/// <summary>
+	/// Finds an adapter by its exact name. -Name and -InterfaceAlias treat * ? and [ ] as wildcards (Get-NetAdapter -Name 'Wi-F*' finds
+	/// Wi-Fi), so a name could reach another adapter; -ceq compares the whole name as it is.
+	/// </summary>
+	private static void FindAdapter(Script script, string name, int depth) =>
+		script.Line($"$adapter = Get-NetAdapter | Where-Object {{ $_.Name -ceq {Quote(name)} }}", depth);
 
 	/// <summary>The argument for <c>powershell -EncodedCommand</c>: the script itself, so no file stands between what was read and what runs as administrator.</summary>
 	public static string EncodedCommand(string script)
@@ -121,7 +154,7 @@ public static class DnsScript
 	/// A PowerShell single-quoted string. Inside one nothing expands, and the only way out is a quote, so quotes are doubled. PowerShell
 	/// also counts the curly quotes (U+2018 to U+201B) as quotes, so those are doubled too.
 	/// </summary>
-	internal static string Quote(string value)
+	public static string Quote(string value)
 	{
 		var text = new StringBuilder("'");
 		foreach (var c in value)

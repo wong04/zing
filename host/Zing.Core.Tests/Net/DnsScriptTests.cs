@@ -14,8 +14,8 @@ public sealed class DnsScriptTests
 	public void Apply_names_only_the_adapters_it_is_given()
 	{
 		var script = DnsScript.Apply("cloudflare", [Dhcp("Ethernet"), Dhcp("Wi-Fi")]);
-		Assert.Contains("-InterfaceAlias 'Ethernet'", script);
-		Assert.Contains("-InterfaceAlias 'Wi-Fi'", script);
+		Assert.Contains("-ceq 'Ethernet'", script);
+		Assert.Contains("-ceq 'Wi-Fi'", script);
 		Assert.DoesNotContain("Bluetooth", script);
 		Assert.Equal(2, CountOf(script, "Set-DnsClientServerAddress"));
 	}
@@ -62,7 +62,7 @@ public sealed class DnsScriptTests
 	public void Apply_quotes_a_name_with_a_quote_in_it()
 	{
 		var script = DnsScript.Apply("cloudflare", [Dhcp("Bob's LAN")]);
-		Assert.Contains("-InterfaceAlias 'Bob''s LAN'", script);
+		Assert.Contains("-ceq 'Bob''s LAN'", script);
 	}
 
 	[Fact]
@@ -147,17 +147,17 @@ public sealed class DnsScriptTests
 	public void Undo_puts_back_static_servers_and_leaves_dhcp_adapters_automatic()
 	{
 		var script = DnsScript.Undo([new DnsAdapter("Ethernet", ["10.0.0.1", "10.0.0.2"], ["fd00::1"]), Dhcp("Wi-Fi", v6: false)], NoDoh, "cloudflare");
-		Assert.Contains("-InterfaceAlias 'Ethernet' -ServerAddresses '10.0.0.1', '10.0.0.2', 'fd00::1'", script);
-		Assert.Contains("-InterfaceAlias 'Wi-Fi' -ResetServerAddresses", script);
-		Assert.DoesNotContain("-InterfaceAlias 'Wi-Fi' -ServerAddresses", script);
+		Assert.Contains("-ServerAddresses '10.0.0.1', '10.0.0.2', 'fd00::1'", script);
+		Assert.Equal(2, CountOf(script, "-ResetServerAddresses"));
+		Assert.Equal(1, CountOf(script, "-ServerAddresses"));
 	}
 
 	[Fact]
 	public void Undo_resets_before_it_sets_so_the_providers_servers_do_not_linger()
 	{
 		var script = DnsScript.Undo([new DnsAdapter("Ethernet", ["10.0.0.1"], [])], NoDoh, "cloudflare");
-		var reset = script.IndexOf("-InterfaceAlias 'Ethernet' -ResetServerAddresses", StringComparison.Ordinal);
-		var set = script.IndexOf("-InterfaceAlias 'Ethernet' -ServerAddresses '10.0.0.1'", StringComparison.Ordinal);
+		var reset = script.IndexOf("-ResetServerAddresses", StringComparison.Ordinal);
+		var set = script.IndexOf("-ServerAddresses '10.0.0.1'", StringComparison.Ordinal);
 		Assert.InRange(reset, 0, set);
 	}
 
@@ -165,7 +165,8 @@ public sealed class DnsScriptTests
 	public void Undo_skips_an_adapter_that_is_gone_instead_of_failing_the_whole_undo()
 	{
 		var script = DnsScript.Undo([Dhcp("Unplugged")], NoDoh, "cloudflare");
-		Assert.Contains("Get-NetAdapter -Name 'Unplugged'", script);
+		Assert.Contains("-ceq 'Unplugged'", script);
+		Assert.Contains("if ($adapter)", script);
 	}
 
 	[Fact]
@@ -191,6 +192,67 @@ public sealed class DnsScriptTests
 		Assert.Throws<InvalidDnsAddressError>(() => DnsScript.Undo([Dhcp("Ethernet")], [new DohEntry("9.9.9.9", "https://dns.quad9.net/dns-query", false, false)], "cloudflare"));
 	}
 
+	[Theory]
+	[InlineData("Wi-F*")]
+	[InlineData("Ethernet?")]
+	[InlineData("Ethernet [2]")]
+	[InlineData("*")]
+	public void A_name_with_wildcard_characters_matches_only_itself(string name)
+	{
+		foreach (var script in new[] { DnsScript.Apply("cloudflare", [Dhcp(name)]), DnsScript.Undo([new DnsAdapter(name, ["10.0.0.1"], [])], NoDoh, "cloudflare") })
+		{
+			// -Name and -InterfaceAlias take wildcards (Get-NetAdapter -Name 'Wi-F*' finds Wi-Fi); -ceq compares exactly.
+			Assert.DoesNotContain("-InterfaceAlias", script);
+			Assert.DoesNotContain("-Name", script);
+			Assert.Contains($"-ceq {DnsScript.Quote(name)}", script);
+			Assert.Contains("-InterfaceIndex $adapter.ifIndex", script);
+		}
+	}
+
+	[Fact]
+	public void Apply_stops_when_an_adapter_it_was_shown_is_gone_instead_of_skipping_it()
+	{
+		var script = DnsScript.Apply("cloudflare", [Dhcp("Ethernet")]);
+		Assert.Contains("if (-not $adapter) { throw", script);
+	}
+
+	[Fact]
+	public void Visible_spells_out_what_would_otherwise_be_hidden_or_rearrange_the_text()
+	{
+		Assert.Equal("Ethernet", DnsDisplay.Visible("Ethernet"));
+		Assert.Equal("a\\u202Eb", DnsDisplay.Visible("a\u202Eb"));
+		Assert.Equal("a\\u200Fb\\u2066c\\u061Cd", DnsDisplay.Visible("a\u200Fb\u2066c\u061Cd"));
+		Assert.Equal("one\\u000Atwo\\u0000", DnsDisplay.Visible("one\ntwo\0"));
+		Assert.Equal("caf\u00E9 \u30A4\u30FC\u30B5", DnsDisplay.Visible("caf\u00E9 \u30A4\u30FC\u30B5"));
+	}
+
+	[Fact]
+	public void The_script_as_shown_spells_out_hidden_characters_but_keeps_its_own_lines()
+	{
+		var script = DnsScript.Apply("cloudflare", [Dhcp("a\u202Eb")]);
+		var shown = DnsDisplay.VisibleScript(script);
+		Assert.Contains("\\u202E", shown);
+		Assert.DoesNotContain("\u202E", shown, StringComparison.Ordinal);
+		Assert.Equal(script.Count(c => c == '\n'), shown.Count(c => c == '\n'));
+	}
+
+	[Fact]
+	public void Undo_lists_what_it_will_set_from_the_same_data_the_script_uses()
+	{
+		var lines = DnsScript.UndoSummary([new DnsAdapter("Ethernet", ["10.0.0.1"], ["fd00::1"]), Dhcp("Wi-Fi", v6: false)], [new DohEntry("1.1.1.1", "https://cloudflare-dns.com/dns-query", false, false)], "cloudflare");
+		Assert.Equal("Ethernet: 10.0.0.1, fd00::1", lines[0]);
+		Assert.Equal("Wi-Fi: automatic (DHCP)", lines[1]);
+		Assert.Contains(lines, l => l.StartsWith("1.1.1.1: restored to", StringComparison.Ordinal) && l.Contains("https://cloudflare-dns.com/dns-query"));
+		Assert.Contains("1.0.0.1: removed from Windows' encrypted DNS list", lines);
+	}
+
+	[Fact]
+	public void The_undo_list_spells_out_hidden_characters_in_a_name()
+	{
+		var lines = DnsScript.UndoSummary([new DnsAdapter("a\u202Eb", [], [])], NoDoh, "cloudflare");
+		Assert.Equal("a\\u202Eb: automatic (DHCP)", lines[0]);
+	}
+
 	[Fact]
 	public void The_script_is_sent_as_an_encoded_command_and_one_too_long_for_a_command_line_is_refused()
 	{
@@ -203,7 +265,7 @@ public sealed class DnsScriptTests
 	public void The_adapter_list_reads_what_the_listing_script_prints()
 	{
 		const string json = """
-			{"adapters":[{"name":"Ethernet","v4":"10.0.0.1,10.0.0.2","v6enabled":true,"v6":""},{"name":"Wi-Fi","v4":null,"v6enabled":false,"v6":null}],
+			{"adapters":[{"name":"Ethernet","v4":"10.0.0.1,10.0.0.2","v6enabled":true,"v6":""},{"name":"Wi-Fi","v4":null,"v6enabled":false,"v6":null}],"dohSupported":true,
 			 "doh":[{"address":"1.1.1.1","template":"https://cloudflare-dns.com/dns-query","allowFallbackToUdp":false,"autoUpgrade":false}]}
 			""";
 		var snapshot = DnsSnapshot.Parse(json);
@@ -218,11 +280,47 @@ public sealed class DnsScriptTests
 	[InlineData("")]
 	[InlineData("not json")]
 	[InlineData("{}")]
-	[InlineData("""{"adapters":[{"name":"E","v4":"not an ip","v6enabled":false,"v6":null}],"doh":[]}""")]
-	[InlineData("""{"adapters":[{"name":"E","v4":null,"v6enabled":false,"v6":null}]}""")]
+	[InlineData("""{"adapters":[],"doh":[]}""")]
+	[InlineData("""{"adapters":[{"name":"E","v4":"not an ip","v6enabled":false,"v6":null}],"dohSupported":true,"doh":[]}""")]
+	[InlineData("""{"adapters":[{"name":"E","v4":null,"v6enabled":false,"v6":null}],"dohSupported":true}""")]
 	public void A_listing_that_is_not_what_the_script_prints_is_an_error(string json)
 	{
 		Assert.Throws<DnsListingError>(() => DnsSnapshot.Parse(json));
+	}
+
+	[Fact]
+	public void An_odd_entry_for_a_server_that_is_not_a_providers_does_not_break_the_listing()
+	{
+		const string json = """
+			{"adapters":[],"dohSupported":true,"doh":[
+			 {"address":"not an address","template":null,"allowFallbackToUdp":false,"autoUpgrade":false},
+			 {"address":"203.0.113.9","template":"ftp://x","allowFallbackToUdp":false,"autoUpgrade":false},
+			 {"address":"1.1.1.1","template":"https://cloudflare-dns.com/dns-query","allowFallbackToUdp":false,"autoUpgrade":true}]}
+			""";
+		var snapshot = DnsSnapshot.Parse(json);
+		Assert.Equal("1.1.1.1", Assert.Single(snapshot.Doh).Address);
+	}
+
+	[Fact]
+	public void An_odd_entry_for_a_providers_own_server_is_still_an_error()
+	{
+		const string json = """{"adapters":[],"dohSupported":true,"doh":[{"address":"1.1.1.1","template":"ftp://x","allowFallbackToUdp":false,"autoUpgrade":false}]}""";
+		Assert.Throws<DnsListingError>(() => DnsSnapshot.Parse(json));
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public void The_listing_says_whether_this_windows_has_encrypted_dns_commands(bool supported)
+	{
+		var snapshot = DnsSnapshot.Parse($$"""{"adapters":[],"dohSupported":{{(supported ? "true" : "false")}},"doh":[]}""");
+		Assert.Equal(supported, snapshot.DohSupported);
+	}
+
+	[Fact]
+	public void The_listing_script_asks_whether_the_commands_exist_and_still_changes_nothing()
+	{
+		Assert.Contains("dohSupported", DnsScript.List);
 	}
 
 	[Fact]
@@ -278,7 +376,7 @@ public sealed class DnsScriptTests
 	private static readonly string[] AllowedCommands =
 	[
 		"Get-Command", "Get-DnsClientDohServerAddress", "Set-DnsClientDohServerAddress", "Add-DnsClientDohServerAddress", "Remove-DnsClientDohServerAddress",
-		"Set-DnsClientServerAddress", "Get-NetAdapter", "Clear-DnsClientCache",
+		"Set-DnsClientServerAddress", "Get-NetAdapter", "Where-Object", "Clear-DnsClientCache",
 	];
 
 	private static void AssertOnlyOurCommands(ScriptShape shape, string name)
