@@ -306,6 +306,47 @@ public sealed class DnsServiceTests : IDisposable
 	}
 
 	[Fact]
+	public async Task An_apply_given_up_on_that_then_ends_declined_leaves_no_saved_file_to_claim_it_was_applied()
+	{
+		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, _ => { }, TimeSpan.FromMilliseconds(150));
+		_system.Hangs = true;
+		var preview = await service.PreviewAsync("cloudflare");
+		await Assert.ThrowsAsync<DnsOutcomeUnknownError>(() => service.ApplyAsync("cloudflare", preview.Token));
+		_system.Result = ElevatedRun.Declined;
+		_system.Finish();
+		Assert.False((await service.PreviewAsync("cloudflare")).Applied);
+		Assert.False(File.Exists(BackupPath));
+	}
+
+	[Fact]
+	public async Task An_apply_given_up_on_that_then_ends_without_encrypted_dns_support_leaves_no_saved_file()
+	{
+		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, _ => { }, TimeSpan.FromMilliseconds(150));
+		_system.Hangs = true;
+		var preview = await service.PreviewAsync("cloudflare");
+		await Assert.ThrowsAsync<DnsOutcomeUnknownError>(() => service.ApplyAsync("cloudflare", preview.Token));
+		_system.Result = new ElevatedRun.Exited(DnsScript.NoEncryptedDnsExit);
+		_system.Finish();
+		Assert.False((await service.PreviewAsync("cloudflare")).Applied);
+		Assert.False(File.Exists(BackupPath));
+	}
+
+	[Fact]
+	public async Task An_undo_given_up_on_that_then_ends_declined_keeps_the_saved_file_because_the_settings_are_still_changed()
+	{
+		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, _ => { }, TimeSpan.FromMilliseconds(150));
+		var first = await service.PreviewAsync("cloudflare");
+		await service.ApplyAsync("cloudflare", first.Token);
+		_system.Hangs = true;
+		var undo = await service.PreviewAsync("cloudflare");
+		await Assert.ThrowsAsync<DnsOutcomeUnknownError>(() => service.UndoAsync(undo.Token));
+		_system.Result = ElevatedRun.Declined;
+		_system.Finish();
+		Assert.True((await service.PreviewAsync("cloudflare")).Applied);
+		Assert.True(File.Exists(BackupPath));
+	}
+
+	[Fact]
 	public async Task A_run_given_up_on_that_fails_later_is_reported_not_lost()
 	{
 		var faults = new List<Exception>();

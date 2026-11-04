@@ -36,6 +36,7 @@ public sealed class DnsService(IDnsSystem system, string backupPath, Func<DateTi
 	// A run given up on is not stopped: its admin prompt can stay open and still be accepted. Until it ends, nothing else may run, or
 	// an old Apply could land after an Undo has removed the settings it needs.
 	private Task? _abandoned;
+	private Task<ElevatedRun>? _abandonedRun;
 
 	public async Task<DnsPreview> PreviewAsync(string provider)
 	{
@@ -72,7 +73,7 @@ public sealed class DnsService(IDnsSystem system, string backupPath, Func<DateTi
 			// Saved before the script runs: a script that stops half way has changed some adapters, and Undo needs the originals.
 			var owned = chosen.Servers.ToHashSet();
 			DnsBackup.Save(backupPath, new DnsBackupFile(provider, now(), snapshot.Adapters, [.. snapshot.Doh.Where(entry => owned.Contains(entry.Address))]));
-			var run = await RunAsync(script);
+			var run = await RunApplyAsync(script);
 			switch (run)
 			{
 				case ElevatedRun.Exited { Code: 0 }:
@@ -131,9 +132,54 @@ public sealed class DnsService(IDnsSystem system, string backupPath, Func<DateTi
 		catch (TimeoutException)
 		{
 			_abandoned = run;
+			_abandonedRun = run;
 			// Observed here: nobody awaits it any more, and its failure must neither vanish nor surface as an unobserved task fault.
 			_ = run.ContinueWith(task => reportFault(task.Exception!.GetBaseException()), CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 			throw new DnsOutcomeUnknownError();
+		}
+	}
+
+	/// <summary>
+	/// An Apply given up on can still end as declined or as "no encrypted DNS here", which changed nothing; the file saved before
+	/// it ran would then say Zing set something. That is cleared here, under the gate. Any other end leaves it: the script may have changed some adapters.
+	/// A restart of Zing while the prompt is open can't be seen, so the file stays then.
+	/// </summary>
+	private async Task<ElevatedRun> RunApplyAsync(string script)
+	{
+		try
+		{
+			return await RunAsync(script);
+		}
+		catch (DnsOutcomeUnknownError)
+		{
+			_abandoned = ForgetIfNothingChangedAsync(_abandonedRun!);
+			throw;
+		}
+	}
+
+	private async Task ForgetIfNothingChangedAsync(Task<ElevatedRun> run)
+	{
+		ElevatedRun ended;
+		try
+		{
+			ended = await run;
+		}
+		catch (Exception)
+		{
+			// Reported where the run was given up on.
+			return;
+		}
+		if (ended is ElevatedRun.Exited { Code: DnsScript.NoEncryptedDnsExit } or not ElevatedRun.Exited)
+		{
+			await _gate.WaitAsync();
+			try
+			{
+				DnsBackup.Delete(backupPath);
+			}
+			finally
+			{
+				_gate.Release();
+			}
 		}
 	}
 
