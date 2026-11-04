@@ -215,6 +215,7 @@ public static class ShellConstants
 public sealed record ShellState(
 	bool SettingsOpen,
 	string SettingsCategory,
+	bool ToolboxOpen,
 	bool SidebarRevealed,
 	bool Gated,
 	Point Origin,

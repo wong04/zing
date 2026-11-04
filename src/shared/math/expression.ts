@@ -30,6 +30,16 @@ export class UnbalancedParenthesesError extends EvalError {
 	}
 }
 
+/** Past this the parser's own recursion would overflow the call stack, so the input is refused instead. */
+export const MAX_NESTING = 200
+
+export class NestedTooDeeplyError extends EvalError {
+	override name = 'NestedTooDeeplyError'
+	constructor() {
+		super('Nested too deeply')
+	}
+}
+
 export class UnknownSymbolError extends EvalError {
 	override name = 'UnknownSymbolError'
 	constructor(readonly symbol: string) {
@@ -131,6 +141,10 @@ const constants: ReadonlyMap<string, number> = new Map([
 class Parser {
 	private readonly characters: readonly string[]
 	private index = 0
+	/** Brackets opened and not yet closed, so running out of input inside one is reported as unbalanced. */
+	private depth = 0
+	/** Every nested bracket, negation and power goes through `power`, so this bounds the recursion. */
+	private nesting = 0
 
 	constructor(text: string, private readonly angle: AngleMode, private readonly variables: Variables) {
 		// Accept the symbols a calculator keypad produces alongside ASCII.
@@ -190,11 +204,17 @@ class Parser {
 
 	// power := unary ('^' power)?   — right associative, so 2^3^2 = 512
 	private power(): number {
+		this.nesting += 1
+		if (this.nesting > MAX_NESTING) throw new NestedTooDeeplyError()
 		const base = this.unary()
 		this.skipSpace()
-		if (this.peek() !== '^') return base
+		if (this.peek() !== '^') {
+			this.nesting -= 1
+			return base
+		}
 		this.index += 1
 		const exponent = this.power()
+		this.nesting -= 1
 		return cPow(base, exponent)
 	}
 
@@ -235,20 +255,27 @@ class Parser {
 	private primary(): number {
 		this.skipSpace()
 		const c = this.peek()
-		if (c === undefined) throw new EmptyExpressionError()
+		if (c === undefined) throw this.depth > 0 ? new UnbalancedParenthesesError() : new EmptyExpressionError()
 
 		if (c === '(') {
 			this.index += 1
-			const value = this.expression()
-			this.skipSpace()
-			if (this.peek() !== ')') throw new UnbalancedParenthesesError()
-			this.index += 1
-			return value
+			return this.closed(() => this.expression())
 		}
 
 		if (isNumber(c) || c === '.') return this.number()
 		if (isLetter(c)) return this.identifier()
 		throw new UnexpectedTokenError(c)
+	}
+
+	/** Parses up to the `)` matching a `(` already consumed. */
+	private closed(parse: () => number): number {
+		this.depth += 1
+		const value = parse()
+		this.skipSpace()
+		if (this.peek() !== ')') throw new UnbalancedParenthesesError()
+		this.index += 1
+		this.depth -= 1
+		return value
 	}
 
 	private takeDigits(): string {
@@ -316,12 +343,7 @@ class Parser {
 		this.skipSpace()
 		if (this.peek() !== '(') throw new UnknownSymbolError(name)
 		this.index += 1
-		const argument = this.expression()
-		this.skipSpace()
-		if (this.peek() !== ')') throw new UnbalancedParenthesesError()
-		this.index += 1
-
-		return this.apply(lower, argument)
+		return this.apply(lower, this.closed(() => this.expression()))
 	}
 
 	/** Trig respects the DEG/RAD switch; everything else is unit-free. */

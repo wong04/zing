@@ -41,3 +41,25 @@ describe('known answers', () => {
 		expect(prettyJSON('["a\\"b\\u00e9"]')).toBe('[\n  "a\\"bé"\n]')
 	})
 })
+
+function problemFor(text: string): JSONProblem {
+	try {
+		prettyJSON(text)
+	} catch (error) {
+		if (error instanceof JSONProblem) return error
+		throw error
+	}
+	throw new Error('parsed, but should not have')
+}
+
+describe('json error position', () => {
+	it('names the line the parser stopped on', () => {
+		expect(problemFor('{\n	"a": 1,\n	"b": }').line).toBe(3)
+	})
+	it('an unterminated document points at its last line', () => {
+		expect(problemFor('{\n"a": [1,\n2').line).toBe(3)
+	})
+	it('a one-line document is line 1', () => {
+		expect(problemFor('{bad}').line).toBe(1)
+	})
+})

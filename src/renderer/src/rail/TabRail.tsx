@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { TabsState, TabView } from '@shared/ipc'
 import { clampRailWidth, VERTICAL_TABS } from '@shared/layout/chrome'
+import { knownRecents } from '@shared/toolbox/panelContent'
 import { favourites, find, isFolder, pinned as pinnedItems } from '@shared/library/library'
 import { edgeDropAt, type DropPane, type EdgeDrop } from '@shared/layout/splitDrop'
 import { buildSlots, snapshotOf } from '@shared/tabs/slots'
@@ -207,7 +208,7 @@ function AppButtons() {
 function RecentTools() {
 	const handle = useSettings()
 	const panels = useToolPanels()
-	const recents = handle?.settings.recentFeatures ?? []
+	const recents = knownRecents(handle?.settings.recentFeatures ?? [])
 	const minimized = panels.panels.filter((p) => p.minimized)
 	if (recents.length === 0 && minimized.length === 0) return null
 	return (

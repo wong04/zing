@@ -166,7 +166,10 @@ test('arrow keys move through the themes, Custom included', async () => {
 	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
 	const custom = sheet.getByRole('radio', { name: 'Custom', exact: true })
 	const amber = sheet.getByRole('radio', { name: 'Amber', exact: true })
+	// The sheet takes focus as it opens, which would pull it back off a swatch focused before that.
+	await expect(sheet.getByRole('dialog', { name: 'Settings' })).toBeFocused()
 	await amber.focus()
+	await expect(amber).toBeFocused()
 	await sheet.keyboard.press('ArrowLeft')
 	await expect(custom).toHaveAttribute('aria-checked', 'true')
 	await expect(custom).toBeFocused()

@@ -191,6 +191,8 @@ export interface InvokeContract {
 	'tabs:activate': { args: [id: TabId]; result: void }
 	'tabs:close': { args: [id: TabId]; result: void }
 	'tabs:navigate': { args: [id: TabId, input: string]; result: void }
+	/** A new tab straight at a web address (a Toolbox link tile): no blank tab first, so Back has nothing behind it. */
+	'tabs:open-link': { args: [url: string]; result: void }
 	'tabs:move': { args: [id: TabId, index: number]; result: void }
 	'tabs:pin': { args: [id: TabId]; result: void }
 	'tabs:unpin': { args: [id: TabId]; result: void }
@@ -251,6 +253,7 @@ export interface InvokeContract {
 	'shell:open-settings': { args: [category?: SettingsCategoryId]; result: void }
 	'shell:close-settings': { args: []; result: void }
 	'shell:toolbox': { args: []; result: void }
+	'shell:close-toolbox': { args: []; result: void }
 	'shell:menu': { args: [kind: ShellMenuKind, id: string, anchor: MenuAnchor]; result: void }
 	'shell:clear-session': { args: []; result: void }
 	'toolpanel:get': { args: []; result: ToolPanelsState }
@@ -263,6 +266,10 @@ export interface InvokeContract {
 	'toolpanel:begin-drag': { args: [id: string]; result: void }
 	/** `origin` is the panel's top-left in window content coordinates. */
 	'toolpanel:end-drag': { args: [id: string, origin: Point]; result: void }
+	/** Lowercase hex digests. `algorithm` is a `HashAlgorithm` ("MD5", "SHA-1", "SHA-256", "SHA-512"); the host also answers MD5, which SubtleCrypto lacks. */
+	'hash:text': { args: [text: string, algorithm: string]; result: string }
+	'hash:file': { args: [path: string, algorithm: string]; result: string }
+	'hash:hmac': { args: [message: string, key: string, algorithm: string]; result: string }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
 	'account:sign-in': { args: [password: string]; result: AccountOutcome }
@@ -305,6 +312,7 @@ export interface ZingApi {
 	activateTab(id: TabId): Promise<void>
 	closeTab(id: TabId): Promise<void>
 	navigateTab(id: TabId, input: string): Promise<void>
+	openLinkInNewTab(url: string): Promise<void>
 	moveTab(id: TabId, index: number): Promise<void>
 	pinTab(id: TabId): Promise<void>
 	unpinTab(id: TabId): Promise<void>
@@ -368,9 +376,13 @@ export interface ZingApi {
 	openSettings(category?: SettingsCategoryId): Promise<void>
 	closeSettings(): Promise<void>
 	openToolbox(): Promise<void>
+	closeToolbox(): Promise<void>
 	openShellMenu(kind: ShellMenuKind, id: string, anchor: MenuAnchor): Promise<void>
 	clearBrowsingSession(): Promise<void>
 	reportError(report: RendererErrorReport): Promise<void>
+	hashText(text: string, algorithm: string): Promise<string>
+	hashFile(path: string, algorithm: string): Promise<string>
+	hmac(message: string, key: string, algorithm: string): Promise<string>
 	onShellState(listener: (state: ShellState) => void): Unsubscribe
 	getToolPanels(): Promise<ToolPanelsState>
 	openPanel(content: string, at: Point): Promise<OpenPanelOutcome>

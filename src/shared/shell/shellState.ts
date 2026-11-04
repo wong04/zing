@@ -41,6 +41,7 @@ export function isSettingsCategory(value: unknown): value is SettingsCategoryId 
 export interface ShellState {
 	readonly settingsOpen: boolean
 	readonly settingsCategory: SettingsCategoryId
+	readonly toolboxOpen: boolean
 	readonly sidebarRevealed: boolean
 	/** True while the account gate covers the window. */
 	readonly gated: boolean

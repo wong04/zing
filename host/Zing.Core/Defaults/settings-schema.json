@@ -116,15 +116,6 @@
 	"securityRealtime": {
 		"type": "flag"
 	},
-	"securityDownloadScan": {
-		"type": "flag"
-	},
-	"securityDomainBlocking": {
-		"type": "flag"
-	},
-	"securitySignatureCheck": {
-		"type": "flag"
-	},
 	"sidebarPinned": {
 		"type": "flag"
 	},
@@ -170,5 +161,8 @@
 		"type": "sleep",
 		"min": 1,
 		"max": 10080
+	},
+	"toolLinks": {
+		"type": "linkList"
 	}
 }

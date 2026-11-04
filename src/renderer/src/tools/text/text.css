@@ -1,0 +1,43 @@
+/* What only the text tools use; the shared pieces are in ../tools.css. */
+
+.text-tool-controls {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.text-tool-controls > .pill-slider {
+	flex: 1;
+}
+
+.text-tool-number {
+	width: 28px;
+	font-variant-numeric: tabular-nums;
+}
+
+.toggle-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	font-size: 13px;
+}
+
+.color-swatch {
+	height: 44px;
+	border: 1px solid var(--separator);
+	border-radius: var(--control-radius);
+}
+
+.qr-frame {
+	align-self: flex-start;
+	padding: 9px;
+	background: #fff;
+	border-radius: 8px;
+}
+
+.qr-frame canvas {
+	display: block;
+	width: 220px;
+	height: 220px;
+	image-rendering: pixelated;
+}

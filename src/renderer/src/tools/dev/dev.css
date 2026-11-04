@@ -1,0 +1,31 @@
+/* What only the developer tools use; the shared pieces are in ../tools.css. */
+
+.dev-pre {
+	box-sizing: border-box;
+	max-height: 150px;
+	margin: 0;
+	padding: 9px;
+	overflow: auto;
+	background: var(--well);
+	border: 1px solid var(--separator);
+	border-radius: var(--control-radius);
+	font: 11.5px/1.45 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
+	user-select: text;
+}
+
+.dev-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.dev-row > .pill-field {
+	flex: 1;
+}
+
+.dev-toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: var(--muted);
+}

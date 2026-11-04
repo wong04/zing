@@ -1,4 +1,5 @@
 import { VERTICAL_TABS } from '../layout/chrome'
+import { DEFAULT_TOOL_LINKS, isToolLinkList } from '../toolbox/links'
 import { DEFAULT_SLEEPING_TABS, isSleepSettings } from '../session/sleepSettings'
 
 /**
@@ -110,9 +111,6 @@ export const SETTINGS_SCHEMA = {
 	/** Off by default: remembering open tabs means writing visited URLs to disk. */
 	restoreTabs: flag(false),
 	securityRealtime: flag(true),
-	securityDownloadScan: flag(true),
-	securityDomainBlocking: flag(true),
-	securitySignatureCheck: flag(true),
 	sidebarPinned: flag(true),
 	/** Feature names only, never what was done with them. */
 	recentFeatures: textList(),
@@ -131,6 +129,8 @@ export const SETTINGS_SCHEMA = {
 	verticalTabsCollapsed: flag(false),
 	/** Zing: discard idle tabs' renderers to save memory; the record and URL stay. */
 	sleepingTabs: { default: DEFAULT_SLEEPING_TABS, accepts: isSleepSettings },
+	/** Zing: the tiles on the Toolbox's Links page, kept like other settings since the user chose to edit them. */
+	toolLinks: { default: DEFAULT_TOOL_LINKS, accepts: isToolLinkList },
 } as const
 
 type Schema = typeof SETTINGS_SCHEMA
@@ -149,8 +149,10 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze(
  * Keys Zing once had and dropped. A stored file may still hold one (it was written while the key
  * existed), so reading skips it instead of failing the whole file as unknown; the next save leaves it out.
  * confirmQuit: Krackn's "Confirm before quitting" switch, which Krackn never read either.
+ * securityDownloadScan, securityDomainBlocking, securitySignatureCheck: the Security switches whose features
+ * Zing dropped (PARITY X12 to X14), so nothing would honour them.
  */
-export const RETIRED_SETTING_KEYS: readonly string[] = ['confirmQuit']
+export const RETIRED_SETTING_KEYS: readonly string[] = ['confirmQuit', 'securityDownloadScan', 'securityDomainBlocking', 'securitySignatureCheck']
 
 export function isSettingKey(key: string): key is SettingKey {
 	return Object.hasOwn(SETTINGS_SCHEMA, key)

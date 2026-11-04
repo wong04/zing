@@ -4,6 +4,7 @@ import { allInputs } from '@shared/convert/formatCatalog'
 import { MAX_SLEEP_MINUTES } from '@shared/session/sleepSettings'
 import { accentLabel, accentThemes, CUSTOM_ACCENT, swatchHex } from '@shared/theme/accent'
 import { allItems } from '@shared/toolbox/catalog'
+import { DEFAULT_TOOL_LINKS } from '@shared/toolbox/links'
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField, PillSlider, Toggle } from '../components'
 import { ShieldAlertIcon, ShieldCheckIcon } from '../components/icons'
@@ -147,6 +148,17 @@ function ShortcutEditor({ handle }: { handle: SettingsHandle }) {
 	)
 }
 
+function ToolLinksRow({ handle }: { handle: SettingsHandle }) {
+	const isDefault = JSON.stringify(handle.settings.toolLinks) === JSON.stringify(DEFAULT_TOOL_LINKS)
+	return (
+		<SettingRowShell title="Links page" detail="The sites on the Toolbox's Links page. Add and remove them there.">
+			<PillButton variant="ghost" size="small" disabled={isDefault} onClick={() => handle.set('toolLinks', DEFAULT_TOOL_LINKS)}>
+				Restore Defaults
+			</PillButton>
+		</SettingRowShell>
+	)
+}
+
 function SleepingTabsRows({ handle }: { handle: SettingsHandle }) {
 	const sleep = handle.settings.sleepingTabs
 	const update = (patch: Partial<typeof sleep>): void => handle.set('sleepingTabs', { ...sleep, ...patch })
@@ -250,6 +262,8 @@ export function CustomRow({ id, handle, version }: { id: CustomId; handle: Setti
 			return <DefaultBrowserRow />
 		case 'shortcuts':
 			return <ShortcutEditor handle={handle} />
+		case 'tool-links':
+			return <ToolLinksRow handle={handle} />
 		case 'sleeping-tabs':
 			return <SleepingTabsRows handle={handle} />
 		case 'privacy-banner':

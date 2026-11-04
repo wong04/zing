@@ -1,3 +1,6 @@
 [
-	"confirmQuit"
+	"confirmQuit",
+	"securityDownloadScan",
+	"securityDomainBlocking",
+	"securitySignatureCheck"
 ]

@@ -17,7 +17,7 @@ export const Section = {
 	unblock: 'Open a Link',
 	diagnose: 'Diagnose',
 	network: 'Network & VPN',
-	security: 'Security',
+	links: 'Links',
 	settings: 'Settings',
 } as const
 export type Section = (typeof Section)[keyof typeof Section]
@@ -25,7 +25,7 @@ export type Section = (typeof Section)[keyof typeof Section]
 /** Single tools, titled as the Toolbox shows them. */
 export const UtilityTool = {
 	tools: 'Engines',
-	json: 'JSON / YAML',
+	json: 'JSON',
 	base64: 'Base64',
 	urlCode: 'URL Encoding',
 	numberBase: 'Number Bases',
@@ -73,6 +73,11 @@ export function panelId(content: PanelContent): string {
 	return toolPrefix + content.tool
 }
 
+/** The stored recents that still name something: a stored id can name a feature since removed. */
+export function knownRecents(stored: readonly string[]): string[] {
+	return stored.filter((id) => panelContentFromId(id) !== null)
+}
+
 /** Round-trips `panelId`. Null for an id that names nothing (a tool removed since it was stored, say). */
 export function panelContentFromId(id: string): PanelContent | null {
 	if (id.startsWith(sectionPrefix)) {
@@ -118,7 +123,6 @@ function sectionSize(value: Section): Size {
 		case Section.convert:
 			return { width: 520, height: 580 }
 		case Section.settings:
-		case Section.security:
 		case Section.network:
 			return { width: 540, height: 620 }
 		case Section.utilities:

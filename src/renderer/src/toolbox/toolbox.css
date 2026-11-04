@@ -1,0 +1,104 @@
+/* The Toolbox sheet. The backdrop and entrance are the Settings sheet's (settings.css). */
+
+.toolbox-sheet {
+	flex-direction: column;
+	width: min(760px, calc(100vw - 80px));
+}
+
+.toolbox-head {
+	display: flex;
+	flex: none;
+	align-items: center;
+	gap: 14px;
+	padding: 18px 20px 14px;
+	border-bottom: 1px solid var(--separator);
+}
+
+.toolbox-head h2 {
+	margin: 0;
+	font-size: 20px;
+	font-weight: 600;
+	letter-spacing: -0.3px;
+}
+
+.toolbox-head .pill-field {
+	flex: 1;
+	min-width: 0;
+}
+
+.toolbox-body {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 6px 20px 22px;
+}
+
+.toolbox-group h3 {
+	margin: 18px 0 8px;
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.toolbox-tiles {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+	gap: 8px;
+}
+
+.toolbox-tile,
+.toolbox-result {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-width: 0;
+	padding: 9px 11px;
+	border: 1px solid var(--separator);
+	border-radius: var(--control-radius);
+	background: var(--control);
+	color: var(--text);
+	font-size: 13px;
+	text-align: left;
+}
+
+.toolbox-tile:hover,
+.toolbox-result:hover {
+	background: color-mix(in srgb, var(--text) 6%, var(--control));
+}
+
+.toolbox-tile:focus-visible,
+.toolbox-result:focus-visible {
+	outline: 2px solid var(--accent-ink);
+	outline-offset: -2px;
+}
+
+.toolbox-result.selected {
+	border-color: transparent;
+	background: color-mix(in srgb, var(--selection) 85%, transparent);
+}
+
+.toolbox-item-icon {
+	display: grid;
+	flex: none;
+	color: var(--accent-ink);
+}
+
+.toolbox-item-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.toolbox-results {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding-top: 14px;
+}
+
+.toolbox-none {
+	margin: 28px 0;
+	color: var(--muted);
+	font-size: 13px;
+	text-align: center;
+}

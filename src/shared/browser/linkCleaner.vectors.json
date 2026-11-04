@@ -11,6 +11,12 @@
 		{ "name": "a ? inside the fragment is not a query", "input": "https://x.com/a#x?utm_source=1", "url": "https://x.com/a#x?utm_source=1", "removed": [] },
 		{ "name": "kept parameters are left exactly as written", "input": "https://x.com/?q=a%20b+c&fbclid=z&x=%E2%9C%93", "url": "https://x.com/?q=a%20b+c&x=%E2%9C%93", "removed": ["fbclid"] },
 		{ "name": "pasted links lose their wrapping", "input": "  <https://x.com/?si=abc>  ", "url": "https://x.com/", "removed": ["si"] },
+		{ "name": "an AI tool's utm_source=chatgpt.com tag is removed", "input": "https://x.com/a?id=7&utm_source=chatgpt.com", "url": "https://x.com/a?id=7", "removed": ["utm_source"] },
+		{ "name": "an AI tool's utm_source=openai tag is removed", "input": "https://x.com/a?id=7&utm_source=openai", "url": "https://x.com/a?id=7", "removed": ["utm_source"] },
+		{ "name": "an AI tool's utm_source=perplexity tag is removed", "input": "https://x.com/a?id=7&utm_source=perplexity", "url": "https://x.com/a?id=7", "removed": ["utm_source"] },
+		{ "name": "an AI tool's utm_source=copilot.com tag is removed", "input": "https://x.com/a?id=7&utm_source=copilot.com", "url": "https://x.com/a?id=7", "removed": ["utm_source"] },
+		{ "name": "an AI tool's utm_source=claude.ai tag is removed", "input": "https://x.com/a?id=7&utm_source=claude.ai", "url": "https://x.com/a?id=7", "removed": ["utm_source"] },
+		{ "name": "a plain source parameter keeps its existing behaviour (removed)", "input": "https://x.com/a?id=7&source=chatgpt.com", "url": "https://x.com/a?id=7", "removed": ["source"] },
 		{ "name": "a malformed escape is compared as written", "input": "https://x.com/?%E0%A4%A=1&ref=2", "url": "https://x.com/?%E0%A4%A=1", "removed": ["ref"] }
 	],
 	"invalid": [

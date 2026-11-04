@@ -1,6 +1,6 @@
 // Port of `UtilityTools.HashAlgorithm` (Krackn Features/Utilities/UtilityTools.swift).
-// Kept apart from `hash.node.ts` so the renderer can list the choices without
-// pulling in `node:crypto`.
+// The digests themselves are computed by the host (Zing.Core Hashing.cs): MD5 isn't in
+// SubtleCrypto. These names are what crosses the bridge.
 
 export const HashAlgorithm = {
 	md5: 'MD5',

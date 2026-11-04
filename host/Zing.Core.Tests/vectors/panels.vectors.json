@@ -7,7 +7,7 @@
 			"steps": [
 				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" },
 				{ "op": "open", "content": "tool:JWT Decoder", "at": [700, 400], "as": "b", "want": "opened" },
-				{ "op": "open", "content": "tool:JSON / YAML", "at": [700, 400], "as": "c", "want": "opened" },
+				{ "op": "open", "content": "tool:JSON", "at": [700, 400], "as": "c", "want": "opened" },
 				{ "op": "open", "content": "tool:Regex Tester", "at": [700, 400], "want": "full" }
 			],
 			"checks": { "isFull": true, "all": 3 }
@@ -28,7 +28,7 @@
 			"steps": [
 				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" },
 				{ "op": "open", "content": "tool:JWT Decoder", "at": [700, 400], "as": "b", "want": "opened" },
-				{ "op": "open", "content": "tool:JSON / YAML", "at": [700, 400], "as": "c", "want": "opened" },
+				{ "op": "open", "content": "tool:JSON", "at": [700, 400], "as": "c", "want": "opened" },
 				{ "op": "minimize", "panel": "a" },
 				{ "op": "open", "content": "tool:Regex Tester", "at": [700, 400], "as": "d", "want": "opened" },
 				{ "op": "restore", "panel": "a", "want": "full" }
@@ -41,7 +41,7 @@
 			"steps": [
 				{ "op": "open", "content": "tool:Hashes", "at": [700, 400], "as": "a", "want": "opened" },
 				{ "op": "open", "content": "tool:JWT Decoder", "at": [700, 400], "as": "b", "want": "opened" },
-				{ "op": "open", "content": "tool:JSON / YAML", "at": [700, 400], "as": "c", "want": "opened" },
+				{ "op": "open", "content": "tool:JSON", "at": [700, 400], "as": "c", "want": "opened" },
 				{ "op": "minimize", "panel": "a" }
 			],
 			"checks": { "isFull": false, "visible": 2, "all": 3, "front": "c" }

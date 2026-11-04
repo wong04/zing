@@ -32,7 +32,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 **Other decisions:** public repo `wong04/zing`, MIT, crediting Krackn in the README. Password autofill becomes a **built-in vault** (Phase 6b).
 
-**v1 scope beyond parity:** split view (Phase 4) and import from other browsers (Phase 6c). The built-in ad/tracker blocker replaces Chrome extensions. **No AI, ever.** Browser sync comes later and will be E2E encrypted, so data gets stable IDs now. On the roadmap after v1: Spaces/profiles, Ctrl+K command bar, Chrome Web Store extensions, sync.
+**v1 scope beyond parity:** split view (Phase 4) and import from other browsers (Phase 6c). The built-in ad/tracker blocker replaces Chrome extensions. Browser sync comes later and will be E2E encrypted, so data gets stable IDs now. On the roadmap after v1: Spaces/profiles, Ctrl+K command bar, Chrome Web Store extensions, sync.
 
 ## macOS → Zing mapping (the risky items)
 
@@ -41,7 +41,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 - **Popups/OAuth**: `setWindowOpenHandler` with `createWindow` so `window.opener` survives (Krackn gotcha).
 - **Unblock**: DoH via `fetch`; `PinnedHTTPClient` becomes Node `tls.connect({host: ip, servername})`, so no hand-rolled HTTP/1.1. `aiorelay://` may become a real https intercept.
 - **Network & VPN**: `.mobileconfig` is replaced by a generated PowerShell script (`Add-DnsClientDohServerAddress`, run as admin by the user), and `wg-quick` by WireGuard for Windows commands. The "honest" copy stays.
-- **Convert**: `sips` → sharp (HEIC needs libheif/ffmpeg, which sharp's prebuilt lacks); `textutil` → mammoth/pandoc; PDF via `printToPDF`; ffmpeg/yt-dlp installed via `winget` instead of `brew` (`Core/ToolInstaller.swift`). The 196-format catalog gets a coverage matrix, and any format Windows can't do is listed explicitly, not dropped silently.
+- **Convert**: `sips` → sharp (HEIC needs libheif/ffmpeg, which sharp's prebuilt lacks); `textutil` → mammoth/pandoc; PDF via `printToPDF`; ffmpeg/yt-dlp downloaded on first use instead of `brew` (`Core/ToolInstaller.swift`). The 196-format catalog gets a coverage matrix, and any format Windows can't do is listed explicitly, not dropped silently.
 - **Security**: Gatekeeper/notarization → Authenticode (`WinVerifyTrust`); quarantine → Mark-of-the-Web; XProtect → Defender status + `MpCmdRun` scan of the file; SIP/FileVault → Secure Boot/BitLocker/SmartScreen status. Add Windows executable types (.exe .scr .msi .lnk .ps1 .hta .vbs) to the disguised-file checks.
 - **Viewer**: SceneKit → three.js loaders; AVKit → `<video>`; QuickLook fallback → metadata + "open with default app".
 - **Background remover**: Vision → ONNX Runtime + a segmentation model. Check the model license (popular ones are AGPL or non-commercial).
@@ -51,7 +51,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 ## Looking ahead: Arc, Dia, and what a remake has to plan for
 
-**Market moment.** Arc is being sunset on **Dec 22, 2026**, and The Browser Company (now owned by Atlassian) is all-in on Dia, an AI browser that is Mac-only with a Windows waitlist. That leaves Windows users of sidebar-tab browsers without a home right now. Zing's vertical tabs, split view and colour themes put it directly in that gap, and a no-AI, keeps-nothing browser is a clear contrast to Dia.
+**Market moment.** Arc is being sunset on **Dec 22, 2026**, and The Browser Company (now owned by Atlassian) is all-in on Dia, an AI browser that is Mac-only with a Windows waitlist. That leaves Windows users of sidebar-tab browsers without a home right now. Zing's vertical tabs, split view and colour themes put it directly in that gap, and a keeps-nothing browser is a clear contrast to Dia.
 
 **Lessons from Arc.** It died of complexity, a steep learning curve and no business model, not of bad engineering. Its Windows port took a year because they ported Swift to Windows (we avoid that). For Zing: keep a small core, make power features opt-in, and keep the first-run experience boring.
 
@@ -68,7 +68,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 - **Following upstream Krackn.** Krackn is still active (last pushed today), and a rewrite can't `git merge` it. Record the baseline Krackn SHA in `PARITY.md`, and add a weekly GitHub Action that lists new Krackn commits since that SHA and opens a "port or skip" issue.
 - **Web-compat traps.** Google sign-in blocks some embedded browsers (needs a clean Chrome UA, tested in CI); Widevine DRM needs castlabs' Electron build plus free EVS signing; passkeys/WebAuthn through Windows Hello need verifying in Electron early.
 - **Windows polish people notice.** Accessibility (ARIA across all chrome, keyboard navigation, `forced-colors` so themes respect Windows contrast themes), per-monitor DPI, Win11 snap layouts, default-browser flow, winget manifest + optional MSIX/Microsoft Store, SmartScreen reputation (signing).
-- **Legal/notices.** Chromium/Electron credits page, ffmpeg (LGPL/GPL, so download it via winget rather than bundling), yt-dlp, model licenses, and a name check on "Zing". Keep Krackn's scope note about school/work filters.
+- **Legal/notices.** Chromium/Electron credits page, ffmpeg (LGPL/GPL, so download it on first use rather than bundling), yt-dlp, model licenses, and a name check on "Zing". Keep Krackn's scope note about school/work filters.
 - **Privacy stance vs. future features.** Krackn "keeps nothing". Sync, imported data, the vault and crash reporting all store something, so each has to be opt-in, flip the privacy banner, and (for sync) be end-to-end encrypted, with a Railway backend that only ever sees ciphertext.
 
 ## Efficiency (Electron's weak spot, so it's designed in, not tuned later)
@@ -99,10 +99,10 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 **Startup**
 - Show the window on `ready-to-show` with only the chrome bundle. Defer blocklist refresh, update check, import detection and toolbox modules until after first paint.
-- Bundle with electron-vite/esbuild and enable the V8 compile cache for the main process. Code-split every Toolbox tool (three.js, graphing, ONNX, PDF) so it loads on first open.
+- Bundle with electron-vite/esbuild and enable the V8 compile cache for the main process. Code-split every Toolbox tool (graphing, ONNX, PDF) so it loads on first open.
 
 **Disk / install size**
-- Don't bundle ffmpeg or yt-dlp (get them via winget, which also avoids LGPL/GPL redistribution). The background-removal model downloads on first use from a GitHub Release with a SHA-256 check.
+- Don't bundle ffmpeg or yt-dlp (download them on first use from each project's own release, with a pinned SHA-256, which also avoids LGPL/GPL redistribution). The background-removal model downloads on first use from a GitHub Release with a SHA-256 check.
 - Use electron-builder `compression: maximum`, ASAR, prune devDependencies, and Electron fuses (disable `RunAsNode` etc., which also tightens security).
 - Debounced, atomic writes (temp file + rename) for `library.json`, session and vault, so there's no write per keystroke and no torn file on crash.
 
@@ -130,7 +130,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 **5. Themes (new)**: move from "accent on grey" to full themes where background, surfaces, tab strip, sidebar and start page all carry colour. 8–10 presets (e.g. Ocean, Sunset, Forest, Grape, Candy, Midnight, plus Mono for current fans), each with light/dark, and a custom theme from one seed colour, extending the existing hue-rotation + contrast-lift generator. Win11 Mica tint follows the theme. Keep the WCAG AA test over every generated token pair.
 
-**6. Toolbox parity**: Open a Link (4 methods), Diagnose, Network & VPN (Windows), Convert + format matrix, Download (yt-dlp, Save page via relay), Security (Windows checks), Viewer, Utilities, Graphing calculator, Background remover, Tool setup (winget).
+**6. Toolbox parity**: Open a Link (4 methods), Diagnose, Network & VPN (Windows), Convert + format matrix, Download (yt-dlp, Save page via relay), Viewer, Utilities, Graphing calculator, Background remover, Engines downloaded on first use.
 
 **6b. Password vault (new, replaces Keychain autofill)**: `vault.zing` in userData, encrypted with `safeStorage` (DPAPI) and unlocked with Windows Hello (WinRT `UserConsentVerifier` through a small napi addon). If Hello isn't set up, the vault shows an explicit "set up Windows Hello" error rather than falling back silently. Includes the key icon in sign-in fields, a save prompt on submit, exact-origin matching (not registrable domain), CSV import from Chrome/Edge/Bitwarden, the existing password generator, and a manage page in Settings. Keeps the privacy model honest: when the vault holds entries, the Settings privacy banner turns from green to a warning, the same way `restoreTabs` does. Tests: origin matching, the cross-origin-frame refusal, encryption round-trip.
 

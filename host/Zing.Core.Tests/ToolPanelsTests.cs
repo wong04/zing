@@ -147,8 +147,16 @@ public sealed class ToolPanelsTests
 		foreach (var tool in PanelTool.All) Assert.Equal(PanelContent.Tool(tool), PanelContent.FromId(PanelContent.Tool(tool).Id));
 		foreach (var section in PanelSection.All) Assert.Equal(PanelContent.Section(section), PanelContent.FromId(PanelContent.Section(section).Id));
 		Assert.Null(PanelContent.FromId("tool:Nope"));
+		Assert.Null(PanelContent.FromId("section:Security"));
 		Assert.Null(PanelContent.FromId("Hashes"));
 		Assert.Equal("tool:Hashes", PanelContent.Tool(PanelTool.Hash).Id);
+	}
+
+	[Fact]
+	public void The_links_page_is_a_tearable_section()
+	{
+		Assert.Equal(PanelContent.Section(PanelSection.Links), PanelContent.FromId("section:Links"));
+		Assert.True(PanelContent.Section(PanelSection.Links).IsTearable);
 	}
 
 	[Fact]
@@ -168,7 +176,7 @@ public sealed class ToolPanelsTests
 		Assert.Equal(new PanelSize(500, 620), PanelContent.Tool(PanelTool.Qr).PreferredSize);
 		Assert.Equal(new PanelSize(520, 540), PanelContent.Tool(PanelTool.Calculator).PreferredSize);
 		Assert.Equal(new PanelSize(460, 500), PanelContent.Tool(PanelTool.Uuid).PreferredSize);
-		Assert.Equal(new PanelSize(540, 620), PanelContent.Section(PanelSection.Security).PreferredSize);
+		Assert.Equal(new PanelSize(540, 620), PanelContent.Section(PanelSection.Network).PreferredSize);
 		Assert.Equal(new PanelSize(480, 540), PanelContent.Section(PanelSection.Download).PreferredSize);
 	}
 
