@@ -48,11 +48,12 @@ public sealed class EngineCatalog
 			// builds, which he publishes under the GitHub release tag below. GPL v3 (the "essentials" build links
 			// libx264 and libx265, which are GPL). Zing doesn't redistribute it and runs it as its own process, so
 			// the GPL covers FFmpeg and not Zing. Two things are NOT settled by that, and are the owner's to decide:
-			//  - HEVC (H.265): libx265 is a software encoder; patent pools (Access Advance, Via LA) license HEVC
-			//    implementations separately from the source licence, and this build does not carry a licence for
-			//    them. Zing gives the user the engine and doesn't ship or sell it, which is a position, not a
-			//    guarantee.
-			//  - MP3 encoding: libmp3lame (LGPL). The MP3 patents expired in 2017, so encoding is free of royalties.
+			//  - HEVC (H.265): libx265 is a software encoder under the GPL, but HEVC is also covered by patent
+			//    pools (Access Advance, Via LA) whose licences are separate from the source licence, and nothing
+			//    in this download grants one. Zing doesn't ship or sell the build; the person downloads it from its
+			//    publisher. That is a position, not legal advice or a guarantee.
+			//  - MP3 encoding: libmp3lame (LGPL). As far as is known the MP3 patents expired in 2017, which is
+			//    a general understanding to confirm, not a licence in this download.
 			new Engine(
 				EngineIds.Ffmpeg,
 				"9.0.2",
@@ -95,11 +96,11 @@ public sealed class EngineCatalog
 				"yt-dlp.exe",
 				"yt-dlp",
 				"The Unlicense"),
-			// IS-Net "general use" (xuebinqin/DIS, Apache-2.0 for code and weights as published in that repository),
-			// as converted to ONNX and hosted by rembg's v0.0.0 release. The DIS authors publish the original weights
-			// on Google Drive only, so rembg's GitHub release is the nearest stable URL, and it is a re-host by a
-			// third party: the owner should confirm that is acceptable. The MD5 below matches the one rembg's own
-			// source pins for this file.
+			// IS-Net "general use" (xuebinqin/DIS), converted to ONNX and hosted by rembg's v0.0.0 release. The DIS repository
+			// is Apache-2.0 ("our code and evaluation metric"); the weights' own licence and the terms of the data they were
+			// trained on (DIS5K has separate terms of use) are not stated, so the owner should confirm this reading. The DIS
+			// authors publish the original weights on Google Drive only, so rembg's GitHub release is the nearest stable URL
+			// and is a third-party re-host. Its MD5 matches the one rembg's own source pins for this file.
 			new Engine(
 				EngineIds.BackgroundModel,
 				"v0.0.0",
@@ -108,7 +109,7 @@ public sealed class EngineCatalog
 				178_648_008,
 				"isnet-general-use.onnx",
 				"Background remover model (IS-Net)",
-				"Apache-2.0"),
+				"Apache-2.0 (the DIS repository; the weights are not separately licensed in writing)"),
 		],
 		new Uri("https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS"));
 

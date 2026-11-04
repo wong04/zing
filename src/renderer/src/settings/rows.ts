@@ -42,6 +42,7 @@ export type CustomId =
 	| 'default-browser'
 	| 'shortcuts'
 	| 'tool-links'
+	| 'engines'
 	| 'sleeping-tabs'
 	| 'privacy-banner'
 	| 'clear-session'
@@ -264,6 +265,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 			detail: (s) => (s.preserveOriginals ? 'A clashing name gets a number added.' : 'Converted files replace existing ones.'),
 			warning: (s) => !s.preserveOriginals,
 		}),
+		{ type: 'custom', id: 'engines', keys: [] },
 	],
 	privacy: [
 		{ type: 'custom', id: 'privacy-banner', keys: [] },

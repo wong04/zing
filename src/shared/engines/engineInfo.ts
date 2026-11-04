@@ -1,3 +1,5 @@
+import { formatBytes } from '../format/formatBytes'
+
 // What the host's EngineStore reports (host/Zing.Core/Engines/EngineInfo.cs).
 
 export interface EngineInfo {
@@ -26,4 +28,9 @@ export interface EngineProgress {
 export interface YtDlpUpdate {
 	readonly version: string
 	readonly changed: boolean
+}
+
+export function describeEngine(engine: EngineInfo): string {
+	if (engine.installedVersion === undefined) return `Not downloaded · ${formatBytes(engine.downloadBytes)} download`
+	return `Downloaded · version ${engine.installedVersion} · ${formatBytes(engine.installedBytes)} on disk`
 }

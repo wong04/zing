@@ -18,7 +18,7 @@ const body = () => Promise.resolve({ default: () => null })
 
 describe('the tool registry', () => {
 	it('has no body for a tool nobody has registered yet', () => {
-		expect(toolComponent(tool(UtilityTool.tools))).toBeNull()
+		expect(toolComponent(tool(UtilityTool.bgRemove))).toBeNull()
 	})
 	it('wraps each registered tool by its panel id', () => {
 		const registry = buildRegistry([{ 'tool:Hashes': body }, { 'tool:UUID': body }])
@@ -41,6 +41,10 @@ describe('the real registry', () => {
 		const catalog = toolboxGroups.flatMap((group) => itemsIn(group))
 		const bodiless = catalog.filter((content) => toolComponent(content) === null).map(panelId)
 		expect(bodiless.sort()).toEqual([...laterPhase].sort())
+	})
+	it('has a body for Engines, which Settings opens and the Toolbox has no tile for', () => {
+		expect(toolComponent(tool(UtilityTool.tools))).not.toBeNull()
+		expect(toolboxGroups.flatMap((group) => itemsIn(group)).map(panelId)).not.toContain('tool:Engines')
 	})
 	it('lists no tool as later-phase once it has a body', () => {
 		expect(laterPhase.filter((id) => registeredToolIds().includes(id))).toEqual([])

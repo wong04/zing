@@ -1,0 +1,48 @@
+.engine-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.engine-row {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 10px 12px;
+	border: 1px solid var(--separator);
+	border-radius: var(--control-radius);
+	background: var(--control);
+}
+
+.engine-head {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+	align-items: baseline;
+	justify-content: space-between;
+}
+
+.engine-status {
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.engine-source,
+.engine-licence {
+	color: var(--muted);
+	font-size: 11px;
+	overflow-wrap: anywhere;
+}
+
+.engine-source {
+	font-family: ui-monospace, Consolas, monospace;
+}
+
+.engine-actions {
+	display: flex;
+	gap: 8px;
+	margin-top: 4px;
+}

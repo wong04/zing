@@ -5,6 +5,7 @@ import { MAX_SLEEP_MINUTES } from '@shared/session/sleepSettings'
 import { accentLabel, accentThemes, CUSTOM_ACCENT, swatchHex } from '@shared/theme/accent'
 import { allItems } from '@shared/toolbox/catalog'
 import { DEFAULT_TOOL_LINKS } from '@shared/toolbox/links'
+import { panelId, tool, UtilityTool } from '@shared/toolbox/panelContent'
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField, PillSlider, Toggle } from '../components'
 import { ShieldAlertIcon, ShieldCheckIcon } from '../components/icons'
@@ -159,6 +160,22 @@ function ToolLinksRow({ handle }: { handle: SettingsHandle }) {
 	)
 }
 
+/** The panel lives on the surface, not in the sheet, so the sheet gets out of its way. */
+async function openEngines(): Promise<void> {
+	await zing.closeSettings()
+	await zing.openPanel(panelId(tool(UtilityTool.tools)), { x: window.screenX + 560, y: window.screenY + 160 })
+}
+
+function EnginesRow() {
+	return (
+		<SettingRowShell title="Engines" detail="FFmpeg, ImageMagick, Pandoc, yt-dlp and the background model. Each downloads only when you ask, with its size and source shown first.">
+			<PillButton variant="outlined" size="small" aria-label="Manage engines" onClick={() => void openEngines()}>
+				Manage
+			</PillButton>
+		</SettingRowShell>
+	)
+}
+
 function SleepingTabsRows({ handle }: { handle: SettingsHandle }) {
 	const sleep = handle.settings.sleepingTabs
 	const update = (patch: Partial<typeof sleep>): void => handle.set('sleepingTabs', { ...sleep, ...patch })
@@ -264,6 +281,8 @@ export function CustomRow({ id, handle, version }: { id: CustomId; handle: Setti
 			return <ShortcutEditor handle={handle} />
 		case 'tool-links':
 			return <ToolLinksRow handle={handle} />
+		case 'engines':
+			return <EnginesRow />
 		case 'sleeping-tabs':
 			return <SleepingTabsRows handle={handle} />
 		case 'privacy-banner':
