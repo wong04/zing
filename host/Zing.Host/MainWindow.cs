@@ -179,7 +179,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	{
 		var settings = _app.Services.Settings;
 		// Created after the chrome view, so above it; overlays are popups above both.
-		return new WebView2Page(_window, _scope, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => StartPage.Handle(url, settings.Snapshot()), this, _app.PersistentProfile, RelayedSiteFor(_app.Services));
+		return new WebView2Page(_window, _scope, events, _environment ?? throw new InvalidOperationException("No WebView2 environment yet"), url => _app.Services.Threats?.Serve(url, settings.Snapshot()) ?? StartPage.Handle(url, settings.Snapshot()), this, _app.PersistentProfile, RelayedSiteFor(_app.Services));
 	}
 
 	public void Show(IPage page)

@@ -61,8 +61,9 @@ public interface IWindowHost
 /// <param name="BrowsingData">Settings' Clear browsing session; null where the host has no engine to clear.</param>
 /// <param name="Net">The network checks Diagnose makes; null uses the real ones, a test passes fakes.</param>
 /// <param name="Dns">Encrypted DNS for the whole PC (Network &amp; VPN); null where the host can't change DNS.</param>
+/// <param name="Threats">Link inspection, with the hosts allowed this session; one per app. Null where the host doesn't inspect links.</param>
 /// <param name="Consent">Whether third parties may be asked to open a link, for the session and every window. One per app: required, so a window cannot end up with its own.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null)
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -707,9 +708,10 @@ public sealed class ChromeApi : IDisposable
 			if (StartPage.IsStartPage(record.Url) && Tabs.PageOf(record.Id) is { } page) act(page);
 	}
 
-	/// <summary>The start page's search and settings links are Zing's to handle; no web page may open Settings.</summary>
+	/// <summary>Link inspection, then the start page's search and settings links, which are Zing's to handle; no web page may open Settings.</summary>
 	private NavigationDecision? InterceptNavigation(string from, string to)
 	{
+		if (_app.Threats?.Check(from, to) is { } inspected) return inspected;
 		switch (StartPage.ClassifyNavigation(from, to, Setting("searchEngine")))
 		{
 			case StartPageNavigation.Search search:

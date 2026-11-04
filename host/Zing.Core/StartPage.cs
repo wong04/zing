@@ -214,13 +214,16 @@ public static class StartPage
 	public static string Html(JsonObject settings) => Html(new StartPageInput(
 		SearchFormAction(TextSetting(settings, "searchEngine")),
 		StartShortcuts.FromSetting(Setting(settings, "startShortcuts")),
-		Theme(TextSetting(settings, "accent"), TextSetting(settings, "customColor"))));
+		ThemeFor(settings)));
+
+	/// <summary>The colours of the current accent, for any page Zing serves itself.</summary>
+	public static StartPageTheme ThemeFor(JsonObject settings) => Theme(TextSetting(settings, "accent"), TextSetting(settings, "customColor"));
 
 	/// <summary>
 	/// The host of a zing: URL as the URL standard reads it: zing is not a special scheme, so the host keeps its
 	/// case. Null for anything that is not a zing: URL with a host.
 	/// </summary>
-	private static string? ZingHost(string url)
+	internal static string? ZingHost(string url)
 	{
 		if (!url.StartsWith("zing://", StringComparison.OrdinalIgnoreCase)) return null;
 		var authority = url["zing://".Length..].Split('/', '?', '#')[0];
@@ -261,7 +264,7 @@ public static class StartPage
 	}
 
 	/// <summary>URLSearchParams.get: the first value for <paramref name="name"/>, form-decoded, or null.</summary>
-	private static string? QueryParam(string url, string name)
+	public static string? QueryParam(string url, string name)
 	{
 		var start = url.IndexOf('?');
 		if (start < 0) return null;

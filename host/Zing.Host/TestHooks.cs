@@ -35,6 +35,17 @@ public static class TestHooks
 		return string.Join(' ', args);
 	}
 
+	/// <summary>
+	/// What link inspection looks at in an e2e run: ZING_E2E_INSPECT_AS is JSON {"127.0.0.1:port": "a.stand-in.host"}, so a test's local server
+	/// can stand for a flagged site without a real rule being weakened. Null outside an e2e run, and when it isn't set.
+	/// </summary>
+	public static Func<Uri, Uri>? InspectedAs()
+	{
+		if (!IsEndToEndRun || Environment.GetEnvironmentVariable("ZING_E2E_INSPECT_AS") is not { } json) return null;
+		var standIns = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? throw new InvalidOperationException("ZING_E2E_INSPECT_AS must be a JSON object");
+		return uri => standIns.TryGetValue(uri.Authority, out var host) ? new UriBuilder(uri) { Host = host, Port = -1 }.Uri : uri;
+	}
+
 	/// <summary>The app clock. ZING_TEST_CLOCK=1 in an e2e run gives one a test can move forward (test:advance-clock).</summary>
 	public static Zing.Core.IClock Clock { get; } = IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_TEST_CLOCK") == "1" ? new Zing.Core.OffsetClock() : new Zing.Core.SystemClock();
 

@@ -20,6 +20,8 @@ public sealed class WebView2Page : IPage
 	private string? _zingNavigation;
 	/// <summary>The relay address the main-frame load under way was allowed for, so only that document is served.</summary>
 	private string? _approvedDocument;
+	/// <summary>The address of a navigation that was turned into a warning: the engine still sends its request, which is refused.</summary>
+	private string? _warnedDocument;
 	private bool _chainIsRelay;
 	/// <summary>A popup of a relayed page: relayed from its birth, while it is still on its blank first document.</summary>
 	private bool _bornRelayed;
@@ -384,9 +386,14 @@ public sealed class WebView2Page : IPage
 					return;
 				case NavigationDecision.Redirect redirect:
 					e.Cancel = true;
+					// Visit anyway on a relayed address: Zing is sending the page back onto the relay, as the relay rule above does.
+					if (RelayedContent.IsRelayUrl(redirect.Url)) _zingNavigation = redirect.Url;
+					_warnedDocument = redirect.Url.StartsWith(StartPage.Scheme + "://", StringComparison.OrdinalIgnoreCase) ? e.Uri : null;
 					core.Navigate(redirect.Url);
 					return;
 			}
+			// The warning page itself starts after the cancelled navigation and must not lift the refusal.
+			if (!e.Uri.StartsWith(StartPage.Scheme + "://", StringComparison.OrdinalIgnoreCase)) _warnedDocument = null;
 			_navigation = e.NavigationId;
 			var toRelay = RelayedContent.IsRelayUrl(e.Uri);
 			if (!e.IsRedirected) _chainIsRelay = toRelay;
@@ -536,7 +543,8 @@ public sealed class WebView2Page : IPage
 		}
 		if (e.Request.Uri.StartsWith("http", StringComparison.OrdinalIgnoreCase))
 		{
-			if (!RelayedNavigation.MayRequestDocument(TopOf(sender), e.Request.Uri, _approvedDocument)) e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
+			var warned = e.ResourceContext == CoreWebView2WebResourceContext.Document && _warnedDocument is not null && RelayedNavigation.Same(_warnedDocument, e.Request.Uri);
+			if (warned || !RelayedNavigation.MayRequestDocument(TopOf(sender), e.Request.Uri, _approvedDocument)) e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
 			return;
 		}
 		CoreWebView2WebResourceResponse response;
