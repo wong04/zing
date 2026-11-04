@@ -694,7 +694,7 @@ async function runLink(panel: Locator, address: string): Promise<void> {
 }
 
 const consentSentence =
-	"This asks an outside service to fetch the page for you, so that service sees the address, and for a reader relay the page too. Zing doesn't send it your cookies or sign-ins. If this network belongs to a school or employer, getting around its filter may break their rules. That's your call."
+	"This asks an outside service to fetch the page for you, so that service sees the address, and for a reader relay the page too. Files the page you open asks for may go the same way. Zing doesn't send it your cookies or sign-ins. If this network belongs to a school or employer, getting around its filter may break their rules. That's your call."
 
 test('a failed load offers Open a Link and Diagnose, and nothing runs without a click', async () => {
 	const stand = await methodsStand(blockedSite)

@@ -12,7 +12,7 @@ import './web.css'
 
 /** The words of the first-use dialog, as the design gives them. */
 export const consentText =
-	"This asks an outside service to fetch the page for you, so that service sees the address, and for a reader relay the page too. Zing doesn't send it your cookies or sign-ins. If this network belongs to a school or employer, getting around its filter may break their rules. That's your call."
+	"This asks an outside service to fetch the page for you, so that service sees the address, and for a reader relay the page too. Files the page you open asks for may go the same way. Zing doesn't send it your cookies or sign-ins. If this network belongs to a school or employer, getting around its filter may break their rules. That's your call."
 
 const warnedText = "This address looks unsafe, so nothing was sent to it or to any outside service. A warning is open in a new tab; Visit anyway there opens it through the relay."
 
