@@ -72,6 +72,27 @@ public sealed class RelayedNavigationTests
 		Assert.True(RelayedNavigation.NewWindowAllowed(Relay, "zing-relay://b.com/"));
 		Assert.False(RelayedNavigation.NewWindowAllowed(Relay, "zing://home"));
 		Assert.True(RelayedNavigation.NewWindowAllowed(Web, "https://x.com/"));
+		Assert.True(RelayedNavigation.NewWindowAllowed(Relay, "https://x.com/"));
+	}
+
+	[Fact]
+	public void ARelayedPagesNewWindowOnAnHttpsAddressOpensOnTheRelayAsItsLinksDo()
+	{
+		Assert.Equal("zing-relay://x.com/a?b=1", RelayedNavigation.NewWindowTarget(Relay, "https://x.com/a?b=1"));
+		Assert.Equal("zing-relay://b.com/", RelayedNavigation.NewWindowTarget(Relay, "zing-relay://b.com/"));
+		Assert.Null(RelayedNavigation.NewWindowTarget(Relay, "http://x.com/"));
+		Assert.Null(RelayedNavigation.NewWindowTarget(Relay, "file:///c:/x"));
+		Assert.Null(RelayedNavigation.NewWindowTarget(Web, Relay));
+		Assert.Equal("https://x.com/", RelayedNavigation.NewWindowTarget(Web, "https://x.com/"));
+	}
+
+	[Fact]
+	public void APlainHttpLinkFromARelayedPageIsRefusedWithAReasonAndNothingElseNeedsOne()
+	{
+		Assert.Contains("https", RelayedNavigation.PlainHttpNotice(Relay, "http://x.com/"));
+		Assert.Null(RelayedNavigation.PlainHttpNotice(Relay, "https://x.com/"));
+		Assert.Null(RelayedNavigation.PlainHttpNotice(Web, "http://x.com/"));
+		Assert.Null(RelayedNavigation.PlainHttpNotice(Relay, "file:///c:/x"));
 	}
 
 	[Fact]

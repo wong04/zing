@@ -407,3 +407,19 @@ test('a typed address in a relayed tab whose server redirect carries a tracker i
 	await stand.close()
 	await new Promise<void>((resolve) => web.server.close(() => resolve()))
 })
+
+test('a relayed page opening an https address in a new window gets a relayed window, as its links do', async () => {
+	const stand = await relayStand((target) => ({
+		status: 200,
+		body: target.host === 'site.test' ? `<!doctype html><title>Site</title><a id="go" target="_blank" href="https://other.test/p">go</a>` : '<!doctype html><title>Other</title><p id="t">other ok</p>',
+	}))
+	const zing = await launchZing({ env: { ZING_E2E_RELAY_URL: stand.origin } })
+	await openRelayed(zing, 'https://site.test/')
+	const site = await pageWhere(zing.browser, (p) => p.url().startsWith('zing-relay://site.test'))
+	await press(site, '#go')
+	// The new window's page is not among the engine's pages the test can reach, so the tab list and what the relay fetched say it worked.
+	await expect.poll(async () => (await tabsOf(zing)).tabs.map((t) => t.url)).toContain('zing-relay://other.test/p')
+	await expect.poll(() => stand.fetched).toEqual(['https://site.test/', 'https://other.test/p'])
+	await zing.close()
+	await stand.close()
+})

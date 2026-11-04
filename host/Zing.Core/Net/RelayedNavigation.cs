@@ -57,12 +57,25 @@ public static class RelayedNavigation
 		return to.StartsWith("about:", StringComparison.OrdinalIgnoreCase);
 	}
 
-	public static bool NewWindowAllowed(string opener, string target)
+	public static bool NewWindowAllowed(string opener, string target) => NewWindowTarget(opener, target) is not null;
+
+	/// <summary>Where a new window goes, or null if none opens: an https address asked for by a relayed page goes onto the relay, as the same link in the page's own window does.</summary>
+	public static string? NewWindowTarget(string opener, string target)
 	{
 		var toRelay = RelayedContent.IsRelayUrl(target);
 		var fromRelay = RelayedContent.IsRelayUrl(opener);
-		if (toRelay) return fromRelay;
-		return !fromRelay;
+		if (toRelay) return fromRelay ? target : null;
+		if (!fromRelay) return target;
+		var decision = StayInRelay(target);
+		return decision is NavigationDecision.Redirect redirect ? redirect.Url : null;
+	}
+
+	/// <summary>What to tell the person when a relayed page's link to a plain http address is refused: nothing else about a refusal needs saying, since the page asked for it.</summary>
+	public static string? PlainHttpNotice(string from, string to)
+	{
+		if (!RelayedContent.IsRelayUrl(from)) return null;
+		if (!to.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) return null;
+		return "A relayed page can only open https links, so this http link wasn't opened.";
 	}
 
 	/// <summary>

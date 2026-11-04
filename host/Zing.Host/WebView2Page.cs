@@ -378,6 +378,7 @@ public sealed class WebView2Page : IPage
 			if (relayDecision is NavigationDecision.Cancelled)
 			{
 				e.Cancel = true;
+				if (origin == NavigationOrigin.Page && RelayedNavigation.PlainHttpNotice(TopOf(core), e.Uri) is { } refused) _events.Notice(refused);
 				return;
 			}
 			// Links a page offers are cleaned at navigation time, server redirects included.
@@ -668,22 +669,26 @@ public sealed class WebView2Page : IPage
 	/// </summary>
 	private void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs e)
 	{
-		// A relayed page opens relayed windows only, and nothing else opens one onto the relay; none opens onto Visit anyway.
-		if (!RelayedNavigation.NewWindowAllowed(TopOf(sender), e.Uri) || !ThreatGate.NewWindowAllowed(e.Uri))
+		// A relayed page opens relayed windows only (an https address goes onto the relay, as its links do), and nothing else opens one
+		// onto the relay; none opens onto Visit anyway.
+		var target = RelayedNavigation.NewWindowTarget(TopOf(sender), e.Uri);
+		if (target is null || !ThreatGate.NewWindowAllowed(e.Uri))
 		{
 			e.Handled = true;
+			if (RelayedNavigation.PlainHttpNotice(TopOf(sender), e.Uri) is { } refused) _events.Notice(refused);
 			return;
 		}
-		Background(OpenPopupAsync(e), "popup");
+		Background(OpenPopupAsync(e, target), "popup");
 	}
 
-	private async Task OpenPopupAsync(CoreWebView2NewWindowRequestedEventArgs e)
+	private async Task OpenPopupAsync(CoreWebView2NewWindowRequestedEventArgs e, string target)
 	{
 		var deferral = e.GetDeferral();
 		try
 		{
-			var popup = (WebView2Page)_events.Popup(e.Uri, background: false);
-			if (RelayedContent.IsRelayUrl(e.Uri)) popup.AllowFirstNavigation(e.Uri);
+			var popup = (WebView2Page)_events.Popup(target, background: false);
+			// The engine starts the window on the address the page gave; for a mapped one that navigation is sent onto the relay by the rule for a relayed page's own.
+			if (RelayedContent.IsRelayUrl(target)) popup.AllowFirstNavigation(target);
 			await popup.Ready;
 			// The opener or the popup may have closed while the engine started it: then there is no window to hand over.
 			if (IsOpen && popup.IsOpen && popup.IsStarted) e.NewWindow = popup.Core;
