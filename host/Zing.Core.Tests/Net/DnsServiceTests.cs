@@ -14,14 +14,20 @@ public sealed class DnsServiceTests : IDisposable
 
 		public Task<DnsSnapshot> ReadAsync(CancellationToken ct) => Task.FromResult(Now);
 
-		/// <summary>The elevated process never ends, as one stuck behind a prompt nobody answers.</summary>
+		/// <summary>The elevated process doesn't end until <see cref="Finish"/> or <see cref="Crash"/>, as one stuck behind a prompt nobody answers.</summary>
 		public bool Hangs { get; set; }
+
+		private readonly TaskCompletionSource _ends = new();
+
+		public void Finish() => _ends.SetResult();
+
+		public void Crash(Exception error) => _ends.SetException(error);
 
 		public async Task<ElevatedRun> RunElevatedAsync(string script, CancellationToken ct)
 		{
 			BeforeRun?.Invoke();
 			Ran.Add(script);
-			if (Hangs) await Task.Delay(Timeout.Infinite, ct);
+			if (Hangs) await _ends.Task;
 			return Result;
 		}
 	}
@@ -33,7 +39,7 @@ public sealed class DnsServiceTests : IDisposable
 
 	public DnsServiceTests()
 	{
-		_service = new DnsService(_system, BackupPath, () => new DateTimeOffset(2026, 11, 3, 9, 0, 0, TimeSpan.Zero));
+		_service = new DnsService(_system, BackupPath, () => new DateTimeOffset(2026, 11, 3, 9, 0, 0, TimeSpan.Zero), _ => { });
 	}
 
 	public void Dispose()
@@ -241,7 +247,7 @@ public sealed class DnsServiceTests : IDisposable
 	[Fact]
 	public async Task A_run_that_never_ends_is_given_up_on_with_the_outcome_unknown_and_undo_stays_available()
 	{
-		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, TimeSpan.FromMilliseconds(150));
+		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, _ => { }, TimeSpan.FromMilliseconds(150));
 		_system.Hangs = true;
 		var preview = await service.PreviewAsync("cloudflare");
 		var error = await Assert.ThrowsAsync<DnsOutcomeUnknownError>(() => service.ApplyAsync("cloudflare", preview.Token));
@@ -254,13 +260,76 @@ public sealed class DnsServiceTests : IDisposable
 	[Fact]
 	public async Task An_undo_that_never_ends_keeps_the_saved_settings()
 	{
-		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, TimeSpan.FromMilliseconds(150));
+		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, _ => { }, TimeSpan.FromMilliseconds(150));
 		var first = await service.PreviewAsync("cloudflare");
 		await service.ApplyAsync("cloudflare", first.Token);
 		_system.Hangs = true;
 		var undo = await service.PreviewAsync("cloudflare");
 		await Assert.ThrowsAsync<DnsOutcomeUnknownError>(() => service.UndoAsync(undo.Token));
 		Assert.True(File.Exists(BackupPath));
+	}
+
+	[Fact]
+	public async Task A_run_given_up_on_blocks_new_runs_until_it_ends_so_an_old_prompt_cannot_apply_after_an_undo()
+	{
+		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, _ => { }, TimeSpan.FromMilliseconds(150));
+		_system.Hangs = true;
+		var preview = await service.PreviewAsync("cloudflare");
+		await Assert.ThrowsAsync<DnsOutcomeUnknownError>(() => service.ApplyAsync("cloudflare", preview.Token));
+		_system.Hangs = false;
+		var undo = await service.PreviewAsync("cloudflare");
+		// The old prompt could still be accepted: nothing may run, or it would apply with the saved settings already gone.
+		var waiting = await Assert.ThrowsAsync<DnsEarlierRunWaitingError>(() => service.UndoAsync(undo.Token));
+		Assert.Contains("admin", waiting.Message, StringComparison.OrdinalIgnoreCase);
+		await Assert.ThrowsAsync<DnsEarlierRunWaitingError>(() => service.ApplyAsync("cloudflare", undo.Token));
+		Assert.Single(_system.Ran);
+		Assert.True(File.Exists(BackupPath));
+		// Previews still work, and show the real state.
+		Assert.True((await service.PreviewAsync("cloudflare")).Applied);
+		_system.Finish();
+		var outcome = await service.UndoAsync(undo.Token);
+		Assert.Equal(DnsOutcome.Undone, outcome.Status);
+		Assert.False(File.Exists(BackupPath));
+	}
+
+	[Fact]
+	public async Task A_run_given_up_on_that_finishes_changes_nothing_but_the_marker()
+	{
+		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, _ => { }, TimeSpan.FromMilliseconds(150));
+		_system.Hangs = true;
+		var preview = await service.PreviewAsync("cloudflare");
+		await Assert.ThrowsAsync<DnsOutcomeUnknownError>(() => service.ApplyAsync("cloudflare", preview.Token));
+		var saved = await File.ReadAllTextAsync(BackupPath, TestContext.Current.CancellationToken);
+		_system.Finish();
+		Assert.Equal(saved, await File.ReadAllTextAsync(BackupPath, TestContext.Current.CancellationToken));
+		Assert.True((await service.PreviewAsync("cloudflare")).Applied);
+	}
+
+	[Fact]
+	public async Task A_run_given_up_on_that_fails_later_is_reported_not_lost()
+	{
+		var faults = new List<Exception>();
+		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, faults.Add, TimeSpan.FromMilliseconds(150));
+		_system.Hangs = true;
+		var preview = await service.PreviewAsync("cloudflare");
+		await Assert.ThrowsAsync<DnsOutcomeUnknownError>(() => service.ApplyAsync("cloudflare", preview.Token));
+		_system.Crash(new InvalidOperationException("elevated start failed"));
+		Assert.Equal("elevated start failed", Assert.Single(faults).Message);
+		// And the marker cleared: the person can go on.
+		_system.Hangs = false;
+		var undo = await service.PreviewAsync("cloudflare");
+		Assert.Equal(DnsOutcome.Undone, (await service.UndoAsync(undo.Token)).Status);
+	}
+
+	[Fact]
+	public async Task The_unknown_outcome_message_says_an_open_prompt_can_still_change_things()
+	{
+		var service = new DnsService(_system, BackupPath, () => DateTimeOffset.UnixEpoch, _ => { }, TimeSpan.FromMilliseconds(150));
+		_system.Hangs = true;
+		var preview = await service.PreviewAsync("cloudflare");
+		var error = await Assert.ThrowsAsync<DnsOutcomeUnknownError>(() => service.ApplyAsync("cloudflare", preview.Token));
+		Assert.Contains("prompt", error.Message, StringComparison.OrdinalIgnoreCase);
+		Assert.Contains("still", error.Message, StringComparison.OrdinalIgnoreCase);
 	}
 
 	[Fact]

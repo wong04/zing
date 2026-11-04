@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace Zing.Core.Net;
 
 /// <summary>An encrypted DNS service and where Windows reaches it: the servers it answers on and the address it speaks HTTPS at.</summary>
@@ -17,10 +19,10 @@ public static class DnsProviders
 		["quad9"] = new("Quad9", ["9.9.9.9", "149.112.112.112"], ["2620:fe::fe", "2620:fe::9"], "https://dns.quad9.net/dns-query"),
 	};
 
-	private static readonly HashSet<string> Servers = [.. All.Values.SelectMany(provider => provider.Servers)];
+	private static readonly HashSet<string> Servers = [.. All.Values.SelectMany(provider => provider.Servers).Select(a => IPAddress.Parse(a).ToString())];
 
 	/// <summary>Whether an address is one of the fixed list's servers, as the system writes it.</summary>
-	public static bool IsKnownServer(string address) => Servers.Contains(address.ToLowerInvariant());
+	public static bool IsKnownServer(string address) => DnsAddresses.TryNormalize(address, out var normal) && Servers.Contains(normal);
 
 	public static DnsProvider Get(string key) => All.TryGetValue(key, out var provider) ? provider : throw new UnknownDohProviderError(key);
 }

@@ -302,6 +302,17 @@ public sealed class DnsScriptTests
 	}
 
 	[Fact]
+	public void A_server_written_another_way_is_still_that_server()
+	{
+		const string json = """{"adapters":[],"dohSupported":true,"doh":[{"address":"2606:4700:4700:0:0:0:0:1111","template":"https://cloudflare-dns.com/dns-query","allowFallbackToUdp":false,"autoUpgrade":true}]}""";
+		Assert.Equal("2606:4700:4700::1111", Assert.Single(DnsSnapshot.Parse(json).Doh).Address);
+		Assert.True(DnsProviders.IsKnownServer("2606:4700:4700:0000:0000:0000:0000:1001"));
+		Assert.True(DnsProviders.IsKnownServer("2620:FE::FE"));
+		Assert.False(DnsProviders.IsKnownServer("1"));
+		Assert.False(DnsProviders.IsKnownServer("not an address"));
+	}
+
+	[Fact]
 	public void An_odd_entry_for_a_providers_own_server_is_still_an_error()
 	{
 		const string json = """{"adapters":[],"dohSupported":true,"doh":[{"address":"1.1.1.1","template":"ftp://x","allowFallbackToUdp":false,"autoUpgrade":false}]}""";

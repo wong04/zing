@@ -71,12 +71,16 @@ public static partial class DnsAddresses
 	private static partial Regex Characters();
 
 	/// <summary>The address in the form the system prints it. Refuses anything that is not an IP address, whatever it contains.</summary>
-	public static string Normalize(string value)
+	public static string Normalize(string value) => TryNormalize(value, out var normal) ? normal : throw new InvalidDnsAddressError(value);
+
+	public static bool TryNormalize(string value, out string normal)
 	{
-		if (!Characters().IsMatch(value) || !IPAddress.TryParse(value, out var address)) throw new InvalidDnsAddressError(value);
+		normal = "";
+		if (!Characters().IsMatch(value) || !IPAddress.TryParse(value, out var address)) return false;
 		// "1" parses as 0.0.0.1; a server is written out in full.
-		if (address.AddressFamily == AddressFamily.InterNetwork && value.Count(c => c == '.') != 3) throw new InvalidDnsAddressError(value);
-		return address.ToString();
+		if (address.AddressFamily == AddressFamily.InterNetwork && value.Count(c => c == '.') != 3) return false;
+		normal = address.ToString();
+		return true;
 	}
 
 	public static string Normalize(string value, AddressFamily family)

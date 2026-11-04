@@ -25,12 +25,17 @@ public sealed record DnsOutcome(string Status, DnsPreview? Preview)
 /// Encrypted DNS for the whole PC: shows the script, runs it after a click, and keeps the previous settings until Undo.
 /// The renderer never supplies script text; it names the script it was shown by a token and the host builds it again.
 /// </summary>
+/// <param name="reportFault">Told of a run that was given up on and then failed, since nobody is waiting on it to throw to.</param>
 /// <param name="runLimit">How long an elevated run may take before it is given up on; two minutes by default.</param>
-public sealed class DnsService(IDnsSystem system, string backupPath, Func<DateTimeOffset> now, TimeSpan? runLimit = null)
+public sealed class DnsService(IDnsSystem system, string backupPath, Func<DateTimeOffset> now, Action<Exception> reportFault, TimeSpan? runLimit = null)
 {
 	// One change at a time, so a double click can't run a script twice or save a backup of already-changed settings.
 	private readonly SemaphoreSlim _gate = new(1, 1);
 	private readonly TimeSpan _runLimit = runLimit ?? TimeSpan.FromMinutes(2);
+
+	// A run given up on is not stopped: its admin prompt can stay open and still be accepted. Until it ends, nothing else may run, or
+	// an old Apply could land after an Undo has removed the settings it needs.
+	private Task? _abandoned;
 
 	public async Task<DnsPreview> PreviewAsync(string provider)
 	{
@@ -53,6 +58,7 @@ public sealed class DnsService(IDnsSystem system, string backupPath, Func<DateTi
 		await _gate.WaitAsync();
 		try
 		{
+			RefuseWhileEarlierRunWaits();
 			if (DnsBackup.Exists(backupPath))
 			{
 				// A corrupt file is reported as that; a good one means the originals are already saved and must not be overwritten.
@@ -92,6 +98,7 @@ public sealed class DnsService(IDnsSystem system, string backupPath, Func<DateTi
 		await _gate.WaitAsync();
 		try
 		{
+			RefuseWhileEarlierRunWaits();
 			var saved = DnsBackup.Load(backupPath);
 			var preview = UndoPreview(saved);
 			if (preview.Token != token) return new DnsOutcome(DnsOutcome.Changed, preview);
@@ -116,15 +123,24 @@ public sealed class DnsService(IDnsSystem system, string backupPath, Func<DateTi
 	/// <summary>A run that hangs would hold the lock for good. The saved settings stay, as the script may have changed some.</summary>
 	private async Task<ElevatedRun> RunAsync(string script)
 	{
-		using var limit = new CancellationTokenSource(_runLimit);
+		var run = system.RunElevatedAsync(script, CancellationToken.None);
 		try
 		{
-			return await system.RunElevatedAsync(script, limit.Token);
+			return await run.WaitAsync(_runLimit);
 		}
-		catch (OperationCanceledException) when (limit.IsCancellationRequested)
+		catch (TimeoutException)
 		{
+			_abandoned = run;
+			// Observed here: nobody awaits it any more, and its failure must neither vanish nor surface as an unobserved task fault.
+			_ = run.ContinueWith(task => reportFault(task.Exception!.GetBaseException()), CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 			throw new DnsOutcomeUnknownError();
 		}
+	}
+
+	private void RefuseWhileEarlierRunWaits()
+	{
+		if (_abandoned is not { IsCompleted: false }) return;
+		throw new DnsEarlierRunWaitingError();
 	}
 
 	private DnsPreview ApplyPreview(string provider, DnsSnapshot snapshot)

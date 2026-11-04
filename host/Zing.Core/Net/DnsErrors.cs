@@ -39,7 +39,15 @@ public sealed class NoEncryptedDnsError : NetError
 /// <summary>The elevated script didn't finish in time, so what it did is not known. The saved settings are kept.</summary>
 public sealed class DnsOutcomeUnknownError : NetError
 {
-	public DnsOutcomeUnknownError() : base("Windows didn't report back in time, so it isn't known whether your DNS settings changed. Check them in Windows Settings (Network & internet, then your connection's DNS). Zing kept your previous settings, so Undo is still available.")
+	public DnsOutcomeUnknownError() : base("Windows didn't report back in time, so it isn't known whether your DNS settings changed. An administrator prompt that is still open can still make the change if you accept it, so close it. Check your DNS settings in Windows Settings (Network & internet, then your connection's DNS). Zing kept your previous settings, so Undo will be available once that earlier run has ended.")
+	{
+	}
+}
+
+/// <summary>A run that was given up on hasn't ended, so its administrator prompt may still be accepted.</summary>
+public sealed class DnsEarlierRunWaitingError : NetError
+{
+	public DnsEarlierRunWaitingError() : base("An earlier run is still waiting for an answer from Windows. Close its administrator prompt (or finish it), then try again.")
 	{
 	}
 }

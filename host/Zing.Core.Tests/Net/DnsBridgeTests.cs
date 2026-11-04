@@ -28,7 +28,7 @@ public sealed class DnsBridgeTests : IDisposable
 	public DnsBridgeTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		var service = new DnsService(_system, Path.Combine(_directory, "dns-before.json"), () => DateTimeOffset.UnixEpoch);
+		var service = new DnsService(_system, Path.Combine(_directory, "dns-before.json"), () => DateTimeOffset.UnixEpoch, _ => { });
 		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), Dns: service), new FakeWindowHost(), "test");
 		_api.Start([], "about:blank");
 		_unsupported = new ChromeApi(_other, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent()), new FakeWindowHost(), "test");
