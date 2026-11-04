@@ -28,7 +28,7 @@ function noticeFor(outcome: DnsOutcome, shown: DnsPreview): string {
 		case 'declined':
 			return 'Nothing changed. Windows asked for permission and it was refused.'
 		case 'changed':
-			return 'Your network adapters changed since the script was shown, so nothing ran. The script below is the new one: read it, then press the button again.'
+			return 'The script changed since it was shown, so nothing ran. Here is the new one: read it, then press the button again.'
 	}
 }
 

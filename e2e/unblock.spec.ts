@@ -1085,7 +1085,7 @@ test('adapters that changed after the script was shown give a new script to read
 	const adapters = { adapters: [{ name: 'Docking station', v4: '', v6enabled: false, v6: null }], doh: [], dohSupported: true }
 	await hook(zing, { action: 'dns-stub', adapters: JSON.stringify(adapters) })
 	await panel.getByRole('button', { name: 'Apply', exact: true }).click()
-	await expect(panel.getByTestId('dns-notice')).toContainText('changed since')
+	await expect(panel.getByTestId('dns-notice')).toContainText('The script changed since it was shown')
 	await expect(dnsScript(panel)).toHaveValue(/'Docking station'/)
 	expect(dnsRan(zing)).toEqual([])
 	expect(existsSync(dnsBackup(zing))).toBe(false)
