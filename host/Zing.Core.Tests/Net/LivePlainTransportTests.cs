@@ -78,7 +78,7 @@ public sealed class LivePlainTransportTests
 		var seen = new List<RelayAttempt>();
 		var engine = new RelayEngine(Transport(), "cloudflare", seen.Add);
 		var error = await Assert.ThrowsAsync<AllStrategiesFailedError>(() => engine.OpenAsync(server.To("/").AbsoluteUri, new RelayConsent(), CancellationToken.None));
-		Assert.Equal(["Direct:Trying", "Direct:Failed", "DohPinned:Trying", "DohPinned:Failed", "ReaderRelay:Skipped", "Wayback:Skipped"], seen.Select(a => $"{a.Strategy}:{a.Status}"));
+		Assert.Equal(["Direct:Trying", "Direct:Failed", "DohPinned:Skipped", "ReaderRelay:Skipped", "Wayback:Skipped"], seen.Select(a => $"{a.Strategy}:{a.Status}"));
 		Assert.Contains("redirected somewhere Zing wouldn't follow", seen[1].Reason);
 		Assert.NotEmpty(error.Attempts);
 	}
@@ -98,7 +98,7 @@ public sealed class LivePlainTransportTests
 		var engine = new RelayEngine(Transport(), "cloudflare", seen.Add);
 		await Assert.ThrowsAsync<AllStrategiesFailedError>(() => engine.OpenAsync(server.To("/").AbsoluteUri, new RelayConsent(), CancellationToken.None));
 		Assert.Equal(AttemptStatus.Failed, seen[1].Status);
-		Assert.Equal(AttemptStatus.Trying, seen[2].Status);
+		Assert.Equal(AttemptStatus.Skipped, seen[2].Status);
 	}
 
 	[Fact]
