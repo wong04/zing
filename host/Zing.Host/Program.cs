@@ -1,6 +1,7 @@
 using Microsoft.Web.WebView2.Core;
 using WinRT;
 using Zing.Core;
+using Zing.Core.Engines;
 
 namespace Zing.Host;
 
@@ -221,7 +222,23 @@ public sealed class ZingApp
 		var openedAccount = AccountStore.Open(Path.Combine(AppPaths.UserData, "account"), new DpapiCipher(), stamp, skipGate);
 		if (openedAccount.Problem is { } accountProblem) StartupProblem("account", "your Zing account", "without it", accountProblem);
 		var account = openedAccount.Value;
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData, purger);
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData, purger, OpenEngines());
+	}
+
+	/// <summary>Nothing is fetched here: engines download only when a person asks. A folder that can't be tidied costs the engines feature, not startup.</summary>
+	private static EngineStore? OpenEngines()
+	{
+		try
+		{
+			var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+			http.DefaultRequestHeaders.UserAgent.ParseAdd("Zing");
+			return new EngineStore(AppPaths.Engines, TestHooks.EngineCatalog() ?? EngineCatalog.Pinned, http, (what, error) => TestHooks.Record(what, error));
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+		{
+			TestHooks.Record("engines folder", error);
+			return null;
+		}
 	}
 
 	/// <summary>Opens the engine and listens to it: a browser process that dies, and a runtime update waiting for the next launch.</summary>

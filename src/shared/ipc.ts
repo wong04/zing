@@ -1,3 +1,4 @@
+import type { EngineInfo, EngineProgress, YtDlpUpdate } from './engines/engineInfo'
 import type { FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
 import type { BrowserLibrary } from './library/library'
@@ -270,6 +271,14 @@ export interface InvokeContract {
 	'hash:text': { args: [text: string, algorithm: string]; result: string }
 	'hash:file': { args: [path: string, algorithm: string]; result: string }
 	'hash:hmac': { args: [message: string, key: string, algorithm: string]; result: string }
+	/** Every engine with its size and whether it is downloaded. Reads the disk; makes no request. */
+	'engines:list': { args: []; result: EngineInfo[] }
+	/** Downloads one, only because a person asked. Pushes `engines:progress`; rejects with the engine's name and the address to fetch it by hand. */
+	'engines:ensure': { args: [id: string]; result: void }
+	/** Rejects with EngineInUseException while a tool is using it. */
+	'engines:remove': { args: [id: string]; result: void }
+	/** Checks the newest yt-dlp release against its published SHA2-256SUMS; a mismatch keeps the old version. */
+	'engines:update-ytdlp': { args: []; result: YtDlpUpdate }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
 	'account:sign-in': { args: [password: string]; result: AccountOutcome }
@@ -295,6 +304,7 @@ export interface EventContract {
 	'shell:state': ShellState
 	'toolpanel:state': ToolPanelsState
 	'account:state': AccountState
+	'engines:progress': EngineProgress
 }
 
 export type InvokeChannel = keyof InvokeContract
@@ -402,5 +412,10 @@ export interface ZingApi {
 	updateProfile(displayName: string, email: string): Promise<AccountOutcome>
 	setRequirePassword(required: boolean): Promise<AccountOutcome>
 	deleteAccount(): Promise<AccountOutcome>
+	listEngines(): Promise<EngineInfo[]>
+	ensureEngine(id: string): Promise<void>
+	removeEngine(id: string): Promise<void>
+	updateYtDlp(): Promise<YtDlpUpdate>
+	onEngineProgress(listener: (progress: EngineProgress) => void): Unsubscribe
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe
 }

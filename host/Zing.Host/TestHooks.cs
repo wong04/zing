@@ -36,6 +36,20 @@ public static class TestHooks
 	/// <summary>The app clock. ZING_TEST_CLOCK=1 in an e2e run gives one a test can move forward (test:advance-clock).</summary>
 	public static Zing.Core.IClock Clock { get; } = IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_TEST_CLOCK") == "1" ? new Zing.Core.OffsetClock() : new Zing.Core.SystemClock();
 
+	/// <summary>
+	/// In an e2e run, ZING_ENGINE_BASE_URL points the engine catalog at a fixture server on this PC, and
+	/// ZING_ENGINE_CATALOG names the JSON file listing what it serves (the hashes depend on the files the test made).
+	/// Null otherwise, and in a real run the pinned catalog is the only one.
+	/// </summary>
+	public static Zing.Core.Engines.EngineCatalog? EngineCatalog()
+	{
+		if (!IsEndToEndRun) return null;
+		var baseUrl = Environment.GetEnvironmentVariable("ZING_ENGINE_BASE_URL");
+		if (string.IsNullOrEmpty(baseUrl)) return null;
+		var manifest = Environment.GetEnvironmentVariable("ZING_ENGINE_CATALOG") ?? throw new InvalidOperationException("ZING_ENGINE_BASE_URL needs ZING_ENGINE_CATALOG, the JSON file the fixture serves");
+		return Zing.Core.Engines.EngineCatalog.FromFixture(new Uri(baseUrl), File.ReadAllText(manifest));
+	}
+
 	private static int? _closeNextAt;
 	private static WindowScope? _newest;
 	private static int _windows;

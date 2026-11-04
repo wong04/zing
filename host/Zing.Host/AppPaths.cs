@@ -27,6 +27,21 @@ public static class AppPaths
 		}
 	}
 
+	/// <summary>
+	/// Where downloaded engines live: %LOCALAPPDATA%Zingengines, beside Zing's other local data, since they are
+	/// big and per-machine and are not settings. A test run keeps them inside its scratch ZING_USER_DATA. Not created
+	/// until something is downloaded.
+	/// </summary>
+	public static string Engines
+	{
+		get
+		{
+			var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");
+			if (!string.IsNullOrEmpty(configured)) return Path.Combine(configured, "engines");
+			return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zing", "engines");
+		}
+	}
+
 	private static string Resolve()
 	{
 		var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");

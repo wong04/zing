@@ -93,6 +93,22 @@
 			"args": 1
 		},
 		{
+			"channel": "engines:ensure",
+			"args": 1
+		},
+		{
+			"channel": "engines:list",
+			"args": 0
+		},
+		{
+			"channel": "engines:remove",
+			"args": 1
+		},
+		{
+			"channel": "engines:update-ytdlp",
+			"args": 0
+		},
+		{
 			"channel": "find:close",
 			"args": 0
 		},
@@ -341,6 +357,7 @@
 	"events": [
 		"account:state",
 		"chrome:focus-address",
+		"engines:progress",
 		"library:state",
 		"overlay:notice",
 		"overlay:overview",

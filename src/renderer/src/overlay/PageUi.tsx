@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { EMPTY_PAGE_UI, hasVisiblePageUi, type DownloadEntry, type PageUiState, type PermissionKind } from '@shared/browser/pageUi'
+import { formatBytes } from '@shared/format/formatBytes'
 import { followHostState } from '../hostState'
 import { zing } from '../api'
 import { useAccentTheme } from '../settings/useAccentTheme'
@@ -11,18 +12,6 @@ function usePageUiState(): PageUiState {
 		return followHostState(zing.onPageUiState, zing.getPageUi, setState)
 	}, [])
 	return state
-}
-
-const SIZE_UNITS = ['B', 'KB', 'MB', 'GB']
-
-function formatBytes(bytes: number): string {
-	let value = bytes
-	let unit = 0
-	while (value >= 1024 && unit < SIZE_UNITS.length - 1) {
-		value /= 1024
-		unit++
-	}
-	return `${unit === 0 ? value : value.toFixed(1)} ${SIZE_UNITS[unit]}`
 }
 
 function describeDownload(d: DownloadEntry): string {

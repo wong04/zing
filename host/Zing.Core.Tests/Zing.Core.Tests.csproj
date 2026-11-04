@@ -13,6 +13,8 @@
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Zing.Core\Zing.Core.csproj" />
+		<!-- Built beside the tests, so a test can install it as an engine and run it. -->
+		<ProjectReference Include="..\Zing.FakeEngine\Zing.FakeEngine.csproj" />
 		<Using Include="Xunit" />
 	</ItemGroup>
 </Project>

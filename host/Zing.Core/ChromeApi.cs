@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Zing.Core.Engines;
 
 namespace Zing.Core;
 
@@ -52,7 +53,8 @@ public interface IWindowHost
 /// <param name="Clock">The app's clock; an e2e run swaps in an <see cref="OffsetClock"/> it can move forward.</param>
 /// <param name="SiteData">Purges a site when its last tab closes; null with a persistent profile.</param>
 /// <param name="BrowsingData">Settings' Clear browsing session; null where the host has no engine to clear.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null)
+/// <param name="Engines">The downloaded engines (FFmpeg and the rest), shared by every window; null where the host has none.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, EngineStore? Engines = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -77,6 +79,8 @@ public sealed class ChromeApi : IDisposable
 	private readonly List<IDisposable> _subscriptions = [];
 	private readonly Action _unsubscribeLibrary;
 	private string? _libraryPanel;
+	// Cancelled when the window closes, so a download it started doesn't outlive it.
+	private readonly CancellationTokenSource _closing = new();
 
 	public TabService Tabs { get; }
 
@@ -217,6 +221,10 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("hash:text", args => Hashing.Text(Text(args, 0), Text(args, 1)));
 		bridge.Register("hash:file", args => HashFileAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("hash:hmac", args => Hashing.Hmac(Text(args, 0), Text(args, 1), Text(args, 2)));
+		bridge.Register("engines:list", _ => Engines().List().Select(EngineInfo.Of).ToList());
+		bridge.Register("engines:ensure", args => EnsureEngineAsync(Text(args, 0)));
+		bridge.Register("engines:remove", args => Do(() => Engines().Remove(Text(args, 0))));
+		bridge.Register("engines:update-ytdlp", _ => UpdateYtDlpAsync());
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
 		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
@@ -350,6 +358,7 @@ public sealed class ChromeApi : IDisposable
 
 	public void Dispose()
 	{
+		_closing.Cancel();
 		foreach (var subscription in _subscriptions) subscription.Dispose();
 		Shell.Dispose();
 		Ordering.Dispose();
@@ -435,6 +444,18 @@ public sealed class ChromeApi : IDisposable
 		_host.Notify("Browsing session cleared");
 		return null;
 	}
+
+	private EngineStore Engines() => _app.Engines ?? throw new InvalidOperationException("This host has no engine store");
+
+	/// <summary>A person asked for the download (a button, after being told its size and source); progress reaches this window.</summary>
+	private async Task<object?> EnsureEngineAsync(string id)
+	{
+		var progress = new PercentProgress(fraction => _host.Push("engines:progress", new { id, fraction }));
+		await Engines().EnsureAsync(id, progress, _closing.Token);
+		return null;
+	}
+
+	private async Task<object?> UpdateYtDlpAsync() => await Engines().UpdateYtDlpAsync(_closing.Token);
 
 	private static async Task<object?> HashFileAsync(string path, string algorithm) => await Hashing.FileAsync(path, algorithm);
 
