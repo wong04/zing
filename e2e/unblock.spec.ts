@@ -372,15 +372,16 @@ test('a relayed page’s iframe and popup stay in the relay', async () => {
 	await expect.poll(() => page.frames().some((f) => f.url() === 'zing-relay://other.test/frame')).toBe(true)
 	await settle()
 	expect(page.frames().filter((f) => f !== page.mainFrame() && !/^(zing-relay:\/\/|about:|chrome-error:|$)/.test(f.url())).map((f) => f.url())).toEqual([])
-	// Popups: a relayed one opens as a relayed tab; an https one, a web one and Zing's own open nothing.
+	// Popups: a relayed one opens as a relayed tab, and an https one is mapped onto the relay like the page's links; a web one and Zing's own open nothing.
 	const before = (await tabsOf(zing)).tabs.length
-	await page.evaluate("globalThis.open('https://nowhere.test/'); globalThis.open(" + JSON.stringify(stand.origin + '/pop') + "); globalThis.open('zing://home'); globalThis.open('file:///c:/windows/win.ini')")
+	await page.evaluate("globalThis.open(" + JSON.stringify(stand.origin + '/pop') + "); globalThis.open('zing://home'); globalThis.open('file:///c:/windows/win.ini')")
 	await settle()
 	expect((await tabsOf(zing)).tabs.length).toBe(before)
 	await page.evaluate("globalThis.open('zing-relay://other.test/pop')")
 	await expect.poll(async () => (await tabsOf(zing)).tabs.some((t) => t.url === 'zing-relay://other.test/pop')).toBe(true)
+	await page.evaluate("globalThis.open('https://nowhere.test/')")
+	await expect.poll(async () => (await tabsOf(zing)).tabs.some((t) => t.url === 'zing-relay://nowhere.test/')).toBe(true)
 	expect(stand.direct).toEqual([])
-	expect(stand.fetched.map((f) => f.target)).not.toContain('https://nowhere.test/')
 	await zing.close()
 	await stand.close()
 })
