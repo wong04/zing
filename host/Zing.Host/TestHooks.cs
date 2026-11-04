@@ -102,7 +102,7 @@ public static class TestHooks
 		if (action == "caption")
 		{
 			var bar = window.AppWindow.TitleBar;
-			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { background = bar.ButtonBackgroundColor, ink = bar.ButtonForegroundColor, height = bar.Height / window.Scale }));
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { background = bar.ButtonBackgroundColor, ink = bar.ButtonForegroundColor, height = bar.Height / window.Scale, buttonsHeight = bar.Height, buttonsWidth = bar.RightInset, passedBand = window.PassedThrough.Band, passedButtons = window.PassedThrough.Buttons }));
 			return true;
 		}
 		if (action == "live-counts")

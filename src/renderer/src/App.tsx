@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { CHROME_LAYOUT } from '@shared/ipc'
+import { captionSurface } from '@shared/theme/accentVariables'
 import { SplitDividers } from './chrome/SplitDividers'
 import { TabStrip } from './chrome/TabStrip'
 import { LibraryChrome } from './library/LibraryChrome'
@@ -29,7 +30,7 @@ export function App() {
 	const sidebarPinned = settings?.sidebarPinned ?? true
 	const position = settings?.tabBarPosition ?? 'left'
 	useAccentTheme()
-	useTitleBarColors(position, settings?.accent, settings?.customColor)
+	useTitleBarColors(captionSurface(position, settings?.verticalTabsCollapsed ?? false), settings?.accent, settings?.customColor)
 	const shownSplit = state?.shownSplit
 	const split = state?.splits?.find((s) => s.id === shownSplit?.id)
 	const appSidebar =
@@ -50,7 +51,7 @@ export function App() {
 			<div className={position === 'top' ? 'chrome' : 'chrome side'} style={layout}>
 				{position === 'top' ? <TabStrip state={state} /> : null}
 				<Toolbar tab={active} />
-				<LibraryChrome />
+				<LibraryChrome position={position} />
 			</div>
 			{position === 'right' ? (
 				<div className="rail-slot">

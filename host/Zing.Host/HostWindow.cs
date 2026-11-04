@@ -187,6 +187,8 @@ public sealed class HostWindow
 	/// pass-through rectangle over them sent their clicks to the chrome too, and minimise, maximise and close
 	/// did nothing (only the drag region's double-click worked). The rectangles are in client pixels.
 	/// </summary>
+	public (int Band, int Buttons) PassedThrough { get; private set; }
+
 	private void PassThroughTitleBar()
 	{
 		Native.GetClientRect(Hwnd, out var client);
@@ -196,6 +198,7 @@ public sealed class HostWindow
 		Windows.Graphics.RectInt32[] passThrough = buttons == 0 || band == 0
 			? [new(0, 0, client.Right, client.Bottom)]
 			: [new(0, 0, client.Right - buttons, band), new(0, band, client.Right, client.Bottom - band)];
+		PassedThrough = (band, buttons);
 		Microsoft.UI.Input.InputNonClientPointerSource.GetForWindowId(AppWindow.Id).SetRegionRects(Microsoft.UI.Input.NonClientRegionKind.Passthrough, passThrough);
 	}
 

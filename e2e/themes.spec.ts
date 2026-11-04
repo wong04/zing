@@ -361,6 +361,37 @@ test('the caption buttons match what they sit on, whatever the theme and tab pos
 	await expectCaption('band')
 	await chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'top'))
 	await expectCaption('window')
+	await chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'right'))
+	await expectCaption('window')
+	// A collapsed rail is narrower than the buttons, which then sit mostly on the toolbar.
+	await chrome.evaluate(() => window.zing.setSetting('verticalTabsCollapsed', true))
+	await expectCaption('band')
+	await zing.close()
+})
+
+test('clicks on the whole height of the caption buttons stay with Windows', async () => {
+	const zing = await launchZing()
+	const caption = await captionColours(zing.chrome)
+	expect(caption.buttonsWidth).toBeGreaterThan(0)
+	expect({ band: caption.passedBand, buttons: caption.passedButtons }).toEqual({ band: caption.buttonsHeight, buttons: caption.buttonsWidth })
+	await zing.close()
+})
+
+test('the library panel starts right under the bars above it, wherever the tabs are', async () => {
+	const zing = await launchZing()
+	const chrome = zing.chrome
+	const edges = () =>
+		chrome.evaluate(() => {
+			// The Favourites bar, when tabs are on top, sits between them.
+			const above = (document.querySelector('.favourites-bar') ?? document.querySelector('.toolbar'))!.getBoundingClientRect()
+			return document.querySelector('.library-panel')!.getBoundingClientRect().top - above.bottom
+		})
+	await chrome.evaluate(() => window.zing.setLibraryPanel('bookmarks'))
+	await expect(chrome.locator('.library-panel')).toBeVisible()
+	for (const position of ['left', 'right', 'top'] as const) {
+		await chrome.evaluate((p) => window.zing.setSetting('tabBarPosition', p), position)
+		await expect.poll(edges).toBe(0)
+	}
 	await zing.close()
 })
 
