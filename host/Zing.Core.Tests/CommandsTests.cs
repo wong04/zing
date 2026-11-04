@@ -70,6 +70,16 @@ public sealed class CommandsTests : IDisposable
 		Assert.True(pinned.Single(m => m.Label == "Close Tab").Enabled);
 		Assert.False(pinned.Single(m => m.Label == "Back to Saved Page").Enabled);
 	}
+
+	[Fact]
+	public void Copy_Address_on_a_relayed_tab_or_a_warning_copies_the_web_address_they_stand_for()
+	{
+		var relayed = _api.Tabs.OpenRelayed("https://example.com/a?b=1");
+		Menus.Tab(_api.Tabs, _api.Saved, relayed.Id, _host.Shell).Single(m => m.Label == "Copy Address").Click!();
+		var warning = _api.Tabs.Open("zing://warning?to=" + Uri.EscapeDataString("https://apple.com.secure-login.tk/verify") + "&w=abc");
+		Menus.Tab(_api.Tabs, _api.Saved, warning.Id, _host.Shell).Single(m => m.Label == "Copy Address").Click!();
+		Assert.Equal(["https://example.com/a?b=1", "https://apple.com.secure-login.tk/verify"], _host.FakeShell.Copied);
+	}
 }
 
 public sealed class FindTests : IDisposable
