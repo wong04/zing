@@ -14,8 +14,13 @@ using System.Text.Json;
 //   --exit <code>             ends with that code
 //   --print-env               prints "env" and the environment as one JSON object
 //   --print-magick-policy     prints the policy.xml found through MAGICK_CONFIGURE_PATH, line by line
+//   (the file viewer's own commands) with "-movflags" it copies its "-i" file to the last argument in six pieces (an empty file is "invalid data"), saying how far it is on
+//   stderr as FFmpeg does; with "-delete" it copies its first argument to the last. The input is a file the test made.
 Console.Out.WriteLine(JsonSerializer.Serialize(args));
 Console.Out.Flush();
+
+if (args.Contains("-movflags")) return FakeViewerConversion.Video(args);
+if (args.Contains("-delete")) return FakeViewerConversion.Image(args);
 
 var code = 0;
 for (var i = 0; i < args.Length; i++)
@@ -76,4 +81,41 @@ static string Operand(string[] args, ref int i, string what)
 {
 	if (i + 1 >= args.Length) throw new ArgumentException($"{args[i]} needs {what}");
 	return args[++i];
+}
+
+static class FakeViewerConversion
+{
+	private const int Pieces = 6;
+	private const int PauseMilliseconds = 700;
+
+	/// <summary>Writes the output while it is "converted", so a reader sees it grow and the progress lines come as FFmpeg's do.</summary>
+	public static int Video(string[] args)
+	{
+		var input = File.ReadAllBytes(args[Array.IndexOf(args, "-i") + 1]);
+		if (input.Length == 0)
+		{
+			Console.Error.WriteLine("Invalid data found when processing input");
+			return 1;
+		}
+		Console.Error.WriteLine("  Duration: 00:00:06.00, start: 0.000000, bitrate: 100 kb/s");
+		Console.Error.Flush();
+		using var output = new FileStream(args[^1], FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+		for (var piece = 0; piece < Pieces; piece++)
+		{
+			var from = input.Length * piece / Pieces;
+			var to = input.Length * (piece + 1) / Pieces;
+			output.Write(input, from, to - from);
+			output.Flush();
+			Console.Error.WriteLine($"frame={(piece + 1) * 30,5} fps= 30 q=28.0 size={output.Length / 1024,7}kB time=00:00:0{piece + 1}.00 bitrate= 100.0kbits/s speed=1.0x");
+			Console.Error.Flush();
+			if (piece < Pieces - 1) Thread.Sleep(PauseMilliseconds);
+		}
+		return 0;
+	}
+
+	public static int Image(string[] args)
+	{
+		File.Copy(args[0], args[^1], overwrite: true);
+		return 0;
+	}
 }
