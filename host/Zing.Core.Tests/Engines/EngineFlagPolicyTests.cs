@@ -136,7 +136,7 @@ public sealed class EngineFlagPolicyTests
 	public void The_other_engines_get_their_sandbox_flags_first()
 	{
 		Assert.Equal(["--sandbox"], EngineFlagPolicy.Pinned.For("pandoc").SafetyFirst);
-		Assert.Equal(["--ignore-config", "--no-plugin-dirs", "--no-cache-dir"], EngineFlagPolicy.Pinned.For("ytdlp").SafetyFirst);
+		Assert.Equal(["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--no-playlist"], EngineFlagPolicy.Pinned.For("ytdlp").SafetyFirst);
 	}
 
 	[Fact]

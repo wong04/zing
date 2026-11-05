@@ -226,7 +226,8 @@ internal sealed class EngineFlagPolicy
 				("-f", new FlagSpec(FlagValue.OneOf) { Choices = [Mp4Selector] }),
 				("--merge-output-format", new FlagSpec(FlagValue.OneOf) { Choices = ["mp4"] }),
 				("-o", new FlagSpec(FlagValue.Output))),
-			["--ignore-config", "--no-plugin-dirs", "--no-cache-dir"],
+			// --no-playlist is the host's: a link inside a playlist or channel never fetches the rest, whatever a renderer sends.
+			["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--no-playlist"],
 			new Dictionary<string, string[]>(),
 			["mp4", "mkv", "webm", "mp3", "m4a", "opus", "wav"],
 			Network: true,

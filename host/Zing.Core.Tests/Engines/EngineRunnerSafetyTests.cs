@@ -34,8 +34,20 @@ public sealed class EngineRunnerSafetyTests
 		await f.RunAsync(f.Request(Literal("--exit"), Literal("0")));
 
 		var echoed = JsonSerializer.Deserialize<string[]>(f.Lines("out")[0])!;
-		Assert.Equal(["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--ffmpeg-location", f.Store.InstalledPath("ffmpeg"), "--exit", "0"], echoed);
+		Assert.Equal(["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--no-playlist", "--ffmpeg-location", f.Store.InstalledPath("ffmpeg"), "--exit", "0"], echoed);
 		Assert.True(File.Exists(echoed[4]));
+	}
+
+	[Fact]
+	public async Task Yt_dlp_never_fetches_a_playlist_whatever_the_renderer_sent()
+	{
+		using var f = new RunnerFixture(engineId: "ytdlp");
+		await f.InstallAsync();
+
+		await f.RunAsync(f.Request(Literal("--exit"), Literal("0")) with { Urls = ["https://example.com/watch?v=1&list=PL1"] });
+
+		Assert.Contains("--no-playlist", JsonSerializer.Deserialize<string[]>(f.Lines("out")[0])!);
+		Assert.Contains("--no-playlist", EngineFlagPolicy.Pinned.For("ytdlp").SafetyFirst);
 	}
 
 	[Fact]
@@ -44,7 +56,7 @@ public sealed class EngineRunnerSafetyTests
 		using var f = new RunnerFixture(engineId: "ytdlp");
 		await f.InstallAsync();
 
-		Assert.Throws<DisallowedEngineFlagException>(() => f.Start(f.Request(Literal("--ffmpeg-location"), Literal("C:\evil"))));
+		Assert.Throws<DisallowedEngineFlagException>(() => f.Start(f.Request(Literal("--ffmpeg-location"), Literal(@"C:\evil"))));
 	}
 
 	[Fact]
