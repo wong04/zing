@@ -131,7 +131,9 @@ public sealed class EngineRunner
 		foreach (var arg in request.Args) Validate(arg, names.Count);
 		if (request.Urls.Count > 0 && !policy.Network) throw new UnsafeEngineArgumentException($"{engine.Name} doesn't take addresses");
 		var urls = request.Urls.Count == 0 ? [] : EngineArguments.Urls(request.Urls);
-		var lease = _store.Use(request.EngineId);
+		// Looked up before any lease is taken, so a missing FFmpeg leaves nothing to undo.
+		var ffmpeg = policy.UsesFfmpeg ? _store.InstalledPath(EngineIds.Ffmpeg) : null;
+		var lease = Lease(engine.Id, ffmpeg is not null);
 		var id = Guid.NewGuid().ToString("N");
 		var folder = Path.Combine(_root, id);
 		JobObject? tree = null;
@@ -151,7 +153,7 @@ public sealed class EngineRunner
 			Directory.CreateDirectory(job.TempFolder);
 			for (var i = 0; i < names.Count; i++) Directory.CreateDirectory(Path.GetDirectoryName(job.TempOutputs[i])!);
 			if (engine.Id == EngineIds.Magick) WriteMagickPolicy(job);
-			var process = StartProcess(job, executable, request, policy, urls);
+			var process = StartProcess(job, executable, ffmpeg, request, policy, urls);
 			job.Process = process;
 			AfterStart?.Invoke(id);
 			JoinJob(job, process);
@@ -271,7 +273,31 @@ public sealed class EngineRunner
 		}
 	}
 
-	private Process StartProcess(Job job, string executable, EngineJobRequest request, EnginePolicy policy, IReadOnlyList<string> urls)
+	/// <summary>The engine's lease, and FFmpeg's too when the engine calls it, so neither can be removed under a running job.</summary>
+	private IDisposable Lease(string engineId, bool withFfmpeg)
+	{
+		var lease = _store.Use(engineId);
+		if (!withFfmpeg) return lease;
+		try
+		{
+			return new Leases(lease, _store.Use(EngineIds.Ffmpeg));
+		}
+		catch
+		{
+			lease.Dispose();
+			throw;
+		}
+	}
+
+	private sealed class Leases(params IDisposable[] parts) : IDisposable
+	{
+		public void Dispose()
+		{
+			foreach (var part in parts) part.Dispose();
+		}
+	}
+
+	private Process StartProcess(Job job, string executable, string? ffmpeg, EngineJobRequest request, EnginePolicy policy, IReadOnlyList<string> urls)
 	{
 		var start = new ProcessStartInfo(executable)
 		{
@@ -286,6 +312,12 @@ public sealed class EngineRunner
 		};
 		ScrubEnvironment(start, job, executable, policy);
 		foreach (var flag in policy.SafetyFirst) start.ArgumentList.Add(flag);
+		// Where FFmpeg is stays the host's to say: the policy has no flag a job could use to name a program.
+		if (ffmpeg is not null)
+		{
+			start.ArgumentList.Add("--ffmpeg-location");
+			start.ArgumentList.Add(ffmpeg);
+		}
 		foreach (var arg in request.Args)
 		{
 			if (arg is JobArg.Literal flag && policy.SafetyBefore.TryGetValue(flag.Text, out var before))

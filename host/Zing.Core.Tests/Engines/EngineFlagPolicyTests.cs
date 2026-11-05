@@ -83,6 +83,8 @@ public sealed class EngineFlagPolicyTests
 		{ "pandoc", ["-f", "markdown", "-t", "html", "--standalone", "-o", "@out", "@in"] },
 		{ "magick", ["@in", "-quality", "85", "-strip", "-auto-orient", "@out"] },
 		{ "ytdlp", ["--newline", "--no-playlist", "-x", "--audio-format", "mp3", "--audio-quality", "0"] },
+		{ "ytdlp", ["--newline", "--no-playlist", "-x", "--audio-format", "mp3", "--audio-quality", "0", "-o", "@out"] },
+		{ "ytdlp", ["--newline", "--no-playlist", "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b", "--merge-output-format", "mp4", "-o", "@out"] },
 	};
 
 	[Theory]
@@ -135,6 +137,14 @@ public sealed class EngineFlagPolicyTests
 	{
 		Assert.Equal(["--sandbox"], EngineFlagPolicy.Pinned.For("pandoc").SafetyFirst);
 		Assert.Equal(["--ignore-config", "--no-plugin-dirs", "--no-cache-dir"], EngineFlagPolicy.Pinned.For("ytdlp").SafetyFirst);
+	}
+
+	[Fact]
+	public void Only_yt_dlp_is_given_FFmpegs_location_by_the_host()
+	{
+		Assert.True(EngineFlagPolicy.Pinned.For("ytdlp").UsesFfmpeg);
+		Assert.All(new[] { "ffmpeg", "magick", "pandoc", "bgmodel" }, id => Assert.False(EngineFlagPolicy.Pinned.For(id).UsesFfmpeg));
+		Assert.DoesNotContain("--ffmpeg-location", EngineFlagPolicy.Pinned.For("ytdlp").Flags.Keys);
 	}
 
 	[Fact]

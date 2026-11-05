@@ -13,7 +13,6 @@ public sealed class EngineRunnerSafetyTests
 
 	[Theory]
 	[InlineData("pandoc", new[] { "--sandbox" })]
-	[InlineData("ytdlp", new[] { "--ignore-config", "--no-plugin-dirs", "--no-cache-dir" })]
 	[InlineData("ffmpeg", new[] { "-nostdin" })]
 	public async Task Each_engine_gets_its_safety_flags_first_and_they_cannot_be_left_out(string engine, string[] flags)
 	{
@@ -24,6 +23,59 @@ public sealed class EngineRunnerSafetyTests
 
 		var echoed = JsonSerializer.Deserialize<string[]>(f.Lines("out")[0])!;
 		Assert.Equal([.. flags, "--exit", "0"], echoed);
+	}
+
+	[Fact]
+	public async Task Yt_dlp_gets_its_safety_flags_first_and_then_FFmpegs_location_from_the_host()
+	{
+		using var f = new RunnerFixture(engineId: "ytdlp");
+		await f.InstallAsync();
+
+		await f.RunAsync(f.Request(Literal("--exit"), Literal("0")));
+
+		var echoed = JsonSerializer.Deserialize<string[]>(f.Lines("out")[0])!;
+		Assert.Equal(["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--ffmpeg-location", f.Store.InstalledPath("ffmpeg"), "--exit", "0"], echoed);
+		Assert.True(File.Exists(echoed[4]));
+	}
+
+	[Fact]
+	public async Task A_renderer_cannot_name_FFmpegs_location_itself()
+	{
+		using var f = new RunnerFixture(engineId: "ytdlp");
+		await f.InstallAsync();
+
+		Assert.Throws<DisallowedEngineFlagException>(() => f.Start(f.Request(Literal("--ffmpeg-location"), Literal("C:\evil"))));
+	}
+
+	[Fact]
+	public async Task Yt_dlp_will_not_start_without_FFmpeg_downloaded_and_nothing_is_left_behind()
+	{
+		using var f = new RunnerFixture(engineId: "ytdlp");
+		await f.InstallAsync();
+		f.Store.Remove("ffmpeg");
+
+		var error = Assert.Throws<EngineNotInstalledException>(() => f.Start(f.Request(Literal("--exit"), Literal("0"))));
+
+		Assert.Contains("FFmpeg", error.Message, StringComparison.OrdinalIgnoreCase);
+		Assert.Equal(0, f.Runner.Running);
+		Assert.Empty(f.Entries(f.Jobs));
+		// The yt-dlp lease taken for the attempt is released again.
+		f.Store.Remove("ytdlp");
+	}
+
+	[Fact]
+	public async Task FFmpeg_cannot_be_removed_while_a_yt_dlp_job_uses_it()
+	{
+		using var f = new RunnerFixture(engineId: "ytdlp");
+		await f.InstallAsync();
+		f.Start(f.Request(Literal("--sleep"), Literal("60000")));
+
+		Assert.Throws<EngineInUseException>(() => f.Store.Remove("ffmpeg"));
+		Assert.Throws<EngineInUseException>(() => f.Store.Remove("ytdlp"));
+
+		f.Runner.KillWindow(f.Owner.Window);
+		await f.ExitAsync(1);
+		f.Store.Remove("ffmpeg");
 	}
 
 	[Fact]
