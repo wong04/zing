@@ -229,15 +229,33 @@ public sealed class ViewerFiles : IDisposable
 
 	public void Dispose() => CloseWhere(_ => true);
 
+	/// <summary>How long a copy that a reader still holds waits before its one more try at deletion.</summary>
+	internal TimeSpan RetryDelay { get; set; } = TimeSpan.FromMilliseconds(500);
+
+	/// <summary>
+	/// A reader that still has the file open (the engine's last read, Explorer's preview) makes the delete fail. It is tried once more after
+	/// a short wait, on the thread pool so no caller waits; only a second failure is reported, and the next start's sweep takes the folder.
+	/// </summary>
 	private void DeleteFolder(string folder)
+	{
+		if (TryDelete(folder) is null) return;
+		var delay = RetryDelay;
+		_ = Task.Delay(delay).ContinueWith(_ =>
+		{
+			if (TryDelete(folder) is { } failure) _onError($"delete {folder}", failure);
+		}, TaskScheduler.Default);
+	}
+
+	private static Exception? TryDelete(string folder)
 	{
 		try
 		{
 			if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+			return null;
 		}
 		catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
 		{
-			_onError($"delete {folder}", failure);
+			return failure;
 		}
 	}
 

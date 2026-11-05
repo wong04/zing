@@ -420,13 +420,32 @@ public sealed class ViewerFilesTests : IDisposable
 	}
 
 	[Fact]
-	public void A_copy_that_cannot_be_deleted_yet_is_reported_and_left_for_the_next_start()
+	public async Task A_copy_that_a_reader_still_holds_is_deleted_by_a_retry_without_a_report()
 	{
+		_viewer.RetryDelay = TimeSpan.FromMilliseconds(150);
+		var session = OpenConverted("a.mov");
+		var final = Path.Combine(session.Folder!, "view.mp4");
+		var held = new FileStream(final, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
+		_viewer.Close(session.Id);
+		// The close itself does not wait: the folder is still there and nothing is reported yet.
+		Assert.True(Directory.Exists(session.Folder));
+		Assert.Empty(_errors);
+		held.Dispose();
+		await Task.Delay(800, TestContext.Current.CancellationToken);
+		Assert.False(Directory.Exists(session.Folder));
+		Assert.Empty(_errors);
+	}
+
+	[Fact]
+	public async Task A_copy_that_is_still_held_after_the_retry_is_reported_and_left_for_the_next_start()
+	{
+		_viewer.RetryDelay = TimeSpan.FromMilliseconds(100);
 		var session = OpenConverted("a.mov");
 		var final = Path.Combine(session.Folder!, "view.mp4");
 		using (new FileStream(final, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
 		{
 			_viewer.Close(session.Id);
+			for (var i = 0; i < 50 && _errors.Count == 0; i++) await Task.Delay(50, TestContext.Current.CancellationToken);
 			Assert.Single(_errors);
 			Assert.True(Directory.Exists(session.Folder));
 		}
