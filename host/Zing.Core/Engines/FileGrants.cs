@@ -39,6 +39,9 @@ public sealed class FileGrants
 /// <summary>
 /// Holds the paths of a drop between the host reading them off the message and the renderer's call that collects them
 /// (<c>files:open-dropped</c>). Only a Zing view's message can offer, so a page can't make the host grant a file.
+/// It is a single slot and is only safe because the host fills it, runs the one call that takes it and clears it on the
+/// UI thread: WebView2 raises the message there, <c>Bridge.HandleAsync</c> runs the handler (which takes the offer) before its
+/// first await, and the clear follows on the UI thread's context, so no other message's offer can sit between them.
 /// </summary>
 public sealed class DropInbox(FileGrants grants)
 {

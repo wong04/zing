@@ -238,5 +238,14 @@ test('a file dropped on a Zing view is handed to the host as a token; a page has
 			}),
 	)
 	expect(answered).toBe(false)
+
+	// A file dropped on a page is the browser's own business (whatever the page does with it, e.g. opening it); nothing is
+	// granted to an engine, because only Zing's views can hand the host a file. (A real Explorer drop on a page is for a
+	// by-hand check: the synthesised one here did not move the blank page.)
+	const pageCdp = await zing.chrome.context().newCDPSession(page)
+	for (const type of ['dragEnter', 'dragOver', 'drop'] as const) await pageCdp.send('Input.dispatchDragEvent', { type, x: 100, y: 100, data })
+	await new Promise((resolve) => setTimeout(resolve, 500))
+	const collected = await zing.chrome.evaluate(() => window.zing.openDropped([]).then(() => 'granted', (e: Error) => e.name))
+	expect(collected).toBe('NoDroppedFilesException')
 	await zing.close()
 })

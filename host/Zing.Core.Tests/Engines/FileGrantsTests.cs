@@ -62,6 +62,17 @@ public sealed class FileGrantsTests
 	}
 
 	[Fact]
+	public void A_drop_nobody_collected_is_forgotten_by_the_clear_that_follows_every_call()
+	{
+		var inbox = new DropInbox(new FileGrants());
+		inbox.Offer(Zing, [Path.Combine(Path.GetTempPath(), "dropped.png")]);
+
+		inbox.Clear();
+
+		Assert.Throws<NoDroppedFilesException>(inbox.Take);
+	}
+
+	[Fact]
 	public void Asking_for_a_drop_when_none_arrived_raises()
 	{
 		Assert.Throws<NoDroppedFilesException>(new DropInbox(new FileGrants()).Take);
