@@ -4,7 +4,7 @@
 //   ZING_REAL_ENGINES=1 bash <pw.sh> e2e/convert-real.spec.ts
 // The HEIC fixture is made with pillow-heif through uv (any HEIC encoder would do); the MOV with the downloaded FFmpeg.
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Locator } from '@playwright/test'
@@ -216,10 +216,14 @@ test.describe('Convert with real engines', () => {
 		const magick = join(zing.userDataDir, 'engines', 'magick', 'magick.exe')
 		const inputs = join(zing.userDataDir, 'in[0]%d')
 		mkdirSync(inputs, { recursive: true })
+		// ImageMagick would expand the % in a path it writes, so the fixtures are made in a plain folder and copied.
+		const plain = mkdtempSync(join(tmpdir(), 'zing-fixture-'))
+		expect(spawnSync(magick, ['-size', '33x31', 'xc:red', '-size', '33x31', 'xc:blue', join(plain, 'odd.gif')], { encoding: 'utf8' }).status).toBe(0)
+		expect(spawnSync(magick, ['-size', '600x400', 'xc:red', join(plain, 'big.png')], { encoding: 'utf8' }).status).toBe(0)
 		const gif = join(inputs, 'odd.gif')
-		expect(spawnSync(magick, ['-size', '33x31', 'xc:red', '-size', '33x31', 'xc:blue', gif], { encoding: 'utf8' }).status).toBe(0)
 		const big = join(inputs, 'big.png')
-		expect(spawnSync(magick, ['-size', '600x400', 'xc:red', big], { encoding: 'utf8' }).status).toBe(0)
+		copyFileSync(join(plain, 'odd.gif'), gif)
+		copyFileSync(join(plain, 'big.png'), big)
 
 		const panel = await openConvert(zing)
 		await convertInTool(zing, panel, gif, 'MP4')
