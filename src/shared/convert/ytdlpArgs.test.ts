@@ -105,8 +105,37 @@ describe('yt-dlp failures (ported from DownloadErrors.swift)', () => {
 			expect(explainMediaFailure(stderr, 1).offerUpdate, stderr).toBe(true)
 		}
 	})
-	it('asks for FFmpeg when it is missing', () => {
-		expect(explainMediaFailure('ERROR: ffprobe and ffmpeg not found. Please install or provide the path using --ffmpeg-location', 1).message).toBe('This needs FFmpeg to finish. Download it from Settings, Files, Engines.')
+	it('says FFmpeg could not be found even though Zing requires it before starting', () => {
+		const message = explainMediaFailure('ERROR: ffprobe and ffmpeg not found. Please install or provide the path using --ffmpeg-location', 1).message
+		expect(message).toContain("couldn't find FFmpeg")
+		expect(message).toContain('Settings, Files, Engines')
+		expect(message).not.toContain('--ffmpeg-location')
+	})
+	it('never shows cookie advice from yt-dlp, whatever its last line says', () => {
+		for (const line of ['ERROR: [site] x: Login required. Use --cookies-from-browser or --cookies for the authentication.', 'ERROR: This content needs --cookies']) {
+			const failure = explainMediaFailure(`WARNING: a
+${line}
+`, 1)
+			expect(failure.message).toBe("This site needs a sign-in. Zing doesn't use your browser's sign-ins.")
+			expect(failure.offerUpdate).toBe(false)
+		}
+	})
+	it('reads 403 only as error text, never from a video id', () => {
+		expect(explainMediaFailure('ERROR: [youtube] a-403-forbidden-b: Video unavailable', 1).message).toBe("This video isn't available.")
+		expect(explainMediaFailure('ERROR: [youtube] a-403-b: something odd', 1)).toEqual({ message: '[youtube] a-403-b: something odd', offerUpdate: false })
+		expect(looksLikeExtractorBreakage('[download] Downloading a_403_b')).toBe(false)
+		expect(looksLikeExtractorBreakage('ERROR: HTTP Error 403: Forbidden')).toBe(true)
+		expect(looksLikeExtractorBreakage('ERROR: 403 Forbidden')).toBe(true)
+	})
+	it('does not name YouTube for another site', () => {
+		expect(explainMediaFailure('ERROR: HTTP Error 403: Forbidden', 1).message).not.toContain('YouTube')
+	})
+	it.each(['ERROR: HTTP Error 429: Too Many Requests', 'ERROR: Please solve this CAPTCHA to continue', 'ERROR: Just a moment... Cloudflare', 'ERROR: Attention Required! | Cloudflare'])('treats %s as a bot check, with no update and no advice to get round it', (stderr) => {
+		const failure = explainMediaFailure(stderr, 1)
+		expect(failure.message).toContain('not a bot')
+		expect(failure.message).toContain("Zing doesn't work around")
+		expect(failure.offerUpdate).toBe(false)
+		expect(looksLikeExtractorBreakage(stderr)).toBe(false)
 	})
 	it('reports a bot check in plain words and does not suggest a way round it', () => {
 		const stderr = "ERROR: [youtube] x: Sign in to confirm you\u2019re not a bot. Use --cookies-from-browser or --cookies for the authentication."

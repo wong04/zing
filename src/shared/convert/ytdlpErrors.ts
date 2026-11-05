@@ -11,8 +11,6 @@ export interface MediaFailure {
 const BENIGN = ['private video', 'video unavailable', 'members-only', 'is not a valid url', 'unsupported url', 'no space left', 'sign in to confirm your age']
 
 const BREAKAGE = [
-	'403',
-	'forbidden',
 	'unable to download video data',
 	'unable to extract',
 	'nsig extraction failed',
@@ -21,8 +19,13 @@ const BREAKAGE = [
 	'requested format is not available',
 ]
 
-/** The wording of YouTube's bot check, with a straight or curly apostrophe. */
-const BOT_CHECK = /confirm you.{0,3}re not a bot/
+/** A site refusing as a robot (YouTube's wording has a straight or curly apostrophe), limiting requests, or putting up a challenge. */
+const BOT_CHECK = /confirm you.{0,3}re not a bot|http error 429|too many requests|captcha|cloudflare|just a moment\.\.\./
+
+/** An HTTP 403 as yt-dlp prints it, never a "403" inside a video id. */
+const HTTP_403 = /http error 403|\b403:? forbidden/
+
+const FFMPEG_MISSING = /(ffmpeg|ffprobe).{0,30}not found|not found.{0,30}(ffmpeg|ffprobe)/
 
 export function isBotCheck(stderr: string): boolean {
 	return BOT_CHECK.test(stderr.toLowerCase())
@@ -32,7 +35,7 @@ export function isBotCheck(stderr: string): boolean {
 export function looksLikeExtractorBreakage(stderr: string): boolean {
 	const text = stderr.toLowerCase()
 	if (isBotCheck(text) || BENIGN.some((phrase) => text.includes(phrase))) return false
-	return BREAKAGE.some((signal) => text.includes(signal))
+	return HTTP_403.test(text) || BREAKAGE.some((signal) => text.includes(signal))
 }
 
 function lastLine(stderr: string): string | null {
@@ -47,7 +50,7 @@ export function explainMediaFailure(stderr: string, exitCode: number): MediaFail
 	const plain = (message: string): MediaFailure => ({ message, offerUpdate: false })
 	// Before everything: this is a refusal by the site, and nothing Zing does about it is a fix.
 	if (isBotCheck(text)) {
-		return plain("The site is asking to confirm this connection is not a bot. Zing doesn't work around that, so this download can't go ahead. Try again later, or watch it in a normal tab.")
+		return plain("The site is asking to confirm this connection is not a bot, or is limiting requests. Zing doesn't work around that, so this download can't go ahead. Try again later, or watch it in a normal tab.")
 	}
 	if (text.includes('private video')) return plain('This video is private.')
 	if (text.includes('video unavailable')) return plain("This video isn't available.")
@@ -56,13 +59,17 @@ export function explainMediaFailure(stderr: string, exitCode: number): MediaFail
 	}
 	if (text.includes('no space left')) return plain('The disk is full.')
 	if (text.includes('is not a valid url') || text.includes('unsupported url')) return plain("That link isn't one yt-dlp recognises.")
-	if (text.includes('403') || text.includes('forbidden')) {
+	if (HTTP_403.test(text)) {
 		return {
 			message:
-				'YouTube refused the download (HTTP 403). This nearly always means yt-dlp needs updating: YouTube changes how it signs media links every few weeks, and an older copy stops being able to follow them.',
+				'The site refused the download (HTTP 403). This often means yt-dlp needs updating: sites change how they sign media links every few weeks, and an older copy stops being able to follow them.',
 			offerUpdate: true,
 		}
 	}
-	if (text.includes('ffmpeg')) return plain('This needs FFmpeg to finish. Download it from Settings, Files, Engines.')
-	return { message: lastLine(stderr) ?? `yt-dlp exited with code ${exitCode}.`, offerUpdate: looksLikeExtractorBreakage(stderr) }
+	// FFmpeg is required before a download starts, so this means yt-dlp couldn't use the copy Zing gave it.
+	if (FFMPEG_MISSING.test(text)) return plain("yt-dlp couldn't find FFmpeg to finish the file. Remove it and download it again in Settings, Files, Engines.")
+	const last = lastLine(stderr)
+	// yt-dlp's own advice may be to hand it cookies, which Zing never does.
+	if (last !== null && /--cookies|cookies-from-browser/.test(last.toLowerCase())) return plain("This site needs a sign-in. Zing doesn't use your browser's sign-ins.")
+	return { message: last ?? `yt-dlp exited with code ${exitCode}.`, offerUpdate: looksLikeExtractorBreakage(stderr) }
 }
