@@ -249,6 +249,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("engines:cancel-job", args => Do(() => Runner().Cancel(Text(args, 0), _windowId)));
 		bridge.Register("files:pick", args => PickFilesAsync(Arg(args, 0)));
 		bridge.Register("files:open-dropped", _ => Drops.Take());
+		bridge.Register("page:save", _ => SavePageAsync());
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
 		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
@@ -470,6 +471,17 @@ public sealed class ChromeApi : IDisposable
 		await data.ClearAllAsync();
 		_host.Notify("Browsing session cleared");
 		return null;
+	}
+
+	/// <summary>
+	/// Writes the active tab's HTML to Downloads. Only a Zing view can ask: a page view has no handler on the bridge. The
+	/// direct route, by script; a relay route would fetch the text elsewhere and call <see cref="PageSave.Write"/> the same way.
+	/// </summary>
+	private async Task<object?> SavePageAsync()
+	{
+		var page = Tabs.ActivePage ?? throw new PageNotSavableException("There is no page open to save.");
+		var html = await PageSave.ReadAsync(page);
+		return Grants.Issue(PageSave.Write(_host.DownloadsDirectory, page.Title, html));
 	}
 
 	private EngineStore Engines() => _app.Engines ?? throw new InvalidOperationException("This host has no engine store");
