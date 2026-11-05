@@ -217,6 +217,30 @@ public sealed class ChromeApiSavePageTests : IDisposable
 	}
 
 	[Fact]
+	public async Task A_dead_view_or_a_bad_answer_is_a_page_that_cant_be_saved()
+	{
+		var page = await WebPage();
+		foreach (Exception failure in new Exception[] { new System.Runtime.InteropServices.COMException("WebView2 gone"), new InvalidOperationException("The page is not running"), new JsonException("not json") })
+		{
+			page.Evaluating = () => Task.FromException<JsonElement>(failure);
+			await Assert.ThrowsAsync<PageNotSavableException>(() => PageSave.ReadAsync(page));
+		}
+	}
+
+	[Fact]
+	public async Task A_programming_error_is_not_reported_as_a_crashed_page()
+	{
+		var page = await WebPage();
+		foreach (Exception failure in new Exception[] { new NullReferenceException(), new ObjectDisposedException("x"), new ArgumentException("bad") })
+		{
+			page.Evaluating = () => Task.FromException<JsonElement>(failure);
+			var raised = await Assert.ThrowsAnyAsync<Exception>(() => PageSave.ReadAsync(page));
+			Assert.IsNotType<PageNotSavableException>(raised);
+			Assert.Same(failure.GetType(), raised.GetType());
+		}
+	}
+
+	[Fact]
 	public async Task A_page_that_never_answers_times_out_as_a_page_that_cant_be_saved()
 	{
 		var page = await WebPage();

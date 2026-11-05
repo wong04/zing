@@ -44,7 +44,9 @@ public static class PageSave
 		{
 			throw new PageNotSavableException("The page didn't answer in time. It may have stopped responding.");
 		}
-		catch (Exception error) when (error is not PageNotSavableException)
+		// What a dead or navigating view raises: the page is not running, WebView2's own failure, or a result that isn't JSON.
+		// Anything else (a null, a disposed object) is a bug and surfaces as one.
+		catch (Exception error) when (error is (InvalidOperationException and not ObjectDisposedException) or System.Runtime.InteropServices.COMException or JsonException)
 		{
 			throw new PageNotSavableException($"The page couldn't be read ({error.GetType().Name}). It may have crashed; reload it and try again.");
 		}
