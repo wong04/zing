@@ -535,7 +535,7 @@ public sealed class ChromeApi : IDisposable
 		{
 			var request = new EngineJobRequest(
 				ViewerConversion.EngineFor(format.Kind),
-				ViewerConversion.Args(format.Kind, path),
+				ViewerConversion.Args(format.Kind, path, Path.GetExtension(path)),
 				session.Folder!,
 				[session.OutputName!],
 				[],

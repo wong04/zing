@@ -295,12 +295,13 @@ test('a token for a closed file answers 404, and so does one that never existed'
 	await choose(zing, viewer, PIXEL)
 	const image = viewer.panel.getByTestId('viewer-image')
 	const url = (await image.getAttribute('src'))!
-	const status = (u: string): Promise<number> => viewer.surface.evaluate(async (target) => (await fetch(target)).status, u)
+	const status = (u: string): Promise<number> => viewer.surface.evaluate(async (target) => (await fetch(target).catch(() => ({ status: 0 }))).status, u)
 	expect(await status(url)).toBe(200)
 	await viewer.panel.getByRole('button', { name: 'Close file', exact: true }).click()
 	await expect.poll(() => status(url)).toBe(404)
 	expect(await status(`https://view.zing/${'a'.repeat(32)}`)).toBe(404)
-	expect(await status('https://view.zing/')).toBe(404)
+	// No token at all gets no CORS answer, which a page sees as a failed fetch.
+	expect(await status('https://view.zing/')).toBe(0)
 	await zing.close()
 })
 
@@ -324,11 +325,8 @@ test('a view.zing address from a page tab answers 404, even with a token that is
 	)
 	expect(loaded).toBe('failed')
 	// Asking for the address as a page also gets nothing.
-	const response = await tab.goto(url).catch(() => null)
-	await tab.waitForLoadState('load')
-	if (response) expect(response.status()).toBe(404)
-	expect(await tab.evaluate(() => (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming).responseStatus)).toBe(404)
-	expect(await tab.evaluate(() => document.contentType)).not.toMatch(/^image\//)
+	// An empty 404 is a failed navigation in Chromium: that is the answer.
+	await expect(tab.goto(url)).rejects.toThrow(/ERR_HTTP_RESPONSE_CODE_FAILURE/)
 	await zing.close()
 })
 

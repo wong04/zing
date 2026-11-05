@@ -1,7 +1,7 @@
 // Local test, not in CI: runs the viewer against the real FFmpeg and ImageMagick that Zing downloads from the pinned addresses in
 // EngineCatalog.cs. Run by hand with ZING_REAL_ENGINES=1, ZING_REAL_DATA=<a scratch folder outside the repo> and ZING_REAL_MOVIE=<a
 // movie in that folder to open>. Nothing leaves this PC but the two engine downloads, and only the first time.
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, type Locator, type Page } from '@playwright/test'
 import type { EngineExit, JobArg } from '../src/shared/engines/engineJob'
@@ -124,5 +124,19 @@ test('the real engines show a HEIC and a HEVC MOV, and a MOV starts playing whil
 	expect(readdirSync(copies)).toHaveLength(1)
 	await viewer.panel.getByRole('button', { name: 'Close file' }).click()
 	await expect.poll(() => readdirSync(copies)).toEqual([])
+	await zing.close()
+})
+
+test('a concat file renamed to .mov is refused by the real FFmpeg and its sibling is not read', async () => {
+	test.setTimeout(120_000)
+	const zing = await launchZing({ userDataDir: DATA })
+	await zing.chrome.evaluate(() => window.zing.ensureEngine('ffmpeg'))
+	const viewer = await openViewer(zing)
+	const trap = join(DATA, 'concat-trap.mov')
+	writeFileSync(trap, `ffconcat version 1.0\nfile '${MOVIE.split(String.fromCharCode(92)).join('/')}'\n`)
+	await queuePick(zing, trap)
+	await viewer.panel.getByRole('button', { name: 'Choose a file' }).click()
+	await expect(viewer.panel.getByRole('alert')).toContainText("Couldn't convert concat-trap.mov")
+	await expect(viewer.panel.getByTestId('viewer-stage')).toHaveCount(0)
 	await zing.close()
 })

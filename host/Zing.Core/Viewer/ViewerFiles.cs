@@ -249,7 +249,8 @@ public sealed class ViewerFiles : IDisposable
 		if (!FromZingView(request)) return NotFound();
 		ViewerSession? session;
 		lock (_gate) session = _sessions.GetValueOrDefault(token);
-		if (session is null) return NotFound();
+		// Past the origin check, so the page may read the answer.
+		if (session is null) return NotFound() with { Headers = Cors(NotFound().Headers) };
 		var method = request.Method.ToUpperInvariant();
 		if (method == "OPTIONS") return Preflight();
 		if (method is not ("GET" or "HEAD")) return Refuse(405, "Method Not Allowed");
@@ -300,6 +301,9 @@ public sealed class ViewerFiles : IDisposable
 	}
 
 	private static ViewerReply NotFound() => Refuse(404, "Not Found");
+
+	private static Dictionary<string, string> Cors(IReadOnlyDictionary<string, string> headers) =>
+		new(headers, StringComparer.OrdinalIgnoreCase) { ["Access-Control-Allow-Origin"] = App, ["Vary"] = "Origin" };
 
 	private static ViewerReply Refuse(int status, string reason) =>
 		new(status, reason, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

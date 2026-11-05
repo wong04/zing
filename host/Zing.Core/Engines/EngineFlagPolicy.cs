@@ -131,7 +131,9 @@ internal sealed class EngineFlagPolicy
 	private static Dictionary<string, FlagSpec> Table(params (string Flag, FlagSpec Spec)[] entries) =>
 		entries.ToDictionary(e => e.Flag, e => e.Spec, StringComparer.Ordinal);
 
-	private static readonly string[] FfmpegFormats = ["mp4", "mov", "matroska", "webm", "mp3", "wav", "flac", "ogg", "ipod", "gif", "image2"];
+	private static readonly string[] FfmpegFormats = ["mp4", "mov", "matroska", "webm", "mp3", "wav", "flac", "ogg", "ipod", "gif", "image2",
+		// Input demuxers the file viewer names before -i (ViewerConversion.Demuxers); each reads one file.
+		"avi", "flv", "asf", "mpeg", "mpegts", "mxf", "rm", "aiff", "ac3", "amr", "dts", "caf", "au", "ape", "wv", "voc", "w64"];
 	private static readonly string[] PandocFormats = ["markdown", "gfm", "commonmark", "html", "docx", "odt", "epub", "rtf", "latex", "plain"];
 
 	/// <summary>The flags Zing.FakeEngine understands: for tests and for e2e runs against the fixture, never for a real engine.</summary>
