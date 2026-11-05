@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Zing.Core.Engines;
 
 namespace Zing.Core;
 
@@ -13,6 +14,17 @@ public sealed class Bridge
 	public delegate Task<object?> Handler(JsonElement[] args);
 
 	private readonly Dictionary<string, Handler> _handlers = new(StringComparer.Ordinal);
+	private DropInbox? _drops;
+
+	/// <summary>Where a Zing view's drop is left for the renderer's <c>files:open-dropped</c> call; set by the window's ChromeApi.</summary>
+	public void UseDropInbox(DropInbox drops) => _drops = drops;
+
+	/// <summary>The host read these paths from a drop on <paramref name="source"/>. Refused unless it is one of Zing's own views.</summary>
+	public void OfferDrop(string source, IReadOnlyList<string> paths) =>
+		(_drops ?? throw new InvalidOperationException("This window takes no drops")).Offer(source, paths);
+
+	/// <summary>A drop nobody collected is forgotten, so the next plain call can't pick it up.</summary>
+	public void ClearDrop() => _drops?.Clear();
 
 	/// <summary>Every channel with a handler, for checking against the contract (Defaults/channels.json).</summary>
 	public IReadOnlyCollection<string> Channels => _handlers.Keys;

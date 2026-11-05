@@ -134,6 +134,7 @@ public sealed class ChromeApi : IDisposable
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
 		Permissions = new PermissionBroker(PageUi);
 		Drops = new DropInbox(Grants);
+		bridge.UseDropInbox(Drops);
 		Stacks = new StackDropdown(key => StackMembers.Of(Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")), Ordering.Stacks(), key), host.Scheduler, state =>
 		{
 			host.Push("stack:dropdown", state);

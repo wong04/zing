@@ -1,6 +1,6 @@
 import './components.css'
 
-export { FileIcon, FileRow, RecentFilesList, ToolEmptyState } from './files'
+export { FileDropZone, FileIcon, FileRow, RecentFilesList, ToolEmptyState } from './files'
 export { IconButton, PillButton } from './PillButton'
 export { PillField, SelectAllField } from './PillField'
 export { PillMenu } from './PillMenu'

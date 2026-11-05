@@ -297,6 +297,8 @@ public sealed class WebView2Page : IPage
 		_view.Visible = _visible;
 		_view.Place(_bounds);
 		_core = _view.Core;
+		// A page has no way to message the host (window.chrome.webview is absent); only Zing's own views may, and the host reads dropped file paths from those alone.
+		_core.Settings.IsWebMessageEnabled = false;
 		_core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);

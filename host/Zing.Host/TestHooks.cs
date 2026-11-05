@@ -50,6 +50,20 @@ public static class TestHooks
 		return Zing.Core.Engines.EngineCatalog.FromFixture(new Uri(baseUrl), File.ReadAllText(manifest));
 	}
 
+	private static readonly Queue<string[]> PickedFiles = new();
+
+	/// <summary>
+	/// What the file picker answers in an e2e run, which shows no dialog. A test queues each answer first with the test
+	/// message {kind: "test", action: "pick-files", files: [...]}; an unqueued pick is an error, never a dialog.
+	/// </summary>
+	public static IReadOnlyList<string> TakePickedFiles()
+	{
+		lock (PickedFiles)
+		{
+			return PickedFiles.Count > 0 ? PickedFiles.Dequeue() : throw new InvalidOperationException("An e2e run shows no file dialog: queue the answer first with the pick-files test message");
+		}
+	}
+
 	private static int? _closeNextAt;
 	private static WindowScope? _newest;
 	private static int _windows;
@@ -68,6 +82,12 @@ public static class TestHooks
 		var root = message.RootElement;
 		if (!root.TryGetProperty("kind", out var kind) || kind.GetString() != "test") return false;
 		var action = root.GetProperty("action").GetString();
+		if (action == "pick-files")
+		{
+			var files = root.GetProperty("files").EnumerateArray().Select(f => f.GetString()!).ToArray();
+			lock (PickedFiles) PickedFiles.Enqueue(files);
+			return true;
+		}
 		if (action == "layers")
 		{
 			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(Layers(window)));

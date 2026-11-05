@@ -10,7 +10,7 @@ namespace Zing.Host;
 /// </summary>
 public sealed class RendererView
 {
-	public const string AppHost = "app.zing";
+	public const string AppHost = ZingOrigin.Host;
 
 	private readonly Bridge _bridge;
 	private readonly string _hash;
@@ -108,13 +108,20 @@ public sealed class RendererView
 	}
 
 	private void OnMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e) =>
-		TestHooks.Background(AnswerAsync(sender, e.Source, e.WebMessageAsJson), "bridge");
+		TestHooks.Background(AnswerAsync(sender, e.Source, e.WebMessageAsJson, DroppedPaths(e)), "bridge");
+
+	/// <summary>
+	/// The paths of the files a Zing view's message carried beside it (a drop, Spike S4); the engine hands them over only
+	/// while the event runs. A page view never gets here: it has no handler, and its messages are switched off.
+	/// </summary>
+	private static IReadOnlyList<string> DroppedPaths(CoreWebView2WebMessageReceivedEventArgs e) =>
+		[.. e.AdditionalObjects?.OfType<CoreWebView2File>().Select(file => file.Path) ?? []];
 
 	/// <summary>Every invoke gets a reply, even one the bridge can't read, so the renderer's promise never hangs.</summary>
-	private async Task AnswerAsync(CoreWebView2 sender, string source, string json)
+	private async Task AnswerAsync(CoreWebView2 sender, string source, string json, IReadOnlyList<string> dropped)
 	{
 		// Only Zing's own UI may talk to the host, never a web page.
-		if (!source.StartsWith($"https://{AppHost}/", StringComparison.Ordinal))
+		if (!ZingOrigin.IsZingView(source))
 		{
 			TestHooks.Record("bridge", new UnauthorizedAccessException($"Message from {source} refused in #{_hash}"));
 			return;
@@ -123,8 +130,17 @@ public sealed class RendererView
 		try
 		{
 			if (TestHooks.TryHandle(json, _window)) return;
-			// The bridge turns a handler's failure into an error result itself; it throws only for a message it can't read.
-			reply = await _bridge.HandleAsync(json);
+			// Left only for a call that asks for the drop, and forgotten afterwards whatever happens.
+			if (dropped.Count > 0 && CarriesDrop(json)) _bridge.OfferDrop(source, dropped);
+			try
+			{
+				// The bridge turns a handler's failure into an error result itself; it throws only for a message it can't read.
+				reply = await _bridge.HandleAsync(json);
+			}
+			finally
+			{
+				_bridge.ClearDrop();
+			}
 		}
 		catch (Exception error)
 		{
@@ -135,6 +151,13 @@ public sealed class RendererView
 		// A call can close its own window (window.close); then there is no one left to answer.
 		if (IsClosed) return;
 		sender.PostWebMessageAsJson(reply);
+	}
+
+	private static bool CarriesDrop(string json)
+	{
+		using var message = System.Text.Json.JsonDocument.Parse(json);
+		var root = message.RootElement;
+		return root.ValueKind == System.Text.Json.JsonValueKind.Object && root.TryGetProperty("channel", out var channel) && channel.GetString() == "files:open-dropped";
 	}
 
 	/// <summary>The bridge's error result (Bridge.cs) for a malformed message that still has an id; null without one.</summary>

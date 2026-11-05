@@ -222,7 +222,22 @@ public sealed class ZingApp
 		var openedAccount = AccountStore.Open(Path.Combine(AppPaths.UserData, "account"), new DpapiCipher(), stamp, skipGate);
 		if (openedAccount.Problem is { } accountProblem) StartupProblem("account", "your Zing account", "without it", accountProblem);
 		var account = openedAccount.Value;
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData, purger, OpenEngines());
+		var engines = OpenEngines();
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData, purger, engines, engines is null ? null : OpenRunner(engines));
+	}
+
+	/// <summary>Clears the job folders a killed Zing left. A folder that can't be tidied costs running engines, not startup.</summary>
+	private static EngineRunner? OpenRunner(EngineStore engines)
+	{
+		try
+		{
+			return new EngineRunner(engines, AppPaths.EngineJobs, (what, error) => TestHooks.Record(what, error));
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+		{
+			TestHooks.Record("engine jobs folder", error);
+			return null;
+		}
 	}
 
 	/// <summary>Nothing is fetched here: engines download only when a person asks. A folder that can't be tidied costs the engines feature, not startup.</summary>

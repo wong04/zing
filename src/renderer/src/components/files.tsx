@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react'
+import { useState, type DragEvent, type ReactNode } from 'react'
+import type { PickedFile } from '../../../shared/engines/engineJob'
+import { zing } from '../api'
 import { extension, fileName, folderName } from './filePath'
 import { CopyIcon, FolderOpenIcon } from './icons'
 import { FadingScroll } from './ScrollFade'
@@ -132,6 +134,47 @@ export function ToolEmptyState({
 					</div>
 				) : null}
 			</div>
+		</div>
+	)
+}
+
+export interface FileDropZoneProps {
+	/** What the drop gave: a name for each file and the token to hand an engine job. The path stays in the host. */
+	readonly onFiles: (files: readonly PickedFile[]) => void
+	/** The host refused the drop or couldn't read it. */
+	readonly onError: (error: Error) => void
+	readonly children: (state: { readonly targeted: boolean }) => ReactNode
+}
+
+const isFileDrag = (event: DragEvent): boolean => event.dataTransfer.types.includes('Files')
+
+/**
+ * Takes files dropped on a Zing view (Spike S4). The host reads each file's path from the drop itself, so what comes
+ * back is a token and a name; a page can't do this, since only Zing's own views reach the host.
+ */
+export function FileDropZone({ onFiles, onError, children }: FileDropZoneProps) {
+	const [targeted, setTargeted] = useState(false)
+	return (
+		<div
+			onDragEnter={(event) => {
+				if (!isFileDrag(event)) return
+				event.preventDefault()
+				setTargeted(true)
+			}}
+			onDragOver={(event) => {
+				if (isFileDrag(event)) event.preventDefault()
+			}}
+			onDragLeave={(event) => {
+				if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setTargeted(false)
+			}}
+			onDrop={(event) => {
+				if (!isFileDrag(event)) return
+				event.preventDefault()
+				setTargeted(false)
+				zing.openDropped([...event.dataTransfer.files]).then(onFiles, onError)
+			}}
+		>
+			{children({ targeted })}
 		</div>
 	)
 }

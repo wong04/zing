@@ -343,6 +343,16 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public IDownloadHost DownloadHost => _downloads.Files;
 
+	public async Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions)
+	{
+		if (TestHooks.IsEndToEndRun) return TestHooks.TakePickedFiles();
+		var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(_window.AppWindow.Id);
+		if (extensions.Count == 0) picker.FileTypeFilter.Add("*");
+		foreach (var extension in extensions) picker.FileTypeFilter.Add("." + extension);
+		var picked = await picker.PickMultipleFilesAsync();
+		return [.. picked.Select(file => file.Path)];
+	}
+
 	// MARK: IPageFeatureHost
 
 	public void DownloadStarting(WebView2Page page, CoreWebView2DownloadStartingEventArgs e) => _downloads.Starting(page, e);
