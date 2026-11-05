@@ -45,6 +45,12 @@ internal sealed partial record EnginePolicy(
 	bool Network)
 {
 	/// <summary>
+	/// The file rules a real engine needs (FFmpeg names each input's format; ImageMagick ends on its output). Off only in
+	/// <see cref="EngineFlagPolicy.Plus"/>, the test seam, where the fake engine takes its arguments in any order.
+	/// </summary>
+	public bool EnforceFileRules { get; init; } = true;
+
+	/// <summary>
 	/// Every literal must be a flag in the table, followed by values of exactly the shape the flag declares; files are
 	/// only ever <see cref="JobArg.Input"/> and <see cref="JobArg.Output"/>. There is no free text, so a literal can't be a
 	/// path, an address, a protocol ("concat:"), a coder ("label:"), an @-list or a filter graph.
@@ -53,6 +59,7 @@ internal sealed partial record EnginePolicy(
 	/// <exception cref="UnsafeEngineArgumentException">A value has the wrong shape, or is missing.</exception>
 	public void Check(IReadOnlyList<JobArg> args)
 	{
+		if (EnforceFileRules) CheckFileRules(args);
 		for (var i = 0; i < args.Count; i++)
 		{
 			if (args[i] is not JobArg.Literal literal) continue;
@@ -65,6 +72,25 @@ internal sealed partial record EnginePolicy(
 				CheckValue(literal.Text, spec, kind, args[i], ref choice);
 			}
 		}
+	}
+
+	/// <summary>
+	/// FFmpeg probes a file's content, and `-protocol_whitelist file,pipe` does not stop a concat or playlist file renamed
+	/// ".mp4" from reading the files beside it (checked with the real engine), so every input must come after `-f` and a
+	/// demuxer from the list. ImageMagick overwrites silently, so its last argument must be a job output.
+	/// </summary>
+	private void CheckFileRules(IReadOnlyList<JobArg> args)
+	{
+		if (EngineId == EngineIds.Ffmpeg)
+		{
+			for (var i = 0; i < args.Count; i++)
+			{
+				if (args[i] is JobArg.Input && !(i >= 3 && args[i - 1] is JobArg.Literal { Text: "-i" } && args[i - 3] is JobArg.Literal { Text: "-f" }))
+					throw new UnsafeEngineArgumentException("An FFmpeg input must follow -f and a format name, then -i, so FFmpeg is told what the file is instead of guessing");
+				if (args[i] is JobArg.Literal { Text: "-i" } && !(i >= 2 && args[i - 2] is JobArg.Literal { Text: "-f" })) throw new UnsafeEngineArgumentException("-i must follow -f and a format name");
+			}
+		}
+		if (EngineId == EngineIds.Magick && (args.Count == 0 || args[^1] is not JobArg.Output)) throw new UnsafeEngineArgumentException("ImageMagick's last argument must be the job's output, so no input can be overwritten");
 	}
 
 	private static void CheckValue(string flag, FlagSpec spec, FlagValue kind, JobArg value, ref int choice)
@@ -123,7 +149,7 @@ internal sealed class EngineFlagPolicy
 		foreach (var (flag, spec) in flags) merged[flag] = spec;
 		var copy = new Dictionary<string, EnginePolicy>(_engines, StringComparer.Ordinal)
 		{
-			[engineId] = current with { Flags = merged, OutputExtensions = [.. current.OutputExtensions, .. extensions] },
+			[engineId] = current with { Flags = merged, OutputExtensions = [.. current.OutputExtensions, .. extensions], EnforceFileRules = false },
 		};
 		return new EngineFlagPolicy(copy);
 	}
@@ -185,8 +211,9 @@ internal sealed class EngineFlagPolicy
 				("-preset", new FlagSpec(FlagValue.OneOf) { Choices = ["medium"] }),
 				("-pix_fmt", new FlagSpec(FlagValue.OneOf) { Choices = ["yuv420p"] }),
 				("-b:v", new FlagSpec(FlagValue.OneOf) { Choices = ["0"] }),
-				("-profile:v", new FlagSpec(FlagValue.Number)),
-				("-loop", new FlagSpec(FlagValue.Number)),
+				("-profile:v", new FlagSpec(FlagValue.OneOf) { Choices = ["3"] }),
+				// 0 is "loop forever" in a GIF; any other number before an image2 input would loop the input instead.
+				("-loop", new FlagSpec(FlagValue.OneOf) { Choices = ["0"] }),
 				("-vf", new FlagSpec(FlagValue.OneOf) { Choices = [GifFilter] })),
 			["-nostdin"],
 			new Dictionary<string, string[]> { ["-i"] = ["-protocol_whitelist", "file,pipe"] },
