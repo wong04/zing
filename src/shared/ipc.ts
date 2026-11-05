@@ -293,6 +293,12 @@ export interface InvokeContract {
 	/** The native open dialog; an empty list if the person cancelled. */
 	'files:pick': { args: [kinds: readonly FileKind[]]; result: PickedFile[] }
 	/**
+	 * Convert's HTML to PDF: Chromium prints the HTML file the token stands for, with scripts and the network off, into the
+	 * Downloads folder under `outputName` (a plain name ending in .pdf; numbered if taken). Answers with the PDF's name and a
+	 * token. Rejects for a file that isn't HTML or is over 1.5 MB.
+	 */
+	'convert:html-to-pdf': { args: [token: string, outputName: string]; result: PickedFile }
+	/**
 	 * Files dropped on a Zing view. The host reads their paths from the drop itself (`postMessageWithAdditionalObjects`),
 	 * so the bridge carries the `File`s beside the message and not in its JSON args; a web page cannot send one.
 	 */
@@ -443,6 +449,8 @@ export interface ZingApi {
 	onEngineOutput(listener: (output: EngineOutput) => void): Unsubscribe
 	onEngineExit(listener: (exit: EngineExit) => void): Unsubscribe
 	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>
+	/** Convert's HTML to PDF (see `convert:html-to-pdf`). */
+	printHtmlToPdf(token: string, outputName: string): Promise<PickedFile>
 	/** Hand over the `File`s of a drop (`event.dataTransfer.files`); resolves with a token for each. */
 	openDropped(files: readonly File[]): Promise<PickedFile[]>
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe

@@ -69,6 +69,10 @@
 			"args": 1
 		},
 		{
+			"channel": "convert:html-to-pdf",
+			"args": 2
+		},
+		{
 			"channel": "default-browser:open-settings",
 			"args": 0
 		},

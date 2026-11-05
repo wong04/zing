@@ -100,6 +100,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		onEngineOutput: (listener) => listen('engines:output', listener),
 		onEngineExit: (listener) => listen('engines:exit', listener),
 		pickFiles: (kinds) => invoke('files:pick', kinds),
+		printHtmlToPdf: (token, outputName) => invoke('convert:html-to-pdf', token, outputName),
 		openDropped: (files) => invoke('files:open-dropped', files),
 		getAccount: () => invoke('account:get'),
 		signUp: (username, displayName, email, password) => invoke('account:sign-up', username, displayName, email, password),

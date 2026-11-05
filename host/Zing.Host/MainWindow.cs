@@ -353,6 +353,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		return [.. picked.Select(file => file.Path)];
 	}
 
+	public Task PrintHtmlToPdfAsync(string html, string pdfPath, CancellationToken cancellation) => HtmlPdfPrinter.PrintAsync(_window, _scope, html, pdfPath, cancellation);
+
 	// MARK: IPageFeatureHost
 
 	public void DownloadStarting(WebView2Page page, CoreWebView2DownloadStartingEventArgs e) => _downloads.Starting(page, e);

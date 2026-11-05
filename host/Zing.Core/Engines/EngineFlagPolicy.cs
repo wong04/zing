@@ -131,7 +131,11 @@ internal sealed class EngineFlagPolicy
 	private static Dictionary<string, FlagSpec> Table(params (string Flag, FlagSpec Spec)[] entries) =>
 		entries.ToDictionary(e => e.Flag, e => e.Spec, StringComparer.Ordinal);
 
-	private static readonly string[] FfmpegFormats = ["mp4", "mov", "matroska", "webm", "mp3", "wav", "flac", "ogg", "ipod", "gif", "image2"];
+	// Demuxer names, for telling FFmpeg what an input is instead of letting it sniff (Convert). None reads a list of other files.
+	private static readonly string[] FfmpegFormats = ["mp4", "mov", "matroska", "webm", "mp3", "wav", "flac", "ogg", "ipod", "gif", "image2", "avi", "flv", "asf", "mpeg", "mpegts", "aiff", "aac", "ac3", "amr"];
+
+	/// <summary>The one filter graph Convert gives FFmpeg for GIF output. Exactly this text; no other -vf value is accepted, since a filter graph can read files (movie=).</summary>
+	internal const string GifFilter = "fps=12,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse";
 	private static readonly string[] PandocFormats = ["markdown", "gfm", "commonmark", "html", "docx", "odt", "epub", "rtf", "latex", "plain"];
 
 	/// <summary>The flags Zing.FakeEngine understands: for tests and for e2e runs against the fixture, never for a real engine.</summary>
@@ -175,7 +179,15 @@ internal sealed class EngineFlagPolicy
 				("-t", new FlagSpec(FlagValue.Number)),
 				("-vn", new FlagSpec()),
 				("-an", new FlagSpec()),
-				("-f", new FlagSpec(FlagValue.OneOf) { Choices = FfmpegFormats })),
+				("-f", new FlagSpec(FlagValue.OneOf) { Choices = FfmpegFormats }),
+				// Encoder settings (Convert): numbers and fixed words only; none names a file, a filter or an address.
+				("-crf", new FlagSpec(FlagValue.Number)),
+				("-preset", new FlagSpec(FlagValue.OneOf) { Choices = ["medium"] }),
+				("-pix_fmt", new FlagSpec(FlagValue.OneOf) { Choices = ["yuv420p"] }),
+				("-b:v", new FlagSpec(FlagValue.OneOf) { Choices = ["0"] }),
+				("-profile:v", new FlagSpec(FlagValue.Number)),
+				("-loop", new FlagSpec(FlagValue.Number)),
+				("-vf", new FlagSpec(FlagValue.OneOf) { Choices = [GifFilter] })),
 			["-nostdin"],
 			new Dictionary<string, string[]> { ["-i"] = ["-protocol_whitelist", "file,pipe"] },
 			["mp4", "mov", "mkv", "webm", "mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "gif", "jpg", "jpeg", "png", "webp"],
@@ -200,7 +212,9 @@ internal sealed class EngineFlagPolicy
 			Table(
 				("-quality", new FlagSpec(FlagValue.Number)),
 				("-strip", new FlagSpec()),
-				("-auto-orient", new FlagSpec())),
+				("-auto-orient", new FlagSpec()),
+				// "1--1" is every image but the first: a multi-frame file gives one picture to a single-frame format.
+				("-delete", new FlagSpec(FlagValue.OneOf) { Choices = ["1--1"] })),
 			[],
 			new Dictionary<string, string[]>(),
 			["jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff", "avif", "heic", "ico"],

@@ -117,9 +117,9 @@ public sealed class EngineRunnerTests : IDisposable
 	{
 		await _f.InstallAsync();
 
-		var error = Assert.Throws<DisallowedEngineFlagException>(() => _f.Start(_f.Request(Literal("-vf"), Literal("scale=iw/2:ih/2"))));
+		var error = Assert.Throws<DisallowedEngineFlagException>(() => _f.Start(_f.Request(Literal("-filter_complex"), Literal("scale=iw/2:ih/2"))));
 
-		Assert.Contains("-vf", error.Message);
+		Assert.Contains("-filter_complex", error.Message);
 		Assert.Equal(0, _f.Runner.Running);
 	}
 

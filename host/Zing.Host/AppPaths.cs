@@ -45,6 +45,9 @@ public static class AppPaths
 	/// <summary>Where each engine job gets its private working folder; emptied at every start, and a job removes its own when it ends.</summary>
 	public static string EngineJobs => Path.Combine(Path.GetDirectoryName(Engines)!, "engine-jobs");
 
+	/// <summary>Where Convert's HTML to PDF keeps the throwaway browser profile of a print; removed when the print ends.</summary>
+	public static string PrintScratch => Path.Combine(Path.GetDirectoryName(Engines)!, "print-scratch");
+
 	private static string Resolve()
 	{
 		var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");
