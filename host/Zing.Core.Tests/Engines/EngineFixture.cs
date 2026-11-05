@@ -190,7 +190,11 @@ public sealed class EngineFixture : IDisposable
 		DeleteRoot();
 	}
 
-	/// <summary>Windows keeps a program's file locked for a moment after the program ends (the virus scanner too), more so when tests run in parallel.</summary>
+	/// <summary>
+	/// Windows keeps a program's file locked for a moment after the program has ended. Without this retry the old fake-engine
+	/// store test and, now and then, a runner test fail on deleting the engine's exe. It is not leftover children: those tests
+	/// kill theirs and assert they are gone, and running the test classes one at a time did not remove the failures.
+	/// </summary>
 	private void DeleteRoot()
 	{
 		for (var attempt = 1; ; attempt++)
