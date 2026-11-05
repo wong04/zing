@@ -91,6 +91,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		onToolPanelsState: (listener) => listen('toolpanel:state', listener),
 		listEngines: () => invoke('engines:list'),
 		ensureEngine: (id) => invoke('engines:ensure', id),
+		cancelEngine: (id) => invoke('engines:cancel', id),
 		removeEngine: (id) => invoke('engines:remove', id),
 		updateYtDlp: () => invoke('engines:update-ytdlp'),
 		onEngineProgress: (listener) => listen('engines:progress', listener),

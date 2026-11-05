@@ -62,6 +62,24 @@ public sealed partial class EngineCatalogTests
 	}
 
 	[Fact]
+	public void The_model_says_first_that_its_weights_licence_is_not_stated()
+	{
+		Assert.StartsWith("The weights' licence isn't stated", EngineCatalog.Pinned.Get("bgmodel").Licence);
+	}
+
+	[Theory]
+	[InlineData("C:/evil.exe")]
+	[InlineData("/evil.exe")]
+	[InlineData("..\\evil.exe")]
+	[InlineData("sub/../../evil.exe")]
+	public void A_fixture_file_that_is_not_below_the_base_is_refused(string file)
+	{
+		var manifest = $$"""[{"id":"ffmpeg","version":"1","file":"{{file.Replace("\\", "\\\\")}}","sha256":"abc","bytes":1,"executable":"ffmpeg.exe"}]""";
+
+		Assert.Throws<ArgumentException>(() => EngineCatalog.FromFixture(new Uri("http://127.0.0.1:5555/"), manifest));
+	}
+
+	[Fact]
 	public void An_unknown_id_raises()
 	{
 		Assert.Throws<UnknownEngineException>(() => EngineCatalog.Pinned.Get("vlc"));

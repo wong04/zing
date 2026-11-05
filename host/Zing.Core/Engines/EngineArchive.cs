@@ -23,9 +23,11 @@ internal static class EngineArchive
 		{
 			using var zip = ZipFile.OpenRead(archive);
 			long declared = 0;
+			var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 			foreach (var entry in zip.Entries)
 			{
 				CheckName(engine, stage, entry.FullName);
+				if (entry.Name != "" && !seen.Add(entry.FullName.Replace('\\', '/'))) throw new EngineDownloadException(engine.Id, engine.Url, $"the archive lists {entry.FullName} more than once");
 				declared += entry.Length;
 				if (declared > maxBytes) throw new EngineDownloadException(engine.Id, engine.Url, "the archive unpacks to more than Zing allows");
 			}
@@ -87,13 +89,37 @@ internal static class EngineArchive
 		var start = new ProcessStartInfo(tar) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = System.Text.Encoding.UTF8 };
 		foreach (var arg in args) start.ArgumentList.Add(arg);
 		using var process = Process.Start(start) ?? throw new EngineDownloadException(engine.Id, engine.Url, "tar.exe didn't start");
-		using var stop = cancel.Register(() => process.Kill(entireProcessTree: true));
+		using var stop = cancel.Register(() => Stop(process));
 		var errors = process.StandardError.ReadToEndAsync();
 		var output = process.StandardOutput.ReadToEnd();
 		process.WaitForExit();
 		cancel.ThrowIfCancellationRequested();
-		if (process.ExitCode != 0) throw new EngineDownloadException(engine.Id, engine.Url, $"tar.exe couldn't unpack it ({errors.Result.Trim()})");
+		if (process.ExitCode != 0) throw new EngineDownloadException(engine.Id, engine.Url, ExplainTarFailure(errors.Result));
 		return output;
+	}
+
+	// A cancel can land just as tar finishes; killing an exited process throws, and that is not a failure.
+	private static void Stop(Process process)
+	{
+		try
+		{
+			process.Kill(entireProcessTree: true);
+		}
+		catch (InvalidOperationException)
+		{
+			// Already exited.
+		}
+	}
+
+	/// <summary>Says what tar's failure most likely means, always keeping tar's own words.</summary>
+	internal static string ExplainTarFailure(string stderr)
+	{
+		var text = stderr.Trim();
+		if (text.Contains("Unrecognized archive format", StringComparison.OrdinalIgnoreCase) || text.Contains("Unsupported", StringComparison.OrdinalIgnoreCase))
+			return $"this Windows' tar.exe can't read 7z archives (it needs a Windows 11 build); tar said: {text}";
+		if (text.Contains("too long", StringComparison.OrdinalIgnoreCase) || text.Contains("ENAMETOOLONG", StringComparison.Ordinal))
+			return $"a file path is too long for Windows to create; tar said: {text}";
+		return $"tar.exe couldn't unpack it ({text})";
 	}
 
 	private static void RefuseLinks(Engine engine, string stage)

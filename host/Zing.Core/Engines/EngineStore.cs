@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Zing.Core.Engines;
@@ -19,7 +20,7 @@ public sealed partial class EngineStore
 {
 	private const string TempPrefix = ".tmp-";
 	private const string AsidePrefix = ".old-";
-	private const string VersionFile = ".zing-engine-version";
+	private const string MarkerFile = ".zing-engine";
 	private const long MaxExtractedBytes = 4L << 30;
 	private const int UpdateSizeFactor = 2;
 	private const long MaxChecksumFileBytes = 64 * 1024;
@@ -28,6 +29,10 @@ public sealed partial class EngineStore
 	private readonly string _root;
 	private readonly EngineCatalog _catalog;
 	private readonly HttpClient _http;
+	// The release page's redirect must be read, not followed: only its first hop names the tag.
+	private readonly HttpClient _noRedirect = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(60) };
+	// The host runs all of this on the UI thread; tests and any other host may not, so the three tables are locked.
+	private readonly object _gate = new();
 	private readonly Action<string, Exception> _onError;
 	private readonly Dictionary<string, Install> _installs = new(StringComparer.Ordinal);
 	private readonly HashSet<string> _updating = new(StringComparer.Ordinal);
@@ -45,6 +50,9 @@ public sealed partial class EngineStore
 
 	public EngineCatalog Catalog => _catalog;
 
+	/// <summary>Test seam: runs once the download is complete and before it is checked again, so a test can swap the file.</summary>
+	internal Action<string>? AfterDownload { get; set; }
+
 	public IReadOnlyList<EngineStatus> List() => [.. _catalog.Engines.Select(Status)];
 
 	/// <summary>
@@ -55,26 +63,45 @@ public sealed partial class EngineStore
 	{
 		var engine = _catalog.Get(id);
 		if (InstalledVersion(engine) is not null) return ExecutablePath(engine);
-		if (!_installs.TryGetValue(id, out var install))
+		Install install;
+		lock (_gate)
 		{
-			install = new Install();
-			_installs[id] = install;
-			install.Task = RunInstallAsync(engine, install);
+			if (!_installs.TryGetValue(id, out install!))
+			{
+				install = new Install();
+				_installs[id] = install;
+				install.Task = RunInstallAsync(engine, install);
+			}
+			install.Listeners.Add(progress);
+			install.Waiters++;
 		}
-		install.Listeners.Add(progress);
-		install.Waiters++;
 		try
 		{
 			return await install.Task.WaitAsync(cancel);
 		}
 		catch (OperationCanceledException) when (cancel.IsCancellationRequested)
 		{
-			if (install.Waiters == 1 && !install.Task.IsCompleted) await StopAsync(install);
+			bool last;
+			// Out of the table before the stop begins, so a caller arriving now starts a fresh download instead of joining a doomed one.
+			lock (_gate)
+			{
+				last = install.Waiters == 1 && !install.Task.IsCompleted;
+				if (last) Forget(id, install);
+			}
+			if (last) await StopAsync(install);
 			throw;
 		}
 		finally
 		{
-			install.Waiters--;
+			lock (_gate) install.Waiters--;
+		}
+	}
+
+	private void Forget(string id, Install install)
+	{
+		lock (_gate)
+		{
+			if (_installs.TryGetValue(id, out var current) && ReferenceEquals(current, install)) _installs.Remove(id);
 		}
 	}
 
@@ -96,15 +123,21 @@ public sealed partial class EngineStore
 	public IDisposable Use(string id)
 	{
 		_catalog.Get(id);
-		_uses[id] = _uses.GetValueOrDefault(id) + 1;
-		return new Lease(() => _uses[id]--);
+		lock (_gate) _uses[id] = _uses.GetValueOrDefault(id) + 1;
+		return new Lease(() =>
+		{
+			lock (_gate) _uses[id]--;
+		});
 	}
 
 	/// <exception cref="EngineInUseException">While it downloads, while a lease is held, or while Windows says one of its files is open.</exception>
 	public void Remove(string id)
 	{
 		_catalog.Get(id);
-		if (_installs.ContainsKey(id) || _updating.Contains(id) || _uses.GetValueOrDefault(id) > 0) throw new EngineInUseException(id);
+		lock (_gate)
+		{
+			if (_installs.ContainsKey(id) || _updating.Contains(id) || _uses.GetValueOrDefault(id) > 0) throw new EngineInUseException(id);
+		}
 		var target = FolderOf(id);
 		if (!Directory.Exists(target)) return;
 		// A rename is all or nothing and Windows refuses it while a file inside is open, so an engine is never half-deleted.
@@ -121,26 +154,40 @@ public sealed partial class EngineStore
 	{
 		var current = _catalog.Get(EngineIds.YtDlp);
 		var installed = InstalledVersion(current) ?? throw new EngineNotInstalledException(current.Id);
-		if (_installs.ContainsKey(current.Id) || !_updating.Add(current.Id)) throw new EngineInUseException(current.Id);
+		lock (_gate)
+		{
+			if (_installs.ContainsKey(current.Id) || !_updating.Add(current.Id)) throw new EngineInUseException(current.Id);
+		}
 		try
 		{
-			var release = await LatestReleaseAsync(current, cancel);
-			if (release.Version == installed) return new YtDlpUpdate(installed, false);
+			var tag = await ReadLatestTagAsync(current, _catalog.YtDlpLatest, cancel);
+			// Never a downgrade: "latest" can briefly name an older tag, and a newer one may already be here.
+			if (EngineVersions.Compare(tag, installed) is <= 0) return new YtDlpUpdate(installed, false);
+			var release = await ReleaseAsync(current, tag, cancel);
 			var next = current with { Version = release.Version, Url = release.Program, Sha256 = release.Sha256 };
 			await InstallAsync(next, exactBytes: null, maxBytes: current.Bytes * UpdateSizeFactor, _ => { }, cancel);
 			return new YtDlpUpdate(release.Version, true);
 		}
 		finally
 		{
-			_updating.Remove(current.Id);
+			lock (_gate) _updating.Remove(current.Id);
 		}
 	}
 
 	private sealed record Release(string Version, Uri Program, string Sha256);
 
-	private async Task<Release> LatestReleaseAsync(Engine current, CancellationToken cancel)
+	[GeneratedRegex(@"^\d{4}\.\d{2}\.\d{2}(\.\d+)?$")]
+	private static partial Regex ReleaseTag();
+
+	/// <summary>
+	/// "latest" redirects once to the tagged release and then again to a storage host with no tag in its address, so only
+	/// the first Location is read. It must be on the catalog's release host and path, and the tag a dated version; the
+	/// program's address is then built from the catalog's base and the tag, never taken from a redirect.
+	/// </summary>
+	private async Task<Release> ReleaseAsync(Engine current, string tag, CancellationToken cancel)
 	{
-		var sums = _catalog.YtDlpLatest;
+		var sums = new Uri(_catalog.YtDlpReleases, $"{tag}/SHA2-256SUMS");
+		var program = new Uri(_catalog.YtDlpReleases, $"{tag}/{current.Executable}");
 		HttpResponseMessage response;
 		try
 		{
@@ -148,15 +195,12 @@ public sealed partial class EngineStore
 		}
 		catch (HttpRequestException error)
 		{
-			throw new EngineDownloadException(current.Id, sums, $"couldn't reach the release page ({error.Message})", error);
+			throw new EngineDownloadException(current.Id, sums, $"couldn't reach the release's checksum file ({error.Message})", error);
 		}
 		using (response)
 		{
-			if (!response.IsSuccessStatusCode) throw new EngineDownloadException(current.Id, sums, $"the release page answered {(int)response.StatusCode}");
+			if (!response.IsSuccessStatusCode) throw new EngineDownloadException(current.Id, sums, $"the checksum file's address answered {(int)response.StatusCode}");
 			if (response.Content.Headers.ContentLength > MaxChecksumFileBytes) throw new EngineDownloadException(current.Id, sums, "the checksum file is larger than expected");
-			var final = response.RequestMessage?.RequestUri ?? sums;
-			var version = final.Segments.Length >= 2 ? final.Segments[^2].TrimEnd('/') : "";
-			if (version is "" or "latest") throw new EngineDownloadException(current.Id, final, "the release address didn't name a version");
 			string text;
 			try
 			{
@@ -164,10 +208,36 @@ public sealed partial class EngineStore
 			}
 			catch (Exception error) when (error is HttpRequestException or IOException)
 			{
-				throw new EngineDownloadException(current.Id, final, $"the checksum file ended early ({error.Message})", error);
+				throw new EngineDownloadException(current.Id, sums, $"the checksum file ended early ({error.Message})", error);
 			}
-			var hash = HashFor(text, current.Executable) ?? throw new EngineDownloadException(current.Id, final, $"the release's checksum file has no SHA-256 for {current.Executable}");
-			return new Release(version, new Uri(final, current.Executable), hash);
+			var hash = HashFor(text, current.Executable) ?? throw new EngineDownloadException(current.Id, sums, $"the release's checksum file has no SHA-256 for {current.Executable}");
+			return new Release(tag, program, hash);
+		}
+	}
+
+	private async Task<string> ReadLatestTagAsync(Engine current, Uri latest, CancellationToken cancel)
+	{
+		HttpResponseMessage response;
+		try
+		{
+			response = await _noRedirect.GetAsync(latest, HttpCompletionOption.ResponseHeadersRead, cancel);
+		}
+		catch (HttpRequestException error)
+		{
+			throw new EngineDownloadException(current.Id, latest, $"couldn't reach the release page ({error.Message})", error);
+		}
+		using (response)
+		{
+			var redirected = (int)response.StatusCode is 301 or 302 or 303 or 307 or 308;
+			if (!redirected || response.Headers.Location is null) throw new EngineDownloadException(current.Id, latest, $"the release page answered {(int)response.StatusCode} instead of pointing to a release, so there is no version to update to");
+			var location = new Uri(latest, response.Headers.Location);
+			var releases = _catalog.YtDlpReleases;
+			var sameOrigin = location.Scheme == releases.Scheme && string.Equals(location.Host, releases.Host, StringComparison.OrdinalIgnoreCase) && location.Port == releases.Port;
+			var path = location.AbsolutePath;
+			if (!sameOrigin || !path.StartsWith(releases.AbsolutePath, StringComparison.Ordinal)) throw new EngineDownloadException(current.Id, location, "the release address isn't on the host Zing expects, so it names no version Zing trusts");
+			var parts = path[releases.AbsolutePath.Length..].Split('/');
+			if (parts.Length != 2 || parts[1] != "SHA2-256SUMS" || !ReleaseTag().IsMatch(parts[0])) throw new EngineDownloadException(current.Id, location, "the release address didn't name a dated version");
+			return parts[0];
 		}
 	}
 
@@ -213,7 +283,7 @@ public sealed partial class EngineStore
 		}
 		finally
 		{
-			_installs.Remove(engine.Id);
+			Forget(engine.Id, install);
 		}
 	}
 
@@ -221,11 +291,30 @@ public sealed partial class EngineStore
 
 	private string ExecutablePath(Engine engine) => Path.Combine(FolderOf(engine.Id), engine.Executable);
 
+	private sealed record Marker(string Version, string Sha256);
+
+	/// <summary>
+	/// The installed version, or null when there is none Zing accepts. The marker holds the version and the hash it was
+	/// verified against, so a pin changed in a newer Zing (a security fix, say) reinstalls without re-hashing anything here.
+	/// A yt-dlp updated by a click stays while it is newer than the pin; once the pin overtakes it, the pin wins.
+	/// </summary>
 	private string? InstalledVersion(Engine engine)
 	{
-		var versionFile = Path.Combine(FolderOf(engine.Id), VersionFile);
-		if (!File.Exists(ExecutablePath(engine)) || !File.Exists(versionFile)) return null;
-		return File.ReadAllText(versionFile).Trim();
+		var markerFile = Path.Combine(FolderOf(engine.Id), MarkerFile);
+		if (!File.Exists(ExecutablePath(engine)) || !File.Exists(markerFile)) return null;
+		Marker? marker;
+		try
+		{
+			marker = JsonSerializer.Deserialize<Marker>(File.ReadAllText(markerFile), ZingJson.Options);
+		}
+		catch (JsonException)
+		{
+			return null;
+		}
+		if (marker is null) return null;
+		if (string.Equals(marker.Sha256, engine.Sha256, StringComparison.OrdinalIgnoreCase)) return marker.Version;
+		if (engine.Id == EngineIds.YtDlp && EngineVersions.Compare(marker.Version, engine.Version) is > 0) return marker.Version;
+		return null;
 	}
 
 	private EngineStatus Status(Engine engine)
@@ -245,10 +334,14 @@ public sealed partial class EngineStore
 		{
 			var downloaded = Path.Combine(temp, "download");
 			await DownloadAsync(engine, exactBytes, maxBytes, downloaded, report, cancel);
+			AfterDownload?.Invoke(downloaded);
+			// The stream was hashed as it arrived; the file is hashed again now, since it has sat in a folder other programs can write to.
+			var onDisk = await Hashing.FileAsync(downloaded, "SHA-256");
+			if (!string.Equals(onDisk, engine.Sha256, StringComparison.OrdinalIgnoreCase)) throw new EngineChecksumException(engine.Id, engine.Url, engine.Sha256, onDisk);
 			var stage = Path.Combine(temp, "stage");
 			await Task.Run(() => Unpack(engine, downloaded, stage, cancel), cancel);
 			if (!File.Exists(Path.Combine(stage, engine.Executable))) throw new EngineExecutableMissingException(engine.Id, engine.Url, engine.Executable);
-			File.WriteAllText(Path.Combine(stage, VersionFile), engine.Version);
+			File.WriteAllText(Path.Combine(stage, MarkerFile), JsonSerializer.Serialize(new Marker(engine.Version, engine.Sha256), ZingJson.Options));
 			Place(engine.Id, stage);
 		}
 		finally
@@ -371,6 +464,8 @@ public sealed partial class EngineStore
 		}
 	}
 
+	// Zing runs one instance per profile (SingleInstance), and the engines folder follows the profile, so no other
+	// process can be staging an install here while this one starts.
 	private void RemoveLeftovers()
 	{
 		if (!Directory.Exists(_root)) return;

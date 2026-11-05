@@ -22,16 +22,20 @@ public sealed record Engine(string Id, string Version, Uri Url, string Sha256, l
 
 public sealed class EngineCatalog
 {
-	public EngineCatalog(IReadOnlyList<Engine> engines, Uri ytDlpLatest)
+	public EngineCatalog(IReadOnlyList<Engine> engines, Uri ytDlpLatest, Uri ytDlpReleases)
 	{
 		Engines = engines;
 		YtDlpLatest = ytDlpLatest;
+		YtDlpReleases = ytDlpReleases;
 	}
 
 	public IReadOnlyList<Engine> Engines { get; }
 
 	/// <summary>The newest yt-dlp release's SHA2-256SUMS. GitHub redirects it to the release's own address, which names the version.</summary>
 	public Uri YtDlpLatest { get; }
+
+	/// <summary>Where tagged releases live ("&lt;base&gt;&lt;tag&gt;/yt-dlp.exe"); the update builds its addresses from this, not from redirects.</summary>
+	public Uri YtDlpReleases { get; }
 
 	public Engine Get(string id) => Engines.FirstOrDefault(e => e.Id == id) ?? throw new UnknownEngineException(id);
 
@@ -109,9 +113,10 @@ public sealed class EngineCatalog
 				178_648_008,
 				"isnet-general-use.onnx",
 				"Background remover model (IS-Net)",
-				"Apache-2.0 (the DIS repository; the weights are not separately licensed in writing)"),
+				"The weights' licence isn't stated; the DIS repository's code is Apache-2.0"),
 		],
-		new Uri("https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS"));
+		new Uri("https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS"),
+		new Uri("https://github.com/yt-dlp/yt-dlp/releases/download/"));
 
 	/// <summary>
 	/// A test run's catalog (ZING_ENGINE_BASE_URL and ZING_ENGINE_CATALOG): the same engines, served by a fixture on this PC.
@@ -120,8 +125,13 @@ public sealed class EngineCatalog
 	{
 		if (!IsThisPc(baseUrl)) throw new ArgumentException($"A fixture catalog must point at this PC, not {baseUrl.Host}", nameof(baseUrl));
 		var entries = JsonSerializer.Deserialize<List<FixtureEntry>>(manifestJson, ZingJson.Options) ?? throw new InvalidDataException("The fixture catalog is empty");
+		foreach (var entry in entries)
+		{
+			// "file" is joined onto the base address, so it must stay below it.
+			if (Path.IsPathRooted(entry.File) || entry.File.Contains("..") || entry.File.Contains(':')) throw new ArgumentException($"A fixture file must be a plain name below the base address, not {entry.File}", nameof(manifestJson));
+		}
 		var engines = entries.Select(e => new Engine(e.Id, e.Version, new Uri(baseUrl, e.File), e.Sha256, e.Bytes, e.Executable, NameOf(e.Id), "test fixture")).ToList();
-		return new EngineCatalog(engines, new Uri(baseUrl, "yt-dlp/latest/SHA2-256SUMS"));
+		return new EngineCatalog(engines, new Uri(baseUrl, "yt-dlp/latest/SHA2-256SUMS"), new Uri(baseUrl, "yt-dlp/"));
 	}
 
 	private sealed record FixtureEntry(string Id, string Version, string File, string Sha256, long Bytes, string Executable);

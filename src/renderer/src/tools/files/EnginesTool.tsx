@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { describeEngine, type EngineInfo } from '@shared/engines/engineInfo'
+import { describeEngine, describeOutcome, engineActions, type EngineInfo } from '@shared/engines/engineInfo'
 import { zing } from '../../api'
 import { InfoBanner, PillButton } from '../../components'
 import { describeFailure } from '../dev/parts'
@@ -7,15 +7,17 @@ import { ToolPage } from '../parts'
 import './files.css'
 
 /** One engine row: what it is, how big, where from, and the buttons that act on it. */
-function EngineRow({ engine, progress, busy, onDownload, onRemove, onUpdate }: {
+function EngineRow({ engine, progress, busy, onDownload, onCancel, onRemove, onUpdate }: {
 	engine: EngineInfo
+	/** 0 to 1 while this row's download runs; undefined otherwise. */
 	progress: number | undefined
 	busy: boolean
 	onDownload: () => void
+	onCancel: () => void
 	onRemove: () => void
 	onUpdate: () => void
 }) {
-	const installed = engine.installedVersion !== undefined
+	const actions = engineActions(engine, { downloading: progress !== undefined, busy })
 	return (
 		<li className="engine-row">
 			<div className="engine-head">
@@ -26,17 +28,23 @@ function EngineRow({ engine, progress, busy, onDownload, onRemove, onUpdate }: {
 			<small className="engine-source">From {engine.url}</small>
 			<small className="engine-licence">Licence: {engine.licence}</small>
 			<div className="engine-actions">
-				{installed ? (
-					<PillButton variant="outlined" size="small" disabled={busy} aria-label={`Remove ${engine.name}`} onClick={onRemove}>
-						Remove
-					</PillButton>
-				) : (
-					<PillButton size="small" disabled={busy} aria-label={`Download ${engine.name}`} onClick={onDownload}>
+				{actions.download ? (
+					<PillButton size="small" aria-label={`Download ${engine.name}`} onClick={onDownload}>
 						Download
 					</PillButton>
-				)}
-				{installed && engine.id === 'ytdlp' ? (
-					<PillButton variant="ghost" size="small" disabled={busy} aria-label="Update yt-dlp" onClick={onUpdate}>
+				) : null}
+				{actions.cancel ? (
+					<PillButton variant="outlined" size="small" aria-label={`Cancel ${engine.name}`} onClick={onCancel}>
+						Cancel
+					</PillButton>
+				) : null}
+				{actions.remove ? (
+					<PillButton variant="outlined" size="small" aria-label={`Remove ${engine.name}`} onClick={onRemove}>
+						Remove
+					</PillButton>
+				) : null}
+				{actions.update ? (
+					<PillButton variant="ghost" size="small" aria-label="Update yt-dlp" onClick={onUpdate}>
 						Update
 					</PillButton>
 				) : null}
@@ -48,8 +56,8 @@ function EngineRow({ engine, progress, busy, onDownload, onRemove, onUpdate }: {
 /** Settings > Files > Engines: the programs and the model Zing downloads when a tool first needs them. */
 export function EnginesTool() {
 	const [engines, setEngines] = useState<readonly EngineInfo[] | null>(null)
-	const [progress, setProgress] = useState<Readonly<Record<string, number>>>({})
-	const [working, setWorking] = useState<string | null>(null)
+	const [downloading, setDownloading] = useState<{ readonly id: string; readonly fraction: number } | null>(null)
+	const [working, setWorking] = useState(false)
 	const [problem, setProblem] = useState<string | null>(null)
 	const [note, setNote] = useState<string | null>(null)
 
@@ -65,15 +73,15 @@ export function EnginesTool() {
 			},
 			(error: unknown) => setProblem(describeFailure(error)),
 		)
-		const stop = zing.onEngineProgress((p) => setProgress((before) => ({ ...before, [p.id]: p.fraction })))
+		const stop = zing.onEngineProgress((p) => setDownloading((now) => (now?.id === p.id ? { id: p.id, fraction: p.fraction } : now)))
 		return () => {
 			mounted = false
 			stop()
 		}
 	}, [])
 
-	const act = async (id: string, work: () => Promise<string | null>): Promise<void> => {
-		setWorking(id)
+	const run = async (work: () => Promise<string | null>): Promise<void> => {
+		setWorking(true)
 		setProblem(null)
 		setNote(null)
 		try {
@@ -81,10 +89,16 @@ export function EnginesTool() {
 		} catch (error) {
 			setProblem(describeFailure(error))
 		} finally {
-			setProgress((before) => Object.fromEntries(Object.entries(before).filter(([key]) => key !== id)))
-			setWorking(null)
+			setDownloading(null)
+			setWorking(false)
 			await refresh().catch((error: unknown) => setProblem(describeFailure(error)))
 		}
+	}
+
+	// The row counts as downloading from the click, before the first progress event arrives.
+	const download = (id: string): void => {
+		setDownloading({ id, fraction: 0 })
+		void run(async () => describeOutcome(await zing.ensureEngine(id)))
 	}
 
 	return (
@@ -97,12 +111,13 @@ export function EnginesTool() {
 					<EngineRow
 						key={engine.id}
 						engine={engine}
-						progress={progress[engine.id]}
-						busy={working !== null}
-						onDownload={() => void act(engine.id, async () => (await zing.ensureEngine(engine.id), null))}
-						onRemove={() => void act(engine.id, async () => (await zing.removeEngine(engine.id), null))}
+						progress={downloading?.id === engine.id ? downloading.fraction : undefined}
+						busy={working}
+						onDownload={() => download(engine.id)}
+						onCancel={() => void zing.cancelEngine(engine.id)}
+						onRemove={() => void run(async () => (await zing.removeEngine(engine.id), null))}
 						onUpdate={() =>
-							void act(engine.id, async () => {
+							void run(async () => {
 								const update = await zing.updateYtDlp()
 								return update.changed ? `yt-dlp updated to ${update.version}.` : `yt-dlp is already the newest release (${update.version}).`
 							})

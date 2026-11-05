@@ -45,6 +45,30 @@ public sealed class EngineArchiveTests : IDisposable
 		new("magick", "7.1.2", _fixture.Url("magick/magick.7z"), EngineFixture.Sha256(archive), archive.Length, executable, "magick", "ImageMagick License");
 
 	[Fact]
+	public void A_tar_that_cannot_read_7z_says_so_and_keeps_its_own_words()
+	{
+		var text = EngineArchive.ExplainTarFailure("tar.exe: Error opening archive: Unrecognized archive format");
+
+		Assert.Contains("can't read 7z", text);
+		Assert.Contains("Unrecognized archive format", text);
+	}
+
+	[Fact]
+	public void A_path_too_long_failure_is_named()
+	{
+		var text = EngineArchive.ExplainTarFailure("tar.exe: some\\very\\deep\\file.dll: Can't create: Filename too long");
+
+		Assert.Contains("path is too long", text);
+		Assert.Contains("Filename too long", text);
+	}
+
+	[Fact]
+	public void Any_other_tar_failure_passes_its_text_through()
+	{
+		Assert.Equal("tar.exe couldn't unpack it (disk full)", EngineArchive.ExplainTarFailure("disk full"));
+	}
+
+	[Fact]
 	public async Task A_7z_engine_is_extracted_and_its_executable_found()
 	{
 		Lay("inner/magick.exe", "program");

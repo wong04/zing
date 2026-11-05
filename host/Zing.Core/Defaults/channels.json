@@ -93,6 +93,10 @@
 			"args": 1
 		},
 		{
+			"channel": "engines:cancel",
+			"args": 1
+		},
+		{
 			"channel": "engines:ensure",
 			"args": 1
 		},

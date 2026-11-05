@@ -72,6 +72,15 @@ public sealed class EngineFixture : IDisposable
 		return Task.CompletedTask;
 	});
 
+	/// <summary>A redirect to any address, including another host.</summary>
+	public void Route302(string path, string to) => Route(path, context =>
+	{
+		context.Response.StatusCode = 302;
+		context.Response.RedirectLocation = to;
+		context.Response.Close();
+		return Task.CompletedTask;
+	});
+
 	public void ServeStatus(string path, int status) => Route(path, context =>
 	{
 		context.Response.StatusCode = status;
@@ -159,7 +168,7 @@ public sealed class EngineFixture : IDisposable
 	public Engine Archive(string id, byte[] zip, string executable, string version = "1.0") =>
 		new(id, version, Url($"{id}/{id}.zip"), Sha256(zip), zip.Length, executable, id, "test licence");
 
-	public EngineStore Store(params Engine[] engines) => Store(new EngineCatalog(engines, Url("yt-dlp/latest/SHA2-256SUMS")));
+	public EngineStore Store(params Engine[] engines) => Store(new EngineCatalog(engines, Url("yt-dlp/latest/SHA2-256SUMS"), Url("yt-dlp/")));
 
 	public EngineStore Store(EngineCatalog catalog) => new(Root, catalog, new HttpClient(), (where, error) => _errors.Add((where, error)));
 

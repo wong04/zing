@@ -81,6 +81,8 @@ public sealed class ChromeApi : IDisposable
 	private string? _libraryPanel;
 	// Cancelled when the window closes, so a download it started doesn't outlive it.
 	private readonly CancellationTokenSource _closing = new();
+	// This window's downloads by engine id, so Cancel can stop one.
+	private readonly Dictionary<string, CancellationTokenSource> _downloads = new(StringComparer.Ordinal);
 
 	public TabService Tabs { get; }
 
@@ -223,6 +225,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("hash:hmac", args => Hashing.Hmac(Text(args, 0), Text(args, 1), Text(args, 2)));
 		bridge.Register("engines:list", _ => Engines().List().Select(EngineInfo.Of).ToList());
 		bridge.Register("engines:ensure", args => EnsureEngineAsync(Text(args, 0)));
+		bridge.Register("engines:cancel", args => Do(() => CancelEngineDownload(Text(args, 0))));
 		bridge.Register("engines:remove", args => Do(() => Engines().Remove(Text(args, 0))));
 		bridge.Register("engines:update-ytdlp", _ => UpdateYtDlpAsync());
 		bridge.Register("account:get", _ => app.Account.State());
@@ -359,6 +362,7 @@ public sealed class ChromeApi : IDisposable
 	public void Dispose()
 	{
 		_closing.Cancel();
+		_closing.Dispose();
 		foreach (var subscription in _subscriptions) subscription.Dispose();
 		Shell.Dispose();
 		Ordering.Dispose();
@@ -451,8 +455,27 @@ public sealed class ChromeApi : IDisposable
 	private async Task<object?> EnsureEngineAsync(string id)
 	{
 		var progress = new PercentProgress(fraction => _host.Push("engines:progress", new { id, fraction }));
-		await Engines().EnsureAsync(id, progress, _closing.Token);
-		return null;
+		using var own = CancellationTokenSource.CreateLinkedTokenSource(_closing.Token);
+		if (!_downloads.TryAdd(id, own)) throw new InvalidOperationException($"{id} is already downloading in this window");
+		try
+		{
+			await Engines().EnsureAsync(id, progress, own.Token);
+			return "installed";
+		}
+		// A cancel is an ordinary answer, not an error; EnsureAsync has removed everything it left before it throws.
+		catch (OperationCanceledException) when (own.IsCancellationRequested)
+		{
+			return "cancelled";
+		}
+		finally
+		{
+			_downloads.Remove(id);
+		}
+	}
+
+	private void CancelEngineDownload(string id)
+	{
+		if (_downloads.TryGetValue(id, out var download)) download.Cancel();
 	}
 
 	private async Task<object?> UpdateYtDlpAsync() => await Engines().UpdateYtDlpAsync(_closing.Token);

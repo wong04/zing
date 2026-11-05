@@ -1,4 +1,4 @@
-import type { EngineInfo, EngineProgress, YtDlpUpdate } from './engines/engineInfo'
+import type { EngineInfo, EngineProgress, EnsureOutcome, YtDlpUpdate } from './engines/engineInfo'
 import type { FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
 import type { BrowserLibrary } from './library/library'
@@ -274,7 +274,9 @@ export interface InvokeContract {
 	/** Every engine with its size and whether it is downloaded. Reads the disk; makes no request. */
 	'engines:list': { args: []; result: EngineInfo[] }
 	/** Downloads one, only because a person asked. Pushes `engines:progress`; rejects with the engine's name and the address to fetch it by hand. */
-	'engines:ensure': { args: [id: string]; result: void }
+	'engines:ensure': { args: [id: string]; result: EnsureOutcome }
+	/** Stops this window's download of one engine. `engines:ensure` then answers 'cancelled' once nothing is left on disk. */
+	'engines:cancel': { args: [id: string]; result: void }
 	/** Rejects with EngineInUseException while a tool is using it. */
 	'engines:remove': { args: [id: string]; result: void }
 	/** Checks the newest yt-dlp release against its published SHA2-256SUMS; a mismatch keeps the old version. */
@@ -413,7 +415,8 @@ export interface ZingApi {
 	setRequirePassword(required: boolean): Promise<AccountOutcome>
 	deleteAccount(): Promise<AccountOutcome>
 	listEngines(): Promise<EngineInfo[]>
-	ensureEngine(id: string): Promise<void>
+	ensureEngine(id: string): Promise<EnsureOutcome>
+	cancelEngine(id: string): Promise<void>
 	removeEngine(id: string): Promise<void>
 	updateYtDlp(): Promise<YtDlpUpdate>
 	onEngineProgress(listener: (progress: EngineProgress) => void): Unsubscribe

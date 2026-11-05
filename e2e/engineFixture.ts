@@ -31,15 +31,22 @@ export interface EngineFixture {
  * A local release host that serves Zing.FakeEngine in place of FFmpeg and the rest, so a test downloads
  * something real without the internet. `missing` ids answer 404.
  */
-export async function startEngineFixture(options: { readonly missing?: readonly string[] } = {}): Promise<EngineFixture> {
+export async function startEngineFixture(options: { readonly missing?: readonly string[]; readonly slow?: readonly string[] } = {}): Promise<EngineFixture> {
 	const dir = mkdtempSync(join(tmpdir(), 'zing-engine-fixture-'))
 	execFileSync('dotnet', ['publish', FAKE_ENGINE_PROJECT, '-c', 'Release', '-r', 'win-x64', '--self-contained', 'false', '-p:PublishSingleFile=true', '-o', dir], { stdio: 'ignore' })
 	const body = readFileSync(join(dir, 'Zing.FakeEngine.exe'))
 	const sha256 = createHash('sha256').update(body).digest('hex')
 	const requests: string[] = []
 	const missing = new Set((options.missing ?? []).map((id) => `/${FILES[id]!.file}`))
+	const slow = new Set((options.slow ?? []).map((id) => `/${FILES[id]!.file}`))
 	const server: Server = createServer((req, res) => {
 		requests.push(req.url ?? '')
+		if (slow.has(req.url ?? '')) {
+			// Half the file, then silence until the client gives up.
+			res.setHeader('content-length', body.length)
+			res.write(body.subarray(0, body.length / 2))
+			return
+		}
 		if (missing.has(req.url ?? '') || !Object.values(FILES).some((f) => `/${f.file}` === req.url)) {
 			res.statusCode = 404
 			res.end()
@@ -58,6 +65,7 @@ export async function startEngineFixture(options: { readonly missing?: readonly 
 		bytes: body.length,
 		close: () =>
 			new Promise<void>((resolve) => {
+				server.closeAllConnections()
 				server.close(() => {
 					rmSync(dir, { recursive: true, force: true })
 					resolve()

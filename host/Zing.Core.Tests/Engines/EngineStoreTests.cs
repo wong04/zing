@@ -407,4 +407,90 @@ public sealed class EngineStoreTests : IDisposable
 		Assert.Contains("my film", echoed);
 		Assert.Equal("fake engine output\n", await File.ReadAllTextAsync(output, TestContext.Current.CancellationToken));
 	}
+
+	[Fact]
+	public async Task A_bumped_pin_reinstalls_an_engine_installed_under_the_old_pin()
+	{
+		var v1 = EngineFixture.Bytes(20_000, seed: 1);
+		var v2 = EngineFixture.Bytes(21_000, seed: 2);
+		_fixture.Serve("ffmpeg/ffmpeg.exe", v1);
+		var path = await _fixture.Store(_fixture.SingleFile("ffmpeg", v1, "1.0")).EnsureAsync("ffmpeg", NoProgress, Never);
+		_fixture.Serve("ffmpeg/ffmpeg.exe", v2);
+
+		var bumped = _fixture.Store(_fixture.SingleFile("ffmpeg", v2, "2.0"));
+
+		Assert.Null(bumped.List()[0].InstalledVersion);
+		await bumped.EnsureAsync("ffmpeg", NoProgress, Never);
+		Assert.Equal("2.0", bumped.List()[0].InstalledVersion);
+		Assert.Equal(v2, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+		Assert.Equal(["ffmpeg"], _fixture.Entries());
+	}
+
+	[Fact]
+	public async Task A_pin_with_the_same_version_but_another_hash_also_reinstalls()
+	{
+		var first = EngineFixture.Bytes(20_000, seed: 1);
+		var second = EngineFixture.Bytes(20_000, seed: 2);
+		_fixture.Serve("ffmpeg/ffmpeg.exe", first);
+		await _fixture.Store(_fixture.SingleFile("ffmpeg", first)).EnsureAsync("ffmpeg", NoProgress, Never);
+		_fixture.Serve("ffmpeg/ffmpeg.exe", second);
+
+		var path = await _fixture.Store(_fixture.SingleFile("ffmpeg", second)).EnsureAsync("ffmpeg", NoProgress, Never);
+
+		Assert.Equal(second, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+	}
+
+	[Fact]
+	public async Task A_caller_arriving_while_the_last_other_caller_is_stopping_the_download_gets_a_fresh_one()
+	{
+		var body = EngineFixture.Bytes(50_000);
+		var release = new TaskCompletionSource();
+		_fixture.ServeSlowly("ffmpeg/ffmpeg.exe", body, 10_000, release.Task);
+		var store = _fixture.Store(_fixture.SingleFile("ffmpeg", body));
+		using var cancel = new CancellationTokenSource();
+		var leaving = store.EnsureAsync("ffmpeg", NoProgress, cancel.Token);
+		await WaitForRequests("ffmpeg/ffmpeg.exe", 1);
+
+		var cancelling = cancel.CancelAsync();
+		var arriving = store.EnsureAsync("ffmpeg", NoProgress, Never);
+		await cancelling;
+		release.SetResult();
+
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => leaving);
+		Assert.True(File.Exists(await arriving));
+		Assert.Equal(["ffmpeg"], _fixture.Entries());
+	}
+
+	private async Task WaitForRequests(string path, int count)
+	{
+		for (var i = 0; i < 200 && _fixture.Requests(path) < count; i++) await Task.Delay(10, TestContext.Current.CancellationToken);
+		Assert.True(_fixture.Requests(path) >= count);
+	}
+
+	[Fact]
+	public async Task A_download_swapped_after_it_was_read_is_caught_before_it_is_unpacked()
+	{
+		var body = EngineFixture.Bytes(20_000);
+		_fixture.Serve("ffmpeg/ffmpeg.exe", body);
+		var store = _fixture.Store(_fixture.SingleFile("ffmpeg", body));
+		store.AfterDownload = path => File.WriteAllBytes(path, EngineFixture.Bytes(20_000, seed: 99));
+
+		var error = await Assert.ThrowsAsync<EngineChecksumException>(() => store.EnsureAsync("ffmpeg", NoProgress, Never));
+
+		Assert.Contains("ffmpeg", error.Message);
+		Assert.Empty(_fixture.Entries());
+	}
+
+	[Fact]
+	public async Task An_archive_listing_a_file_twice_raises_a_named_error()
+	{
+		var zip = EngineFixture.Zip(("pandoc-1/pandoc.exe", "program"), ("pandoc-1/PANDOC.exe", "again"));
+		_fixture.Serve("pandoc/pandoc.zip", zip);
+		var store = _fixture.Store(_fixture.Archive("pandoc", zip, @"pandoc-1\pandoc.exe"));
+
+		var error = await Assert.ThrowsAsync<EngineDownloadException>(() => store.EnsureAsync("pandoc", NoProgress, Never));
+
+		Assert.Contains("more than once", error.Message);
+		Assert.Empty(_fixture.Entries());
+	}
 }

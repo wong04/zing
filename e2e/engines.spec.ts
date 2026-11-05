@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, type Locator, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
@@ -57,6 +57,23 @@ test('the Engines panel lists sizes and Remove frees one', async () => {
 	await ffmpeg.getByRole('button', { name: 'Remove FFmpeg' }).click()
 	await expect(ffmpeg).toContainText('Not downloaded')
 	expect(existsSync(join(zing.userDataDir, 'engines', 'ffmpeg'))).toBe(false)
+	await zing.close()
+})
+
+test('Cancel stops a download, leaves nothing behind and shows no error', async () => {
+	fixture = await startEngineFixture({ slow: ['ffmpeg'] })
+	const zing = await launchZing({ env: fixture.env })
+	const { panel } = await openEnginesPanel(zing)
+	const ffmpeg = row(panel, 'FFmpeg')
+	await ffmpeg.getByRole('button', { name: 'Download FFmpeg' }).click()
+	await expect(ffmpeg).toContainText('Downloading')
+	await ffmpeg.getByRole('button', { name: 'Cancel FFmpeg' }).click()
+	await expect(ffmpeg).toContainText('Not downloaded')
+	await expect(ffmpeg.getByRole('button', { name: 'Download FFmpeg' })).toBeEnabled()
+	await expect(panel.getByRole('alert')).toHaveCount(0)
+	// The temp folder goes before Cancel is answered: nothing is left in the engines folder.
+	const folder = join(zing.userDataDir, 'engines')
+	expect(existsSync(folder) ? readdirSync(folder) : []).toEqual([])
 	await zing.close()
 })
 
