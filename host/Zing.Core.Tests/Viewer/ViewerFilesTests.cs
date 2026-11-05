@@ -353,6 +353,20 @@ public sealed class ViewerFilesTests : IDisposable
 	}
 
 	[Fact]
+	public async Task A_growing_copy_whose_file_is_being_deleted_is_not_yet_not_an_error()
+	{
+		var session = OpenConverted("holiday.mov");
+		var live = Path.Combine(session.Folder!, "live.mp4");
+		_viewer.BeginLive(session.Id, live);
+		// The engine's job folder is being removed while it still has the file open: Windows keeps the name, and refuses to open it.
+		await using var writer = new FileStream(live, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+		await writer.WriteAsync(Bytes(10), TestContext.Current.CancellationToken);
+		File.Delete(live);
+		var reply = await _viewer.ServeAsync(Get(session, "bytes=0-"));
+		Assert.Equal(204, reply.Status);
+	}
+
+	[Fact]
 	public async Task A_finished_copy_reads_from_its_final_place_and_416_is_the_real_end()
 	{
 		var session = OpenConverted("holiday.mov");
