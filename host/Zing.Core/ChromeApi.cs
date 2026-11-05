@@ -46,6 +46,8 @@ public interface IWindowHost
 	IDownloadHost DownloadHost { get; }
 	/// <summary>Shows the native open dialog for these extensions (none means every file) and returns what the person picked; empty if they cancelled. An e2e run shows no dialog.</summary>
 	Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions);
+	/// <summary>Has Chromium print this HTML text to a PDF at this path (Convert). Scripts and the network are off while it does.</summary>
+	Task PrintHtmlToPdfAsync(string html, string pdfPath, CancellationToken cancellation);
 	/// <summary>Runs delayed work on the window's UI thread.</summary>
 	IScheduler Scheduler { get; }
 	IShellActions Shell { get; }
@@ -248,6 +250,7 @@ public sealed class ChromeApi : IDisposable
 		// Not "engines:cancel": that one stops a download by engine id.
 		bridge.Register("engines:cancel-job", args => Do(() => Runner().Cancel(Text(args, 0), _windowId)));
 		bridge.Register("files:pick", args => PickFilesAsync(Arg(args, 0)));
+		bridge.Register("convert:html-to-pdf", args => HtmlToPdfAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("files:open-dropped", _ => Drops.Take());
 		bridge.Register("page:save", _ => SavePageAsync());
 		bridge.Register("account:get", _ => app.Account.State());
@@ -494,6 +497,14 @@ public sealed class ChromeApi : IDisposable
 		var extensions = FileKinds.Extensions([.. kinds.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : throw new ArgumentException("A file kind must be a string"))]);
 		var paths = await _host.PickFilesAsync(extensions);
 		return paths.Select(Grants.Issue).ToList();
+	}
+
+	/// <summary>Convert's HTML to PDF: prints the file a token stands for and answers with the PDF's name and a token.</summary>
+	private async Task<object?> HtmlToPdfAsync(string token, string outputName)
+	{
+		var path = Grants.Resolve(token);
+		var placed = await HtmlPdf.PrintAsync(path, outputName, _host.DownloadsDirectory, _host.PrintHtmlToPdfAsync, _closing.Token);
+		return Grants.Issue(placed);
 	}
 
 	/// <summary>

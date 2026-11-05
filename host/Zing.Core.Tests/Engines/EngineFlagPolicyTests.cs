@@ -23,10 +23,19 @@ public sealed class EngineFlagPolicyTests
 		{ "ffmpeg", ["-i", "http://example.com/a.mp4"] },
 		{ "ffmpeg", ["-f", "lavfi"] },
 		{ "ffmpeg", ["-f", "concat"] },
+		{ "ffmpeg", ["-f", "image2", "-i", "@in"] },
 		{ "ffmpeg", ["-f", "segment"] },
 		{ "ffmpeg", ["-f", "hls"] },
 		{ "ffmpeg", ["-filter_complex", "movie=C:/x"] },
 		{ "ffmpeg", ["-vf", "scale=iw/2:ih/2"] },
+		{ "ffmpeg", ["-vf", "movie=C:/x"] },
+		{ "ffmpeg", ["-preset", "veryslow"] },
+		{ "ffmpeg", ["-pix_fmt", "C:/x"] },
+		{ "ffmpeg", ["-b:v", "10M"] },
+		{ "ffmpeg", ["-crf", "movie=C:/x"] },
+		{ "ffmpeg", ["-f", "mov", "-i", "C:/anywhere.mov"] },
+		{ "magick", ["-delete", "0"] },
+		{ "magick", ["-delete", "C:/x"] },
 		{ "ffmpeg", ["-attach", "@in"] },
 		{ "ffmpeg", ["-dump_attachment:t", "x"] },
 		{ "ffmpeg", ["-report"] },
@@ -40,6 +49,20 @@ public sealed class EngineFlagPolicyTests
 		{ "ffmpeg", ["-t", "10; calc"] },
 		{ "ffmpeg", ["-i"] },
 		{ "ffmpeg", ["-i", "@out"] },
+		// A renamed concat or playlist file is read by FFmpeg unless the format is named first (checked with the real engine).
+		{ "ffmpeg", ["-i", "@in", "@out"] },
+		{ "ffmpeg", ["@in", "@out"] },
+		{ "ffmpeg", ["-c:v", "libx264", "-i", "@in", "@out"] },
+		{ "ffmpeg", ["-f", "mp4", "-c:v", "libx264", "-i", "@in", "@out"] },
+		{ "ffmpeg", ["-f", "mp4", "-i", "@in", "-i", "@in", "@out"] },
+		{ "ffmpeg", ["-f", "mp4", "-i", "@in", "@in"] },
+		{ "ffmpeg", ["-f", "mp4", "-i", "@in", "-loop", "1", "@out"] },
+		{ "ffmpeg", ["-f", "mp4", "-i", "@in", "-profile:v", "1", "@out"] },
+		// ImageMagick overwrites silently: its last argument must be an output, so no input can be the destination.
+		{ "magick", ["@in", "@in"] },
+		{ "magick", ["@in", "-auto-orient"] },
+		{ "magick", [] },
+		{ "magick", ["@in", "@out", "@in"] },
 		{ "ffmpeg", ["-protocol_whitelist", "file,http,tcp"] },
 		{ "ffmpeg", ["--exec", "calc"] },
 		{ "magick", ["label:@C:/x"] },
@@ -78,10 +101,21 @@ public sealed class EngineFlagPolicyTests
 
 	public static TheoryData<string, string[]> Allowed => new()
 	{
-		{ "ffmpeg", ["-i", "@in", "-c:v", "libx264", "-c:a", "aac", "-b:a", "192k", "-an", "-vn", "-ss", "1.5", "-t", "10", "-f", "mp4", "@out"] },
-		{ "ffmpeg", ["-i", "@in", "-q:a", "2", "@out"] },
+		{ "ffmpeg", ["-f", "mov", "-i", "@in", "-c:v", "libx264", "-c:a", "aac", "-b:a", "192k", "-an", "-vn", "-ss", "1.5", "-t", "10", "-f", "mp4", "@out"] },
+		{ "ffmpeg", ["-f", "mp3", "-i", "@in", "-q:a", "2", "@out"] },
 		{ "pandoc", ["-f", "markdown", "-t", "html", "--standalone", "-o", "@out", "@in"] },
 		{ "magick", ["@in", "-quality", "85", "-strip", "-auto-orient", "@out"] },
+		// What Convert sends (src/shared/convert/commands.ts): the input first, the output last.
+		{ "magick", ["@in", "-delete", "1--1", "-auto-orient", "-quality", "85", "@out"] },
+		{ "magick", ["@in", "-auto-orient", "@out"] },
+		{ "ffmpeg", ["-f", "mov", "-i", "@in", "-c:v", "libx264", "-crf", "11", "-preset", "medium", "-pix_fmt", "yuv420p", "-c:a", "aac", "@out"] },
+		{ "ffmpeg", ["-f", "mp4", "-i", "@in", "-c:v", "libvpx-vp9", "-crf", "12", "-b:v", "0", "-pix_fmt", "yuv420p", "-c:a", "libopus", "@out"] },
+		{ "ffmpeg", ["-f", "mov", "-i", "@in", "-c:v", "prores_ks", "-profile:v", "3", "-c:a", "pcm_s16le", "@out"] },
+		{ "ffmpeg", ["-f", "mpegts", "-i", "@in", "-vf", EngineFlagPolicy.GifFilter, "-loop", "0", "@out"] },
+		{ "ffmpeg", ["-f", "avi", "-i", "@in", "-vn", "-c:a", "libmp3lame", "-q:a", "2", "@out"] },
+		{ "ffmpeg", ["-f", "mp3", "-i", "@in", "-vn", "-c:a", "libopus", "-b:a", "160k", "@out"] },
+		{ "pandoc", ["-f", "markdown", "@in", "-t", "docx", "--standalone", "-o", "@out"] },
+		{ "pandoc", ["-f", "html", "@in", "-t", "plain", "-o", "@out"] },
 		{ "ytdlp", ["--newline", "--no-playlist", "-x", "--audio-format", "mp3", "--audio-quality", "0"] },
 		{ "ytdlp", ["--newline", "--no-playlist", "-x", "--audio-format", "mp3", "--audio-quality", "0", "-o", "@out"] },
 		{ "ytdlp", ["--newline", "--no-playlist", "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b", "--merge-output-format", "mp4", "-o", "@out"] },
@@ -120,7 +154,7 @@ public sealed class EngineFlagPolicyTests
 	[Fact]
 	public void Option_looking_files_are_fine_because_files_are_never_literals()
 	{
-		EngineFlagPolicy.Pinned.For("ffmpeg").Check([new JobArg.Literal("-i"), new JobArg.Input(Path.GetFullPath("-rf.mov")), new JobArg.Output(0)]);
+		EngineFlagPolicy.Pinned.For("ffmpeg").Check([new JobArg.Literal("-f"), new JobArg.Literal("mp4"), new JobArg.Literal("-i"), new JobArg.Input(Path.GetFullPath("-rf.mov")), new JobArg.Output(0)]);
 	}
 
 	[Fact]

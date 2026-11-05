@@ -112,6 +112,15 @@ public sealed class FakeWindowHost : IWindowHost
 		PickedExtensions = extensions;
 		return Task.FromResult(PickedPaths);
 	}
+	/// <summary>The HTML text each print was given.</summary>
+	public List<string> Printed { get; } = [];
+
+	public Task PrintHtmlToPdfAsync(string html, string pdfPath, CancellationToken cancellation)
+	{
+		Printed.Add(html);
+		File.WriteAllText(pdfPath, "%PDF-fake");
+		return Task.CompletedTask;
+	}
 	public void Notify(string text) => Notices.Add(text);
 	public void NewWindow() => NewWindows++;
 	public void CloseWindow() => Closes++;

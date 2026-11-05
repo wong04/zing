@@ -234,6 +234,8 @@ public sealed class EngineRunner
 	{
 		var plain = name.Length > 0 && name == Path.GetFileName(name) && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 && name.TrimEnd('.', ' ').Length > 0;
 		if (!plain) throw new UnsafeEngineArgumentException($"\"{name}\" isn't a plain file name");
+		// ImageMagick expands "%d" and reads "[0]" in the name it writes; yt-dlp's -o is a template where "%" means something.
+		if (name.IndexOfAny(['%', '[', ']']) >= 0) throw new UnsafeEngineArgumentException($"\"{name}\" has a \"%\", \"[\" or \"]\" in it, which an engine reads as a pattern");
 		var cleaned = DownloadNames.FileName(name, _ => false);
 		var extension = Path.GetExtension(cleaned).TrimStart('.').ToLowerInvariant();
 		var allowed = extension.Length > 0 && !NeverAnOutput.Contains(extension) && policy.OutputExtensions.Contains(extension, StringComparer.Ordinal);
@@ -328,13 +330,20 @@ public sealed class EngineRunner
 			{
 				JobArg.Literal literal => literal.Text,
 				JobArg.Input input => EngineArguments.FilePath(input.Path),
-				JobArg.Output output => job.TempOutputs[output.Index],
+				JobArg.Output output => OutputArgument(request.EngineId, job, output.Index),
 				_ => throw new InvalidOperationException($"Unknown job argument {arg}"),
 			});
 		}
 		foreach (var url in urls) start.ArgumentList.Add(url);
 		return Process.Start(start) ?? throw new InvalidOperationException($"{executable} didn't start");
 	}
+
+	/// <summary>
+	/// ImageMagick expands "%d" and reads "[0]" in the name it writes, so an output under a folder with either in its path
+	/// (a user-data folder can have a "%") would fail. It is given the path relative to its working folder, which has none.
+	/// </summary>
+	private static string OutputArgument(string engineId, Job job, int index) =>
+		engineId == EngineIds.Magick ? Path.GetRelativePath(job.WorkFolder, job.TempOutputs[index]) : job.TempOutputs[index];
 
 	/// <summary>
 	/// .NET can't start a process suspended, so it runs for the instant before it joins its job. A child it started in that

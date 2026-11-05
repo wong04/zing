@@ -197,7 +197,7 @@ test('a job that was never given a file, or that would run before the engine is 
 	await zing.chrome.evaluate(() => window.zing.ensureEngine('ffmpeg'))
 	expect(await run([{ input: 'C:\\Windows\\win.ini' }])).toContain("wasn't picked or dropped")
 	expect(await run(['-i', 'C:\\Windows\\win.ini'])).toContain('takes a file the person picked')
-	expect(await run(['-vf', 'movie=C:/x'])).toContain("isn't given the option")
+	expect(await run(['-filter_complex', 'movie=C:/x'])).toContain("isn't given the option")
 	expect(await run([{ input: '' }])).toContain("wasn't picked or dropped")
 	await zing.close()
 })

@@ -4,9 +4,9 @@ import type { Point, ToolPanelView, ToolPanelsState } from '@shared/shell/shellS
 import { zing } from '../api'
 import { ToolEmptyState } from '../components'
 import { CloseGlyph, MinusIcon } from '../components/icons'
+import { PanelIdContext } from '../tools/panelId'
 import { toolComponent } from '../tools/registry'
 import { PanelErrorBoundary } from './PanelErrorBoundary'
-import { PanelIdContext } from './panelId'
 import { PanelIcon } from './panelIcon'
 import './panels.css'
 

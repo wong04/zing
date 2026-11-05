@@ -225,4 +225,36 @@ public sealed class ChromeApiEnginesTests : IAsyncLifetime
 
 		Assert.Equal(0, Pushed("engines:exit").Single().GetProperty("code").GetInt32());
 	}
+
+	[Fact]
+	public async Task An_html_file_is_printed_to_a_pdf_in_Downloads_and_answered_as_a_name_and_a_token()
+	{
+		_host.PickedPaths = [_engines.Make("page.html", "<h1>Hi</h1>")];
+		var token = Value(await Invoke("files:pick", (object)new[] { "document" }))[0].GetProperty("token").GetString()!;
+
+		var printed = Value(await Invoke("convert:html-to-pdf", token, "page.pdf"));
+
+		Assert.Equal("page.pdf", printed.GetProperty("name").GetString());
+		Assert.Matches("^[0-9a-f]{32}$", printed.GetProperty("token").GetString()!);
+		Assert.Equal("%PDF-fake", File.ReadAllText(Path.Combine(_engines.Outputs, "page.pdf")));
+		Assert.Equal(["<h1>Hi</h1>"], _host.Printed);
+		Assert.DoesNotContain(_engines.Outputs.Replace("\\", "\\\\"), printed.ToString());
+	}
+
+	[Fact]
+	public async Task A_path_the_renderer_made_up_is_not_printed()
+	{
+		Assert.Equal(nameof(UnknownFileGrantException), ErrorName(await Invoke("convert:html-to-pdf", @"C:\Windows\win.ini", "x.pdf")));
+		Assert.Empty(_host.Printed);
+	}
+
+	[Fact]
+	public async Task A_file_that_is_not_html_is_not_printed()
+	{
+		_host.PickedPaths = [_engines.Make("notes.txt")];
+		var token = Value(await Invoke("files:pick", (object)new[] { "document" }))[0].GetProperty("token").GetString()!;
+
+		Assert.Equal(nameof(NotHtmlException), ErrorName(await Invoke("convert:html-to-pdf", token, "notes.pdf")));
+		Assert.Empty(_host.Printed);
+	}
 }

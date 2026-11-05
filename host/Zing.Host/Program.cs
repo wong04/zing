@@ -231,6 +231,7 @@ public sealed class ZingApp
 	{
 		try
 		{
+			HtmlPdfPrinter.SweepLeftovers();
 			// The e2e fixture serves Zing.FakeEngine as every engine, so a run against it also accepts that program's flags.
 			return TestHooks.EngineCatalog() is null
 				? new EngineRunner(engines, AppPaths.EngineJobs, (what, error) => TestHooks.Record(what, error))

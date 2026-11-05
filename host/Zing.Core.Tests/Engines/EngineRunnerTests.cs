@@ -117,9 +117,9 @@ public sealed class EngineRunnerTests : IDisposable
 	{
 		await _f.InstallAsync();
 
-		var error = Assert.Throws<DisallowedEngineFlagException>(() => _f.Start(_f.Request(Literal("-vf"), Literal("scale=iw/2:ih/2"))));
+		var error = Assert.Throws<DisallowedEngineFlagException>(() => _f.Start(_f.Request(Literal("-filter_complex"), Literal("scale=iw/2:ih/2"))));
 
-		Assert.Contains("-vf", error.Message);
+		Assert.Contains("-filter_complex", error.Message);
 		Assert.Equal(0, _f.Runner.Running);
 	}
 
@@ -140,6 +140,19 @@ public sealed class EngineRunnerTests : IDisposable
 
 		Assert.Throws<UnsafeEngineArgumentException>(() => _f.Start(_f.Request([$"clip.{extension}"], Literal("--fake-write"), Output(0))));
 		Assert.Throws<UnsafeEngineArgumentException>(() => _f.Start(_f.Request([$"clip.txt.{extension}"], Literal("--fake-write"), Output(0))));
+	}
+
+	[Theory]
+	[InlineData("a%d.txt")]
+	[InlineData("100%.txt")]
+	[InlineData("a[0].txt")]
+	[InlineData("a]b.txt")]
+	public async Task An_output_name_with_a_template_character_is_refused(string name)
+	{
+		// ImageMagick expands "%d" and reads "[0]" in the name it writes, and yt-dlp's -o is a template with "%".
+		await _f.InstallAsync();
+
+		Assert.Throws<UnsafeEngineArgumentException>(() => _f.Start(_f.Request([name], Literal("--fake-write"), Output(0))));
 	}
 
 	[Fact]
