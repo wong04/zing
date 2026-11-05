@@ -207,3 +207,31 @@ test('two prints at once both finish: one does not remove the other browser prof
 	expect(Date.now() - started).toBeLessThan(60_000)
 	await zing.close()
 })
+
+test('a file dropped while a conversion runs is ignored, and the running one can still be cancelled', async () => {
+	fixture = await startEngineFixture()
+	const zing = await launchZing({ env: fixture.env })
+	await zing.chrome.evaluate(() => window.zing.ensureEngine('ffmpeg'))
+	const input = join(zing.userDataDir, 'long.mov')
+	writeFileSync(input, 'fake-sleep: 60000\n')
+	const other = join(zing.userDataDir, 'other.mov')
+	writeFileSync(other, 'x')
+
+	const { surface, panel } = await openConvert(zing)
+	await choose(zing, panel, input)
+	await panel.getByRole('button', { name: 'Convert', exact: true }).click()
+	await expect(panel.getByRole('status')).toHaveText('Converting…')
+
+	const box = (await panel.locator('.convert-drop').boundingBox())!
+	const cdp = await surface.context().newCDPSession(surface)
+	const data = { items: [], files: [other], dragOperationsMask: 1 }
+	for (const type of ['dragEnter', 'dragOver', 'drop'] as const) await cdp.send('Input.dispatchDragEvent', { type, x: box.x + box.width / 2, y: box.y + box.height / 2, data })
+	await new Promise((resolve) => setTimeout(resolve, 800))
+
+	await expect(panel.getByText('long.mov', { exact: true })).toBeVisible()
+	await expect(panel.getByText('other.mov', { exact: true })).toHaveCount(0)
+	await expect(panel.getByRole('status')).toHaveText('Converting…')
+	await panel.getByRole('button', { name: 'Cancel conversion' }).click()
+	await expect(panel.getByText('Cancelled. Nothing was kept.')).toBeVisible()
+	await zing.close()
+})

@@ -160,7 +160,10 @@ internal sealed class EngineFlagPolicy
 	// Demuxer names, for telling FFmpeg what an input is instead of letting it sniff (Convert). None reads a list of other files.
 	private static readonly string[] FfmpegFormats = ["mp4", "mov", "matroska", "webm", "mp3", "wav", "flac", "ogg", "ipod", "gif", "image2", "avi", "flv", "asf", "mpeg", "mpegts", "aiff", "aac", "ac3", "amr"];
 
-	/// <summary>The one filter graph Convert gives FFmpeg for GIF output. Exactly this text; no other -vf value is accepted, since a filter graph can read files (movie=).</summary>
+	/// <summary>The even-size filter for H.264 (x264 refuses odd dimensions). A fixed text like the GIF one.</summary>
+	internal const string EvenSizeFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+
+	/// <summary>The one filter graph Convert gives FFmpeg for GIF output (see also <see cref="EvenSizeFilter"/>). Exactly this text; no other -vf value is accepted, since a filter graph can read files (movie=).</summary>
 	internal const string GifFilter = "fps=12,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse";
 	private static readonly string[] PandocFormats = ["markdown", "gfm", "commonmark", "html", "docx", "odt", "epub", "rtf", "latex", "plain"];
 
@@ -214,7 +217,7 @@ internal sealed class EngineFlagPolicy
 				("-profile:v", new FlagSpec(FlagValue.OneOf) { Choices = ["3"] }),
 				// 0 is "loop forever" in a GIF; any other number before an image2 input would loop the input instead.
 				("-loop", new FlagSpec(FlagValue.OneOf) { Choices = ["0"] }),
-				("-vf", new FlagSpec(FlagValue.OneOf) { Choices = [GifFilter] })),
+				("-vf", new FlagSpec(FlagValue.OneOf) { Choices = [GifFilter, EvenSizeFilter] })),
 			["-nostdin"],
 			new Dictionary<string, string[]> { ["-i"] = ["-protocol_whitelist", "file,pipe"] },
 			["mp4", "mov", "mkv", "webm", "mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "gif", "jpg", "jpeg", "png", "webp"],
@@ -241,7 +244,9 @@ internal sealed class EngineFlagPolicy
 				("-strip", new FlagSpec()),
 				("-auto-orient", new FlagSpec()),
 				// "1--1" is every image but the first: a multi-frame file gives one picture to a single-frame format.
-				("-delete", new FlagSpec(FlagValue.OneOf) { Choices = ["1--1"] })),
+				("-delete", new FlagSpec(FlagValue.OneOf) { Choices = ["1--1"] }),
+				// An icon can't be bigger than 256 pixels; ">" only ever shrinks.
+				("-resize", new FlagSpec(FlagValue.OneOf) { Choices = ["256x256>"] })),
 			[],
 			new Dictionary<string, string[]>(),
 			["jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff", "avif", "heic", "ico"],

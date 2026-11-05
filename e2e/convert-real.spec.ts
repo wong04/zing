@@ -5,6 +5,7 @@
 // The HEIC fixture is made with pillow-heif through uv (any HEIC encoder would do); the MOV with the downloaded FFmpeg.
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Locator } from '@playwright/test'
 import type { EngineExit } from '../src/shared/engines/engineJob'
@@ -26,9 +27,9 @@ test.describe('Convert with real engines', () => {
 
 	const ffmpegPath = (zing: Launched): string => join(zing.userDataDir, 'engines', 'ffmpeg', 'ffmpeg-9.0.2-essentials_build', 'bin', 'ffmpeg.exe')
 
-	async function launchWithEngines(): Promise<Launched> {
-		const zing = await launchZing()
-		for (const id of ['ffmpeg', 'magick', 'pandoc']) expect(await zing.chrome.evaluate((engine) => window.zing.ensureEngine(engine), id)).toBe('installed')
+	async function launchWithEngines(userDataDir?: string, ids: readonly string[] = ['ffmpeg', 'magick', 'pandoc']): Promise<Launched> {
+		const zing = await launchZing(userDataDir === undefined ? {} : { userDataDir })
+		for (const id of ids) expect(await zing.chrome.evaluate((engine) => window.zing.ensureEngine(engine), id)).toBe('installed')
 		return zing
 	}
 
@@ -97,7 +98,7 @@ test.describe('Convert with real engines', () => {
 	})
 
 	// Open items from engine-rules.md, answered by running the engines.
-	test('FFmpeg: a concat or playlist file renamed .mp4 is refused once its format is named, and is followed when it is not', async () => {
+	test('FFmpeg: a concat or playlist file renamed .mp4 is refused, and a job that does not name the input format is refused by the host', async () => {
 		const zing = await launchWithEngines()
 		const secrets = join(zing.userDataDir, 'secrets')
 		mkdirSync(secrets, { recursive: true })
@@ -134,11 +135,9 @@ test.describe('Convert with real engines', () => {
 			expect(exit.code, name).not.toBe(0)
 			expect(exit.outputs, name).toEqual([])
 		}
-		// Without it, the whitelist ("file,pipe") does not stop a renamed playlist from reading the files beside it.
-		expect((await run(join(secrets, 'concat.mp4'), false)).code).toBe(0)
-		// HLS under a non-standard extension is not detected, and an address inside a playlist is never fetched.
-		expect((await run(join(secrets, 'hls.mp4'), false)).code).not.toBe(0)
-		expect((await run(join(secrets, 'network.mp4'), false)).code).not.toBe(0)
+		// Without it the host refuses the job: the whitelist ("file,pipe") alone did not stop a renamed concat file from reading
+		// the files beside it (found with this engine), so the policy requires -f before every -i.
+		for (const name of ['concat.mp4', 'hls.mp4', 'network.mp4']) await expect(run(join(secrets, name), false), name).rejects.toThrow(/-f and a format/)
 		await zing.close()
 	})
 
@@ -207,6 +206,62 @@ test.describe('Convert with real engines', () => {
 		)
 		expect(exit).toMatchObject({ code: 0, cancelled: false })
 		expect(existsSync(join(zing.userDataDir, 'downloads', 'b.jpg'))).toBe(true)
+		await zing.close()
+	})
+
+	test('odd-sized GIFs become MP4, big images become ICO and AVIF, and a Zing folder with % and [ in its path works', async () => {
+		const dir = join(tmpdir(), `zing%d [real] ${Date.now()}`)
+		mkdirSync(dir, { recursive: true })
+		const zing = await launchWithEngines(dir, ['ffmpeg', 'magick'])
+		const magick = join(zing.userDataDir, 'engines', 'magick', 'magick.exe')
+		const inputs = join(zing.userDataDir, 'in[0]%d')
+		mkdirSync(inputs, { recursive: true })
+		const gif = join(inputs, 'odd.gif')
+		expect(spawnSync(magick, ['-size', '33x31', 'xc:red', '-size', '33x31', 'xc:blue', gif], { encoding: 'utf8' }).status).toBe(0)
+		const big = join(inputs, 'big.png')
+		expect(spawnSync(magick, ['-size', '600x400', 'xc:red', big], { encoding: 'utf8' }).status).toBe(0)
+
+		const panel = await openConvert(zing)
+		await convertInTool(zing, panel, gif, 'MP4')
+		await convertInTool(zing, panel, gif, 'PNG')
+		await convertInTool(zing, panel, big, 'ICO')
+		await convertInTool(zing, panel, big, 'AVIF')
+		const downloads = join(zing.userDataDir, 'downloads')
+		expect(readdirSync(downloads).sort()).toEqual(['big.avif', 'big.ico', 'odd.mp4', 'odd.png'])
+		const probe = spawnSync(ffmpegPath(zing), ['-hide_banner', '-i', join(downloads, 'odd.mp4')], { encoding: 'utf8' })
+		expect(probe.stderr).toMatch(/Video: h264 .* 32x30/)
+		const ico = spawnSync(magick, ['identify', join(downloads, 'big.ico')], { encoding: 'utf8' })
+		expect(ico.stdout).toMatch(/256x171/)
+		expect(spawnSync(magick, ['identify', join(downloads, 'big.avif')], { encoding: 'utf8' }).stdout).toMatch(/600x400/)
+		await zing.close()
+	})
+
+	test('ImageMagick: an SVG renamed .png is read by its content and still refused by the policy', async () => {
+		const zing = await launchWithEngines(undefined, ['magick'])
+		const secret = join(zing.userDataDir, 'secret.png')
+		expect(spawnSync(join(zing.userDataDir, 'engines', 'magick', 'magick.exe'), ['-size', '8x8', 'xc:red', secret], { encoding: 'utf8' }).status).toBe(0)
+		const disguised = join(zing.userDataDir, 'photo.png')
+		writeFileSync(disguised, '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="8" height="8"><image xlink:href="secret.png" width="8" height="8"/></svg>')
+		await zing.chrome.evaluate(() => window.zing.openPanel('tool:Hashes', { x: 800, y: 300 }))
+		const panelId = (await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels[0]!.id
+		await queuePick(zing, disguised)
+		const [picked] = await zing.chrome.evaluate(() => window.zing.pickFiles(['any']))
+		const exit = await zing.chrome.evaluate(
+			async ([id, token]) => {
+				const done = new Promise<EngineExit>((resolve) => {
+					const stop = window.zing.onEngineExit((e) => {
+						stop()
+						resolve(e)
+					})
+				})
+				await window.zing.runEngine('magick', id as string, { args: [{ input: token as string }, { output: 0 }], outputs: ['out.jpg'] })
+				return done
+			},
+			[panelId, picked!.token] as const,
+		)
+		expect(exit.code).not.toBe(0)
+		expect(exit.outputs).toEqual([])
+		expect(exit.stderrTail.join(' ')).toContain('security policy')
 		await zing.close()
 	})
 })

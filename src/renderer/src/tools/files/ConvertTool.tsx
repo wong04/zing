@@ -62,6 +62,8 @@ export function ConvertTool() {
 	}, [])
 
 	const take = (files: readonly PickedFile[]): void => {
+		// A drop while a job runs would swap the file under it and lose its Cancel.
+		if (busy) return
 		const first = files[0]
 		if (first === undefined) return
 		setFile(first)
@@ -174,6 +176,7 @@ export function ConvertTool() {
 							<PillSlider aria-label="Quality" min={1} max={100} step={1} value={quality} onChange={setQuality} valueText={`${quality} out of 100`} />
 						</div>
 					) : null}
+					{target.ext === 'pdf' ? <span className="convert-hint">The page is printed as UTF-8 text, with scripts and the network off.</span> : null}
 					<div className="convert-row">
 						<PillButton disabled={busy || stage.kind === 'offer'} onClick={start}>
 							Convert

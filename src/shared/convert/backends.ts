@@ -105,6 +105,7 @@ function targetsFor(ext: string, readBy: ConversionBackend): readonly Conversion
 		case 'imagemagick':
 			return IMAGE_TARGETS
 		case 'ffmpeg':
+			if (ext === 'gif') return [...VIDEO_TARGETS, ...IMAGE_TARGETS]
 			return category(ext) === 'audio' ? AUDIO_TARGETS : [...VIDEO_TARGETS, ...AUDIO_TARGETS]
 		case 'pandoc':
 			return ext === 'html' || ext === 'htm' || ext === 'xhtml' ? HTML_TARGETS : DOCUMENT_TARGETS

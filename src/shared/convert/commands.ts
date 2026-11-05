@@ -18,6 +18,9 @@ const OUTPUT: JobArg = { output: 0 }
 // awful. Fixed text; the host accepts exactly this string for -vf.
 export const GIF_FILTER = 'fps=12,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse'
 
+// x264 refuses odd widths and heights (a GIF often has them); this rounds them down to even. Fixed text; the host accepts exactly it for -vf.
+export const EVEN_SIZE_FILTER = 'scale=trunc(iw/2)*2:trunc(ih/2)*2'
+
 // `quality` is 0-100 and only affects lossy targets. The input's format is named so FFmpeg never sniffs it.
 export function ffmpegArgs(input: JobArg, inputFormat: string, ext: string, quality: number): JobArg[] {
 	const codec = isAudio(ext) ? ['-vn', ...audioCodecArgs(ext, quality)] : videoCodecArgs(ext, quality)
@@ -57,7 +60,7 @@ function videoCodecArgs(ext: string, quality: number): string[] {
 		case 'mp4':
 		case 'mov':
 		case 'mkv':
-			return ['-c:v', 'libx264', '-crf', String(clamp(51 - Math.trunc((quality * 51) / 100), 0, 51)), '-preset', 'medium', '-pix_fmt', 'yuv420p', '-c:a', 'aac']
+			return ['-vf', EVEN_SIZE_FILTER, '-c:v', 'libx264', '-crf', String(clamp(51 - Math.trunc((quality * 51) / 100), 0, 51)), '-preset', 'medium', '-pix_fmt', 'yuv420p', '-c:a', 'aac']
 		default:
 			throw new Error(`No video settings for .${ext}`)
 	}
@@ -89,7 +92,9 @@ const MULTI_FRAME = new Set(['gif', 'tiff', 'tif', 'webp', 'ico'])
 export function magickArgs(input: JobArg, ext: string, quality: number): JobArg[] {
 	const firstFrame = MULTI_FRAME.has(ext) ? [] : ['-delete', '1--1']
 	const lossy = isLossyTarget(ext) ? ['-quality', String(clamp(Math.trunc(quality), 1, 100))] : []
-	return [input, ...firstFrame, '-auto-orient', ...lossy, OUTPUT]
+	// An icon holds at most 256 by 256 pixels; "256x256>" only ever shrinks.
+	const iconSize = ext === 'ico' ? ['-resize', '256x256>'] : []
+	return [input, ...firstFrame, '-auto-orient', ...lossy, ...iconSize, OUTPUT]
 }
 
 // Pandoc can't infer a standalone document for these from the extension alone.
@@ -136,8 +141,13 @@ export function uniqueOutputName(base: string, ext: string, exists: (name: strin
 
 // Windows forbids these in file names, and a converted file named after a
 // page title or URL can contain any of them.
+// Zero-width characters, direction marks and embeddings/overrides/isolates, and the byte-order mark.
+const INVISIBLE: readonly (readonly [number, number])[] = [[0x200b, 0x200f], [0x202a, 0x202e], [0x2060, 0x2069], [0xfeff, 0xfeff]]
+const isInvisible = (code: number): boolean => INVISIBLE.some(([from, to]) => code >= from && code <= to)
+
 export function safeFileBase(name: string): string {
-	const printable = [...name].filter((ch) => ch.charCodeAt(0) >= 0x20).join('')
+	// Control characters, and the invisible ones that turn text around (a right-to-left override can make "photo-gpj.exe" read as "photo-exe.jpg").
+	const printable = [...name].filter((ch) => ch.charCodeAt(0) >= 0x20 && !isInvisible(ch.charCodeAt(0))).join('')
 	const cleaned = printable.replace(/[<>:"/\\|?*]/g, '').replace(/[. ]+$/, '').trim()
 	const reserved = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i
 	if (!cleaned) return 'file'
@@ -157,9 +167,12 @@ function outputExtension(ext: string): string {
 	return ext === 'prores' ? 'mov' : ext
 }
 
+// The job folder, Zing's data folder and the extension all count towards Windows' 260-character path limit.
+const MAX_BASE_CHARACTERS = 100
+
 /** The name an output is asked for; the host numbers it if the Downloads folder has one already. */
 export function outputFileName(base: string, ext: string): string {
-	return `${safeFileBase(base)}.${outputExtension(ext)}`
+	return `${safeFileBase([...safeFileBase(base)].slice(0, MAX_BASE_CHARACTERS).join(''))}.${outputExtension(ext)}`
 }
 
 function splitName(name: string): { base: string; ext: string } {
@@ -187,16 +200,16 @@ export function convertPlan(input: { readonly name: string; readonly token: stri
 	if (!format) throw new ConvertRefusedError(`A .${ext} file can't become .${target}`)
 	const output = outputFileName(base, target)
 	const file: JobArg = { input: input.token }
-	switch (support.readBy) {
+	switch (format.backend) {
 		case 'imagemagick':
 			checkMagickName(input.name)
 			return { kind: 'engine', engine: 'magick', args: magickArgs(file, target, quality), outputs: [output] }
 		case 'ffmpeg':
 			return { kind: 'engine', engine: 'ffmpeg', args: ffmpegArgs(file, ffmpegInputFormat(ext)!, target, quality), outputs: [output] }
 		case 'pandoc':
-			if (format.backend === 'chromium-pdf') return { kind: 'print', token: input.token, output }
 			return { kind: 'engine', engine: 'pandoc', args: pandocArgs(file, ext, target), outputs: [output] }
 		case 'chromium-pdf':
+			return { kind: 'print', token: input.token, output }
 		case 'tar':
 			throw new ConvertRefusedError(`"${input.name}" can't be converted here`)
 	}

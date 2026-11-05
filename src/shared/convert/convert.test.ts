@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { JobArg } from '../engines/engineJob'
 import { ALL_CATALOG_EXTENSIONS, convertTargets, inputSupport, MAC_ONLY_INPUTS, type ConversionBackend } from './backends'
-import { convertPlan, explainFfmpegFailure, GIF_FILTER, ffmpegArgs, magickArgs, outputFileName, pandocArgs, safeFileBase, tarArgs, uniqueOutputName } from './commands'
+import { convertPlan, EVEN_SIZE_FILTER, explainFfmpegFailure, GIF_FILTER, ffmpegArgs, magickArgs, outputFileName, pandocArgs, safeFileBase, tarArgs, uniqueOutputName } from './commands'
 import { allInputs, category, label } from './formatCatalog'
 
 const token = { input: 'token-1' }
@@ -71,6 +71,14 @@ describe('Windows coverage matrix', () => {
 		expect(exts('mp3')).not.toContain('mp4')
 		expect(exts('md')).toEqual(expect.arrayContaining(['docx', 'html', 'epub']))
 	})
+	it('a GIF is a picture and a clip: video and image targets, never audio', () => {
+		const exts = convertTargets('gif').map((f) => f.ext)
+		expect(exts).toEqual(expect.arrayContaining(['mp4', 'webm', 'png', 'jpg']))
+		expect(exts).not.toContain('mp3')
+		expect(exts).not.toContain('gif')
+		expect(convertTargets('gif').find((f) => f.ext === 'png')).toMatchObject({ backend: 'imagemagick' })
+		expect(convertTargets('gif').find((f) => f.ext === 'mp4')).toMatchObject({ backend: 'ffmpeg' })
+	})
 	it('PDF output is for HTML only, and goes through Chromium, not Pandoc', () => {
 		expect(convertTargets('html').find((f) => f.ext === 'pdf')).toMatchObject({ backend: 'chromium-pdf' })
 		expect(convertTargets('htm').some((f) => f.ext === 'pdf')).toBe(true)
@@ -122,6 +130,10 @@ describe('ffmpeg arguments', () => {
 		// An iPhone clip is 10-bit HEVC; x264 would otherwise write High 10, which most players refuse.
 		expect(after(run('mp4', 50), '-pix_fmt')).toBe('yuv420p')
 	})
+	it('H.264 gets the fixed even-size filter, since x264 refuses odd dimensions', () => {
+		for (const target of ['mp4', 'mov', 'mkv']) expect(after(run(target, 50), '-vf')).toBe(EVEN_SIZE_FILTER)
+		expect(run('webm', 50)).not.toContain('-vf')
+	})
 	it('GIF gets the fixed palette filter', () => expect(after(run('gif', 50), '-vf')).toContain('palettegen'))
 	it('ProRes is written in a .mov', () => {
 		expect(outputFileName('clip', 'prores')).toBe('clip.mov')
@@ -149,6 +161,10 @@ describe('other backends', () => {
 		expect(magickArgs(token, 'jpg', 0)).toContain('1')
 		expect(magickArgs(token, 'jpg', 500)).toContain('100')
 		expect(magickArgs(token, 'png', 80)).not.toContain('-quality')
+	})
+	it('an icon is shrunk to the 256 pixels an icon can be, and only an icon', () => {
+		expect(magickArgs(token, 'ico', 50)).toEqual([token, '-auto-orient', '-resize', '256x256>', out])
+		expect(magickArgs(token, 'png', 50)).not.toContain('-resize')
 	})
 	it('multi-frame targets keep every frame', () => {
 		expect(magickArgs(token, 'gif', 80)).not.toContain('-delete')
@@ -198,6 +214,15 @@ describe('the plan for one conversion', () => {
 })
 
 describe('output names', () => {
+	it('a long name is cut so the file stays inside Windows path limits', () => {
+		const name = outputFileName('é'.repeat(400), 'png')
+		expect([...name].length).toBeLessThanOrEqual(100 + '.png'.length)
+		expect(name.endsWith('.png')).toBe(true)
+	})
+	it('direction overrides and invisible controls are removed, so a name cannot disguise its extension', () => {
+		expect(outputFileName('photo‮gpj.exe', 'png')).toBe('photogpj.exe.png')
+		expect(safeFileBase('a‎b⁦c⁩d')).toBe('abcd')
+	})
 	const taken = new Set(['dup.pdf', 'dup 2.pdf'])
 	it('never overwrites: numbers collisions', () => expect(uniqueOutputName('dup', 'pdf', (n) => taken.has(n), true)).toBe('dup 3.pdf'))
 	it('honours turning the protection off', () => expect(uniqueOutputName('dup', 'pdf', (n) => taken.has(n), false)).toBe('dup.pdf'))
@@ -222,9 +247,12 @@ describe('the host allow-list', () => {
 		if (plan.kind !== 'engine') throw new Error('not an engine job')
 		return plan.args.filter((arg): arg is string => typeof arg === 'string' && arg.startsWith('-') && arg !== '1--1')
 	}
-	const samples: [string, string][] = [['a.mov', 'mp4'], ['a.mov', 'webm'], ['a.mov', 'prores'], ['a.mov', 'gif'], ['a.mov', 'mp3'], ['a.wav', 'ogg'], ['a.mp3', 'opus'], ['a.heic', 'jpg'], ['a.heic', 'gif'], ['a.md', 'docx'], ['a.html', 'txt']]
+	const samples: [string, string][] = [['a.gif', 'png'], ['a.gif', 'mp4'], ['a.heic', 'ico'], ['a.mov', 'mp4'], ['a.mov', 'webm'], ['a.mov', 'prores'], ['a.mov', 'gif'], ['a.mov', 'mp3'], ['a.wav', 'ogg'], ['a.mp3', 'opus'], ['a.heic', 'jpg'], ['a.heic', 'gif'], ['a.md', 'docx'], ['a.html', 'txt']]
 	it.each(samples)('%s to %s uses only flags the host lists', (name, target) => {
 		for (const flag of flagsOf(name, target)) expect(policy, flag).toContain(`("${flag}"`)
 	})
-	it('the host accepts exactly the GIF filter used here', () => expect(policy).toContain(`GifFilter = "${GIF_FILTER}"`))
+	it('the host accepts exactly the filters used here', () => {
+		expect(policy).toContain(`GifFilter = "${GIF_FILTER}"`)
+		expect(policy).toContain(`EvenSizeFilter = "${EVEN_SIZE_FILTER}"`)
+	})
 })
