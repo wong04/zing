@@ -11,22 +11,6 @@ public sealed class RunnerFixture : IDisposable
 	private readonly object _gate = new();
 	private bool _installed;
 
-	/// <summary>The flags the fake engine understands, which the real catalog's allow-list naturally lacks.</summary>
-	internal static readonly Dictionary<string, FlagSpec> FakeFlags = new(StringComparer.Ordinal)
-	{
-		["--fake-write"] = new FlagSpec(FlagValue.Output),
-		["--write-after"] = new FlagSpec(FlagValue.Number, FlagValue.Output),
-		["--print-cwd"] = new FlagSpec(),
-		["--spawn-child"] = new FlagSpec(),
-		["--sleep"] = new FlagSpec(FlagValue.Number),
-		["--chatty"] = new FlagSpec(FlagValue.Number),
-		["--long-line"] = new FlagSpec(FlagValue.Number),
-		["--err"] = new FlagSpec(FlagValue.Unchecked),
-		["--exit"] = new FlagSpec(FlagValue.Number),
-		["--print-env"] = new FlagSpec(),
-		["--print-magick-policy"] = new FlagSpec(),
-	};
-
 	public RunnerFixture(TimeSpan? flushEvery = null, string engineId = "ffmpeg")
 	{
 		EngineId = engineId;
@@ -38,7 +22,7 @@ public sealed class RunnerFixture : IDisposable
 		var body = System.IO.File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Zing.FakeEngine.exe"));
 		_engines.Serve($"{engineId}/{engineId}.exe", body);
 		Store = _engines.Store(_engines.SingleFile(engineId, body));
-		var policy = EngineFlagPolicy.Pinned.Plus(engineId, FakeFlags, "txt");
+		var policy = EngineFlagPolicy.Pinned.Plus(engineId, EngineFlagPolicy.FakeEngineFlags, "txt");
 		Runner = new EngineRunner(Store, Jobs, (where, error) => Errors.Add((where, error)), policy, flushEvery ?? TimeSpan.FromMilliseconds(20));
 	}
 

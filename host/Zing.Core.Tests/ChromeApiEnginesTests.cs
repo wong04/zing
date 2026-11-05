@@ -100,10 +100,15 @@ public sealed class ChromeApiEnginesTests : IAsyncLifetime
 		var exit = Pushed("engines:exit").Single();
 		Assert.Equal(id, exit.GetProperty("jobId").GetString());
 		Assert.Equal(0, exit.GetProperty("code").GetInt32());
-		var placed = exit.GetProperty("outputs")[0].GetString()!;
-		Assert.Equal(Path.Combine(_engines.Outputs, "clip.txt"), placed);
-		var output = Pushed("engines:output").SelectMany(p => p.GetProperty("lines").EnumerateArray()).Select(l => l.GetProperty("text").GetString()!).First();
-		Assert.Contains("-rf.mov", output);
+		var output = exit.GetProperty("outputs")[0];
+		var placed = Path.Combine(_engines.Outputs, "clip.txt");
+		// A name and a token, never the path; the token is good for a later job's input.
+		Assert.Equal("clip.txt", output.GetProperty("name").GetString());
+		Assert.DoesNotContain(_engines.Outputs, output.ToString());
+		Assert.Equal(placed, _api.Grants.Resolve(output.GetProperty("token").GetString()!));
+		Assert.True(File.Exists(placed));
+		var echoed = Pushed("engines:output").SelectMany(p => p.GetProperty("lines").EnumerateArray()).Select(l => l.GetProperty("text").GetString()!).First();
+		Assert.Contains("-rf.mov", echoed);
 	}
 
 	[Fact]

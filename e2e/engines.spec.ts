@@ -146,11 +146,13 @@ test('a picked file reaches the engine as an absolute path, its output is placed
 	await expect.poll(async () => (await exitsOf(zing)).length).toBe(1)
 	const [exit] = await exitsOf(zing)
 	const placed = join(zing.userDataDir, 'downloads', 'clip.txt')
-	expect(exit).toMatchObject({ code: 0, cancelled: false, outputs: [placed] })
+	// A name and a token, not the path.
+	expect(exit).toMatchObject({ code: 0, cancelled: false, outputs: [{ name: 'clip.txt', token: expect.stringMatching(/^[0-9a-f]{32}$/) }] })
+	expect(JSON.stringify(exit?.outputs)).not.toContain(zing.userDataDir.replaceAll('\\', '\\\\'))
 	expect(readFileSync(placed, 'utf8')).toBe('fake engine output\n')
 	// The argument echo is the engine's first line: the file arrives whole, as a path that can't be read as an option.
 	const echoed = JSON.parse((await linesOf(zing))[0]!.slice('out:'.length)) as string[]
-	expect(echoed).toEqual(['--fake-write', expect.stringMatching(/clip\.txt$/), input])
+	expect(echoed).toEqual(['-nostdin', '--fake-write', expect.stringMatching(/clip\.txt$/), input])
 	// Nothing is left in the job folder, and a second exit never follows.
 	await new Promise((resolve) => setTimeout(resolve, 500))
 	expect(await exitsOf(zing)).toHaveLength(1)
@@ -189,12 +191,13 @@ test('a job that was never given a file, or that would run before the engine is 
 	const run = (args: readonly JobArg[]) => zing.chrome.evaluate(([id, a]) => window.zing.runEngine('ffmpeg', id as string, { args: a as JobArg[] }).then(() => 'started', (e: Error) => e.message), [panel, args] as const)
 
 	// Running never downloads: the engine must have been fetched on purpose first.
-	expect(await run(['--version'])).toContain("hasn't been downloaded")
+	expect(await run(['--exit', '0'])).toContain("hasn't been downloaded")
 	expect(fixture.requests).toEqual([])
 
 	await zing.chrome.evaluate(() => window.zing.ensureEngine('ffmpeg'))
 	expect(await run([{ input: 'C:\\Windows\\win.ini' }])).toContain("wasn't picked or dropped")
-	expect(await run(['-i', 'C:\\Windows\\win.ini'])).toContain('looks like a file path')
+	expect(await run(['-i', 'C:\\Windows\\win.ini'])).toContain('takes a file the person picked')
+	expect(await run(['-vf', 'movie=C:/x'])).toContain("isn't given the option")
 	expect(await run([{ input: '' }])).toContain("wasn't picked or dropped")
 	await zing.close()
 })

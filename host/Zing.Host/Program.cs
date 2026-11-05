@@ -231,7 +231,10 @@ public sealed class ZingApp
 	{
 		try
 		{
-			return new EngineRunner(engines, AppPaths.EngineJobs, (what, error) => TestHooks.Record(what, error));
+			// The e2e fixture serves Zing.FakeEngine as every engine, so a run against it also accepts that program's flags.
+			return TestHooks.EngineCatalog() is null
+				? new EngineRunner(engines, AppPaths.EngineJobs, (what, error) => TestHooks.Record(what, error))
+				: EngineRunner.ForFakeEngine(engines, AppPaths.EngineJobs, (what, error) => TestHooks.Record(what, error));
 		}
 		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
 		{

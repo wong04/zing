@@ -82,6 +82,13 @@ public sealed class EngineRunner
 		RemoveLeftovers();
 	}
 
+	/// <summary>
+	/// A runner that also accepts the flags of Zing.FakeEngine, for e2e runs that serve it as every engine. Zing.Host calls it
+	/// only in an e2e run with a fixture catalog (ZING_ENGINE_BASE_URL); a real run uses the public constructor.
+	/// </summary>
+	public static EngineRunner ForFakeEngine(EngineStore store, string root, Action<string, Exception> onError) =>
+		new(store, root, onError, EngineFlagPolicy.WithFakeEngine());
+
 	public int Running
 	{
 		get

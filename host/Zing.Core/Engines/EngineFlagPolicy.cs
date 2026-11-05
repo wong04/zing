@@ -134,6 +134,30 @@ internal sealed class EngineFlagPolicy
 	private static readonly string[] FfmpegFormats = ["mp4", "mov", "matroska", "webm", "mp3", "wav", "flac", "ogg", "ipod", "gif", "image2"];
 	private static readonly string[] PandocFormats = ["markdown", "gfm", "commonmark", "html", "docx", "odt", "epub", "rtf", "latex", "plain"];
 
+	/// <summary>The flags Zing.FakeEngine understands: for tests and for e2e runs against the fixture, never for a real engine.</summary>
+	internal static readonly IReadOnlyDictionary<string, FlagSpec> FakeEngineFlags = new Dictionary<string, FlagSpec>(StringComparer.Ordinal)
+	{
+		["--fake-write"] = new FlagSpec(FlagValue.Output),
+		["--write-after"] = new FlagSpec(FlagValue.Number, FlagValue.Output),
+		["--print-cwd"] = new FlagSpec(),
+		["--spawn-child"] = new FlagSpec(),
+		["--sleep"] = new FlagSpec(FlagValue.Number),
+		["--chatty"] = new FlagSpec(FlagValue.Number),
+		["--long-line"] = new FlagSpec(FlagValue.Number),
+		["--err"] = new FlagSpec(FlagValue.Unchecked),
+		["--exit"] = new FlagSpec(FlagValue.Number),
+		["--print-env"] = new FlagSpec(),
+		["--print-magick-policy"] = new FlagSpec(),
+	};
+
+	/// <summary>Pinned, plus the fake engine's flags and a .txt output on every engine (the e2e fixture serves it as each).</summary>
+	internal static EngineFlagPolicy WithFakeEngine()
+	{
+		var policy = Pinned;
+		foreach (var id in new[] { EngineIds.Ffmpeg, EngineIds.Magick, EngineIds.Pandoc, EngineIds.YtDlp }) policy = policy.Plus(id, FakeEngineFlags, "txt");
+		return policy;
+	}
+
 	public static EngineFlagPolicy Pinned { get; } = new(new Dictionary<string, EnginePolicy>(StringComparer.Ordinal)
 	{
 		// -i takes a granted file, and the runner puts a protocol whitelist of file and pipe before each, so nothing here

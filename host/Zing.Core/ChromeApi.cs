@@ -527,9 +527,17 @@ public sealed class ChromeApi : IDisposable
 		if (!_disposed) _host.Push("engines:output", batch);
 	}
 
+	/// <summary>
+	/// What the renderer is told when a job ends. Each output is a name and a token (to show, and to give a later job as an
+	/// input), not a path. The engine's own lines and <c>StderrTail</c> can still contain paths: FFmpeg prints the files it
+	/// reads, and a tool needs those lines to show progress and errors.
+	/// </summary>
+	private sealed record JobExitEvent(string JobId, int Code, bool Cancelled, IReadOnlyList<FileGrant> Outputs, IReadOnlyList<string> StderrTail, string? Error);
+
 	private void PushJobExit(JobExit exit)
 	{
-		if (!_disposed) _host.Push("engines:exit", exit);
+		if (_disposed) return;
+		_host.Push("engines:exit", new JobExitEvent(exit.JobId, exit.Code, exit.Cancelled, [.. exit.Outputs.Select(Grants.Issue)], exit.StderrTail, exit.Error));
 	}
 
 	/// <summary>A person asked for the download (a button, after being told its size and source); progress reaches this window.</summary>
