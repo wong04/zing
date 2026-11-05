@@ -35,7 +35,7 @@ public sealed class EngineRunnerSafetyTests
 
 		var echoed = JsonSerializer.Deserialize<string[]>(f.Lines("out")[0])!;
 		Assert.Equal(["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--no-playlist", "--ffmpeg-location", f.Store.InstalledPath("ffmpeg"), "--exit", "0"], echoed);
-		Assert.True(File.Exists(echoed[4]));
+		Assert.True(File.Exists(echoed[5]));
 	}
 
 	[Fact]
