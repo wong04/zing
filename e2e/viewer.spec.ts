@@ -40,6 +40,34 @@ test.afterEach(async () => {
 	fixture = undefined
 })
 
+function makePdf(pages: number, bytesPerPage: number): Buffer {
+	const objects: string[] = []
+	const kids: string[] = []
+	objects.push('<</Type/Catalog/Pages 2 0 R>>')
+	objects.push('')
+	const filler = 'BT /F1 18 Tf 72 700 Td (Hello from page PAGE) Tj ET\n' + '0.9 0.9 0.95 rg 72 100 400 30 re f\n'.repeat(Math.ceil(bytesPerPage / 36))
+	objects.push('<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>')
+	for (let i = 0; i < pages; i++) {
+		const content = filler.replace('PAGE', String(i + 1))
+		const pageNo = 4 + i * 2
+		kids.push(`${pageNo} 0 R`)
+		objects.push(`<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 3 0 R>>>>/Contents ${pageNo + 1} 0 R>>`)
+		objects.push(`<</Length ${content.length}>>\nstream\n${content}endstream`)
+	}
+	objects[1] = `<</Type/Pages/Kids[${kids.join(' ')}]/Count ${pages}>>`
+	let out = '%PDF-1.4\n'
+	const offsets: number[] = []
+	objects.forEach((o, i) => {
+		offsets.push(out.length)
+		out += `${i + 1} 0 obj\n${o}\nendobj\n`
+	})
+	const xref = out.length
+	out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n` + offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')
+	out += `trailer\n<</Size ${objects.length + 1}/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF\n`
+	return Buffer.from(out, 'latin1')
+}
+
+
 /** A copy of a fixture under the name a test wants, in a folder of its own. */
 function copyAs(source: string, name: string): string {
 	const path = join(work, name)
@@ -134,6 +162,25 @@ test('a picture and a PDF are shown as they are, from a type chosen from the ext
 		return { type: response.headers.get('content-type'), policy: response.headers.get('content-security-policy') }
 	}, await frame.getAttribute('src'))
 	expect(pdfHeaders).toEqual({ type: 'application/pdf', policy: "default-src 'none'; frame-ancestors https://app.zing" })
+	await zing.close()
+})
+
+test('a PDF over the whole-file limit is served without a Range header and in chunks with one', async () => {
+	const zing = await launchZing()
+	const viewer = await openViewer(zing)
+	const pdf = join(work, 'big.pdf')
+	writeFileSync(pdf, makePdf(300, 30_000))
+	await choose(zing, viewer, pdf)
+	const frame = viewer.panel.getByTestId('viewer-pdf')
+	await expect(frame).toBeVisible()
+	const url = await frame.getAttribute('src')
+	const ranged = await viewer.surface.evaluate(async (u) => {
+		const response = await fetch(u!, { headers: { Range: 'bytes=0-' } })
+		return { status: response.status, bytes: (await response.arrayBuffer()).byteLength, range: response.headers.get('content-range') }
+	}, url)
+	expect(ranged.status).toBe(206)
+	expect(ranged.bytes).toBe(4 * 1024 * 1024)
+	expect(ranged.range?.startsWith('bytes 0-4194303/')).toBe(true)
 	await zing.close()
 })
 

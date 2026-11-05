@@ -143,3 +143,8 @@ video.viewer-media {
 	align-items: center;
 	margin-top: 6px;
 }
+
+/* The panel body wraps a tool in two plain divs (the drop zone is one); the viewer needs the height to fill its stage. */
+.float-body > div:has(> .viewer) {
+	height: 100%;
+}
