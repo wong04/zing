@@ -97,6 +97,22 @@ describe('nextFragment', () => {
 		const moof = box('moof', box('traf', tfdt(10)))
 		expect(nextFragment(join(moof, big), 0)).toMatchObject({ kind: 'fragment', length: moof.length + big.length })
 	})
+	it('refuses a 64-bit box size smaller than its own 16-byte header, which would never advance', () => {
+		const big = (hi: number, lo: number): Uint8Array => Uint8Array.from([...u32(1), ...ascii('mdat'), ...u32(hi), ...u32(lo), 0, 0, 0, 0])
+		for (const lo of [0, 1, 8, 15]) {
+			expect(() => nextFragment(big(0, lo), 0), String(lo)).toThrow(/size/)
+			expect(() => initLength(join(box('ftyp', ascii('isom')), big(0, lo))), String(lo)).toThrow(/size/)
+		}
+	})
+	it('refuses a 64-bit box size that is not a safe integer', () => {
+		expect(() => nextFragment(Uint8Array.from([...u32(1), ...ascii('mdat'), ...u32(0x200000), ...u32(0)]), 0)).toThrow(/size/)
+		expect(() => nextFragment(Uint8Array.from([...u32(1), ...ascii('mdat'), ...u32(0xffffffff), ...u32(0xffffffff)]), 0)).toThrow(/size/)
+	})
+	it('refuses a box bigger than 256 MiB, so what is waiting for it cannot grow without limit', () => {
+		expect(() => nextFragment(Uint8Array.from([...u32(256 * 1024 * 1024 + 1), ...ascii('mdat')]), 0)).toThrow(/size/)
+		expect(() => initLength(Uint8Array.from([...u32(0xf0000000), ...ascii('ftyp')]))).toThrow(/size/)
+		expect(nextFragment(Uint8Array.from([...u32(256 * 1024 * 1024), ...ascii('free')]), 0)).toBeUndefined()
+	})
 	it('refuses a fragment with no start time', () => {
 		expect(() => nextFragment(join(box('moof', box('traf')), box('mdat', new Uint8Array(1))), 0)).toThrow(/tfdt/)
 	})

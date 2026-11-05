@@ -19,14 +19,25 @@ const u32 = (bytes: Uint8Array, at: number): number => ((bytes[at]! << 24) | (by
 
 const u64 = (bytes: Uint8Array, at: number): number => u32(bytes, at) * 2 ** 32 + u32(bytes, at + 4)
 
+/** The biggest box that is waited for whole; what arrives while waiting is kept in memory. */
+const MAX_BOX = 256 * 1024 * 1024
+
+function checked(type: string, size: number, headerSize: number): Header {
+	if (!Number.isSafeInteger(size) || size < headerSize) throw new Mp4FormatError(`The ${JSON.stringify(type)} box has size ${size}, which can't hold its own ${headerSize}-byte header`)
+	if (size > MAX_BOX) throw new Mp4FormatError(`The ${JSON.stringify(type)} box has size ${size}, more than the ${MAX_BOX} bytes the viewer will wait for`)
+	return { type, size }
+}
+
 /** The box starting at `at`, or undefined while its header isn't all here. */
 function header(bytes: Uint8Array, at: number): Header | undefined {
 	if (at + 8 > bytes.length) return undefined
 	const type = fourcc(bytes, at + 4)
 	const size = u32(bytes, at)
-	if (size === 1) return at + 16 > bytes.length ? undefined : { type, size: u64(bytes, at + 8) }
-	if (size < 8) throw new Mp4FormatError(`The ${JSON.stringify(type)} box has size ${size}, smaller than its own header`)
-	return { type, size }
+	if (size === 1) {
+		if (at + 16 > bytes.length) return undefined
+		return checked(type, u64(bytes, at + 8), 16)
+	}
+	return checked(type, size, 8)
 }
 
 function find(bytes: Uint8Array, type: string, from = 0, to = bytes.length): number {
