@@ -187,7 +187,24 @@ public sealed class EngineFixture : IDisposable
 		{
 			// The accept loop ends by the listener closing under it.
 		}
-		if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
+		DeleteRoot();
+	}
+
+	/// <summary>Windows keeps a program's file locked for a moment after the program ends (the virus scanner too), more so when tests run in parallel.</summary>
+	private void DeleteRoot()
+	{
+		for (var attempt = 1; ; attempt++)
+		{
+			try
+			{
+				if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
+				return;
+			}
+			catch (Exception error) when (error is IOException or UnauthorizedAccessException && attempt < 50)
+			{
+				Thread.Sleep(100);
+			}
+		}
 	}
 }
 
