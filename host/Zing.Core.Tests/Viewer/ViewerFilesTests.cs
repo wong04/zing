@@ -372,8 +372,10 @@ public sealed class ViewerFilesTests : IDisposable
 	public async Task A_failed_conversion_answers_404()
 	{
 		var session = OpenConverted("holiday.mov");
+		await File.WriteAllBytesAsync(Path.Combine(session.Folder!, "half-made.mp4"), Bytes(10), TestContext.Current.CancellationToken);
 		_viewer.Fail(session.Id);
 		Assert.Equal(404, (await _viewer.ServeAsync(Get(session, "bytes=0-"))).Status);
+		Assert.False(Directory.Exists(session.Folder));
 	}
 
 	[Fact]

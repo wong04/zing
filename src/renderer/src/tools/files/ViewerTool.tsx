@@ -7,12 +7,13 @@ import { formatBytes } from '@shared/format/formatBytes'
 import { panelId, Section, section } from '@shared/toolbox/panelContent'
 import { zing } from '../../api'
 import { FileDropZone, InfoBanner, PillButton, ToolEmptyState } from '../../components'
+import { usePanelId } from '../../panels/PanelContext'
 import { PanelIcon } from '../../panels/panelIcon'
 import { describeFailure } from '../dev/parts'
 import './files.css'
 import { playStream } from './streamPlayer'
 
-const VIEWER_PANEL = panelId(section(Section.viewer))
+const VIEWER_CONTENT = panelId(section(Section.viewer))
 const CONVERT_PANEL = panelId(section(Section.convert))
 
 type Notice =
@@ -64,6 +65,7 @@ function Stage({ file, duration, onError }: { file: Showing; duration: () => num
 
 /** Files & Media > Files: shows a picture, video, sound or PDF, converting a temporary copy of what Chromium can't show. */
 export function ViewerTool() {
+	const panel = usePanelId()
 	const [file, setFile] = useState<Showing | null>(null)
 	const [notice, setNotice] = useState<Notice | null>(null)
 	const current = useRef<Showing | null>(null)
@@ -84,6 +86,8 @@ export function ViewerTool() {
 			}
 			setNotice({ kind: 'failed', message: failureText(showing?.opened.name ?? 'the file', exit) })
 			setFile(null)
+			// The host has dropped the copy; this forgets the address too.
+			if (showing) void zing.closeViewerFile(showing.opened.id).catch((error: unknown) => console.error('Closing the viewer file failed', error))
 		}
 		const offOutput = zing.onEngineOutput((output) => {
 			if (job.current !== undefined && job.current !== output.jobId) return
@@ -140,7 +144,7 @@ export function ViewerTool() {
 			job.current = undefined
 			total.current = undefined
 			early.current.clear()
-			const opened = await zing.openViewerFile(picked.token, VIEWER_PANEL)
+			const opened = await zing.openViewerFile(picked.token, panel)
 			job.current = opened.jobId
 			const finished = opened.jobId === undefined ? undefined : early.current.get(opened.jobId)
 			setFile({ opened, ready: opened.jobId === undefined, fraction: undefined })
@@ -148,9 +152,10 @@ export function ViewerTool() {
 			else if (finished && !finished.cancelled) {
 				setNotice({ kind: 'failed', message: failureText(opened.name, finished) })
 				setFile(null)
+				await zing.closeViewerFile(opened.id)
 			}
 		},
-		[close],
+		[close, panel],
 	)
 
 	const openChecked = useCallback(
@@ -255,7 +260,7 @@ export function ViewerTool() {
 						</>
 					) : (
 						<ToolEmptyState
-							icon={<PanelIcon content={VIEWER_PANEL} size={44} />}
+							icon={<PanelIcon content={VIEWER_CONTENT} size={44} />}
 							title="View a file"
 							message="Drop a file here or choose one. Pictures, video, sound and PDFs open here, including HEIC, MOV and MKV, which are converted in a temporary copy that is deleted when you close the file."
 							targeted={targeted}

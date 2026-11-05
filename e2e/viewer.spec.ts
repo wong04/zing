@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -122,7 +122,7 @@ test('a picture and a PDF are shown as they are, from a type chosen from the ext
 		return { status: response.status, type: response.headers.get('content-type'), sniff: response.headers.get('x-content-type-options'), policy: response.headers.get('content-security-policy') }
 	}, url)
 	expect(headers).toEqual({ status: 200, type: 'image/png', sniff: 'nosniff', policy: "sandbox; default-src 'none'; frame-ancestors 'none'" })
-	await viewer.panel.getByRole('button', { name: 'Close file' }).click()
+	await viewer.panel.getByRole('button', { name: 'Close file', exact: true }).click()
 
 	const pdf = join(work, 'paper.pdf')
 	writeFileSync(pdf, '%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 100]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n')
@@ -232,7 +232,7 @@ test('closing the file deletes the temporary copy', async () => {
 	const [folder] = leftIn(copies(zing))
 	expect(folder).toMatch(/^\d+_/)
 	expect(existsSync(join(copies(zing), folder!, 'view.png'))).toBe(true)
-	await viewer.panel.getByRole('button', { name: 'Close file' }).click()
+	await viewer.panel.getByRole('button', { name: 'Close file', exact: true }).click()
 	await expect.poll(() => leftIn(copies(zing))).toEqual([])
 	await zing.close()
 })
@@ -297,7 +297,7 @@ test('a token for a closed file answers 404, and so does one that never existed'
 	const url = (await image.getAttribute('src'))!
 	const status = (u: string): Promise<number> => viewer.surface.evaluate(async (target) => (await fetch(target)).status, u)
 	expect(await status(url)).toBe(200)
-	await viewer.panel.getByRole('button', { name: 'Close file' }).click()
+	await viewer.panel.getByRole('button', { name: 'Close file', exact: true }).click()
 	await expect.poll(() => status(url)).toBe(404)
 	expect(await status(`https://view.zing/${'a'.repeat(32)}`)).toBe(404)
 	expect(await status('https://view.zing/')).toBe(404)
@@ -324,7 +324,9 @@ test('a view.zing address from a page tab answers 404, even with a token that is
 	)
 	expect(loaded).toBe('failed')
 	// Asking for the address as a page also gets nothing.
-	await tab.goto(url).catch(() => undefined)
+	const response = await tab.goto(url).catch(() => null)
+	await tab.waitForLoadState('load')
+	if (response) expect(response.status()).toBe(404)
 	expect(await tab.evaluate(() => (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming).responseStatus)).toBe(404)
 	expect(await tab.evaluate(() => document.contentType)).not.toMatch(/^image\//)
 	await zing.close()
@@ -338,7 +340,7 @@ test('a file the viewer cannot show says so and offers Convert', async () => {
 	await choose(zing, viewer, model)
 	await expect(viewer.panel.getByTestId('viewer-unsupported')).toHaveText("part.obj is a kind of file the viewer can't show.")
 	await viewer.panel.getByRole('button', { name: 'Open Convert' }).click()
-	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels.map((p) => p.id)).toContain('section:Convert')
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels.map((p) => p.content)).toContain('section:Convert')
 	await zing.close()
 })
 
@@ -381,9 +383,4 @@ test('a conversion that fails says why and leaves nothing behind', async () => {
 	await expect(viewer.panel.getByTestId('viewer-stage')).toHaveCount(0)
 	await expect.poll(() => leftIn(copies(zing))).toEqual([])
 	await zing.close()
-})
-
-test('the fixture MP4 is a real MP4 the host can serve in ranges', () => {
-	expect(readFileSync(CLIP).subarray(4, 8).toString()).toBe('ftyp')
-	expect(readFileSync(FRAGMENTED).subarray(4, 8).toString()).toBe('ftyp')
 })

@@ -154,11 +154,17 @@ public sealed class ViewerFiles : IDisposable
 		if (stale is not null) DeleteFolder(stale);
 	}
 
-	/// <summary>The conversion failed or was stopped: the address answers 404 from now on.</summary>
+	/// <summary>The conversion failed or was stopped: the address answers 404 from now on and whatever copy there is goes.</summary>
 	public void Fail(string id)
 	{
-		var stale = Finish(id, session => session.State = ConversionState.Failed);
-		if (stale is not null) DeleteFolder(stale);
+		string? folder = null;
+		var stale = Finish(id, session =>
+		{
+			session.State = ConversionState.Failed;
+			folder = session.Folder;
+		});
+		var gone = stale ?? folder;
+		if (gone is not null) DeleteFolder(gone);
 	}
 
 	/// <summary>Returns the folder of a file that was closed before its engine ended, which is now due for deletion.</summary>
@@ -313,7 +319,7 @@ public sealed class ViewerFiles : IDisposable
 		["Content-Security-Policy"] = session.Format.Show == "pdf" ? $"default-src 'none'; frame-ancestors {App}" : "sandbox; default-src 'none'; frame-ancestors 'none'",
 		["Referrer-Policy"] = "no-referrer",
 		["Access-Control-Allow-Origin"] = App,
-		["Access-Control-Expose-Headers"] = "Content-Range, Content-Length, Accept-Ranges",
+		["Access-Control-Expose-Headers"] = "Content-Range, Content-Length, Accept-Ranges, X-Content-Type-Options, Content-Security-Policy",
 		["Vary"] = "Origin",
 	};
 
