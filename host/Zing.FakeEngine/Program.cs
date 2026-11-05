@@ -14,8 +14,20 @@ using System.Text.Json;
 //   --exit <code>             ends with that code
 //   --print-env               prints "env" and the environment as one JSON object
 //   --print-magick-policy     prints the policy.xml found through MAGICK_CONFIGURE_PATH, line by line
+//   --no-playlist -o <path> -- <url>   acts as yt-dlp (see FakeDownload below)
 Console.Out.WriteLine(JsonSerializer.Serialize(args));
 Console.Out.Flush();
+
+// Standing in for yt-dlp (the Download tool's e2e): given "--no-playlist", "-o <path>" and an address after "--", it
+// prints progress the way yt-dlp does, writes the file, and lets the address pick the ending.
+//   ...bot-check... ends with YouTube's bot-check message   ...forbidden... ends with an HTTP 403
+//   ...slow...      stops at 10% and waits to be cancelled
+var outputFlag = Array.IndexOf(args, "-o");
+var dashes = Array.IndexOf(args, "--");
+if (Array.IndexOf(args, "--no-playlist") >= 0 && outputFlag >= 0 && outputFlag + 1 < args.Length && dashes >= 0 && dashes + 1 < args.Length)
+{
+	return FakeDownload(args[dashes + 1], args[outputFlag + 1], Array.IndexOf(args, "-x") >= 0);
+}
 
 var code = 0;
 for (var i = 0; i < args.Length; i++)
@@ -71,6 +83,31 @@ for (var i = 0; i < args.Length; i++)
 	}
 }
 return code;
+
+static int FakeDownload(string url, string output, bool extractsAudio)
+{
+	if (url.Contains("bot-check"))
+	{
+		Console.Error.WriteLine("ERROR: [youtube] abc: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication.");
+		return 1;
+	}
+	if (url.Contains("forbidden"))
+	{
+		Console.Error.WriteLine("ERROR: unable to download video data: HTTP Error 403: Forbidden");
+		return 1;
+	}
+	foreach (var percent in new[] { 10, 45, 80, 100 })
+	{
+		Console.Out.WriteLine($"[download] {percent,3}.0% of 5.00MiB at 1.00MiB/s ETA 00:01");
+		Console.Out.Flush();
+		if (percent == 10 && url.Contains("slow")) Thread.Sleep(60_000);
+		Thread.Sleep(150);
+	}
+	if (extractsAudio) Console.Out.WriteLine("[ExtractAudio] Destination: audio.mp3");
+	Console.Out.Flush();
+	File.WriteAllText(output, "fake media");
+	return 0;
+}
 
 static string Operand(string[] args, ref int i, string what)
 {

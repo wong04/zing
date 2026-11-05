@@ -73,7 +73,7 @@ public sealed class EngineRunnerTests : IDisposable
 		var request = ytdlp.Request(Literal("--exit"), Literal("0")) with { Urls = ["https://example.com/watch?v=1"] };
 		await ytdlp.RunAsync(request);
 
-		Assert.Equal(["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--exit", "0", "--", "https://example.com/watch?v=1"], JsonSerializer.Deserialize<string[]>(ytdlp.Lines("out")[0])!);
+		Assert.Equal(["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--no-playlist", "--ffmpeg-location", ytdlp.Store.InstalledPath("ffmpeg"), "--exit", "0", "--", "https://example.com/watch?v=1"], JsonSerializer.Deserialize<string[]>(ytdlp.Lines("out")[0])!);
 		await _f.InstallAsync();
 		Assert.Throws<UnsafeEngineArgumentException>(() => _f.Start(_f.Request(Literal("--exit"), Literal("0")) with { Urls = ["https://example.com/"] }));
 	}

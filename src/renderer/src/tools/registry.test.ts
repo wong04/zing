@@ -7,7 +7,6 @@ import { buildRegistry, DuplicateToolError, registeredToolIds, toolComponent } f
 const laterPhase: readonly string[] = [
 	'section:Convert',
 	'section:Diagnose',
-	'section:Download',
 	'section:Files',
 	'section:Network & VPN',
 	'section:Open a Link',

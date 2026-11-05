@@ -290,6 +290,12 @@ export interface InvokeContract {
 	'engines:run': { args: [engineId: string, panelId: string, job: EngineJobSpec]; result: string }
 	/** Stops a job of this window; its outputs are discarded. (`engines:cancel` stops a download.) */
 	'engines:cancel-job': { args: [jobId: string]; result: void }
+	/**
+	 * Saves the active tab's HTML (only what is on the page, no images or styles) to Downloads under a numbered name, and
+	 * answers with the file's name and a token. Rejects for a page that isn't http or https, one in reader mode, or a very
+	 * large one. A page view cannot call this: it has no host channel.
+	 */
+	'page:save': { args: []; result: PickedFile }
 	/** The native open dialog; an empty list if the person cancelled. */
 	'files:pick': { args: [kinds: readonly FileKind[]]; result: PickedFile[] }
 	/**
@@ -440,6 +446,7 @@ export interface ZingApi {
 	onEngineProgress(listener: (progress: EngineProgress) => void): Unsubscribe
 	runEngine(engineId: string, panelId: string, job: EngineJobSpec): Promise<string>
 	cancelEngineJob(jobId: string): Promise<void>
+	savePage(): Promise<PickedFile>
 	onEngineOutput(listener: (output: EngineOutput) => void): Unsubscribe
 	onEngineExit(listener: (exit: EngineExit) => void): Unsubscribe
 	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>

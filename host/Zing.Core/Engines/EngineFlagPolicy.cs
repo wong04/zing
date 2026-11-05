@@ -36,13 +36,15 @@ internal sealed record FlagSpec(params FlagValue[] Values)
 /// <param name="SafetyFirst">Flags the runner puts before everything else; the renderer can't remove them.</param>
 /// <param name="SafetyBefore">Flags the runner puts right before each occurrence of a flag (FFmpeg's whitelist is an input option, so it must precede each -i).</param>
 /// <param name="OutputExtensions">The extensions a job's outputs may have (lower case, no dot).</param>
+/// <param name="UsesFfmpeg">The engine calls FFmpeg itself (yt-dlp merges and converts with it): the runner then passes FFmpeg's location, which no job may name, and holds FFmpeg while the job runs.</param>
 internal sealed partial record EnginePolicy(
 	string EngineId,
 	IReadOnlyDictionary<string, FlagSpec> Flags,
 	IReadOnlyList<string> SafetyFirst,
 	IReadOnlyDictionary<string, string[]> SafetyBefore,
 	IReadOnlyList<string> OutputExtensions,
-	bool Network)
+	bool Network,
+	bool UsesFfmpeg = false)
 {
 	/// <summary>
 	/// Every literal must be a flag in the table, followed by values of exactly the shape the flag declares; files are
@@ -132,6 +134,9 @@ internal sealed class EngineFlagPolicy
 		entries.ToDictionary(e => e.Flag, e => e.Spec, StringComparer.Ordinal);
 
 	private static readonly string[] FfmpegFormats = ["mp4", "mov", "matroska", "webm", "mp3", "wav", "flac", "ogg", "ipod", "gif", "image2"];
+	/// <summary>The one yt-dlp format selector the Download tool uses (src/shared/convert/ytdlpArgs.ts): MP4-friendly parts first, then anything.</summary>
+	private const string Mp4Selector = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b";
+
 	private static readonly string[] PandocFormats = ["markdown", "gfm", "commonmark", "html", "docx", "odt", "epub", "rtf", "latex", "plain"];
 
 	/// <summary>The flags Zing.FakeEngine understands: for tests and for e2e runs against the fixture, never for a real engine.</summary>
@@ -206,7 +211,9 @@ internal sealed class EngineFlagPolicy
 			["jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff", "avif", "heic", "ico"],
 			Network: false),
 		// The only engine with the network, as it fetches a page. Its config files, plugins and cache are switched off; -o
-		// takes one of the job's outputs; addresses come only through the job's urls, after a "--".
+		// takes one of the job's outputs; addresses come only through the job's urls, after a "--". There is no cookie,
+		// header, user-agent, impersonation or proxy flag: Zing does not hand a site anything but the request itself. FFmpeg's
+		// location is added by the runner (UsesFfmpeg), never taken from a job.
 		[EngineIds.YtDlp] = new EnginePolicy(
 			EngineIds.YtDlp,
 			Table(
@@ -215,11 +222,16 @@ internal sealed class EngineFlagPolicy
 				("-x", new FlagSpec()),
 				("--audio-format", new FlagSpec(FlagValue.OneOf) { Choices = ["mp3", "m4a", "opus", "wav"] }),
 				("--audio-quality", new FlagSpec(FlagValue.Number)),
+				// One fixed selector (it names formats, nothing that reaches a file), and the merge container.
+				("-f", new FlagSpec(FlagValue.OneOf) { Choices = [Mp4Selector] }),
+				("--merge-output-format", new FlagSpec(FlagValue.OneOf) { Choices = ["mp4"] }),
 				("-o", new FlagSpec(FlagValue.Output))),
-			["--ignore-config", "--no-plugin-dirs", "--no-cache-dir"],
+			// --no-playlist is the host's: a link inside a playlist or channel never fetches the rest, whatever a renderer sends.
+			["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--no-playlist"],
 			new Dictionary<string, string[]>(),
 			["mp4", "mkv", "webm", "mp3", "m4a", "opus", "wav"],
-			Network: true),
+			Network: true,
+			UsesFfmpeg: true),
 		// A model file, not a program: it is never started.
 		[EngineIds.BackgroundModel] = new EnginePolicy(EngineIds.BackgroundModel, Table(), [], new Dictionary<string, string[]>(), [], Network: false),
 	});

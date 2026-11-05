@@ -12,17 +12,33 @@ public static class EngineArguments
 
 	/// <summary>
 	/// The operands for yt-dlp-style tools: a "--" so nothing after it is an option, then each address. Only absolute
-	/// http and https addresses pass, so no file:, no relative text, and nothing that starts with "-".
+	/// http and https addresses pass: no file:, no relative text, nothing that starts with "-", no sign-in in the address,
+	/// no space or control character, and nothing that names this PC or the local network (a renderer can't be trusted to
+	/// have checked: this is the only engine with the network).
 	/// </summary>
 	public static IReadOnlyList<string> Urls(IEnumerable<string> urls)
 	{
 		List<string> operands = ["--"];
 		foreach (var url in urls)
 		{
-			var valid = Uri.TryCreate(url, UriKind.Absolute, out var parsed) && parsed.Scheme is "http" or "https" && !url.StartsWith('-');
+			// A backslash is a path separator to some parsers and part of the host to others (Python reads "a.com\@127.0.0.1" as
+			// 127.0.0.1), and a percent in the host is decoded by some and not others: neither is worth the doubt.
+			var valid = !url.StartsWith('-') && !url.Any(c => c <= ' ' || c == '\u007f' || c == '\\') && !Authority(url).Contains('%') && Uri.TryCreate(url, UriKind.Absolute, out var parsed) && parsed.Scheme is "http" or "https" && parsed.UserInfo.Length == 0;
 			if (!valid) throw new UnsafeEngineArgumentException($"{url} isn't an http or https address");
-			operands.Add(url);
+			var checkedUri = new Uri(url);
+			if (LocalAddresses.IsLocal(checkedUri)) throw new UnsafeEngineArgumentException($"{url} is on this PC or the local network");
+			// The text that was checked is the text the engine gets.
+			operands.Add(checkedUri.AbsoluteUri);
 		}
 		return operands;
+	}
+
+	private static string Authority(string url)
+	{
+		var start = url.IndexOf("://", StringComparison.Ordinal);
+		if (start < 0) return "";
+		var rest = url[(start + 3)..];
+		var end = rest.IndexOfAny(['/', '?', '#']);
+		return end < 0 ? rest : rest[..end];
 	}
 }

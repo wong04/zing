@@ -3,7 +3,10 @@ using Zing.Core.Engines;
 
 namespace Zing.Core.Tests.Engines;
 
-/// <summary>Zing.FakeEngine installed as one engine ("ffmpeg" unless told), and a runner over it with its folders under a scratch root.</summary>
+/// <summary>
+/// Zing.FakeEngine installed as one engine ("ffmpeg" unless told), and a runner over it with its folders under a scratch root.
+/// yt-dlp is given a fake FFmpeg beside it, as the runner hands yt-dlp FFmpeg's location.
+/// </summary>
 public sealed class RunnerFixture : IDisposable
 {
 	private static readonly TimeSpan Wait = TimeSpan.FromSeconds(30);
@@ -21,7 +24,13 @@ public sealed class RunnerFixture : IDisposable
 		Directory.CreateDirectory(Inputs);
 		var body = System.IO.File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Zing.FakeEngine.exe"));
 		_engines.Serve($"{engineId}/{engineId}.exe", body);
-		Store = _engines.Store(_engines.SingleFile(engineId, body));
+		List<Engine> catalog = [_engines.SingleFile(engineId, body)];
+		if (engineId == EngineIds.YtDlp)
+		{
+			_engines.Serve("ffmpeg/ffmpeg.exe", body);
+			catalog.Add(_engines.SingleFile(EngineIds.Ffmpeg, body));
+		}
+		Store = _engines.Store([.. catalog]);
 		var policy = EngineFlagPolicy.Pinned.Plus(engineId, EngineFlagPolicy.FakeEngineFlags, "txt");
 		Runner = new EngineRunner(Store, Jobs, (where, error) => Errors.Add((where, error)), policy, flushEvery ?? TimeSpan.FromMilliseconds(20));
 	}
@@ -52,13 +61,19 @@ public sealed class RunnerFixture : IDisposable
 	public async Task InstallAsync()
 	{
 		if (_installed) return;
-		var path = await Store.EnsureAsync(EngineId, new InlineProgress<double>(_ => { }), CancellationToken.None);
+		await InstallOneAsync(EngineId);
+		if (EngineId == EngineIds.YtDlp) await InstallOneAsync(EngineIds.Ffmpeg);
+		_installed = true;
+	}
+
+	private async Task InstallOneAsync(string id)
+	{
+		var path = await Store.EnsureAsync(id, new InlineProgress<double>(_ => { }), CancellationToken.None);
 		// The apphost needs its dll and runtime config beside it.
 		foreach (var sibling in new[] { "Zing.FakeEngine.dll", "Zing.FakeEngine.runtimeconfig.json" })
 		{
 			System.IO.File.Copy(Path.Combine(AppContext.BaseDirectory, sibling), Path.Combine(Path.GetDirectoryName(path)!, sibling));
 		}
-		_installed = true;
 	}
 
 	public EngineJobRequest Request(params JobArg[] args) => new(EngineId, args, Outputs, [], []);

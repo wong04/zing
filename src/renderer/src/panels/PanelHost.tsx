@@ -6,6 +6,7 @@ import { ToolEmptyState } from '../components'
 import { CloseGlyph, MinusIcon } from '../components/icons'
 import { toolComponent } from '../tools/registry'
 import { PanelErrorBoundary } from './PanelErrorBoundary'
+import { PanelIdContext } from './panelId'
 import { PanelIcon } from './panelIcon'
 import './panels.css'
 
@@ -24,7 +25,9 @@ function PanelBody({ panel }: { panel: ToolPanelView }) {
 	const Body = content ? toolComponent(content) : null
 	if (!Body) return <EmptyBody panel={panel} />
 	return (
-		<Suspense fallback={null}>{createElement(Body)}</Suspense>
+		<PanelIdContext.Provider value={panel.id}>
+			<Suspense fallback={null}>{createElement(Body)}</Suspense>
+		</PanelIdContext.Provider>
 	)
 }
 

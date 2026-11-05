@@ -189,6 +189,10 @@
 			"args": 0
 		},
 		{
+			"channel": "page:save",
+			"args": 0
+		},
+		{
 			"channel": "pageui:get",
 			"args": 0
 		},

@@ -51,4 +51,54 @@ public sealed class EngineArgumentsTests
 	{
 		Assert.Throws<UnsafeEngineArgumentException>(() => EngineArguments.Urls([url]));
 	}
+
+	private static IEnumerable<string> Vector(string name) => Vectors.Load("src/shared/convert/mediaUrl.vectors.json").GetProperty(name).EnumerateArray().Select(e => e.GetString()!);
+
+	private static TheoryData<string> Data(IEnumerable<string> values)
+	{
+		var data = new TheoryData<string>();
+		foreach (var value in values) data.Add(value);
+		return data;
+	}
+
+	public static TheoryData<string> LocalAddresses() => Data(Vector("refuse"));
+
+	public static TheoryData<string> PublicAddresses() => Data(Vector("accept"));
+
+	[Theory]
+	[MemberData(nameof(LocalAddresses))]
+	public void An_address_on_this_pc_or_the_local_network_is_refused_whatever_the_renderer_checked(string url)
+	{
+		Assert.Throws<UnsafeEngineArgumentException>(() => EngineArguments.Urls([url]));
+	}
+
+	[Theory]
+	[MemberData(nameof(PublicAddresses))]
+	public void A_public_address_passes(string url)
+	{
+		Assert.Equal(["--", url], EngineArguments.Urls([url]));
+	}
+
+	[Fact]
+	public void The_engine_gets_the_text_that_was_checked_not_the_text_that_was_sent()
+	{
+		Assert.Equal(["--", "https://example.com/", "http://127.0.0.1.example.com/a"], EngineArguments.Urls(["https://EXAMPLE.com", "http://127.0.0.1.example.com/a"]));
+	}
+
+	[Theory]
+	[InlineData("http://example.com/a\b")]
+	[InlineData("http://exa%6dple.com/")]
+	public void A_backslash_or_a_percent_in_the_host_is_refused_because_other_parsers_read_them_differently(string url)
+	{
+		Assert.Throws<UnsafeEngineArgumentException>(() => EngineArguments.Urls([url]));
+	}
+
+	[Theory]
+	[InlineData("https://user:secret@example.com/a")]
+	[InlineData("https://example.com/a\nhttps://example.org/")]
+	[InlineData("https://example.com/a b")]
+	public void A_sign_in_in_the_address_or_a_break_in_it_is_refused(string url)
+	{
+		Assert.Throws<UnsafeEngineArgumentException>(() => EngineArguments.Urls([url]));
+	}
 }
