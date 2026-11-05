@@ -30,7 +30,9 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public void StopFind() => Calls.Add("stop find");
 	public bool IsAudible { get; set; }
 	public System.Text.Json.JsonElement ProbeResult { get; set; } = System.Text.Json.JsonDocument.Parse("{\"scrollY\":0,\"dirty\":false}").RootElement;
-	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script) => Task.FromResult(ProbeResult);
+	/// <summary>When set, answers <see cref="EvaluateAsync"/> instead of <see cref="ProbeResult"/>, so a test can navigate, hang or fail mid-script.</summary>
+	public Func<Task<System.Text.Json.JsonElement>>? Evaluating { get; set; }
+	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script) => Evaluating?.Invoke() ?? Task.FromResult(ProbeResult);
 	public void RunWhenLoaded(string script) => Calls.Add($"when loaded {script}");
 	public int TextSize { get; set; } = Zing.Core.TextSize.Default;
 	public double Zoom { get; set; } = Zing.Core.Zoom.Default;

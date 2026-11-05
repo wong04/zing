@@ -6,6 +6,9 @@ namespace Zing.Core;
 /// <summary>The page can't be saved as it is; the reason is for the person.</summary>
 public sealed class PageNotSavableException(string reason) : InvalidOperationException(reason);
 
+/// <summary>The HTML of a page and the title the tab had when it was asked.</summary>
+public sealed record PageText(string Title, string Html);
+
 /// <summary>
 /// Saving the current tab's HTML (X9). The text comes in as a parameter, so the direct route (the page answers a script)
 /// and a later relay route (the HTML fetched elsewhere) share the one writer. Only what is on the page: no images, styles
@@ -16,20 +19,44 @@ public static class PageSave
 	/// <summary>Larger pages are refused rather than half-written.</summary>
 	public const int MaxBytes = 64 * 1024 * 1024;
 
+	/// <summary>How long a page may take to give up its text; a hung or crashed render process never answers.</summary>
+	public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(15);
+
 	private const int MaxNameLength = 80;
 	private const int MaxNumbering = 100;
 
 	/// <summary>The document type (which outerHTML leaves out) followed by the root element, as the page holds them now.</summary>
 	public const string Script = "(() => { const d = document; const type = d.doctype ? new XMLSerializer().serializeToString(d.doctype) : ''; return type + d.documentElement.outerHTML })()";
 
-	/// <exception cref="PageNotSavableException">Not a web page, in reader mode, or the page didn't answer with text.</exception>
-	public static async Task<string> ReadAsync(IPage page)
+	/// <exception cref="PageNotSavableException">Not a web page, in reader mode, the page didn't answer in time or at all, it moved to another page meanwhile, or it didn't answer with text.</exception>
+	public static async Task<PageText> ReadAsync(IPage page, TimeSpan? timeout = null)
 	{
-		if (!Uri.TryCreate(page.Url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) throw new PageNotSavableException("Only web pages can be saved.");
+		var url = WithoutFragment(page.Url);
+		var title = page.Title;
+		if (!IsWeb(url)) throw new PageNotSavableException("Only web pages can be saved.");
 		if (page.InReader) throw new PageNotSavableException("Leave reader mode first; this copy would be the article, not the page.");
-		var answer = await page.EvaluateAsync(Script);
-		return answer.ValueKind == JsonValueKind.String ? answer.GetString()! : throw new PageNotSavableException("The page didn't give up its text.");
+		JsonElement answer;
+		try
+		{
+			answer = await page.EvaluateAsync(Script).WaitAsync(timeout ?? DefaultTimeout);
+		}
+		catch (TimeoutException)
+		{
+			throw new PageNotSavableException("The page didn't answer in time. It may have stopped responding.");
+		}
+		catch (Exception error) when (error is not PageNotSavableException)
+		{
+			throw new PageNotSavableException($"The page couldn't be read ({error.GetType().Name}). It may have crashed; reload it and try again.");
+		}
+		// The text belongs to the page the person asked about; if the tab moved on meanwhile it is another page's.
+		var now = WithoutFragment(page.Url);
+		if (now != url || !IsWeb(now)) throw new PageNotSavableException("The page changed while it was being saved. Try again once it has loaded.");
+		return answer.ValueKind == JsonValueKind.String ? new PageText(title, answer.GetString()!) : throw new PageNotSavableException("The page didn't give up its text.");
 	}
+
+	private static string WithoutFragment(string url) => url.Split('#')[0];
+
+	private static bool IsWeb(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https";
 
 	/// <summary>
 	/// Writes the HTML as UTF-8 with a byte-order mark (so a meta charset in the page can't make the copy read as another
@@ -57,8 +84,11 @@ public static class PageSave
 	private static string BaseName(string title)
 	{
 		var trimmed = title.Trim();
-		var shortened = trimmed.Length > MaxNameLength ? trimmed[..MaxNameLength] : trimmed;
-		return trimmed.Length == 0 ? "page" : shortened;
+		if (trimmed.Length == 0) return "page";
+		if (trimmed.Length <= MaxNameLength) return trimmed;
+		// Not between the two halves of a surrogate pair, which would leave an invalid name.
+		var end = char.IsHighSurrogate(trimmed[MaxNameLength - 1]) ? MaxNameLength - 1 : MaxNameLength;
+		return trimmed[..end];
 	}
 
 	private static string MoveIntoPlace(string part, string directory, string name)

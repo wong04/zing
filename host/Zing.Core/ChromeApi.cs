@@ -480,8 +480,8 @@ public sealed class ChromeApi : IDisposable
 	private async Task<object?> SavePageAsync()
 	{
 		var page = Tabs.ActivePage ?? throw new PageNotSavableException("There is no page open to save.");
-		var html = await PageSave.ReadAsync(page);
-		return Grants.Issue(PageSave.Write(_host.DownloadsDirectory, page.Title, html));
+		var text = await PageSave.ReadAsync(page);
+		return Grants.Issue(PageSave.Write(_host.DownloadsDirectory, text.Title, text.Html));
 	}
 
 	private EngineStore Engines() => _app.Engines ?? throw new InvalidOperationException("This host has no engine store");

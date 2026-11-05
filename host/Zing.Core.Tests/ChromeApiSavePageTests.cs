@@ -134,6 +134,111 @@ public sealed class ChromeApiSavePageTests : IDisposable
 		Assert.Empty(Saved());
 	}
 
+	private static JsonElement Html(string html) => JsonSerializer.SerializeToElement(html);
+
+	private async Task<FakePage> WebPage()
+	{
+		await Invoke("tabs:navigate", _api.Tabs.ActiveId!, "https://example.com/a");
+		ActivePage.Url = "https://example.com/a";
+		ActivePage.Title = "First";
+		return ActivePage;
+	}
+
+	[Fact]
+	public async Task A_tab_that_navigates_while_the_text_is_read_is_refused_rather_than_saved_under_the_wrong_page()
+	{
+		var page = await WebPage();
+		page.Evaluating = () =>
+		{
+			page.Url = "https://example.org/b";
+			page.Title = "Second";
+			return Task.FromResult(Html("<p>second page</p>"));
+		};
+
+		var result = await Invoke("page:save");
+
+		Assert.Equal(nameof(PageNotSavableException), ErrorName(result));
+		Assert.Empty(Saved());
+	}
+
+	[Fact]
+	public async Task A_tab_that_leaves_the_web_while_the_text_is_read_is_refused()
+	{
+		var page = await WebPage();
+		page.Evaluating = () =>
+		{
+			page.Url = "about:blank";
+			return Task.FromResult(Html("<p>x</p>"));
+		};
+
+		Assert.Equal(nameof(PageNotSavableException), ErrorName(await Invoke("page:save")));
+		Assert.Empty(Saved());
+	}
+
+	[Fact]
+	public async Task A_change_of_the_fragment_alone_is_still_the_same_page()
+	{
+		var page = await WebPage();
+		page.Evaluating = () =>
+		{
+			page.Url = "https://example.com/a#section";
+			return Task.FromResult(Html("<p>same</p>"));
+		};
+
+		Assert.True((await Invoke("page:save")).GetProperty("ok").GetBoolean());
+		Assert.Equal(["First.html"], Saved());
+	}
+
+	[Fact]
+	public async Task The_name_comes_from_the_title_the_tab_had_before_the_script_ran()
+	{
+		var page = await WebPage();
+		page.Evaluating = () =>
+		{
+			page.Title = "Changed by the page";
+			return Task.FromResult(Html("<p>x</p>"));
+		};
+
+		await Invoke("page:save");
+
+		Assert.Equal(["First.html"], Saved());
+	}
+
+	[Fact]
+	public async Task A_script_that_fails_is_reported_as_a_page_that_cant_be_saved()
+	{
+		var page = await WebPage();
+		page.Evaluating = () => Task.FromException<JsonElement>(new InvalidOperationException("WebView2 process failed"));
+
+		var result = await Invoke("page:save");
+
+		Assert.Equal(nameof(PageNotSavableException), ErrorName(result));
+		Assert.Empty(Saved());
+	}
+
+	[Fact]
+	public async Task A_page_that_never_answers_times_out_as_a_page_that_cant_be_saved()
+	{
+		var page = await WebPage();
+		page.Evaluating = () => new TaskCompletionSource<JsonElement>().Task;
+
+		var error = await Assert.ThrowsAsync<PageNotSavableException>(() => PageSave.ReadAsync(page, TimeSpan.FromMilliseconds(100)));
+
+		Assert.Contains("didn't answer", error.Message);
+		Assert.Empty(Saved());
+	}
+
+	[Fact]
+	public void A_title_is_cut_without_splitting_a_surrogate_pair()
+	{
+		var directory = Path.Combine(_downloads, "cut");
+		var path = PageSave.Write(directory, new string('a', 79) + "😀tail", "x");
+
+		var name = Path.GetFileNameWithoutExtension(path);
+		Assert.Equal(new string('a', 79), name);
+		Assert.DoesNotContain(name, char.IsSurrogate);
+	}
+
 	[Fact]
 	public async Task A_page_over_the_size_limit_is_refused_and_leaves_nothing()
 	{
