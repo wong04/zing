@@ -11,10 +11,10 @@ public sealed class RunnerFixture : IDisposable
 	private readonly object _gate = new();
 	private bool _installed;
 
-	public RunnerFixture(TimeSpan? flushEvery = null, string engineId = "ffmpeg")
+	public RunnerFixture(TimeSpan? flushEvery = null, string engineId = "ffmpeg", string jobsFolder = "jobs")
 	{
 		EngineId = engineId;
-		Jobs = Path.Combine(_engines.Root, "jobs");
+		Jobs = Path.Combine(_engines.Root, jobsFolder);
 		Outputs = Path.Combine(_engines.Root, "outputs");
 		Inputs = Path.Combine(_engines.Root, "inputs");
 		Directory.CreateDirectory(Outputs);

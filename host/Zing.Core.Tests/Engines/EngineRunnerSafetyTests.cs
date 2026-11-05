@@ -79,6 +79,23 @@ public sealed class EngineRunnerSafetyTests
 	}
 
 	[Fact]
+	public async Task ImageMagick_is_given_its_output_without_the_percent_and_bracket_characters_of_the_jobs_folder()
+	{
+		// ImageMagick expands "%d" and reads "[0]" in the file name it writes (checked with the real engine), so a Zing
+		// folder with them in its path would break every conversion. Its output is given relative to the job's working folder.
+		using var f = new RunnerFixture(engineId: "magick", jobsFolder: "100%d [0] jobs");
+		await f.InstallAsync();
+
+		var exit = await f.RunAsync(f.Request(["o.txt"], Literal("--fake-write"), new JobArg.Output(0)));
+
+		Assert.Equal(0, exit.Code);
+		Assert.Equal(["o.txt"], exit.Outputs.Select(Path.GetFileName));
+		var echoed = System.Text.Json.JsonSerializer.Deserialize<string[]>(f.Lines("out")[0])!;
+		Assert.DoesNotContain('%', echoed[1]);
+		Assert.DoesNotContain('[', echoed[1]);
+	}
+
+	[Fact]
 	public async Task ImageMagick_reads_a_restrictive_policy_the_job_wrote()
 	{
 		using var f = new RunnerFixture(engineId: "magick");
