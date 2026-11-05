@@ -141,8 +141,8 @@ export function uniqueOutputName(base: string, ext: string, exists: (name: strin
 
 // Windows forbids these in file names, and a converted file named after a
 // page title or URL can contain any of them.
-// Zero-width characters, direction marks and embeddings/overrides/isolates, and the byte-order mark.
-const INVISIBLE: readonly (readonly [number, number])[] = [[0x200b, 0x200f], [0x202a, 0x202e], [0x2060, 0x2069], [0xfeff, 0xfeff]]
+// Delete and C1 controls, the Arabic letter mark, zero-width characters, line and paragraph separators, direction marks and embeddings/overrides/isolates, and the byte-order mark.
+const INVISIBLE: readonly (readonly [number, number])[] = [[0x7f, 0x9f], [0x61c, 0x61c], [0x200b, 0x200f], [0x2028, 0x202e], [0x2060, 0x2069], [0xfeff, 0xfeff]]
 const isInvisible = (code: number): boolean => INVISIBLE.some(([from, to]) => code >= from && code <= to)
 
 export function safeFileBase(name: string): string {
@@ -172,7 +172,9 @@ const MAX_BASE_CHARACTERS = 100
 
 /** The name an output is asked for; the host numbers it if the Downloads folder has one already. */
 export function outputFileName(base: string, ext: string): string {
-	return `${safeFileBase([...safeFileBase(base)].slice(0, MAX_BASE_CHARACTERS).join(''))}.${outputExtension(ext)}`
+	// "%" and brackets are patterns to ImageMagick and yt-dlp (the host refuses them in an output name), so they become "_".
+	const plain = safeFileBase(base).replace(/[%[\]]/g, '_')
+	return `${safeFileBase([...plain].slice(0, MAX_BASE_CHARACTERS).join(''))}.${outputExtension(ext)}`
 }
 
 function splitName(name: string): { base: string; ext: string } {

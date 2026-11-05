@@ -235,3 +235,27 @@ test('a file dropped while a conversion runs is ignored, and the running one can
 	await expect(panel.getByText('Cancelled. Nothing was kept.')).toBeVisible()
 	await zing.close()
 })
+
+test('a file dropped while the download offer is showing does not change the file being converted', async () => {
+	fixture = await startEngineFixture()
+	const zing = await launchZing({ env: fixture.env })
+	const input = join(zing.userDataDir, 'first.heic')
+	const other = join(zing.userDataDir, 'second.heic')
+	writeFileSync(input, 'x')
+	writeFileSync(other, 'y')
+
+	const { surface, panel } = await openConvert(zing)
+	await choose(zing, panel, input)
+	await panel.getByRole('button', { name: 'Convert', exact: true }).click()
+	await expect(panel.getByText(/This needs ImageMagick/)).toBeVisible()
+
+	const box = (await panel.locator('.convert-drop').boundingBox())!
+	const cdp = await surface.context().newCDPSession(surface)
+	const data = { items: [], files: [other], dragOperationsMask: 1 }
+	for (const type of ['dragEnter', 'dragOver', 'drop'] as const) await cdp.send('Input.dispatchDragEvent', { type, x: box.x + box.width / 2, y: box.y + box.height / 2, data })
+	await new Promise((resolve) => setTimeout(resolve, 800))
+	await expect(panel.getByText('first.heic', { exact: true })).toBeVisible()
+	await expect(panel.getByText('second.heic', { exact: true })).toHaveCount(0)
+	expect(fixture.requests).toEqual([])
+	await zing.close()
+})

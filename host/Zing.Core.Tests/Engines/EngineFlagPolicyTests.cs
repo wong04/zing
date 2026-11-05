@@ -23,6 +23,7 @@ public sealed class EngineFlagPolicyTests
 		{ "ffmpeg", ["-i", "http://example.com/a.mp4"] },
 		{ "ffmpeg", ["-f", "lavfi"] },
 		{ "ffmpeg", ["-f", "concat"] },
+		{ "ffmpeg", ["-f", "image2", "-i", "@in"] },
 		{ "ffmpeg", ["-f", "segment"] },
 		{ "ffmpeg", ["-f", "hls"] },
 		{ "ffmpeg", ["-filter_complex", "movie=C:/x"] },

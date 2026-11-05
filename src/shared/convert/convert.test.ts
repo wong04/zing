@@ -219,6 +219,14 @@ describe('output names', () => {
 		expect([...name].length).toBeLessThanOrEqual(100 + '.png'.length)
 		expect(name.endsWith('.png')).toBe(true)
 	})
+	it('characters an engine reads as a pattern become underscores, so the file still converts', () => {
+		expect(outputFileName('a%d [0] 100%', 'png')).toBe('a_d _0_ 100_.png')
+		expect(convertPlan({ name: 'clip 100%.mov', token: 't' }, 'mp4', 80)).toMatchObject({ outputs: ['clip 100_.mp4'] })
+	})
+	it('more invisible and control characters are removed', () => {
+		const odd = [0x061c, 0x80, 0x9f, 0x7f, 0x2028, 0x2029].map((code) => String.fromCodePoint(code)).join('x')
+		expect(safeFileBase('a' + odd + 'b')).toBe('axxxxxb')
+	})
 	it('direction overrides and invisible controls are removed, so a name cannot disguise its extension', () => {
 		expect(outputFileName('photo‮gpj.exe', 'png')).toBe('photogpj.exe.png')
 		expect(safeFileBase('a‎b⁦c⁩d')).toBe('abcd')

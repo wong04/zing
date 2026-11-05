@@ -232,6 +232,8 @@ public sealed class EngineRunner
 	{
 		var plain = name.Length > 0 && name == Path.GetFileName(name) && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 && name.TrimEnd('.', ' ').Length > 0;
 		if (!plain) throw new UnsafeEngineArgumentException($"\"{name}\" isn't a plain file name");
+		// ImageMagick expands "%d" and reads "[0]" in the name it writes; yt-dlp's -o is a template where "%" means something.
+		if (name.IndexOfAny(['%', '[', ']']) >= 0) throw new UnsafeEngineArgumentException($"\"{name}\" has a \"%\", \"[\" or \"]\" in it, which an engine reads as a pattern");
 		var cleaned = DownloadNames.FileName(name, _ => false);
 		var extension = Path.GetExtension(cleaned).TrimStart('.').ToLowerInvariant();
 		var allowed = extension.Length > 0 && !NeverAnOutput.Contains(extension) && policy.OutputExtensions.Contains(extension, StringComparer.Ordinal);

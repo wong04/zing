@@ -98,21 +98,29 @@ internal static class HtmlPdfPrinter
 	/// <summary>A crash can leave a profile folder. Run once when Zing starts, before any print: a print's own folder is never another print's leftover.</summary>
 	public static void SweepLeftovers()
 	{
-		if (!Directory.Exists(AppPaths.PrintScratch)) return;
-		foreach (var leftover in Directory.GetDirectories(AppPaths.PrintScratch))
+		// Reported through the same path as other host faults; it must not reach OpenRunner's catch, which would switch engines off.
+		try
 		{
-			try
+			if (!Directory.Exists(AppPaths.PrintScratch)) return;
+			foreach (var leftover in Directory.GetDirectories(AppPaths.PrintScratch))
 			{
-				Directory.Delete(leftover, recursive: true);
+				try
+				{
+					Directory.Delete(leftover, recursive: true);
+				}
+				catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+				{
+					TestHooks.Record("print scratch", error);
+				}
 			}
-			catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-			{
-				TestHooks.Record("print scratch", error);
-			}
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+		{
+			TestHooks.Record("print scratch", error);
 		}
 	}
 
-	/// <summary>The browser process may hold the folder for a moment after its view closes; a folder that stays is swept at the next print.</summary>
+	/// <summary>The browser process may hold the folder for a moment after its view closes; a folder that stays is swept the next time Zing starts.</summary>
 	private static async Task DiscardAsync(string folder)
 	{
 		for (var attempt = 0; attempt < 10; attempt++)
@@ -127,6 +135,6 @@ internal static class HtmlPdfPrinter
 				await Task.Delay(200);
 			}
 		}
-		TestHooks.Record("print scratch", new IOException($"Couldn't remove {folder}; the next print removes it"));
+		TestHooks.Record("print scratch", new IOException($"Couldn't remove {folder}; Zing removes it the next time it starts"));
 	}
 }

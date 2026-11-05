@@ -158,7 +158,7 @@ internal sealed class EngineFlagPolicy
 		entries.ToDictionary(e => e.Flag, e => e.Spec, StringComparer.Ordinal);
 
 	// Demuxer names, for telling FFmpeg what an input is instead of letting it sniff (Convert). None reads a list of other files.
-	private static readonly string[] FfmpegFormats = ["mp4", "mov", "matroska", "webm", "mp3", "wav", "flac", "ogg", "ipod", "gif", "image2", "avi", "flv", "asf", "mpeg", "mpegts", "aiff", "aac", "ac3", "amr"];
+	private static readonly string[] FfmpegFormats = ["mp4", "mov", "matroska", "webm", "mp3", "wav", "flac", "ogg", "ipod", "gif", "avi", "flv", "asf", "mpeg", "mpegts", "aiff", "aac", "ac3", "amr"];
 
 	/// <summary>The even-size filter for H.264 (x264 refuses odd dimensions). A fixed text like the GIF one.</summary>
 	internal const string EvenSizeFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
@@ -215,7 +215,7 @@ internal sealed class EngineFlagPolicy
 				("-pix_fmt", new FlagSpec(FlagValue.OneOf) { Choices = ["yuv420p"] }),
 				("-b:v", new FlagSpec(FlagValue.OneOf) { Choices = ["0"] }),
 				("-profile:v", new FlagSpec(FlagValue.OneOf) { Choices = ["3"] }),
-				// 0 is "loop forever" in a GIF; any other number before an image2 input would loop the input instead.
+				// 0 is "loop forever" in a GIF; any other number would loop an image input forever.
 				("-loop", new FlagSpec(FlagValue.OneOf) { Choices = ["0"] }),
 				("-vf", new FlagSpec(FlagValue.OneOf) { Choices = [GifFilter, EvenSizeFilter] })),
 			["-nostdin"],

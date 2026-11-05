@@ -129,6 +129,26 @@ public sealed class HtmlPdfTests : IDisposable
 	}
 
 	[Fact]
+	public async Task A_print_that_writes_late_after_it_failed_is_never_placed()
+	{
+		var page = Page("page.html", "<p>x</p>");
+		Task TimesOutThenWrites(string html, string pdf, CancellationToken cancellation)
+		{
+			_ = Task.Run(async () =>
+			{
+				await Task.Delay(200, TestContext.Current.CancellationToken);
+				File.WriteAllText(pdf, "%PDF-late");
+			});
+			throw new TimeoutException("took too long");
+		}
+
+		await Assert.ThrowsAsync<TimeoutException>(() => HtmlPdf.PrintAsync(page, "page.pdf", Downloads, TimesOutThenWrites, CancellationToken.None));
+		await Task.Delay(600, TestContext.Current.CancellationToken);
+
+		Assert.DoesNotContain(Directory.GetFiles(Downloads), f => !Path.GetFileName(f).StartsWith('.'));
+	}
+
+	[Fact]
 	public async Task A_print_that_wrote_no_file_is_an_error_not_a_success()
 	{
 		var page = Page("page.html", "<p>x</p>");

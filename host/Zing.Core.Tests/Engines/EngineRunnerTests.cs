@@ -142,6 +142,19 @@ public sealed class EngineRunnerTests : IDisposable
 		Assert.Throws<UnsafeEngineArgumentException>(() => _f.Start(_f.Request([$"clip.txt.{extension}"], Literal("--fake-write"), Output(0))));
 	}
 
+	[Theory]
+	[InlineData("a%d.txt")]
+	[InlineData("100%.txt")]
+	[InlineData("a[0].txt")]
+	[InlineData("a]b.txt")]
+	public async Task An_output_name_with_a_template_character_is_refused(string name)
+	{
+		// ImageMagick expands "%d" and reads "[0]" in the name it writes, and yt-dlp's -o is a template with "%".
+		await _f.InstallAsync();
+
+		Assert.Throws<UnsafeEngineArgumentException>(() => _f.Start(_f.Request([name], Literal("--fake-write"), Output(0))));
+	}
+
 	[Fact]
 	public async Task An_output_with_no_extension_is_refused()
 	{

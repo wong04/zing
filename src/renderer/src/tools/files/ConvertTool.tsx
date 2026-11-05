@@ -18,6 +18,8 @@ type Stage =
 	/** The engine this needs isn't downloaded: the person is told its name, size and source, and nothing is fetched until they press Download. */
 	| { readonly kind: 'offer'; readonly engine: EngineInfo; readonly plan: ConvertPlan }
 	| { readonly kind: 'downloading'; readonly engine: EngineInfo; readonly fraction: number }
+	/** From the Convert click until the plan is running or the offer is shown: the file must not change under it. */
+	| { readonly kind: 'preparing' }
 	| { readonly kind: 'working'; readonly cancellable: boolean }
 	| { readonly kind: 'done'; readonly output: PickedFile }
 	| { readonly kind: 'failed'; readonly message: string }
@@ -54,7 +56,8 @@ export function ConvertTool() {
 	const support = file === null ? null : inputSupport(ext)
 	const targets = useMemo(() => (file === null ? [] : convertTargets(ext)), [file, ext])
 	const target = targets.find((t) => t.ext === choice) ?? targets[0]
-	const busy = stage.kind === 'working' || stage.kind === 'downloading'
+	// A drop or a pick changes the file, so none is taken from the Convert click until the job ends or the offer is dismissed.
+	const busy = stage.kind === 'preparing' || stage.kind === 'offer' || stage.kind === 'working' || stage.kind === 'downloading'
 
 	useEffect(() => {
 		const stop = zing.onEngineProgress((progress) => setStage((now) => (now.kind === 'downloading' && now.engine.id === progress.id ? { ...now, fraction: progress.fraction } : now)))
@@ -113,12 +116,14 @@ export function ConvertTool() {
 	const start = (): void => {
 		if (file === null || target === undefined) return
 		setProblem(null)
+		setStage({ kind: 'preparing' })
 		void guarded(async () => {
 			let plan: ConvertPlan
 			try {
 				plan = convertPlan(file, target.ext, quality)
 			} catch (error) {
 				if (!(error instanceof ConvertRefusedError)) throw error
+				setStage({ kind: 'idle' })
 				setProblem(error.message)
 				return
 			}
@@ -178,7 +183,7 @@ export function ConvertTool() {
 					) : null}
 					{target.ext === 'pdf' ? <span className="convert-hint">The page is printed as UTF-8 text, with scripts and the network off.</span> : null}
 					<div className="convert-row">
-						<PillButton disabled={busy || stage.kind === 'offer'} onClick={start}>
+						<PillButton disabled={busy} onClick={start}>
 							Convert
 						</PillButton>
 					</div>
@@ -236,6 +241,8 @@ function StageView({ stage, onDownload, onCancelDownload, onCancelJob, onDismiss
 					</div>
 				</InfoBanner>
 			)
+		case 'preparing':
+			return null
 		case 'working':
 			return (
 				<InfoBanner kind="info">
