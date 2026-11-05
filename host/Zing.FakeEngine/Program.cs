@@ -14,7 +14,7 @@ using System.Text.Json;
 //   --exit <code>             ends with that code
 //   --print-env               prints "env" and the environment as one JSON object
 //   --print-magick-policy     prints the policy.xml found through MAGICK_CONFIGURE_PATH, line by line
-// Like a converter (Convert's e2e runs it as ffmpeg, magick and pandoc), when the last argument is a path that doesn't exist yet
+// Like a converter (Convert's e2e runs it as ffmpeg, magick and pandoc), when the last argument is a path with an extension that doesn't exist yet (ImageMagick is given it relative to the working folder)
 // in a folder that does, it writes a small file there; and an input file (any argument that is a small existing file) whose first
 // line is "fake-fail: <text>" makes it print <text> to stderr and exit 1, as a converter that can't read its input does, and
 // "fake-sleep: <ms>" makes it wait that long first (a long conversion a test can cancel).
@@ -86,7 +86,7 @@ for (var i = 0; i < args.Length; i++)
 			break;
 	}
 }
-if (!wrote && args.Length > 0 && Path.IsPathRooted(args[^1]) && !File.Exists(args[^1]) && Directory.Exists(Path.GetDirectoryName(args[^1])))
+if (!wrote && args.Length > 0 && !args[^1].StartsWith('-') && Path.HasExtension(args[^1]) && !File.Exists(args[^1]) && Directory.Exists(Path.GetDirectoryName(Path.GetFullPath(args[^1]))))
 {
 	File.WriteAllText(args[^1], "fake engine output\n");
 }
