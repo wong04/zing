@@ -12,6 +12,8 @@ using System.Text.Json;
 //   --long-line <n>           prints one line of n characters
 //   --err <text>              prints a line to stderr
 //   --exit <code>             ends with that code
+//   --print-env               prints "env" and the environment as one JSON object
+//   --print-magick-policy     prints the policy.xml found through MAGICK_CONFIGURE_PATH, line by line
 Console.Out.WriteLine(JsonSerializer.Serialize(args));
 Console.Out.Flush();
 
@@ -53,6 +55,15 @@ for (var i = 0; i < args.Length; i++)
 		case "--err":
 			Console.Error.WriteLine(Operand(args, ref i, "text"));
 			Console.Error.Flush();
+			break;
+		case "--print-env":
+			var environment = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>().ToDictionary(e => (string)e.Key, e => (string?)e.Value);
+			Console.Out.WriteLine("env " + JsonSerializer.Serialize(environment));
+			Console.Out.Flush();
+			break;
+		case "--print-magick-policy":
+			foreach (var policyLine in File.ReadAllLines(Path.Combine(Environment.GetEnvironmentVariable("MAGICK_CONFIGURE_PATH")!, "policy.xml"))) Console.Out.WriteLine(policyLine);
+			Console.Out.Flush();
 			break;
 		case "--exit":
 			code = int.Parse(Operand(args, ref i, "a code"));

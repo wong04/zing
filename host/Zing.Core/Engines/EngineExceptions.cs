@@ -36,7 +36,7 @@ public sealed class EngineNotInstalledException(string engineId)
 }
 
 /// <summary>An argument, file name or address the renderer sent isn't one an engine may be given.</summary>
-public sealed class UnsafeEngineArgumentException(string reason) : ArgumentException(reason);
+public class UnsafeEngineArgumentException(string reason) : ArgumentException(reason);
 
 public sealed class TooManyJobsException(int limit)
 	: InvalidOperationException($"Zing runs at most {limit} engine jobs at a time. Wait for one to finish or cancel it, then try again");
@@ -63,4 +63,12 @@ public sealed class EngineBusyException(string engineId)
 	: InvalidOperationException($"{EngineCatalog.NameOf(engineId)} is being downloaded or updated right now. Wait for that to finish, then try again")
 {
 	public string EngineId { get; } = engineId;
+}
+
+/// <summary>A literal that isn't one of the engine's allowed flags (Zing keeps a short list per engine; free text is never an option).</summary>
+public sealed class DisallowedEngineFlagException(string engineId, string flag)
+	: UnsafeEngineArgumentException($"{EngineCatalog.NameOf(engineId)} isn't given the option \"{flag}\": it isn't on Zing's list of options for it")
+{
+	public string EngineId { get; } = engineId;
+	public string Flag { get; } = flag;
 }

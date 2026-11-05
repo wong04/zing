@@ -36,11 +36,15 @@ public sealed record JobExit(string JobId, int Code, bool Cancelled, IReadOnlyLi
 
 /// <summary>
 /// Runs a downloaded engine as a child process for one job. The executable comes only from <see cref="EngineStore"/>;
-/// arguments go through ArgumentList, never a shell; the process starts with no console window, an empty private
-/// folder as its working directory (so a program or DLL planted beside someone's input isn't picked up from it) and
-/// no stdin. Each job has a Win32 job object, so it ends with Zing, and cancelling ends the whole process tree.
-/// An engine writes to a temp file in the job's folder and the file moves into place only on exit code 0 and no
-/// cancel, never over an existing file; the job's folder is then deleted. Nothing is logged or kept on disk.
+/// arguments go through ArgumentList, never a shell. Every literal must be a flag on that engine's allow-list
+/// (<see cref="EngineFlagPolicy"/>) with a value of a strict shape, so option text can't name a file, an address or a
+/// program; files are only tokens the person was given and outputs only the job's own. Safety flags per engine are
+/// always added. The process starts with no console window, a scrubbed environment, an empty private folder as its
+/// working directory (so a program or DLL planted beside someone's input isn't picked up from it) and no stdin. Each job
+/// has a Win32 job object, so it ends with Zing, and cancelling ends the whole process tree. An engine writes to a temp
+/// file in the job's folder and the file is placed only on exit code 0 and no cancel, never over an existing file
+/// (staged beside its final name when the folders are on different volumes); the job's folder is then deleted. Nothing
+/// is logged or kept on disk.
 /// </summary>
 public sealed class EngineRunner
 {
@@ -55,6 +59,7 @@ public sealed class EngineRunner
 	private readonly string _root;
 	private readonly Action<string, Exception> _onError;
 	private readonly TimeSpan _flushEvery;
+	private readonly EngineFlagPolicy _policy;
 	private readonly object _gate = new();
 	private readonly Dictionary<string, Job> _jobs = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, string> _ended = new(StringComparer.Ordinal);
@@ -63,10 +68,16 @@ public sealed class EngineRunner
 	/// <param name="root">Where jobs' private folders go, under Zing's data. Anything left in it from a Zing that was killed is deleted now.</param>
 	/// <param name="onError">Called for a failure nobody awaits: a folder that couldn't be deleted (tried again at the next start) or a callback that threw.</param>
 	public EngineRunner(EngineStore store, string root, Action<string, Exception> onError, TimeSpan? flushEvery = null)
+		: this(store, root, onError, EngineFlagPolicy.Pinned, flushEvery)
+	{
+	}
+
+	internal EngineRunner(EngineStore store, string root, Action<string, Exception> onError, EngineFlagPolicy policy, TimeSpan? flushEvery = null)
 	{
 		_store = store;
 		_root = root;
 		_onError = onError;
+		_policy = policy;
 		_flushEvery = flushEvery ?? TimeSpan.FromMilliseconds(100);
 		RemoveLeftovers();
 	}
@@ -82,40 +93,65 @@ public sealed class EngineRunner
 	/// <summary>Test seam: runs before each attempt to move an output into place, with the job's id.</summary>
 	internal Action<string>? BeforeMove { get; set; }
 
+	/// <summary>Test seam: runs between the process starting and joining its job object, with the job's id.</summary>
+	internal Action<string>? AfterStart { get; set; }
+
+	/// <summary>Test seam: whether two paths are on one volume (a rename); false stages a copy beside the final name.</summary>
+	internal Func<string, string, bool> SameVolume { get; set; } = (a, b) =>
+		string.Equals(Path.GetPathRoot(Path.GetFullPath(a)), Path.GetPathRoot(Path.GetFullPath(b)), StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>How long the output pipes may stay open after the engine and its job have ended (something outside the job can hold them).</summary>
+	internal TimeSpan DrainTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+	/// <summary>Test seam: awaited with the output pipes, so a test can hold the drain open or make it fail.</summary>
+	internal Task? DrainBlocker { get; set; }
+
 	/// <summary>
 	/// Starts a job and returns its id at once; <paramref name="onOutput"/> and then, exactly once, <paramref name="onExit"/>
 	/// follow on another thread. The exit comes after every line of output and after the outputs are in place.
 	/// </summary>
 	/// <exception cref="UnknownEngineException">Not an id in the catalog.</exception>
 	/// <exception cref="EngineNotInstalledException">Not downloaded; running never downloads.</exception>
-	/// <exception cref="UnsafeEngineArgumentException">A literal that names a file (a rooted path, a backslash, "..", a file: address), a bad output name or URL.</exception>
+	/// <exception cref="UnsafeEngineArgumentException">A literal that isn't an allowed flag with a value of its shape (<see cref="DisallowedEngineFlagException"/> names the flag), a bad output name or extension, or a bad URL.</exception>
+	/// <exception cref="EngineBusyException">The engine is being downloaded or updated.</exception>
 	/// <exception cref="TooManyJobsException"><see cref="MaxRunning"/> jobs are already running.</exception>
 	public string Start(JobOwner owner, EngineJobRequest request, Action<JobOutputBatch> onOutput, Action<JobExit> onExit)
 	{
-		var names = request.OutputNames.Select(SafeOutputName).ToList();
+		var engine = _store.Catalog.Get(request.EngineId);
+		var policy = _policy.For(engine.Id);
+		policy.Check(request.Args);
+		var names = request.OutputNames.Select(name => SafeOutputName(name, policy)).ToList();
 		foreach (var arg in request.Args) Validate(arg, names.Count);
+		if (request.Urls.Count > 0 && !policy.Network) throw new UnsafeEngineArgumentException($"{engine.Name} doesn't take addresses");
 		var urls = request.Urls.Count == 0 ? [] : EngineArguments.Urls(request.Urls);
 		var lease = _store.Use(request.EngineId);
 		var id = Guid.NewGuid().ToString("N");
 		var folder = Path.Combine(_root, id);
+		JobObject? tree = null;
 		Job? job = null;
 		try
 		{
 			var executable = _store.InstalledPath(request.EngineId);
-			job = new Job(id, owner, folder, request.OutputDirectory, names, lease, onOutput, onExit);
+			// The job object exists before the job is findable, so a close that arrives at any moment has something to end.
+			tree = JobObject.Create();
+			job = new Job(id, owner, folder, request.OutputDirectory, names, lease, tree, onOutput, onExit);
 			lock (_gate)
 			{
 				if (_jobs.Count >= MaxRunning) throw new TooManyJobsException(MaxRunning);
 				_jobs[id] = job;
 			}
 			Directory.CreateDirectory(job.WorkFolder);
+			Directory.CreateDirectory(job.TempFolder);
 			for (var i = 0; i < names.Count; i++) Directory.CreateDirectory(Path.GetDirectoryName(job.TempOutputs[i])!);
-			var process = StartProcess(job, executable, request, urls);
+			if (engine.Id == EngineIds.Magick) WriteMagickPolicy(job);
+			var process = StartProcess(job, executable, request, policy, urls);
 			job.Process = process;
+			AfterStart?.Invoke(id);
+			JoinJob(job, process);
 		}
 		catch
 		{
-			Abandon(job, lease, folder, id);
+			Abandon(job, tree, lease, folder, id);
 			throw;
 		}
 		_ = Task.Run(() => RunAsync(job));
@@ -171,9 +207,6 @@ public sealed class EngineRunner
 	{
 		switch (arg)
 		{
-			case JobArg.Literal literal:
-				ValidateLiteral(literal.Text);
-				break;
 			case JobArg.Input input:
 				EngineArguments.FilePath(input.Path);
 				break;
@@ -182,27 +215,56 @@ public sealed class EngineRunner
 		}
 	}
 
-	/// <summary>
-	/// Option text may not name a file: the renderer gets files only as tokens, and a path typed as option text would
-	/// slip past that. This catches the ways to say one in Windows (a rooted path, "C:x", a UNC or backslash path, "..",
-	/// a file: address). It can't stop an engine's own mini-languages (an FFmpeg filter) from reading a file, so the tools
-	/// build their option text themselves and never pass a person's text through as an option.
-	/// </summary>
-	private static void ValidateLiteral(string text)
+	private static readonly HashSet<string> NeverAnOutput = new(StringComparer.Ordinal)
 	{
-		var segments = text.Split('/', '\\');
-		var namesFile = Path.IsPathRooted(text) || text.Contains('\\') || segments.Contains("..") || text.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
-		if (namesFile) throw new UnsafeEngineArgumentException($"{text} looks like a file path, which an engine may only be given as a file the person picked or dropped");
-	}
+		"exe", "bat", "cmd", "ps1", "lnk", "scr", "msi", "com", "vbs", "vbe", "js", "jse", "wsf", "hta", "dll", "cpl", "reg", "pif", "url", "scf", "msc", "jar",
+	};
 
-	private static string SafeOutputName(string name)
+	/// <summary>A plain file name whose extension the engine's list allows. Reserved device names (CON, NUL, COM1...) are renamed by <see cref="DownloadNames"/> rather than refused.</summary>
+	private static string SafeOutputName(string name, EnginePolicy policy)
 	{
 		var plain = name.Length > 0 && name == Path.GetFileName(name) && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 && name.TrimEnd('.', ' ').Length > 0;
 		if (!plain) throw new UnsafeEngineArgumentException($"\"{name}\" isn't a plain file name");
-		return DownloadNames.FileName(name, _ => false);
+		var cleaned = DownloadNames.FileName(name, _ => false);
+		var extension = Path.GetExtension(cleaned).TrimStart('.').ToLowerInvariant();
+		var allowed = extension.Length > 0 && !NeverAnOutput.Contains(extension) && policy.OutputExtensions.Contains(extension, StringComparer.Ordinal);
+		if (!allowed) throw new UnsafeEngineArgumentException($"\"{name}\" isn't a kind of file {EngineCatalog.NameOf(policy.EngineId)} may make here");
+		return cleaned;
 	}
 
-	private Process StartProcess(Job job, string executable, EngineJobRequest request, IReadOnlyList<string> urls)
+	private static void WriteMagickPolicy(Job job)
+	{
+		Directory.CreateDirectory(job.MagickFolder);
+		File.WriteAllText(Path.Combine(job.MagickFolder, MagickPolicy.FileName), MagickPolicy.Xml);
+	}
+
+	private static readonly string[] ProxyVariables = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"];
+
+	/// <summary>
+	/// Nothing of Zing's or the person's environment reaches an engine: only the Windows folder (Python and winsock fail
+	/// without it, and it holds no secret), the job's own TEMP, a PATH of the engine's folder alone (System32 is searched for
+	/// DLLs whatever PATH says, so none of these needs it), the proxy variables for the one engine with the network, and
+	/// ImageMagick's policy folder.
+	/// </summary>
+	private static void ScrubEnvironment(ProcessStartInfo start, Job job, string executable, EnginePolicy policy)
+	{
+		var env = start.Environment;
+		env.Clear();
+		var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+		env["SystemRoot"] = windows;
+		env["windir"] = windows;
+		env["TEMP"] = job.TempFolder;
+		env["TMP"] = job.TempFolder;
+		env["PATH"] = Path.GetDirectoryName(executable)!;
+		if (policy.EngineId == EngineIds.Magick) env["MAGICK_CONFIGURE_PATH"] = job.MagickFolder;
+		if (!policy.Network) return;
+		foreach (var name in ProxyVariables)
+		{
+			if (Environment.GetEnvironmentVariable(name) is { Length: > 0 } value) env[name] = value;
+		}
+	}
+
+	private Process StartProcess(Job job, string executable, EngineJobRequest request, EnginePolicy policy, IReadOnlyList<string> urls)
 	{
 		var start = new ProcessStartInfo(executable)
 		{
@@ -215,8 +277,14 @@ public sealed class EngineRunner
 			StandardOutputEncoding = Encoding.UTF8,
 			StandardErrorEncoding = Encoding.UTF8,
 		};
+		ScrubEnvironment(start, job, executable, policy);
+		foreach (var flag in policy.SafetyFirst) start.ArgumentList.Add(flag);
 		foreach (var arg in request.Args)
 		{
+			if (arg is JobArg.Literal flag && policy.SafetyBefore.TryGetValue(flag.Text, out var before))
+			{
+				foreach (var safety in before) start.ArgumentList.Add(safety);
+			}
 			start.ArgumentList.Add(arg switch
 			{
 				JobArg.Literal literal => literal.Text,
@@ -226,22 +294,29 @@ public sealed class EngineRunner
 			});
 		}
 		foreach (var url in urls) start.ArgumentList.Add(url);
-		job.Tree = JobObject.Create();
-		var process = Process.Start(start) ?? throw new InvalidOperationException($"{executable} didn't start");
+		return Process.Start(start) ?? throw new InvalidOperationException($"{executable} didn't start");
+	}
+
+	/// <summary>
+	/// .NET can't start a process suspended, so it runs for the instant before it joins its job. A child it started in that
+	/// instant would not be in the job: an engine takes far longer than that to start one (its runtime loads first). A close
+	/// that arrived meanwhile ended an empty job, so it is applied again now.
+	/// </summary>
+	private static void JoinJob(Job job, Process process)
+	{
 		try
 		{
-			// .NET can't start a process suspended, so it runs for the instant before this call. A child it started in that
-			// instant would not be in the job: an engine takes far longer than that to start one (the runtime loads first).
 			job.Tree.Assign(process);
 		}
 		catch
 		{
 			process.Kill(entireProcessTree: true);
-			process.Dispose();
 			throw;
 		}
+		bool cancelled;
+		lock (job.Sync) cancelled = job.Cancelled;
+		if (cancelled) job.Tree.Terminate();
 		process.StandardInput.Close();
-		return process;
 	}
 
 	private async Task RunAsync(Job job)
@@ -249,17 +324,27 @@ public sealed class EngineRunner
 		var outputs = new List<string>();
 		string? error = null;
 		var code = -1;
-		var cancelled = false;
 		try
 		{
 			var process = job.Process!;
 			using var stopFlushing = new CancellationTokenSource();
 			var flushing = FlushLoopAsync(job, stopFlushing.Token);
-			var pumps = Task.WhenAll(PumpAsync(job, process.StandardOutput, "out"), PumpAsync(job, process.StandardError, "err"));
+			var pumps = Task.WhenAll(PumpAsync(job, process.StandardOutput, "out"), PumpAsync(job, process.StandardError, "err"), DrainBlocker ?? Task.CompletedTask);
 			await process.WaitForExitAsync();
 			// Anything the engine left running holds the pipes open and would keep the output from draining; none should outlive it.
 			job.Tree.Terminate();
-			await pumps;
+			if (await Task.WhenAny(pumps, Task.Delay(DrainTimeout)) == pumps)
+			{
+				await pumps;
+			}
+			else
+			{
+				// Something outside the job holds the pipes; the lines it would still send are lost.
+				error = "The engine's output didn't finish (something kept its pipes open), so the last lines may be missing";
+				process.StandardOutput.Dispose();
+				process.StandardError.Dispose();
+				_ = pumps.ContinueWith(late => late.Exception, TaskContinuationOptions.OnlyOnFaulted);
+			}
 			await stopFlushing.CancelAsync();
 			await flushing;
 			Flush(job);
@@ -269,7 +354,6 @@ public sealed class EngineRunner
 			{
 				commit = code == 0 && !job.Cancelled;
 				job.Committing = commit;
-				cancelled = job.Cancelled && !commit;
 			}
 			if (commit) outputs = Place(job);
 		}
@@ -288,6 +372,9 @@ public sealed class EngineRunner
 		{
 			Finish(job);
 		}
+		// A cancel that arrived while the file was being placed was too late: the file stands, and the exit says it wasn't cancelled.
+		bool cancelled;
+		lock (job.Sync) cancelled = job.Cancelled && !job.Committing;
 		var exit = new JobExit(job.Id, code, cancelled, outputs, job.StderrTail(), error);
 		try
 		{
@@ -310,16 +397,16 @@ public sealed class EngineRunner
 			while (_endedOrder.Count > RememberedEnded) _ended.Remove(_endedOrder.Dequeue());
 		}
 		job.Process?.Dispose();
-		job.Tree?.Dispose();
+		job.Tree.Dispose();
 		job.Lease.Dispose();
 		Discard(job.Folder);
 	}
 
-	private void Abandon(Job? job, IDisposable lease, string folder, string id)
+	private void Abandon(Job? job, JobObject? tree, IDisposable lease, string folder, string id)
 	{
 		lock (_gate) _jobs.Remove(id);
 		job?.Process?.Dispose();
-		job?.Tree?.Dispose();
+		tree?.Dispose();
 		lease.Dispose();
 		Discard(folder);
 	}
@@ -388,7 +475,7 @@ public sealed class EngineRunner
 		End();
 	}
 
-	/// <summary>Moves every output out of the job's folder, or none: one that is missing or can't be placed undoes the rest.</summary>
+	/// <summary>Places every output, or none: one that is missing or can't be placed undoes the rest.</summary>
 	private List<string> Place(Job job)
 	{
 		for (var i = 0; i < job.Names.Count; i++)
@@ -403,40 +490,75 @@ public sealed class EngineRunner
 		}
 		catch
 		{
-			foreach (var path in placed)
-			{
-				try
-				{
-					File.Delete(path);
-				}
-				catch (Exception undo) when (undo is IOException or UnauthorizedAccessException)
-				{
-					_onError($"undo {path}", undo);
-				}
-			}
+			foreach (var path in placed) DeleteFile(path, "undo");
 			throw;
 		}
 		return placed;
 	}
 
-	/// <summary>The name is chosen against what exists, and File.Move refuses to overwrite, so a file that arrives in between makes the next number be tried.</summary>
+	/// <summary>
+	/// On one volume the move is a rename: whole or not at all. Across volumes a move is a copy that a crash could leave
+	/// half-made under the real name, so the copy goes to a hidden part file beside the final name (created new, never
+	/// over anything) and is renamed from there. The part file of a Zing that crashed meanwhile stays: it sits in the
+	/// person's folder, which Zing can't safely sweep.
+	/// </summary>
 	private string MoveIntoPlace(Job job, string temp, string name)
 	{
-		for (var attempt = 0; attempt < MaxNumbering; attempt++)
+		var staged = SameVolume(temp, job.OutputDirectory) ? null : Stage(job, temp, name);
+		try
 		{
-			var target = Path.Combine(job.OutputDirectory, DownloadNames.FileName(name, candidate => Taken(Path.Combine(job.OutputDirectory, candidate))));
-			BeforeMove?.Invoke(job.Id);
-			try
+			// The name is chosen against what exists, and File.Move refuses to overwrite, so a file that arrives in between makes the next number be tried.
+			for (var attempt = 0; attempt < MaxNumbering; attempt++)
 			{
-				File.Move(temp, target, overwrite: false);
-				return target;
+				var target = Path.Combine(job.OutputDirectory, DownloadNames.FileName(name, candidate => Taken(Path.Combine(job.OutputDirectory, candidate))));
+				BeforeMove?.Invoke(job.Id);
+				try
+				{
+					File.Move(staged ?? temp, target, overwrite: false);
+					return target;
+				}
+				catch (IOException) when (Taken(target))
+				{
+					// Taken in the instant since it was checked; choose again.
+				}
 			}
-			catch (IOException) when (Taken(target))
-			{
-				// Taken in the instant since it was checked; choose again.
-			}
+			throw new IOException($"Couldn't find a free name for {name} in {job.OutputDirectory}");
 		}
-		throw new IOException($"Couldn't find a free name for {name} in {job.OutputDirectory}");
+		finally
+		{
+			if (staged is not null) DeleteFile(staged, "remove part file");
+		}
+	}
+
+	private static string StagedName(Job job, string name) => $".{name}.{job.Id[..8]}.zing-part";
+
+	private string Stage(Job job, string temp, string name)
+	{
+		var part = Path.Combine(job.OutputDirectory, StagedName(job, name));
+		try
+		{
+			using var source = new FileStream(temp, FileMode.Open, FileAccess.Read, FileShare.Read);
+			using var destination = new FileStream(part, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+			source.CopyTo(destination);
+		}
+		catch
+		{
+			DeleteFile(part, "remove part file");
+			throw;
+		}
+		return part;
+	}
+
+	private void DeleteFile(string path, string what)
+	{
+		try
+		{
+			File.Delete(path);
+		}
+		catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+		{
+			_onError($"{what} {path}", failure);
+		}
 	}
 
 	private static bool Taken(string path) => File.Exists(path) || Directory.Exists(path);
@@ -461,7 +583,7 @@ public sealed class EngineRunner
 		foreach (var folder in Directory.GetDirectories(_root)) Discard(folder);
 	}
 
-	private sealed class Job(string id, JobOwner owner, string folder, string outputDirectory, IReadOnlyList<string> names, IDisposable lease, Action<JobOutputBatch> onOutput, Action<JobExit> onExit)
+	private sealed class Job(string id, JobOwner owner, string folder, string outputDirectory, IReadOnlyList<string> names, IDisposable lease, JobObject tree, Action<JobOutputBatch> onOutput, Action<JobExit> onExit)
 	{
 		private readonly List<JobOutput> _pending = [];
 		private readonly Queue<string> _stderr = new();
@@ -471,6 +593,8 @@ public sealed class EngineRunner
 		public JobOwner Owner { get; } = owner;
 		public string Folder { get; } = folder;
 		public string WorkFolder { get; } = Path.Combine(folder, "work");
+		public string TempFolder { get; } = Path.Combine(folder, "tmp");
+		public string MagickFolder { get; } = Path.Combine(folder, "magick");
 		public string OutputDirectory { get; } = outputDirectory;
 		public IReadOnlyList<string> Names { get; } = names;
 		public IReadOnlyList<string> TempOutputs { get; } = [.. names.Select((name, i) => Path.Combine(folder, "out", i.ToString(), name))];
@@ -481,7 +605,7 @@ public sealed class EngineRunner
 		public bool Cancelled { get; set; }
 		public bool Committing { get; set; }
 		public Process? Process { get; set; }
-		public JobObject Tree { get; set; } = null!;
+		public JobObject Tree { get; } = tree;
 
 		public void Add(string stream, string text)
 		{

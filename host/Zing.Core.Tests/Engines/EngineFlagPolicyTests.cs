@@ -1,0 +1,158 @@
+using System.Xml.Linq;
+using Zing.Core.Engines;
+
+namespace Zing.Core.Tests.Engines;
+
+public sealed class EngineFlagPolicyTests
+{
+	private static JobArg[] Args(params string[] tokens) =>
+		[.. tokens.Select(t => t switch
+		{
+			"@in" => (JobArg)new JobArg.Input(Path.Combine(Path.GetTempPath(), "in.mov")),
+			"@out" => new JobArg.Output(0),
+			_ => new JobArg.Literal(t),
+		})];
+
+	public static TheoryData<string, string[]> Bypasses => new()
+	{
+		// The ways to reach a file, the network or a program that the old denylist let through.
+		{ "ffmpeg", ["-i", "concat:C:/x|C:/y"] },
+		{ "ffmpeg", ["-i", "subfile,,start,0,end,9,,:C:/x"] },
+		{ "ffmpeg", ["movie=C:/x"] },
+		{ "ffmpeg", ["-f", "tee", "[f=mp4]C:/anywhere/out.mp4"] },
+		{ "ffmpeg", ["-i", "http://example.com/a.mp4"] },
+		{ "ffmpeg", ["-f", "lavfi"] },
+		{ "ffmpeg", ["-f", "concat"] },
+		{ "ffmpeg", ["-f", "segment"] },
+		{ "ffmpeg", ["-f", "hls"] },
+		{ "ffmpeg", ["-filter_complex", "movie=C:/x"] },
+		{ "ffmpeg", ["-vf", "scale=iw/2:ih/2"] },
+		{ "ffmpeg", ["-attach", "@in"] },
+		{ "ffmpeg", ["-dump_attachment:t", "x"] },
+		{ "ffmpeg", ["-report"] },
+		{ "ffmpeg", ["-c:v", "concat:x"] },
+		{ "ffmpeg", ["-c:v", "libx264:C"] },
+		{ "ffmpeg", ["-c:v", "-an"] },
+		{ "ffmpeg", ["-c:v", "a/b"] },
+		{ "ffmpeg", ["-c:v", "C:\\x"] },
+		{ "ffmpeg", ["-c:v", "@in-list"] },
+		{ "ffmpeg", ["-ss", "00:00:10"] },
+		{ "ffmpeg", ["-t", "10; calc"] },
+		{ "ffmpeg", ["-i"] },
+		{ "ffmpeg", ["-i", "@out"] },
+		{ "ffmpeg", ["-protocol_whitelist", "file,http,tcp"] },
+		{ "ffmpeg", ["--exec", "calc"] },
+		{ "magick", ["label:@C:/x"] },
+		{ "magick", ["msl:"] },
+		{ "magick", ["ephemeral:"] },
+		{ "magick", ["@C:/list.txt"] },
+		{ "magick", ["-write", "C:/x"] },
+		{ "magick", ["-quality", "label:x"] },
+		{ "pandoc", ["--lua-filter", "x.lua"] },
+		{ "pandoc", ["--filter", "x"] },
+		{ "pandoc", ["--extract-media", "x"] },
+		{ "pandoc", ["--resource-path", "x"] },
+		{ "pandoc", ["--data-dir", "x"] },
+		{ "pandoc", ["--include-in-header", "x"] },
+		{ "pandoc", ["--template", "x"] },
+		{ "pandoc", ["-o", "C:/anywhere.html"] },
+		{ "pandoc", ["-f", "markdown+raw_html+lua"] },
+		{ "ytdlp", ["--exec", "calc"] },
+		{ "ytdlp", ["--plugin-dirs", "x"] },
+		{ "ytdlp", ["--config-locations", "x"] },
+		{ "ytdlp", ["--cookies", "x"] },
+		{ "ytdlp", ["--cookies-from-browser", "chrome"] },
+		{ "ytdlp", ["--batch-file", "x"] },
+		{ "ytdlp", ["--load-info-json", "x"] },
+		{ "ytdlp", ["-o", "C:/x"] },
+		{ "ytdlp", ["--audio-format", "mp3;calc"] },
+		{ "bgmodel", ["--anything"] },
+	};
+
+	[Theory]
+	[MemberData(nameof(Bypasses))]
+	public void A_flag_or_value_outside_the_allow_list_is_refused_by_name(string engine, string[] tokens)
+	{
+		Assert.ThrowsAny<UnsafeEngineArgumentException>(() => EngineFlagPolicy.Pinned.For(engine).Check(Args(tokens)));
+	}
+
+	public static TheoryData<string, string[]> Allowed => new()
+	{
+		{ "ffmpeg", ["-i", "@in", "-c:v", "libx264", "-c:a", "aac", "-b:a", "192k", "-an", "-vn", "-ss", "1.5", "-t", "10", "-f", "mp4", "@out"] },
+		{ "ffmpeg", ["-i", "@in", "-q:a", "2", "@out"] },
+		{ "pandoc", ["-f", "markdown", "-t", "html", "--standalone", "-o", "@out", "@in"] },
+		{ "magick", ["@in", "-quality", "85", "-strip", "-auto-orient", "@out"] },
+		{ "ytdlp", ["--newline", "--no-playlist", "-x", "--audio-format", "mp3", "--audio-quality", "0"] },
+	};
+
+	[Theory]
+	[MemberData(nameof(Allowed))]
+	public void The_flags_the_tools_need_pass(string engine, string[] tokens)
+	{
+		EngineFlagPolicy.Pinned.For(engine).Check(Args(tokens));
+	}
+
+	[Fact]
+	public void The_refusal_names_the_flag_and_the_engine()
+	{
+		var error = Assert.Throws<DisallowedEngineFlagException>(() => EngineFlagPolicy.Pinned.For("pandoc").Check(Args("--lua-filter", "x.lua")));
+
+		Assert.Contains("--lua-filter", error.Message);
+		Assert.Contains("Pandoc", error.Message);
+	}
+
+	[Fact]
+	public void A_scheme_like_value_passes_only_where_the_flag_says_so()
+	{
+		var policy = EngineFlagPolicy.Pinned.Plus("ffmpeg", new Dictionary<string, FlagSpec>
+		{
+			["--strict"] = new FlagSpec(FlagValue.Word),
+			["--scheme"] = new FlagSpec(FlagValue.Word) { AllowsScheme = true },
+		});
+
+		Assert.ThrowsAny<UnsafeEngineArgumentException>(() => policy.For("ffmpeg").Check(Args("--strict", "label:x")));
+		policy.For("ffmpeg").Check(Args("--scheme", "label:x"));
+		policy.For("ffmpeg").Check(Args("--strict", "0:v:0"));
+	}
+
+	[Fact]
+	public void Option_looking_files_are_fine_because_files_are_never_literals()
+	{
+		EngineFlagPolicy.Pinned.For("ffmpeg").Check([new JobArg.Literal("-i"), new JobArg.Input(Path.GetFullPath("-rf.mov")), new JobArg.Output(0)]);
+	}
+
+	[Fact]
+	public void FFmpeg_gets_no_stdin_and_a_protocol_whitelist_before_every_input()
+	{
+		var policy = EngineFlagPolicy.Pinned.For("ffmpeg");
+
+		Assert.Equal(["-nostdin"], policy.SafetyFirst);
+		Assert.Equal(["-protocol_whitelist", "file,pipe"], policy.SafetyBefore["-i"]);
+	}
+
+	[Fact]
+	public void The_other_engines_get_their_sandbox_flags_first()
+	{
+		Assert.Equal(["--sandbox"], EngineFlagPolicy.Pinned.For("pandoc").SafetyFirst);
+		Assert.Equal(["--ignore-config", "--no-plugin-dirs", "--no-cache-dir"], EngineFlagPolicy.Pinned.For("ytdlp").SafetyFirst);
+	}
+
+	[Fact]
+	public void Only_yt_dlp_has_the_network()
+	{
+		Assert.True(EngineFlagPolicy.Pinned.For("ytdlp").Network);
+		Assert.All(new[] { "ffmpeg", "magick", "pandoc", "bgmodel" }, id => Assert.False(EngineFlagPolicy.Pinned.For(id).Network));
+	}
+
+	[Fact]
+	public void The_ImageMagick_policy_blocks_the_dangerous_coders_and_at_paths()
+	{
+		var document = XDocument.Parse(MagickPolicy.Xml);
+		var policies = document.Root!.Elements("policy").ToList();
+
+		var coders = policies.Single(p => (string?)p.Attribute("domain") == "coder" && (string?)p.Attribute("rights") == "none").Attribute("pattern")!.Value;
+		foreach (var coder in new[] { "MSL", "MVG", "EPHEMERAL", "URL", "HTTP", "HTTPS", "FTP", "TEXT", "LABEL", "CAPTION", "PS", "EPS", "PDF", "XPS" }) Assert.Contains(coder, coders.Trim('{', '}').Split(','));
+		Assert.Contains(policies, p => (string?)p.Attribute("domain") == "path" && (string?)p.Attribute("pattern") == "@*" && (string?)p.Attribute("rights") == "none");
+		Assert.Contains(policies, p => (string?)p.Attribute("domain") == "delegate" && (string?)p.Attribute("rights") == "none");
+	}
+}

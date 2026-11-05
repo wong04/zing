@@ -3,7 +3,7 @@ using Zing.Core.Engines;
 
 namespace Zing.Core.Tests.Engines;
 
-/// <summary>Zing.FakeEngine installed as the "ffmpeg" engine, and a runner over it with its folders under a scratch root.</summary>
+/// <summary>Zing.FakeEngine installed as one engine ("ffmpeg" unless told), and a runner over it with its folders under a scratch root.</summary>
 public sealed class RunnerFixture : IDisposable
 {
 	private static readonly TimeSpan Wait = TimeSpan.FromSeconds(30);
@@ -11,18 +11,38 @@ public sealed class RunnerFixture : IDisposable
 	private readonly object _gate = new();
 	private bool _installed;
 
-	public RunnerFixture(TimeSpan? flushEvery = null)
+	/// <summary>The flags the fake engine understands, which the real catalog's allow-list naturally lacks.</summary>
+	internal static readonly Dictionary<string, FlagSpec> FakeFlags = new(StringComparer.Ordinal)
 	{
+		["--fake-write"] = new FlagSpec(FlagValue.Output),
+		["--write-after"] = new FlagSpec(FlagValue.Number, FlagValue.Output),
+		["--print-cwd"] = new FlagSpec(),
+		["--spawn-child"] = new FlagSpec(),
+		["--sleep"] = new FlagSpec(FlagValue.Number),
+		["--chatty"] = new FlagSpec(FlagValue.Number),
+		["--long-line"] = new FlagSpec(FlagValue.Number),
+		["--err"] = new FlagSpec(FlagValue.Unchecked),
+		["--exit"] = new FlagSpec(FlagValue.Number),
+		["--print-env"] = new FlagSpec(),
+		["--print-magick-policy"] = new FlagSpec(),
+	};
+
+	public RunnerFixture(TimeSpan? flushEvery = null, string engineId = "ffmpeg")
+	{
+		EngineId = engineId;
 		Jobs = Path.Combine(_engines.Root, "jobs");
 		Outputs = Path.Combine(_engines.Root, "outputs");
 		Inputs = Path.Combine(_engines.Root, "inputs");
 		Directory.CreateDirectory(Outputs);
 		Directory.CreateDirectory(Inputs);
 		var body = System.IO.File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Zing.FakeEngine.exe"));
-		_engines.Serve("ffmpeg/ffmpeg.exe", body);
-		Store = _engines.Store(_engines.SingleFile("ffmpeg", body));
-		Runner = new EngineRunner(Store, Jobs, (where, error) => Errors.Add((where, error)), flushEvery ?? TimeSpan.FromMilliseconds(20));
+		_engines.Serve($"{engineId}/{engineId}.exe", body);
+		Store = _engines.Store(_engines.SingleFile(engineId, body));
+		var policy = EngineFlagPolicy.Pinned.Plus(engineId, FakeFlags, "txt");
+		Runner = new EngineRunner(Store, Jobs, (where, error) => Errors.Add((where, error)), policy, flushEvery ?? TimeSpan.FromMilliseconds(20));
 	}
+
+	public string EngineId { get; }
 
 	public EngineStore Store { get; }
 
@@ -48,7 +68,7 @@ public sealed class RunnerFixture : IDisposable
 	public async Task InstallAsync()
 	{
 		if (_installed) return;
-		var path = await Store.EnsureAsync("ffmpeg", new InlineProgress<double>(_ => { }), CancellationToken.None);
+		var path = await Store.EnsureAsync(EngineId, new InlineProgress<double>(_ => { }), CancellationToken.None);
 		// The apphost needs its dll and runtime config beside it.
 		foreach (var sibling in new[] { "Zing.FakeEngine.dll", "Zing.FakeEngine.runtimeconfig.json" })
 		{
@@ -57,9 +77,9 @@ public sealed class RunnerFixture : IDisposable
 		_installed = true;
 	}
 
-	public EngineJobRequest Request(params JobArg[] args) => new("ffmpeg", args, Outputs, [], []);
+	public EngineJobRequest Request(params JobArg[] args) => new(EngineId, args, Outputs, [], []);
 
-	public EngineJobRequest Request(IReadOnlyList<string> outputNames, params JobArg[] args) => new("ffmpeg", args, Outputs, outputNames, []);
+	public EngineJobRequest Request(IReadOnlyList<string> outputNames, params JobArg[] args) => new(EngineId, args, Outputs, outputNames, []);
 
 	public static JobArg[] Literals(params string[] texts) => [.. texts.Select(t => (JobArg)new JobArg.Literal(t))];
 

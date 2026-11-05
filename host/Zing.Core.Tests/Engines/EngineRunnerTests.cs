@@ -39,42 +39,49 @@ public sealed class EngineRunnerTests : IDisposable
 		var option = _f.Make("-rf.mov");
 		var accented = _f.Make("my film é (1).heic");
 
-		var exit = await _f.RunAsync(_f.Request(Literal("-i"), Input(option), Input(accented), Literal("my film é (1).heic")));
+		var exit = await _f.RunAsync(_f.Request(["my film é (1).txt"], Literal("-i"), Input(option), Literal("-i"), Input(accented), Output(0)));
 
 		Assert.Equal(0, exit.Code);
 		var echoed = JsonSerializer.Deserialize<string[]>(_f.Lines("out")[0])!;
-		Assert.Equal(["-i", option, accented, "my film é (1).heic"], echoed);
+		// The runner's own flags come first, and the whitelist before each input.
+		Assert.Equal(["-nostdin", "-protocol_whitelist", "file,pipe", "-i", option, "-protocol_whitelist", "file,pipe", "-i", accented], echoed[..9]);
+		Assert.EndsWith(Path.Combine("0", "my film é (1).txt"), echoed[9]);
+		Assert.Equal(10, echoed.Length);
 		// Unchanged is not enough: FFmpeg reads a bare "-rf.mov" as an option, and this one is a path that cannot.
-		Assert.All(echoed.Skip(1).Take(2), arg => Assert.False(arg.StartsWith('-')));
+		Assert.False(echoed[4].StartsWith('-'));
+		Assert.EndsWith(Path.DirectorySeparatorChar + "-rf.mov", echoed[4]);
 	}
 
 	[Fact]
 	public async Task Quotes_spaces_and_backslashes_survive_untouched()
 	{
 		await _f.InstallAsync();
-		var awkward = _f.Make("say 'hi' \\ there.txt".Replace("\\", "+"));
+		var awkward = _f.Make("say 'hi' + there.txt");
 
-		var exit = await _f.RunAsync(_f.Request(Input(awkward), Literal("a b"), Literal("c\"d"), Literal("")));
+		var exit = await _f.RunAsync(_f.Request(Literal("-i"), Input(awkward), Literal("--err"), Literal("a b"), Literal("--err"), Literal("c\"d"), Literal("--err"), Literal("e\\")));
 
 		Assert.Equal(0, exit.Code);
-		Assert.Equal([awkward, "a b", "c\"d", ""], JsonSerializer.Deserialize<string[]>(_f.Lines("out")[0])!);
+		Assert.Equal(["-nostdin", "-protocol_whitelist", "file,pipe", "-i", awkward, "--err", "a b", "--err", "c\"d", "--err", "e\\"], JsonSerializer.Deserialize<string[]>(_f.Lines("out")[0])!);
 	}
 
 	[Fact]
-	public async Task Urls_come_after_a_double_dash()
+	public async Task Urls_come_after_a_double_dash_and_only_the_network_engine_takes_them()
 	{
+		using var ytdlp = new RunnerFixture(engineId: "ytdlp");
+		await ytdlp.InstallAsync();
+
+		var request = ytdlp.Request(Literal("--exit"), Literal("0")) with { Urls = ["https://example.com/watch?v=1"] };
+		await ytdlp.RunAsync(request);
+
+		Assert.Equal(["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--exit", "0", "--", "https://example.com/watch?v=1"], JsonSerializer.Deserialize<string[]>(ytdlp.Lines("out")[0])!);
 		await _f.InstallAsync();
-
-		var request = _f.Request(Literal("--newline")) with { Urls = ["https://example.com/watch?v=1"] };
-		await _f.RunAsync(request);
-
-		Assert.Equal(["--newline", "--", "https://example.com/watch?v=1"], JsonSerializer.Deserialize<string[]>(_f.Lines("out")[0])!);
+		Assert.Throws<UnsafeEngineArgumentException>(() => _f.Start(_f.Request(Literal("--exit"), Literal("0")) with { Urls = ["https://example.com/"] }));
 	}
 
 	[Fact]
 	public void An_unknown_engine_id_raises()
 	{
-		var request = _f.Request(Literal("x")) with { EngineId = "notepad" };
+		var request = _f.Request(Literal("--exit"), Literal("0")) with { EngineId = "notepad" };
 
 		Assert.Throws<UnknownEngineException>(() => _f.Start(request));
 	}
@@ -82,7 +89,7 @@ public sealed class EngineRunnerTests : IDisposable
 	[Fact]
 	public void An_engine_that_isnt_downloaded_raises_and_nothing_is_fetched()
 	{
-		Assert.Throws<EngineNotInstalledException>(() => _f.Start(_f.Request(Literal("x"))));
+		Assert.Throws<EngineNotInstalledException>(() => _f.Start(_f.Request(Literal("--exit"), Literal("0"))));
 		Assert.Equal(0, _f.Runner.Running);
 	}
 
@@ -100,23 +107,64 @@ public sealed class EngineRunnerTests : IDisposable
 	{
 		await _f.InstallAsync();
 
-		Assert.Throws<UnsafeEngineArgumentException>(() => _f.Start(_f.Request(Literal(literal))));
+		Assert.ThrowsAny<UnsafeEngineArgumentException>(() => _f.Start(_f.Request(Literal(literal))));
 		Assert.Equal(0, _f.Runner.Running);
 		Assert.Empty(_f.Entries(_f.Jobs));
 	}
 
-	[Theory]
-	[InlineData("scale=iw/2:ih/2")]
-	[InlineData("-c:v")]
-	[InlineData("libx264")]
-	[InlineData("-vf")]
-	public async Task Ordinary_option_text_is_allowed(string literal)
+	[Fact]
+	public async Task A_literal_that_is_not_an_allowed_flag_is_refused_by_name()
 	{
 		await _f.InstallAsync();
 
-		var exit = await _f.RunAsync(_f.Request(Literal(literal)));
+		var error = Assert.Throws<DisallowedEngineFlagException>(() => _f.Start(_f.Request(Literal("-vf"), Literal("scale=iw/2:ih/2"))));
+
+		Assert.Contains("-vf", error.Message);
+		Assert.Equal(0, _f.Runner.Running);
+	}
+
+	[Theory]
+	[InlineData("exe")]
+	[InlineData("bat")]
+	[InlineData("cmd")]
+	[InlineData("ps1")]
+	[InlineData("lnk")]
+	[InlineData("scr")]
+	[InlineData("msi")]
+	[InlineData("com")]
+	[InlineData("EXE")]
+	[InlineData("xyz")]
+	public async Task An_output_whose_extension_is_not_on_the_engines_list_is_refused(string extension)
+	{
+		await _f.InstallAsync();
+
+		Assert.Throws<UnsafeEngineArgumentException>(() => _f.Start(_f.Request([$"clip.{extension}"], Literal("--fake-write"), Output(0))));
+		Assert.Throws<UnsafeEngineArgumentException>(() => _f.Start(_f.Request([$"clip.txt.{extension}"], Literal("--fake-write"), Output(0))));
+	}
+
+	[Fact]
+	public async Task An_output_with_no_extension_is_refused()
+	{
+		await _f.InstallAsync();
+
+		Assert.Throws<UnsafeEngineArgumentException>(() => _f.Start(_f.Request(["clip"], Literal("--fake-write"), Output(0))));
+	}
+
+	[Theory]
+	[InlineData("CON.txt")]
+	[InlineData("nul.txt")]
+	[InlineData("Aux.txt")]
+	[InlineData("com1.txt")]
+	[InlineData("LPT9.txt")]
+	public async Task A_reserved_device_name_is_renamed_never_written(string name)
+	{
+		await _f.InstallAsync();
+
+		var exit = await _f.RunAsync(_f.Request([name], Literal("--fake-write"), Output(0)));
 
 		Assert.Equal(0, exit.Code);
+		Assert.Equal(Path.GetFileNameWithoutExtension(name) + "_.txt", Path.GetFileName(exit.Outputs[0]));
+		Assert.Equal("fake engine output\n", File.ReadAllText(exit.Outputs[0]));
 	}
 
 	[Theory]
