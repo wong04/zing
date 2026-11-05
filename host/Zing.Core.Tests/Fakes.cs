@@ -95,7 +95,21 @@ public sealed class FakeWindowHost : IWindowHost
 	public int Closes { get; private set; }
 	public int Relayouts { get; private set; }
 
-	public void Push(string channel, object? payload) => Pushed.Add((channel, payload));
+	// Engine jobs push from their own threads.
+	public void Push(string channel, object? payload)
+	{
+		lock (Pushed) Pushed.Add((channel, payload));
+	}
+
+	/// <summary>What the file picker "returns"; the extensions it was asked for are kept.</summary>
+	public IReadOnlyList<string> PickedPaths { get; set; } = [];
+	public IReadOnlyList<string>? PickedExtensions { get; private set; }
+
+	public Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions)
+	{
+		PickedExtensions = extensions;
+		return Task.FromResult(PickedPaths);
+	}
 	public void Notify(string text) => Notices.Add(text);
 	public void NewWindow() => NewWindows++;
 	public void CloseWindow() => Closes++;
@@ -129,7 +143,7 @@ public sealed class FakeWindowHost : IWindowHost
 	public void SetPageUiHeight(int height) => PageUiHeights.Add(height);
 	public void FocusPageUi() { }
 
-	public string DownloadsDirectory => Path.GetTempPath();
+	public string DownloadsDirectory { get; set; } = Path.GetTempPath();
 	public IDownloadHost DownloadHost { get; } = new FakeDownloads();
 
 	public ManualScheduler FakeScheduler { get; } = new();

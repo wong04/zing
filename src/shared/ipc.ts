@@ -1,4 +1,5 @@
 import type { EngineInfo, EngineProgress, EnsureOutcome, YtDlpUpdate } from './engines/engineInfo'
+import type { EngineExit, EngineJobSpec, EngineOutput, FileKind, PickedFile } from './engines/engineJob'
 import type { FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
 import type { BrowserLibrary } from './library/library'
@@ -281,6 +282,21 @@ export interface InvokeContract {
 	'engines:remove': { args: [id: string]; result: void }
 	/** Checks the newest yt-dlp release against its published SHA2-256SUMS; a mismatch keeps the old version. */
 	'engines:update-ytdlp': { args: []; result: YtDlpUpdate }
+	/**
+	 * Starts an engine on a job owned by an open panel and answers with the job's id. Closing that panel (not minimizing it)
+	 * or the window stops the job. Pushes `engines:output` and, once, `engines:exit`. Rejects when the engine isn't downloaded
+	 * (it never downloads), when 3 jobs already run, or with the reason an argument or file was refused.
+	 */
+	'engines:run': { args: [engineId: string, panelId: string, job: EngineJobSpec]; result: string }
+	/** Stops a job of this window; its outputs are discarded. (`engines:cancel` stops a download.) */
+	'engines:cancel-job': { args: [jobId: string]; result: void }
+	/** The native open dialog; an empty list if the person cancelled. */
+	'files:pick': { args: [kinds: readonly FileKind[]]; result: PickedFile[] }
+	/**
+	 * Files dropped on a Zing view. The host reads their paths from the drop itself (`postMessageWithAdditionalObjects`),
+	 * so the bridge carries the `File`s beside the message and not in its JSON args; a web page cannot send one.
+	 */
+	'files:open-dropped': { args: [files: readonly File[]]; result: PickedFile[] }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
 	'account:sign-in': { args: [password: string]; result: AccountOutcome }
@@ -307,6 +323,8 @@ export interface EventContract {
 	'toolpanel:state': ToolPanelsState
 	'account:state': AccountState
 	'engines:progress': EngineProgress
+	'engines:output': EngineOutput
+	'engines:exit': EngineExit
 }
 
 export type InvokeChannel = keyof InvokeContract
@@ -420,5 +438,12 @@ export interface ZingApi {
 	removeEngine(id: string): Promise<void>
 	updateYtDlp(): Promise<YtDlpUpdate>
 	onEngineProgress(listener: (progress: EngineProgress) => void): Unsubscribe
+	runEngine(engineId: string, panelId: string, job: EngineJobSpec): Promise<string>
+	cancelEngineJob(jobId: string): Promise<void>
+	onEngineOutput(listener: (output: EngineOutput) => void): Unsubscribe
+	onEngineExit(listener: (exit: EngineExit) => void): Unsubscribe
+	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>
+	/** Hand over the `File`s of a drop (`event.dataTransfer.files`); resolves with a token for each. */
+	openDropped(files: readonly File[]): Promise<PickedFile[]>
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe
 }

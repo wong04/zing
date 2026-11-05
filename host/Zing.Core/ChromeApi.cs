@@ -44,6 +44,8 @@ public interface IWindowHost
 	/// <summary>Where downloads are saved, and the file actions on them.</summary>
 	string DownloadsDirectory { get; }
 	IDownloadHost DownloadHost { get; }
+	/// <summary>Shows the native open dialog for these extensions (none means every file) and returns what the person picked; empty if they cancelled. An e2e run shows no dialog.</summary>
+	Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions);
 	/// <summary>Runs delayed work on the window's UI thread.</summary>
 	IScheduler Scheduler { get; }
 	IShellActions Shell { get; }
@@ -54,7 +56,8 @@ public interface IWindowHost
 /// <param name="SiteData">Purges a site when its last tab closes; null with a persistent profile.</param>
 /// <param name="BrowsingData">Settings' Clear browsing session; null where the host has no engine to clear.</param>
 /// <param name="Engines">The downloaded engines (FFmpeg and the rest), shared by every window; null where the host has none.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, EngineStore? Engines = null)
+/// <param name="Runner">Runs them; shared so that "at most 3 jobs" holds for all of Zing. Null where the host has none.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, EngineStore? Engines = null, EngineRunner? Runner = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -83,6 +86,15 @@ public sealed class ChromeApi : IDisposable
 	private readonly CancellationTokenSource _closing = new();
 	// This window's downloads by engine id, so Cancel can stop one.
 	private readonly Dictionary<string, CancellationTokenSource> _downloads = new(StringComparer.Ordinal);
+	// Names this window's jobs to the runner, which is shared by every window.
+	private readonly string _windowId = Guid.NewGuid().ToString("N");
+	private volatile bool _disposed;
+
+	/// <summary>The files this window's renderer may give an engine: what the picker or a drop issued.</summary>
+	public FileGrants Grants { get; } = new();
+
+	/// <summary>Where the host leaves what a Zing view dropped until the renderer collects it.</summary>
+	public DropInbox Drops { get; }
 
 	public TabService Tabs { get; }
 
@@ -121,6 +133,7 @@ public sealed class ChromeApi : IDisposable
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
 		Permissions = new PermissionBroker(PageUi);
+		Drops = new DropInbox(Grants);
 		Stacks = new StackDropdown(key => StackMembers.Of(Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")), Ordering.Stacks(), key), host.Scheduler, state =>
 		{
 			host.Push("stack:dropdown", state);
@@ -138,6 +151,8 @@ public sealed class ChromeApi : IDisposable
 		Shell = new ShellModel(appVersion, new ShellWindow(PageArea, () => host.ContentSize, () => host.ContentOrigin, () => host.Cursor), host.Scheduler, Flag("sidebarPinned"), !app.Account.State().SignedIn, RecentFeatures());
 		Shell.StateChanged += state => host.Push("shell:state", state);
 		Shell.PanelsChanged += state => host.Push("toolpanel:state", state);
+		// A job belongs to its panel: once the panel is gone (minimized is not gone) its engine is stopped.
+		Shell.PanelsChanged += state => app.Runner?.KillPanelsExcept(_windowId, state.Panels.Select(p => p.Id).ToHashSet(StringComparer.Ordinal));
 		Shell.SurfaceRegionChanged += host.SurfaceRegionChanged;
 		Shell.FocusSurfaceRequested += host.FocusSurface;
 		Shell.SetSidebarWidth(SidebarWidth());
@@ -228,6 +243,11 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("engines:cancel", args => Do(() => CancelEngineDownload(Text(args, 0))));
 		bridge.Register("engines:remove", args => Do(() => Engines().Remove(Text(args, 0))));
 		bridge.Register("engines:update-ytdlp", _ => UpdateYtDlpAsync());
+		bridge.Register("engines:run", args => RunEngine(Text(args, 0), Text(args, 1), Arg(args, 2)));
+		// Not "engines:cancel": that one stops a download by engine id.
+		bridge.Register("engines:cancel-job", args => Do(() => Runner().Cancel(Text(args, 0), _windowId)));
+		bridge.Register("files:pick", args => PickFilesAsync(Arg(args, 0)));
+		bridge.Register("files:open-dropped", _ => Drops.Take());
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
 		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
@@ -361,6 +381,8 @@ public sealed class ChromeApi : IDisposable
 
 	public void Dispose()
 	{
+		_disposed = true;
+		_app.Runner?.KillWindow(_windowId);
 		_closing.Cancel();
 		_closing.Dispose();
 		foreach (var subscription in _subscriptions) subscription.Dispose();
@@ -450,6 +472,64 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	private EngineStore Engines() => _app.Engines ?? throw new InvalidOperationException("This host has no engine store");
+
+	private EngineRunner Runner() => _app.Runner ?? throw new InvalidOperationException("This host can't run engines");
+
+	private async Task<object?> PickFilesAsync(JsonElement kinds)
+	{
+		if (kinds.ValueKind != JsonValueKind.Array) throw new ArgumentException("Argument 0 must be a list of file kinds");
+		var extensions = FileKinds.Extensions([.. kinds.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : throw new ArgumentException("A file kind must be a string"))]);
+		var paths = await _host.PickFilesAsync(extensions);
+		return paths.Select(Grants.Issue).ToList();
+	}
+
+	/// <summary>
+	/// <c>spec</c> is <c>{ args: (string | {input: token} | {output: n})[], outputs?: string[], urls?: string[] }</c>.
+	/// Files come only as tokens this window's picker or a drop issued, so the renderer can't name another path.
+	/// </summary>
+	private object RunEngine(string engineId, string panelId, JsonElement spec)
+	{
+		var runner = Runner();
+		if (!Shell.PanelsState().Panels.Any(p => p.Id == panelId)) throw new UnknownPanelException(panelId);
+		if (spec.ValueKind != JsonValueKind.Object || !spec.TryGetProperty("args", out var args) || args.ValueKind != JsonValueKind.Array) throw new ArgumentException("The job needs a list of args");
+		var request = new EngineJobRequest(
+			engineId,
+			[.. args.EnumerateArray().Select(JobArgument)],
+			_host.DownloadsDirectory,
+			Strings(spec, "outputs"),
+			Strings(spec, "urls"));
+		return runner.Start(new JobOwner(_windowId, panelId), request, PushJobOutput, PushJobExit);
+	}
+
+	private JobArg JobArgument(JsonElement arg)
+	{
+		if (arg.ValueKind == JsonValueKind.String) return new JobArg.Literal(arg.GetString()!);
+		if (arg.ValueKind == JsonValueKind.Object && arg.TryGetProperty("input", out var token) && token.ValueKind == JsonValueKind.String)
+		{
+			var path = Grants.Resolve(token.GetString()!);
+			return File.Exists(path) ? new JobArg.Input(path) : throw new FileNotFoundException($"{Path.GetFileName(path)} isn't there any more. Pick it again", path);
+		}
+		if (arg.ValueKind == JsonValueKind.Object && arg.TryGetProperty("output", out var index) && index.TryGetInt32(out var number)) return new JobArg.Output(number);
+		throw new ArgumentException("A job argument is a string, {input: token} or {output: number}");
+	}
+
+	private static List<string> Strings(JsonElement spec, string name)
+	{
+		if (!spec.TryGetProperty(name, out var list) || list.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return [];
+		if (list.ValueKind != JsonValueKind.Array) throw new ArgumentException($"{name} must be a list of strings");
+		return [.. list.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.String ? item.GetString()! : throw new ArgumentException($"{name} must be a list of strings"))];
+	}
+
+	// A closed window has no renderer to tell.
+	private void PushJobOutput(JobOutputBatch batch)
+	{
+		if (!_disposed) _host.Push("engines:output", batch);
+	}
+
+	private void PushJobExit(JobExit exit)
+	{
+		if (!_disposed) _host.Push("engines:exit", exit);
+	}
 
 	/// <summary>A person asked for the download (a button, after being told its size and source); progress reaches this window.</summary>
 	private async Task<object?> EnsureEngineAsync(string id)

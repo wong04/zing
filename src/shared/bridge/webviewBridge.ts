@@ -12,6 +12,8 @@ import { createZingApi, type Invoke } from '../zingApi'
 /** The slice of `window.chrome.webview` the bridge uses. */
 export interface WebViewChannel {
 	postMessage(message: unknown): void
+	/** Sends the `File`s beside the message; the host reads their paths from them (Spike S4). */
+	postMessageWithAdditionalObjects(message: unknown, objects: readonly unknown[]): void
 	addEventListener(type: 'message', listener: (event: { data: unknown }) => void): void
 }
 
@@ -81,6 +83,11 @@ export function webViewZingApi(webview: WebViewChannel, wrapInvoke: (invoke: Inv
 		new Promise((resolve, reject) => {
 			const id = nextId++
 			pending.set(id, { channel, resolve: resolve as (value: unknown) => void, reject })
+			if (channel === 'files:open-dropped') {
+				// A File is not JSON; the host takes its path from the object itself, so it stays out of the args.
+				webview.postMessageWithAdditionalObjects({ kind: 'invoke', id, channel, args: [] } satisfies InvokeMessage, args[0] as readonly File[])
+				return
+			}
 			const message: InvokeMessage = { kind: 'invoke', id, channel, args }
 			webview.postMessage(message)
 		})

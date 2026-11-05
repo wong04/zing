@@ -97,6 +97,10 @@
 			"args": 1
 		},
 		{
+			"channel": "engines:cancel-job",
+			"args": 1
+		},
+		{
 			"channel": "engines:ensure",
 			"args": 1
 		},
@@ -109,8 +113,20 @@
 			"args": 1
 		},
 		{
+			"channel": "engines:run",
+			"args": 3
+		},
+		{
 			"channel": "engines:update-ytdlp",
 			"args": 0
+		},
+		{
+			"channel": "files:open-dropped",
+			"args": 1
+		},
+		{
+			"channel": "files:pick",
+			"args": 1
 		},
 		{
 			"channel": "find:close",
@@ -361,6 +377,8 @@
 	"events": [
 		"account:state",
 		"chrome:focus-address",
+		"engines:exit",
+		"engines:output",
 		"engines:progress",
 		"library:state",
 		"overlay:notice",
