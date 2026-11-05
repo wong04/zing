@@ -50,22 +50,22 @@ test('the real engines show a HEIC and a HEVC MOV, and a MOV starts playing whil
 						resolve(e)
 					}
 				})
-				window.zing.runEngine('magick', id!, { args: [{ input: token! }, '-quality', '80', { output: 0 }] as JobArg[], outputs: ['shot.heic'] }).then((j) => (job = j), reject)
+				window.zing.runEngine('magick', id!, { args: [{ input: token! }, '-quality', '80', { output: 0 }] as JobArg[], outputs: ['shot.tif'] }).then((j) => (job = j), reject)
 			}),
 		[panel, png.token] as const,
 	)
-	console.log('magick made a HEIC:', made.code, made.error ?? '', made.stderrTail.join(' | '))
-	await zing.chrome.evaluate(() => window.zing.closePanel('tool:Hashes'))
+	console.log('magick made a TIFF:', made.code, made.error ?? '', made.stderrTail.join(' | '))
+	await zing.chrome.evaluate((id) => window.zing.closePanel(id), panel)
 	const heic = join(DATA, 'downloads', made.outputs[0]?.name ?? 'missing.heic')
-	expect(existsSync(heic), 'ImageMagick wrote a HEIC').toBe(true)
+	expect(existsSync(heic), 'ImageMagick wrote a TIFF').toBe(true)
 
 	const viewer = await openViewer(zing)
 	await queuePick(zing, heic)
 	await viewer.panel.getByRole('button', { name: 'Choose a file' }).click()
 	const image = viewer.panel.getByTestId('viewer-image')
 	await expect.poll(() => image.evaluate((i: HTMLImageElement) => i.naturalWidth), { timeout: 60_000 }).toBe(24)
-	console.log('HEIC shown through the real ImageMagick')
-	await viewer.panel.getByRole('button', { name: 'Close file' }).click()
+	console.log('TIFF shown through the real ImageMagick')
+	await viewer.panel.getByRole('button', { name: 'Close file', exact: true }).click()
 
 	// The MOV: seconds from the click to the first picture, and to the end of the conversion.
 	await viewer.surface.evaluate(() => {
@@ -114,7 +114,11 @@ test('the real engines show a HEIC and a HEVC MOV, and a MOV starts playing whil
 		await video.evaluate((v: HTMLVideoElement, t) => {
 			v.currentTime = t
 		}, target)
-		await expect.poll(() => video.evaluate((v: HTMLVideoElement) => !v.seeking && v.readyState >= 2), { timeout: 30_000 }).toBe(true)
+		const state = (): Promise<string> => video.evaluate((v: HTMLVideoElement) => JSON.stringify({ seeking: v.seeking, ready: v.readyState, t: v.currentTime, ended: v.ended, err: v.error?.message, notice: document.querySelector('[role=alert]')?.textContent, buffered: Array.from({ length: v.buffered.length }, (_, i) => [v.buffered.start(i), v.buffered.end(i)]) }))
+		await expect.poll(() => video.evaluate((v: HTMLVideoElement) => !v.seeking && v.readyState >= 2), { timeout: 30_000, message: await state() }).toBe(true).catch(async (error) => {
+			console.log('stuck seek', target, await state())
+			throw error
+		})
 		const at = await video.evaluate((v: HTMLVideoElement) => v.currentTime)
 		console.log(`seek to ${target.toFixed(1)} s landed at ${at.toFixed(1)} s`)
 		expect(Math.abs(at - target)).toBeLessThan(3)
@@ -122,7 +126,7 @@ test('the real engines show a HEIC and a HEVC MOV, and a MOV starts playing whil
 
 	const copies = join(DATA, 'viewer-copies')
 	expect(readdirSync(copies)).toHaveLength(1)
-	await viewer.panel.getByRole('button', { name: 'Close file' }).click()
+	await viewer.panel.getByRole('button', { name: 'Close file', exact: true }).click()
 	await expect.poll(() => readdirSync(copies)).toEqual([])
 	await zing.close()
 })

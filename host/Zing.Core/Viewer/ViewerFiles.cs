@@ -250,12 +250,12 @@ public sealed class ViewerFiles : IDisposable
 		ViewerSession? session;
 		lock (_gate) session = _sessions.GetValueOrDefault(token);
 		// Past the origin check, so the page may read the answer.
-		if (session is null) return NotFound() with { Headers = Cors(NotFound().Headers) };
+		if (session is null) return NotFoundForView();
 		var method = request.Method.ToUpperInvariant();
 		if (method == "OPTIONS") return Preflight();
 		if (method is not ("GET" or "HEAD")) return Refuse(405, "Method Not Allowed");
 		var source = Source(session);
-		if (source is null) return NotFound();
+		if (source is null) return NotFoundForView();
 		try
 		{
 			return source.Growing ? await ServeGrowingAsync(session, source.Path, request, method) : await ServeFinishedAsync(session, source.Path!, request, method);
@@ -263,7 +263,7 @@ public sealed class ViewerFiles : IDisposable
 		catch (Exception gone) when (gone is FileNotFoundException or DirectoryNotFoundException)
 		{
 			// A native file deleted or moved since it was opened; a growing one is told apart below.
-			return NotFound();
+			return NotFoundForView();
 		}
 	}
 
@@ -301,6 +301,13 @@ public sealed class ViewerFiles : IDisposable
 	}
 
 	private static ViewerReply NotFound() => Refuse(404, "Not Found");
+
+	/// <summary>A 404 for a request that passed the origin check: the page may read it, so its fetch fails with a status instead of an opaque error.</summary>
+	private static ViewerReply NotFoundForView()
+	{
+		var reply = NotFound();
+		return reply with { Headers = Cors(reply.Headers) };
+	}
 
 	private static Dictionary<string, string> Cors(IReadOnlyDictionary<string, string> headers) =>
 		new(headers, StringComparer.OrdinalIgnoreCase) { ["Access-Control-Allow-Origin"] = App, ["Vary"] = "Origin" };
@@ -463,7 +470,7 @@ public sealed class ViewerFiles : IDisposable
 		// A conversion that failed while the page waited has nothing more to give.
 		lock (_gate)
 		{
-			if (session.State == ConversionState.Failed) return NotFound();
+			if (session.State == ConversionState.Failed) return NotFoundForView();
 		}
 		var headers = Headers(session);
 		headers.Remove("Content-Type");
