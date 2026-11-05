@@ -119,6 +119,14 @@ public sealed partial class EngineStore
 		}
 	}
 
+	/// <summary>The engine's executable if it is downloaded. Unlike <see cref="EnsureAsync"/> it never fetches: running a tool must not download anything the person didn't ask for.</summary>
+	/// <exception cref="EngineNotInstalledException">It hasn't been downloaded.</exception>
+	public string InstalledPath(string id)
+	{
+		var engine = _catalog.Get(id);
+		return InstalledVersion(engine) is null ? throw new EngineNotInstalledException(id) : ExecutablePath(engine);
+	}
+
 	/// <summary>Marks the engine as running, so Remove refuses until the lease is disposed.</summary>
 	public IDisposable Use(string id)
 	{

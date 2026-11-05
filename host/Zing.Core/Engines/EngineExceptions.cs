@@ -34,3 +34,26 @@ public sealed class EngineNotInstalledException(string engineId)
 {
 	public string EngineId { get; } = engineId;
 }
+
+/// <summary>An argument, file name or address the renderer sent isn't one an engine may be given.</summary>
+public sealed class UnsafeEngineArgumentException(string reason) : ArgumentException(reason);
+
+public sealed class TooManyJobsException(int limit)
+	: InvalidOperationException($"Zing runs at most {limit} engine jobs at a time. Wait for one to finish or cancel it, then try again");
+
+public sealed class UnknownJobException(string jobId)
+	: InvalidOperationException($"No engine job {jobId} is running for this window");
+
+/// <summary>The engine ended cleanly but didn't make a file the job was promised.</summary>
+public sealed class EngineOutputMissingException(string name)
+	: IOException($"The engine finished without making {name}");
+
+/// <summary>A file token the renderer sent was never issued by the file picker or a drop in this window.</summary>
+public sealed class UnknownFileGrantException()
+	: UnauthorizedAccessException("That file wasn't picked or dropped in this window, so Zing won't read it");
+
+public sealed class NoDroppedFilesException()
+	: InvalidOperationException("No files were dropped");
+
+public sealed class UnknownFileKindException(string kind)
+	: ArgumentException($"{kind} isn't a kind of file Zing can ask for (image, video, audio, document, any)");
