@@ -372,6 +372,14 @@
 		{
 			"channel": "toolpanel:restore",
 			"args": 1
+		},
+		{
+			"channel": "viewer:close",
+			"args": 1
+		},
+		{
+			"channel": "viewer:open",
+			"args": 2
 		}
 	],
 	"events": [
