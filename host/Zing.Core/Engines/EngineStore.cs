@@ -124,14 +124,25 @@ public sealed partial class EngineStore
 	public string InstalledPath(string id)
 	{
 		var engine = _catalog.Get(id);
+		lock (_gate)
+		{
+			if (Busy(id)) throw new EngineBusyException(id);
+		}
 		return InstalledVersion(engine) is null ? throw new EngineNotInstalledException(id) : ExecutablePath(engine);
 	}
+
+	/// <summary>Called with the gate held.</summary>
+	private bool Busy(string id) => _installs.ContainsKey(id) || _updating.Contains(id);
 
 	/// <summary>Marks the engine as running, so Remove refuses until the lease is disposed.</summary>
 	public IDisposable Use(string id)
 	{
 		_catalog.Get(id);
-		lock (_gate) _uses[id] = _uses.GetValueOrDefault(id) + 1;
+		lock (_gate)
+		{
+			if (Busy(id)) throw new EngineBusyException(id);
+			_uses[id] = _uses.GetValueOrDefault(id) + 1;
+		}
 		return new Lease(() =>
 		{
 			lock (_gate) _uses[id]--;
@@ -164,7 +175,8 @@ public sealed partial class EngineStore
 		var installed = InstalledVersion(current) ?? throw new EngineNotInstalledException(current.Id);
 		lock (_gate)
 		{
-			if (_installs.ContainsKey(current.Id) || !_updating.Add(current.Id)) throw new EngineInUseException(current.Id);
+			// A running job holds the file open, and the new one is moved over it.
+			if (_installs.ContainsKey(current.Id) || _uses.GetValueOrDefault(current.Id) > 0 || !_updating.Add(current.Id)) throw new EngineInUseException(current.Id);
 		}
 		try
 		{

@@ -493,4 +493,31 @@ public sealed class EngineStoreTests : IDisposable
 		Assert.Contains("more than once", error.Message);
 		Assert.Empty(_fixture.Entries());
 	}
+	[Fact]
+	public async Task An_engine_that_is_downloading_cannot_be_used_or_run()
+	{
+		var body = EngineFixture.Bytes(50_000);
+		var release = new TaskCompletionSource();
+		_fixture.ServeSlowly("ffmpeg/ffmpeg.exe", body, 10_000, release.Task);
+		var store = _fixture.Store(_fixture.SingleFile("ffmpeg", body));
+		var running = store.EnsureAsync("ffmpeg", NoProgress, Never);
+
+		Assert.Throws<EngineBusyException>(() => store.Use("ffmpeg"));
+		Assert.Throws<EngineBusyException>(() => store.InstalledPath("ffmpeg"));
+
+		release.SetResult();
+		await running;
+		Assert.EndsWith("ffmpeg.exe", store.InstalledPath("ffmpeg"));
+		store.Use("ffmpeg").Dispose();
+	}
+
+	[Fact]
+	public void An_engine_that_is_not_downloaded_has_no_path()
+	{
+		var body = EngineFixture.Bytes(1_000);
+		var store = _fixture.Store(_fixture.SingleFile("ffmpeg", body));
+
+		Assert.Throws<EngineNotInstalledException>(() => store.InstalledPath("ffmpeg"));
+		Assert.Throws<UnknownEngineException>(() => store.InstalledPath("notepad"));
+	}
 }

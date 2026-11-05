@@ -57,3 +57,10 @@ public sealed class NoDroppedFilesException()
 
 public sealed class UnknownFileKindException(string kind)
 	: ArgumentException($"{kind} isn't a kind of file Zing can ask for (image, video, audio, document, any)");
+
+/// <summary>The engine is being downloaded or updated, so it can't be started or leased until that ends.</summary>
+public sealed class EngineBusyException(string engineId)
+	: InvalidOperationException($"{EngineCatalog.NameOf(engineId)} is being downloaded or updated right now. Wait for that to finish, then try again")
+{
+	public string EngineId { get; } = engineId;
+}

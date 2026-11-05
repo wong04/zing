@@ -255,4 +255,36 @@ public sealed class YtDlpUpdateTests : IDisposable
 		Assert.Equal(pinned, InstalledVersion(later));
 		Assert.Equal(fresh, await File.ReadAllBytesAsync(ExePath, TestContext.Current.CancellationToken));
 	}
+	[Fact]
+	public async Task An_update_is_refused_while_a_job_holds_the_engine()
+	{
+		var store = await InstalledOldAsync();
+		PublishRelease(Sums(EngineFixture.Sha256(_newExe)));
+		var lease = store.Use("ytdlp");
+
+		await Assert.ThrowsAsync<EngineInUseException>(() => store.UpdateYtDlpAsync(CancellationToken.None));
+		Assert.Equal(Old, InstalledVersion(store));
+
+		lease.Dispose();
+		Assert.True((await store.UpdateYtDlpAsync(CancellationToken.None)).Changed);
+	}
+
+	[Fact]
+	public async Task An_engine_that_is_updating_cannot_be_used_or_run()
+	{
+		var store = await InstalledOldAsync();
+		var release = new TaskCompletionSource();
+		_fixture.ServeRedirect("yt-dlp/latest/SHA2-256SUMS", $"yt-dlp/{New}/SHA2-256SUMS");
+		_fixture.ServeRedirect($"yt-dlp/{New}/SHA2-256SUMS", "assets/9f3c/blob");
+		_fixture.ServeSlowly("assets/9f3c/blob", Encoding.UTF8.GetBytes(Sums(EngineFixture.Sha256(_newExe))), 10, release.Task);
+		_fixture.Serve($"yt-dlp/{New}/yt-dlp.exe", _newExe);
+		var updating = store.UpdateYtDlpAsync(CancellationToken.None);
+		await Task.Delay(300, TestContext.Current.CancellationToken);
+
+		Assert.Throws<EngineBusyException>(() => store.Use("ytdlp"));
+		Assert.Throws<EngineBusyException>(() => store.InstalledPath("ytdlp"));
+
+		release.SetResult();
+		await updating;
+	}
 }
