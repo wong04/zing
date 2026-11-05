@@ -33,6 +33,31 @@ public sealed class EngineRunnerTests : IDisposable
 	private static string Text(JobExit exit) => $"code {exit.Code}, cancelled {exit.Cancelled}, error {exit.Error}, outputs {string.Join(",", exit.Outputs)}";
 
 	[Fact]
+	public async Task A_tool_is_told_where_the_output_is_staged_before_the_engine_starts_and_the_path_is_gone_after_placement()
+	{
+		await _f.InstallAsync();
+		IReadOnlyList<string>? staged = null;
+		var existedAtCallback = true;
+		var request = _f.Request(["clip.txt"], Literal("--fake-write"), Output(0)) with
+		{
+			OutputsStaged = paths =>
+			{
+				staged = paths;
+				existedAtCallback = File.Exists(paths[0]);
+			},
+		};
+
+		var exit = await _f.RunAsync(request);
+
+		Assert.Equal(0, exit.Code);
+		var path = Assert.Single(staged!);
+		Assert.False(existedAtCallback);
+		Assert.EndsWith(Path.Combine("0", "clip.txt"), path);
+		Assert.False(File.Exists(path));
+		Assert.True(File.Exists(Assert.Single(exit.Outputs)));
+	}
+
+	[Fact]
 	public async Task A_file_named_like_an_option_and_an_accented_name_arrive_as_single_unchanged_arguments()
 	{
 		await _f.InstallAsync();

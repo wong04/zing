@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Zing.Core.Engines;
+using Zing.Core.Viewer;
 
 namespace Zing.Core;
 
@@ -57,7 +58,7 @@ public interface IWindowHost
 /// <param name="BrowsingData">Settings' Clear browsing session; null where the host has no engine to clear.</param>
 /// <param name="Engines">The downloaded engines (FFmpeg and the rest), shared by every window; null where the host has none.</param>
 /// <param name="Runner">Runs them; shared so that "at most 3 jobs" holds for all of Zing. Null where the host has none.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, EngineStore? Engines = null, EngineRunner? Runner = null)
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -95,6 +96,9 @@ public sealed class ChromeApi : IDisposable
 
 	/// <summary>Where the host leaves what a Zing view dropped until the renderer collects it.</summary>
 	public DropInbox Drops { get; }
+
+	/// <summary>The files open in this window's viewer panels; null on a host with no temporary folder for converted copies.</summary>
+	public ViewerFiles? Viewer { get; }
 
 	public TabService Tabs { get; }
 
@@ -135,6 +139,11 @@ public sealed class ChromeApi : IDisposable
 		Permissions = new PermissionBroker(PageUi);
 		Drops = new DropInbox(Grants);
 		bridge.UseDropInbox(Drops);
+		if (app.ViewerRoot is { } viewerRoot)
+		{
+			Viewer = new ViewerFiles(viewerRoot, (what, error) => host.Warn(what, error));
+			bridge.UseViewer(Viewer);
+		}
 		Stacks = new StackDropdown(key => StackMembers.Of(Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")), Ordering.Stacks(), key), host.Scheduler, state =>
 		{
 			host.Push("stack:dropdown", state);
@@ -154,6 +163,8 @@ public sealed class ChromeApi : IDisposable
 		Shell.PanelsChanged += state => host.Push("toolpanel:state", state);
 		// A job belongs to its panel: once the panel is gone (minimized is not gone) its engine is stopped.
 		Shell.PanelsChanged += state => app.Runner?.KillPanelsExcept(_windowId, state.Panels.Select(p => p.Id).ToHashSet(StringComparer.Ordinal));
+		// A viewer file is shown in its panel and goes with it; its copy is deleted.
+		Shell.PanelsChanged += state => Viewer?.CloseExcept(state.Panels.Select(p => p.Id).ToHashSet(StringComparer.Ordinal));
 		Shell.SurfaceRegionChanged += host.SurfaceRegionChanged;
 		Shell.FocusSurfaceRequested += host.FocusSurface;
 		Shell.SetSidebarWidth(SidebarWidth());
@@ -249,6 +260,8 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("engines:cancel-job", args => Do(() => Runner().Cancel(Text(args, 0), _windowId)));
 		bridge.Register("files:pick", args => PickFilesAsync(Arg(args, 0)));
 		bridge.Register("files:open-dropped", _ => Drops.Take());
+		bridge.Register("viewer:open", args => OpenViewerFile(Text(args, 0), Text(args, 1)));
+		bridge.Register("viewer:close", args => Do(() => CloseViewerFile(Text(args, 0))));
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
 		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
@@ -384,6 +397,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		_disposed = true;
 		_app.Runner?.KillWindow(_windowId);
+		Viewer?.Dispose();
 		_closing.Cancel();
 		_closing.Dispose();
 		foreach (var subscription in _subscriptions) subscription.Dispose();
@@ -500,6 +514,80 @@ public sealed class ChromeApi : IDisposable
 			Strings(spec, "outputs"),
 			Strings(spec, "urls"));
 		return runner.Start(new JobOwner(_windowId, panelId), request, PushJobOutput, PushJobExit);
+	}
+
+	/// <summary>
+	/// Shows a picked or dropped file in a viewer panel. Chromium's own formats are served from where they are; the rest are converted
+	/// into a temporary copy by an engine owned by the panel, so closing the panel stops the job and deletes the copy.
+	/// </summary>
+	private object OpenViewerFile(string token, string panelId)
+	{
+		var viewer = Viewer ?? throw new InvalidOperationException("This host can't show files");
+		var path = Grants.Resolve(token);
+		if (!File.Exists(path)) throw new FileNotFoundException($"{Path.GetFileName(path)} isn't there any more. Pick it again", path);
+		if (!Shell.PanelsState().Panels.Any(p => p.Id == panelId)) throw new UnknownPanelException(panelId);
+		var format = ViewerFormats.For(Path.GetExtension(path)) ?? throw new UnsupportedViewerFormatException(Path.GetExtension(path).TrimStart('.'));
+		CloseViewerPanel(panelId);
+		if (!format.Converted) return Opened(viewer.OpenNative(path, panelId, format));
+		var runner = Runner();
+		var session = viewer.OpenConverted(path, panelId, format);
+		try
+		{
+			var request = new EngineJobRequest(
+				ViewerConversion.EngineFor(format.Kind),
+				ViewerConversion.Args(format.Kind, path),
+				session.Folder!,
+				[session.OutputName!],
+				[],
+				staged => viewer.BeginLive(session.Id, staged[0]));
+			session.JobId = runner.Start(new JobOwner(_windowId, panelId), request, PushJobOutput, exit => EndViewerJob(viewer, session, exit));
+		}
+		catch
+		{
+			viewer.Abandon(session.Id);
+			throw;
+		}
+		return Opened(session);
+	}
+
+	private sealed record ViewerOpened(string Id, string Name, string Show, string Url, string? JobId, bool Stream);
+
+	private static ViewerOpened Opened(ViewerSession session) => new(session.Id, session.Name, session.Format.Show, session.Url, session.JobId, session.Stream);
+
+	/// <summary>The copy is done, or it isn't. The renderer is told by the usual exit event, without a token for the temporary file.</summary>
+	private void EndViewerJob(ViewerFiles viewer, ViewerSession session, JobExit exit)
+	{
+		if (exit.Code == 0 && !exit.Cancelled && exit.Error is null && exit.Outputs.Count == 1) viewer.Complete(session.Id, exit.Outputs[0]);
+		else viewer.Fail(session.Id);
+		if (!_disposed) _host.Push("engines:exit", new JobExitEvent(exit.JobId, exit.Code, exit.Cancelled, [], exit.StderrTail, exit.Error));
+	}
+
+	private void CloseViewerFile(string id)
+	{
+		if (Viewer?.Find(id) is { } session) CloseViewerSession(session);
+	}
+
+	private void CloseViewerPanel(string panelId)
+	{
+		if (Viewer?.ForPanel(panelId) is { } session) CloseViewerSession(session);
+	}
+
+	private void CloseViewerSession(ViewerSession session)
+	{
+		if (session.JobId is { } job) StopJob(job);
+		Viewer!.Close(session.Id);
+	}
+
+	private void StopJob(string jobId)
+	{
+		try
+		{
+			Runner().Cancel(jobId, _windowId);
+		}
+		catch (UnknownJobException)
+		{
+			// So long ago that the runner has forgotten it: it is not running.
+		}
 	}
 
 	private JobArg JobArgument(JsonElement arg)

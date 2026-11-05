@@ -175,7 +175,17 @@ internal sealed class EngineFlagPolicy
 				("-t", new FlagSpec(FlagValue.Number)),
 				("-vn", new FlagSpec()),
 				("-an", new FlagSpec()),
-				("-f", new FlagSpec(FlagValue.OneOf) { Choices = FfmpegFormats })),
+				("-f", new FlagSpec(FlagValue.OneOf) { Choices = FfmpegFormats }),
+				// The file viewer's conversions. None names a file, an address or a program: -sn and -dn drop streams, the rest are
+				// numbers or a fixed word, and -movflags takes the one fixed set that makes a fragmented MP4.
+				("-sn", new FlagSpec()),
+				("-dn", new FlagSpec()),
+				("-preset", new FlagSpec(FlagValue.OneOf) { Choices = ["ultrafast", "superfast", "veryfast", "faster", "fast"] }),
+				("-crf", new FlagSpec(FlagValue.Number)),
+				("-g", new FlagSpec(FlagValue.Number)),
+				("-pix_fmt", new FlagSpec(FlagValue.OneOf) { Choices = ["yuv420p"] }),
+				("-ac", new FlagSpec(FlagValue.OneOf) { Choices = ["2"] }),
+				("-movflags", new FlagSpec(FlagValue.OneOf) { Choices = ["frag_keyframe+empty_moov+default_base_moof"] })),
 			["-nostdin"],
 			new Dictionary<string, string[]> { ["-i"] = ["-protocol_whitelist", "file,pipe"] },
 			["mp4", "mov", "mkv", "webm", "mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "gif", "jpg", "jpeg", "png", "webp"],
@@ -200,7 +210,10 @@ internal sealed class EngineFlagPolicy
 			Table(
 				("-quality", new FlagSpec(FlagValue.Number)),
 				("-strip", new FlagSpec()),
-				("-auto-orient", new FlagSpec())),
+				("-auto-orient", new FlagSpec()),
+				// The file viewer shows the first frame of a picture, no bigger than a screen needs. Both take one fixed word.
+				("-delete", new FlagSpec(FlagValue.OneOf) { Choices = ["1--1"] }),
+				("-resize", new FlagSpec(FlagValue.OneOf) { Choices = ["4096x4096>"] })),
 			[],
 			new Dictionary<string, string[]>(),
 			["jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff", "avif", "heic", "ico"],

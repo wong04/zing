@@ -223,7 +223,9 @@ public sealed class ZingApp
 		if (openedAccount.Problem is { } accountProblem) StartupProblem("account", "your Zing account", "without it", accountProblem);
 		var account = openedAccount.Value;
 		var engines = OpenEngines();
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData, purger, engines, engines is null ? null : OpenRunner(engines));
+		// Reached only by the Zing that owns this profile (the single-instance check came first), so what is in the folder is a dead Zing's.
+		Zing.Core.Viewer.ViewerFiles.SweepLeftovers(AppPaths.ViewerCopies, Zing.Core.Viewer.ViewerFiles.IsZingRunning, (what, error) => TestHooks.Record(what, error));
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData, purger, engines, engines is null ? null : OpenRunner(engines), AppPaths.ViewerCopies);
 	}
 
 	/// <summary>Clears the job folders a killed Zing left. A folder that can't be tidied costs running engines, not startup.</summary>

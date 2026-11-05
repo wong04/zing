@@ -175,6 +175,23 @@ public sealed class ViewerFiles : IDisposable
 		}
 	}
 
+	public ViewerSession? Find(string id)
+	{
+		lock (_gate) return _sessions.GetValueOrDefault(id);
+	}
+
+	public ViewerSession? ForPanel(string panel)
+	{
+		lock (_gate) return _sessions.Values.FirstOrDefault(session => session.Panel == panel);
+	}
+
+	/// <summary>Whether an address is on the viewer's host, whoever asks: a page tab's request for one is answered 404 without looking further.</summary>
+	public static bool IsViewerAddress(string url) =>
+		Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && string.Equals(uri.Host, Host, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>The reply for an address on the viewer's host that no Zing view of a window answers.</summary>
+	public static ViewerReply Unavailable() => NotFound();
+
 	/// <summary>Forgets the file: its address answers 404 and its copy is deleted. A close is not an error twice.</summary>
 	public void Close(string id) => Remove(id, awaitExit: true);
 
