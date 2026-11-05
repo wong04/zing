@@ -490,6 +490,36 @@ public sealed class ViewerFilesTests : IDisposable
 	}
 
 	[Fact]
+	public void The_sweep_of_a_root_that_is_itself_a_junction_removes_the_link_and_leaves_the_target_alone()
+	{
+		var target = Path.Combine(_dir, "users-folder");
+		Directory.CreateDirectory(Path.Combine(target, "docs"));
+		File.WriteAllText(Path.Combine(target, "docs", "mine.txt"), "keep");
+		File.WriteAllText(Path.Combine(target, "4000000_looks-like-ours"), "keep");
+		var root = Path.Combine(_dir, "planted");
+		MakeJunction(root, target);
+		ViewerFiles.SweepLeftovers(root, _ => false, (what, error) => throw new InvalidOperationException($"{what}: {error}"));
+		Assert.True(File.Exists(Path.Combine(target, "docs", "mine.txt")));
+		Assert.True(File.Exists(Path.Combine(target, "4000000_looks-like-ours")));
+		Assert.True(Directory.Exists(root));
+		Assert.False(new DirectoryInfo(root).Attributes.HasFlag(FileAttributes.ReparsePoint));
+	}
+
+	[Fact]
+	public void Opening_a_copy_when_the_root_is_a_junction_replaces_the_link_and_never_writes_through_it()
+	{
+		var target = Path.Combine(_dir, "users-folder2");
+		Directory.CreateDirectory(target);
+		var root = Path.Combine(_dir, "planted2");
+		MakeJunction(root, target);
+		using var viewer = new ViewerFiles(root, (_, _) => { });
+		var session = viewer.OpenConverted("a.mov", "p", ViewerFormats.For("mov")!);
+		Assert.Empty(Directory.GetFileSystemEntries(target));
+		Assert.False(new DirectoryInfo(root).Attributes.HasFlag(FileAttributes.ReparsePoint));
+		Assert.True(Directory.Exists(session.Folder));
+	}
+
+	[Fact]
 	public void A_zing_that_is_running_is_known_by_its_process_name()
 	{
 		Assert.False(ViewerFiles.IsZingRunning(int.MaxValue));

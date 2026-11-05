@@ -118,6 +118,7 @@ public sealed class ViewerFiles : IDisposable
 		return Add(panel, id =>
 		{
 			var folder = Path.Combine(_root, $"{Environment.ProcessId}_{id[..8]}");
+			EnsureRealRoot(_root);
 			Directory.CreateDirectory(folder);
 			return new ViewerSession(id, panel, Path.GetFileName(sourceName), format, null, folder);
 		});
@@ -488,11 +489,25 @@ public sealed class ViewerFiles : IDisposable
 	public static void SweepLeftovers(string root, Func<int, bool> isZingRunning, Action<string, Exception> onError)
 	{
 		if (!Directory.Exists(root)) return;
+		if (IsLink(new DirectoryInfo(root)))
+		{
+			// Something else made the root a link (to a person's folder, say): only the link goes, never what it points at.
+			EnsureRealRoot(root);
+			return;
+		}
 		foreach (var entry in new DirectoryInfo(root).EnumerateFileSystemInfos().ToList())
 		{
 			var live = entry is DirectoryInfo && !IsLink(entry) && OwnerFolder.Match(entry.Name) is { Success: true } owner && int.TryParse(owner.Groups[1].Value, out var pid) && isZingRunning(pid);
 			if (!live) RemoveWithoutFollowing(entry, onError);
 		}
+	}
+
+	/// <summary>Makes sure <paramref name="root"/> is a real folder: a junction or link planted in its place is removed (the link only) and a folder made.</summary>
+	private static void EnsureRealRoot(string root)
+	{
+		var info = new DirectoryInfo(root);
+		if (info.Exists && IsLink(info)) info.Delete();
+		Directory.CreateDirectory(root);
 	}
 
 	/// <summary>Whether a process of this id is a running Zing.</summary>
