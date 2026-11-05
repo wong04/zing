@@ -191,3 +191,19 @@ test('HTML to PDF is printed by Chromium with scripts and the network off', asyn
 	await expect.poll(() => (existsSync(scratch) ? readdirSync(scratch) : [])).toEqual([])
 	await zing.close()
 })
+
+test('two prints at once both finish: one does not remove the other browser profile', async () => {
+	fixture = await startEngineFixture()
+	const zing = await launchZing({ env: fixture.env })
+	const files = ['one.html', 'two.html'].map((name) => join(zing.userDataDir, name))
+	for (const file of files) writeFileSync(file, `<h1>${file}</h1>`)
+	await queuePick(zing, ...files)
+	const picked = await zing.chrome.evaluate(() => window.zing.pickFiles(['document']))
+	const started = Date.now()
+	const results = await zing.chrome.evaluate((tokens) => Promise.all(tokens.map((p, i) => window.zing.printHtmlToPdf(p.token, `out${i}.pdf`))), picked)
+	expect(results.map((r) => r.name).sort()).toEqual(['out0.pdf', 'out1.pdf'])
+	for (const name of ['out0.pdf', 'out1.pdf']) expect(readFileSync(join(zing.userDataDir, 'downloads', name)).subarray(0, 5).toString('latin1')).toBe('%PDF-')
+	// Prints take turns, so a second one is neither concurrent nor delayed by a sweep.
+	expect(Date.now() - started).toBeLessThan(60_000)
+	await zing.close()
+})

@@ -1,5 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
+using Zing.Core.Engines;
 
 namespace Zing.Host;
 
@@ -15,9 +16,24 @@ internal static class HtmlPdfPrinter
 
 	private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
 
+	/// <summary>One print at a time: each starts a browser of its own, and a compromised renderer must not be able to start many.</summary>
+	private static readonly SemaphoreSlim Turn = new(1, 1);
+
 	public static async Task PrintAsync(HostWindow window, WindowScope scope, string html, string pdfPath, CancellationToken cancellation)
 	{
-		await SweepLeftoversAsync();
+		await Turn.WaitAsync(cancellation);
+		try
+		{
+			await PrintOneAsync(window, scope, html, pdfPath, cancellation);
+		}
+		finally
+		{
+			Turn.Release();
+		}
+	}
+
+	private static async Task PrintOneAsync(HostWindow window, WindowScope scope, string html, string pdfPath, CancellationToken cancellation)
+	{
 		var profile = Path.Combine(AppPaths.PrintScratch, Guid.NewGuid().ToString("N"));
 		Directory.CreateDirectory(profile);
 		HostedView? view = null;
@@ -46,7 +62,14 @@ internal static class HtmlPdfPrinter
 			await LoadAsync(core, html, cancellation);
 			var settings = environment.CreatePrintSettings();
 			settings.ShouldPrintBackgrounds = true;
-			if (!await core.PrintToPdfAsync(pdfPath, settings)) throw new InvalidOperationException("Chromium could not print the page to a PDF");
+			try
+			{
+				if (!await core.PrintToPdfAsync(pdfPath, settings).AsTask().WaitAsync(Timeout, cancellation)) throw new HtmlPdfException("Chromium could not print the page to a PDF");
+			}
+			catch (TimeoutException)
+			{
+				throw new HtmlPdfException($"Printing took longer than {Timeout.TotalSeconds:0} seconds, so Zing stopped it");
+			}
 		}
 		finally
 		{
@@ -72,11 +95,21 @@ internal static class HtmlPdfPrinter
 		await done.Task;
 	}
 
-	/// <summary>A crash can leave a profile folder; each print starts by removing them.</summary>
-	private static async Task SweepLeftoversAsync()
+	/// <summary>A crash can leave a profile folder. Run once when Zing starts, before any print: a print's own folder is never another print's leftover.</summary>
+	public static void SweepLeftovers()
 	{
 		if (!Directory.Exists(AppPaths.PrintScratch)) return;
-		foreach (var leftover in Directory.GetDirectories(AppPaths.PrintScratch)) await DiscardAsync(leftover);
+		foreach (var leftover in Directory.GetDirectories(AppPaths.PrintScratch))
+		{
+			try
+			{
+				Directory.Delete(leftover, recursive: true);
+			}
+			catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+			{
+				TestHooks.Record("print scratch", error);
+			}
+		}
 	}
 
 	/// <summary>The browser process may hold the folder for a moment after its view closes; a folder that stays is swept at the next print.</summary>
