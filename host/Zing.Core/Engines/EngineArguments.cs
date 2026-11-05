@@ -12,15 +12,18 @@ public static class EngineArguments
 
 	/// <summary>
 	/// The operands for yt-dlp-style tools: a "--" so nothing after it is an option, then each address. Only absolute
-	/// http and https addresses pass, so no file:, no relative text, and nothing that starts with "-".
+	/// http and https addresses pass: no file:, no relative text, nothing that starts with "-", no sign-in in the address,
+	/// no space or control character, and nothing that names this PC or the local network (a renderer can't be trusted to
+	/// have checked: this is the only engine with the network).
 	/// </summary>
 	public static IReadOnlyList<string> Urls(IEnumerable<string> urls)
 	{
 		List<string> operands = ["--"];
 		foreach (var url in urls)
 		{
-			var valid = Uri.TryCreate(url, UriKind.Absolute, out var parsed) && parsed.Scheme is "http" or "https" && !url.StartsWith('-');
+			var valid = !url.StartsWith('-') && !url.Any(c => c <= ' ' || c == '') && Uri.TryCreate(url, UriKind.Absolute, out var parsed) && parsed.Scheme is "http" or "https" && parsed.UserInfo.Length == 0;
 			if (!valid) throw new UnsafeEngineArgumentException($"{url} isn't an http or https address");
+			if (LocalAddresses.IsLocal(new Uri(url))) throw new UnsafeEngineArgumentException($"{url} is on this PC or the local network");
 			operands.Add(url);
 		}
 		return operands;

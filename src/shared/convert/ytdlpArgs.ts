@@ -56,8 +56,10 @@ function ipv6Local(bracketed: string): boolean {
 	// Anything this can't read is refused rather than let through.
 	if (!groups) return true
 	const [first, second] = groups as [number, number]
-	if (groups.every((group) => group === 0) || (groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1)) return true
-	if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xff00) === 0xff00) return true
+	// IPv4-compatible (::a.b.c.d, which also covers :: and ::1) carries an IPv4 address in the last 32 bits.
+	if (groups.slice(0, 6).every((group) => group === 0)) return embeddedIpv4(groups[6]!, groups[7]!)
+	// Unique-local (fc00::/7), link-local (fe80::/10), site-local (fec0::/10) and multicast (ff00::/8).
+	if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xffc0) === 0xfec0 || (first & 0xff00) === 0xff00) return true
 	// IPv4-mapped (::ffff:a.b.c.d) and NAT64 (64:ff9b::/96) carry an IPv4 address in the last 32 bits.
 	const mapped = groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff
 	const nat64 = first === 0x64 && second === 0xff9b && groups.slice(2, 6).every((group) => group === 0)

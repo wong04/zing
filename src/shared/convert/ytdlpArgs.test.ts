@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { explainMediaFailure, looksLikeExtractorBreakage } from './ytdlpErrors'
 import { InvalidMediaUrlError, parseMediaUrl, parseProgress, ytdlpJob } from './ytdlpArgs'
+
+// Shared with the host's EngineArguments.Urls tests: the same addresses are refused on both sides.
+const vectors = JSON.parse(readFileSync(new URL('./mediaUrl.vectors.json', import.meta.url), 'utf8')) as { refuse: string[]; accept: string[] }
 
 const watch = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
 
@@ -48,41 +52,10 @@ describe('parseMediaUrl', () => {
 	it('refuses a sign-in embedded in the address', () => {
 		expect(() => parseMediaUrl('https://user:secret@example.com/a')).toThrow(InvalidMediaUrlError)
 	})
-	it.each([
-		'http://localhost/a',
-		'http://LOCALHOST:8080/a',
-		'http://app.localhost/a',
-		'http://127.0.0.1/a',
-		'http://127.1/a',
-		'http://2130706433/a',
-		'http://0x7f.0.0.1/a',
-		'http://0/a',
-		'http://10.0.0.5/a',
-		'http://172.16.0.1/a',
-		'http://172.31.255.255/a',
-		'http://192.168.1.1/a',
-		'http://169.254.169.254/latest',
-		'http://100.64.0.1/a',
-		'http://224.0.0.1/a',
-		'http://[::1]/a',
-		'http://[::]/a',
-		'http://[fe80::1]/a',
-		'http://[fc00::1]/a',
-		'http://[fd12:3456::1]/a',
-		'http://[::ffff:127.0.0.1]/a',
-		'http://[::ffff:192.168.0.1]/a',
-		'http://[64:ff9b::7f00:1]/a',
-		'http://[2002:7f00:1::]/a',
-		'http://printer/a',
-		'http://nas.local/a',
-		'http://router.lan/a',
-		'http://something.internal/a',
-		'http://home.arpa/a',
-		'http://localhost./a',
-	])('refuses the local address %s', (text) => {
+	it.each(vectors.refuse)('refuses the local address %s', (text) => {
 		expect(() => parseMediaUrl(text)).toThrow(InvalidMediaUrlError)
 	})
-	it.each(['http://172.15.0.1/a', 'http://172.32.0.1/a', 'http://8.8.8.8/a', 'http://100.63.0.1/a', 'http://[2606:4700::1111]/a', 'https://sub.example.co.uk/a'])('accepts the public address %s', (text) => {
+	it.each(vectors.accept)('accepts the public address %s', (text) => {
 		expect(parseMediaUrl(text)).toBe(new URL(text).href)
 	})
 })
