@@ -112,7 +112,7 @@ describe('yt-dlp failures (ported from DownloadErrors.swift)', () => {
 		expect(message).not.toContain('--ffmpeg-location')
 	})
 	it('never shows cookie advice from yt-dlp, whatever its last line says', () => {
-		for (const line of ['ERROR: [site] x: Login required. Use --cookies-from-browser or --cookies for the authentication.', 'ERROR: This content needs --cookies']) {
+		for (const line of ['ERROR: [site] x: Login required. Use --cookies-from-browser or --cookies for the authentication.', 'ERROR: This content needs --cookies', 'ERROR: [site] Login required: export your Cookies to a file', 'ERROR: needs a cookie jar']) {
 			const failure = explainMediaFailure(`WARNING: a
 ${line}
 `, 1)

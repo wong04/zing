@@ -87,7 +87,10 @@ export function parseMediaUrl(text: string): string {
 	if (trimmed === '') throw new InvalidMediaUrlError('Paste a link to a video first.')
 	// The URL parser silently drops tabs and line breaks, which would make "two addresses" look like one.
 	// eslint-disable-next-line no-control-regex
-	if (/[\u0000- \u007f]/.test(trimmed)) throw new InvalidMediaUrlError("That doesn't look like one link. Remove spaces and line breaks.")
+	if (/[\u0000-\u0020\u007f]/.test(trimmed)) throw new InvalidMediaUrlError("That doesn't look like one link. Remove spaces and line breaks.")
+	// A backslash is a slash to the URL parser here but part of the host to yt-dlp's (a.com\@127.0.0.1 is 127.0.0.1 to Python), and a
+	// percent in the host is decoded by one and not the other. The host refuses both too.
+	if (trimmed.includes('\\') || /^[a-z]+:\/\/[^/?#]*%/i.test(trimmed)) throw new InvalidMediaUrlError("That link has a character in its address that Zing doesn't accept.")
 	let url: URL
 	try {
 		url = new URL(trimmed)

@@ -79,6 +79,20 @@ public sealed class EngineArgumentsTests
 		Assert.Equal(["--", url], EngineArguments.Urls([url]));
 	}
 
+	[Fact]
+	public void The_engine_gets_the_text_that_was_checked_not_the_text_that_was_sent()
+	{
+		Assert.Equal(["--", "https://example.com/", "http://127.0.0.1.example.com/a"], EngineArguments.Urls(["https://EXAMPLE.com", "http://127.0.0.1.example.com/a"]));
+	}
+
+	[Theory]
+	[InlineData("http://example.com/a\b")]
+	[InlineData("http://exa%6dple.com/")]
+	public void A_backslash_or_a_percent_in_the_host_is_refused_because_other_parsers_read_them_differently(string url)
+	{
+		Assert.Throws<UnsafeEngineArgumentException>(() => EngineArguments.Urls([url]));
+	}
+
 	[Theory]
 	[InlineData("https://user:secret@example.com/a")]
 	[InlineData("https://example.com/a\nhttps://example.org/")]

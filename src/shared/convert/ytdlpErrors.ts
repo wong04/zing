@@ -70,6 +70,6 @@ export function explainMediaFailure(stderr: string, exitCode: number): MediaFail
 	if (FFMPEG_MISSING.test(text)) return plain("yt-dlp couldn't find FFmpeg to finish the file. Remove it and download it again in Settings, Files, Engines.")
 	const last = lastLine(stderr)
 	// yt-dlp's own advice may be to hand it cookies, which Zing never does.
-	if (last !== null && /--cookies|cookies-from-browser/.test(last.toLowerCase())) return plain("This site needs a sign-in. Zing doesn't use your browser's sign-ins.")
+	if (last !== null && /cookie/i.test(last)) return plain("This site needs a sign-in. Zing doesn't use your browser's sign-ins.")
 	return { message: last ?? `yt-dlp exited with code ${exitCode}.`, offerUpdate: looksLikeExtractorBreakage(stderr) }
 }
