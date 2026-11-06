@@ -4,9 +4,10 @@
 import { PDF_LIMITS, PdfEditError, type OverlayItem, type PdfPlan, type RightAngle } from '@shared/pdf/pdfCore'
 
 export interface FileInfo {
+	/** Index of the file in the panel's list of opened files; it never changes, and Undo does not close a file. */
+	readonly source: number
 	readonly name: string
 	readonly pageCount: number
-	readonly bytes: number
 }
 
 export interface PageEntry {
@@ -27,7 +28,6 @@ export interface PlacedItem {
 }
 
 export interface Model {
-	readonly files: readonly FileInfo[]
 	readonly pages: readonly PageEntry[]
 	readonly items: readonly PlacedItem[]
 	readonly form: Readonly<Record<string, string>>
@@ -35,17 +35,21 @@ export interface Model {
 }
 
 export function emptyModel(): Model {
-	return { files: [], pages: [], items: [], form: {}, nextKey: 1 }
+	return { pages: [], items: [], form: {}, nextKey: 1 }
 }
 
 /** Adds all of a file's pages at the end. */
 export function addFile(model: Model, file: FileInfo): Model {
-	const total = model.files.reduce((sum, f) => sum + f.bytes, 0) + file.bytes
-	if (total > PDF_LIMITS.maxSessionBytes) throw new PdfEditError(`${file.name} would take the open files past ${PDF_LIMITS.maxSessionBytes / (1024 * 1024)} MB, which is all the memory the PDF tools use. Close the panel to start afresh.`)
 	if (model.pages.length + file.pageCount > PDF_LIMITS.maxPages) throw new PdfEditError(`${file.name} would make ${model.pages.length + file.pageCount} pages; the PDF tools handle up to ${PDF_LIMITS.maxPages}.`)
-	const source = model.files.length
-	const added = Array.from({ length: file.pageCount }, (_, i): PageEntry => ({ key: model.nextKey + i, source, page: i + 1, rotate: 0 }))
-	return { ...model, files: [...model.files, file], pages: [...model.pages, ...added], nextKey: model.nextKey + file.pageCount }
+	const added = Array.from({ length: file.pageCount }, (_, i): PageEntry => ({ key: model.nextKey + i, source: file.source, page: i + 1, rotate: 0 }))
+	return { ...model, pages: [...model.pages, ...added], nextKey: model.nextKey + file.pageCount }
+}
+
+/** The files stay in memory until the panel closes, even when Undo takes their pages out, so they are counted as they are opened. */
+export function checkSessionBytes(openBytes: number, adding: number, name: string): void {
+	if (openBytes + adding > PDF_LIMITS.maxSessionBytes) {
+		throw new PdfEditError(`${name} would take the open files past ${PDF_LIMITS.maxSessionBytes / (1024 * 1024)} MB, which is all the memory the PDF tools use. Close the panel and start again with fewer files.`)
+	}
 }
 
 /** Moves a page one place earlier (-1) or later (1); the model is returned as it was when the page is at that end. */
@@ -121,6 +125,15 @@ export function toPlan(model: Model): PdfPlan {
 	return Object.keys(model.form).length === 0 ? { pages, overlays } : { pages, overlays, formValues: model.form }
 }
 
+/** The plan for just the pages `from` to `to` of the result (counted from 1), with their items. Form values are left out: a part is a new file, not the form. */
+export function toPlanRange(model: Model, range: { readonly from: number; readonly to: number }): PdfPlan {
+	const whole = toPlan(model)
+	return {
+		pages: whole.pages.slice(range.from - 1, range.to),
+		overlays: whole.overlays.filter((o) => o.page >= range.from && o.page <= range.to).map((o) => ({ ...o, page: o.page - range.from + 1 })),
+	}
+}
+
 export interface History {
 	readonly past: readonly Model[]
 	readonly present: Model
@@ -132,6 +145,11 @@ export function startHistory(model: Model): History {
 }
 
 /** Makes `next` the present. What could have been redone is forgotten. */
+/** Replaces the present without a new step, for a run of small changes to one thing (a slider drag) that Undo should take back at once. */
+export function amend(history: History, next: Model): History {
+	return { ...history, present: next }
+}
+
 export function commit(history: History, next: Model): History {
 	if (next === history.present) return history
 	return trim({ past: [...history.past, history.present], present: next, future: [] })

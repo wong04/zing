@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { PDF_LIMITS, PdfEditError } from '@shared/pdf/pdfCore'
 import {
 	addFile,
+	amend,
+	checkSessionBytes,
 	addItem,
 	deletePages,
 	emptyModel,
@@ -13,6 +15,7 @@ import {
 	setFormValue,
 	startHistory,
 	toPlan,
+	toPlanRange,
 	trim,
 	undo,
 	commit,
@@ -23,7 +26,7 @@ import {
 const text = { kind: 'text', text: 'hi', x: 1, y: 2, size: 12 } as const
 
 function twoFiles(): Model {
-	return addFile(addFile(emptyModel(), { name: 'a.pdf', pageCount: 2, bytes: 10 }), { name: 'b.pdf', pageCount: 3, bytes: 10 })
+	return addFile(addFile(emptyModel(), { source: 0, name: 'a.pdf', pageCount: 2 }), { source: 1, name: 'b.pdf', pageCount: 3 })
 }
 
 describe('the page list', () => {
@@ -57,13 +60,13 @@ describe('the page list', () => {
 		expect(() => deletePages(model, model.pages.map((p) => p.key))).toThrow(PdfEditError)
 	})
 	it('refuses a session over the memory limit', () => {
-		expect(() => addFile(emptyModel(), { name: 'big.pdf', pageCount: 1, bytes: PDF_LIMITS.maxSessionBytes + 1 })).toThrow(/memory/)
-		const model = addFile(emptyModel(), { name: 'a.pdf', pageCount: 1, bytes: PDF_LIMITS.maxSessionBytes })
-		expect(() => addFile(model, { name: 'b.pdf', pageCount: 1, bytes: 1 })).toThrow(PdfEditError)
+		expect(() => checkSessionBytes(0, PDF_LIMITS.maxSessionBytes + 1, 'big.pdf')).toThrow(/memory/)
+		expect(() => checkSessionBytes(PDF_LIMITS.maxSessionBytes, 1, 'b.pdf')).toThrow(PdfEditError)
+		expect(() => checkSessionBytes(PDF_LIMITS.maxSessionBytes - 1, 1, 'b.pdf')).not.toThrow()
 	})
 	it('refuses a session over the page limit', () => {
-		const model = addFile(emptyModel(), { name: 'a.pdf', pageCount: PDF_LIMITS.maxPages, bytes: 1 })
-		expect(() => addFile(model, { name: 'b.pdf', pageCount: 1, bytes: 1 })).toThrow(/pages/)
+		const model = addFile(emptyModel(), { source: 0, name: 'a.pdf', pageCount: PDF_LIMITS.maxPages })
+		expect(() => addFile(model, { source: 1, name: 'b.pdf', pageCount: 1 })).toThrow(/pages/)
 	})
 })
 
@@ -91,9 +94,22 @@ describe('the plan', () => {
 		expect(plan.overlays).toEqual([{ page: 1, items: [text] }])
 	})
 	it('carries the form values only when there are some', () => {
-		const model = addFile(emptyModel(), { name: 'f.pdf', pageCount: 1, bytes: 1 })
+		const model = addFile(emptyModel(), { source: 0, name: 'f.pdf', pageCount: 1 })
 		expect(toPlan(model).formValues).toBeUndefined()
 		expect(toPlan(setFormValue(model, 'name', 'Zed')).formValues).toEqual({ name: 'Zed' })
+	})
+})
+
+describe('the plan for a range', () => {
+	it('keeps the pages in the range, with their items renumbered and no form values', () => {
+		let model = twoFiles()
+		model = addItem(model, model.pages[3]!.key, text)
+		model = setFormValue(model, 'a', 'b')
+		const part = toPlanRange(model, { from: 3, to: 5 })
+		expect(part.pages).toEqual([{ source: 1, page: 1, rotate: 0 }, { source: 1, page: 2, rotate: 0 }, { source: 1, page: 3, rotate: 0 }])
+		expect(part.overlays).toEqual([{ page: 2, items: [text] }])
+		expect(part.formValues).toBeUndefined()
+		expect(toPlanRange(model, { from: 1, to: 2 }).overlays).toEqual([])
 	})
 })
 
@@ -117,12 +133,20 @@ describe('undo', () => {
 		h = commit(h, movePage(h.present, h.present.pages[0]!.key, 1))
 		expect(redo(h)).toBe(h)
 	})
+	it('amends the present without a new step', () => {
+		let h = startHistory(twoFiles())
+		h = commit(h, setFormValue(h.present, 'k', '1'))
+		const steps = h.past.length
+		h = amend(h, setFormValue(h.present, 'k', '2'))
+		expect(h.past).toHaveLength(steps)
+		expect(h.present.form).toEqual({ k: '2' })
+	})
 	it('keeps at most the step limit', () => {
 		const h = grow(startHistory(emptyModel()), PDF_LIMITS.undoSteps + 30)
 		expect(h.past).toHaveLength(PDF_LIMITS.undoSteps)
 	})
 	it('lets go of the oldest steps when the images they hold are over the byte limit', () => {
-		let h = startHistory(addFile(emptyModel(), { name: 'a.pdf', pageCount: 1, bytes: 1 }))
+		let h = startHistory(addFile(emptyModel(), { source: 0, name: 'a.pdf', pageCount: 1 }))
 		const page = h.present.pages[0]!.key
 		const picture = (): Uint8Array => new Uint8Array(PDF_LIMITS.maxOverlayImageBytes)
 		for (let i = 0; i < 12; i++) {
@@ -136,7 +160,7 @@ describe('undo', () => {
 		expect(h.past.length).toBeGreaterThan(0)
 	})
 	it('refuses more pictures on the pages than the byte limit allows', () => {
-		let model = addFile(emptyModel(), { name: 'a.pdf', pageCount: 1, bytes: 1 })
+		let model = addFile(emptyModel(), { source: 0, name: 'a.pdf', pageCount: 1 })
 		const page = model.pages[0]!.key
 		const picture = { kind: 'image', bytes: new Uint8Array(PDF_LIMITS.maxOverlayImageBytes), format: 'png', x: 0, y: 0, width: 10, height: 10 } as const
 		for (let i = 0; i < PDF_LIMITS.undoBytes / PDF_LIMITS.maxOverlayImageBytes; i++) model = addItem(model, page, picture)

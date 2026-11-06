@@ -1,9 +1,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { OPEN_OPTIONS } from './pdfRender'
 
-const root = join(import.meta.dirname, '..', '..', '..', '..')
+const root = join(import.meta.dirname, '..', '..')
 
 function sources(dir: string): string[] {
 	return readdirSync(dir).flatMap((name) => {
@@ -35,7 +34,8 @@ describe('pdf-lib and pdf.js load only when a PDF tool opens', () => {
 
 describe('how pdf.js opens a PDF', () => {
 	it('runs no script, fetches nothing, and uses no eval', () => {
-		expect(OPEN_OPTIONS).toMatchObject({ isEvalSupported: false, enableXfa: false, disableAutoFetch: true, disableStream: true, disableRange: true, disableFontFace: true })
+		const options = /OPEN_OPTIONS = \{([^}]*)\}/.exec(render())![1]!
+		for (const setting of ['isEvalSupported: false', 'enableXfa: false', 'disableAutoFetch: true', 'disableStream: true', 'disableRange: true', 'disableFontFace: true']) expect(options).toContain(setting)
 	})
 	it('names no address outside the bundle and no wasm', () => {
 		const code = render()

@@ -9,7 +9,7 @@ describe('base64', () => {
 	})
 	it('agrees with Buffer, and handles nothing', () => {
 		const bytes = new Uint8Array([0, 255, 10, 13, 128])
-		expect(bytesToBase64(bytes)).toBe(Buffer.from(bytes).toString('base64'))
+		expect(bytesToBase64(bytes)).toBe(btoa(String.fromCharCode(...bytes)))
 		expect(base64ToBytes('')).toEqual(new Uint8Array())
 	})
 	it('refuses text that is not base64', () => {

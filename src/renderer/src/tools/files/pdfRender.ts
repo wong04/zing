@@ -137,6 +137,6 @@ export async function openPreview(name: string, bytes: Uint8Array): Promise<PdfP
 			if (blob === null) throw new PdfEditError(`Page ${index + 1} of ${name} is too large to turn into a picture.`)
 			return new Uint8Array(await blob.arrayBuffer())
 		},
-		destroy: () => doc.destroy(),
+		destroy: () => task.destroy(),
 	}
 }
