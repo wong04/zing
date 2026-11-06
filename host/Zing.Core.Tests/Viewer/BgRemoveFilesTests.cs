@@ -250,6 +250,29 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 		Assert.Equal(App, first.Headers["Access-Control-Allow-Origin"]);
 	}
 
+	[Fact]
+	public async Task A_save_only_session_takes_a_save_of_its_kinds_and_serves_nothing()
+	{
+		var session = _viewer.OpenSaveSession(Panel, [SessionKinds.Pdf]);
+		var saved = await _viewer.ServeAsync(Put(session, "out.pdf", [.. "%PDF-1.7 x"u8.ToArray()]));
+		Assert.Equal(201, saved.Status);
+		Assert.Equal("out.pdf", Saved(saved));
+		Assert.Equal(404, (await _viewer.ServeAsync(Get(session.Url))).Status);
+		// The png belongs to the image kind, not to this session.
+		Assert.Equal(400, (await _viewer.ServeAsync(Put(session, "x.png", Png()))).Status);
+	}
+
+	[Fact]
+	public async Task A_save_only_session_replaces_the_panels_session_and_ends_with_it()
+	{
+		var picture = Open();
+		var save = _viewer.OpenSaveSession(Panel, [SessionKinds.Pdf, SessionKinds.Image]);
+		Assert.Equal(404, (await _viewer.ServeAsync(Get(picture.Url))).Status);
+		Assert.Equal(201, (await _viewer.ServeAsync(Put(save, "a.png", Png()))).Status);
+		_viewer.CloseExcept(new HashSet<string>());
+		Assert.Equal(404, (await _viewer.ServeAsync(Put(save, "b.png", Png()))).Status);
+	}
+
 	private static string Saved(ViewerReply reply) => System.Text.Json.JsonDocument.Parse(reply.Body).RootElement.GetProperty("name").GetString()!;
 
 	[Fact]

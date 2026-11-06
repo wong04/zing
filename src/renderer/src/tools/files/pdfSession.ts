@@ -8,6 +8,8 @@ import { saveUrl } from './bgremoveProtocol'
 
 export interface SessionDeps {
 	open(panelId: string, token: string, kinds: readonly ['pdf', 'image']): Promise<ViewerOpened>
+	/** A results-only session for the panel (`session:open-save`). */
+	openSave(panelId: string, kinds: readonly ['pdf', 'image']): Promise<ViewerOpened>
 	fetchFn: typeof fetch
 }
 
@@ -28,6 +30,11 @@ export async function readSession(deps: SessionDeps, panelId: string, token: str
 	const declared = Number(response.headers.get('content-length') ?? 0)
 	if (declared > PDF_LIMITS.maxReadBytes * 2) throw new PdfEditError(`${opened.name} is larger than the PDF tools read.`)
 	return { bytes: new Uint8Array(await response.arrayBuffer()), sessionId: opened.id }
+}
+
+/** A session that takes results and serves no file: opened from the panel id alone, so a save never depends on the file that was read. */
+export async function openSaveSession(deps: SessionDeps, panelId: string): Promise<string> {
+	return (await deps.openSave(panelId, KINDS)).id
 }
 
 /** Streams `bytes` into Downloads through the session; answers the name the host gave it and a token. */

@@ -14,7 +14,7 @@ import './files.css'
 import { newPdfWorkerClient } from './pdfEditClient'
 import { handOffPdf, takeHandedPdf } from './pdfHandoff'
 import { usePanelId } from '../panelId'
-import { readGranted, saveResult } from './pdfHost'
+import { readGranted, saveResult, saveSessionFor } from './pdfHost'
 import { createPreviewSession } from './pdfRender'
 import { toPicture } from './pictureBytes'
 import { useEngineJob } from './useEngineJob'
@@ -118,7 +118,8 @@ export function ConvertTool() {
 		let sessionId: string
 		try {
 			const read = await readGranted(ownPanel, plan.token, signal)
-			sessionId = read.sessionId
+			// Saves go into a session of their own, so they do not depend on the file just read.
+			sessionId = await saveSessionFor(ownPanel)
 			preview = await pdfViewer.open(name, read.bytes)
 		} catch (error) {
 			runningPages.current = false
@@ -146,7 +147,7 @@ export function ConvertTool() {
 		const read = await readGranted(ownPanel, plan.token)
 		const picture = await toPicture(name, read.bytes)
 		const pdf = await pdfClient.imagesToPdf([{ name, format: picture.format, bytes: picture.bytes }])
-		setStage({ kind: 'done', outputs: [await saveResult(read.sessionId, plan.output, pdf)] })
+		setStage({ kind: 'done', outputs: [await saveResult(await saveSessionFor(ownPanel), plan.output, pdf)] })
 	}
 
 	const execute = async (plan: ConvertPlan, targetExt: string): Promise<void> => {

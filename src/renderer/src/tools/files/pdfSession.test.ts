@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { PDF_LIMITS, PdfEditError } from '@shared/pdf/pdfCore'
-import { putResult, readSession, type SessionDeps } from './pdfSession'
+import { openSaveSession, putResult, readSession, type SessionDeps } from './pdfSession'
 
 function deps(respond: (url: string, init?: RequestInit) => Response | Promise<Response>, calls: { url: string; init?: RequestInit }[] = []): SessionDeps {
 	return {
 		open: async (_panel, token) => ({ id: `session-${token}`, name: 'a.pdf', url: `https://view.zing/session-${token}`, show: 'native' }) as never,
+		openSave: async (_panel, kinds) => ({ id: `save-${kinds.join('-')}`, name: 'results', url: 'https://view.zing/x', show: 'native' }) as never,
 		fetchFn: (async (url: string, init?: RequestInit) => {
 			calls.push({ url, init })
 			return respond(url, init)
@@ -29,6 +30,12 @@ describe('reading a granted file through a session', () => {
 	it('refuses an answer longer than the read limit before it is held', async () => {
 		const huge = new Response(new Uint8Array(1), { headers: { 'content-length': String(PDF_LIMITS.maxReadBytes * 3) } })
 		await expect(readSession(deps(() => huge), 'p', 't')).rejects.toThrow(PdfEditError)
+	})
+})
+
+describe('a session for saving', () => {
+	it('is opened from the panel and the kinds alone, with no file', async () => {
+		expect(await openSaveSession(deps(() => new Response('')), 'panel-1')).toBe('save-pdf-image')
 	})
 })
 

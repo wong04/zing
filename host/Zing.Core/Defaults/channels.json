@@ -221,6 +221,10 @@
 			"args": 3
 		},
 		{
+			"channel": "session:open-save",
+			"args": 2
+		},
+		{
 			"channel": "settings:get",
 			"args": 0
 		},

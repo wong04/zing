@@ -9,7 +9,7 @@ import { ToolPage } from '../parts'
 import './files.css'
 import { PdfPageEditor } from './PdfPageEditor'
 import { onHandedPdf, takeHandedPdf } from './pdfHandoff'
-import { readGranted, saveResult, sessionFor } from './pdfHost'
+import { readGranted, saveResult, saveSessionFor } from './pdfHost'
 import { usePanelId } from '../panelId'
 import { describeRun, runParts, type RunOutcome } from './pdfRun'
 import {
@@ -41,8 +41,6 @@ import { createPreviewSession, type PdfPreview } from './pdfRender'
 
 interface Opened {
 	readonly name: string
-	/** The grant it was opened from, to open a session again when saving. */
-	readonly token: string
 	readonly bytes: Uint8Array
 	readonly preview: PdfPreview
 	readonly fields: readonly FormFieldInfo[]
@@ -202,7 +200,7 @@ export function PdfTool() {
 		try {
 			const source = current.length
 			const next = commit(historyRef.current, addFile(historyRef.current.present, { source, name: file.name, pageCount: info.pageCount }))
-			openedRef.current = [...current, { name: file.name, token: file.token, bytes, preview, fields: info.fields }]
+			openedRef.current = [...current, { name: file.name, bytes, preview, fields: info.fields }]
 			setOpened(openedRef.current)
 			apply(next)
 			setSaved([])
@@ -380,12 +378,11 @@ export function PdfTool() {
 		setProblem(null)
 		setSaved([])
 		const sources = sourcesFor()
-		const lastToken = openedRef.current.at(-1)!.token
 		void (async () => {
 			let outcome: RunOutcome | undefined
 			try {
-				// One session for the whole run, opened afresh: a refused file opened earlier would have ended the panel's old one.
-				const sessionId = await sessionFor(panelId, lastToken)
+				// One results-only session for the whole run, opened from the panel alone: the source files may be gone by now.
+				const sessionId = await saveSessionFor(panelId)
 				outcome = await runParts(
 					plans.length,
 					(i) => client.build(sources, plans[i]!),
