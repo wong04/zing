@@ -416,7 +416,7 @@ public sealed class ViewerFiles : IDisposable
 		if (method is not ("GET" or "HEAD")) return Refuse(405, "Method Not Allowed");
 		lock (_gate)
 		{
-			if (!_sessions.Values.Any(session => session.Reads("image"))) return NotFoundForView();
+			if (!_sessions.Values.Any(session => session.Source is not null && session.Reads("image"))) return NotFoundForView();
 		}
 		var (path, lease) = (ModelOpener ?? throw new InvalidOperationException("This host has no model to serve"))();
 		try

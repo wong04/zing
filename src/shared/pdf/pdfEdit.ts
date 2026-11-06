@@ -4,7 +4,7 @@
 // Every function loads its input afresh and returns new bytes; none changes what it was given. A file that is encrypted,
 // damaged, empty or past PDF_LIMITS.maxPages is refused with a PdfEditError naming it. `ignoreEncryption` is never used:
 // pdf-lib would then write the file without its encryption, which is not what the person asked for.
-import { EncryptedPDFError, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFStream, PDFString, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { EncryptedPDFError, PDFArray, PDFContext, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFStream, PDFString, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { checkPictureSize } from './pictureHeader'
 import {
 	PDF_LIMITS,
@@ -318,24 +318,40 @@ function rebuildForm(out: PDFDocument, source: PDFDocument): void {
 	out.catalog.set(PDFName.of('AcroForm'), out.context.register(form))
 }
 
-/** Takes out of `object` (and the plain dictionaries and arrays inside it, not what its references lead to) every reference to a lost object. */
-function cutReferences(object: unknown, lost: ReadonlySet<PDFRef>): void {
+/** A destination that begins with a lost page, such as [page /Fit]. */
+function isLostDestination(value: unknown, lost: ReadonlySet<PDFRef>): boolean {
+	if (!(value instanceof PDFArray)) return false
+	const first = value.get(0)
+	return first instanceof PDFRef && lost.has(first)
+}
+
+/** An action that goes to a lost page: it would be left as [/Fit] with no page, so it is dropped whole. */
+function isLostAction(value: unknown, lost: ReadonlySet<PDFRef>, context: PDFContext): boolean {
+	const dict = value instanceof PDFRef ? context.lookup(value) : value
+	return dict instanceof PDFDict && isLostDestination(dict.get(PDFName.of('D')), lost)
+}
+
+/**
+ * Takes out of `object` (and the plain dictionaries and arrays inside it, not what its references lead to) every reference to a lost
+ * object. A destination or an action that would be left with no page is removed whole instead of being left as [/Fit].
+ */
+function cutReferences(object: unknown, lost: ReadonlySet<PDFRef>, context: PDFContext): void {
 	if (object instanceof PDFStream) {
-		cutReferences(object.dict, lost)
+		cutReferences(object.dict, lost, context)
 		return
 	}
 	if (object instanceof PDFDict) {
 		for (const [key, value] of object.entries()) {
-			if (value instanceof PDFRef && lost.has(value)) object.delete(key)
-			else cutReferences(value, lost)
+			if ((value instanceof PDFRef && lost.has(value)) || isLostAction(value, lost, context) || (key === PDFName.of('Dest') && isLostDestination(value, lost))) object.delete(key)
+			else cutReferences(value, lost, context)
 		}
 		return
 	}
 	if (object instanceof PDFArray) {
 		for (let at = object.size() - 1; at >= 0; at--) {
 			const value = object.get(at)
-			if (value instanceof PDFRef && lost.has(value)) object.remove(at)
-			else cutReferences(value, lost)
+			if ((value instanceof PDFRef && lost.has(value)) || isLostAction(value, lost, context)) object.remove(at)
+			else cutReferences(value, lost, context)
 		}
 	}
 }
@@ -356,7 +372,7 @@ function removeLostPages(doc: PDFDocument): void {
 		const page = object instanceof PDFDict ? object.get(PDFName.of('P')) : undefined
 		if (page instanceof PDFRef && lost.has(page)) lost.add(ref)
 	}
-	for (const [ref, object] of context.enumerateIndirectObjects()) if (!lost.has(ref)) cutReferences(object, lost)
+	for (const [ref, object] of context.enumerateIndirectObjects()) if (!lost.has(ref)) cutReferences(object, lost, context)
 	for (const ref of lost) context.delete(ref)
 	removeUnreachable(doc)
 }

@@ -263,6 +263,15 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 	}
 
 	[Fact]
+	public async Task A_save_only_session_with_the_image_kind_is_not_a_reason_to_serve_the_model()
+	{
+		_viewer.OpenSaveSession(Panel, [SessionKinds.Pdf, SessionKinds.Image]);
+		Assert.Equal(404, (await _viewer.ServeAsync(Get(Model))).Status);
+		Open();
+		Assert.Equal(200, (await _viewer.ServeAsync(Get(Model))).Status);
+	}
+
+	[Fact]
 	public async Task A_save_only_session_replaces_the_panels_session_and_ends_with_it()
 	{
 		var picture = Open();

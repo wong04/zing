@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, PDFString, type PDFPage } from 'pdf-lib'
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFStream, PDFString, type PDFObject, type PDFPage } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { deletePages, fillForm, mergePdfs, splitPdf } from './pdfEdit'
 
@@ -7,8 +7,26 @@ const SECRET = 'SECRETPAGE3'
 const pageObjects = (doc: PDFDocument): number =>
 	doc.context.enumerateIndirectObjects().filter(([, o]) => (o as { get?: (n: PDFName) => unknown }).get?.(PDFName.of('Type')) === PDFName.of('Page')).length
 
+/** Destinations left with a name but no page, such as [/Fit]: what is left when only the page reference of a cut action is taken out. */
+function deadDestinations(doc: PDFDocument): number {
+	let dead = 0
+	const look = (object: PDFObject): void => {
+		if (object instanceof PDFStream) look(object.dict)
+		else if (object instanceof PDFDict) {
+			for (const [key, value] of object.entries()) {
+				if ((key === PDFName.of('D') || key === PDFName.of('Dest')) && value instanceof PDFArray && value.size() > 0 && value.get(0) instanceof PDFName) dead++
+				look(value)
+			}
+		} else if (object instanceof PDFArray) object.asArray().forEach(look)
+	}
+	for (const [, object] of doc.context.enumerateIndirectObjects()) look(object)
+	return dead
+}
+
 async function expectNoLeak(bytes: Uint8Array, kept: number): Promise<void> {
-	expect(pageObjects(await PDFDocument.load(bytes))).toBe(kept)
+	const loaded = await PDFDocument.load(bytes)
+	expect(deadDestinations(loaded)).toBe(0)
+	expect(pageObjects(loaded)).toBe(kept)
 	expect(Buffer.from(bytes).toString('latin1')).not.toContain(SECRET)
 }
 
