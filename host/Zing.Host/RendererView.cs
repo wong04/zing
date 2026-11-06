@@ -129,7 +129,7 @@ public sealed class RendererView
 			var request = e.Request;
 			var reply = viewer is null
 				? ViewerFiles.Unavailable()
-				: await viewer.ServeAsync(new ViewerRequest(request.Method, request.Uri, Header(request, "Range"), Header(request, "Origin"), Header(request, "Referer"), request.Content, long.TryParse(Header(request, "Content-Length"), out var declared) ? declared : null));
+				: await viewer.ServeAsync(new ViewerRequest(request.Method, request.Uri, Header(request, "Range"), Header(request, "Origin"), Header(request, "Referer"), request.Content?.AsStreamForRead(), long.TryParse(Header(request, "Content-Length"), out var declared) ? declared : null));
 			if (!IsClosed) e.Response = ViewerResponses.Make(sender.Environment, reply);
 		}
 		catch (Exception) when (!IsClosed)
