@@ -225,6 +225,8 @@ public sealed class ZingApp
 		var engines = OpenEngines();
 		// Reached only by the Zing that owns this profile (the single-instance check came first), so what is in the folder is a dead Zing's.
 		Zing.Core.Viewer.ViewerFiles.SweepLeftovers(AppPaths.ViewerCopies, Zing.Core.Viewer.ViewerFiles.IsZingRunning, (what, error) => TestHooks.Record(what, error));
+		// HTML to PDF needs no engine, so its print folders are swept whether or not the engines folder opened.
+		HtmlPdfPrinter.SweepLeftovers();
 		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies);
 	}
 
@@ -233,7 +235,6 @@ public sealed class ZingApp
 	{
 		try
 		{
-			HtmlPdfPrinter.SweepLeftovers();
 			// The e2e fixture serves Zing.FakeEngine as every engine, so a run against it also accepts that program's flags.
 			return TestHooks.EngineCatalog() is null
 				? new EngineRunner(engines, AppPaths.EngineJobs, placement, (what, error) => TestHooks.Record(what, error))
