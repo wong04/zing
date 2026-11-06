@@ -4,7 +4,7 @@
 // Every function loads its input afresh and returns new bytes; none changes what it was given. A file that is encrypted,
 // damaged, empty or past PDF_LIMITS.maxPages is refused with a PdfEditError naming it. `ignoreEncryption` is never used:
 // pdf-lib would then write the file without its encryption, which is not what the person asked for.
-import { EncryptedPDFError, PDFArray, PDFContext, PDFDict, PDFDocument, PDFHexString, PDFName, PDFObjectCopier, PDFPage, PDFPageLeaf, PDFRef, PDFStream, PDFString, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFObject } from 'pdf-lib'
+import { EncryptedPDFError, PDFArray, PDFContext, PDFDict, PDFDocument, PDFHexString, PDFName, PDFObjectCopier, PDFPage, PDFPageLeaf, PDFRawStream, PDFRef, PDFStream, PDFString, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, decodePDFRawStream, degrees, rgb, type PDFFont, type PDFObject } from 'pdf-lib'
 import { checkPictureSize } from './pictureHeader'
 import {
 	PDF_LIMITS,
@@ -201,6 +201,7 @@ async function assemble(sources: readonly PdfFile[], docs: readonly PDFDocument[
 	} else {
 		doc = await copyPlanned(docs, plan)
 		if (single) rebuildForm(doc, docs[only]!)
+		trimResources(doc)
 		removeLostPages(doc)
 	}
 	// Drawn before the pages are turned, so what is placed turns with its page.
@@ -468,7 +469,10 @@ function removeLostPages(doc: PDFDocument): void {
 	const kept = new Set(doc.getPages().map((p) => p.ref))
 	const lost = new Set<PDFRef>()
 	for (const [ref, object] of context.enumerateIndirectObjects()) if (isPageObject(object) && !kept.has(ref)) lost.add(ref)
-	if (lost.size === 0) return
+	if (lost.size === 0) {
+		removeUnreachable(doc)
+		return
+	}
 	// An annotation or widget whose own page is lost goes with it, and so does its place in a field's /Kids.
 	for (const [ref, object] of context.enumerateIndirectObjects()) {
 		const page = object instanceof PDFDict ? object.get(PDFName.of('P')) : undefined
@@ -500,6 +504,141 @@ function removeUnreachable(doc: PDFDocument): void {
 		else if (object instanceof PDFArray) pending.push(...object.asArray())
 	}
 	for (const [ref] of context.enumerateIndirectObjects()) if (!seen.has(ref)) context.delete(ref)
+}
+
+const RESOURCES = PDFName.of('Resources')
+const XOBJECT = PDFName.of('XObject')
+const PATTERN = PDFName.of('Pattern')
+const NAMED_RESOURCES = new Set(['XObject', 'Font', 'ExtGState', 'Pattern', 'Shading', 'ColorSpace', 'Properties'].map((key) => PDFName.of(key)))
+const NAME_ENDS = new Set([0, 9, 10, 12, 13, 32, ...[...'()<>[]{}/%'].map((c) => c.charCodeAt(0))])
+
+/**
+ * Every name a content stream's bytes could use, or undefined when they can't be read. Each `/` starts a name, also inside a
+ * string, a comment or inline picture data: that finds more names than the stream uses, never fewer.
+ */
+function namesIn(stream: PDFStream): Set<PDFName> | undefined {
+	// pdf-lib's decoders ignore /DecodeParms, so a stream that has them can't be read reliably.
+	if (!(stream instanceof PDFRawStream) || stream.dict.has(PDFName.of('DecodeParms'))) return undefined
+	let bytes: Uint8Array
+	try {
+		bytes = decodePDFRawStream(stream).decode()
+	} catch {
+		return undefined
+	}
+	const names = new Set<PDFName>()
+	for (let at = 0; at < bytes.length; at++) {
+		if (bytes[at] !== 0x2f) continue
+		let end = at + 1
+		let name = ''
+		for (; end < bytes.length && !NAME_ENDS.has(bytes[end]!); end++) name += String.fromCharCode(bytes[end]!)
+		if (name !== '') names.add(PDFName.of(name))
+		at = end - 1
+	}
+	return names
+}
+
+/**
+ * The names that `streams` use from `resources`, with those of each form XObject they draw that takes its resources from them
+ * (one with no /Resources of its own). A form or tiling pattern with its own /Resources is trimmed by itself. Undefined when a
+ * stream can't be read, so nothing can be shown to be unused.
+ */
+function usedNames(streams: readonly PDFStream[], resources: PDFDict, context: PDFContext, seen: Set<PDFStream>): Set<PDFName> | undefined {
+	const names = new Set<PDFName>()
+	const pending = [...streams]
+	const followed = new Set<PDFStream>(streams)
+	while (pending.length > 0) {
+		const stream = pending.pop()!
+		const found = namesIn(stream)
+		if (found === undefined) return undefined
+		for (const name of found) names.add(name)
+		for (const category of [XOBJECT, PATTERN]) {
+			const entries = resources.lookup(category)
+			if (!(entries instanceof PDFDict)) continue
+			for (const [name, value] of entries.entries()) {
+				const inner = found.has(name) ? context.lookup(value) : undefined
+				if (!(inner instanceof PDFStream)) continue
+				if (inner.dict.has(RESOURCES)) {
+					if (seen.has(inner)) continue
+					seen.add(inner)
+					trimStreamResources(inner, context, seen)
+				} else if (category === XOBJECT && inner.dict.get(PDFName.of('Subtype')) === PDFName.of('Form') && !followed.has(inner)) {
+					followed.add(inner)
+					pending.push(inner)
+				}
+			}
+		}
+	}
+	return names
+}
+
+/** A copy of `resources` whose named resources (pictures, fonts and the like) are only the ones in `names`. */
+function onlyNamed(resources: PDFDict, names: ReadonlySet<PDFName>, context: PDFContext): PDFDict {
+	const trimmed = context.obj({})
+	for (const [key, value] of resources.entries()) {
+		const entries = NAMED_RESOURCES.has(key) ? resources.lookup(key) : undefined
+		if (!(entries instanceof PDFDict)) {
+			trimmed.set(key, value)
+			continue
+		}
+		const kept = context.obj({})
+		for (const [name, entry] of entries.entries()) if (names.has(name)) kept.set(name, entry)
+		trimmed.set(key, kept)
+	}
+	return trimmed
+}
+
+/** A form XObject, tiling pattern or appearance stream gets its own /Resources, holding what its content uses. */
+function trimStreamResources(stream: PDFStream, context: PDFContext, seen: Set<PDFStream>): void {
+	const resources = stream.dict.lookup(RESOURCES)
+	if (!(resources instanceof PDFDict)) return
+	const names = usedNames([stream], resources, context, seen)
+	if (names !== undefined) stream.dict.set(RESOURCES, onlyNamed(resources, names, context))
+}
+
+/** An annotation's appearance streams: /N, /R and /D, each a stream or a dictionary of them. */
+function appearanceStreams(annot: PDFDict, context: PDFContext): PDFStream[] {
+	const appearance = annot.lookup(PDFName.of('AP'))
+	if (!(appearance instanceof PDFDict)) return []
+	const streams: PDFStream[] = []
+	for (const [, value] of appearance.entries()) {
+		const state = context.lookup(value)
+		if (state instanceof PDFStream) streams.push(state)
+		if (!(state instanceof PDFDict)) continue
+		for (const [, inner] of state.entries()) {
+			const stream = context.lookup(inner)
+			if (stream instanceof PDFStream) streams.push(stream)
+		}
+	}
+	return streams
+}
+
+/**
+ * Pages can share one /Resources dictionary, their own or inherited from /Pages, and copying a page copies all of it: the
+ * pictures and fonts of a page that was left out would stay in the file, reachable from a page that stays. So each page of a
+ * rebuilt file gets its own /Resources with only the names its content uses, followed through the forms it draws, and so do its
+ * annotations' appearances. A page whose content can't be read keeps what it has.
+ */
+function trimResources(doc: PDFDocument): void {
+	const { context } = doc
+	const seen = new Set<PDFStream>()
+	for (const page of doc.getPages()) {
+		for (const entry of page.node.Annots()?.asArray() ?? []) {
+			const annot = context.lookup(entry)
+			if (!(annot instanceof PDFDict)) continue
+			for (const stream of appearanceStreams(annot, context)) {
+				if (seen.has(stream)) continue
+				seen.add(stream)
+				trimStreamResources(stream, context, seen)
+			}
+		}
+		const resources = page.node.lookup(RESOURCES)
+		const contents = page.node.Contents()
+		if (!(resources instanceof PDFDict) || contents === undefined) continue
+		const items = contents instanceof PDFArray ? contents.asArray().map((item) => context.lookup(item)) : [contents]
+		if (!items.every((item): item is PDFStream => item instanceof PDFStream)) continue
+		const names = usedNames(items, resources, context, seen)
+		if (names !== undefined) page.node.set(RESOURCES, onlyNamed(resources, names, context))
+	}
 }
 
 async function helvetica(doc: PDFDocument): Promise<PDFFont> {

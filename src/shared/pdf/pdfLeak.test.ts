@@ -203,3 +203,95 @@ describe('filling a form after pages were deleted', () => {
 		await expect(fillForm(smaller, { gone: 'x' })).rejects.toThrow(/gone/)
 	})
 })
+
+const PICTURE_A = 'PICTUREOFPAGEONE'
+const PICTURE_B = 'PICTUREOFPAGETWO'
+
+/** An uncompressed grey picture whose pixels spell `mark`, so the test can look for it in the bytes. */
+const picture = (doc: PDFDocument, mark: string): PDFRef =>
+	doc.context.register(doc.context.stream(mark, { Type: 'XObject', Subtype: 'Image', Width: mark.length, Height: 1, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }))
+
+/** Two pages that draw ImA and ImB from one /Resources dictionary; `wire` says where that dictionary hangs. */
+async function twoPictures(wire: (doc: PDFDocument, pages: PDFPage[], resources: PDFRef) => void): Promise<Uint8Array> {
+	const doc = await PDFDocument.create()
+	const { context } = doc
+	const pages = [doc.addPage([100, 100]), doc.addPage([100, 100])]
+	const resources = context.register(context.obj({ XObject: { ImA: picture(doc, PICTURE_A), ImB: picture(doc, PICTURE_B) }, ProcSet: ['PDF', 'ImageB'] }))
+	pages.forEach((page, i) => page.node.set(PDFName.of('Contents'), context.register(context.stream(`q 100 0 0 100 0 0 cm /Im${'AB'[i]} Do Q`))))
+	wire(doc, pages, resources)
+	return doc.save({ useObjectStreams: false })
+}
+
+const shareResources = (_doc: PDFDocument, pages: PDFPage[], resources: PDFRef): void => pages.forEach((page) => page.node.set(PDFName.of('Resources'), resources))
+
+const xobjectNames = (dict: PDFDict): string[] => dict.lookup(PDFName.of('XObject'), PDFDict).keys().map((key) => key.decodeText())
+
+describe("a left-out page's pictures are not in the file when pages share their /Resources", () => {
+	const wires: [string, (doc: PDFDocument, pages: PDFPage[], resources: PDFRef) => void][] = [
+		['one /Resources dictionary for both pages', shareResources],
+		[
+			'/Resources inherited from /Pages',
+			(doc, pages, resources) => {
+				pages.forEach((page) => page.node.delete(PDFName.of('Resources')))
+				doc.catalog.Pages().set(PDFName.of('Resources'), resources)
+			},
+		],
+	]
+	const runs: [string, (bytes: Uint8Array) => Promise<Uint8Array>][] = [
+		['delete', (bytes) => deletePages(bytes, [2])],
+		['split', async (bytes) => (await splitPdf(bytes, [{ from: 1, to: 1 }]))[0]!],
+	]
+	for (const [wireName, wire] of wires) {
+		for (const [runName, run] of runs) {
+			it(`${wireName}: ${runName}`, async () => {
+				const bytes = await run(await twoPictures(wire))
+				const text = Buffer.from(bytes).toString('latin1')
+				expect(text).not.toContain(PICTURE_B)
+				expect(text).toContain(PICTURE_A)
+				const page = (await PDFDocument.load(bytes)).getPages()[0]!
+				expect(xobjectNames(page.node.Resources()!)).toEqual(['ImA'])
+				expect(page.node.Resources()!.lookup(PDFName.of('ProcSet'))).toBeInstanceOf(PDFArray)
+			})
+		}
+	}
+
+	it('a form XObject whose /Resources is the shared dictionary keeps only what the form draws', async () => {
+		const original = await twoPictures((doc, pages, resources) => {
+			shareResources(doc, pages, resources)
+			const { context } = doc
+			const form = context.register(context.stream('/ImA Do', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 1, 1], Resources: resources }))
+			context.lookup(resources, PDFDict).lookup(PDFName.of('XObject'), PDFDict).set(PDFName.of('Fm'), form)
+			pages[0]!.node.set(PDFName.of('Contents'), context.register(context.stream('q 100 0 0 100 0 0 cm /Fm Do Q')))
+		})
+		const bytes = await deletePages(original, [2])
+		const text = Buffer.from(bytes).toString('latin1')
+		expect(text).not.toContain(PICTURE_B)
+		expect(text).toContain(PICTURE_A)
+		const page = (await PDFDocument.load(bytes)).getPages()[0]!
+		expect(xobjectNames(page.node.Resources()!)).toEqual(['Fm'])
+		const form = page.node.Resources()!.lookup(PDFName.of('XObject'), PDFDict).lookup(PDFName.of('Fm'), PDFStream)
+		expect(xobjectNames(form.dict.lookup(PDFName.of('Resources'), PDFDict))).toEqual(['ImA'])
+	})
+
+	it("an annotation's appearance whose /Resources is the shared dictionary keeps only what it draws", async () => {
+		const original = await twoPictures((doc, pages, resources) => {
+			shareResources(doc, pages, resources)
+			const { context } = doc
+			const look = context.register(context.stream('/ImA Do', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 1, 1], Resources: resources }))
+			pages[0]!.node.set(PDFName.of('Annots'), context.obj([context.register(context.obj({ Type: 'Annot', Subtype: 'Stamp', Rect: [0, 0, 5, 5], AP: { N: look } }))]))
+		})
+		const text = Buffer.from(await deletePages(original, [2])).toString('latin1')
+		expect(text).not.toContain(PICTURE_B)
+		expect(text).toContain(PICTURE_A)
+	})
+
+	it("keeps every resource when a page's content can't be read", async () => {
+		const original = await twoPictures((doc, pages, resources) => {
+			shareResources(doc, pages, resources)
+			const { context } = doc
+			pages[0]!.node.set(PDFName.of('Contents'), context.register(context.stream('q 100 0 0 100 0 0 cm /ImA Do Q', { Filter: 'JBIG2Decode' })))
+		})
+		const page = (await PDFDocument.load(await deletePages(original, [2]))).getPages()[0]!
+		expect(xobjectNames(page.node.Resources()!)).toEqual(['ImA', 'ImB'])
+	})
+})
