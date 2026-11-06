@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { codecsOf, initLength, nextFragment, timescaleOf } from './fragmentedMp4'
+import { codecsOf, INIT_LIMIT, initLength, Mp4FormatError, nextFragment, timescaleOf } from './fragmentedMp4'
 
 const ascii = (text: string): number[] => [...text].map((c) => c.charCodeAt(0))
 const u32 = (n: number): number[] => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]
@@ -36,6 +36,23 @@ describe('initLength', () => {
 	})
 	it('refuses a file that is not an MP4 at all', () => {
 		expect(() => initLength(Uint8Array.from([0, 0, 0, 16, ...ascii('RIFF'), 0, 0, 0, 0, 0, 0, 0, 0]))).toThrow(/ftyp/)
+	})
+})
+
+describe('initLength with no moov', () => {
+	it('gives up once more than the limit has been read without finding a moov box', () => {
+		const ftyp = box('ftyp', ascii('isom'))
+		const piece = 1024 * 1024
+		const count = INIT_LIMIT / piece + 1
+		const many = new Uint8Array(ftyp.length + count * piece)
+		many.set(ftyp, 0)
+		for (let i = 0; i < count; i++) many.set(Uint8Array.from([...u32(piece), ...ascii('free')]), ftyp.length + i * piece)
+		expect(many.length).toBeGreaterThan(INIT_LIMIT)
+		expect(() => initLength(many)).toThrow(Mp4FormatError)
+		expect(() => initLength(many)).toThrow(/moov/)
+	})
+	it('still waits for a moov that is within the limit', () => {
+		expect(initLength(join(box('ftyp', ascii('isom')), box('free', new Uint8Array(100))))).toBeUndefined()
 	})
 })
 

@@ -466,10 +466,11 @@ public sealed class ViewerFiles : IDisposable
 		{
 			file = OpenForReading(path);
 		}
-		catch (Exception notThere) when (notThere is FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException)
+		catch (Exception notThere) when (notThere is FileNotFoundException or DirectoryNotFoundException || (notThere is UnauthorizedAccessException && !File.Exists(path)))
 		{
-			// Not made yet, moved into place an instant before the exit arrives, or being deleted with its job folder (Windows refuses
-			// to open a file that is delete-pending, with access denied).
+			// Not made yet, moved into place an instant before the exit arrives, or being deleted with its job folder: Windows refuses to
+			// open a delete-pending file with access denied, and says the file is not there. A file that is there and refused is a real
+			// error and is not caught.
 			return NotYet(session);
 		}
 		using (file)

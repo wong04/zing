@@ -48,8 +48,12 @@ function find(bytes: Uint8Array, type: string, from = 0, to = bytes.length): num
 	return -1
 }
 
+/** The most that is read while looking for the moov box; beyond it the file is not what FFmpeg wrote. */
+export const INIT_LIMIT = 64 * 1024 * 1024
+
 /** How many bytes the init segment (ftyp and moov) takes, or undefined until the moov box is complete. */
 export function initLength(bytes: Uint8Array): number | undefined {
+	if (bytes.length > INIT_LIMIT) throw new Mp4FormatError(`No moov box in the first ${INIT_LIMIT} bytes of the converted file`)
 	let at = 0
 	for (;;) {
 		const box = header(bytes, at)

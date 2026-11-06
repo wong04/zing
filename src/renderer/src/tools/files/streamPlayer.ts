@@ -1,4 +1,5 @@
 import { codecsOf, initLength, nextFragment, timescaleOf } from '@shared/convert/fragmentedMp4'
+import { Stall } from './stall'
 
 // Plays the fragmented MP4 that FFmpeg is still writing (host/Zing.Core/Viewer/ViewerFiles.cs). A <video src> can't: it needs the
 // file's length up front. So this feeds a MediaSource by `Range` fetches from https://view.zing/<token>, which answer 206 with
@@ -12,6 +13,8 @@ import { codecsOf, initLength, nextFragment, timescaleOf } from '@shared/convert
 const AHEAD_SECONDS = 60
 const BEHIND_SECONDS = 30
 const WAIT_MS = 300
+/** No new bytes for this long while the file is still not finished: the conversion has stalled or the file is not coming. */
+const STALL_MS = 120_000
 const BACK_PRESSURE_MS = 250
 
 export class StreamError extends Error {
@@ -100,6 +103,7 @@ class StreamPlayer {
 	}
 
 	private async pump(generation: number): Promise<void> {
+		const stall = new Stall(STALL_MS)
 		while (this.live(generation)) {
 			await this.untilRoom(generation)
 			if (!this.live(generation)) return
@@ -110,10 +114,12 @@ class StreamPlayer {
 				return
 			}
 			if (chunk === 'wait') {
+				stall.check()
 				await this.clampSeek(generation)
 				if (this.live(generation)) await sleep(WAIT_MS)
 				continue
 			}
+			stall.progress()
 			this.offset += chunk.length
 			this.carry = join(this.carry, chunk)
 			await this.consume(generation)

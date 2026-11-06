@@ -367,6 +367,31 @@ public sealed class ViewerFilesTests : IDisposable
 	}
 
 	[Fact]
+	[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+	public async Task A_growing_copy_that_exists_but_cannot_be_opened_is_an_error_not_a_wait()
+	{
+		var session = OpenConverted("holiday.mov");
+		var live = Path.Combine(session.Folder!, "live.mp4");
+		_viewer.BeginLive(session.Id, live);
+		await File.WriteAllBytesAsync(live, Bytes(10), TestContext.Current.CancellationToken);
+		var file = new FileInfo(live);
+		var me = System.Security.Principal.WindowsIdentity.GetCurrent().User!;
+		var security = file.GetAccessControl();
+		var deny = new System.Security.AccessControl.FileSystemAccessRule(me, System.Security.AccessControl.FileSystemRights.ReadData, System.Security.AccessControl.AccessControlType.Deny);
+		security.AddAccessRule(deny);
+		file.SetAccessControl(security);
+		try
+		{
+			await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _viewer.ServeAsync(Get(session, "bytes=0-")));
+		}
+		finally
+		{
+			security.RemoveAccessRule(deny);
+			file.SetAccessControl(security);
+		}
+	}
+
+	[Fact]
 	public async Task A_finished_copy_reads_from_its_final_place_and_416_is_the_real_end()
 	{
 		var session = OpenConverted("holiday.mov");
