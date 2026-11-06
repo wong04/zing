@@ -1,4 +1,4 @@
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFStream, PDFString, type PDFObject, type PDFPage } from 'pdf-lib'
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFStream, PDFString, type PDFObject, type PDFPage } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { deletePages, fillForm, listFormFields, mergePdfs, splitPdf } from './pdfEdit'
 
@@ -7,17 +7,21 @@ const SECRET = 'SECRETPAGE3'
 const pageObjects = (doc: PDFDocument): number =>
 	doc.context.enumerateIndirectObjects().filter(([, o]) => (o as { get?: (n: PDFName) => unknown }).get?.(PDFName.of('Type')) === PDFName.of('Page')).length
 
-/** Destinations left with a name but no page, such as [/Fit]: what is left when only the page reference of a cut action is taken out. */
+const FITS = ['XYZ', 'Fit', 'FitH', 'FitV', 'FitR', 'FitB', 'FitBH', 'FitBV'].map((fit) => PDFName.of(fit))
+
+/**
+ * Destinations left with no page, such as [/Fit], wherever they are: under /D or /Dest, in a /Dests dictionary, in a name tree
+ * or as their own object. It is what is left when only the page reference of a cut destination is taken out.
+ */
 function deadDestinations(doc: PDFDocument): number {
 	let dead = 0
 	const look = (object: PDFObject): void => {
 		if (object instanceof PDFStream) look(object.dict)
-		else if (object instanceof PDFDict) {
-			for (const [key, value] of object.entries()) {
-				if ((key === PDFName.of('D') || key === PDFName.of('Dest')) && value instanceof PDFArray && value.size() > 0 && value.get(0) instanceof PDFName) dead++
-				look(value)
-			}
-		} else if (object instanceof PDFArray) object.asArray().forEach(look)
+		else if (object instanceof PDFDict) for (const [, value] of object.entries()) look(value)
+		else if (object instanceof PDFArray) {
+			if (FITS.includes(object.get(0) as PDFName)) dead++
+			object.asArray().forEach(look)
+		}
 	}
 	for (const [, object] of doc.context.enumerateIndirectObjects()) look(object)
 	return dead
@@ -95,6 +99,72 @@ describe('a page that is left out is not in the file, whatever pointed at it', (
 		const merged = await mergePdfs([await threePages(cases[0]![1]), await threePages(cases[3]![1])])
 		expect(pageObjects(await PDFDocument.load(merged))).toBe(6)
 	})
+})
+
+/**
+ * A document's named destinations, as LaTeX writes them: an old-style /Dests dictionary, a /Dests name tree with three leaves
+ * (values that are actions by reference, direct arrays and arrays by reference) and an outline-like item whose /Dest is its own
+ * object. A rebuild does not copy the catalog, so they are hung on page 1, which is how they reach the copy.
+ */
+function namedDestinations(doc: PDFDocument, pages: PDFPage[]): void {
+	const { context } = doc
+	const [kept, lost] = [pages[1]!.ref, pages[2]!.ref]
+	const action = (page: PDFPage): PDFRef => context.register(context.obj({ S: 'GoTo', D: [page.ref, 'Fit'] }))
+	const own = (page: PDFPage): PDFRef => context.register(context.obj([page.ref, 'Fit']))
+	const leaf = (names: PDFArray, low: string, high: string): PDFRef => context.register(context.obj({ Names: names, Limits: [PDFString.of(low), PDFString.of(high)] }))
+	const tree = context.obj({
+		Kids: [
+			leaf(context.obj([PDFString.of('a'), action(pages[2]!), PDFString.of('b'), action(pages[1]!), PDFString.of('c'), [lost, 'Fit']]), 'a', 'c'),
+			leaf(context.obj([PDFString.of('d'), own(pages[2]!), PDFString.of('e'), [kept, 'Fit']]), 'd', 'e'),
+			leaf(context.obj([PDFString.of('f'), [lost, 'FitH', 0]]), 'f', 'f'),
+		],
+	})
+	const dests = context.obj({ gone: [lost, 'Fit'], goneByRef: own(pages[2]!), stays: [kept, 'Fit'] })
+	const item = context.obj({ Title: PDFString.of('Section 3'), Dest: own(pages[2]!) })
+	pages[0]!.node.set(PDFName.of('Doc'), context.obj({ Dests: dests, Names: { Dests: tree }, Item: item }))
+}
+
+/** The name tree's names and values, leaf by leaf, with each leaf's /Limits. */
+function readTree(tree: PDFDict): { names: Record<string, PDFObject>; limits: string[][] } {
+	const names: Record<string, PDFObject> = {}
+	const limits: string[][] = []
+	for (const kid of tree.lookup(PDFName.of('Kids'), PDFArray).asArray()) {
+		const leaf = tree.context.lookup(kid, PDFDict)
+		const pairs = leaf.lookup(PDFName.of('Names'), PDFArray)
+		for (let at = 0; at < pairs.size(); at += 2) names[(pairs.get(at) as PDFString).decodeText()] = pairs.get(at + 1)
+		limits.push(leaf.lookup(PDFName.of('Limits'), PDFArray).asArray().map((s) => (s as PDFString).decodeText()))
+	}
+	return { names, limits }
+}
+
+describe('named destinations to a left-out page', () => {
+	const runs: [string, (bytes: Uint8Array) => Promise<Uint8Array>][] = [
+		['delete', (bytes) => deletePages(bytes, [3])],
+		['split', async (bytes) => (await splitPdf(bytes, [{ from: 1, to: 2 }]))[0]!],
+	]
+	for (const [name, run] of runs) {
+		it(`${name}: are gone with their names, and the ones to kept pages still lead there`, async () => {
+			const bytes = await run(await threePages(namedDestinations))
+			await expectNoLeak(bytes, 2)
+			const loaded = await PDFDocument.load(bytes)
+			const page2 = loaded.getPages()[1]!.ref
+			const target = (dest: PDFObject): PDFObject => (loaded.context.lookup(dest) as PDFArray).get(0)
+			const doc = loaded.getPages()[0]!.node.lookup(PDFName.of('Doc'), PDFDict)
+
+			const { names, limits } = readTree(doc.lookup(PDFName.of('Names'), PDFDict).lookup(PDFName.of('Dests'), PDFDict))
+			expect(Object.keys(names)).toEqual(['b', 'e'])
+			expect(target(loaded.context.lookup(names.b!, PDFDict).get(PDFName.of('D')))).toBe(page2)
+			expect(target(names.e!)).toBe(page2)
+			expect(limits).toEqual([['b', 'b'], ['e', 'e']])
+
+			const dests = doc.lookup(PDFName.of('Dests'), PDFDict)
+			expect(dests.keys().map((key) => key.decodeText())).toEqual(['stays'])
+			expect(target(dests.get(PDFName.of('stays'))!)).toBe(page2)
+
+			const item = doc.lookup(PDFName.of('Item'), PDFDict)
+			expect(item.has(PDFName.of('Dest'))).toBe(false)
+		})
+	}
 })
 
 describe('which pages a field is on', () => {

@@ -4,7 +4,7 @@
 // Every function loads its input afresh and returns new bytes; none changes what it was given. A file that is encrypted,
 // damaged, empty or past PDF_LIMITS.maxPages is refused with a PdfEditError naming it. `ignoreEncryption` is never used:
 // pdf-lib would then write the file without its encryption, which is not what the person asked for.
-import { EncryptedPDFError, PDFArray, PDFContext, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFStream, PDFString, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { EncryptedPDFError, PDFArray, PDFContext, PDFDict, PDFDocument, PDFHexString, PDFName, PDFObjectCopier, PDFPage, PDFPageLeaf, PDFRef, PDFStream, PDFString, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFObject } from 'pdf-lib'
 import { checkPictureSize } from './pictureHeader'
 import {
 	PDF_LIMITS,
@@ -270,6 +270,21 @@ function dropPageLinks(doc: PDFDocument, keep: ReadonlySet<number>): void {
 	}
 }
 
+/**
+ * Like copyPages, except that each page is copied through its reference. copyPages copies the page object itself, so a kept page
+ * that something on another page points at (a named destination, an action) would come out twice, and that reference would lead
+ * to the second copy; here it leads to the kept page.
+ */
+async function copyPagesByRef(out: PDFDocument, doc: PDFDocument, indices: readonly number[]): Promise<PDFPage[]> {
+	await doc.flush()
+	const copier = PDFObjectCopier.for(doc.context, out.context)
+	const pages = doc.getPages()
+	return indices.map((index) => {
+		const ref = copier.copy(pages[index]!.ref)
+		return PDFPage.of(out.context.lookup(ref, PDFPageLeaf), ref, out)
+	})
+}
+
 async function copyPlanned(docs: readonly PDFDocument[], plan: PdfPlan): Promise<PDFDocument> {
 	const out = await PDFDocument.create()
 	// One copyPages call per file, so what pages share (fonts, images) is copied once; a page used twice is copied again.
@@ -278,7 +293,7 @@ async function copyPlanned(docs: readonly PDFDocument[], plan: PdfPlan): Promise
 		if (doc === undefined) continue
 		const wanted = [...new Set(plan.pages.filter((p) => p.source === source).map((p) => p.page))]
 		dropPageLinks(doc, new Set(wanted))
-		const copied = await out.copyPages(doc, wanted.map((page) => page - 1))
+		const copied = await copyPagesByRef(out, doc, wanted.map((page) => page - 1))
 		wanted.forEach((page, i) => copies.set(`${source}:${page}`, copied[i]!))
 	}
 	const used = new Set<PDFPage>()
@@ -327,22 +342,91 @@ function rebuildForm(out: PDFDocument, source: PDFDocument): void {
 	out.catalog.set(PDFName.of('AcroForm'), out.context.register(form))
 }
 
-/** A destination that begins with a lost page, such as [page /Fit]. */
-function isLostDestination(value: unknown, lost: ReadonlySet<PDFRef>): boolean {
-	if (!(value instanceof PDFArray)) return false
-	const first = value.get(0)
-	return first instanceof PDFRef && lost.has(first)
+const DEST = PDFName.of('Dest')
+const DESTS = PDFName.of('Dests')
+const NAMES = PDFName.of('Names')
+const KIDS = PDFName.of('Kids')
+const LIMITS = PDFName.of('Limits')
+const FITS = new Set(['XYZ', 'Fit', 'FitH', 'FitV', 'FitR', 'FitB', 'FitBH', 'FitBV'].map((fit) => PDFName.of(fit)))
+
+/**
+ * A destination that leads to no page, directly or by reference: [lostPage /Fit], or [/Fit] once its page reference was cut
+ * (objects are cut in no set order, so a destination that is its own object may already have lost its page).
+ */
+function isDeadDestination(value: unknown, lost: ReadonlySet<PDFRef>, context: PDFContext): boolean {
+	if (value instanceof PDFRef && lost.has(value)) return true
+	const dest = value instanceof PDFRef ? context.lookup(value) : value
+	if (!(dest instanceof PDFArray)) return false
+	const first = dest.get(0)
+	return (first instanceof PDFRef && lost.has(first)) || (first instanceof PDFName && FITS.has(first))
 }
 
-/** An action that goes to a lost page: it would be left as [/Fit] with no page, so it is dropped whole. */
-function isLostAction(value: unknown, lost: ReadonlySet<PDFRef>, context: PDFContext): boolean {
+/** An action that goes to no page: it would be left as [/Fit], so it is dropped whole. */
+function isDeadAction(value: unknown, lost: ReadonlySet<PDFRef>, context: PDFContext): boolean {
 	const dict = value instanceof PDFRef ? context.lookup(value) : value
-	return dict instanceof PDFDict && isLostDestination(dict.get(PDFName.of('D')), lost)
+	return dict instanceof PDFDict && isDeadDestination(dict.get(PDFName.of('D')), lost, context)
+}
+
+function isCut(value: unknown, lost: ReadonlySet<PDFRef>, context: PDFContext): boolean {
+	return (value instanceof PDFRef && lost.has(value)) || isDeadAction(value, lost, context)
+}
+
+/** A leaf (with /Names) or an intermediate node (whose kids have /Limits) of a name tree. Page tree and field /Kids have no /Limits. */
+function isNameTreeNode(dict: PDFDict): boolean {
+	if (dict.lookup(NAMES) instanceof PDFArray) return true
+	const kids = dict.lookup(KIDS)
+	if (!(kids instanceof PDFArray) || kids.size() === 0) return false
+	const first = kids.lookup(0)
+	return first instanceof PDFDict && first.has(LIMITS)
+}
+
+/**
+ * In a name tree a name and its value are cut together, so the pairs stay in step; a kid left with no names is taken out of
+ * /Kids, and each /Limits is set to the names that are left. Returns whether the node still has a name.
+ */
+function cutNameNode(node: PDFDict, lost: ReadonlySet<PDFRef>, context: PDFContext, seen: Set<PDFDict>): boolean {
+	const pairs = node.lookup(NAMES)
+	if (pairs instanceof PDFArray) {
+		for (let at = (pairs.size() & ~1) - 2; at >= 0; at -= 2) {
+			const value = pairs.get(at + 1)
+			if (!isCut(value, lost, context) && !isDeadDestination(value, lost, context)) continue
+			pairs.remove(at + 1)
+			pairs.remove(at)
+		}
+		const last = (pairs.size() & ~1) - 2
+		if (last < 0) return false
+		setLimits(node, pairs.get(0), pairs.get(last), context)
+		return true
+	}
+	const kids = node.lookup(KIDS)
+	if (!(kids instanceof PDFArray)) return false
+	for (let at = kids.size() - 1; at >= 0; at--) {
+		const kid = kids.lookup(at)
+		if (!(kid instanceof PDFDict) || seen.has(kid)) continue
+		seen.add(kid)
+		if (!cutNameNode(kid, lost, context, seen)) kids.remove(at)
+	}
+	if (kids.size() === 0) return false
+	const low = kids.lookup(0, PDFDict).lookup(LIMITS, PDFArray).get(0)
+	const high = kids.lookup(kids.size() - 1, PDFDict).lookup(LIMITS, PDFArray).get(1)
+	setLimits(node, low, high, context)
+	return true
+}
+
+/** Only a kid has /Limits; the root of a tree has none. */
+function setLimits(node: PDFDict, low: PDFObject, high: PDFObject, context: PDFContext): void {
+	if (node.has(LIMITS)) node.set(LIMITS, context.obj([low, high]))
+}
+
+/** An old-style /Dests dictionary loses each name whose destination leads to no page. */
+function cutDests(dests: PDFDict, lost: ReadonlySet<PDFRef>, context: PDFContext): void {
+	for (const [name, value] of dests.entries()) if (isDeadDestination(value, lost, context) || isDeadAction(value, lost, context)) dests.delete(name)
 }
 
 /**
  * Takes out of `object` (and the plain dictionaries and arrays inside it, not what its references lead to) every reference to a lost
- * object. A destination or an action that would be left with no page is removed whole instead of being left as [/Fit].
+ * object. A destination or an action that would be left with no page is removed whole instead of being left as [/Fit]: its key, its
+ * place in an array, or its name and value in a name tree.
  */
 function cutReferences(object: unknown, lost: ReadonlySet<PDFRef>, context: PDFContext): void {
 	if (object instanceof PDFStream) {
@@ -350,16 +434,22 @@ function cutReferences(object: unknown, lost: ReadonlySet<PDFRef>, context: PDFC
 		return
 	}
 	if (object instanceof PDFDict) {
+		if (isNameTreeNode(object)) cutNameNode(object, lost, context, new Set([object]))
 		for (const [key, value] of object.entries()) {
-			if ((value instanceof PDFRef && lost.has(value)) || isLostAction(value, lost, context) || (key === PDFName.of('Dest') && isLostDestination(value, lost))) object.delete(key)
-			else cutReferences(value, lost, context)
+			if (isCut(value, lost, context) || (key === DEST && isDeadDestination(value, lost, context))) {
+				object.delete(key)
+				continue
+			}
+			const dests = key === DESTS ? context.lookup(value) : undefined
+			if (dests instanceof PDFDict && !isNameTreeNode(dests)) cutDests(dests, lost, context)
+			cutReferences(value, lost, context)
 		}
 		return
 	}
 	if (object instanceof PDFArray) {
 		for (let at = object.size() - 1; at >= 0; at--) {
 			const value = object.get(at)
-			if ((value instanceof PDFRef && lost.has(value)) || isLostAction(value, lost, context)) object.remove(at)
+			if (isCut(value, lost, context)) object.remove(at)
 			else cutReferences(value, lost, context)
 		}
 	}
@@ -367,8 +457,9 @@ function cutReferences(object: unknown, lost: ReadonlySet<PDFRef>, context: PDFC
 
 /**
  * The guarantee that a left-out page is not in the file, however it was reached (a link, an action, a field's other widgets, an
- * article bead): after copying, every page object that is not one of the output's pages is found, every reference to it, and to
- * the widgets that sat on it, is cut, and whatever is no longer reachable from the document is removed from the file.
+ * article bead, a named destination): after copying, every page object that is not one of the output's pages is found, every
+ * reference to it, and to the widgets that sat on it, is cut, and whatever is no longer reachable from the document is removed
+ * from the file.
  */
 function removeLostPages(doc: PDFDocument): void {
 	const { context } = doc
@@ -381,7 +472,13 @@ function removeLostPages(doc: PDFDocument): void {
 		const page = object instanceof PDFDict ? object.get(PDFName.of('P')) : undefined
 		if (page instanceof PDFRef && lost.has(page)) lost.add(ref)
 	}
-	for (const [ref, object] of context.enumerateIndirectObjects()) if (!lost.has(ref)) cutReferences(object, lost, context)
+	// A name tree's /Names array that is its own object is cut through its node, in pairs, never on its own.
+	const nameArrays = new Set<PDFRef>()
+	for (const [, object] of context.enumerateIndirectObjects()) {
+		const names = object instanceof PDFDict ? object.get(NAMES) : undefined
+		if (names instanceof PDFRef) nameArrays.add(names)
+	}
+	for (const [ref, object] of context.enumerateIndirectObjects()) if (!lost.has(ref) && !nameArrays.has(ref)) cutReferences(object, lost, context)
 	for (const ref of lost) context.delete(ref)
 	removeUnreachable(doc)
 }
