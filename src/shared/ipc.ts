@@ -296,6 +296,17 @@ export interface InvokeContract {
 	 * large one. A page view cannot call this: it has no host channel.
 	 */
 	'page:save': { args: []; result: PickedFile }
+	/**
+	 * The PDF tools: the bytes of a file this window picked or was given, as base64. Only PDF, PNG and JPEG files whose content
+	 * is what their name says, up to 50 MB; anything else rejects with PdfFileRefusedException. A page view has no host channel.
+	 */
+	'files:read': { args: [token: string]; result: string }
+	/**
+	 * The PDF tools: puts base64 bytes in Downloads under `name` (a plain name ending in .pdf, .png or .jpg, up to 100 characters
+	 * before the extension; the bytes must be that kind; numbered if taken) and answers with the name it got and a token.
+	 * Up to 100 MB. Rejects with PdfFileRefusedException otherwise.
+	 */
+	'files:save-bytes': { args: [name: string, base64: string]; result: PickedFile }
 	/** The native open dialog; an empty list if the person cancelled. */
 	'files:pick': { args: [kinds: readonly FileKind[]]; result: PickedFile[] }
 	/**
@@ -458,6 +469,10 @@ export interface ZingApi {
 	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>
 	/** Convert's HTML to PDF (see `convert:html-to-pdf`). */
 	printHtmlToPdf(token: string, outputName: string): Promise<PickedFile>
+	/** The PDF tools' read of a granted PDF, PNG or JPEG as base64 (see `files:read`). */
+	readFileBase64(token: string): Promise<string>
+	/** The PDF tools' save of base64 bytes to Downloads (see `files:save-bytes`). */
+	saveFileBase64(name: string, base64: string): Promise<PickedFile>
 	/** Hand over the `File`s of a drop (`event.dataTransfer.files`); resolves with a token for each. */
 	openDropped(files: readonly File[]): Promise<PickedFile[]>
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe

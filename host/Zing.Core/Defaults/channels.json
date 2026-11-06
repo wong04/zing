@@ -133,6 +133,14 @@
 			"args": 1
 		},
 		{
+			"channel": "files:read",
+			"args": 1
+		},
+		{
+			"channel": "files:save-bytes",
+			"args": 2
+		},
+		{
 			"channel": "find:close",
 			"args": 0
 		},

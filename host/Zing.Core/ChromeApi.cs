@@ -251,6 +251,8 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("engines:cancel-job", args => Do(() => Runner().Cancel(Text(args, 0), _windowId)));
 		bridge.Register("files:pick", args => PickFilesAsync(Arg(args, 0)));
 		bridge.Register("convert:html-to-pdf", args => HtmlToPdfAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("files:read", args => ReadFileAsync(Text(args, 0)));
+		bridge.Register("files:save-bytes", args => SaveBytesAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("files:open-dropped", _ => Drops.Take());
 		bridge.Register("page:save", _ => SavePageAsync());
 		bridge.Register("account:get", _ => app.Account.State());
@@ -497,6 +499,21 @@ public sealed class ChromeApi : IDisposable
 		var extensions = FileKinds.Extensions([.. kinds.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : throw new ArgumentException("A file kind must be a string"))]);
 		var paths = await _host.PickFilesAsync(extensions);
 		return paths.Select(Grants.Issue).ToList();
+	}
+
+	/// <summary>The PDF tools: the bytes of a granted PDF, PNG or JPEG as base64 (see <see cref="PdfFiles"/>).</summary>
+	private async Task<object?> ReadFileAsync(string token)
+	{
+		var path = Grants.Resolve(token);
+		return Convert.ToBase64String(await Task.Run(() => PdfFiles.Read(path)));
+	}
+
+	/// <summary>The PDF tools: puts base64 bytes in Downloads under a numbered name and answers with that name and a token.</summary>
+	private async Task<object?> SaveBytesAsync(string name, string base64)
+	{
+		if (base64.Length > PdfFiles.MaxSaveText) throw new PdfFileRefusedException($"That file is over the {PdfFiles.MaxSaveBytes / (1024 * 1024)} MB the PDF tools save.");
+		var bytes = Convert.FromBase64String(base64);
+		return Grants.Issue(await Task.Run(() => PdfFiles.Save(_host.DownloadsDirectory, name, bytes)));
 	}
 
 	/// <summary>Convert's HTML to PDF: prints the file a token stands for and answers with the PDF's name and a token.</summary>
