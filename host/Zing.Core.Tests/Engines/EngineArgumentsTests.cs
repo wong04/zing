@@ -80,6 +80,12 @@ public sealed class EngineArgumentsTests
 	}
 
 	[Fact]
+	public void The_engine_gets_a_host_in_ascii_the_form_that_was_checked()
+	{
+		Assert.Equal(["--", "https://www.example.com/a", "https://xn--bcher-kva.example/a"], EngineArguments.Urls(["https://ｗｗｗ.example.com/a", "https://bücher.example/a"]));
+	}
+
+	[Fact]
 	public void The_engine_gets_the_text_that_was_checked_not_the_text_that_was_sent()
 	{
 		Assert.Equal(["--", "https://example.com/", "http://127.0.0.1.example.com/a"], EngineArguments.Urls(["https://EXAMPLE.com", "http://127.0.0.1.example.com/a"]));

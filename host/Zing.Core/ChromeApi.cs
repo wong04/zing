@@ -99,6 +99,7 @@ public sealed class ChromeApi : IDisposable
 
 	internal IWindowHost Host => _host;
 	private readonly string _appVersion;
+	private readonly OutputPlacement _placement;
 	private readonly List<IDisposable> _subscriptions = [];
 	private readonly Action _unsubscribeLibrary;
 	private string? _libraryPanel;
@@ -154,6 +155,7 @@ public sealed class ChromeApi : IDisposable
 		_consent = app.Consent;
 		_host = host;
 		_appVersion = appVersion;
+		_placement = OutputPlacement.ForSettings(app.Settings);
 		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text));
 		Saved = new SavedTabs(Tabs, app.Library);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
@@ -164,7 +166,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.UseDropInbox(Drops);
 		if (app.ViewerRoot is { } viewerRoot)
 		{
-			Viewer = new ViewerFiles(viewerRoot, (what, error) => host.Warn(what, error))
+			Viewer = new ViewerFiles(viewerRoot, _placement, (what, error) => host.Warn(what, error))
 			{
 				ModelOpener = () => OpenModel(app.Engines),
 				SaveDirectory = host.DownloadsDirectory,
@@ -540,7 +542,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		var page = Tabs.ActivePage ?? throw new PageNotSavableException("There is no page open to save.");
 		var text = await PageSave.ReadAsync(page);
-		return Grants.Issue(PageSave.Write(_host.DownloadsDirectory, text.Title, text.Html));
+		return Grants.Issue(PageSave.Write(_placement, _host.DownloadsDirectory, text.Title, text.Html));
 	}
 
 	private EngineStore Engines() => _app.Engines ?? throw new InvalidOperationException("This host has no engine store");
@@ -562,11 +564,6 @@ public sealed class ChromeApi : IDisposable
 		return paths.Select(Grants.Issue).ToList();
 	}
 
-	/// <summary>
-	/// Opens a picked or dropped file for a tool panel as a read session on the viewer file server. The host judges the first bytes
-	/// against the kinds asked for (a fixed table: image, pdf) and the length cap, and answers with a session address; the token and
-	/// the path never reach the tool. Closing the panel, opening another file in it or <c>viewer:close</c> revokes it.
-	/// </summary>
 	/// <summary>The model and a hold on it, so the store will not remove it while the host streams it.</summary>
 	private static (string Path, IDisposable Lease) OpenModel(EngineStore? engines)
 	{
@@ -586,6 +583,11 @@ public sealed class ChromeApi : IDisposable
 	private static List<string> StringArray(JsonElement list) =>
 		list.ValueKind == JsonValueKind.Array ? [.. list.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.String ? item.GetString()! : throw new ArgumentException("Kinds must be a list of names"))] : throw new ArgumentException("Argument 2 must be a list of kinds");
 
+	/// <summary>
+	/// Opens a picked or dropped file for a tool panel as a read session on the viewer file server. The host judges the first bytes
+	/// against the kinds asked for (a fixed table: image, pdf) and the length cap, and answers with a session address; the token and
+	/// the path never reach the tool. Closing the panel, opening another file in it or <c>viewer:close</c> revokes it.
+	/// </summary>
 	private object OpenToolSession(string panelId, string token, IReadOnlyList<string> kindNames)
 	{
 		var viewer = Viewer ?? throw new InvalidOperationException("This host can't serve files to tools");
@@ -613,7 +615,7 @@ public sealed class ChromeApi : IDisposable
 	private async Task<object?> HtmlToPdfAsync(string token, string outputName)
 	{
 		var path = Grants.Resolve(token);
-		var placed = await HtmlPdf.PrintAsync(path, outputName, _host.DownloadsDirectory, _host.PrintHtmlToPdfAsync, _closing.Token);
+		var placed = await HtmlPdf.PrintAsync(path, outputName, _host.DownloadsDirectory, _placement, _host.PrintHtmlToPdfAsync, _closing.Token);
 		return Grants.Issue(placed);
 	}
 

@@ -68,11 +68,10 @@ export function extensionOf(name: string): string {
 	return dot < 0 ? '' : name.slice(dot + 1).toLowerCase()
 }
 
-
-/** What `viewer:open` answers with. */
 /** The kinds of file a tool can ask a read session for (SessionKinds.cs). */
 export type SessionKindName = 'image' | 'pdf'
 
+/** What `viewer:open` answers with. */
 export interface ViewerOpened {
 	/** Names this open file to `viewer:close`. */
 	readonly id: string

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PDF_LIMITS, PdfEditError } from '@shared/pdf/pdfCore'
+import { PDF_LIMITS, PdfEditError, type OverlayItem } from '@shared/pdf/pdfCore'
 import {
 	addFile,
 	amend,
@@ -127,15 +127,26 @@ describe('the form after pages were deleted', () => {
 })
 
 describe('the plan for a range', () => {
-	it('keeps the pages in the range, with their items renumbered and no form values', () => {
+	it('keeps the pages in the range, with their items renumbered', () => {
 		let model = twoFiles()
 		model = addItem(model, model.pages[3]!.key, text)
-		model = setFormValue(model, 'a', 'b')
-		const part = toPlanRange(model, { from: 3, to: 5 })
+		const part = toPlanRange(model, { from: 3, to: 5 }, 1, [])
 		expect(part.pages).toEqual([{ source: 1, page: 1, rotate: 0 }, { source: 1, page: 2, rotate: 0 }, { source: 1, page: 3, rotate: 0 }])
 		expect(part.overlays).toEqual([{ page: 2, items: [text] }])
 		expect(part.formValues).toBeUndefined()
-		expect(toPlanRange(model, { from: 1, to: 2 }).overlays).toEqual([])
+		expect(toPlanRange(model, { from: 1, to: 2 }, 0, []).overlays).toEqual([])
+	})
+	it('carries the typed values of the fields that have a widget on a page in the range', () => {
+		const fields = [
+			{ name: 'first', pages: [1] },
+			{ name: 'second', pages: [2] },
+			{ name: 'both', pages: [1, 3] },
+		]
+		let model = addFile(emptyModel(), { source: 0, name: 'f.pdf', pageCount: 3 })
+		model = setFormValue(setFormValue(setFormValue(model, 'first', 'Alice'), 'second', 'Bob'), 'both', 'yes')
+		expect(toPlanRange(model, { from: 1, to: 1 }, 0, fields).formValues).toEqual({ first: 'Alice', both: 'yes' })
+		expect(toPlanRange(model, { from: 2, to: 2 }, 0, fields).formValues).toEqual({ second: 'Bob' })
+		expect(toPlanRange(model, { from: 1, to: 1 }, 0, []).formValues).toBeUndefined()
 	})
 })
 
@@ -192,8 +203,16 @@ describe('undo', () => {
 		for (let i = 0; i < PDF_LIMITS.undoBytes / PDF_LIMITS.maxOverlayImageBytes; i++) model = addItem(model, page, picture)
 		expect(() => addItem(model, page, picture)).toThrow(/pictures/)
 	})
-	it('trim never drops the present', () => {
-		const h = trim({ past: [], present: emptyModel(), future: [] })
-		expect(h.present).toBeDefined()
+	it('trim never drops the present, even when the history holds more pictures than the limit', () => {
+		const base = addFile(emptyModel(), { source: 0, name: 'a.pdf', pageCount: 1 })
+		const page = base.pages[0]!.key
+		const picture = (): OverlayItem => ({ kind: 'image', bytes: new Uint8Array(PDF_LIMITS.maxOverlayImageBytes), format: 'png', x: 0, y: 0, width: 10, height: 10 })
+		let present = base
+		for (let i = 0; i < PDF_LIMITS.undoBytes / PDF_LIMITS.maxOverlayImageBytes; i++) present = addItem(present, page, picture())
+		const older = addItem(base, page, picture())
+		const h = trim({ past: [older], present, future: [older] })
+		expect(h.present).toBe(present)
+		expect(h.past).toEqual([])
+		expect(h.future).toEqual([])
 	})
 })

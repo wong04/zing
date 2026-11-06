@@ -17,7 +17,7 @@ public sealed class SaveBudgetException(string message) : SaveRefusedException(m
 /// <summary>
 /// A tool result (the background remover's PNG, a PDF tool's PDF or JPEG). The worker PUTs the file it made to the host (a streamed request body, never base64 or
 /// a bridge message); the host checks the declared and the real size, the format's magic bytes and the name, and puts the file in
-/// Downloads under a name that is not taken (never over a file), through a hidden part file so a failure never leaves half a PNG
+/// Downloads as "Never overwrite files" says (see OutputPlacement), through a hidden part file so a failure never leaves half a PNG
 /// under a real name. The copy is made with asynchronous IO, so the thread that called is not held.
 /// </summary>
 public static partial class ResultSave
@@ -46,7 +46,7 @@ public static partial class ResultSave
 	/// <exception cref="SaveTooLargeException">Declared or actually longer than the format cap.</exception>
 	/// <exception cref="SaveBudgetException">It would take the window past <paramref name="room"/>.</exception>
 	/// <exception cref="SaveRefusedException">The name is not a plain name with an allowed extension, or the bytes are not that format.</exception>
-	public static async Task<(string Path, long Bytes)> WriteAsync(string directory, string name, IReadOnlyCollection<SaveFormat> allowed, Stream body, long? declared, long room, TimeSpan idle, Func<bool> stillOpen, CancellationToken cancel)
+	public static async Task<(string Path, long Bytes)> WriteAsync(OutputPlacement placement, string directory, string name, IReadOnlyCollection<SaveFormat> allowed, Stream body, long? declared, long room, TimeSpan idle, Func<bool> stillOpen, CancellationToken cancel)
 	{
 		var format = CheckName(name, allowed);
 		if (declared is { } length)
@@ -66,7 +66,7 @@ public static partial class ResultSave
 			// The session may have been closed while the body arrived; then the file does not land.
 			cancel.ThrowIfCancellationRequested();
 			if (!stillOpen()) throw new OperationCanceledException("The session was closed");
-			var target = MoveIntoPlace(part, directory, name);
+			var target = placement.Place(part, directory, name);
 			return (target, written);
 		}
 		finally
@@ -125,20 +125,4 @@ public static partial class ResultSave
 
 	private static SaveBudgetException OutOfRoom() => new("Zing has saved as much result data as it will in one session. Close Zing and open it again to save more");
 
-	private static string MoveIntoPlace(string part, string directory, string name)
-	{
-		// File.Move refuses to overwrite, so a file that arrives after the name was chosen makes the next number be tried.
-		while (true)
-		{
-			var target = Path.Combine(directory, DownloadNames.FileName(name, candidate => File.Exists(Path.Combine(directory, candidate))));
-			try
-			{
-				File.Move(part, target, overwrite: false);
-				return target;
-			}
-			catch (IOException) when (File.Exists(target))
-			{
-			}
-		}
-	}
 }

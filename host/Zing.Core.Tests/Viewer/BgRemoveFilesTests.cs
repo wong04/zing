@@ -25,7 +25,7 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 	{
 		await _engines.InstallAsync();
 		Directory.CreateDirectory(_dir);
-		_viewer = new ViewerFiles(Path.Combine(_dir, "viewer"), (what, error) => _errors.Add((what, error)))
+		_viewer = new ViewerFiles(Path.Combine(_dir, "viewer"), OutputPlacement.ForSettings(new SettingsStore()), (what, error) => _errors.Add((what, error)))
 		{
 			ModelOpener = Opener,
 			SaveDirectory = Path.Combine(_dir, "downloads"),
@@ -343,7 +343,7 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 	[Fact]
 	public void The_default_budget_is_about_a_gigabyte()
 	{
-		Assert.InRange(new ViewerFiles(_dir, (_, _) => { }).SaveBudget, 900L * 1024 * 1024, 1100L * 1024 * 1024);
+		Assert.InRange(new ViewerFiles(_dir, OutputPlacement.ForSettings(new SettingsStore()), (_, _) => { }).SaveBudget, 900L * 1024 * 1024, 1100L * 1024 * 1024);
 	}
 
 	[Fact]

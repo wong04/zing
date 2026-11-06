@@ -270,6 +270,54 @@ public sealed class EngineRunnerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task With_Never_overwrite_files_off_an_existing_file_is_replaced()
+	{
+		await _f.InstallAsync();
+		_f.Settings.Set("preserveOriginals", System.Text.Json.Nodes.JsonValue.Create(false));
+		var existing = Path.Combine(_f.Outputs, "clip.txt");
+		File.WriteAllText(existing, "precious");
+
+		var exit = await _f.RunAsync(_f.Request(["clip.txt"], Literal("--fake-write"), Output(0)));
+
+		Assert.Equal([existing], exit.Outputs);
+		Assert.NotEqual("precious", File.ReadAllText(existing));
+		Assert.Equal(["clip.txt"], _f.Entries(_f.Outputs));
+	}
+
+	[Fact]
+	public async Task With_Never_overwrite_files_off_a_job_with_several_outputs_still_numbers_them()
+	{
+		await _f.InstallAsync();
+		_f.Settings.Set("preserveOriginals", System.Text.Json.Nodes.JsonValue.Create(false));
+		File.WriteAllText(Path.Combine(_f.Outputs, "a.txt"), "precious a");
+		File.WriteAllText(Path.Combine(_f.Outputs, "b.txt"), "precious b");
+
+		var exit = await _f.RunAsync(_f.Request(["a.txt", "b.txt"], Literal("--fake-write"), Output(0), Literal("--fake-write"), Output(1)));
+
+		Assert.Equal([Path.Combine(_f.Outputs, "a 2.txt"), Path.Combine(_f.Outputs, "b 2.txt")], exit.Outputs);
+		Assert.Equal("precious a", File.ReadAllText(Path.Combine(_f.Outputs, "a.txt")));
+		Assert.Equal("precious b", File.ReadAllText(Path.Combine(_f.Outputs, "b.txt")));
+	}
+
+	[Fact]
+	public async Task With_Never_overwrite_files_off_a_job_that_fails_partway_loses_no_file_it_would_have_replaced()
+	{
+		await _f.InstallAsync();
+		_f.Settings.Set("preserveOriginals", System.Text.Json.Nodes.JsonValue.Create(false));
+		File.WriteAllText(Path.Combine(_f.Outputs, "c.txt"), "precious");
+		var moves = 0;
+		_f.Runner.BeforeMove = _ =>
+		{
+			if (++moves == 2) throw new IOException("disk full");
+		};
+
+		var exit = await _f.RunAsync(_f.Request(["c.txt", "d.txt"], Literal("--fake-write"), Output(0), Literal("--fake-write"), Output(1)));
+
+		Assert.Empty(exit.Outputs);
+		Assert.Equal("precious", File.ReadAllText(Path.Combine(_f.Outputs, "c.txt")));
+	}
+
+	[Fact]
 	public async Task A_file_that_appears_between_the_check_and_the_move_is_not_overwritten()
 	{
 		await _f.InstallAsync();
@@ -557,7 +605,7 @@ public sealed class EngineRunnerTests : IDisposable
 		Directory.CreateDirectory(Path.Combine(_f.Jobs, "left-over", "out"));
 		File.WriteAllText(Path.Combine(_f.Jobs, "left-over", "out", "partial.mp4"), "x");
 
-		_ = new EngineRunner(_f.Store, _f.Jobs, (_, _) => { });
+		_ = new EngineRunner(_f.Store, _f.Jobs, OutputPlacement.ForSettings(_f.Settings), (_, _) => { });
 
 		Assert.Empty(_f.Entries(_f.Jobs));
 	}

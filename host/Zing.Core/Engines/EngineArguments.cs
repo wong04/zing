@@ -27,8 +27,9 @@ public static class EngineArguments
 			if (!valid) throw new UnsafeEngineArgumentException($"{url} isn't an http or https address");
 			var checkedUri = new Uri(url);
 			if (LocalAddresses.IsLocal(checkedUri)) throw new UnsafeEngineArgumentException($"{url} is on this PC or the local network");
-			// The text that was checked is the text the engine gets.
-			operands.Add(checkedUri.AbsoluteUri);
+			// The text that was checked is the text the engine gets: the host in its ASCII form (IdnHost), which is the one classified.
+			var ascii = checkedUri.HostNameType == UriHostNameType.Dns ? new UriBuilder(checkedUri) { Host = checkedUri.IdnHost }.Uri : checkedUri;
+			operands.Add(ascii.AbsoluteUri);
 		}
 		return operands;
 	}

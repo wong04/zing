@@ -14,7 +14,7 @@ public sealed class ViewerFilesTests : IDisposable
 	public ViewerFilesTests()
 	{
 		Directory.CreateDirectory(_dir);
-		_viewer = new ViewerFiles(Path.Combine(_dir, "viewer"), (what, error) => _errors.Add((what, error)));
+		_viewer = new ViewerFiles(Path.Combine(_dir, "viewer"), OutputPlacement.ForSettings(new SettingsStore()), (what, error) => _errors.Add((what, error)));
 	}
 
 	public void Dispose()
@@ -217,7 +217,7 @@ public sealed class ViewerFilesTests : IDisposable
 	public async Task Another_window_cannot_read_this_windows_file()
 	{
 		var session = OpenNative("clip.mp4", Bytes(100));
-		using var other = new ViewerFiles(Path.Combine(_dir, "other"), (_, _) => { });
+		using var other = new ViewerFiles(Path.Combine(_dir, "other"), OutputPlacement.ForSettings(new SettingsStore()), (_, _) => { });
 		Assert.Equal(404, (await other.ServeAsync(Get(session))).Status);
 	}
 
@@ -570,7 +570,7 @@ public sealed class ViewerFilesTests : IDisposable
 		Directory.CreateDirectory(target);
 		var root = Path.Combine(_dir, "planted2");
 		MakeJunction(root, target);
-		using var viewer = new ViewerFiles(root, (_, _) => { });
+		using var viewer = new ViewerFiles(root, OutputPlacement.ForSettings(new SettingsStore()), (_, _) => { });
 		var session = viewer.OpenConverted("a.mov", "p", ViewerFormats.For("mov")!);
 		Assert.Empty(Directory.GetFileSystemEntries(target));
 		Assert.False(new DirectoryInfo(root).Attributes.HasFlag(FileAttributes.ReparsePoint));

@@ -59,6 +59,8 @@ function Stage({ file, duration, onError }: { file: Showing; duration: () => num
 		case 'audio':
 			return <audio className="viewer-audio" src={opened.url} controls aria-label={opened.name} data-testid="viewer-audio" onError={() => onError(new Error(`Chromium can't play ${opened.name}`))} />
 		case 'pdf':
+			// No sandbox attribute: Chromium's PDF viewer refuses to run in a sandboxed frame. The host keeps a link in the PDF from
+			// loading anything or opening a window (RendererView), which viewer.spec checks.
 			return <iframe className="viewer-media viewer-pdf" src={opened.url} title={opened.name} data-testid="viewer-pdf" />
 	}
 }

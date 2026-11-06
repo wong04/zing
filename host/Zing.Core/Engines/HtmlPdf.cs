@@ -23,12 +23,12 @@ public static class HtmlPdf
 	private static readonly string[] HtmlExtensions = [".html", ".htm", ".xhtml"];
 
 	/// <summary>Prints <paramref name="htmlPath"/> and returns where the PDF now is.</summary>
-	/// <param name="outputName">The wanted name, such as "page.pdf"; numbered if Downloads has one.</param>
+	/// <param name="outputName">The wanted name, such as "page.pdf"; numbered if Downloads has one, unless "Never overwrite files" is off.</param>
 	/// <param name="print">Renders the page text to the given PDF path (Chromium; a fake in tests).</param>
 	/// <exception cref="NotHtmlException">The file isn't an HTML file.</exception>
 	/// <exception cref="HtmlTooLargeException">The page is more than <see cref="MaxHtmlBytes"/>.</exception>
 	/// <exception cref="HtmlPdfException">The output name isn't a plain .pdf name, or the print made no file.</exception>
-	public static async Task<string> PrintAsync(string htmlPath, string outputName, string downloads, Func<string, string, CancellationToken, Task> print, CancellationToken cancellation)
+	public static async Task<string> PrintAsync(string htmlPath, string outputName, string downloads, OutputPlacement placement, Func<string, string, CancellationToken, Task> print, CancellationToken cancellation)
 	{
 		var name = Path.GetFileName(htmlPath);
 		if (!HtmlExtensions.Contains(Path.GetExtension(htmlPath), StringComparer.OrdinalIgnoreCase)) throw new NotHtmlException(name);
@@ -46,28 +46,11 @@ public static class HtmlPdf
 			// A print that finishes after Cancel must not leave its file.
 			cancellation.ThrowIfCancellationRequested();
 			if (!File.Exists(staged)) throw new HtmlPdfException($"Printing {name} made no PDF");
-			return Place(staged, downloads, outputName);
+			return placement.Place(staged, downloads, outputName);
 		}
 		finally
 		{
 			File.Delete(staged);
-		}
-	}
-
-	/// <summary>Moves the file to the first free name, never replacing one: a file that appears meanwhile makes the move fail and the next number is tried.</summary>
-	private static string Place(string staged, string downloads, string outputName)
-	{
-		while (true)
-		{
-			var target = Path.Combine(downloads, DownloadNames.FileName(outputName, candidate => File.Exists(Path.Combine(downloads, candidate))));
-			try
-			{
-				File.Move(staged, target, overwrite: false);
-				return target;
-			}
-			catch (IOException) when (File.Exists(target))
-			{
-			}
 		}
 	}
 }

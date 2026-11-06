@@ -1,4 +1,5 @@
 using Microsoft.Web.WebView2.Core;
+using Zing.Core;
 using Zing.Core.Viewer;
 
 namespace Zing.Host;
@@ -18,7 +19,7 @@ internal static class ViewerResponses
 			// A file locked or removed between the check in the viewer and now: the page gets a status it can read, not a failure of the request.
 			reply.Lease?.Dispose();
 			Faults.Warning("open a file for the viewer", failure);
-			return environment.CreateWebResourceResponse(null, 503, "Service Unavailable", "Cache-Control: no-store\r\nAccess-Control-Allow-Origin: https://app.zing");
+			return environment.CreateWebResourceResponse(null, 503, "Service Unavailable", $"Cache-Control: no-store\r\nAccess-Control-Allow-Origin: https://{ZingOrigin.Host}");
 		}
 		catch
 		{

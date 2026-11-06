@@ -35,6 +35,32 @@ export function describeRun(outcome: RunOutcome): string | null {
 	return `Stopped. ${saved.length} of ${total} files were saved to your Downloads folder; the other ${total - saved.length} were not made.`
 }
 
+/**
+ * Opens the files in order. `isCancelled` is looked at before each file and after a failure, so nothing after a Cancel starts
+ * and a file whose opening Cancel broke off is not counted.
+ * @throws the failure of a file, unless Cancel caused it.
+ */
+export async function openInTurn<T>(files: readonly T[], open: (file: T) => Promise<void>, isCancelled: () => boolean): Promise<{ added: number; stopped: boolean }> {
+	let added = 0
+	for (const file of files) {
+		if (isCancelled()) return { added, stopped: true }
+		try {
+			await open(file)
+		} catch (error) {
+			if (isCancelled()) return { added, stopped: true }
+			throw error
+		}
+		added++
+	}
+	return { added, stopped: false }
+}
+
+/** The words after Cancel while files were opening. */
+export function describeStoppedOpen(added: number): string {
+	if (added === 0) return 'Stopped. No file was added.'
+	return `Stopped. ${added} ${added === 1 ? 'file was' : 'files were'} added.`
+}
+
 /** The busy label while files are being opened, as opposed to a save or split. */
 export const OPENING = 'Opening…'
 

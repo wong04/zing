@@ -124,7 +124,10 @@ export function ConvertTool() {
 			preview = await pdfViewer.open(name, read.bytes)
 		} catch (error) {
 			runningPages.current = false
-			throw error
+			// Cancel aborts the read, which rejects with an AbortError: that is the stop asked for, not a failure.
+			if (!stopPages.current) throw error
+			setStage({ kind: 'cancelled', kept: 0 })
+			return
 		}
 		try {
 			if (preview.pageCount > PDF_LIMITS.maxConvertPages) {
@@ -237,7 +240,11 @@ export function ConvertTool() {
 			if (outcome.status !== 'full') return
 			takeHandedPdf()
 			setProblem('Three panels are already open. Close one, then open the PDF again.')
-		}, fail)
+		}, (error: unknown) => {
+			// The file must not wait for a PDF panel opened later for something else.
+			takeHandedPdf()
+			fail(error)
+		})
 	}
 
 	const unavailable = support !== null && 'unavailable' in support ? support.unavailable : null

@@ -53,6 +53,35 @@ public sealed class RendererView
 		core.WebResourceRequested += renderer.OnViewerResource;
 		core.WebMessageReceived += renderer.OnMessage;
 		core.ProcessFailed += renderer.OnProcessFailed;
+		// The viewer shows untrusted PDFs in a frame here: a link in one must not load a web page into Zing's own UI, where it
+		// could pass for it, nor open a window outside Zing's rules.
+		var home = $"https://{AppHost}/index.html#{hash}";
+		var opened = false;
+		core.NavigationStarting += (_, e) =>
+		{
+			if (ZingOrigin.MayLoadAsView(home, e.Uri, first: !opened, reload: e.NavigationKind == CoreWebView2NavigationKind.Reload))
+			{
+				opened = true;
+				return;
+			}
+			e.Cancel = true;
+		};
+		core.FrameNavigationStarting += (_, e) =>
+		{
+			if (!ZingOrigin.IsViewerDocument(e.Uri)) e.Cancel = true;
+		};
+		// FrameNavigationStarting sees only the top document's own frames; the PDF viewer's are nested deeper, so every frame is
+		// guarded as it is made, and so are the frames it makes.
+		core.FrameCreated += (_, e) => GuardFrame(e.Frame);
+		core.NewWindowRequested += (_, e) => e.Handled = true;
+		// A link in a PDF sends its request even when its navigation is cancelled above, so a document from anywhere else is
+		// answered here, before it reaches the network.
+		core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.All);
+		core.WebResourceRequested += (_, e) =>
+		{
+			if (e.ResourceContext == CoreWebView2WebResourceContext.Document && !ZingOrigin.IsRendererDocument(e.Request.Uri))
+				e.Response = core.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "Cache-Control: no-store");
+		};
 		// Events sent before the root has loaded would be lost, so callers get the view once it has.
 		// Never resumed inside the engine's event, which may close the window (the e2e close-at hook does).
 		var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -66,10 +95,19 @@ public sealed class RendererView
 		core.NavigationCompleted += Completed;
 		// A closed view never completes its navigation; the scope (which closes the view) ends the wait.
 		using var gone = scope.Token.Register(() => loaded.TrySetException(new ViewGoneException(hash)));
-		core.Navigate($"https://{AppHost}/index.html#{hash}");
+		core.Navigate(home);
 		await loaded.Task;
 		scope.Checkpoint(hash);
 		return renderer;
+	}
+
+	private static void GuardFrame(CoreWebView2Frame frame)
+	{
+		frame.NavigationStarting += (_, e) =>
+		{
+			if (!ZingOrigin.IsViewerDocument(e.Uri)) e.Cancel = true;
+		};
+		frame.FrameCreated += (_, e) => GuardFrame(e.Frame);
 	}
 
 	public void Send(string eventJson)
@@ -117,6 +155,8 @@ public sealed class RendererView
 	/// </summary>
 	private void OnViewerResource(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
 	{
+		// The document filter above brings app.zing's own pages here too; they are served from the folder mapping.
+		if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var address) || address.Host != ViewerFiles.Host) return;
 		var deferral = e.GetDeferral();
 		TestHooks.Background(ServeViewerAsync(sender, e, deferral), "viewer");
 	}
