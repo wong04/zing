@@ -281,7 +281,9 @@ async function copyPagesByRef(out: PDFDocument, doc: PDFDocument, indices: reado
 	const pages = doc.getPages()
 	return indices.map((index) => {
 		const ref = copier.copy(pages[index]!.ref)
-		return PDFPage.of(out.context.lookup(ref, PDFPageLeaf), ref, out)
+		const leaf = out.context.lookup(ref)
+		if (!(leaf instanceof PDFPageLeaf)) throw new PdfEditError(`Page ${index + 1} could not be copied.`)
+		return PDFPage.of(leaf, ref, out)
 	})
 }
 

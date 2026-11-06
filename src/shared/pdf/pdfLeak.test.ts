@@ -153,7 +153,7 @@ describe('named destinations to a left-out page', () => {
 
 			const { names, limits } = readTree(doc.lookup(PDFName.of('Names'), PDFDict).lookup(PDFName.of('Dests'), PDFDict))
 			expect(Object.keys(names)).toEqual(['b', 'e'])
-			expect(target(loaded.context.lookup(names.b!, PDFDict).get(PDFName.of('D')))).toBe(page2)
+			expect(target(loaded.context.lookup(names.b!, PDFDict).get(PDFName.of('D'))!)).toBe(page2)
 			expect(target(names.e!)).toBe(page2)
 			expect(limits).toEqual([['b', 'b'], ['e', 'e']])
 
