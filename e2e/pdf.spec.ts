@@ -40,7 +40,7 @@ async function openTool(zing: Launched, name: string): Promise<{ surface: Page; 
 	await zing.chrome.getByRole('button', { name: 'Toolbox' }).first().click()
 	const surface = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
 	await expect(surface.getByRole('dialog', { name: 'Toolbox' })).toBeVisible()
-	await surface.getByTestId('toolbox-tile').filter({ hasText: name }).click()
+	await surface.getByTestId('toolbox-tile').getByText(name, { exact: true }).click()
 	const panel = surface.getByRole('dialog', { name, exact: true })
 	await expect(panel).toBeVisible()
 	return { surface, panel }
@@ -212,7 +212,8 @@ test('text, a picture and a typed signature are placed on a page; the signature 
 	await panel.getByRole('option').first().click()
 	await panel.getByRole('button', { name: 'Edit page…' }).click()
 
-	await expect(panel.getByText(/not a digital signature/).first()).toBeVisible()
+	await expect(panel.getByText(/A signature here is a picture of your signature/)).toBeVisible()
+	await expect(panel.getByText(/It is not a digital signature/)).toBeVisible()
 	await panel.getByLabel('Text to add').fill('Hello Zing')
 	await panel.getByRole('button', { name: 'Add text' }).click()
 	await expect(panel.getByRole('button', { name: 'Text: Hello Zing' })).toBeVisible()

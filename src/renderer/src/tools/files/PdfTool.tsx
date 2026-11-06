@@ -448,6 +448,12 @@ export function PdfTool() {
 					Edit page…
 				</PillButton>
 			</div>
+			<section className="pdf-section" aria-label="Split">
+				<PillField label="Split out pages" placeholder="1-3, 5" value={ranges} onChange={setRanges} onSubmit={split} />
+				<PillButton size="small" variant="outlined" disabled={busy !== null || ranges.trim() === ''} onClick={split}>
+					Save each range as its own file
+				</PillButton>
+			</section>
 			<span className="convert-hint">Arrow keys move between pages, Space selects, Ctrl+Arrow moves the page, R turns it, Delete removes it, Enter edits it.</span>
 			<ul className="pdf-grid" role="listbox" aria-label="Pages" aria-multiselectable="true">
 				{model.pages.map((entry, i) => {
@@ -490,12 +496,6 @@ export function PdfTool() {
 					<span className="convert-hint">The form stays a form: saved fields can still be changed in a PDF reader.</span>
 				</section>
 			) : null}
-			<section className="pdf-section" aria-label="Split">
-				<PillField label="Split out pages" placeholder="1-3, 5" value={ranges} onChange={setRanges} onSubmit={split} />
-				<PillButton size="small" variant="outlined" disabled={busy !== null || ranges.trim() === ''} onClick={split}>
-					Save each range as its own file
-				</PillButton>
-			</section>
 		</>
 	)
 
