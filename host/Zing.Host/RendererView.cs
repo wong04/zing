@@ -1,5 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
+using Zing.Core.Viewer;
 
 namespace Zing.Host;
 
@@ -47,6 +48,9 @@ public sealed class RendererView
 		core.Settings.IsNonClientRegionSupportEnabled = hash is "chrome" or "surface";
 		core.Settings.AreDefaultContextMenusEnabled = false;
 		core.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
+		// The viewer's files are served from this window's own table; a page view answers the same address 404 (WebView2Page).
+		core.AddWebResourceRequestedFilter($"https://{ViewerFiles.Host}/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+		core.WebResourceRequested += renderer.OnViewerResource;
 		core.WebMessageReceived += renderer.OnMessage;
 		core.ProcessFailed += renderer.OnProcessFailed;
 		// Events sent before the root has loaded would be lost, so callers get the view once it has.
@@ -106,6 +110,42 @@ public sealed class RendererView
 				break;
 		}
 	}
+
+	/// <summary>
+	/// A file the viewer shows. The engine reads the response body on the UI thread, so the body is never a stream that waits for
+	/// something: a range is read from disk first (off the UI thread, under a deferral) and handed over as bytes.
+	/// </summary>
+	private void OnViewerResource(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
+	{
+		var deferral = e.GetDeferral();
+		TestHooks.Background(ServeViewerAsync(sender, e, deferral), "viewer");
+	}
+
+	private async Task ServeViewerAsync(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e, Windows.Foundation.Deferral deferral)
+	{
+		try
+		{
+			var viewer = _bridge.Viewer;
+			var request = e.Request;
+			var reply = viewer is null
+				? ViewerFiles.Unavailable()
+				: await viewer.ServeAsync(new ViewerRequest(request.Method, request.Uri, Header(request, "Range"), Header(request, "Origin"), Header(request, "Referer")));
+			if (!IsClosed) e.Response = ViewerResponses.Make(sender.Environment, reply);
+		}
+		catch (Exception) when (!IsClosed)
+		{
+			// The page gets an error, not a request that goes to the network; the failure is recorded by the caller.
+			e.Response = sender.Environment.CreateWebResourceResponse(null, 500, "Internal Server Error", "Cache-Control: no-store");
+			throw;
+		}
+		finally
+		{
+			deferral.Complete();
+		}
+	}
+
+	private static string? Header(CoreWebView2WebResourceRequest request, string name) =>
+		request.Headers.Contains(name) ? request.Headers.GetHeader(name) : null;
 
 	private void OnMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e) =>
 		TestHooks.Background(AnswerAsync(sender, e.Source, e.WebMessageAsJson, DroppedPaths(e)), "bridge");

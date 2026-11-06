@@ -1,4 +1,5 @@
 import type { EngineInfo, EngineProgress, EnsureOutcome, YtDlpUpdate } from './engines/engineInfo'
+import type { ViewerOpened } from './convert/viewable'
 import type { EngineExit, EngineJobSpec, EngineOutput, FileKind, PickedFile } from './engines/engineJob'
 import type { FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
@@ -309,6 +310,14 @@ export interface InvokeContract {
 	 * so the bridge carries the `File`s beside the message and not in its JSON args; a web page cannot send one.
 	 */
 	'files:open-dropped': { args: [files: readonly File[]]; result: PickedFile[] }
+	/**
+	 * Opens a picked or dropped file (by its token) in the viewer panel `panelId`, converting a copy when Chromium can't show it.
+	 * One file per panel: it replaces the panel's earlier one. Closing the panel (or the window) ends the conversion and deletes the copy.
+	 * Rejects for a format it can't show, an engine that isn't downloaded, or a file that has gone.
+	 */
+	'viewer:open': { args: [token: string, panelId: string]; result: ViewerOpened }
+	/** Forgets the open file: its address answers 404, a running conversion stops and the temporary copy is deleted. */
+	'viewer:close': { args: [id: string]; result: void }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
 	'account:sign-in': { args: [password: string]; result: AccountOutcome }
@@ -460,5 +469,7 @@ export interface ZingApi {
 	printHtmlToPdf(token: string, outputName: string): Promise<PickedFile>
 	/** Hand over the `File`s of a drop (`event.dataTransfer.files`); resolves with a token for each. */
 	openDropped(files: readonly File[]): Promise<PickedFile[]>
+	openViewerFile(token: string, panelId: string): Promise<ViewerOpened>
+	closeViewerFile(id: string): Promise<void>
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe
 }

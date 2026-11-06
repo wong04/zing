@@ -103,6 +103,8 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		pickFiles: (kinds) => invoke('files:pick', kinds),
 		printHtmlToPdf: (token, outputName) => invoke('convert:html-to-pdf', token, outputName),
 		openDropped: (files) => invoke('files:open-dropped', files),
+		openViewerFile: (token, panelId) => invoke('viewer:open', token, panelId),
+		closeViewerFile: (id) => invoke('viewer:close', id),
 		getAccount: () => invoke('account:get'),
 		signUp: (username, displayName, email, password) => invoke('account:sign-up', username, displayName, email, password),
 		signIn: (password) => invoke('account:sign-in', password),

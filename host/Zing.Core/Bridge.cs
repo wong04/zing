@@ -19,6 +19,11 @@ public sealed class Bridge
 	/// <summary>Where a Zing view's drop is left for the renderer's <c>files:open-dropped</c> call; set by the window's ChromeApi.</summary>
 	public void UseDropInbox(DropInbox drops) => _drops = drops;
 
+	/// <summary>The window's viewer files, for the host to answer `https://view.zing/...` from; set by the window's ChromeApi.</summary>
+	public Viewer.ViewerFiles? Viewer { get; private set; }
+
+	public void UseViewer(Viewer.ViewerFiles viewer) => Viewer = viewer;
+
 	/// <summary>The host read these paths from a drop on <paramref name="source"/>. Refused unless it is one of Zing's own views.</summary>
 	public void OfferDrop(string source, IReadOnlyList<string> paths) =>
 		(_drops ?? throw new InvalidOperationException("This window takes no drops")).Offer(source, paths);
