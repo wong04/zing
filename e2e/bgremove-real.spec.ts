@@ -32,7 +32,7 @@ test.describe('Background remover with the real model', () => {
 		const zing: Launched = await launchZing()
 		const installed = await zing.chrome.evaluate(() => window.zing.ensureEngine('bgmodel'))
 		expect(installed).toBe('installed')
-		const modelPath = join(zing.userDataDir, 'engines', 'bgmodel', readdirSync(join(zing.userDataDir, 'engines', 'bgmodel'))[0]!, 'isnet-general-use.onnx')
+		const modelPath = join(zing.userDataDir, 'engines', 'bgmodel', 'isnet-general-use.onnx')
 		const hash = createHash('sha256').update(readFileSync(modelPath)).digest('hex')
 		expect(hash).toBe(CATALOG_SHA256)
 
