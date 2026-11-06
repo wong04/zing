@@ -3,12 +3,12 @@ export class MaskSizeError extends Error {
 }
 
 /**
- * Makes the mask the picture's see-through channel. The colour stays as it was. A pixel the source already made
- * see-through stays at most as opaque as the source had it, so a transparent PNG does not come back with its hidden
- * colours showing. Returns a new array; `rgba` is not changed.
+ * Sets each pixel's alpha to the mask value times the source alpha (so with an opaque source, alpha is the mask: 0 to 255 from 0 to
+ * 1, rounded), and keeps the colour as it was. A pixel the source already made see-through stays at most as opaque as it was, so
+ * a transparent PNG does not come back with its hidden colours showing. Returns a new array; `rgba` is not changed.
  * @param mask 0 to 1 for each pixel, row by row; values outside that range count as the nearest end.
  * @throws MaskSizeError the pixels or the mask do not fit `width` by `height`.
- * @throws RangeError a mask value is not a number, which means the model's output is broken.
+ * @throws RangeError a mask value is not a number, which means the model output is broken.
  */
 export function applyMask(rgba: Uint8ClampedArray, mask: Float32Array, width: number, height: number): Uint8ClampedArray<ArrayBuffer> {
 	const pixels = width * height

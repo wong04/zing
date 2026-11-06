@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
+import { proceedAfterCheck, RunGate } from '@shared/convert/bgFlow'
 import { outputFileName } from '@shared/convert/commands'
+import type { ViewerOpened } from '@shared/convert/viewable'
 import type { EngineInfo } from '@shared/engines/engineInfo'
 import type { PickedFile } from '@shared/engines/engineJob'
 import { formatBytes } from '@shared/format/formatBytes'
 import { zing } from '../../api'
 import { FileDropZone, FileRow, InfoBanner, PillButton } from '../../components'
 import { describeFailure } from '../dev/parts'
+import { usePanelId } from '../panelId'
 import { ToolPage } from '../parts'
-import { LOCAL_ORIGIN, STAGE_TEXT, type RemoveMessage, type RemoveRequest, type RemoveStage } from './bgremoveProtocol'
+import { MODEL_URL, saveUrl, STAGE_TEXT, type RemoveMessage, type RemoveRequest, type RemoveStage } from './bgremoveProtocol'
 import './files.css'
 
 const MODEL_ID = 'bgmodel'
-/** Served by the host to Zing's own views only (LocalFiles.cs); the picture by its token, the model by its engine id. */
-const MODEL_URL = `${LOCAL_ORIGIN}/zing-local/model/${MODEL_ID}`
-const fileUrl = (token: string): string => `${LOCAL_ORIGIN}/zing-local/file/${token}`
 /** Room for " no background.png" inside a name the host accepts. */
 const MAX_BASE_CHARACTERS = 80
 
@@ -23,8 +23,7 @@ type Stage =
 	| { readonly kind: 'offer'; readonly engine: EngineInfo }
 	| { readonly kind: 'downloading'; readonly engine: EngineInfo; readonly fraction: number }
 	| { readonly kind: 'working'; readonly stage: RemoveStage; readonly fraction: number | undefined }
-	| { readonly kind: 'saving' }
-	| { readonly kind: 'done'; readonly output: PickedFile; readonly seconds: number }
+	| { readonly kind: 'done'; readonly name: string; readonly seconds: number }
 	| { readonly kind: 'failed'; readonly message: string }
 	| { readonly kind: 'cancelled' }
 
@@ -34,38 +33,45 @@ function savedName(pictureName: string): string {
 	return outputFileName(`${[...base].slice(0, MAX_BASE_CHARACTERS).join('')} no background`, 'png')
 }
 
-/** The PNG as base64 for the host's channel, read by the browser off the main thread's own work. */
-function toBase64(png: ArrayBuffer): Promise<string> {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader()
-		reader.onload = () => resolve(String(reader.result).slice(String(reader.result).indexOf(',') + 1))
-		reader.onerror = () => reject(reader.error ?? new Error('The picture could not be read back'))
-		reader.readAsDataURL(new Blob([png], { type: 'image/png' }))
-	})
-}
-
 /** Tool > Background Remover: a pre-trained model runs on this PC, in a worker; nothing is uploaded. */
 export function BgRemoveTool() {
+	const panelId = usePanelId()
 	const [file, setFile] = useState<PickedFile | null>(null)
 	const [stage, setStage] = useState<Stage>({ kind: 'idle' })
 	const [problem, setProblem] = useState<string | null>(null)
 	const worker = useRef<Worker | null>(null)
-	// What the host-bound save should say, kept off the render: a closed panel must not save a late result.
+	// The picture's session on the host: what the worker is given instead of a path or a token. Revoked on Cancel, a new picture, the end of a run and closing the panel.
+	const session = useRef<ViewerOpened | null>(null)
+	const gate = useRef(new RunGate())
+	const runId = useRef(0)
+	// A closed panel must not go on to show or save a late result.
 	const mounted = useRef(true)
 
-	const busy = stage.kind === 'offer' || stage.kind === 'downloading' || stage.kind === 'working' || stage.kind === 'saving'
+	const busy = stage.kind === 'offer' || stage.kind === 'downloading' || stage.kind === 'working'
 
 	const stopWorker = (): void => {
 		worker.current?.terminate()
 		worker.current = null
 	}
 
-	// Closing the panel unmounts this (minimizing only hides it), and the worker goes with it.
+	const endSession = (): void => {
+		const open = session.current
+		session.current = null
+		if (open === null) return
+		zing.closeViewerFile(open.id).catch((error: unknown) => {
+			if (mounted.current) setProblem(describeFailure(error))
+		})
+	}
+
+	// Closing the panel unmounts this (minimizing only hides it), and the worker and the session go with it.
 	useEffect(() => {
 		mounted.current = true
+		const runs = gate.current
 		return () => {
 			mounted.current = false
+			runs.cancel()
 			stopWorker()
+			endSession()
 		}
 	}, [])
 
@@ -79,21 +85,19 @@ export function BgRemoveTool() {
 		if (busy) return
 		const first = files[0]
 		if (first === undefined) return
+		endSession()
 		setFile(first)
 		setStage({ kind: 'idle' })
 		setProblem(files.length > 1 ? `The background remover takes one picture at a time, so only ${first.name} was used.` : null)
 	}
 
 	const fail = (error: unknown): void => {
+		gate.current.cancel()
 		stopWorker()
+		endSession()
+		if (!mounted.current) return
 		setStage({ kind: 'idle' })
 		setProblem(describeFailure(error))
-	}
-
-	const save = async (picture: PickedFile, png: ArrayBuffer, seconds: number): Promise<void> => {
-		setStage({ kind: 'saving' })
-		const output = await zing.savePng(savedName(picture.name), await toBase64(png))
-		if (mounted.current) setStage({ kind: 'done', output, seconds })
 	}
 
 	/** Starts a worker with one request; the worker is ended on its answer, on Cancel and when the panel closes. */
@@ -109,58 +113,95 @@ export function BgRemoveTool() {
 		}
 		started.onerror = (event) => {
 			stopWorker()
+			endSession()
 			setStage({ kind: 'failed', message: event.message || 'The background remover stopped unexpectedly.' })
 		}
 		started.postMessage(request)
 	}
 
-	const run = (picture: PickedFile): void => {
+	const run = (picture: PickedFile, opened: ViewerOpened): void => {
 		setStage({ kind: 'working', stage: 'reading', fraction: undefined })
-		launch({ type: 'run', fileUrl: fileUrl(picture.token), modelUrl: MODEL_URL }, (message) => {
-			if (message.type === 'progress') setStage({ kind: 'working', stage: message.stage, fraction: message.fraction })
-			else if (message.type === 'failed') setStage({ kind: 'failed', message: message.message })
-			else if (message.type === 'done') save(picture, message.png, message.seconds).catch(fail)
+		launch({ type: 'run', fileUrl: opened.url, modelUrl: MODEL_URL, saveUrl: saveUrl(opened.id, savedName(picture.name)) }, (message) => {
+			if (message.type === 'progress') {
+				setStage({ kind: 'working', stage: message.stage, fraction: message.fraction })
+				return
+			}
+			endSession()
+			if (message.type === 'failed') setStage({ kind: 'failed', message: message.message })
+			else if (message.type === 'done') setStage({ kind: 'done', name: message.name, seconds: message.seconds })
 		})
 	}
 
-	/** The picture is judged first, so one that cannot be used never leads to a 170 MB offer. */
-	const afterCheck = async (picture: PickedFile): Promise<void> => {
-		const model = (await zing.listEngines()).find((e) => e.id === MODEL_ID)
-		if (model === undefined) throw new Error('Zing has no background model in its engine list')
-		if (!mounted.current) return
-		if (model.installedVersion === undefined) setStage({ kind: 'offer', engine: model })
-		else run(picture)
+	const model = async (): Promise<{ installed: boolean; engine: EngineInfo }> => {
+		const engine = (await zing.listEngines()).find((e) => e.id === MODEL_ID)
+		if (engine === undefined) throw new Error('Zing has no background model in its engine list')
+		return { installed: engine.installedVersion !== undefined, engine }
 	}
 
 	const start = (): void => {
 		if (file === null) return
+		const id = gate.current.begin()
+		runId.current = id
 		setProblem(null)
 		setStage({ kind: 'working', stage: 'reading', fraction: undefined })
-		launch({ type: 'check', fileUrl: fileUrl(file.token) }, (message) => {
-			if (message.type === 'failed') setStage({ kind: 'failed', message: message.message })
-			else if (message.type === 'checked') afterCheck(file).catch(fail)
-		})
+		const begin = async (): Promise<void> => {
+			// The host judges the picture's first bytes and length here, and gives the worker a session in place of the file.
+			const opened = await zing.openBackgroundPicture(panelId, file.token)
+			if (!gate.current.isCurrent(id)) {
+				zing.closeViewerFile(opened.id).catch(fail)
+				return
+			}
+			session.current = opened
+			launch({ type: 'check', fileUrl: opened.url }, (message) => {
+				if (message.type === 'failed') {
+					endSession()
+					setStage({ kind: 'failed', message: message.message })
+					return
+				}
+				if (message.type !== 'checked') return
+				// The picture is judged first, so one that cannot be used never leads to a 170 MB offer.
+				const found = model()
+				let engine: EngineInfo | undefined
+				proceedAfterCheck(gate.current, id, async () => {
+					const result = await found
+					engine = result.engine
+					return result
+				}, () => setStage({ kind: 'offer', engine: engine! }), () => run(file, opened)).catch(fail)
+			})
+		}
+		begin().catch(fail)
 	}
 
 	const download = (engine: EngineInfo): void => {
-		if (file === null) return
+		const opened = session.current
+		if (file === null || opened === null) return
+		const id = runId.current
 		setStage({ kind: 'downloading', engine, fraction: 0 })
 		const fetchModel = async (): Promise<void> => {
 			const outcome = await zing.ensureEngine(engine.id)
-			if (!mounted.current) return
+			if (!gate.current.isCurrent(id) || !mounted.current) return
 			if (outcome === 'cancelled') {
+				endSession()
 				setStage({ kind: 'idle' })
 				setProblem('Cancelled. Nothing was kept.')
 				return
 			}
-			run(file)
+			run(file, opened)
 		}
 		fetchModel().catch(fail)
 	}
 
 	const cancelRun = (): void => {
+		gate.current.cancel()
 		stopWorker()
+		endSession()
 		setStage({ kind: 'cancelled' })
+	}
+
+	const dismissOffer = (): void => {
+		gate.current.cancel()
+		endSession()
+		setStage({ kind: 'idle' })
 	}
 
 	return (
@@ -183,7 +224,7 @@ export function BgRemoveTool() {
 					</PillButton>
 				</div>
 			)}
-			<StageView stage={stage} onDownload={download} onCancelDownload={(engine) => void zing.cancelEngine(engine.id).catch(fail)} onCancelRun={cancelRun} onDismiss={() => setStage({ kind: 'idle' })} />
+			<StageView stage={stage} onDownload={download} onCancelDownload={(engine) => void zing.cancelEngine(engine.id).catch(fail)} onCancelRun={cancelRun} onDismiss={dismissOffer} />
 		</ToolPage>
 	)
 }
@@ -244,18 +285,12 @@ function StageView({ stage, onDownload, onCancelDownload, onCancelRun, onDismiss
 					</div>
 				</InfoBanner>
 			)
-		case 'saving':
-			return (
-				<InfoBanner kind="info">
-					<span role="status">Saving to your Downloads folder…</span>
-				</InfoBanner>
-			)
 		case 'done':
 			return (
 				<InfoBanner kind="info">
 					<div className="convert-offer" role="status">
 						<span>{`Saved to your Downloads folder (${stage.seconds.toFixed(1)} seconds):`}</span>
-						<FileRow path={stage.output.name} />
+						<FileRow path={stage.name} />
 					</div>
 				</InfoBanner>
 			)

@@ -1,12 +1,13 @@
 // Runs in a dedicated worker, so decoding, the model and the cut-out never block the interface. Everything is fetched
-// from this app's own address: the picture and the model from the host (see LocalFiles.cs), the WebAssembly from the bundle.
+// from this app's own address or the host's file server (ViewerFiles.cs): the WebAssembly from the bundle, the picture and the model from the server.
 import * as ort from 'onnxruntime-web/wasm'
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url'
 import { applyMask, normaliseMask, resizeMask } from '@shared/convert/alphaMask'
 import { MODEL_SIZE, toModelInput, type Normalisation } from '@shared/convert/bgPrep'
 import { checkImage, MAX_PIXELS, SNIFF_BYTES } from '@shared/convert/imageSniff'
+import { restrictNetwork } from '@shared/convert/workerNetwork'
 import { describe, download, MAX_FILE_BYTES, post, progress, scope, WorkerFailure } from './bgworkerCommon'
-import type { RunRequest } from './bgremoveProtocol'
+import { VIEW_ORIGIN, type RunRequest } from './bgremoveProtocol'
 
 /** Checked against the real model: see bgremove.real.test.ts. */
 const NORMALISATION: Normalisation = { mean: [0.5, 0.5, 0.5], std: [1, 1, 1], divideByMax: false }
@@ -50,6 +51,13 @@ async function createSession(modelBytes: Uint8Array): Promise<ort.InferenceSessi
 	}
 }
 
+/** PUTs the PNG to the host, which checks it, names and numbers the file and writes it off the interface thread. */
+async function save(url: string, png: Blob): Promise<string> {
+	const response = await fetch(url, { method: 'PUT', body: png })
+	if (!response.ok) throw new WorkerFailure('unavailable', `The picture could not be saved: ${(await response.text()) || `the host answered ${response.status}`}.`)
+	return ((await response.json()) as { name: string }).name
+}
+
 async function run(request: RunRequest): Promise<void> {
 	const started = performance.now()
 	progress('reading')
@@ -76,13 +84,16 @@ async function run(request: RunRequest): Promise<void> {
 		const cut = applyMask(picture.rgba, mask, picture.width, picture.height)
 		const canvas = new OffscreenCanvas(picture.width, picture.height)
 		canvas.getContext('2d')!.putImageData(new ImageData(cut, picture.width, picture.height), 0, 0)
-		const png = await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer()
-		post({ type: 'done', png, width: picture.width, height: picture.height, seconds: (performance.now() - started) / 1000 }, [png])
+		const png = await canvas.convertToBlob({ type: 'image/png' })
+		progress('saving')
+		const name = await save(request.saveUrl, png)
+		post({ type: 'done', name, width: picture.width, height: picture.height, seconds: (performance.now() - started) / 1000 })
 	} finally {
 		await session.release()
 	}
 }
 
 scope.onmessage = (event: MessageEvent<RunRequest>) => {
+	restrictNetwork(self as unknown as Record<string, unknown>, location.origin, VIEW_ORIGIN)
 	run(event.data).catch((error: unknown) => post(describe(error)))
 }

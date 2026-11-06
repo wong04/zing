@@ -91,71 +91,133 @@ test('with no model, the tool states its size and source and downloads only on a
 	await expect(panel.getByText(/background model could not be loaded/)).toBeVisible({ timeout: 60_000 })
 	expect(fixture.requests.filter((r) => r.includes('isnet'))).toHaveLength(1)
 	expect(savedPngs(zing)).toEqual([])
-	// The WebAssembly compiled in the worker under the chrome's CSP as it is, from the app's own bundle.
+	// The WebAssembly compiled and ran in the worker, from the app's own bundle. The worker has no policy of its own (the bundle is served
+	// without headers and the page's meta policy does not reach a worker); what keeps it local is the guard in the worker and this check.
 	expect(requested.some((url) => /ort-wasm-simd-threaded.*\.wasm$/.test(url))).toBe(true)
-	// Everything the browser asked for was the app's own bundle or the host's file answers (the picture and the model); nothing else.
-	expect(requested.filter((url) => !url.startsWith('https://app.zing/') && !url.startsWith('https://local.zing/') && !url.startsWith('data:'))).toEqual([])
-	expect(requested.filter((url) => url.startsWith('https://local.zing/')).map((url) => url.replace(/[0-9a-f]{32}/, '<token>'))).toEqual([
-		'https://local.zing/zing-local/file/<token>',
-		'https://local.zing/zing-local/file/<token>',
-		'https://local.zing/zing-local/model/bgmodel',
+	// Everything the browser asked for was the app's own bundle or the viewer file server (the picture's session twice, the model once); nothing else.
+	expect(requested.filter((url) => !url.startsWith('https://app.zing/') && !url.startsWith('https://view.zing/') && !url.startsWith('data:'))).toEqual([])
+	expect(requested.filter((url) => url.startsWith('https://view.zing/')).map((url) => url.replace(/[A-Za-z0-9_-]{32}$/, '<session>'))).toEqual([
+		'https://view.zing/<session>',
+		'https://view.zing/<session>',
+		'https://view.zing/model/bgmodel',
 	])
 	// And the worker has ended.
 	await expect.poll(() => surface.workers().length).toBe(0)
 	await zing.close()
 })
 
-test('the host serves the model by its id and a picture by its token to Zing views only, and refuses all else; a page tab gets nothing', async () => {
+/** Opens the tool's panel and starts a picture session by the bridge, the way the tool does, and says where to fetch it. */
+async function openSession(zing: Launched, file: string): Promise<{ id: string; url: string }> {
+	await openTool(zing)
+	const panelId = await zing.chrome.evaluate(async () => (await window.zing.getToolPanels()).panels.find((p) => p.content === 'tool:Background Remover')!.id)
+	await queuePick(zing, file)
+	const token = await zing.chrome.evaluate(async () => (await window.zing.pickFiles(['image']))[0]!.token)
+	return zing.chrome.evaluate(([panel, t]) => window.zing.openBackgroundPicture(panel as string, t as string), [panelId, token] as const)
+}
+
+test('the viewer file server gives the model and the picture only to a Zing view, only while the picture is open, and takes the result only for that session', async () => {
 	fixture = await startEngineFixture()
 	const zing = await launchZing({ env: fixture.env })
 	const file = picture(zing, 'tok.png')
 	await zing.chrome.evaluate(() => window.zing.ensureEngine('bgmodel'))
-	await queuePick(zing, file)
-	const token = await zing.chrome.evaluate(async () => (await window.zing.pickFiles(['image']))[0]!.token)
+	const session = await openSession(zing, file)
 
-	// The chrome page's own CSP only lets it fetch its own origin; the tool fetches from a worker, which has none. So the
-	// probe lifts the page's policy for this test alone (a DevTools command), to ask the same questions the worker does.
-	const cdp = await zing.chrome.context().newCDPSession(zing.chrome)
-	await cdp.send('Page.setBypassCSP', { enabled: true })
-	await zing.chrome.reload()
-	await zing.chrome.waitForLoadState('domcontentloaded')
-	const local = 'https://local.zing'
 	const asked = (path: string, init?: RequestInit): Promise<number | string> =>
-		zing.chrome.evaluate(([p, i]) => fetch(p as string, i as RequestInit | undefined).then((r) => r.status, (e: Error) => e.name), [local + path, init] as const)
+		zing.chrome.evaluate(([p, i]) => fetch(p as string, i as RequestInit | undefined).then((r) => r.status, (e: Error) => e.name), [path, init] as const)
 
 	const model = await zing.chrome.evaluate(async () => {
-		const response = await fetch('https://local.zing/zing-local/model/bgmodel')
+		const response = await fetch('https://view.zing/model/bgmodel')
 		return { status: response.status, length: Number(response.headers.get('Content-Length')), bytes: (await response.arrayBuffer()).byteLength, type: response.headers.get('Content-Type') }
 	})
 	expect(model).toEqual({ status: 200, length: fixture.bytes, bytes: fixture.bytes, type: 'application/octet-stream' })
-	const served = await zing.chrome.evaluate(async (t) => Array.from(new Uint8Array(await (await fetch(`https://local.zing/zing-local/file/${t}`)).arrayBuffer())), token)
+	const served = await zing.chrome.evaluate(async (url) => Array.from(new Uint8Array(await (await fetch(url)).arrayBuffer())), session.url)
 	expect(Buffer.from(served).equals(readFileSync(file))).toBe(true)
 
-	expect(await asked('/zing-local/model/ffmpeg')).toBe(403)
-	expect(await asked('/zing-local/model/ytdlp')).toBe(403)
-	expect(await asked('/zing-local/model/bgmodel/../ffmpeg')).toBe(403)
-	expect(await asked('/zing-local/file/' + '0'.repeat(32))).toBe(403)
-	expect(await asked('/zing-local/file/..%5C..%5CWindows%5Cwin.ini')).toBe(403)
-	expect(await asked('/zing-local/file/C:/Windows/win.ini')).toBe(403)
-	expect(await asked('/zing-local/model/bgmodel', { method: 'POST', body: 'x' })).toBe(403)
-	expect(await asked('/zing-local/')).toBe(403)
+	// The model has one id; the address has one shape; a PUT is only for a save.
+	expect(await asked('https://view.zing/model/ffmpeg')).toBe('TypeError')
+	expect(await asked('https://view.zing/model/ytdlp')).toBe('TypeError')
+	expect(await asked('https://view.zing/model/bgmodel/../ffmpeg')).toBe('TypeError')
+	expect(await asked('https://view.zing/model/bgmodel?x=1')).toBe('TypeError')
+	expect(await asked(`https://view.zing/${'0'.repeat(32)}`)).toBe(404)
+	expect(await asked(session.url, { method: 'POST', body: 'x' })).toBe(405)
+	expect(await asked(session.url, { method: 'PUT', body: 'x' })).toBe(405)
 
-	// A web page in a tab: the same addresses on the same host name reach nothing, whatever the request mode.
+	// The result: PUT to the session, checked and numbered by the host, off the interface thread.
+	const png = Buffer.from(encodePng(new Uint8ClampedArray(4 * 4 * 4).fill(255), 4, 4))
+	const put = (name: string, body: BodyInit, id = session.id): Promise<{ status: number; text: string }> =>
+		zing.chrome.evaluate(([n, b, i]) => fetch(`https://view.zing/save/${i as string}/${encodeURIComponent(n as string)}`, { method: 'PUT', body: new Uint8Array(b as number[]) }).then(async (r) => ({ status: r.status, text: await r.text() })), [name, Array.from(body as Uint8Array), id] as const)
+	const first = await put('cat no background.png', png)
+	const second = await put('cat no background.png', png)
+	expect([first.status, second.status]).toEqual([201, 201])
+	expect([JSON.parse(first.text).name, JSON.parse(second.text).name]).toEqual(['cat no background.png', 'cat no background 2.png'])
+	expect(readdirSync(join(zing.userDataDir, 'downloads')).sort()).toEqual(['cat no background 2.png', 'cat no background.png'])
+	expect((await put('..\\evil.png', png)).status).toBe(400)
+	expect((await put('con.png', png)).status).toBe(201)
+	const notPng = await put('x.png', new Uint8Array(Buffer.from('MZ not a png at all')))
+	expect(notPng.status).toBe(400)
+	expect(notPng.text).toMatch(/not a PNG/)
+	expect(await put('y.png', png, 'a'.repeat(32))).toMatchObject({ status: 404 })
+	expect(readdirSync(join(zing.userDataDir, 'downloads')).sort()).toEqual(['cat no background 2.png', 'cat no background.png', 'con_.png'])
+
+	// Revoked, nothing is served or saved any more.
+	await zing.chrome.evaluate((id) => window.zing.closeViewerFile(id), session.id)
+	expect(await asked(session.url)).toBe(404)
+	expect(await asked('https://view.zing/model/bgmodel')).toBe(404)
+	expect((await put('z.png', png)).status).toBe(404)
+	await zing.close()
+})
+
+test('a page tab gets nothing from the model, the picture or the save: not by fetch, image, frame, popup or without a referrer', async () => {
+	fixture = await startEngineFixture()
 	server = createServer((_, response) => {
 		response.writeHead(200, { 'Content-Type': 'text/html' })
 		response.end('<title>probe</title>')
 	})
 	await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve))
 	const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
-	const tab = await zing.chrome.evaluate(async () => (await window.zing.getTabs()).tabs[0]!.id)
-	await zing.chrome.evaluate(([id, url]) => window.zing.navigateTab(id as string, url as string), [tab, origin] as const)
-	const page = await pageWhere(zing.browser, (p) => p.url() === origin)
-	for (const path of ['/zing-local/model/bgmodel', `/zing-local/file/${token}`]) {
-		for (const mode of ['cors', 'no-cors'] as const) {
-			const outcome = await page.evaluate(([p, m]) => fetch(`https://local.zing${p}`, { mode: m as RequestMode }).then((r) => `answered ${r.status} ${r.type}`, (e: Error) => e.name), [path, mode] as const)
-			expect(outcome, `${mode} ${path}`).toBe('TypeError')
+	const zing = await launchZing({ env: { ...fixture.env, ZING_START_URL: origin } })
+	const file = picture(zing, 'tok.png')
+	await zing.chrome.evaluate(() => window.zing.ensureEngine('bgmodel'))
+	const session = await openSession(zing, file)
+	const tab = await pageWhere(zing.browser, (p) => p.url() === origin)
+	const model = 'https://view.zing/model/bgmodel'
+	const save = `https://view.zing/save/${session.id}/a.png`
+
+	for (const url of [model, session.url, save]) {
+		for (const init of [{ mode: 'cors' }, { mode: 'no-cors' }, { mode: 'no-cors', referrerPolicy: 'no-referrer' }, { mode: 'cors', method: 'PUT', body: 'x' }] as const) {
+			const outcome = await tab.evaluate(([u, i]) => fetch(u as string, i as RequestInit).then((r) => `answered ${r.status} ${r.type} ${r.headers.get('content-type')}`, (e: Error) => e.name), [url, init] as const)
+			expect(outcome, `${init.mode} ${url}`).toBe('TypeError')
 		}
 	}
+	const image = await tab.evaluate((u) => new Promise<string>((resolve) => {
+		const img = new Image()
+		img.onload = () => resolve('loaded')
+		img.onerror = () => resolve('failed')
+		img.src = u
+	}), session.url)
+	expect(image).toBe('failed')
+	const noReferrerImage = await tab.evaluate((u) => new Promise<string>((resolve) => {
+		const img = new Image()
+		img.referrerPolicy = 'no-referrer'
+		img.onload = () => resolve('loaded')
+		img.onerror = () => resolve('failed')
+		img.src = u
+	}), session.url)
+	expect(noReferrerImage).toBe('failed')
+	await tab.evaluate((u) => {
+		const frame = document.createElement('iframe')
+		frame.src = u
+		document.body.append(frame)
+	}, session.url)
+	await expect.poll(() => tab.frames().some((f) => f.url().startsWith('https://view.zing/') || f.url().startsWith('chrome-error:'))).toBe(true)
+	for (const frame of tab.frames().filter((f) => f !== tab.mainFrame())) {
+		expect(await frame.evaluate(() => document.contentType).catch(() => 'none')).not.toBe('image/png')
+	}
+	const popup = tab.waitForEvent('popup', { timeout: 5_000 }).catch(() => null)
+	await tab.evaluate((u) => void (globalThis as unknown as { open(address: string): void }).open(u), session.url)
+	const opened = await popup
+	if (opened) expect(await opened.evaluate(() => document.contentType).catch(() => 'none')).not.toBe('image/png')
+	await expect(tab.goto(session.url)).rejects.toThrow()
 	await zing.close()
 })
 
@@ -171,8 +233,8 @@ test('a picture that cannot be used is refused plainly before the model is offer
 	writeFileSync(heic, header)
 	await choose(zing, panel, heic)
 	await panel.getByRole('button', { name: 'Remove background' }).click()
-	await expect(panel.getByText(/HEIC or AVIF picture can't be handled by the background remover/)).toBeVisible()
-	await expect(panel.getByText(/Use Convert .* or open it in the viewer/)).toBeVisible()
+	await expect(panel.getByText(/takes PNG, JPEG and WebP pictures/)).toBeVisible()
+	await expect(panel.getByText(/Use Convert to make one first, or open this file in the viewer/)).toBeVisible()
 
 	const huge = join(zing.userDataDir, 'huge.png')
 	const png = Buffer.alloc(33)
@@ -189,7 +251,7 @@ test('a picture that cannot be used is refused plainly before the model is offer
 	writeFileSync(text, 'this is not a picture')
 	await choose(zing, panel, text)
 	await panel.getByRole('button', { name: 'Remove background' }).click()
-	await expect(panel.getByText(/This file can't be handled by the background remover/)).toBeVisible()
+	await expect(panel.getByText(/takes PNG, JPEG and WebP pictures/)).toBeVisible()
 
 	// None of them led to an offer or a download.
 	await expect(panel.getByText(/isn't on this PC yet/)).toHaveCount(0)
@@ -237,19 +299,5 @@ test('a corrupt picture is a plain error, and Cancel and closing the panel end t
 	await expect(panel).toHaveCount(0, { timeout: 30_000 })
 	await expect.poll(() => surface.workers().length).toBe(0)
 	expect(savedPngs(zing)).toEqual([])
-	await zing.close()
-})
-
-test('a PNG from the tool is saved to Downloads under a numbered name and the original is untouched', async () => {
-	fixture = await startEngineFixture()
-	const zing = await launchZing({ env: fixture.env })
-	const png = Buffer.from(encodePng(new Uint8ClampedArray(4 * 4 * 4).fill(255), 4, 4))
-	const saved = await zing.chrome.evaluate((b64) => Promise.all([window.zing.savePng('cat no background.png', b64), window.zing.savePng('cat no background.png', b64)]), png.toString('base64'))
-	expect(saved.map((s) => s.name).sort()).toEqual(['cat no background 2.png', 'cat no background.png'])
-	const refused = await zing.chrome.evaluate((b64) => window.zing.savePng('..\\evil.png', b64).then(() => 'saved', (e: Error) => e.name), png.toString('base64'))
-	expect(refused).toBe('PngSaveException')
-	const notPng = await zing.chrome.evaluate(() => window.zing.savePng('x.png', btoa('MZ not a png')).then(() => 'saved', (e: Error) => e.name))
-	expect(notPng).toBe('PngSaveException')
-	expect(readdirSync(join(zing.userDataDir, 'downloads')).sort()).toEqual(['cat no background 2.png', 'cat no background.png'])
 	await zing.close()
 })
