@@ -313,6 +313,16 @@ export function PdfTool() {
 			event.preventDefault()
 			focusCell(model.pages[Math.max(0, Math.min(model.pages.length - 1, to))]?.key)
 		}
+		if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'z') {
+			event.preventDefault()
+			doUndo()
+			return
+		}
+		if (event.ctrlKey && (event.key.toLowerCase() === 'y' || (event.shiftKey && event.key.toLowerCase() === 'z'))) {
+			event.preventDefault()
+			doRedo()
+			return
+		}
 		if (event.ctrlKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
 			event.preventDefault()
 			doMove(entry.key, event.key === 'ArrowLeft' ? -1 : 1)
@@ -465,7 +475,10 @@ export function PdfTool() {
 					Save each range as its own file
 				</PillButton>
 			</section>
-			<span className="convert-hint">Arrow keys move between pages, Space selects, Ctrl+Arrow moves the page, R turns it, Delete removes it, Enter edits it.</span>
+			<span className="convert-hint" data-testid="pdf-target">
+				{targets().length === 0 ? 'No page chosen.' : `Turn and Delete act on page ${targets().map(positionOf).sort((a, b) => a - b).join(', ')}.`}
+			</span>
+			<span className="convert-hint">Ctrl+Z undoes, Ctrl+Y redoes. Arrow keys move between pages, Space selects, Ctrl+Arrow moves the page, R turns it, Delete removes it, Enter edits it.</span>
 			<ul className="pdf-grid" role="listbox" aria-label="Pages" aria-multiselectable="true">
 				{model.pages.map((entry, i) => {
 					const file = opened[entry.source]!

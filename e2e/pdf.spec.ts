@@ -173,11 +173,14 @@ test('reorder by keyboard works, with visible focus and an announcement', async 
 	await expect(panel.getByRole('status').filter({ hasText: 'Already the last page.' })).toHaveCount(1)
 	await surface.keyboard.press('Control+ArrowLeft')
 	await expect(panel.getByRole('status').filter({ hasText: 'Page moved to position 2 of 3.' })).toHaveCount(1)
+	// Ctrl+Z takes the last move back, from the keyboard.
+	await surface.keyboard.press('Control+z')
+	await expect(panel.getByRole('status').filter({ hasText: 'Undone.' })).toHaveCount(1)
 
 	await panel.getByRole('button', { name: 'Save PDF' }).click()
 	await expect(panel.getByText('three-edited.pdf', { exact: true })).toBeVisible()
 	const saved = await widthsOf(join(downloadsOf(zing), 'three-edited.pdf'))
-	expect(saved).toEqual([300, 400, 200])
+	expect(saved).toEqual([300, 200, 400])
 	await zing.close()
 })
 
@@ -189,6 +192,7 @@ test('turning, deleting and undo change the saved file, never the original', asy
 	await expect(panel.getByText('1 file, 3 pages')).toBeVisible()
 
 	await panel.getByRole('option').nth(1).click()
+	await expect(panel.getByTestId('pdf-target')).toHaveText('Turn and Delete act on page 2.')
 	await panel.getByRole('button', { name: 'Turn right' }).click()
 	await panel.getByRole('button', { name: 'Delete', exact: true }).click()
 	await expect(panel.getByText('1 file, 2 pages')).toBeVisible()
@@ -288,9 +292,11 @@ test('a web page cannot read a file or save one through the PDF channels', async
 		() =>
 			new Promise<boolean>((resolve) => {
 				const webview = (globalThis as unknown as { chrome?: { webview?: { postMessage(m: unknown): void; addEventListener(t: 'message', l: () => void): void } } }).chrome?.webview
-				webview?.addEventListener('message', () => resolve(true))
-				webview?.postMessage({ kind: 'invoke', id: 1, channel: 'files:save-bytes', args: ['evil.pdf', btoa('%PDF-1.4 evil')] })
-				webview?.postMessage({ kind: 'invoke', id: 2, channel: 'files:read', args: ['00000000000000000000000000000000'] })
+				// The page must be able to try: without chrome.webview the test would pass for the wrong reason.
+				if (webview === undefined) throw new Error('chrome.webview is missing on this page, so the test proves nothing')
+				webview.addEventListener('message', () => resolve(true))
+				webview.postMessage({ kind: 'invoke', id: 1, channel: 'files:save-bytes', args: ['evil.pdf', btoa('%PDF-1.4 evil')] })
+				webview.postMessage({ kind: 'invoke', id: 2, channel: 'files:read', args: ['00000000000000000000000000000000'] })
 				setTimeout(() => resolve(false), 1500)
 			}),
 	)
