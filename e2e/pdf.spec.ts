@@ -4,7 +4,10 @@ import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { expect, type Locator, type Page } from '@playwright/test'
 import { PDFDocument, PDFName, StandardFonts, rgb } from 'pdf-lib'
+import type { ZingApi } from '../src/shared/ipc'
 import { launchZing, pageWhere, test, type Launched } from './zing'
+
+declare const window: { readonly zing: ZingApi }
 
 // PDF Tools run on the machine: no engine, no outside address. The fixtures are small PDFs made here with pdf-lib.
 
@@ -286,12 +289,17 @@ test('a web page cannot read a PDF panel session or save through it', async () =
 	const base = `http://127.0.0.1:${(pageServer.address() as AddressInfo).port}`
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/x` } })
 	const pdf = await makePdf(join(zing.userDataDir, 'a.pdf'), [200])
-	const { surface, panel } = await openPdf(zing, pdf)
+	const { panel } = await openPdf(zing, pdf)
 	await expect(panel.getByText('1 file, 1 page')).toBeVisible()
-	// The address the panel read its file from, as the interface itself fetched it.
-	const session = await surface.evaluate(() => performance.getEntriesByType('resource').map((e) => e.name).find((n) => /^https:\/\/view\.zing\/[0-9a-f]{32}$/.test(n)))
-	expect(session, 'the panel should have read through a view.zing session').toBeDefined()
-	const id = session!.split('/').pop()!
+	// A session for the open panel, as the interface itself asks for one.
+	await queuePick(zing, pdf)
+	const session = await zing.chrome.evaluate(async () => {
+		const token = (await window.zing.pickFiles(['pdf']))[0]!.token
+		const panelId = (await window.zing.getToolPanels()).panels[0]!.id
+		return (await window.zing.openToolSession(panelId, token, ['pdf', 'image'])).url
+	})
+	expect(session).toMatch(/^https:\/\/view\.zing\/[0-9A-Za-z_-]+$/)
+	const id = session.split('/').pop()!
 
 	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/x`)
 	const outcome = await page.evaluate(async ([read, save]) => {
@@ -306,7 +314,8 @@ test('a web page cannot read a PDF panel session or save through it', async () =
 		}
 		return [await tried(read!), await tried(read!, { mode: 'no-cors' }), await tried(save!, { method: 'PUT', body: '%PDF-1.4 evil' })]
 	}, [session, `https://view.zing/save/${id}/evil.pdf`])
-	expect(outcome).toEqual(['refused', 'refused', 'refused'])
+	// A no-cors fetch gets an opaque answer (status 0, nothing readable) whatever the server said, as in bgremove.spec.
+	expect(outcome).toEqual(['refused', 'answered 0', 'refused'])
 	expect(filesIn(downloadsOf(zing))).toEqual([])
 	await zing.close()
 })
