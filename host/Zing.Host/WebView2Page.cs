@@ -548,6 +548,12 @@ public sealed class WebView2Page : IPage
 			ServeRelayed(sender, e);
 			return;
 		}
+		// Before the http rule: view.zing is an https address, and a page must get its 404, never a request to the network.
+		if (Zing.Core.Viewer.ViewerFiles.IsViewerAddress(e.Request.Uri))
+		{
+			e.Response = ViewerResponses.Make(sender.Environment, Zing.Core.Viewer.ViewerFiles.Unavailable());
+			return;
+		}
 		if (e.Request.Uri.StartsWith("http", StringComparison.OrdinalIgnoreCase))
 		{
 			var warned = ThreatGate.IsWithheld(_warnedDocument, e.Request.Uri, e.ResourceContext == CoreWebView2WebResourceContext.Document);
@@ -555,11 +561,6 @@ public sealed class WebView2Page : IPage
 			return;
 		}
 		CoreWebView2WebResourceResponse response;
-		if (Zing.Core.Viewer.ViewerFiles.IsViewerAddress(e.Request.Uri))
-		{
-			e.Response = ViewerResponses.Make(sender.Environment, Zing.Core.Viewer.ViewerFiles.Unavailable());
-			return;
-		}
 		try
 		{
 			var page = _serveStartPage(e.Request.Uri);
