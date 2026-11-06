@@ -36,6 +36,7 @@ export interface FileRowProps {
 
 /** A file's icon with its name and an optional second line (Krackn `FileRow`). */
 export function FileRow({ path, subtitle, iconSize = 20, selected = false, dragFile }: FileRowProps) {
+	useEffect(() => (dragFile ? () => endToolDrag(dragFile) : undefined), [dragFile])
 	const classes = ['file-row', selected ? 'selected' : '', dragFile ? 'draggable' : ''].filter(Boolean).join(' ')
 	return (
 		<span
@@ -43,7 +44,7 @@ export function FileRow({ path, subtitle, iconSize = 20, selected = false, dragF
 			draggable={dragFile ? true : undefined}
 			title={dragFile ? 'Drag this into another tool' : undefined}
 			onDragStart={dragFile ? (event) => beginToolDrag(event.dataTransfer, dragFile) : undefined}
-			onDragEnd={dragFile ? endToolDrag : undefined}
+			onDragEnd={dragFile ? () => endToolDrag() : undefined}
 		>
 			<FileIcon path={path} size={iconSize} />
 			<span className="file-row-text">
@@ -221,7 +222,7 @@ export function FileDropZone({ onFiles, onError, children }: FileDropZoneProps) 
 				event.preventDefault()
 				setTargeted(false)
 				if (isToolDrag(event.dataTransfer.types)) {
-					const file = droppedToolFile(event.dataTransfer)
+					const file = droppedToolFile(event.dataTransfer.types)
 					if (file === undefined) onError(new ForeignToolDragError())
 					else onFiles([file])
 					return

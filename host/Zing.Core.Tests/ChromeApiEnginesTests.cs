@@ -257,6 +257,7 @@ public sealed class ChromeApiEnginesTests : IAsyncLifetime
 		Assert.Equal(nameof(NotHtmlException), ErrorName(await Invoke("convert:html-to-pdf", token, "notes.pdf")));
 		Assert.Empty(_host.Printed);
 	}
+
 	[Fact]
 	public async Task A_picked_file_is_copied_to_the_clipboard_by_the_path_the_host_holds()
 	{

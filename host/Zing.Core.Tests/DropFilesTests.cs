@@ -24,7 +24,7 @@ public sealed class DropFilesTests
 	{
 		var bytes = DropFiles.Build([@"C:\a.pdf", @"D:\b c.png"]);
 
-		Assert.Equal("C:\\a.pdf\0D:\\b c.png\0\0",Encoding.Unicode.GetString(bytes, 20, bytes.Length - 20));
+		Assert.Equal("C:\\a.pdf\0D:\\b c.png\0\0", Encoding.Unicode.GetString(bytes, 20, bytes.Length - 20));
 	}
 
 	[Fact]
