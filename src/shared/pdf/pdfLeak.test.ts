@@ -295,3 +295,59 @@ describe("a left-out page's pictures are not in the file when pages share their 
 		expect(xobjectNames(page.node.Resources()!)).toEqual(['ImA', 'ImB'])
 	})
 })
+
+/**
+ * Two pages sharing one /Resources with a picture ImX; page 1's content uses something (`wire` adds it) that draws ImX from
+ * the page's resources without naming it in the page's own content. Page 2 is deleted.
+ */
+async function drawnThroughResources(wire: (doc: PDFDocument, resources: PDFDict) => string): Promise<PDFDict> {
+	const doc = await PDFDocument.create()
+	const { context } = doc
+	const pages = [doc.addPage([100, 100]), doc.addPage([100, 100])]
+	const resources = context.obj({ XObject: { ImX: picture(doc, PICTURE_A) }, ProcSet: ['PDF'] })
+	const content = wire(doc, resources)
+	pages[0]!.node.set(PDFName.of('Contents'), context.register(context.stream(content)))
+	pages[1]!.node.set(PDFName.of('Contents'), context.register(context.stream('q Q')))
+	const shared = context.register(resources)
+	for (const page of pages) page.node.set(PDFName.of('Resources'), shared)
+	const bytes = await deletePages(await doc.save({ useObjectStreams: false }), [2])
+	return (await PDFDocument.load(bytes)).getPages()[0]!.node.Resources()!
+}
+
+describe('what draws from the page resources without naming them there keeps them', () => {
+	it('a Type 3 font with no /Resources whose glyph draws a picture', async () => {
+		const resources = await drawnThroughResources((doc, res) => {
+			const { context } = doc
+			const glyph = context.register(context.stream('1000 0 d0 /ImX Do'))
+			const font = context.register(context.obj({ Type: 'Font', Subtype: 'Type3', FontBBox: [0, 0, 1, 1], FontMatrix: [0.001, 0, 0, 0.001, 0, 0], CharProcs: { a: glyph }, Encoding: { Type: 'Encoding', Differences: [97, 'a'] }, FirstChar: 97, LastChar: 97, Widths: [1000] }))
+			res.set(PDFName.of('Font'), context.obj({ T3: font }))
+			return 'BT /T3 12 Tf (a) Tj ET'
+		})
+		expect(xobjectNames(resources)).toEqual(['ImX'])
+	})
+	it('a soft mask group with no /Resources', async () => {
+		const resources = await drawnThroughResources((doc, res) => {
+			const { context } = doc
+			const group = context.register(context.stream('/ImX Do', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 1, 1], Group: { S: 'Transparency', CS: 'DeviceGray' } }))
+			res.set(PDFName.of('ExtGState'), context.obj({ GS0: context.obj({ SMask: { S: 'Luminosity', G: group } }) }))
+			return '/GS0 gs 0 0 10 10 re f'
+		})
+		expect(xobjectNames(resources)).toEqual(['ImX'])
+	})
+	it('a tiling pattern with no /Resources', async () => {
+		const resources = await drawnThroughResources((doc, res) => {
+			const { context } = doc
+			const pattern = context.register(context.stream('/ImX Do', { PatternType: 1, PaintType: 1, TilingType: 1, BBox: [0, 0, 1, 1], XStep: 1, YStep: 1 }))
+			res.set(PDFName.of('Pattern'), context.obj({ P0: pattern }))
+			return '/Pattern cs /P0 scn 0 0 10 10 re f'
+		})
+		expect(xobjectNames(resources)).toEqual(['ImX'])
+	})
+	it('the default colour spaces, which content uses without naming them', async () => {
+		const resources = await drawnThroughResources((doc, res) => {
+			res.set(PDFName.of('ColorSpace'), doc.context.obj({ DefaultRGB: 'DeviceRGB', DefaultGray: 'DeviceGray', DefaultCMYK: 'DeviceCMYK', Unused: 'DeviceRGB' }))
+			return '/ImX Do 1 0 0 rg'
+		})
+		expect(resources.lookup(PDFName.of('ColorSpace'), PDFDict).keys().map((key) => key.decodeText())).toEqual(['DefaultRGB', 'DefaultGray', 'DefaultCMYK'])
+	})
+})

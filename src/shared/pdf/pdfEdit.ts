@@ -510,6 +510,11 @@ const RESOURCES = PDFName.of('Resources')
 const XOBJECT = PDFName.of('XObject')
 const PATTERN = PDFName.of('Pattern')
 const NAMED_RESOURCES = new Set(['XObject', 'Font', 'ExtGState', 'Pattern', 'Shading', 'ColorSpace', 'Properties'].map((key) => PDFName.of(key)))
+const FONT = PDFName.of('Font')
+const EXT_G_STATE = PDFName.of('ExtGState')
+const COLOR_SPACE = PDFName.of('ColorSpace')
+// Content uses these without naming them: they stand in for DeviceRGB, DeviceGray and DeviceCMYK.
+const DEFAULT_COLOR_SPACES = new Set(['DefaultRGB', 'DefaultGray', 'DefaultCMYK'].map((key) => PDFName.of(key)))
 const NAME_ENDS = new Set([0, 9, 10, 12, 13, 32, ...[...'()<>[]{}/%'].map((c) => c.charCodeAt(0))])
 
 /**
@@ -549,7 +554,7 @@ function usedNames(streams: readonly PDFStream[], resources: PDFDict, context: P
 	while (pending.length > 0) {
 		const stream = pending.pop()!
 		const found = namesIn(stream)
-		if (found === undefined) return undefined
+		if (found === undefined || drawsFromUnnamed(found, resources, context)) return undefined
 		for (const name of found) names.add(name)
 		for (const category of [XOBJECT, PATTERN]) {
 			const entries = resources.lookup(category)
@@ -571,6 +576,29 @@ function usedNames(streams: readonly PDFStream[], resources: PDFDict, context: P
 	return names
 }
 
+/**
+ * Whether one of `names` is a Type 3 font, a soft mask group or a tiling pattern with no /Resources of its own: what it draws
+ * comes from `resources` under names the content never says, so nothing there can be shown to be unused.
+ */
+function drawsFromUnnamed(names: ReadonlySet<PDFName>, resources: PDFDict, context: PDFContext): boolean {
+	const named = (category: PDFName): PDFObject[] => {
+		const entries = resources.lookup(category)
+		if (!(entries instanceof PDFDict)) return []
+		return entries.entries().filter(([name]) => names.has(name)).map(([, value]) => context.lookup(value) as PDFObject)
+	}
+	const ownless = (object: unknown): boolean => {
+		const dict = object instanceof PDFStream ? object.dict : object
+		return dict instanceof PDFDict && !dict.has(RESOURCES)
+	}
+	const type3 = named(FONT).some((font) => font instanceof PDFDict && font.get(PDFName.of('Subtype')) === PDFName.of('Type3') && ownless(font))
+	const mask = named(EXT_G_STATE).some((state) => {
+		const smask = state instanceof PDFDict ? state.lookup(PDFName.of('SMask')) : undefined
+		return smask instanceof PDFDict && ownless(smask.lookup(PDFName.of('G')))
+	})
+	const tiling = named(PATTERN).some((pattern) => pattern instanceof PDFStream && ownless(pattern))
+	return type3 || mask || tiling
+}
+
 /** A copy of `resources` whose named resources (pictures, fonts and the like) are only the ones in `names`. */
 function onlyNamed(resources: PDFDict, names: ReadonlySet<PDFName>, context: PDFContext): PDFDict {
 	const trimmed = context.obj({})
@@ -581,7 +609,7 @@ function onlyNamed(resources: PDFDict, names: ReadonlySet<PDFName>, context: PDF
 			continue
 		}
 		const kept = context.obj({})
-		for (const [name, entry] of entries.entries()) if (names.has(name)) kept.set(name, entry)
+		for (const [name, entry] of entries.entries()) if (names.has(name) || (key === COLOR_SPACE && DEFAULT_COLOR_SPACES.has(name))) kept.set(name, entry)
 		trimmed.set(key, kept)
 	}
 	return trimmed
