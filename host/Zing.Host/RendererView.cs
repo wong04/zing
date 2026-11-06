@@ -50,7 +50,7 @@ public sealed class RendererView
 		core.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
 		core.WebMessageReceived += renderer.OnMessage;
 		// All kinds of source, so a worker's fetch is answered as well as the page's own.
-		core.AddWebResourceRequestedFilter($"https://{AppHost}{LocalFiles.Prefix}*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+		core.AddWebResourceRequestedFilter($"https://{ZingOrigin.LocalFilesHost}{LocalFiles.Prefix}*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
 		core.WebResourceRequested += renderer.OnLocalFileRequested;
 		core.ProcessFailed += renderer.OnProcessFailed;
 		// Events sent before the root has loaded would be lost, so callers get the view once it has.
@@ -123,16 +123,16 @@ public sealed class RendererView
 
 	/// <summary>
 	/// The background model and a granted file, as bytes, for a script in this Zing view (a worker included): GET
-	/// /zing-local/model/&lt;engine id&gt; or /zing-local/file/&lt;token&gt;, and nothing else. Registered on Zing's own views only,
-	/// so a page tab, which has no <c>app.zing</c> and no handler, gets nothing. The bytes are streamed from the file,
+	/// https://local.zing/zing-local/model/&lt;engine id&gt; or /zing-local/file/&lt;token&gt;, and nothing else. Registered on Zing's own views only,
+	/// so a page tab, where that name resolves nowhere and no handler listens, gets nothing. The bytes are streamed from the file,
 	/// never read into memory here, and not through the JSON bridge.
 	/// </summary>
 	private void OnLocalFileRequested(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
 	{
 		var environment = sender.Environment;
-		if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri) || uri.Host != AppHost || e.Request.Method != "GET")
+		if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri) || uri.Host != ZingOrigin.LocalFilesHost || e.Request.Method != "GET")
 		{
-			e.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", "Cache-Control: no-store");
+			e.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", RefusalHeaders);
 			return;
 		}
 		try
@@ -142,16 +142,19 @@ public sealed class RendererView
 		}
 		catch (Exception error) when (error is LocalFileRefusedException or UnknownFileGrantException)
 		{
-			e.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", "Cache-Control: no-store");
+			e.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", RefusalHeaders);
 		}
 		catch (Exception error) when (error is EngineNotInstalledException or EngineBusyException or FileNotFoundException or DirectoryNotFoundException)
 		{
-			e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", "Cache-Control: no-store");
+			e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", RefusalHeaders);
 		}
 	}
 
+	// The view that asked is on another origin, so it can only read the status if the answer says it may.
+	private static readonly string RefusalHeaders = string.Join("\r\n", "Cache-Control: no-store", $"Access-Control-Allow-Origin: https://{AppHost}");
+
 	private static string ServedHeaders(long length) =>
-		string.Join("\r\n", "Content-Type: application/octet-stream", $"Content-Length: {length}", "Cache-Control: no-store", "X-Content-Type-Options: nosniff");
+		string.Join("\r\n", "Content-Type: application/octet-stream", $"Content-Length: {length}", "Cache-Control: no-store", "X-Content-Type-Options: nosniff", $"Access-Control-Allow-Origin: https://{AppHost}", "Access-Control-Expose-Headers: Content-Length", "Vary: Origin");
 
 	/// <summary>Every invoke gets a reply, even one the bridge can't read, so the renderer's promise never hangs.</summary>
 	private async Task AnswerAsync(CoreWebView2 sender, string source, string json, IReadOnlyList<string> dropped)

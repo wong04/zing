@@ -93,7 +93,7 @@ test.describe('Background remover with the real model', () => {
 		expect(score.outside).toBeLessThan(0.1)
 
 		// Everything the browser asked for came from the app's own address.
-		expect(requests.filter((url) => !url.startsWith('https://app.zing/') && !url.startsWith('data:') && !url.startsWith('blob:'))).toEqual([])
+		expect(requests.filter((url) => !url.startsWith('https://app.zing/') && !url.startsWith('https://local.zing/') && !url.startsWith('data:'))).toEqual([])
 		expect(requests.some((url) => /ort-wasm-simd-threaded.*\.wasm$/.test(url))).toBe(true)
 		await expect.poll(() => surface.workers().length).toBe(0)
 

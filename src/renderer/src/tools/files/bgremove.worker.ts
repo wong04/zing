@@ -4,56 +4,12 @@ import * as ort from 'onnxruntime-web/wasm'
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url'
 import { applyMask, normaliseMask, resizeMask } from '@shared/convert/alphaMask'
 import { MODEL_SIZE, toModelInput, type Normalisation } from '@shared/convert/bgPrep'
-import { checkImage, CorruptImageError, ImageTooLargeError, MAX_PIXELS, SNIFF_BYTES, UnsupportedImageError } from '@shared/convert/imageSniff'
-import type { CheckRequest, FailureKind, RemoveMessage, RemoveRequest, RemoveStage, RunRequest } from './bgremoveProtocol'
+import { checkImage, MAX_PIXELS, SNIFF_BYTES } from '@shared/convert/imageSniff'
+import { describe, download, MAX_FILE_BYTES, post, progress, scope, WorkerFailure } from './bgworkerCommon'
+import type { RunRequest } from './bgremoveProtocol'
 
 /** Checked against the real model: see bgremove.real.test.ts. */
 const NORMALISATION: Normalisation = { mean: [0.5, 0.5, 0.5], std: [1, 1, 1], divideByMax: false }
-
-/** A compressed picture of this size is already past anything a camera makes; the pixel limit is the real guard. */
-const MAX_FILE_BYTES = 120 * 1024 * 1024
-
-class WorkerFailure extends Error {
-	override name = 'WorkerFailure'
-	constructor(
-		readonly kind: FailureKind,
-		message: string,
-	) {
-		super(message)
-	}
-}
-
-// The page's DOM typings are in use, and they give `self` the window's postMessage.
-const scope = self as unknown as { postMessage(message: RemoveMessage, transfer: Transferable[]): void; onmessage: ((event: MessageEvent<RemoveRequest>) => void) | null }
-
-function post(message: RemoveMessage, transfer: Transferable[] = []): void {
-	scope.postMessage(message, transfer)
-}
-
-const progress = (stage: RemoveStage, fraction?: number): void => post({ type: 'progress', stage, fraction })
-
-/** Reads a whole response into one array, telling how far it has got. */
-async function download(url: string, what: string, limit: number, report: (fraction: number) => void): Promise<Uint8Array> {
-	const response = await fetch(url, { cache: 'no-store' })
-	if (!response.ok) throw new WorkerFailure('unavailable', `${what} could not be read from Zing (${response.status}).`)
-	const total = Number(response.headers.get('Content-Length'))
-	if (!Number.isFinite(total) || total <= 0) throw new WorkerFailure('unavailable', `${what} came without a size, so Zing will not read it.`)
-	if (total > limit) throw new WorkerFailure('too-large', `${what} is ${Math.round(total / 1048576)} MB, more than Zing will read.`)
-	if (response.body === null) throw new WorkerFailure('unavailable', `${what} came empty.`)
-	const bytes = new Uint8Array(total)
-	let filled = 0
-	const reader = response.body.getReader()
-	for (;;) {
-		const { done, value } = await reader.read()
-		if (done) break
-		if (filled + value.length > total) throw new WorkerFailure('unavailable', `${what} was longer than it said.`)
-		bytes.set(value, filled)
-		filled += value.length
-		report(filled / total)
-	}
-	if (filled !== total) throw new WorkerFailure('unavailable', `${what} stopped early.`)
-	return bytes
-}
 
 async function decode(bytes: Uint8Array, format: string): Promise<{ bitmap: ImageBitmap; rgba: Uint8ClampedArray; width: number; height: number }> {
 	let bitmap: ImageBitmap
@@ -94,12 +50,6 @@ async function createSession(modelBytes: Uint8Array): Promise<ort.InferenceSessi
 	}
 }
 
-async function check(request: CheckRequest): Promise<void> {
-	const file = await download(request.fileUrl, 'The picture', MAX_FILE_BYTES, () => undefined)
-	checkImage(file.subarray(0, SNIFF_BYTES))
-	post({ type: 'checked' })
-}
-
 async function run(request: RunRequest): Promise<void> {
 	const started = performance.now()
 	progress('reading')
@@ -133,17 +83,6 @@ async function run(request: RunRequest): Promise<void> {
 	}
 }
 
-function describe(error: unknown): RemoveMessage & { type: 'failed' } {
-	if (error instanceof WorkerFailure) return { type: 'failed', kind: error.kind, message: error.message }
-	if (error instanceof UnsupportedImageError) return { type: 'failed', kind: 'unsupported', message: error.message }
-	if (error instanceof ImageTooLargeError) return { type: 'failed', kind: 'too-large', message: error.message }
-	if (error instanceof CorruptImageError) return { type: 'failed', kind: 'corrupt', message: error.message }
-	if (error instanceof RangeError) return { type: 'failed', kind: 'model', message: `The model answer was not usable: ${error.message}.` }
-	return { type: 'failed', kind: 'unavailable', message: error instanceof Error ? error.message : String(error) }
-}
-
-scope.onmessage = (event: MessageEvent<RemoveRequest>) => {
-	const request = event.data
-	const work = request.type === 'check' ? check(request) : run(request)
-	work.catch((error: unknown) => post(describe(error)))
+scope.onmessage = (event: MessageEvent<RunRequest>) => {
+	run(event.data).catch((error: unknown) => post(describe(error)))
 }

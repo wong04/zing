@@ -42,6 +42,12 @@ async function choose(zing: Launched, panel: Locator, file: string): Promise<voi
 	await expect(panel.getByText(file.split('\\').at(-1)!, { exact: true })).toBeVisible()
 }
 
+/** The PNGs in Downloads; the folder does not exist until something is saved. */
+function savedPngs(zing: Launched): string[] {
+	const folder = join(zing.userDataDir, 'downloads')
+	return existsSync(folder) ? readdirSync(folder).filter((name) => name.endsWith('.png')) : []
+}
+
 function picture(zing: Launched, name: string): string {
 	const path = join(zing.userDataDir, name)
 	const fixtureImage = drawFixture(64, 48)
@@ -84,10 +90,16 @@ test('with no model, the tool states its size and source and downloads only on a
 	// The fake model is not an ONNX file, so the worker says so plainly, and nothing is saved.
 	await expect(panel.getByText(/background model could not be loaded/)).toBeVisible({ timeout: 60_000 })
 	expect(fixture.requests.filter((r) => r.includes('isnet'))).toHaveLength(1)
-	expect(readdirSync(join(zing.userDataDir, 'downloads')).filter((n) => n.endsWith('.png'))).toEqual([])
+	expect(savedPngs(zing)).toEqual([])
 	// The WebAssembly compiled in the worker under the chrome's CSP as it is, from the app's own bundle.
 	expect(requested.some((url) => /ort-wasm-simd-threaded.*\.wasm$/.test(url))).toBe(true)
-	expect(requested.filter((url) => !url.startsWith('https://app.zing/') && !url.startsWith('data:') && !url.startsWith('blob:'))).toEqual([])
+	// Everything the browser asked for was the app's own bundle or the host's file answers (the picture and the model); nothing else.
+	expect(requested.filter((url) => !url.startsWith('https://app.zing/') && !url.startsWith('https://local.zing/') && !url.startsWith('data:'))).toEqual([])
+	expect(requested.filter((url) => url.startsWith('https://local.zing/')).map((url) => url.replace(/[0-9a-f]{32}/, '<token>'))).toEqual([
+		'https://local.zing/zing-local/file/<token>',
+		'https://local.zing/zing-local/file/<token>',
+		'https://local.zing/zing-local/model/bgmodel',
+	])
 	// And the worker has ended.
 	await expect.poll(() => surface.workers().length).toBe(0)
 	await zing.close()
@@ -101,15 +113,22 @@ test('the host serves the model by its id and a picture by its token to Zing vie
 	await queuePick(zing, file)
 	const token = await zing.chrome.evaluate(async () => (await window.zing.pickFiles(['image']))[0]!.token)
 
+	// The chrome page's own CSP only lets it fetch its own origin; the tool fetches from a worker, which has none. So the
+	// probe lifts the page's policy for this test alone (a DevTools command), to ask the same questions the worker does.
+	const cdp = await zing.chrome.context().newCDPSession(zing.chrome)
+	await cdp.send('Page.setBypassCSP', { enabled: true })
+	await zing.chrome.reload()
+	await zing.chrome.waitForLoadState('domcontentloaded')
+	const local = 'https://local.zing'
 	const asked = (path: string, init?: RequestInit): Promise<number | string> =>
-		zing.chrome.evaluate(([p, i]) => fetch(p as string, i as RequestInit | undefined).then((r) => r.status, (e: Error) => e.name), [path, init] as const)
+		zing.chrome.evaluate(([p, i]) => fetch(p as string, i as RequestInit | undefined).then((r) => r.status, (e: Error) => e.name), [local + path, init] as const)
 
 	const model = await zing.chrome.evaluate(async () => {
-		const response = await fetch('/zing-local/model/bgmodel')
+		const response = await fetch('https://local.zing/zing-local/model/bgmodel')
 		return { status: response.status, length: Number(response.headers.get('Content-Length')), bytes: (await response.arrayBuffer()).byteLength, type: response.headers.get('Content-Type') }
 	})
 	expect(model).toEqual({ status: 200, length: fixture.bytes, bytes: fixture.bytes, type: 'application/octet-stream' })
-	const served = await zing.chrome.evaluate(async (t) => Array.from(new Uint8Array(await (await fetch(`/zing-local/file/${t}`)).arrayBuffer())), token)
+	const served = await zing.chrome.evaluate(async (t) => Array.from(new Uint8Array(await (await fetch(`https://local.zing/zing-local/file/${t}`)).arrayBuffer())), token)
 	expect(Buffer.from(served).equals(readFileSync(file))).toBe(true)
 
 	expect(await asked('/zing-local/model/ffmpeg')).toBe(403)
@@ -133,7 +152,7 @@ test('the host serves the model by its id and a picture by its token to Zing vie
 	const page = await pageWhere(zing.browser, (p) => p.url() === origin)
 	for (const path of ['/zing-local/model/bgmodel', `/zing-local/file/${token}`]) {
 		for (const mode of ['cors', 'no-cors'] as const) {
-			const outcome = await page.evaluate(([p, m]) => fetch(`https://app.zing${p}`, { mode: m as RequestMode }).then((r) => `answered ${r.status} ${r.type}`, (e: Error) => e.name), [path, mode] as const)
+			const outcome = await page.evaluate(([p, m]) => fetch(`https://local.zing${p}`, { mode: m as RequestMode }).then((r) => `answered ${r.status} ${r.type}`, (e: Error) => e.name), [path, mode] as const)
 			expect(outcome, `${mode} ${path}`).toBe('TypeError')
 		}
 	}
@@ -211,13 +230,13 @@ test('a corrupt picture is a plain error, and Cancel and closing the panel end t
 	await panel.getByRole('button', { name: 'Remove background' }).click()
 	await expect(panel.getByText('Cancelled. Nothing was kept.')).toBeVisible({ timeout: 60_000 })
 	await expect.poll(() => surface.workers().length).toBe(0)
-	expect(readdirSync(join(zing.userDataDir, 'downloads')).filter((n) => n.endsWith('.png'))).toEqual([])
+	expect(savedPngs(zing)).toEqual([])
 
 	await clickOn('close')
 	await panel.getByRole('button', { name: 'Remove background' }).click()
 	await expect(panel).toHaveCount(0, { timeout: 30_000 })
 	await expect.poll(() => surface.workers().length).toBe(0)
-	expect(existsSync(join(zing.userDataDir, 'downloads')) ? readdirSync(join(zing.userDataDir, 'downloads')).filter((n) => n.endsWith('.png')) : []).toEqual([])
+	expect(savedPngs(zing)).toEqual([])
 	await zing.close()
 })
 

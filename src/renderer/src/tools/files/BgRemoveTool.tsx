@@ -7,13 +7,13 @@ import { zing } from '../../api'
 import { FileDropZone, FileRow, InfoBanner, PillButton } from '../../components'
 import { describeFailure } from '../dev/parts'
 import { ToolPage } from '../parts'
-import { STAGE_TEXT, type RemoveMessage, type RemoveRequest, type RemoveStage } from './bgremoveProtocol'
+import { LOCAL_ORIGIN, STAGE_TEXT, type RemoveMessage, type RemoveRequest, type RemoveStage } from './bgremoveProtocol'
 import './files.css'
 
 const MODEL_ID = 'bgmodel'
 /** Served by the host to Zing's own views only (LocalFiles.cs); the picture by its token, the model by its engine id. */
-const MODEL_URL = `/zing-local/model/${MODEL_ID}`
-const fileUrl = (token: string): string => `/zing-local/file/${token}`
+const MODEL_URL = `${LOCAL_ORIGIN}/zing-local/model/${MODEL_ID}`
+const fileUrl = (token: string): string => `${LOCAL_ORIGIN}/zing-local/file/${token}`
 /** Room for " no background.png" inside a name the host accepts. */
 const MAX_BASE_CHARACTERS = 80
 
@@ -99,8 +99,9 @@ export function BgRemoveTool() {
 	/** Starts a worker with one request; the worker is ended on its answer, on Cancel and when the panel closes. */
 	const launch = (request: RemoveRequest, onMessage: (message: RemoveMessage) => void): void => {
 		stopWorker()
-		// `new Worker(new URL(...))` stays inline: that exact shape is what the bundler recognises.
-		const started = new Worker(new URL('./bgremove.worker.ts', import.meta.url), { type: 'module' })
+		// `new Worker(new URL(...))` stays inline: that exact shape is what the bundler recognises. The check worker never
+		// carries onnxruntime, which loads only when a removal really runs.
+		const started = request.type === 'check' ? new Worker(new URL('./bgcheck.worker.ts', import.meta.url), { type: 'module' }) : new Worker(new URL('./bgremove.worker.ts', import.meta.url), { type: 'module' })
 		worker.current = started
 		started.onmessage = (event: MessageEvent<RemoveMessage>) => {
 			if (event.data.type !== 'progress') stopWorker()

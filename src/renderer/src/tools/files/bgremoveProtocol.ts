@@ -1,5 +1,8 @@
 /** What the main thread and the background-removal worker say to each other. */
 
+/** The name only Zing's own views have answered by the host (ZingOrigin.LocalFilesHost); a worker fetches the picture and the model from it. */
+export const LOCAL_ORIGIN = 'https://local.zing'
+
 /** Reads the picture and judges its format and size, without the model: so a picture that cannot be used is refused before the model is offered. */
 export interface CheckRequest {
 	readonly type: 'check'
