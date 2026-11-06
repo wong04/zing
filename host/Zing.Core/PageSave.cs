@@ -23,7 +23,6 @@ public static class PageSave
 	public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(15);
 
 	private const int MaxNameLength = 80;
-	private const int MaxNumbering = 100;
 
 	/// <summary>The document type (which outerHTML leaves out) followed by the root element, as the page holds them now.</summary>
 	public const string Script = "(() => { const d = document; const type = d.doctype ? new XMLSerializer().serializeToString(d.doctype) : ''; return type + d.documentElement.outerHTML })()";
@@ -62,11 +61,11 @@ public static class PageSave
 
 	/// <summary>
 	/// Writes the HTML as UTF-8 with a byte-order mark (so a meta charset in the page can't make the copy read as another
-	/// encoding) under "title.html", numbered rather than overwriting, and returns its path. The text goes to a hidden part
+	/// encoding) under "title.html", placed as "Never overwrite files" says (see OutputPlacement), and returns its path. The text goes to a hidden part
 	/// file first, so a failure never leaves a half-written page under a real name.
 	/// </summary>
 	/// <exception cref="PageNotSavableException">Over <see cref="MaxBytes"/>.</exception>
-	public static string Write(string directory, string title, string html)
+	public static string Write(OutputPlacement placement, string directory, string title, string html)
 	{
 		var bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true).GetPreamble().Concat(Encoding.UTF8.GetBytes(html)).ToArray();
 		if (bytes.Length > MaxBytes) throw new PageNotSavableException("This page is too large to save.");
@@ -75,7 +74,7 @@ public static class PageSave
 		try
 		{
 			File.WriteAllBytes(part, bytes);
-			return MoveIntoPlace(part, directory, BaseName(title) + ".html");
+			return placement.Place(part, directory, BaseName(title) + ".html");
 		}
 		finally
 		{
@@ -91,24 +90,5 @@ public static class PageSave
 		// Not between the two halves of a surrogate pair, which would leave an invalid name.
 		var end = char.IsHighSurrogate(trimmed[MaxNameLength - 1]) ? MaxNameLength - 1 : MaxNameLength;
 		return trimmed[..end];
-	}
-
-	private static string MoveIntoPlace(string part, string directory, string name)
-	{
-		// File.Move refuses to overwrite, so a file that arrives after the name was chosen makes the next number be tried.
-		for (var attempt = 0; attempt < MaxNumbering; attempt++)
-		{
-			var target = Path.Combine(directory, DownloadNames.FileName(name, candidate => File.Exists(Path.Combine(directory, candidate))));
-			try
-			{
-				File.Move(part, target, overwrite: false);
-				return target;
-			}
-			catch (IOException) when (File.Exists(target))
-			{
-				// Taken in the instant since it was checked; choose again.
-			}
-		}
-		throw new IOException($"Couldn't find a free name for {name} in {directory}");
 	}
 }

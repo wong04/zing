@@ -99,6 +99,7 @@ public sealed class ChromeApi : IDisposable
 
 	internal IWindowHost Host => _host;
 	private readonly string _appVersion;
+	private readonly OutputPlacement _placement;
 	private readonly List<IDisposable> _subscriptions = [];
 	private readonly Action _unsubscribeLibrary;
 	private string? _libraryPanel;
@@ -154,6 +155,7 @@ public sealed class ChromeApi : IDisposable
 		_consent = app.Consent;
 		_host = host;
 		_appVersion = appVersion;
+		_placement = OutputPlacement.ForSettings(app.Settings);
 		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text));
 		Saved = new SavedTabs(Tabs, app.Library);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
@@ -164,7 +166,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.UseDropInbox(Drops);
 		if (app.ViewerRoot is { } viewerRoot)
 		{
-			Viewer = new ViewerFiles(viewerRoot, (what, error) => host.Warn(what, error))
+			Viewer = new ViewerFiles(viewerRoot, _placement, (what, error) => host.Warn(what, error))
 			{
 				ModelOpener = () => OpenModel(app.Engines),
 				SaveDirectory = host.DownloadsDirectory,
@@ -540,7 +542,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		var page = Tabs.ActivePage ?? throw new PageNotSavableException("There is no page open to save.");
 		var text = await PageSave.ReadAsync(page);
-		return Grants.Issue(PageSave.Write(_host.DownloadsDirectory, text.Title, text.Html));
+		return Grants.Issue(PageSave.Write(_placement, _host.DownloadsDirectory, text.Title, text.Html));
 	}
 
 	private EngineStore Engines() => _app.Engines ?? throw new InvalidOperationException("This host has no engine store");
@@ -613,7 +615,7 @@ public sealed class ChromeApi : IDisposable
 	private async Task<object?> HtmlToPdfAsync(string token, string outputName)
 	{
 		var path = Grants.Resolve(token);
-		var placed = await HtmlPdf.PrintAsync(path, outputName, _host.DownloadsDirectory, _host.PrintHtmlToPdfAsync, _closing.Token);
+		var placed = await HtmlPdf.PrintAsync(path, outputName, _host.DownloadsDirectory, _placement, _host.PrintHtmlToPdfAsync, _closing.Token);
 		return Grants.Issue(placed);
 	}
 

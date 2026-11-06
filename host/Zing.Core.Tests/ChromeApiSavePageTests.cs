@@ -10,12 +10,13 @@ public sealed class ChromeApiSavePageTests : IDisposable
 	private readonly Bridge _bridge = new();
 	private readonly FakeWindowHost _host = new();
 	private readonly string _downloads = Path.Combine(Path.GetTempPath(), "zing-save-page-" + Guid.NewGuid().ToString("N"));
+	private readonly SettingsStore _settings = new();
 	private readonly ChromeApi _api;
 
 	public ChromeApiSavePageTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent()), _host, "test");
+		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent()), _host, "test");
 		_host.DownloadsDirectory = _downloads;
 		_api.Start([], "about:blank");
 	}
@@ -61,6 +62,19 @@ public sealed class ChromeApiSavePageTests : IDisposable
 		// A byte-order mark, so a meta charset in the page can't make the saved copy read as another encoding.
 		Assert.Equal([0xEF, 0xBB, 0xBF], bytes[..3]);
 		Assert.Equal("<!DOCTYPE html><html><body>caf\u00e9</body></html>", Encoding.UTF8.GetString(bytes[3..]));
+	}
+
+	[Fact]
+	public async Task With_Never_overwrite_files_off_a_second_save_replaces_the_first()
+	{
+		_settings.Set("preserveOriginals", System.Text.Json.Nodes.JsonValue.Create(false));
+		await OpenPage("<p>one</p>", "Same");
+		ActivePage.ProbeResult = JsonSerializer.SerializeToElement("<p>two</p>");
+		var second = await Invoke("page:save");
+
+		Assert.Equal("Same.html", second.GetProperty("value").GetProperty("name").GetString());
+		Assert.Equal(["Same.html"], Saved());
+		Assert.Contains("two", File.ReadAllText(Path.Combine(_downloads, "Same.html")));
 	}
 
 	[Fact]
@@ -256,7 +270,7 @@ public sealed class ChromeApiSavePageTests : IDisposable
 	public void A_title_is_cut_without_splitting_a_surrogate_pair()
 	{
 		var directory = Path.Combine(_downloads, "cut");
-		var path = PageSave.Write(directory, new string('a', 79) + "😀tail", "x");
+		var path = PageSave.Write(OutputPlacement.ForSettings(new SettingsStore()), directory, new string('a', 79) + "😀tail", "x");
 
 		var name = Path.GetFileNameWithoutExtension(path);
 		Assert.Equal(new string('a', 79), name);

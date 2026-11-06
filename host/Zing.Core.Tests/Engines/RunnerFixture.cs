@@ -32,10 +32,13 @@ public sealed class RunnerFixture : IDisposable
 		}
 		Store = _engines.Store([.. catalog]);
 		var policy = EngineFlagPolicy.Pinned.Plus(engineId, EngineFlagPolicy.FakeEngineFlags, "txt");
-		Runner = new EngineRunner(Store, Jobs, (where, error) => Errors.Add((where, error)), policy, flushEvery ?? TimeSpan.FromMilliseconds(20));
+		Runner = new EngineRunner(Store, Jobs, OutputPlacement.ForSettings(Settings), (where, error) => Errors.Add((where, error)), policy, flushEvery ?? TimeSpan.FromMilliseconds(20));
 	}
 
 	public string EngineId { get; }
+
+	/// <summary>The settings the runner's placement reads ("Never overwrite files").</summary>
+	public SettingsStore Settings { get; } = new();
 
 	public EngineStore Store { get; }
 

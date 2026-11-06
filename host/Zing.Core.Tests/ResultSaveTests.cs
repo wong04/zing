@@ -12,13 +12,15 @@ public sealed class ResultSaveTests : IDisposable
 	private static readonly SaveFormat[] PngOnly = [SaveFormats.Png];
 	private readonly string _root = Directory.CreateTempSubdirectory("zing-pngsave-").FullName;
 	private string Downloads => Path.Combine(_root, "downloads");
+	private readonly SettingsStore _settings = new();
+	private OutputPlacement Placement => OutputPlacement.ForSettings(_settings);
 
 	public void Dispose() => Directory.Delete(_root, recursive: true);
 
 	private static byte[] Png(int extra = 8) => [.. Signature, .. new byte[extra]];
 
 	private async Task<string> Save(string name, byte[] bytes, long? declared = null, long room = Plenty) =>
-		(await ResultSave.WriteAsync(Downloads, name, PngOnly, new MemoryStream(bytes), declared ?? bytes.Length, room, Patient, () => true, CancellationToken.None)).Path;
+		(await ResultSave.WriteAsync(Placement, Downloads, name, PngOnly, new MemoryStream(bytes), declared ?? bytes.Length, room, Patient, () => true, CancellationToken.None)).Path;
 
 	private string[] Left() => Directory.Exists(Downloads) ? [.. Directory.GetFileSystemEntries(Downloads).Select(p => Path.GetFileName(p)!)] : [];
 
@@ -41,6 +43,20 @@ public sealed class ResultSaveTests : IDisposable
 
 		Assert.Equal(Path.Combine(Downloads, "cat 2.png"), path);
 		Assert.Equal("mine", File.ReadAllText(Path.Combine(Downloads, "cat.png")));
+	}
+
+	[Fact]
+	public async Task With_Never_overwrite_files_off_a_taken_name_is_replaced()
+	{
+		_settings.Set("preserveOriginals", System.Text.Json.Nodes.JsonValue.Create(false));
+		Directory.CreateDirectory(Downloads);
+		File.WriteAllText(Path.Combine(Downloads, "cat.png"), "mine");
+
+		var path = await Save("cat.png", Png());
+
+		Assert.Equal(Path.Combine(Downloads, "cat.png"), path);
+		Assert.Equal(Png(), File.ReadAllBytes(path));
+		Assert.Equal(["cat.png"], Left());
 	}
 
 	[Fact]
@@ -110,7 +126,7 @@ public sealed class ResultSaveTests : IDisposable
 	{
 		var body = new ThrowingStream();
 
-		await Assert.ThrowsAsync<SaveTooLargeException>(() => ResultSave.WriteAsync(Downloads, "big.png", PngOnly, body, SaveFormats.Png.Cap + 1L, Plenty, Patient, () => true, CancellationToken.None));
+		await Assert.ThrowsAsync<SaveTooLargeException>(() => ResultSave.WriteAsync(Placement, Downloads, "big.png", PngOnly, body, SaveFormats.Png.Cap + 1L, Plenty, Patient, () => true, CancellationToken.None));
 		Assert.False(body.Touched);
 	}
 
@@ -119,7 +135,7 @@ public sealed class ResultSaveTests : IDisposable
 	{
 		var lying = new LongStream(SaveFormats.Png.Cap + 1000L);
 
-		await Assert.ThrowsAsync<SaveRefusedException>(() => ResultSave.WriteAsync(Downloads, "big.png", PngOnly, lying, 100, Plenty, Patient, () => true, CancellationToken.None));
+		await Assert.ThrowsAsync<SaveRefusedException>(() => ResultSave.WriteAsync(Placement, Downloads, "big.png", PngOnly, lying, 100, Plenty, Patient, () => true, CancellationToken.None));
 		Assert.Empty(Left());
 		Assert.True(lying.Served <= SaveFormats.Png.Cap + 81920);
 	}
@@ -139,7 +155,7 @@ public sealed class ResultSaveTests : IDisposable
 
 		Assert.Contains("as much", error.Message);
 		Assert.Empty(Left());
-		await Assert.ThrowsAsync<SaveBudgetException>(() => ResultSave.WriteAsync(Downloads, "cat.png", PngOnly, new MemoryStream(Png(1000)), null, 500, Patient, () => true, CancellationToken.None));
+		await Assert.ThrowsAsync<SaveBudgetException>(() => ResultSave.WriteAsync(Placement, Downloads, "cat.png", PngOnly, new MemoryStream(Png(1000)), null, 500, Patient, () => true, CancellationToken.None));
 		Assert.Empty(Left());
 	}
 
@@ -148,7 +164,7 @@ public sealed class ResultSaveTests : IDisposable
 	{
 		var aborted = new MemoryStream(Png(50));
 
-		var error = await Assert.ThrowsAsync<SaveRefusedException>(() => ResultSave.WriteAsync(Downloads, "cat.png", PngOnly, aborted, Png(50).Length + 500L, Plenty, Patient, () => true, CancellationToken.None));
+		var error = await Assert.ThrowsAsync<SaveRefusedException>(() => ResultSave.WriteAsync(Placement, Downloads, "cat.png", PngOnly, aborted, Png(50).Length + 500L, Plenty, Patient, () => true, CancellationToken.None));
 
 		Assert.Contains("stopped early", error.Message);
 		Assert.Empty(Left());
@@ -157,7 +173,7 @@ public sealed class ResultSaveTests : IDisposable
 	[Fact]
 	public async Task A_body_longer_than_its_content_length_is_refused()
 	{
-		await Assert.ThrowsAsync<SaveRefusedException>(() => ResultSave.WriteAsync(Downloads, "cat.png", PngOnly, new MemoryStream(Png(500)), 20, Plenty, Patient, () => true, CancellationToken.None));
+		await Assert.ThrowsAsync<SaveRefusedException>(() => ResultSave.WriteAsync(Placement, Downloads, "cat.png", PngOnly, new MemoryStream(Png(500)), 20, Plenty, Patient, () => true, CancellationToken.None));
 		Assert.Empty(Left());
 	}
 
@@ -166,7 +182,7 @@ public sealed class ResultSaveTests : IDisposable
 	{
 		var trickle = new TrickleStream(Png(100), 3);
 
-		var saved = await ResultSave.WriteAsync(Downloads, "cat.png", PngOnly, trickle, Png(100).Length, Plenty, Patient, () => true, CancellationToken.None);
+		var saved = await ResultSave.WriteAsync(Placement, Downloads, "cat.png", PngOnly, trickle, Png(100).Length, Plenty, Patient, () => true, CancellationToken.None);
 
 		Assert.Equal(Png(100), File.ReadAllBytes(saved.Path));
 	}
@@ -174,14 +190,14 @@ public sealed class ResultSaveTests : IDisposable
 	[Fact]
 	public async Task A_trickle_that_is_not_a_png_is_still_refused()
 	{
-		await Assert.ThrowsAsync<SaveRefusedException>(() => ResultSave.WriteAsync(Downloads, "cat.png", PngOnly, new TrickleStream(new byte[100], 3), 100, Plenty, Patient, () => true, CancellationToken.None));
+		await Assert.ThrowsAsync<SaveRefusedException>(() => ResultSave.WriteAsync(Placement, Downloads, "cat.png", PngOnly, new TrickleStream(new byte[100], 3), 100, Plenty, Patient, () => true, CancellationToken.None));
 		Assert.Empty(Left());
 	}
 
 	[Fact]
 	public async Task A_session_closed_before_the_move_keeps_the_file_from_landing()
 	{
-		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ResultSave.WriteAsync(Downloads, "cat.png", PngOnly, new MemoryStream(Png()), Png().Length, Plenty, Patient, () => false, CancellationToken.None));
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ResultSave.WriteAsync(Placement, Downloads, "cat.png", PngOnly, new MemoryStream(Png()), Png().Length, Plenty, Patient, () => false, CancellationToken.None));
 		Assert.Empty(Left());
 	}
 
@@ -190,7 +206,7 @@ public sealed class ResultSaveTests : IDisposable
 	{
 		using var cancel = new CancellationTokenSource();
 		var never = new NeverEndingStream();
-		var save = ResultSave.WriteAsync(Downloads, "cat.png", PngOnly, never, null, Plenty, Patient, () => true, cancel.Token);
+		var save = ResultSave.WriteAsync(Placement, Downloads, "cat.png", PngOnly, never, null, Plenty, Patient, () => true, cancel.Token);
 		await never.Started.Task;
 
 		cancel.Cancel();
@@ -202,7 +218,7 @@ public sealed class ResultSaveTests : IDisposable
 	[Fact]
 	public async Task A_body_that_stops_arriving_times_out_and_leaves_nothing()
 	{
-		var error = await Assert.ThrowsAsync<SaveStalledException>(() => ResultSave.WriteAsync(Downloads, "cat.png", PngOnly, new NeverEndingStream(), null, Plenty, TimeSpan.FromMilliseconds(150), () => true, CancellationToken.None));
+		var error = await Assert.ThrowsAsync<SaveStalledException>(() => ResultSave.WriteAsync(Placement, Downloads, "cat.png", PngOnly, new NeverEndingStream(), null, Plenty, TimeSpan.FromMilliseconds(150), () => true, CancellationToken.None));
 
 		Assert.Contains("stalled", error.Message);
 		Assert.Empty(Left());

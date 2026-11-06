@@ -270,6 +270,21 @@ public sealed class EngineRunnerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task With_Never_overwrite_files_off_an_existing_file_is_replaced()
+	{
+		await _f.InstallAsync();
+		_f.Settings.Set("preserveOriginals", System.Text.Json.Nodes.JsonValue.Create(false));
+		var existing = Path.Combine(_f.Outputs, "clip.txt");
+		File.WriteAllText(existing, "precious");
+
+		var exit = await _f.RunAsync(_f.Request(["clip.txt"], Literal("--fake-write"), Output(0)));
+
+		Assert.Equal([existing], exit.Outputs);
+		Assert.NotEqual("precious", File.ReadAllText(existing));
+		Assert.Equal(["clip.txt"], _f.Entries(_f.Outputs));
+	}
+
+	[Fact]
 	public async Task A_file_that_appears_between_the_check_and_the_move_is_not_overwritten()
 	{
 		await _f.InstallAsync();
@@ -557,7 +572,7 @@ public sealed class EngineRunnerTests : IDisposable
 		Directory.CreateDirectory(Path.Combine(_f.Jobs, "left-over", "out"));
 		File.WriteAllText(Path.Combine(_f.Jobs, "left-over", "out", "partial.mp4"), "x");
 
-		_ = new EngineRunner(_f.Store, _f.Jobs, (_, _) => { });
+		_ = new EngineRunner(_f.Store, _f.Jobs, OutputPlacement.ForSettings(_f.Settings), (_, _) => { });
 
 		Assert.Empty(_f.Entries(_f.Jobs));
 	}

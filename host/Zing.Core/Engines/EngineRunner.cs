@@ -17,7 +17,7 @@ public abstract record JobArg
 }
 
 /// <param name="OutputDirectory">Where finished outputs are placed.</param>
-/// <param name="OutputNames">The file names the job will make, in order. Each is placed under this name, numbered ("clip 2.mp4") if it is taken.</param>
+/// <param name="OutputNames">The file names the job will make, in order. Each is placed under this name, numbered ("clip 2.mp4") if it is taken, unless "Never overwrite files" is off.</param>
 /// <param name="Urls">Addresses for tools like yt-dlp; appended after a "--".</param>
 /// <param name="OutputsStaged">Called before the engine starts with the temporary path of each output, in order. A tool that shows the
 /// file while it grows (the viewer) reads it from there; the path stops existing when the file is placed or the job ends.</param>
@@ -44,7 +44,7 @@ public sealed record JobExit(string JobId, int Code, bool Cancelled, IReadOnlyLi
 /// always added. The process starts with no console window, a scrubbed environment, an empty private folder as its
 /// working directory (so a program or DLL planted beside someone's input isn't picked up from it) and no stdin. Each job
 /// has a Win32 job object, so it ends with Zing, and cancelling ends the whole process tree. An engine writes to a temp
-/// file in the job's folder and the file is placed only on exit code 0 and no cancel, never over an existing file
+/// file in the job's folder and the file is placed only on exit code 0 and no cancel, numbered or replacing as "Never overwrite files" says
 /// (staged beside its final name when the folders are on different volumes); the job's folder is then deleted. Nothing
 /// is logged or kept on disk.
 /// </summary>
@@ -55,10 +55,10 @@ public sealed class EngineRunner
 	public const int MaxLineChars = 2000;
 	public const int StderrTailLines = 20;
 	private const int RememberedEnded = 64;
-	private const int MaxNumbering = 1000;
 
 	private readonly EngineStore _store;
 	private readonly string _root;
+	private readonly OutputPlacement _placement;
 	private readonly Action<string, Exception> _onError;
 	private readonly TimeSpan _flushEvery;
 	private readonly EngineFlagPolicy _policy;
@@ -69,15 +69,17 @@ public sealed class EngineRunner
 
 	/// <param name="root">Where jobs' private folders go, under Zing's data. Anything left in it from a Zing that was killed is deleted now.</param>
 	/// <param name="onError">Called for a failure nobody awaits: a folder that couldn't be deleted (tried again at the next start) or a callback that threw.</param>
-	public EngineRunner(EngineStore store, string root, Action<string, Exception> onError, TimeSpan? flushEvery = null)
-		: this(store, root, onError, EngineFlagPolicy.Pinned, flushEvery)
+	/// <param name="placement">Puts each output in its folder, numbered or replacing, as the person's setting says.</param>
+	public EngineRunner(EngineStore store, string root, OutputPlacement placement, Action<string, Exception> onError, TimeSpan? flushEvery = null)
+		: this(store, root, placement, onError, EngineFlagPolicy.Pinned, flushEvery)
 	{
 	}
 
-	internal EngineRunner(EngineStore store, string root, Action<string, Exception> onError, EngineFlagPolicy policy, TimeSpan? flushEvery = null)
+	internal EngineRunner(EngineStore store, string root, OutputPlacement placement, Action<string, Exception> onError, EngineFlagPolicy policy, TimeSpan? flushEvery = null)
 	{
 		_store = store;
 		_root = root;
+		_placement = placement;
 		_onError = onError;
 		_policy = policy;
 		_flushEvery = flushEvery ?? TimeSpan.FromMilliseconds(100);
@@ -88,8 +90,8 @@ public sealed class EngineRunner
 	/// A runner that also accepts the flags of Zing.FakeEngine, for e2e runs that serve it as every engine. Zing.Host calls it
 	/// only in an e2e run with a fixture catalog (ZING_ENGINE_BASE_URL); a real run uses the public constructor.
 	/// </summary>
-	public static EngineRunner ForFakeEngine(EngineStore store, string root, Action<string, Exception> onError) =>
-		new(store, root, onError, EngineFlagPolicy.WithFakeEngine());
+	public static EngineRunner ForFakeEngine(EngineStore store, string root, OutputPlacement placement, Action<string, Exception> onError) =>
+		new(store, root, placement, onError, EngineFlagPolicy.WithFakeEngine());
 
 	public int Running
 	{
@@ -558,22 +560,7 @@ public sealed class EngineRunner
 		var staged = SameVolume(temp, job.OutputDirectory) ? null : Stage(job, temp, name);
 		try
 		{
-			// The name is chosen against what exists, and File.Move refuses to overwrite, so a file that arrives in between makes the next number be tried.
-			for (var attempt = 0; attempt < MaxNumbering; attempt++)
-			{
-				var target = Path.Combine(job.OutputDirectory, DownloadNames.FileName(name, candidate => Taken(Path.Combine(job.OutputDirectory, candidate))));
-				BeforeMove?.Invoke(job.Id);
-				try
-				{
-					File.Move(staged ?? temp, target, overwrite: false);
-					return target;
-				}
-				catch (IOException) when (Taken(target))
-				{
-					// Taken in the instant since it was checked; choose again.
-				}
-			}
-			throw new IOException($"Couldn't find a free name for {name} in {job.OutputDirectory}");
+			return _placement.Place(staged ?? temp, job.OutputDirectory, name, () => BeforeMove?.Invoke(job.Id));
 		}
 		finally
 		{
@@ -611,8 +598,6 @@ public sealed class EngineRunner
 			_onError($"{what} {path}", failure);
 		}
 	}
-
-	private static bool Taken(string path) => File.Exists(path) || Directory.Exists(path);
 
 	private void Discard(string folder)
 	{

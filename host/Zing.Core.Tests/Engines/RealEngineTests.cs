@@ -60,7 +60,7 @@ public sealed class RealEngineTests
 		}
 
 		var outputs = Path.Combine(root, "outputs");
-		var runner = new EngineRunner(store, Path.Combine(root, "jobs"), OnError);
+		var runner = new EngineRunner(store, Path.Combine(root, "jobs"), OutputPlacement.ForSettings(new SettingsStore()), OnError);
 		var exit = new TaskCompletionSource<JobExit>();
 		JobArg[] args = [new JobArg.Literal("--newline"), new JobArg.Literal("--no-playlist"), .. modeArgs, new JobArg.Literal("-o"), new JobArg.Output(0)];
 		runner.Start(

@@ -107,6 +107,7 @@ public sealed class ViewerFiles : IDisposable
 	private static readonly Regex OwnerFolder = new(@"^(\d+)_", RegexOptions.CultureInvariant);
 
 	private readonly string _root;
+	private readonly OutputPlacement _placement;
 	private readonly Action<string, Exception> _onError;
 	private readonly object _gate = new();
 	private readonly Dictionary<string, ViewerSession> _sessions = new(StringComparer.Ordinal);
@@ -132,9 +133,11 @@ public sealed class ViewerFiles : IDisposable
 
 	/// <param name="root">Where converted copies go: a folder of Zing's own under the temp folder.</param>
 	/// <param name="onError">Called for a copy that couldn't be deleted yet (the next start's sweep takes it).</param>
-	public ViewerFiles(string root, Action<string, Exception> onError)
+	/// <param name="placement">Puts a saved result in its folder, numbered or replacing, as the person's setting says.</param>
+	public ViewerFiles(string root, OutputPlacement placement, Action<string, Exception> onError)
 	{
 		_root = root;
+		_placement = placement;
 		_onError = onError;
 	}
 
@@ -479,7 +482,7 @@ public sealed class ViewerFiles : IDisposable
 		long bytes = 0;
 		try
 		{
-			var saved = await ResultSave.WriteAsync(directory, address.Name, allowed, request.Body, request.ContentLength, reserve, SaveIdleTimeout, () => !session.Revoked.IsCancellationRequested, session.Revoked.Token).ConfigureAwait(false);
+			var saved = await ResultSave.WriteAsync(_placement, directory, address.Name, allowed, request.Body, request.ContentLength, reserve, SaveIdleTimeout, () => !session.Revoked.IsCancellationRequested, session.Revoked.Token).ConfigureAwait(false);
 			bytes = saved.Bytes;
 			var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { name = Path.GetFileName(saved.Path), token = IssueToken?.Invoke(saved.Path) });
 			var headers = Cors(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Content-Type"] = "application/json", ["Content-Length"] = json.Length.ToString(CultureInfo.InvariantCulture), ["Cache-Control"] = "no-store" });

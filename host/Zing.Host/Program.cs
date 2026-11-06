@@ -225,19 +225,19 @@ public sealed class ZingApp
 		var engines = OpenEngines();
 		// Reached only by the Zing that owns this profile (the single-instance check came first), so what is in the folder is a dead Zing's.
 		Zing.Core.Viewer.ViewerFiles.SweepLeftovers(AppPaths.ViewerCopies, Zing.Core.Viewer.ViewerFiles.IsZingRunning, (what, error) => TestHooks.Record(what, error));
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines), ViewerRoot: AppPaths.ViewerCopies);
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies);
 	}
 
 	/// <summary>Clears the job folders a killed Zing left. A folder that can't be tidied costs running engines, not startup.</summary>
-	private static EngineRunner? OpenRunner(EngineStore engines)
+	private static EngineRunner? OpenRunner(EngineStore engines, OutputPlacement placement)
 	{
 		try
 		{
 			HtmlPdfPrinter.SweepLeftovers();
 			// The e2e fixture serves Zing.FakeEngine as every engine, so a run against it also accepts that program's flags.
 			return TestHooks.EngineCatalog() is null
-				? new EngineRunner(engines, AppPaths.EngineJobs, (what, error) => TestHooks.Record(what, error))
-				: EngineRunner.ForFakeEngine(engines, AppPaths.EngineJobs, (what, error) => TestHooks.Record(what, error));
+				? new EngineRunner(engines, AppPaths.EngineJobs, placement, (what, error) => TestHooks.Record(what, error))
+				: EngineRunner.ForFakeEngine(engines, AppPaths.EngineJobs, placement, (what, error) => TestHooks.Record(what, error));
 		}
 		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
 		{
