@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeCancelledPages, describeRun, runParts, whyNotNow } from './pdfRun'
+import { OPENING, describeCancelledPages, describeRun, notAdded, runParts, whyNotNow } from './pdfRun'
 
 const bytes = new Uint8Array([1])
 
@@ -59,6 +59,13 @@ describe('opening a file while a run is in progress', () => {
 	it('is refused with the reason, since it would end the session the run saves into', () => {
 		expect(whyNotNow(null)).toBeNull()
 		expect(whyNotNow('Saving…')).toBe('A save is running (Saving…). Wait for it to finish, or press Cancel, before opening or adding a file.')
+	})
+	it('says a file is still opening when that is what is busy, not that a save is running', () => {
+		expect(whyNotNow(OPENING)).toBe('A file is still opening. Wait for it to finish, then try again.')
+	})
+	it('names the files that were not added, so a refused drop or hand-off is not lost without a word', () => {
+		expect(notAdded(['a.pdf'], 'A file is still opening.')).toBe('a.pdf was not added. A file is still opening.')
+		expect(notAdded(['a.pdf', 'b.pdf'], 'A file is still opening.')).toBe('a.pdf and b.pdf were not added. A file is still opening.')
 	})
 })
 

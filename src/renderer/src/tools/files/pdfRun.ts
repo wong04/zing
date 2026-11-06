@@ -35,9 +35,20 @@ export function describeRun(outcome: RunOutcome): string | null {
 	return `Stopped. ${saved.length} of ${total} files were saved to your Downloads folder; the other ${total - saved.length} were not made.`
 }
 
+/** The busy label while files are being opened, as opposed to a save or split. */
+export const OPENING = 'Opening…'
+
 /** Why a file can't be opened or added right now, or null when it can: doing it would end the session the run is saving into. */
 export function whyNotNow(busy: string | null): string | null {
-	return busy === null ? null : `A save is running (${busy}). Wait for it to finish, or press Cancel, before opening or adding a file.`
+	if (busy === null) return null
+	if (busy === OPENING) return 'A file is still opening. Wait for it to finish, then try again.'
+	return `A save is running (${busy}). Wait for it to finish, or press Cancel, before opening or adding a file.`
+}
+
+/** A refused drop or hand-off has already been taken from where it came, so the person is told by name that it was not added. */
+export function notAdded(names: readonly string[], reason: string): string {
+	const list = new Intl.ListFormat('en', { type: 'conjunction' }).format(names)
+	return `${list} ${names.length === 1 ? 'was' : 'were'} not added. ${reason}`
 }
 
 /** The banner after Cancel on Convert's PDF to pictures. */

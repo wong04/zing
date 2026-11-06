@@ -11,7 +11,7 @@ import { PdfPageEditor } from './PdfPageEditor'
 import { onHandedPdf, takeHandedPdf } from './pdfHandoff'
 import { readGranted, saveResult, saveSessionFor } from './pdfHost'
 import { usePanelId } from '../panelId'
-import { describeRun, runParts, whyNotNow, type RunOutcome } from './pdfRun'
+import { OPENING, describeRun, notAdded, runParts, whyNotNow, type RunOutcome } from './pdfRun'
 import {
 	addFile,
 	addItem,
@@ -220,10 +220,10 @@ export function PdfTool() {
 		// Opening a file replaces the panel's session, which would end the one a save or split is writing into.
 		const reason = whyNotNow(busy)
 		if (reason !== null) {
-			setProblem(reason)
+			setProblem(notAdded(files.map((f) => f.name), reason))
 			return
 		}
-		setBusy('Opening…')
+		setBusy(OPENING)
 		setProblem(null)
 		void (async () => {
 			try {
