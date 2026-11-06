@@ -212,8 +212,7 @@ test('text, a picture and a typed signature are placed on a page; the signature 
 	await panel.getByRole('option').first().click()
 	await panel.getByRole('button', { name: 'Edit page…' }).click()
 
-	await expect(panel.getByText(/A signature here is a picture of your signature/)).toBeVisible()
-	await expect(panel.getByText(/It is not a digital signature/)).toBeVisible()
+	await expect(panel.locator('.pdf-editor').getByText(/A signature here is a picture of your signature placed on the page. It is not a digital signature/)).toBeVisible()
 	await panel.getByLabel('Text to add').fill('Hello Zing')
 	await panel.getByRole('button', { name: 'Add text' }).click()
 	await expect(panel.getByRole('button', { name: 'Text: Hello Zing' })).toBeVisible()

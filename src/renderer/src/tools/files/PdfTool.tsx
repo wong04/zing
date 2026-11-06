@@ -120,7 +120,7 @@ function PageThumb({ preview, index, turn, onError }: { preview: PdfPreview; ind
 
 	return (
 		<span ref={box} className="pdf-thumb">
-			<canvas ref={canvas} className="pdf-thumb-canvas" aria-hidden="true" />
+			<canvas ref={canvas} width={0} height={0} className="pdf-thumb-canvas" aria-hidden="true" />
 		</span>
 	)
 }
