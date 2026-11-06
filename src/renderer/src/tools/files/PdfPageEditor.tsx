@@ -20,8 +20,14 @@ const BIG_NUDGE = 10
  * security policy lets pictures in from itself and from data, not from blob, and a data address would mean base64 of up to 8 MB
  * on this thread; a canvas needs neither. It is drawn no larger than 1024 pixels on a side, which is plenty for a preview.
  */
-function PictureView({ item, scale }: { item: Extract<OverlayItem, { kind: 'image' }>; scale: number }) {
+function PictureView({ item, scale, onFail }: { item: Extract<OverlayItem, { kind: 'image' }>; scale: number; onFail: (reason: string) => void }) {
 	const canvas = useRef<HTMLCanvasElement>(null)
+	const [failed, setFailed] = useState(false)
+	// The parent makes a new function on every render; depending on it would redraw each time.
+	const report = useRef(onFail)
+	useEffect(() => {
+		report.current = onFail
+	})
 	useEffect(() => {
 		let live = true
 		createImageBitmap(new Blob([item.bytes as BlobPart])).then(
@@ -37,12 +43,17 @@ function PictureView({ item, scale }: { item: Extract<OverlayItem, { kind: 'imag
 				target.getContext('2d')!.drawImage(bitmap, 0, 0, target.width, target.height)
 				bitmap.close()
 			},
-			() => undefined,
+			(error: unknown) => {
+				if (!live) return
+				setFailed(true)
+				report.current(error instanceof Error ? error.message : 'the browser could not decode it')
+			},
 		)
 		return () => {
 			live = false
 		}
 	}, [item.bytes])
+	if (failed) return <span role="img" aria-label="Picture that can't be shown" style={{ display: 'block', width: item.width * scale, height: item.height * scale, border: '1px dashed currentColor', fontSize: 11 }}>Can&apos;t show this picture</span>
 	return <canvas ref={canvas} aria-hidden="true" style={{ width: item.width * scale, height: item.height * scale }} />
 }
 
@@ -222,7 +233,7 @@ export function PdfPageEditor({ preview, index, position, turn, items, onAdd, on
 							{placed.item.kind === 'text' ? (
 								<span style={{ fontSize: placed.item.size * scale, lineHeight: 1.2, whiteSpace: 'pre' }}>{placed.item.text}</span>
 							) : (
-								<PictureView item={placed.item} scale={scale} />
+								<PictureView item={placed.item} scale={scale} onFail={(reason) => setProblem(`A picture on this page can't be shown (${reason}). Remove it and use another.`)} />
 							)}
 						</div>
 					)

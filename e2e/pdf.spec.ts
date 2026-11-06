@@ -22,10 +22,12 @@ test.afterEach(async () => {
 async function makePdf(path: string, widths: readonly number[]): Promise<string> {
 	const doc = await PDFDocument.create()
 	const font = await doc.embedFont(StandardFonts.Helvetica)
+	const picture = await doc.embedPng(Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')))
 	widths.forEach((width, i) => {
 		const page = doc.addPage([width, 200])
 		page.drawRectangle({ x: 10, y: 10, width: width - 20, height: 120, color: rgb(0, 0, 0) })
 		page.drawText(`Page ${i + 1}`, { x: 14, y: 150, size: 20, font })
+		page.drawImage(picture, { x: width - 40, y: 150, width: 20, height: 20 })
 	})
 	writeFileSync(path, await doc.save())
 	return path
@@ -252,6 +254,54 @@ test('text, a picture and a typed signature are placed on a page; the signature 
 	expect(resources.lookup(PDFName.of('XObject'))).toBeDefined()
 	expect(resources.lookup(PDFName.of('Font'))).toBeDefined()
 	expect(readFileSync(pdf).equals(original)).toBe(true)
+	await zing.close()
+})
+
+test('after deleting the pages a form was on, the panel says the form went and offers no fields', async () => {
+	const zing = await launchZing()
+	const doc = await PDFDocument.create()
+	doc.addPage([300, 300])
+	const second = doc.addPage([300, 300])
+	doc.getForm().createTextField('name').addToPage(second, { x: 10, y: 200, width: 150, height: 20 })
+	const path = join(zing.userDataDir, 'late.pdf')
+	writeFileSync(path, await doc.save())
+	const { panel } = await openPdf(zing, path)
+	await expect(panel.getByLabel('name', { exact: true })).toBeVisible()
+	await panel.getByRole('option').nth(1).click()
+	await panel.getByRole('button', { name: 'Delete', exact: true }).click()
+	await expect(panel.getByText(/The form went with the deleted pages/)).toBeVisible()
+	await expect(panel.getByLabel('name', { exact: true })).toHaveCount(0)
+	await zing.close()
+})
+
+test('a picture the browser cannot decode is reported, not left as a blank box', async () => {
+	const zing = await launchZing()
+	const pdf = await makePdf(join(zing.userDataDir, 'a.pdf'), [300])
+	// A real PNG header (so it passes the size check), then bytes that are not an image.
+	const broken = join(zing.userDataDir, 'broken.png')
+	const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+	writeFileSync(broken, Buffer.concat([png.subarray(0, 33), Buffer.from('this is not image data at all, just text')]))
+	const { panel } = await openPdf(zing, pdf)
+	await panel.getByRole('option').first().click()
+	await panel.getByRole('button', { name: 'Edit page…' }).click()
+	await queuePick(zing, broken)
+	await panel.getByRole('button', { name: 'Add picture…' }).click()
+	await expect(panel.getByRole('alert')).toContainText("A picture on this page can't be shown")
+	await expect(panel.getByRole('img', { name: "Picture that can't be shown" })).toBeVisible()
+	await zing.close()
+})
+
+test('while a save runs, files cannot be opened or added and pages cannot be edited', async () => {
+	const zing = await launchZing()
+	const big = await makePdf(join(zing.userDataDir, 'big.pdf'), Array.from({ length: 500 }, () => 200))
+	const { panel } = await openPdf(zing, big)
+	await expect(panel.getByText('1 file, 500 pages')).toBeVisible({ timeout: 60_000 })
+	await panel.getByRole('option').first().click()
+	await panel.getByRole('button', { name: 'Save PDF' }).click()
+	await expect(panel.getByRole('button', { name: 'Add another PDF…' })).toBeDisabled()
+	await expect(panel.getByRole('button', { name: 'Edit page…' })).toBeDisabled()
+	await expect(panel.getByText('Saved to your Downloads folder:')).toBeVisible({ timeout: 60_000 })
+	await expect(panel.getByRole('button', { name: 'Add another PDF…' })).toBeEnabled()
 	await zing.close()
 })
 
