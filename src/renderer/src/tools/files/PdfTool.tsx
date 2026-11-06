@@ -20,6 +20,8 @@ import {
 	commit,
 	deletePages,
 	editText,
+	fieldsOnKeptPages,
+	onlyFields,
 	emptyModel,
 	moveItem,
 	movePage,
@@ -156,7 +158,9 @@ export function PdfTool() {
 	const model = history.present
 	const used = [...new Set(model.pages.map((p) => p.source))]
 	const single = used.length === 1 ? opened[used[0]!] : undefined
-	const fields = single?.fields ?? []
+	// Only the fields that still have a widget on a page that stays: a delete takes the others with it.
+	const fields = single === undefined ? [] : fieldsOnKeptPages(model, used[0]!, single.fields)
+	const formLost = single !== undefined && single.fields.length > 0 && fields.length === 0
 
 	const apply = (next: History): void => {
 		historyRef.current = next
@@ -407,7 +411,7 @@ export function PdfTool() {
 	const save = (): void => {
 		if (busy !== null || model.pages.length === 0) return
 		const name = used.length > 1 ? 'merged.pdf' : suffixedFileName(baseName(), '-edited', 'pdf')
-		runPlans('Saving…', [toPlan(model)], () => name)
+		runPlans('Saving…', [onlyFields(toPlan(model), fields.map((f) => f.name))], () => name)
 	}
 
 	const split = (): void => {
@@ -519,6 +523,7 @@ export function PdfTool() {
 					)
 				})}
 			</ul>
+			{formLost ? <span className="convert-hint">The form went with the deleted pages: none of its fields has a place on a page that stays, so there is nothing to fill.</span> : null}
 			{fields.length > 0 ? (
 				<section className="pdf-section" aria-label="Form fields">
 					<span className="tool-label">Form fields</span>

@@ -1,6 +1,6 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFStream, PDFString, type PDFObject, type PDFPage } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
-import { deletePages, fillForm, mergePdfs, splitPdf } from './pdfEdit'
+import { deletePages, fillForm, listFormFields, mergePdfs, splitPdf } from './pdfEdit'
 
 const SECRET = 'SECRETPAGE3'
 
@@ -94,6 +94,19 @@ describe('a page that is left out is not in the file, whatever pointed at it', (
 	it('merge keeps every page and still has no extra page object', async () => {
 		const merged = await mergePdfs([await threePages(cases[0]![1]), await threePages(cases[3]![1])])
 		expect(pageObjects(await PDFDocument.load(merged))).toBe(6)
+	})
+})
+
+describe('which pages a field is on', () => {
+	it('is listed with each field, counted from 1', async () => {
+		const doc = await PDFDocument.create()
+		const pages = [doc.addPage([100, 100]), doc.addPage([100, 100])]
+		doc.getForm().createTextField('first').addToPage(pages[0]!, { x: 5, y: 50, width: 80, height: 15 })
+		const radio = doc.getForm().createRadioGroup('both')
+		radio.addOptionToPage('a', pages[0]!, { x: 5, y: 5, width: 10, height: 10 })
+		radio.addOptionToPage('b', pages[1]!, { x: 5, y: 5, width: 10, height: 10 })
+		const fields = await listFormFields(await doc.save())
+		expect(fields.map((f) => [f.name, f.pages])).toEqual([['first', [1]], ['both', [1, 2]]])
 	})
 })
 

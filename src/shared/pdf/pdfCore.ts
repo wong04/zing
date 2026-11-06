@@ -110,6 +110,8 @@ export interface FormFieldInfo {
 	readonly value: string
 	readonly options?: readonly string[]
 	readonly readOnly: boolean
+	/** The pages (from 1) its widgets are on. A field with none on a page that stays does not survive deleting the others. */
+	readonly pages: readonly number[]
 }
 
 /**

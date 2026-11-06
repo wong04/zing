@@ -140,14 +140,23 @@ export async function listFormFields(file: PdfSource): Promise<FormFieldInfo[]> 
 	// getForm() makes an empty form in a file that has none; asking first leaves the file as it is.
 	if (!doc.catalog.has(PDFName.of('AcroForm'))) return []
 	const fields: FormFieldInfo[] = []
+	// Which page each widget is on: found from the pages' annotations, the same way rebuildForm finds the widgets that stay.
+	const pageOf = new Map<unknown, number>()
+	for (const [index, page] of doc.getPages().entries()) {
+		for (const entry of page.node.Annots()?.asArray() ?? []) {
+			const widget = entry instanceof PDFRef ? doc.context.lookup(entry) : entry
+			if (widget instanceof PDFDict) pageOf.set(widget, index + 1)
+		}
+	}
 	for (const field of doc.getForm().getFields()) {
 		const name = field.getName()
 		const readOnly = field.isReadOnly()
-		if (field instanceof PDFTextField) fields.push({ name, kind: 'text', value: field.getText() ?? '', readOnly })
-		else if (field instanceof PDFCheckBox) fields.push({ name, kind: 'checkbox', value: String(field.isChecked()), readOnly })
-		else if (field instanceof PDFRadioGroup) fields.push({ name, kind: 'radio', value: field.getSelected() ?? '', options: field.getOptions(), readOnly })
-		else if (field instanceof PDFDropdown) fields.push({ name, kind: 'dropdown', value: field.getSelected()[0] ?? '', options: field.getOptions(), readOnly })
-		else if (field instanceof PDFOptionList) fields.push({ name, kind: 'list', value: field.getSelected()[0] ?? '', options: field.getOptions(), readOnly })
+		const pages = [...new Set(field.acroField.getWidgets().map((w) => pageOf.get(w.dict)).filter((p): p is number => p !== undefined))].sort((a, b) => a - b)
+		if (field instanceof PDFTextField) fields.push({ name, kind: 'text', value: field.getText() ?? '', readOnly, pages })
+		else if (field instanceof PDFCheckBox) fields.push({ name, kind: 'checkbox', value: String(field.isChecked()), readOnly, pages })
+		else if (field instanceof PDFRadioGroup) fields.push({ name, kind: 'radio', value: field.getSelected() ?? '', options: field.getOptions(), readOnly, pages })
+		else if (field instanceof PDFDropdown) fields.push({ name, kind: 'dropdown', value: field.getSelected()[0] ?? '', options: field.getOptions(), readOnly, pages })
+		else if (field instanceof PDFOptionList) fields.push({ name, kind: 'list', value: field.getSelected()[0] ?? '', options: field.getOptions(), readOnly, pages })
 	}
 	return fields
 }

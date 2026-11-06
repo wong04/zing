@@ -134,6 +134,21 @@ export function toPlanRange(model: Model, range: { readonly from: number; readon
 	}
 }
 
+/**
+ * The form fields that are still there once pages are deleted: those with a widget on a page that stays, which is the rule the
+ * rebuilt file follows (pdfEdit's rebuildForm). A reorder or a turn keeps them all, since every page stays.
+ */
+export function fieldsOnKeptPages<T extends { readonly pages: readonly number[] }>(model: Model, source: number, fields: readonly T[]): T[] {
+	const kept = new Set(model.pages.filter((p) => p.source === source).map((p) => p.page))
+	return fields.filter((field) => field.pages.some((page) => kept.has(page)))
+}
+
+/** The plan with the values of every field but `names` taken out, so a field that went with a deleted page is not asked for. */
+export function onlyFields(plan: PdfPlan, names: readonly string[]): PdfPlan {
+	const values = Object.fromEntries(Object.entries(plan.formValues ?? {}).filter(([name]) => names.includes(name)))
+	return Object.keys(values).length === 0 ? { pages: plan.pages, overlays: plan.overlays } : { pages: plan.pages, overlays: plan.overlays, formValues: values }
+}
+
 export interface History {
 	readonly past: readonly Model[]
 	readonly present: Model

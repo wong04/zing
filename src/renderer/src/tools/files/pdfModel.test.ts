@@ -7,6 +7,8 @@ import {
 	addItem,
 	deletePages,
 	emptyModel,
+	fieldsOnKeptPages,
+	onlyFields,
 	moveItem,
 	movePage,
 	redo,
@@ -97,6 +99,30 @@ describe('the plan', () => {
 		const model = addFile(emptyModel(), { source: 0, name: 'f.pdf', pageCount: 1 })
 		expect(toPlan(model).formValues).toBeUndefined()
 		expect(toPlan(setFormValue(model, 'name', 'Zed')).formValues).toEqual({ name: 'Zed' })
+	})
+})
+
+describe('the form after pages were deleted', () => {
+	const fields = [
+		{ name: 'a', kind: 'text', value: '', readOnly: false, pages: [1] },
+		{ name: 'b', kind: 'text', value: '', readOnly: false, pages: [2] },
+		{ name: 'c', kind: 'radio', value: '', readOnly: false, pages: [1, 2] },
+	] as const
+	it('lists the fields with a widget on a page that stays', () => {
+		let model = addFile(emptyModel(), { source: 0, name: 'f.pdf', pageCount: 2 })
+		expect(fieldsOnKeptPages(model, 0, fields).map((f) => f.name)).toEqual(['a', 'b', 'c'])
+		model = deletePages(model, [model.pages[1]!.key])
+		expect(fieldsOnKeptPages(model, 0, fields).map((f) => f.name)).toEqual(['a', 'c'])
+	})
+	it('lists none when every page with a widget is gone', () => {
+		let model = addFile(emptyModel(), { source: 0, name: 'f.pdf', pageCount: 3 })
+		model = deletePages(model, [model.pages[0]!.key, model.pages[1]!.key])
+		expect(fieldsOnKeptPages(model, 0, fields)).toEqual([])
+	})
+	it('takes the values of fields that are gone out of a plan', () => {
+		const plan = { pages: [], overlays: [], formValues: { a: '1', b: '2' } }
+		expect(onlyFields(plan, ['a']).formValues).toEqual({ a: '1' })
+		expect(onlyFields(plan, []).formValues).toBeUndefined()
 	})
 })
 
