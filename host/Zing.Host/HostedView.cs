@@ -187,7 +187,7 @@ public sealed class HostedView
 		// Keys only go to the active window, and an overlay is a window of its own: activate it, but only
 		// while Zing is in front, so a background window (or a test run) never takes focus from another app.
 		if (_overlay && _window.IsForeground) Native.SetForegroundWindow(_hwnd);
-		Controller.MoveFocus(CoreWebView2MoveFocusReason.Programmatic);
+		EngineFocus.Move(() => Controller.MoveFocus(CoreWebView2MoveFocusReason.Programmatic));
 	}
 
 	internal bool IsOverlayWindow(nint hwnd) => _overlay && hwnd == _hwnd;

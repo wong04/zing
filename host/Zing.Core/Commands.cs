@@ -112,7 +112,7 @@ public static class Menus
 			MenuItem.Separator,
 			new MenuItem("Reload", () => tabs.PageOf(id)?.Reload()),
 			new MenuItem("Open in Default Browser", () => shell.OpenExternal(record.Url), Enabled: web),
-			new MenuItem("Copy Address", () => shell.CopyText(record.Url), Enabled: record.Url != TabStore.NewTabUrl),
+			new MenuItem("Copy Address", () => shell.CopyText(Net.RelayedContent.ToWebAddress(record.Url)), Enabled: record.Url != TabStore.NewTabUrl),
 			MenuItem.Separator,
 			// A saved tab closes and its item stays; a pinned tab without one isn't closed by accident.
 			new MenuItem("Close Tab", () => tabs.Close(id), Enabled: !record.Pinned || record.ItemId is not null),

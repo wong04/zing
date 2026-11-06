@@ -15,6 +15,7 @@ import {
 	type ThreatVerdict,
 } from './threatModel'
 import { sniffType } from './threatScanner'
+import vectors from './threatModel.vectors.json'
 
 function verdictFor(raw: string): ThreatVerdict {
 	return inspectURL(new URL(raw))
@@ -31,25 +32,19 @@ function hasFinding(host: string, text: string): boolean {
 describe('real sites must not be flagged', () => {
 	// Every one of these is an ordinary site. A false positive here is worse than
 	// a missed detection, because it teaches the user to ignore the warning.
-	it.each([
-		'https://www.google.com/search?q=hello',
-		'https://github.com/apple/swift',
-		'https://en.wikipedia.org/wiki/Main_Page',
-		'https://news.bbc.co.uk/news',
-		'https://docs.google.com/document/d/abc123/edit',
-		'https://mail.google.com/mail/u/0',
-		'https://www.apple.com/uk/mac/',
-		'https://appleinsider.com/articles/latest',
-		'https://stackoverflow.com/questions/12345',
-		'https://accounts.google.com/signin',
-		'https://login.microsoftonline.com/common/oauth2',
-		'https://secure.paypal.com/myaccount',
-		'https://www.amazon.co.uk/gp/cart',
-		'https://open.spotify.com/playlist/xyz',
-		'https://developer.mozilla.org/en-US/docs/Web',
-		'https://arxiv.org/abs/2401.00001',
-	])('allows %s', (site) => {
-		expect(verdictLevel(verdictFor(site))).toBeLessThanOrEqual(ThreatLevel.notice)
+	it.each(vectors.mustBeClean)('allows %s', (site) => {
+		expect(verdictFor(site).findings).toEqual([])
+	})
+})
+
+describe('shared vectors (held to the C# twin)', () => {
+	it.each(vectors.verdicts)('$url', ({ url, level, titles }) => {
+		const verdict = verdictFor(url)
+		expect(verdictLevel(verdict)).toBe(level)
+		expect(verdict.findings.map((finding) => finding.title)).toEqual(titles)
+	})
+	it.each(vectors.hostFindings)('host $host', ({ host, scheme, titles }) => {
+		expect(inspectHost(host, scheme).map((finding) => finding.title)).toEqual(titles)
 	})
 })
 

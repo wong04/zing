@@ -26,6 +26,26 @@ public sealed class SavedTabsTests
 	}
 
 	[Fact]
+	public void Pinning_a_relayed_tab_saves_the_real_address()
+	{
+		var tab = Visit("zing-relay://mail.test/inbox");
+		_saved.Pin(tab.Id);
+		var item = Assert.IsType<BookmarkLink>(Assert.Single(Library.Pinned(_library.Snapshot)));
+		Assert.Equal("https://mail.test/inbox", item.Url);
+		Assert.False(_saved.HasLeftItsAddress(tab.Id));
+	}
+
+	[Fact]
+	public void Save_This_Page_Here_on_a_relayed_tab_saves_the_real_address()
+	{
+		var tab = Visit("https://mail.test/");
+		_saved.Pin(tab.Id);
+		_tabs.Navigate(tab.Id, "zing-relay://mail.test/sent");
+		_saved.Update(tab.Id);
+		Assert.Equal("https://mail.test/sent", Assert.IsType<BookmarkLink>(Assert.Single(Library.Pinned(_library.Snapshot))).Url);
+	}
+
+	[Fact]
 	public void Pinning_a_tab_saves_it_to_Pinned_and_ties_the_tab_to_the_item()
 	{
 		var tab = Visit("https://mail.test/");

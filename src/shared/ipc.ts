@@ -7,6 +7,9 @@ import type { BrowserLibrary } from './library/library'
 import type { TabId, TabRecord } from './model/tab'
 import type { TabOrganization } from './browser/tabOrganizer'
 import type { Settings, SettingKey } from './settings'
+import type { DiagnosticReport } from './unblock/blockDiagnostics'
+import type { DnsOutcome, DnsPreview } from './unblock/dnsSetup'
+import type { RelayAttemptEvent, RelayOpenResult } from './unblock/relayOpen'
 import type {
 	AccountOutcome,
 	AccountState,
@@ -94,9 +97,14 @@ export type CommandOutcome =
 	| { readonly status: 'not-applicable' }
 	| { readonly status: 'not-implemented'; readonly label: string }
 
+/** What the failed-load offer's buttons open. */
+export type OfferTool = 'openLink' | 'diagnose'
+
 export interface Notice {
 	readonly id: number
 	readonly text: string
+	/** Present for the offer after a page failed like a block: it stays until chosen or dismissed and carries the buttons. */
+	readonly offer?: { readonly address: string }
 }
 
 export interface TitleBarColors {
@@ -262,6 +270,8 @@ export interface InvokeContract {
 	'toolpanel:get': { args: []; result: ToolPanelsState }
 	/** `at` is in screen coordinates (a pointer event's screenX/screenY). */
 	'toolpanel:open': { args: [content: string, at: Point]; result: OpenPanelOutcome }
+	/** Opens (or raises) the panel in the middle of the page with an address filled in; the field is only filled, starting anything is a click in the tool. */
+	'toolpanel:open-with-input': { args: [content: string, input: string]; result: OpenPanelOutcome }
 	'toolpanel:close': { args: [id: string]; result: void }
 	'toolpanel:minimize': { args: [id: string]; result: void }
 	'toolpanel:restore': { args: [id: string]; result: OpenPanelOutcome }
@@ -329,6 +339,33 @@ export interface InvokeContract {
 	'viewer:open': { args: [token: string, panelId: string]; result: ViewerOpened }
 	/** Forgets the open file: its address answers 404, a running conversion stops and the temporary copy is deleted. */
 	'viewer:close': { args: [id: string]; result: void }
+	/** Runs the Diagnose ladder for a site name (or a pasted address) with the DoH provider chosen in Settings. Resolver failures are part of the report; a name that isn't a site is an error. */
+	'net:diagnose': { args: [host: string]; result: DiagnosticReport }
+	/**
+	 * The script that sets up encrypted DNS for this PC with the provider chosen in Settings, or, once it has been set up, the script that undoes it.
+	 * Reads the adapters; changes nothing and asks for nothing.
+	 */
+	'dns:preview': { args: []; result: DnsPreview }
+	/**
+	 * Runs the Apply script a preview showed, as administrator. `token` names that script: the host builds the script itself and, if it is
+	 * not the one shown (the adapters changed), runs nothing and answers 'changed' with the new one. The renderer never sends script text.
+	 */
+	'dns:apply': { args: [token: string]; result: DnsOutcome }
+	/** Runs the Undo script a preview showed, from the settings saved before Apply. Same `token` rule. */
+	'dns:undo': { args: [token: string]; result: DnsOutcome }
+	/**
+	 * Tries direct, DoH with IP pinning, the reader relay and the Wayback archive in order, pushing `relay:attempt` for each step
+	 * with `runId`, which the caller chooses so overlapping runs can be told apart. The reader relay and the archive wait for the
+	 * session's consent (`needsConsent`). Rejects when every method fails, when what was typed is not an address, and after 3 minutes.
+	 */
+	'relay:open': { args: [input: string, runId: string]; result: RelayOpenResult }
+	/** The person said yes to the reader relay and the archive seeing addresses. Holds for this session of the app, in memory only. */
+	'relay:allow-third-parties': { args: []; result: void }
+	/** A new tab on a page reached through the relay. Rejects an address that isn't https, which the relay scheme can't stand for. */
+	'tabs:open-relayed': { args: [url: string]; result: void }
+	/** A button of the failed-load offer: opens that tool with the failed address filled in. Starts nothing. */
+	'offer:choose': { args: [tool: OfferTool]; result: OpenPanelOutcome }
+	'offer:dismiss': { args: []; result: void }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
 	'account:sign-in': { args: [password: string]; result: AccountOutcome }
@@ -357,6 +394,7 @@ export interface EventContract {
 	'engines:progress': EngineProgress
 	'engines:output': EngineOutput
 	'engines:exit': EngineExit
+	'relay:attempt': RelayAttemptEvent
 }
 
 export type InvokeChannel = keyof InvokeContract
@@ -445,9 +483,20 @@ export interface ZingApi {
 	hashText(text: string, algorithm: string): Promise<string>
 	hashFile(path: string, algorithm: string): Promise<string>
 	hmac(message: string, key: string, algorithm: string): Promise<string>
+	diagnose(host: string): Promise<DiagnosticReport>
+	previewDns(): Promise<DnsPreview>
+	applyDns(token: string): Promise<DnsOutcome>
+	undoDns(token: string): Promise<DnsOutcome>
+	openLink(input: string, runId: string): Promise<RelayOpenResult>
+	allowRelayThirdParties(): Promise<void>
+	openRelayedTab(url: string): Promise<void>
+	chooseOffer(tool: OfferTool): Promise<OpenPanelOutcome>
+	dismissOffer(): Promise<void>
+	onRelayAttempt(listener: (event: RelayAttemptEvent) => void): Unsubscribe
 	onShellState(listener: (state: ShellState) => void): Unsubscribe
 	getToolPanels(): Promise<ToolPanelsState>
 	openPanel(content: string, at: Point): Promise<OpenPanelOutcome>
+	openPanelWithInput(content: string, input: string): Promise<OpenPanelOutcome>
 	closePanel(id: string): Promise<void>
 	minimizePanel(id: string): Promise<void>
 	restorePanel(id: string): Promise<OpenPanelOutcome>

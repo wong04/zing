@@ -12,6 +12,7 @@ export default defineConfig({
 	timeout: 90_000,
 	// CI runners start WebView2 and finish downloads several times slower than a desk PC.
 	expect: { timeout: 15_000 },
+	// More workers fail even on a quiet PC: Zing dies at startup in AppInstance, workers crash, and timing tests go over. The gain stops at 2 or 3.
 	workers: 1,
 	// The WebView2 engine sometimes keeps its profile lock for 30 s and more after Zing quits, on CI only; a rerun of the test passes.
 	retries: process.env.CI ? 1 : 0,

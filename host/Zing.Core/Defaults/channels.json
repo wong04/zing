@@ -81,6 +81,18 @@
 			"args": 0
 		},
 		{
+			"channel": "dns:apply",
+			"args": 1
+		},
+		{
+			"channel": "dns:preview",
+			"args": 0
+		},
+		{
+			"channel": "dns:undo",
+			"args": 1
+		},
+		{
 			"channel": "downloads:cancel",
 			"args": 1
 		},
@@ -189,6 +201,18 @@
 			"args": 1
 		},
 		{
+			"channel": "net:diagnose",
+			"args": 1
+		},
+		{
+			"channel": "offer:choose",
+			"args": 1
+		},
+		{
+			"channel": "offer:dismiss",
+			"args": 0
+		},
+		{
 			"channel": "overview:close",
 			"args": 0
 		},
@@ -215,6 +239,14 @@
 		{
 			"channel": "permission:deny",
 			"args": 1
+		},
+		{
+			"channel": "relay:allow-third-parties",
+			"args": 0
+		},
+		{
+			"channel": "relay:open",
+			"args": 2
 		},
 		{
 			"channel": "session:open",
@@ -338,6 +370,10 @@
 			"args": 1
 		},
 		{
+			"channel": "tabs:open-relayed",
+			"args": 1
+		},
+		{
 			"channel": "tabs:pin",
 			"args": 1
 		},
@@ -386,6 +422,10 @@
 			"args": 2
 		},
 		{
+			"channel": "toolpanel:open-with-input",
+			"args": 2
+		},
+		{
 			"channel": "toolpanel:restore",
 			"args": 1
 		},
@@ -408,6 +448,7 @@
 		"overlay:notice",
 		"overlay:overview",
 		"pageui:state",
+		"relay:attempt",
 		"settings:changed",
 		"shell:state",
 		"stack:dropdown",

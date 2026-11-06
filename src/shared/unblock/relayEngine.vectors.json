@@ -1,0 +1,82 @@
+{
+	"normalize": [
+		{"input": "example.com", "href": "https://example.com/"},
+		{"input": "  example.com  ", "href": "https://example.com/"},
+		{"input": "<https://a.com/x>", "href": "https://a.com/x"},
+		{"input": "\"https://a.com/x\"", "href": "https://a.com/x"},
+		{"input": "http://a.com", "href": "http://a.com/"},
+		{"input": "https://a.com:8443/p?q=1", "href": "https://a.com:8443/p?q=1"},
+		{"input": "a.com/path with space", "href": "https://a.com/path%20with%20space"},
+		{"input": "a.com/x#frag", "href": "https://a.com/x#frag"},
+		{"input": "HTTPS://UPPER.COM", "href": "https://upper.com/"},
+		{"input": "sub.domain.co.uk/x", "href": "https://sub.domain.co.uk/x"}
+	],
+	"refused": ["", "   ", "<>", "\"\"", "'", "not a url", "a b c", "http://", "https://", "://x", "javascript:alert(1)", "file:///etc/passwd"],
+	"credentials": ["https://user:pw@host.com/", "user:pw@host.com", "https://user@host.com/x"],
+	"privateHosts": [
+		{"input": "localhost", "private": true},
+		{"input": "http://localhost:8080/x", "private": true},
+		{"input": "localhost.", "private": true},
+		{"input": "app.localhost", "private": true},
+		{"input": "127.0.0.1", "private": true},
+		{"input": "http://127.5.5.5/", "private": true},
+		{"input": "127.1", "private": true},
+		{"input": "2130706433", "private": true},
+		{"input": "0x7f.0.0.1", "private": true},
+		{"input": "[FD00::1]", "private": true},
+		{"input": "[::ffff:10.0.0.1]", "private": true},
+		{"input": "[::127.0.0.1]", "private": true},
+		{"input": "[::ffff:8.8.8.8]", "private": false},
+		{"input": "0.0.0.0", "private": true},
+		{"input": "10.0.0.1", "private": true},
+		{"input": "172.16.0.1", "private": true},
+		{"input": "172.31.255.255", "private": true},
+		{"input": "192.168.1.1", "private": true},
+		{"input": "169.254.169.254", "private": true},
+		{"input": "[::1]", "private": true},
+		{"input": "http://[fd00::1]/", "private": true},
+		{"input": "[fe80::1]", "private": true},
+		{"input": "[::ffff:127.0.0.1]", "private": true},
+		{"input": "printer.local", "private": true},
+		{"input": "http://nas.LOCAL/files", "private": true},
+		{"input": "nas", "private": true},
+		{"input": "http://intranet/wiki", "private": true},
+		{"input": "example.com", "private": false},
+		{"input": "https://sub.example.co.uk/x", "private": false},
+		{"input": "8.8.8.8", "private": false},
+		{"input": "172.32.0.1", "private": false},
+		{"input": "172.15.0.1", "private": false},
+		{"input": "192.169.0.1", "private": false},
+		{"input": "[2606:4700::1111]", "private": false},
+		{"input": "notlocal.com", "private": false},
+		{"input": "mylocal.example.org", "private": false}
+	],
+	"privateHostNames": [
+		{"host": "localhost..", "private": true},
+		{"host": "LOCALHOST", "private": true},
+		{"host": "printer.local..", "private": true},
+		{"host": "example.com..", "private": false}
+	],
+	"status": {
+		"ok": [200, 204, 302, 399],
+		"failed": [199, 400, 404, 503]
+	},
+	"waybackSnapshot": [
+		{
+			"answer": {"archived_snapshots": {"closest": {"available": true, "url": "http://web.archive.org/web/2024/http://example.com/"}}},
+			"href": "https://web.archive.org/web/2024/http://example.com/"
+		},
+		{
+			"answer": {"archived_snapshots": {"closest": {"available": true, "url": "https://web.archive.org/web/2023/https://a.com/x"}}},
+			"href": "https://web.archive.org/web/2023/https://a.com/x"
+		}
+	],
+	"waybackEmpty": [
+		{"archived_snapshots": {}},
+		{"archived_snapshots": {"closest": {"available": false, "url": "http://web.archive.org/x"}}},
+		{"archived_snapshots": {"closest": {"available": true}}},
+		{"archived_snapshots": {"closest": {"available": true, "url": 5}}},
+		"nope",
+		null
+	]
+}

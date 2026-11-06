@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Zing.Core.Engines;
 using Zing.Core.Viewer;
+using Zing.Core.Net;
 
 namespace Zing.Core;
 
@@ -12,6 +13,12 @@ public interface IWindowHost
 	/// <summary>Sends an event to every Zing renderer view of this window.</summary>
 	void Push(string channel, object? payload);
 	void Notify(string text);
+	/// <summary>Shows the offer to open a link or diagnose a page that failed to load like a block, until it is chosen or dismissed. <paramref name="address"/> is what to show of the failed address.</summary>
+	void OfferUnblock(string address);
+	/// <summary>Takes the offer down.</summary>
+	void DismissOffer();
+	/// <summary>The offer left the screen on its own: it timed out, or another notice replaced it.</summary>
+	event Action OfferEnded;
 	void NewWindow();
 	void CloseWindow();
 	/// <summary>The chrome insets or the surface changed; put the page and layers where they now go.</summary>
@@ -60,7 +67,11 @@ public interface IWindowHost
 /// <param name="BrowsingData">Settings' Clear browsing session; null where the host has no engine to clear.</param>
 /// <param name="Engines">The downloaded engines (FFmpeg and the rest), shared by every window; null where the host has none.</param>
 /// <param name="Runner">Runs them; shared so that "at most 3 jobs" holds for all of Zing. Null where the host has none.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null)
+/// <param name="Net">The network checks Diagnose makes; null uses the real ones, a test passes fakes.</param>
+/// <param name="Dns">Encrypted DNS for the whole PC (Network &amp; VPN); null where the host can't change DNS.</param>
+/// <param name="Threats">Link inspection, with the hosts allowed this session; one per app. Null where the host doesn't inspect links.</param>
+/// <param name="Consent">Whether third parties may be asked to open a link, for the session and every window. One per app: required, so a window cannot end up with its own.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -78,6 +89,10 @@ public sealed class ChromeApi : IDisposable
 	private static readonly HashSet<string> NavigableSchemes = new(StringComparer.OrdinalIgnoreCase) { "http", "https", "about", "file" };
 
 	private readonly AppServices _app;
+	private readonly RelayConsent _consent;
+	/// <summary>The address of the page the offer on screen is for.</summary>
+	private string? _offered;
+	private string? _offeredTab;
 	private readonly IWindowHost _host;
 
 	internal IWindowHost Host => _host;
@@ -119,6 +134,9 @@ public sealed class ChromeApi : IDisposable
 
 	public TabLifecycle Lifecycle { get; }
 
+	/// <summary>Whether the reader relay and the archive may be asked this session.</summary>
+	public RelayConsent Consent => _consent;
+
 	public StackDropdown Stacks { get; }
 
 	public ShellModel Shell { get; }
@@ -131,9 +149,10 @@ public sealed class ChromeApi : IDisposable
 	public ChromeApi(Bridge bridge, AppServices app, IWindowHost host, string appVersion)
 	{
 		_app = app;
+		_consent = app.Consent;
 		_host = host;
 		_appVersion = appVersion;
-		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, (tab, description) => host.Notify($"Couldn't load {tab.Url} ({description})"), InterceptNavigation, app.SiteData);
+		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text));
 		Saved = new SavedTabs(Tabs, app.Library);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
@@ -166,6 +185,7 @@ public sealed class ChromeApi : IDisposable
 		Tabs.Leaving += Overview.Leaving;
 		Tabs.Closed += Overview.Forget;
 		Shell = new ShellModel(appVersion, new ShellWindow(PageArea, () => host.ContentSize, () => host.ContentOrigin, () => host.Cursor), host.Scheduler, Flag("sidebarPinned"), !app.Account.State().SignedIn, RecentFeatures());
+		host.OfferEnded += EndOffer;
 		Shell.StateChanged += state => host.Push("shell:state", state);
 		Shell.PanelsChanged += state => host.Push("toolpanel:state", state);
 		// A job belongs to its panel: once the panel is gone (minimized is not gone) its engine is stopped.
@@ -246,6 +266,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("shell:menu", args => Do(() => Menu([.. Shell.MenuItems(Text(args, 0), Text(args, 1)).Select(i => i.Invoke is null ? MenuItem.Separator : new MenuItem(i.Label, i.Invoke))], args, 2)));
 		bridge.Register("toolpanel:get", _ => Shell.PanelsState());
 		bridge.Register("toolpanel:open", args => Shell.OpenPanel(Text(args, 0), PointArg(args, 1)));
+		bridge.Register("toolpanel:open-with-input", args => Shell.OpenPanelWithInput(Text(args, 0), Text(args, 1)));
 		bridge.Register("toolpanel:close", args => Do(() => Shell.ClosePanel(Text(args, 0))));
 		bridge.Register("toolpanel:minimize", args => Do(() => Shell.MinimizePanel(Text(args, 0))));
 		bridge.Register("toolpanel:restore", args => Shell.RestorePanel(Text(args, 0)));
@@ -273,6 +294,15 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("page:save", _ => SavePageAsync());
 		bridge.Register("viewer:open", args => OpenViewerFile(Text(args, 0), Text(args, 1)));
 		bridge.Register("viewer:close", args => Do(() => CloseViewerFile(Text(args, 0))));
+		bridge.Register("net:diagnose", args => DiagnoseAsync(Text(args, 0)));
+		bridge.Register("dns:preview", async _ => await DnsSetup().PreviewAsync(Setting("dohProvider")));
+		bridge.Register("dns:apply", async args => await DnsSetup().ApplyAsync(Setting("dohProvider"), Text(args, 0)));
+		bridge.Register("dns:undo", async args => await DnsSetup().UndoAsync(Text(args, 0)));
+		bridge.Register("relay:open", args => OpenLinkAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("relay:allow-third-parties", _ => Do(_consent.Allow));
+		bridge.Register("tabs:open-relayed", args => Do(() => OpenRelayedTab(Text(args, 0))));
+		bridge.Register("offer:choose", args => ChooseOffer(Text(args, 0)));
+		bridge.Register("offer:dismiss", _ => Do(DismissOffer));
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
 		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
@@ -411,6 +441,7 @@ public sealed class ChromeApi : IDisposable
 		Viewer?.Dispose();
 		_closing.Cancel();
 		_closing.Dispose();
+		_host.OfferEnded -= EndOffer;
 		foreach (var subscription in _subscriptions) subscription.Dispose();
 		Shell.Dispose();
 		Ordering.Dispose();
@@ -724,6 +755,86 @@ public sealed class ChromeApi : IDisposable
 
 	private static async Task<object?> HashFileAsync(string path, string algorithm) => await Hashing.FileAsync(path, algorithm);
 
+	private DnsService DnsSetup() => _app.Dns ?? throw new InvalidOperationException("This host can't change DNS");
+
+	private async Task<object?> DiagnoseAsync(string host)
+	{
+		var net = _app.Net ?? NetServices.Live;
+		return await new Diagnose(net.Probes, net.Doh).RunAsync(host, Setting("dohProvider"), CancellationToken.None);
+	}
+
+	/// <summary>
+	/// The bridge cannot cancel a call and several runs can overlap, so each attempt is pushed with the id the caller gave this run.
+	/// The page itself stays here: it is someone else's text, and the tool only needs to know which way worked.
+	/// </summary>
+	private async Task<object?> OpenLinkAsync(string input, string runId)
+	{
+		var net = _app.Net ?? NetServices.Live;
+		var address = RelayRules.Normalize(input);
+		if (_app.Threats?.WouldWarn(address) == true) return WarnBeforeFetching(address);
+		var engine = new RelayEngine(net.RelayTransport, Setting("dohProvider"), attempt => _host.Push("relay:attempt", new RelayAttemptEvent(runId, attempt.Strategy, attempt.Status, attempt.Reason)));
+		var result = await engine.OpenAsync(address.AbsoluteUri, _consent, CancellationToken.None);
+		return new OpenLinkResult(result.Outcome, result.Strategy, address.AbsoluteUri, result.Attempts);
+	}
+
+	/// <summary>The tab goes to the warning on its own: Visit anyway there is what opens the address through the relay.</summary>
+	private OpenLinkResult WarnBeforeFetching(Uri address)
+	{
+		if (RelayedContent.Encode(address) is null) Tabs.FocusPage(Tabs.Open(address.AbsoluteUri).Id);
+		else OpenRelayedTab(address.AbsoluteUri);
+		return new OpenLinkResult(RelayOutcome.Warned, null, address.AbsoluteUri, []);
+	}
+
+	private void OpenRelayedTab(string url)
+	{
+		var opened = Tabs.OpenRelayed(url);
+		Tabs.FocusPage(opened.Id);
+	}
+
+	private void LoadFailed(TabRecord tab, string description)
+	{
+		// The engine can report a second, vaguer failure for the same load (an abort after the name failed); it adds nothing the offer doesn't say.
+		if (_offered is not null && tab.Id == _offeredTab && LoadFailureOffer.IsOffered(tab.Url, _offered) && LoadFailureOffer.For(tab.Url, description) is null) return;
+		// An offer for a page you aren't looking at would be about something else than what is on screen.
+		if (tab.Id != Tabs.ActiveId || LoadFailureOffer.For(tab.Url, description) is not { } address)
+		{
+			_host.Notify($"Couldn't load {tab.Url} ({description})");
+			return;
+		}
+		_offered = address;
+		_offeredTab = tab.Id;
+		Shell.OfferedAddress = address;
+		_host.OfferUnblock(address);
+	}
+
+	/// <summary>A click on one of the offer's buttons: the tool opens with the address filled in, and nothing starts until a click there.</summary>
+	private OpenPanelOutcome ChooseOffer(string tool)
+	{
+		var address = _offered ?? throw new NoOfferError();
+		var panel = tool switch
+		{
+			"openLink" => $"section:{PanelSection.Unblock}",
+			"diagnose" => $"section:{PanelSection.Diagnose}",
+			_ => throw new UnknownOfferToolError(tool),
+		};
+		var outcome = Shell.OpenPanelWithInput(panel, address);
+		// Nothing opened: the offer stays, and the caller says why.
+		if (outcome != OpenPanelOutcome.Full) DismissOffer();
+		return outcome;
+	}
+
+	private void DismissOffer()
+	{
+		EndOffer();
+		_host.DismissOffer();
+	}
+
+	private void EndOffer()
+	{
+		_offered = null;
+		Shell.OfferedAddress = null;
+	}
+
 	private async Task<object?> HistoryMenuAsync(string direction, JsonElement[] args)
 	{
 		if (Tabs.ActivePage is not { } page) return null;
@@ -870,6 +981,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		if (target is not ("current" or "tab")) throw new ArgumentException($"Unknown library open target {target}");
 		if (_app.Library.UrlOf(id) is not { } url) return;
+		RelayedContent.RefuseRelayAddress(url);
 		if (target == "tab" || Tabs.ActiveId is null)
 		{
 			Tabs.Open(url);
@@ -881,7 +993,8 @@ public sealed class ChromeApi : IDisposable
 
 	private void OpenAll(string id)
 	{
-		foreach (var url in _app.Library.UrlsOf(id)) Tabs.Open(url);
+		var urls = _app.Library.UrlsOf(id).Select(RelayedContent.RefuseRelayAddress).ToList();
+		foreach (var url in urls) Tabs.Open(url);
 	}
 
 	private void ForEachStartPage(Action<IPage> act)
@@ -890,9 +1003,10 @@ public sealed class ChromeApi : IDisposable
 			if (StartPage.IsStartPage(record.Url) && Tabs.PageOf(record.Id) is { } page) act(page);
 	}
 
-	/// <summary>The start page's search and settings links are Zing's to handle; no web page may open Settings.</summary>
-	private NavigationDecision? InterceptNavigation(string from, string to)
+	/// <summary>Link inspection, then the start page's search and settings links, which are Zing's to handle; no web page may open Settings.</summary>
+	private NavigationDecision? InterceptNavigation(string tabId, string from, string to)
 	{
+		if (_app.Threats?.Check(tabId, from, to) is { } inspected) return inspected;
 		switch (StartPage.ClassifyNavigation(from, to, Setting("searchEngine")))
 		{
 			case StartPageNavigation.Search search:

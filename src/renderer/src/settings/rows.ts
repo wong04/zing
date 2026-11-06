@@ -87,7 +87,7 @@ const ENGINE_LABELS: Readonly<Record<(typeof SEARCH_ENGINES)[number], string>> =
 	startpage: 'Startpage (private)',
 }
 
-const DOH_LABELS: Readonly<Record<(typeof DOH_PROVIDERS)[number], string>> = {
+export const DOH_LABELS: Readonly<Record<(typeof DOH_PROVIDERS)[number], string>> = {
 	cloudflare: 'Cloudflare',
 	'cloudflare-security': 'Cloudflare (malware blocking)',
 	google: 'Google',

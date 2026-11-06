@@ -5,6 +5,8 @@ export default defineConfig({
 	resolve: { alias: { '@shared': resolve('src/shared') } },
 	test: {
 		include: ['src/**/*.test.ts'],
+		// These call outside services; npm test must not reach the internet.
+		exclude: ['src/**/*.network.test.ts', 'node_modules/**'],
 		passWithNoTests: false,
 	},
 })

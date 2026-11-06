@@ -158,6 +158,15 @@ function capitalized(word: string): string {
 	return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
 }
 
+/** Loopback, private (RFC 1918) and link-local addresses: machines the person is already on the network of. */
+export function isLocalNetworkIPv4(host: string): boolean {
+	const [first = 0, second = 0] = labelsOf(host).map(Number)
+	if (first === 127 || first === 10) return true
+	if (first === 192 && second === 168) return true
+	if (first === 169 && second === 254) return true
+	return first === 172 && second >= 16 && second <= 31
+}
+
 export function inspectHost(rawHost: string, scheme: string | undefined = 'https'): ThreatFinding[] {
 	const findings: ThreatFinding[] = []
 	const host = rawHost.toLowerCase()
@@ -178,8 +187,10 @@ export function inspectHost(rawHost: string, scheme: string | undefined = 'https
 	}
 
 	// A bare IP over plain HTTP is how a lot of commodity malware fetches
-	// its payload. Over HTTPS it's usually just a dev box.
-	if (isRawIPv4(host)) {
+	// its payload. Over HTTPS it's usually just a dev box. An address on this
+	// machine or its own network is a router page or a dev server, never a
+	// payload host, and warning on it would teach people to ignore the warning.
+	if (isRawIPv4(host) && !isLocalNetworkIPv4(host)) {
 		findings.push({
 			level: scheme === 'https' ? ThreatLevel.notice : ThreatLevel.suspicious,
 			title: 'Connects to a raw IP address',

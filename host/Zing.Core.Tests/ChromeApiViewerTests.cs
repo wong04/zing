@@ -22,7 +22,7 @@ public sealed class ChromeApiViewerTests : IAsyncLifetime
 		await _engines.InstallAsync();
 		_root = Path.Combine(_engines.Inputs, "viewer-copies");
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		var services = new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), Engines: _engines.Store, Runner: _engines.Runner, ViewerRoot: _root);
+		var services = new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent(), Engines: _engines.Store, Runner: _engines.Runner, ViewerRoot: _root);
 		_api = new ChromeApi(_bridge, services, _host, "test");
 		_host.DownloadsDirectory = _engines.Outputs;
 		_api.Start([], "about:blank");

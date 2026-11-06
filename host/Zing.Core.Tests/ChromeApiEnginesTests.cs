@@ -17,7 +17,7 @@ public sealed class ChromeApiEnginesTests : IAsyncLifetime
 	{
 		await _engines.InstallAsync();
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		var services = new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), Engines: _engines.Store, Runner: _engines.Runner);
+		var services = new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent(), Engines: _engines.Store, Runner: _engines.Runner);
 		_api = new ChromeApi(_bridge, services, _host, "test");
 		_host.DownloadsDirectory = _engines.Outputs;
 		_api.Start([], "about:blank");
@@ -199,7 +199,7 @@ public sealed class ChromeApiEnginesTests : IAsyncLifetime
 		await Task.Delay(300, TestContext.Current.CancellationToken);
 
 		Assert.Empty(Pushed("engines:exit"));
-		_api = new ChromeApi(new Bridge(), new AppServices(new SettingsStore(), new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("x-")), Address.FromDefaults(), new TickingClock(), Accounts.Guest()), new FakeWindowHost(), "test");
+		_api = new ChromeApi(new Bridge(), new AppServices(new SettingsStore(), new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("x-")), Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent()), new FakeWindowHost(), "test");
 	}
 
 	[Fact]

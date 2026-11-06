@@ -14,7 +14,7 @@ public sealed class SiteUsage
 
 	public void Visit(string tabKey, string url)
 	{
-		if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return;
+		if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https" or Net.RelayedContent.Scheme)) return;
 		var domain = RegistrableDomain.Of(uri.IdnHost);
 		if (!_domainsByTab.TryGetValue(tabKey, out var domains)) _domainsByTab[tabKey] = domains = new HashSet<string>(StringComparer.Ordinal);
 		domains.Add(domain);

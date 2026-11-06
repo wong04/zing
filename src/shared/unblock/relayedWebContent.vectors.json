@@ -1,0 +1,135 @@
+{
+	"mapping": [
+		{
+			"web": "https://example.com/a/style.css?v=2#x",
+			"relay": "zing-relay://example.com/a/style.css?v=2#x"
+		},
+		{
+			"web": "https://example.com/",
+			"relay": "zing-relay://example.com/"
+		},
+		{
+			"web": "https://upload.example.org:8443/x.png",
+			"relay": "zing-relay://upload.example.org:8443/x.png"
+		},
+		{
+			"web": "https://web.archive.org/web/2020/https://example.com/",
+			"relay": "zing-relay://web.archive.org/web/2020/https://example.com/"
+		}
+	],
+	"notEncoded": [
+		"http://example.com/",
+		"ftp://example.com/",
+		"zing-relay://example.com/",
+		"file:///c:/x"
+	],
+	"notDecoded": [
+		"https://example.com/",
+		"aiorelay://example.com/",
+		"zing://home"
+	],
+	"patchText": [
+		{
+			"in": "<img src=\"https://a.com/x.png\" srcset=\"https://a.com/1x.png 1x, https://a.com/2x.png 2x\"><a HREF='https://b.com/'>",
+			"out": "<img src=\"zing-relay://a.com/x.png\" srcset=\"zing-relay://a.com/1x.png 1x, zing-relay://a.com/2x.png 2x\"><a HREF='zing-relay://b.com/'>"
+		},
+		{
+			"in": "a{background:url(https://a.com/x.png)} b{src:url( \"https://a.com/f.woff2\")}",
+			"out": "a{background:url(zing-relay://a.com/x.png)} b{src:url( \"zing-relay://a.com/f.woff2\")}"
+		},
+		{
+			"in": "<head><BASE href=\"https://a.com/\"><title>t</title>",
+			"out": "<head><title>t</title>"
+		},
+		{
+			"in": "<p>Visit https://a.com today</p>",
+			"out": "<p>Visit https://a.com today</p>"
+		},
+		{
+			"in": "<link rel=\"preconnect\" href=\"https://a.com\"><link rel=stylesheet href=x.css>",
+			"out": "<link rel=stylesheet href=x.css>"
+		},
+		{
+			"in": "<LINK href='//b.com' REL='dns-prefetch'><p>t</p><link rel=\"prefetch\" href=\"/n\"><link rel=prerender href=/p>",
+			"out": "<p>t</p>"
+		},
+		{
+			"in": "<link rel=\"preload\" as=\"style\" href=\"/s.css\">",
+			"out": "<link rel=\"preload\" as=\"style\" href=\"/s.css\">"
+		}
+	],
+	"charset": [
+		{
+			"contentType": "text/html; charset=EUC-JP",
+			"charset": "EUC-JP"
+		},
+		{
+			"contentType": "text/html; charset=\"iso-8859-1\"",
+			"charset": "iso-8859-1"
+		},
+		{
+			"contentType": "text/plain; charset=utf-8; format=flowed",
+			"charset": "utf-8"
+		},
+		{
+			"contentType": "text/css",
+			"charset": "utf-8"
+		},
+		{
+			"contentType": "image/png",
+			"charset": null
+		}
+	],
+	"patch": [
+		{
+			"name": "Latin-1 bytes survive the rewrite",
+			"contentType": "text/html; charset=iso-8859-1",
+			"bodyHex": "3c703e636166e93c2f703e3c696d67207372633d2268747470733a2f2f612e636f6d2f78223e",
+			"outHex": "3c703e636166e93c2f703e3c696d67207372633d227a696e672d72656c61793a2f2f612e636f6d2f78223e"
+		},
+		{
+			"name": "non-HTML payloads are untouched",
+			"contentType": "image/png",
+			"bodyHex": "7372633d2268747470733a2f2f612e636f6d2f22",
+			"outHex": "7372633d2268747470733a2f2f612e636f6d2f22"
+		},
+		{
+			"name": "UTF-16 bodies are untouched",
+			"contentType": "text/html; charset=UTF-16LE",
+			"bodyHex": "fffe3c00",
+			"outHex": "fffe3c00"
+		}
+	],
+	"appLike": [
+		{
+			"textLength": 12,
+			"scripts": 97,
+			"failure": true
+		},
+		{
+			"textLength": 199,
+			"scripts": 21,
+			"failure": true
+		},
+		{
+			"textLength": 200,
+			"scripts": 21,
+			"failure": false
+		},
+		{
+			"textLength": 5000,
+			"scripts": 40,
+			"failure": false
+		},
+		{
+			"textLength": 10,
+			"scripts": 3,
+			"failure": false
+		},
+		{
+			"textLength": 10,
+			"scripts": 20,
+			"failure": false
+		}
+	]
+}

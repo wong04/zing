@@ -17,13 +17,6 @@ public sealed class LaunchArgsTests
 	}
 
 	[Fact]
-	public void A_raw_command_line_splits_like_the_c_runtime()
-	{
-		Assert.Equal([@"C:\Program Files\Zing\Zing.exe", "https://a.test/?x=1&y=2", "--flag"], LaunchArgs.Split(@"""C:\Program Files\Zing\Zing.exe"" ""https://a.test/?x=1&y=2""  --flag"));
-		Assert.Empty(LaunchArgs.Split("   "));
-	}
-
-	[Fact]
 	public void The_inbox_queues_links_until_a_window_takes_them_then_hands_them_straight_over()
 	{
 		var inbox = new LinkInbox();

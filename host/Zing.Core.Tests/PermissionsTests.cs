@@ -40,6 +40,22 @@ public sealed class PermissionsTests
 		Assert.True(broker.Check(null, permission, "https://a.test", null));
 	}
 
+	[Theory]
+	[InlineData("geolocation")]
+	[InlineData("media")]
+	[InlineData("notifications")]
+	[InlineData("fullscreen")]
+	[InlineData("pointerLock")]
+	public void A_relayed_page_is_refused_everything_without_a_prompt(string permission)
+	{
+		var (broker, ui, page) = Setup();
+		var resolver = new Resolver();
+		broker.Request(page, "zing-relay://a.test/x", permission, new PermissionDetails("zing-relay://a.test/x", ["video"]), resolver);
+		Assert.Equal([false], resolver.Answers);
+		Assert.Null(ui.State.Permission);
+		Assert.False(broker.Check(page, permission, "zing-relay://a.test", "video"));
+	}
+
 	[Fact]
 	public void A_prompt_is_held_until_answered_then_remembered_for_that_page()
 	{
