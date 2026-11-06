@@ -127,15 +127,26 @@ describe('the form after pages were deleted', () => {
 })
 
 describe('the plan for a range', () => {
-	it('keeps the pages in the range, with their items renumbered and no form values', () => {
+	it('keeps the pages in the range, with their items renumbered', () => {
 		let model = twoFiles()
 		model = addItem(model, model.pages[3]!.key, text)
-		model = setFormValue(model, 'a', 'b')
-		const part = toPlanRange(model, { from: 3, to: 5 })
+		const part = toPlanRange(model, { from: 3, to: 5 }, 1, [])
 		expect(part.pages).toEqual([{ source: 1, page: 1, rotate: 0 }, { source: 1, page: 2, rotate: 0 }, { source: 1, page: 3, rotate: 0 }])
 		expect(part.overlays).toEqual([{ page: 2, items: [text] }])
 		expect(part.formValues).toBeUndefined()
-		expect(toPlanRange(model, { from: 1, to: 2 }).overlays).toEqual([])
+		expect(toPlanRange(model, { from: 1, to: 2 }, 0, []).overlays).toEqual([])
+	})
+	it('carries the typed values of the fields that have a widget on a page in the range', () => {
+		const fields = [
+			{ name: 'first', pages: [1] },
+			{ name: 'second', pages: [2] },
+			{ name: 'both', pages: [1, 3] },
+		]
+		let model = addFile(emptyModel(), { source: 0, name: 'f.pdf', pageCount: 3 })
+		model = setFormValue(setFormValue(setFormValue(model, 'first', 'Alice'), 'second', 'Bob'), 'both', 'yes')
+		expect(toPlanRange(model, { from: 1, to: 1 }, 0, fields).formValues).toEqual({ first: 'Alice', both: 'yes' })
+		expect(toPlanRange(model, { from: 2, to: 2 }, 0, fields).formValues).toEqual({ second: 'Bob' })
+		expect(toPlanRange(model, { from: 1, to: 1 }, 0, []).formValues).toBeUndefined()
 	})
 })
 

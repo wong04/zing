@@ -440,7 +440,7 @@ export function PdfTool() {
 			fail(error)
 			return
 		}
-		runPlans('Splitting…', parts.map((range) => toPlanRange(model, range)), (i) => suffixedFileName(baseName(), `-part-${String(i + 1).padStart(2, '0')}`, 'pdf'))
+		runPlans('Splitting…', parts.map((range) => toPlanRange(model, range, used[0]!, single?.fields ?? [])), (i) => suffixedFileName(baseName(), `-part-${String(i + 1).padStart(2, '0')}`, 'pdf'))
 	}
 
 	// Ends this panel's worker, which fails the file being built; one already being saved still lands and is reported.

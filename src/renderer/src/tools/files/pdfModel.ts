@@ -125,13 +125,19 @@ export function toPlan(model: Model): PdfPlan {
 	return Object.keys(model.form).length === 0 ? { pages, overlays } : { pages, overlays, formValues: model.form }
 }
 
-/** The plan for just the pages `from` to `to` of the result (counted from 1), with their items. Form values are left out: a part is a new file, not the form. */
-export function toPlanRange(model: Model, range: { readonly from: number; readonly to: number }): PdfPlan {
+/**
+ * The plan for just the pages `from` to `to` of the result (counted from 1), with their items, and the typed values of the fields
+ * of file `source` that keep a widget in the part (`fields` is empty when the panel has no single file's form).
+ */
+export function toPlanRange<T extends { readonly name: string; readonly pages: readonly number[] }>(model: Model, range: { readonly from: number; readonly to: number }, source: number, fields: readonly T[]): PdfPlan {
 	const whole = toPlan(model)
-	return {
+	const part = { ...model, pages: model.pages.slice(range.from - 1, range.to) }
+	const plan = {
 		pages: whole.pages.slice(range.from - 1, range.to),
 		overlays: whole.overlays.filter((o) => o.page >= range.from && o.page <= range.to).map((o) => ({ ...o, page: o.page - range.from + 1 })),
+		...(whole.formValues === undefined ? {} : { formValues: whole.formValues }),
 	}
+	return onlyFields(plan, fieldsOnKeptPages(part, source, fields).map((f) => f.name))
 }
 
 /**
