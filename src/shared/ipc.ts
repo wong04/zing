@@ -302,19 +302,18 @@ export interface InvokeContract {
 	/** Stops a job of this window; its outputs are discarded. (`engines:cancel` stops a download.) */
 	'engines:cancel-job': { args: [jobId: string]; result: void }
 	/**
-	 * Saves the active tab's HTML (only what is on the page, no images or styles) to Downloads under a numbered name, and
+	 * Saves the active tab's HTML (only what is on the page, no images or styles) to Downloads (a taken name is numbered unless "Never overwrite files" is off), and
 	 * answers with the file's name and a token. Rejects for a page that isn't http or https, one in reader mode, or a very
 	 * large one. A page view cannot call this: it has no host channel.
 	 */
 	'page:save': { args: []; result: PickedFile }
-	/**
-	/** The native open dialog; an empty list if the person cancelled. */
 	/**
 	 * A session that only takes results (`PUT https://view.zing/save/<id>/<name>`, for the formats of `kinds`) and serves no file. It
 	 * replaces the panel's earlier session, shares the save quota and ends with the panel. For a tool that has read its file and
 	 * must still be able to save when that file is gone.
 	 */
 	'session:open-save': { args: [panelId: string, kinds: readonly SessionKindName[]]; result: ViewerOpened }
+	/** The native open dialog; an empty list if the person cancelled. */
 	'files:pick': { args: [kinds: readonly FileKind[]]; result: PickedFile[] }
 	/**
 	 * Puts the file a token stands for on the clipboard as a file (CF_HDROP), so Explorer can paste it. Takes a token, never a
@@ -333,7 +332,7 @@ export interface InvokeContract {
 	 * to 50 MB). The host judges the file first bytes and length and rejects anything else (SessionFileRefusedException),
 	 * an unknown kind or an unknown panel. The answer's `url` is `GET`able by the tool (a worker included) and nothing else is
 	 * revealed: no path, no token. Opening another file in the panel, `viewer:close(id)` or closing the panel revokes it.
-	 * The same session takes results: `PUT https://view.zing/save/<id>/<name>` (see docs in task-18-report).
+	 * The same session takes results: `PUT https://view.zing/save/<id>/<name>` (ViewerFiles.cs).
 	 */
 	'session:open': { args: [panelId: string, token: string, kinds: readonly SessionKindName[]]; result: ViewerOpened }
 	/** The background remover's session: `session:open` with the `image` kind. */

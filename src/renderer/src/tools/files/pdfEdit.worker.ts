@@ -1,5 +1,7 @@
 // pdf-lib runs here, off the interface's thread: loading, copying and saving a large file can take seconds. What stays on
 // the main thread is the panel itself and the page pictures (pdf.js has a worker of its own for parsing).
+// It reads untrusted PDFs and needs no network, so it is narrowed the same way as pdf.js's worker.
+import './pdfjsGuard'
 import { buildPdf, imagesToPdf, inspectPdf, PdfEditError } from '@shared/pdf/pdfEdit'
 
 interface Scope {

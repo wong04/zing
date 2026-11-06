@@ -165,12 +165,12 @@ export function startHistory(model: Model): History {
 	return { past: [], present: model, future: [] }
 }
 
-/** Makes `next` the present. What could have been redone is forgotten. */
 /** Replaces the present without a new step, for a run of small changes to one thing (a slider drag) that Undo should take back at once. */
 export function amend(history: History, next: Model): History {
 	return { ...history, present: next }
 }
 
+/** Makes `next` the present. What could have been redone is forgotten. */
 export function commit(history: History, next: Model): History {
 	if (next === history.present) return history
 	return trim({ past: [...history.past, history.present], present: next, future: [] })

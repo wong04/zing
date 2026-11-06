@@ -210,7 +210,7 @@ export function BgRemoveTool() {
 				{({ targeted }) => (
 					<div className={targeted ? 'convert-drop targeted' : 'convert-drop'}>
 						{file === null ? <span className="convert-hint">Drop a picture here</span> : <FileRow path={file.name} />}
-						<PillButton variant="outlined" size="small" disabled={busy} onClick={() => zing.pickFiles(['image']).then(take, fail)}>
+						<PillButton variant="outlined" size="small" disabled={busy} onClick={() => zing.pickFiles(['picture']).then(take, fail)}>
 							{file === null ? 'Choose a picture…' : 'Choose another'}
 						</PillButton>
 					</div>
