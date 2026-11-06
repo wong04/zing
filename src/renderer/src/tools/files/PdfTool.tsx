@@ -151,7 +151,7 @@ export function PdfTool() {
 	}
 	const fail = (error: unknown): void => setProblem(describeFailure(error))
 	// The same words twice in a row are not read out again, so a trailing space tells the screen reader it is new.
-	const say = (text: string): void => setAnnouncement((now) => (now === text ? `${text} ` : text))
+	const say = (text: string): void => setAnnouncement((now) => (now === text ? `${text}00a0` : text))
 
 	/** Runs an edit; a refusal is shown to the person, not thrown. */
 	const edit = (change: (m: Model) => Model, said?: string): void => {
