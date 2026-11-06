@@ -36,6 +36,8 @@
 	},
 	"dependencies": {
 		"@mozilla/readability": "0.6.0",
+		"pdf-lib": "1.17.1",
+		"pdfjs-dist": "6.4.299",
 		"qrcode-generator": "2.0.4",
 		"react": "^19.3.1",
 		"react-dom": "^19.3.1"
