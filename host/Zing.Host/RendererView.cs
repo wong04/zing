@@ -1,6 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
-using Zing.Core.Engines;
+using Zing.Core.Viewer;
 
 namespace Zing.Host;
 
@@ -48,10 +48,10 @@ public sealed class RendererView
 		core.Settings.IsNonClientRegionSupportEnabled = hash is "chrome" or "surface";
 		core.Settings.AreDefaultContextMenusEnabled = false;
 		core.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
+		// The viewer's files are served from this window's own table; a page view answers the same address 404 (WebView2Page).
+		core.AddWebResourceRequestedFilter($"https://{ViewerFiles.Host}/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+		core.WebResourceRequested += renderer.OnViewerResource;
 		core.WebMessageReceived += renderer.OnMessage;
-		// All kinds of source, so a worker's fetch is answered as well as the page's own.
-		core.AddWebResourceRequestedFilter($"https://{ZingOrigin.LocalFilesHost}{LocalFiles.Prefix}*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
-		core.WebResourceRequested += renderer.OnLocalFileRequested;
 		core.ProcessFailed += renderer.OnProcessFailed;
 		// Events sent before the root has loaded would be lost, so callers get the view once it has.
 		// Never resumed inside the engine's event, which may close the window (the e2e close-at hook does).
@@ -111,6 +111,42 @@ public sealed class RendererView
 		}
 	}
 
+	/// <summary>
+	/// A file the viewer shows. The engine reads the response body on the UI thread, so the body is never a stream that waits for
+	/// something: a range is read from disk first (off the UI thread, under a deferral) and handed over as bytes.
+	/// </summary>
+	private void OnViewerResource(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
+	{
+		var deferral = e.GetDeferral();
+		TestHooks.Background(ServeViewerAsync(sender, e, deferral), "viewer");
+	}
+
+	private async Task ServeViewerAsync(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e, Windows.Foundation.Deferral deferral)
+	{
+		try
+		{
+			var viewer = _bridge.Viewer;
+			var request = e.Request;
+			var reply = viewer is null
+				? ViewerFiles.Unavailable()
+				: await viewer.ServeAsync(new ViewerRequest(request.Method, request.Uri, Header(request, "Range"), Header(request, "Origin"), Header(request, "Referer"), request.Content, long.TryParse(Header(request, "Content-Length"), out var declared) ? declared : null));
+			if (!IsClosed) e.Response = ViewerResponses.Make(sender.Environment, reply);
+		}
+		catch (Exception) when (!IsClosed)
+		{
+			// The page gets an error, not a request that goes to the network; the failure is recorded by the caller.
+			e.Response = sender.Environment.CreateWebResourceResponse(null, 500, "Internal Server Error", "Cache-Control: no-store");
+			throw;
+		}
+		finally
+		{
+			deferral.Complete();
+		}
+	}
+
+	private static string? Header(CoreWebView2WebResourceRequest request, string name) =>
+		request.Headers.Contains(name) ? request.Headers.GetHeader(name) : null;
+
 	private void OnMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e) =>
 		TestHooks.Background(AnswerAsync(sender, e.Source, e.WebMessageAsJson, DroppedPaths(e)), "bridge");
 
@@ -121,40 +157,6 @@ public sealed class RendererView
 	private static IReadOnlyList<string> DroppedPaths(CoreWebView2WebMessageReceivedEventArgs e) =>
 		[.. e.AdditionalObjects?.OfType<CoreWebView2File>().Select(file => file.Path) ?? []];
 
-	/// <summary>
-	/// The background model and a granted file, as bytes, for a script in this Zing view (a worker included): GET
-	/// https://local.zing/zing-local/model/&lt;engine id&gt; or /zing-local/file/&lt;token&gt;, and nothing else. Registered on Zing's own views only,
-	/// so a page tab, where that name resolves nowhere and no handler listens, gets nothing. The bytes are streamed from the file,
-	/// never read into memory here, and not through the JSON bridge.
-	/// </summary>
-	private void OnLocalFileRequested(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
-	{
-		var environment = sender.Environment;
-		if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri) || uri.Host != ZingOrigin.LocalFilesHost || e.Request.Method != "GET")
-		{
-			e.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", RefusalHeaders);
-			return;
-		}
-		try
-		{
-			var file = _bridge.OpenLocalFile(uri.AbsolutePath);
-			e.Response = environment.CreateWebResourceResponse(file.Content.AsRandomAccessStream(), 200, "OK", ServedHeaders(file.Length));
-		}
-		catch (Exception error) when (error is LocalFileRefusedException or UnknownFileGrantException)
-		{
-			e.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", RefusalHeaders);
-		}
-		catch (Exception error) when (error is EngineNotInstalledException or EngineBusyException or FileNotFoundException or DirectoryNotFoundException)
-		{
-			e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", RefusalHeaders);
-		}
-	}
-
-	// The view that asked is on another origin, so it can only read the status if the answer says it may.
-	private static readonly string RefusalHeaders = string.Join("\r\n", "Cache-Control: no-store", $"Access-Control-Allow-Origin: https://{AppHost}");
-
-	private static string ServedHeaders(long length) =>
-		string.Join("\r\n", "Content-Type: application/octet-stream", $"Content-Length: {length}", "Cache-Control: no-store", "X-Content-Type-Options: nosniff", $"Access-Control-Allow-Origin: https://{AppHost}", "Access-Control-Expose-Headers: Content-Length", "Vary: Origin");
 
 	/// <summary>Every invoke gets a reply, even one the bridge can't read, so the renderer's promise never hangs.</summary>
 	private async Task AnswerAsync(CoreWebView2 sender, string source, string json, IReadOnlyList<string> dropped)

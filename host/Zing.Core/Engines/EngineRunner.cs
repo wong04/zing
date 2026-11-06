@@ -19,7 +19,9 @@ public abstract record JobArg
 /// <param name="OutputDirectory">Where finished outputs are placed.</param>
 /// <param name="OutputNames">The file names the job will make, in order. Each is placed under this name, numbered ("clip 2.mp4") if it is taken.</param>
 /// <param name="Urls">Addresses for tools like yt-dlp; appended after a "--".</param>
-public sealed record EngineJobRequest(string EngineId, IReadOnlyList<JobArg> Args, string OutputDirectory, IReadOnlyList<string> OutputNames, IReadOnlyList<string> Urls);
+/// <param name="OutputsStaged">Called before the engine starts with the temporary path of each output, in order. A tool that shows the
+/// file while it grows (the viewer) reads it from there; the path stops existing when the file is placed or the job ends.</param>
+public sealed record EngineJobRequest(string EngineId, IReadOnlyList<JobArg> Args, string OutputDirectory, IReadOnlyList<string> OutputNames, IReadOnlyList<string> Urls, Action<IReadOnlyList<string>>? OutputsStaged = null);
 
 /// <summary>A job belongs to the panel that started it, in the window that holds the panel.</summary>
 public sealed record JobOwner(string Window, string Panel);
@@ -153,6 +155,7 @@ public sealed class EngineRunner
 			Directory.CreateDirectory(job.TempFolder);
 			for (var i = 0; i < names.Count; i++) Directory.CreateDirectory(Path.GetDirectoryName(job.TempOutputs[i])!);
 			if (engine.Id == EngineIds.Magick) WriteMagickPolicy(job);
+			request.OutputsStaged?.Invoke(job.TempOutputs);
 			var process = StartProcess(job, executable, ffmpeg, request, policy, urls);
 			job.Process = process;
 			AfterStart?.Invoke(id);

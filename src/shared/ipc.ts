@@ -1,4 +1,5 @@
 import type { EngineInfo, EngineProgress, EnsureOutcome, YtDlpUpdate } from './engines/engineInfo'
+import type { ViewerOpened } from './convert/viewable'
 import type { EngineExit, EngineJobSpec, EngineOutput, FileKind, PickedFile } from './engines/engineJob'
 import type { FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
@@ -305,16 +306,25 @@ export interface InvokeContract {
 	 */
 	'convert:html-to-pdf': { args: [token: string, outputName: string]; result: PickedFile }
 	/**
-	 * The background remover's result: `pngBase64` is saved to the Downloads folder as `name` (a plain name ending in .png, at
-	 * most 150 characters; numbered if taken, never over a file). Rejects for anything that is not a PNG, one over 64 MB, or
-	 * a bad name. Answers with the saved name and a token.
+	 * Opens a picked or dropped picture for the background remover in its panel. The host reads the file's first bytes (PNG,
+	 * JPEG or WebP only) and its length, and answers with a session: the worker fetches the picture at `url`, and PUTs the result
+	 * to `https://view.zing/save/<id>/<name>`. Rejects for another kind of file, one over 120 MB, or an unknown panel. A new
+	 * picture, `viewer:close` or closing the panel revokes the session.
 	 */
-	'files:save-png': { args: [name: string, pngBase64: string]; result: PickedFile }
+	'bgremove:open': { args: [panelId: string, token: string]; result: ViewerOpened }
 	/**
 	 * Files dropped on a Zing view. The host reads their paths from the drop itself (`postMessageWithAdditionalObjects`),
 	 * so the bridge carries the `File`s beside the message and not in its JSON args; a web page cannot send one.
 	 */
 	'files:open-dropped': { args: [files: readonly File[]]; result: PickedFile[] }
+	/**
+	 * Opens a picked or dropped file (by its token) in the viewer panel `panelId`, converting a copy when Chromium can't show it.
+	 * One file per panel: it replaces the panel's earlier one. Closing the panel (or the window) ends the conversion and deletes the copy.
+	 * Rejects for a format it can't show, an engine that isn't downloaded, or a file that has gone.
+	 */
+	'viewer:open': { args: [token: string, panelId: string]; result: ViewerOpened }
+	/** Forgets the open file: its address answers 404, a running conversion stops and the temporary copy is deleted. */
+	'viewer:close': { args: [id: string]; result: void }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
 	'account:sign-in': { args: [password: string]; result: AccountOutcome }
@@ -464,9 +474,11 @@ export interface ZingApi {
 	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>
 	/** Convert's HTML to PDF (see `convert:html-to-pdf`). */
 	printHtmlToPdf(token: string, outputName: string): Promise<PickedFile>
-	/** The background remover's result (see `files:save-png`). */
-	savePng(name: string, pngBase64: string): Promise<PickedFile>
+	/** Opens a picture for the background remover (see `bgremove:open`). */
+	openBackgroundPicture(panelId: string, token: string): Promise<ViewerOpened>
 	/** Hand over the `File`s of a drop (`event.dataTransfer.files`); resolves with a token for each. */
 	openDropped(files: readonly File[]): Promise<PickedFile[]>
+	openViewerFile(token: string, panelId: string): Promise<ViewerOpened>
+	closeViewerFile(id: string): Promise<void>
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe
 }

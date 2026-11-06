@@ -41,6 +41,10 @@
 			"args": 1
 		},
 		{
+			"channel": "bgremove:open",
+			"args": 2
+		},
+		{
 			"channel": "chrome:app-menu",
 			"args": 1
 		},
@@ -131,10 +135,6 @@
 		{
 			"channel": "files:pick",
 			"args": 1
-		},
-		{
-			"channel": "files:save-png",
-			"args": 2
 		},
 		{
 			"channel": "find:close",
@@ -384,6 +384,14 @@
 		{
 			"channel": "toolpanel:restore",
 			"args": 1
+		},
+		{
+			"channel": "viewer:close",
+			"args": 1
+		},
+		{
+			"channel": "viewer:open",
+			"args": 2
 		}
 	],
 	"events": [

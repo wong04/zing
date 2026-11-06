@@ -6,7 +6,6 @@ import { buildRegistry, DuplicateToolError, registeredToolIds, toolComponent } f
 /** Catalog items whose tool arrives in a later phase; their panel shows the empty state. */
 const laterPhase: readonly string[] = [
 	'section:Diagnose',
-	'section:Files',
 	'section:Network & VPN',
 	'section:Open a Link',
 ]

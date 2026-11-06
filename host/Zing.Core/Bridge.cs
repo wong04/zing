@@ -15,21 +15,18 @@ public sealed class Bridge
 
 	private readonly Dictionary<string, Handler> _handlers = new(StringComparer.Ordinal);
 	private DropInbox? _drops;
-	private LocalFiles? _localFiles;
 
 	/// <summary>Where a Zing view's drop is left for the renderer's <c>files:open-dropped</c> call; set by the window's ChromeApi.</summary>
 	public void UseDropInbox(DropInbox drops) => _drops = drops;
 
+	/// <summary>The window's viewer files, for the host to answer `https://view.zing/...` from; set by the window's ChromeApi.</summary>
+	public Viewer.ViewerFiles? Viewer { get; private set; }
+
+	public void UseViewer(Viewer.ViewerFiles viewer) => Viewer = viewer;
+
 	/// <summary>The host read these paths from a drop on <paramref name="source"/>. Refused unless it is one of Zing's own views.</summary>
 	public void OfferDrop(string source, IReadOnlyList<string> paths) =>
 		(_drops ?? throw new InvalidOperationException("This window takes no drops")).Offer(source, paths);
-
-	/// <summary>Where Zing's own views fetch the background model and a granted file as bytes; set by the window's ChromeApi.</summary>
-	public void UseLocalFiles(LocalFiles files) => _localFiles = files;
-
-	/// <summary>The bytes for an address under <see cref="LocalFiles.Prefix"/>, for a Zing view only (the host attaches this to those views alone).</summary>
-	public LocalFile OpenLocalFile(string path) =>
-		(_localFiles ?? throw new InvalidOperationException("This window serves no local files")).Open(path);
 
 	/// <summary>A drop nobody collected is forgotten, so the next plain call can't pick it up.</summary>
 	public void ClearDrop() => _drops?.Clear();

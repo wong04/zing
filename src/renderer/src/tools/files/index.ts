@@ -5,4 +5,5 @@ export const filesTools: ToolLoaders = {
 	'tool:Engines': () => import('./EnginesTool').then((m) => ({ default: m.EnginesTool })),
 	'tool:Background Remover': () => import('./BgRemoveTool').then((m) => ({ default: m.BgRemoveTool })),
 	'section:Download': () => import('./DownloadTool').then((m) => ({ default: m.DownloadTool })),
+	'section:Files': () => import('./ViewerTool').then((m) => ({ default: m.ViewerTool })),
 }
