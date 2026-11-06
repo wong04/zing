@@ -134,34 +134,6 @@
 	background: var(--control);
 }
 
-.convert-drop.targeted {
-	border-color: var(--accent);
-}
-
-.convert-hint {
-	color: var(--muted);
-	font-size: 13px;
-}
-
-.convert-options {
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-}
-
-.convert-row {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px 12px;
-	align-items: center;
-}
-
-.convert-offer {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-}
-
 .viewer-media {
 	max-width: 100%;
 	max-height: 100%;
