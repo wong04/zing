@@ -16,6 +16,9 @@ internal static class LocalAddresses
 	{
 		if (uri.HostNameType is UriHostNameType.IPv4 or UriHostNameType.IPv6) return IPAddress.TryParse(uri.DnsSafeHost, out var ip) ? IsLocal(ip) : true;
 		var name = uri.IdnHost.TrimEnd('.').ToLowerInvariant();
+		// .NET calls a host in fullwidth or ideographic characters a name, though its ASCII form is an address ("１２７。０。０。１" is
+		// 127.0.0.1), and that ASCII form is what the engine connects to.
+		if (IPAddress.TryParse(name, out var mapped)) return IsLocal(mapped);
 		// A name with no dot is an intranet machine.
 		return !name.Contains('.') || name == "home.arpa" || LocalSuffixes.Any(name.EndsWith);
 	}

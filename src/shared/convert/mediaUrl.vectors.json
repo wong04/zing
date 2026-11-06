@@ -49,7 +49,14 @@
 		"http://%31%32%37.0.0.1/",
 		"http://example.com%5c@127.0.0.1/",
 		"http://user@127.0.0.1/",
-		"http://example.com\u0007/"
+		"http://example.com\u0007/",
+		"http://１２７.０.０.１/a",
+		"http://127。0。0。1/a",
+		"http://127｡0｡0｡1/a",
+		"http://192．168．1．1/a",
+		"http://１０.０.０.１/a",
+		"http://ｌｏｃａｌｈｏｓｔ/a",
+		"http://nas。local/a"
 	],
 	"accept": [
 		"http://172.15.0.1/a",
