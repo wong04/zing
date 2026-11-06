@@ -381,6 +381,12 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		return [.. picked.Select(file => file.Path)];
 	}
 
+	public void CopyFilesToClipboard(IReadOnlyList<string> paths)
+	{
+		if (!_window.OnUiThread) throw new InvalidOperationException("Files can only be put on the clipboard from the window's own thread");
+		FileClipboard.Copy(_window.Hwnd, paths);
+	}
+
 	public Task PrintHtmlToPdfAsync(string html, string pdfPath, CancellationToken cancellation) => HtmlPdfPrinter.PrintAsync(_window, _scope, html, pdfPath, cancellation);
 
 	// MARK: IPageFeatureHost

@@ -130,6 +130,13 @@ public static class TestHooks
 			lock (PickedFiles) PickedFiles.Enqueue(files);
 			return true;
 		}
+		if (action == "read-clipboard")
+		{
+			// The real clipboard is never opened in an e2e run (FileClipboard); this is the CF_HDROP block it would have been given, read back.
+			var block = FileClipboard.Held ?? throw new InvalidOperationException("Nothing was copied to the clipboard");
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { format = "CF_HDROP", paths = Zing.Core.DropFiles.Parse(block) }));
+			return true;
+		}
 		if (action == "layers")
 		{
 			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(Layers(window)));

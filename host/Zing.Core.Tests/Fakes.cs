@@ -112,6 +112,16 @@ public sealed class FakeWindowHost : IWindowHost
 		PickedExtensions = extensions;
 		return Task.FromResult(PickedPaths);
 	}
+
+	/// <summary>The paths of each copy to the clipboard.</summary>
+	public List<IReadOnlyList<string>> CopiedFiles { get; } = [];
+	public Exception? ClipboardFailure { get; set; }
+
+	public void CopyFilesToClipboard(IReadOnlyList<string> paths)
+	{
+		if (ClipboardFailure is { } failure) throw failure;
+		CopiedFiles.Add(paths);
+	}
 	/// <summary>The HTML text each print was given.</summary>
 	public List<string> Printed { get; } = [];
 

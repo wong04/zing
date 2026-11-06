@@ -317,6 +317,11 @@ export interface InvokeContract {
 	'session:open-save': { args: [panelId: string, kinds: readonly SessionKindName[]]; result: ViewerOpened }
 	'files:pick': { args: [kinds: readonly FileKind[]]; result: PickedFile[] }
 	/**
+	 * Puts the file a token stands for on the clipboard as a file (CF_HDROP), so Explorer can paste it. Takes a token, never a
+	 * path: the host looks the path up, and rejects a token it never issued here or a file that has gone.
+	 */
+	'files:copy-to-clipboard': { args: [token: string]; result: void }
+	/**
 	 * Convert's HTML to PDF: Chromium prints the HTML file the token stands for, with scripts and the network off, into the
 	 * Downloads folder under `outputName` (a plain name ending in .pdf; numbered if taken). Answers with the PDF's name and a
 	 * token. Rejects for a file that isn't HTML or is over 1.5 MB.
@@ -532,6 +537,8 @@ export interface ZingApi {
 	onEngineOutput(listener: (output: EngineOutput) => void): Unsubscribe
 	onEngineExit(listener: (exit: EngineExit) => void): Unsubscribe
 	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>
+	/** Copies a picked, dropped or made file to the clipboard as a file (see `files:copy-to-clipboard`). */
+	copyFileToClipboard(token: string): Promise<void>
 	/** Convert's HTML to PDF (see `convert:html-to-pdf`). */
 	printHtmlToPdf(token: string, outputName: string): Promise<PickedFile>
 	/** Opens a read session for a tool panel (see `session:open`). */

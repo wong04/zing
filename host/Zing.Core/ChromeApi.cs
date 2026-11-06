@@ -54,6 +54,8 @@ public interface IWindowHost
 	IDownloadHost DownloadHost { get; }
 	/// <summary>Shows the native open dialog for these extensions (none means every file) and returns what the person picked; empty if they cancelled. An e2e run shows no dialog.</summary>
 	Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions);
+	/// <summary>Puts these files on the clipboard as files (CF_HDROP), so Explorer can paste them. Called on the UI thread; throws if the clipboard can't be written. An e2e run leaves the real clipboard alone.</summary>
+	void CopyFilesToClipboard(IReadOnlyList<string> paths);
 	/// <summary>Has Chromium print this HTML text to a PDF at this path (Convert). Scripts and the network are off while it does.</summary>
 	Task PrintHtmlToPdfAsync(string html, string pdfPath, CancellationToken cancellation);
 	/// <summary>Runs delayed work on the window's UI thread.</summary>
@@ -289,6 +291,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("files:pick", args => PickFilesAsync(Arg(args, 0)));
 		bridge.Register("convert:html-to-pdf", args => HtmlToPdfAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("files:open-dropped", _ => Drops.Take());
+		bridge.Register("files:copy-to-clipboard", args => Do(() => CopyFileToClipboard(Text(args, 0))));
 		bridge.Register("session:open", args => OpenToolSession(Text(args, 0), Text(args, 1), StringArray(Arg(args, 2))));
 		bridge.Register("session:open-save", args => OpenSaveSession(Text(args, 0), StringArray(Arg(args, 1))));
 		bridge.Register("bgremove:open", args => OpenToolSession(Text(args, 0), Text(args, 1), ["image"]));
@@ -543,6 +546,13 @@ public sealed class ChromeApi : IDisposable
 	private EngineStore Engines() => _app.Engines ?? throw new InvalidOperationException("This host has no engine store");
 
 	private EngineRunner Runner() => _app.Runner ?? throw new InvalidOperationException("This host can't run engines");
+
+	private void CopyFileToClipboard(string token)
+	{
+		var path = Grants.Resolve(token);
+		if (!File.Exists(path)) throw new FileNotFoundException($"{Path.GetFileName(path)} is no longer there, so it can't be copied", path);
+		_host.CopyFilesToClipboard([path]);
+	}
 
 	private async Task<object?> PickFilesAsync(JsonElement kinds)
 	{
