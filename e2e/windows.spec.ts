@@ -42,6 +42,14 @@ test('a second launch hands its link to the running window as a new tab and exit
 	await zing.close()
 })
 
+test('launches at the same moment each hand over their link and exit', async () => {
+	const zing = await launchZing()
+	const links = [1, 2, 3, 4].map((n) => `${base}/linked?n=${n}`)
+	expect(await Promise.all(links.map((link) => zing.launchAgain([link])))).toEqual([0, 0, 0, 0])
+	await expect.poll(() => urls(zing.chrome)).toEqual(expect.arrayContaining(links))
+	await zing.close()
+})
+
 test('a link that is not a web address is ignored', async () => {
 	const zing = await launchZing({ args: ['file:///C:/Windows/win.ini', 'ms-settings:'] })
 	await expect.poll(async () => (await urls(zing.chrome)).map((u) => u.replace(/\/$/, ''))).toEqual(['zing://home'])

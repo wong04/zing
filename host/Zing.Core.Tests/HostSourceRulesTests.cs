@@ -35,6 +35,23 @@ public sealed partial class HostSourceRulesTests
 		Assert.True(offences.Count == 0, "async void crashes Zing on a throw; pass an async Task to TestHooks.Background instead:\n" + string.Join("\n", offences));
 	}
 
+	/// <summary>
+	/// Windows App SDK's AppInstance keeps every process id of an exe path in shared memory and never
+	/// removes its own on exit. A later launch given a reused id dies in AppInstance's first call with
+	/// COMException 0x8000FFFF, and no caller can prevent that. ProfileOwner replaces it.
+	/// </summary>
+	[Fact]
+	public void HostDoesNotUseAppInstance()
+	{
+		var offences = HostSources()
+			.SelectMany(file => File.ReadAllLines(file).Select((line, index) => (file, line, number: index + 1)))
+			.Where(l => !l.line.TrimStart().StartsWith("//", StringComparison.Ordinal))
+			.Where(l => l.line.Contains("AppInstance", StringComparison.Ordinal))
+			.Select(l => $"{Path.GetFileName(l.file)}:{l.number}: {l.line.Trim()}")
+			.ToList();
+		Assert.True(offences.Count == 0, "AppInstance crashes a launch that reuses an old process id; use ProfileOwner:" + string.Join(" ", offences));
+	}
+
 	[Fact]
 	public void RuleSeesTheHostSources()
 	{
