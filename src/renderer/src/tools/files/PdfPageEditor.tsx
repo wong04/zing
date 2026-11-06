@@ -3,7 +3,6 @@ import { PDF_LIMITS, PdfEditError, type OverlayItem } from '@shared/pdf/pdfCore'
 import { zing } from '../../api'
 import { InfoBanner, PillButton, PillField, PillSlider } from '../../components'
 import { describeFailure } from '../dev/parts'
-import { bytesToBase64 } from './pdfBytes'
 import { usePanelId } from '../panelId'
 import { readGranted } from './pdfHost'
 import type { PlacedItem } from './pdfModel'
@@ -16,16 +15,35 @@ const DISPLAY_WIDTH = 440
 const NUDGE = 2
 const BIG_NUDGE = 10
 
-const urls = new WeakMap<Uint8Array, string>()
-
-function pictureUrl(item: Extract<OverlayItem, { kind: 'image' }>): string {
-	let url = urls.get(item.bytes)
-	if (url === undefined) {
-		// A data address: the interface's content security policy lets pictures in from itself and from data, not from blob.
-		url = `data:image/${item.format === 'png' ? 'png' : 'jpeg'};base64,${bytesToBase64(item.bytes)}`
-		urls.set(item.bytes, url)
-	}
-	return url
+/**
+ * A placed picture, drawn on a canvas from the bytes by the browser's own decoder (createImageBitmap). The interface's content
+ * security policy lets pictures in from itself and from data, not from blob, and a data address would mean base64 of up to 8 MB
+ * on this thread; a canvas needs neither. It is drawn no larger than 1024 pixels on a side, which is plenty for a preview.
+ */
+function PictureView({ item, scale }: { item: Extract<OverlayItem, { kind: 'image' }>; scale: number }) {
+	const canvas = useRef<HTMLCanvasElement>(null)
+	useEffect(() => {
+		let live = true
+		createImageBitmap(new Blob([item.bytes as BlobPart])).then(
+			(bitmap) => {
+				if (!live) {
+					bitmap.close()
+					return
+				}
+				const target = canvas.current!
+				const shrink = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height))
+				target.width = Math.max(1, Math.round(bitmap.width * shrink))
+				target.height = Math.max(1, Math.round(bitmap.height * shrink))
+				target.getContext('2d')!.drawImage(bitmap, 0, 0, target.width, target.height)
+				bitmap.close()
+			},
+			() => undefined,
+		)
+		return () => {
+			live = false
+		}
+	}, [item.bytes])
+	return <canvas ref={canvas} aria-hidden="true" style={{ width: item.width * scale, height: item.height * scale }} />
 }
 
 export interface PdfPageEditorProps {
@@ -204,7 +222,7 @@ export function PdfPageEditor({ preview, index, position, turn, items, onAdd, on
 							{placed.item.kind === 'text' ? (
 								<span style={{ fontSize: placed.item.size * scale, lineHeight: 1.2, whiteSpace: 'pre' }}>{placed.item.text}</span>
 							) : (
-								<img src={pictureUrl(placed.item)} alt="" draggable={false} style={{ width: placed.item.width * scale, height: placed.item.height * scale }} />
+								<PictureView item={placed.item} scale={scale} />
 							)}
 						</div>
 					)

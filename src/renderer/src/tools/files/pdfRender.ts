@@ -14,9 +14,9 @@ function loadPdfJs(): Promise<PdfJs> {
 	return loading
 }
 
-/** The worker is bundled with the rest of the interface (a .js file of Zing's own origin, not an address from anywhere else). */
+/** The worker is bundled with the rest of the interface (a .js file of Zing's own origin, not an address from anywhere else), behind a guard that narrows its network. */
 function loadWorkerClass(): Promise<new () => Worker> {
-	workerClass ??= import('pdfjs-dist/build/pdf.worker.min.mjs?worker').then((m) => m.default)
+	workerClass ??= import('./pdfjsWorker?worker').then((m) => m.default)
 	return workerClass
 }
 

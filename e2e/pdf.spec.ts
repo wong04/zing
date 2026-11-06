@@ -227,6 +227,18 @@ test('text, a picture and a typed signature are placed on a page; the signature 
 	await panel.getByLabel('Or type it').fill('Zed Zed')
 	await panel.getByRole('button', { name: 'Place on page' }).click()
 	await expect(panel.getByRole('button', { name: 'Picture or signature' })).toBeVisible()
+	// The preview is drawn from the bytes (no data address, no blob): the signature's ink is there.
+	await expect
+		.poll(() =>
+			panel.getByRole('button', { name: 'Picture or signature' }).locator('canvas').evaluate((c: HTMLCanvasElement) => {
+				if (c.width === 0) return 0
+				const data = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data
+				let ink = 0
+				for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) ink++
+				return ink
+			}),
+		)
+		.toBeGreaterThan(50)
 	// Moved with the keyboard, which is the signature's only other way to move.
 	await panel.getByRole('button', { name: 'Picture or signature' }).focus()
 	await panel.page().keyboard.press('Shift+ArrowDown')

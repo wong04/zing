@@ -26,10 +26,19 @@ describe('pdf-lib and pdf.js load only when a PDF tool opens', () => {
 		expect(importers(/shared\/pdf\/pdfEdit'/)).toEqual(['renderer/src/tools/files/pdfEdit.worker.ts'])
 	})
 	it('names pdf.js in one file, and only in dynamic imports', () => {
-		expect(importers(/pdfjs-dist/)).toEqual(['renderer/src/tools/files/pdfRender.ts'])
+		expect(importers(/pdfjs-dist/)).toEqual(['renderer/src/tools/files/pdfRender.ts', 'renderer/src/tools/files/pdfjsWorker.ts'])
 		expect(render()).not.toMatch(/^import [^t].*pdfjs-dist/m)
 		expect(render()).toMatch(/= import\('pdfjs-dist'\)/)
 	})
+})
+
+describe('the pdf.js worker', () => {
+	const worker = readFileSync(join(root, 'renderer', 'src', 'tools', 'files', 'pdfjsWorker.ts'), 'utf8')
+	it('imports its network guard before pdf.js, so the guard runs first', () => {
+		expect(worker.indexOf("import './pdfjsGuard'")).toBeGreaterThanOrEqual(0)
+		expect(worker.indexOf("import './pdfjsGuard'")).toBeLessThan(worker.indexOf('pdf.worker.min.mjs'))
+	})
+	it('is the worker that is loaded', () => expect(render()).toMatch(/import\('\.\/pdfjsWorker\?worker'\)/))
 })
 
 describe('how pdf.js opens a PDF', () => {
