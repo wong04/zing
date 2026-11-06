@@ -1,4 +1,5 @@
 import { PdfEditError } from '@shared/pdf/pdfCore'
+import { checkPictureSize } from '@shared/pdf/pictureHeader'
 
 export interface Picture {
 	readonly format: 'png' | 'jpg'
@@ -25,6 +26,8 @@ export async function canvasToPng(canvas: HTMLCanvasElement, name: string): Prom
  * and re-saved as PNG, with transparency kept.
  */
 export async function toPicture(name: string, bytes: Uint8Array): Promise<Picture> {
+	// The size is read from the header first: a small file can describe a canvas of billions of pixels.
+	checkPictureSize(name, bytes)
 	const kind = sniffPicture(bytes)
 	if (kind !== 'other') return { format: kind, bytes }
 	let bitmap: ImageBitmap

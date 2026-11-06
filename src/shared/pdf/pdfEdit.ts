@@ -5,6 +5,7 @@
 // damaged, empty or past PDF_LIMITS.maxPages is refused with a PdfEditError naming it. `ignoreEncryption` is never used:
 // pdf-lib would then write the file without its encryption, which is not what the person asked for.
 import { EncryptedPDFError, PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { checkPictureSize } from './pictureHeader'
 import {
 	PDF_LIMITS,
 	PdfEditError,
@@ -318,6 +319,7 @@ function drawText(page: PDFPage, font: PDFFont, item: Extract<OverlayItem, { kin
 
 async function drawImage(doc: PDFDocument, page: PDFPage, item: Extract<OverlayItem, { kind: 'image' }>, box: { x: number; y: number; width: number; height: number }, rotation: number): Promise<void> {
 	if (!finite(item.x, item.y, item.width, item.height) || item.width <= 0 || item.height <= 0) throw new PdfEditError('An image needs a position and a size above zero.')
+	checkPictureSize(`The ${item.format.toUpperCase()} picture`, item.bytes)
 	let image
 	try {
 		image = item.format === 'png' ? await doc.embedPng(item.bytes) : await doc.embedJpg(item.bytes)
@@ -367,6 +369,7 @@ export async function imagesToPdf(pictures: readonly PictureFile[]): Promise<Uin
 	if (pictures.length > PDF_LIMITS.maxPages) throw new PdfEditError(`A PDF can have up to ${PDF_LIMITS.maxPages} pages; ${pictures.length} pictures were given.`)
 	const doc = await PDFDocument.create()
 	for (const picture of pictures) {
+		checkPictureSize(picture.name, picture.bytes)
 		let image
 		try {
 			image = picture.format === 'png' ? await doc.embedPng(picture.bytes) : await doc.embedJpg(picture.bytes)

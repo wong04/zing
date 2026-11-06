@@ -268,6 +268,15 @@ describe('files Zing will not edit', () => {
 })
 
 
+describe('picture bombs', () => {
+	// Only the header says 20000 x 20000; nothing would decode, which is the point.
+	const bomb = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0x4e, 0x20, 0, 0, 0x4e, 0x20, 8, 6, 0, 0, 0])
+	it('are refused by images to pdf and by an overlay, naming the file', async () => {
+		await expect(imagesToPdf([{ name: 'bomb.png', format: 'png', bytes: bomb }])).rejects.toThrow(/bomb\.png.*megapixels/)
+		await expect(addOverlay(await fixture(1), { page: 1, items: [{ kind: 'image', bytes: bomb, format: 'png', x: 0, y: 0, width: 5, height: 5 }] })).rejects.toThrow(/megapixels/)
+	})
+})
+
 describe('inspectPdf', () => {
 	it('answers the page count and the fillable fields, and refuses what the other functions refuse', async () => {
 		const info = await inspectPdf({ name: 'f.pdf', bytes: await formFixture() })
