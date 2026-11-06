@@ -4,9 +4,10 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Locator, type Page } from '@playwright/test'
+import { PDFDocument, PDFName, PDFString, rgb } from 'pdf-lib'
 import type { ZingApi } from '../src/shared/ipc'
 import { startEngineFixture, type EngineFixture } from './engineFixture'
-import { launchZing, pageWhere, test, type Launched } from './zing'
+import { launchZing, pageWhere, pages, test, type Launched } from './zing'
 
 declare const window: { readonly zing: ZingApi; readonly screenX: number; readonly screenY: number }
 
@@ -19,9 +20,12 @@ let fixture: EngineFixture | undefined
 let work = ''
 let server: Server
 let base = ''
+/** Requests for /followed: a link in a PDF that was followed would ask for it. */
+let followed = 0
 
 test.beforeAll(async () => {
-	server = createServer((_req, res) => {
+	server = createServer((req, res) => {
+		if (req.url === '/followed') followed++
 		res.setHeader('content-type', 'text/html')
 		res.end('<!doctype html><title>A page tab</title><p>just a page</p>')
 	})
@@ -162,6 +166,53 @@ test('a picture and a PDF are shown as they are, from a type chosen from the ext
 		return { type: response.headers.get('content-type'), policy: response.headers.get('content-security-policy') }
 	}, await frame.getAttribute('src'))
 	expect(pdfHeaders).toEqual({ type: 'application/pdf', policy: "default-src 'none'; frame-ancestors https://app.zing" })
+	await zing.close()
+})
+
+/** Whether the middle of an element, as drawn on screen, is the blue of the linked PDF's page. */
+async function middleColour(surface: Page, element: Locator): Promise<string> {
+	const shot = (await element.screenshot()).toString('base64')
+	const [red, green, blue] = await surface.evaluate(async (png) => {
+		const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(png), (c) => c.charCodeAt(0))], { type: 'image/png' }))
+		const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+		const context = canvas.getContext('2d')!
+		context.drawImage(bitmap, 0, 0)
+		return [...context.getImageData(Math.floor(bitmap.width / 2), Math.floor(bitmap.height / 2), 1, 1).data]
+	}, shot)
+	return blue! > red! + 60 && blue! > green! + 40 ? 'blue' : `rgb(${red}, ${green}, ${blue})`
+}
+
+test('a link in a PDF neither moves the view nor opens a window, clicked or Ctrl+clicked', async () => {
+	const doc = await PDFDocument.create()
+	// Taller than the frame, so the page fills the frame's width and its middle.
+	const page = doc.addPage([600, 2400])
+	page.drawRectangle({ x: 0, y: 0, width: 600, height: 2400, color: rgb(0.2, 0.4, 0.8) })
+	const { context } = doc
+	const link = context.register(context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [0, 0, 600, 2400], Border: [0, 0, 0], A: { Type: 'Action', S: 'URI', URI: PDFString.of(`${base}/followed`) } }))
+	page.node.set(PDFName.of('Annots'), context.obj([link]))
+	const pdf = join(work, 'linked.pdf')
+	writeFileSync(pdf, await doc.save())
+	followed = 0
+
+	const zing = await launchZing()
+	const viewer = await openViewer(zing)
+	await choose(zing, viewer, pdf)
+	const frame = viewer.panel.getByTestId('viewer-pdf')
+	await expect(frame).toBeVisible()
+	const src = await frame.getAttribute('src')
+	const before = pages(zing.browser).map((p) => p.url())
+	// The page is blue all over and is all link: once the PDF viewer has drawn it, a click in the middle lands on the link.
+	await expect.poll(() => middleColour(viewer.surface, frame), { timeout: 20_000 }).toEqual('blue')
+	await frame.click()
+	await viewer.surface.waitForTimeout(1500)
+	await frame.click({ modifiers: ['Control'] })
+	await viewer.surface.waitForTimeout(2000)
+
+	expect(followed).toBe(0)
+	expect(pages(zing.browser).map((p) => p.url())).toEqual(before)
+	expect(viewer.surface.url()).toMatch(/#surface$/)
+	expect(viewer.surface.frames().some((f) => f.url().includes('/followed'))).toBe(false)
+	expect(await frame.getAttribute('src')).toBe(src)
 	await zing.close()
 })
 

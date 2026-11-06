@@ -53,6 +53,17 @@ public sealed class RendererView
 		core.WebResourceRequested += renderer.OnViewerResource;
 		core.WebMessageReceived += renderer.OnMessage;
 		core.ProcessFailed += renderer.OnProcessFailed;
+		// The viewer shows untrusted PDFs in a frame here: a link in one must not load a web page into Zing's own UI, where it
+		// could pass for it, nor open a window outside Zing's rules.
+		core.NavigationStarting += (_, e) =>
+		{
+			if (!ZingOrigin.IsRendererDocument(e.Uri)) e.Cancel = true;
+		};
+		core.FrameNavigationStarting += (_, e) =>
+		{
+			if (!ZingOrigin.IsRendererDocument(e.Uri)) e.Cancel = true;
+		};
+		core.NewWindowRequested += (_, e) => e.Handled = true;
 		// Events sent before the root has loaded would be lost, so callers get the view once it has.
 		// Never resumed inside the engine's event, which may close the window (the e2e close-at hook does).
 		var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
