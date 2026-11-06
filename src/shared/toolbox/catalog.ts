@@ -25,6 +25,7 @@ const groupItems: Readonly<Record<ToolboxGroup, readonly PanelContent[]>> = {
 		section(Section.convert),
 		section(Section.download),
 		tool(UtilityTool.bgRemove),
+		tool(UtilityTool.pdf),
 	],
 	[ToolboxGroup.web]: [
 		section(Section.unblock),

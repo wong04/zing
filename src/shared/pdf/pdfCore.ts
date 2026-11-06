@@ -19,6 +19,8 @@ export const PDF_LIMITS = {
 	maxOverlayImageBytes: 8 * MiB,
 	/** Pages Convert turns into pictures in one run. */
 	maxConvertPages: 100,
+	/** All the files open in the panel together; they are held in memory until it is closed. */
+	maxSessionBytes: 200 * MiB,
 	/** Edits that Undo can take back. */
 	undoSteps: 100,
 	/** Image bytes the undo history may hold on to, over all its steps. */
@@ -49,7 +51,7 @@ export function asPdfFile(source: PdfSource): PdfFile {
 
 export type RgbColor = readonly [red: number, green: number, blue: number]
 
-/** Text placed on a page. `x` and `y` are the top-left of the first line, in points on the page as it is shown (turned pages included), y downward. */
+/** Text placed on a page. `x` and `y` are the top-left of the first line, in points on the page as the file shows it (its own turn included, but not the extra turn in a plan, which is applied after drawing), y downward. */
 export interface TextItem {
 	readonly kind: 'text'
 	readonly text: string

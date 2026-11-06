@@ -183,10 +183,12 @@ async function assemble(sources: readonly PdfFile[], docs: readonly PDFDocument[
 	const only = plan.pages[0]!.source
 	const single = plan.pages.every((p) => p.source === only)
 	const doc = single && keepsEveryPageOnce(plan, docs[only]!) ? reorderInPlace(docs[only]!, plan) : await copyPlanned(docs, plan)
+	// Drawn before the pages are turned, so what is placed turns with its page.
 	for (const overlay of plan.overlays) {
 		checkPages('The finished file', [overlay.page], doc.getPageCount())
 		await draw(doc, sources[only]!.name, overlay)
 	}
+	turnPages(doc, plan)
 	if (plan.formValues !== undefined && Object.keys(plan.formValues).length > 0) await fill(doc, sources[only]!.name, plan.formValues)
 	return doc.save()
 }
@@ -198,13 +200,17 @@ function keepsEveryPageOnce(plan: PdfPlan, doc: PDFDocument): boolean {
 
 function reorderInPlace(doc: PDFDocument, plan: PdfPlan): PDFDocument {
 	const pages = doc.getPages()
-	const ordered = plan.pages.map((entry) => ({ page: pages[entry.page - 1]!, rotate: entry.rotate }))
+	const ordered = plan.pages.map((entry) => pages[entry.page - 1]!)
 	for (let i = pages.length - 1; i >= 0; i--) doc.removePage(i)
-	for (const { page, rotate } of ordered) {
-		doc.addPage(page)
-		if (rotate !== 0) page.setRotation(degrees(normalAngle(page.getRotation().angle + rotate)))
-	}
+	for (const page of ordered) doc.addPage(page)
 	return doc
+}
+
+function turnPages(doc: PDFDocument, plan: PdfPlan): void {
+	doc.getPages().forEach((page, i) => {
+		const turn = plan.pages[i]!.rotate
+		if (turn !== 0) page.setRotation(degrees(normalAngle(page.getRotation().angle + turn)))
+	})
 }
 
 async function copyPlanned(docs: readonly PDFDocument[], plan: PdfPlan): Promise<PDFDocument> {
@@ -223,7 +229,6 @@ async function copyPlanned(docs: readonly PDFDocument[], plan: PdfPlan): Promise
 		if (used.has(page)) page = (await out.copyPages(docs[entry.source]!, [entry.page - 1]))[0]!
 		used.add(page)
 		out.addPage(page)
-		if (entry.rotate !== 0) page.setRotation(degrees(normalAngle(page.getRotation().angle + entry.rotate)))
 	}
 	return out
 }
