@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeRun, runParts } from './pdfRun'
+import { describeCancelledPages, describeRun, runParts, whyNotNow } from './pdfRun'
 
 const bytes = new Uint8Array([1])
 
@@ -52,6 +52,22 @@ describe('a run of saves can be cancelled', () => {
 		).catch((e: unknown) => e)) as Error & { saved?: string[] }
 		expect(error.message).toBe('disk full')
 		expect(error.saved).toEqual(['p1.pdf'])
+	})
+})
+
+describe('opening a file while a run is in progress', () => {
+	it('is refused with the reason, since it would end the session the run saves into', () => {
+		expect(whyNotNow(null)).toBeNull()
+		expect(whyNotNow('Saving…')).toBe('A save is running (Saving…). Wait for it to finish, or press Cancel, before opening or adding a file.')
+	})
+})
+
+describe('what Convert says when pages were turned into pictures and the person cancelled', () => {
+	it('says cancelled, and how many pages are already in Downloads', () => {
+		expect(describeCancelledPages(0)).toBe('Cancelled. Nothing was kept.')
+		expect(describeCancelledPages(undefined)).toBe('Cancelled. Nothing was kept.')
+		expect(describeCancelledPages(1)).toBe('Cancelled. The 1 page already made is in your Downloads folder.')
+		expect(describeCancelledPages(4)).toBe('Cancelled. The 4 pages already made are in your Downloads folder.')
 	})
 })
 

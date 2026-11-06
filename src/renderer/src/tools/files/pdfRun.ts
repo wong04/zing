@@ -34,3 +34,14 @@ export function describeRun(outcome: RunOutcome): string | null {
 	if (total === 1) return 'Stopped. The file had already been saved to your Downloads folder.'
 	return `Stopped. ${saved.length} of ${total} files were saved to your Downloads folder; the other ${total - saved.length} were not made.`
 }
+
+/** Why a file can't be opened or added right now, or null when it can: doing it would end the session the run is saving into. */
+export function whyNotNow(busy: string | null): string | null {
+	return busy === null ? null : `A save is running (${busy}). Wait for it to finish, or press Cancel, before opening or adding a file.`
+}
+
+/** The banner after Cancel on Convert's PDF to pictures. */
+export function describeCancelledPages(kept: number | undefined): string {
+	if (kept === undefined || kept === 0) return 'Cancelled. Nothing was kept.'
+	return `Cancelled. The ${kept} ${kept === 1 ? 'page already made is' : 'pages already made are'} in your Downloads folder.`
+}

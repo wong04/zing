@@ -15,7 +15,7 @@ import { newPdfWorkerClient } from './pdfEditClient'
 import { handOffPdf, takeHandedPdf } from './pdfHandoff'
 import { usePanelId } from '../panelId'
 import { readGranted, saveResult, saveSessionFor } from './pdfHost'
-import { runParts } from './pdfRun'
+import { describeCancelledPages, runParts } from './pdfRun'
 import { createPreviewSession } from './pdfRender'
 import { toPicture } from './pictureBytes'
 import { useEngineJob } from './useEngineJob'
@@ -375,6 +375,6 @@ function StageView({ stage, onDownload, onCancelDownload, onCancelJob, onDismiss
 		case 'failed':
 			return <InfoBanner kind="warning">{stage.message}</InfoBanner>
 		case 'cancelled':
-			return <InfoBanner kind="info">{stage.kept === undefined || stage.kept === 0 ? 'Cancelled. Nothing was kept.' : `Stopped. The ${stage.kept} ${stage.kept === 1 ? 'page' : 'pages'} already made ${stage.kept === 1 ? 'is' : 'are'} in your Downloads folder.`}</InfoBanner>
+			return <InfoBanner kind="info">{describeCancelledPages(stage.kept)}</InfoBanner>
 	}
 }

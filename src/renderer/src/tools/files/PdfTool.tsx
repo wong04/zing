@@ -11,7 +11,7 @@ import { PdfPageEditor } from './PdfPageEditor'
 import { onHandedPdf, takeHandedPdf } from './pdfHandoff'
 import { readGranted, saveResult, saveSessionFor } from './pdfHost'
 import { usePanelId } from '../panelId'
-import { describeRun, runParts, type RunOutcome } from './pdfRun'
+import { describeRun, runParts, whyNotNow, type RunOutcome } from './pdfRun'
 import {
 	addFile,
 	addItem,
@@ -216,7 +216,13 @@ export function PdfTool() {
 	}
 
 	const take = (files: readonly PickedFile[]): void => {
-		if (busy !== null || files.length === 0) return
+		if (files.length === 0) return
+		// Opening a file replaces the panel's session, which would end the one a save or split is writing into.
+		const reason = whyNotNow(busy)
+		if (reason !== null) {
+			setProblem(reason)
+			return
+		}
 		setBusy('Opening…')
 		setProblem(null)
 		void (async () => {
@@ -256,6 +262,16 @@ export function PdfTool() {
 
 	// What Turn and Delete act on: the selection when the focused page is part of it, otherwise only the focused page, so a stale
 	// selection elsewhere is never changed by accident. The target is shown above the pages.
+	// The editor reads pictures through the panel's session too, so it is not opened while a run is saving into it.
+	const openEditor = (key: number): void => {
+		const reason = whyNotNow(busy)
+		if (reason !== null) {
+			setProblem(reason)
+			return
+		}
+		setEditing(key)
+	}
+
 	const targets = (): readonly number[] => (focused === null ? [] : selected.includes(focused) ? selected : [focused])
 	const positionOf = (key: number): number => model.pages.findIndex((p) => p.key === key) + 1
 
@@ -355,7 +371,7 @@ export function PdfTool() {
 				return
 			case 'Enter':
 				event.preventDefault()
-				setEditing(entry.key)
+				openEditor(entry.key)
 				return
 			case 'Delete':
 				event.preventDefault()
@@ -477,7 +493,7 @@ export function PdfTool() {
 				<PillButton size="small" variant="outlined" disabled={targets().length === 0} onClick={doDelete}>
 					Delete
 				</PillButton>
-				<PillButton size="small" variant="outlined" disabled={focused === null} onClick={() => focused !== null && setEditing(focused)}>
+				<PillButton size="small" variant="outlined" disabled={focused === null || busy !== null} onClick={() => focused !== null && openEditor(focused)}>
 					Edit page…
 				</PillButton>
 			</div>
@@ -514,7 +530,7 @@ export function PdfTool() {
 								if (e.ctrlKey || e.metaKey) toggle(entry.key)
 								else setSelected([entry.key])
 							}}
-							onDoubleClick={() => setEditing(entry.key)}
+							onDoubleClick={() => openEditor(entry.key)}
 							onKeyDown={(e) => onCellKey(e, entry)}
 						>
 							<PageThumb preview={file.preview} index={entry.page - 1} turn={entry.rotate} onError={fail} />
