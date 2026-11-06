@@ -486,6 +486,10 @@
 	min-width: 0;
 }
 
+.file-row.draggable {
+	cursor: grab;
+}
+
 .file-row-text {
 	display: flex;
 	flex-direction: column;

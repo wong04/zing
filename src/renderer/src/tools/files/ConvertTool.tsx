@@ -7,7 +7,7 @@ import { formatBytes } from '@shared/format/formatBytes'
 import { PDF_LIMITS } from '@shared/pdf/pdfCore'
 import { panelId, tool, UtilityTool } from '@shared/toolbox/panelContent'
 import { zing } from '../../api'
-import { FileDropZone, FileRow, InfoBanner, PillButton, PillMenu, PillSlider } from '../../components'
+import { CopyFileButton, FileDropZone, FileRow, InfoBanner, PillButton, PillMenu, PillSlider } from '../../components'
 import { describeFailure } from '../dev/parts'
 import { ToolPage } from '../parts'
 import './files.css'
@@ -289,19 +289,21 @@ export function ConvertTool() {
 					else void job.cancel().catch(fail)
 				}}
 				onOpenPdf={openInPdfTools}
+				onCopyError={(error) => setProblem(describeFailure(error))}
 				onDismiss={() => setStage({ kind: 'idle' })}
 			/>
 		</ToolPage>
 	)
 }
 
-function StageView({ stage, onDownload, onCancelDownload, onCancelJob, onDismiss, onOpenPdf }: {
+function StageView({ stage, onDownload, onCancelDownload, onCancelJob, onDismiss, onOpenPdf, onCopyError }: {
 	stage: Stage
 	onDownload: (engine: EngineInfo, plan: ConvertPlan) => void
 	onCancelDownload: (engine: EngineInfo) => void
 	onCancelJob: () => void
 	onDismiss: () => void
 	onOpenPdf: (output: PickedFile) => void
+	onCopyError: (error: Error) => void
 }) {
 	switch (stage.kind) {
 		case 'idle':
@@ -360,7 +362,10 @@ function StageView({ stage, onDownload, onCancelDownload, onCancelJob, onDismiss
 					<div className="convert-offer" role="status">
 						<span>Saved to your Downloads folder:</span>
 						{stage.outputs.map((output) => (
-							<FileRow key={output.token} path={output.name} />
+							<div key={output.token} className="convert-output">
+								<FileRow path={output.name} dragFile={output} />
+								<CopyFileButton file={output} onError={onCopyError} />
+							</div>
 						))}
 						{stage.outputs.length === 1 && stage.outputs[0]!.name.toLowerCase().endsWith('.pdf') ? (
 							<div className="convert-actions">

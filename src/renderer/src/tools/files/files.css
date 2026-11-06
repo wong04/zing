@@ -87,6 +87,13 @@
 	gap: 8px;
 }
 
+.convert-output {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
 .convert-actions {
 	display: flex;
 	gap: 8px;
