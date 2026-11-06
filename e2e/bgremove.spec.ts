@@ -139,8 +139,9 @@ test('the viewer file server gives the model and the picture only to a Zing view
 	expect(await asked('https://view.zing/model/bgmodel/../ffmpeg')).toBe('TypeError')
 	expect(await asked('https://view.zing/model/bgmodel?x=1')).toBe('TypeError')
 	expect(await asked(`https://view.zing/${'0'.repeat(32)}`)).toBe(404)
-	expect(await asked(session.url, { method: 'POST', body: 'x' })).toBe(405)
-	expect(await asked(session.url, { method: 'PUT', body: 'x' })).toBe(405)
+	// A refused method gets no CORS answer, which the page sees as a failed fetch.
+	expect(await asked(session.url, { method: 'POST', body: 'x' })).toBe('TypeError')
+	expect(await asked(session.url, { method: 'PUT', body: 'x' })).toBe('TypeError')
 
 	// The result: PUT to the session, checked and numbered by the host, off the interface thread.
 	const png = Buffer.from(encodePng(new Uint8ClampedArray(4 * 4 * 4).fill(255), 4, 4))
@@ -186,7 +187,9 @@ test('a page tab gets nothing from the model, the picture or the save: not by fe
 	for (const url of [model, session.url, save]) {
 		for (const init of [{ mode: 'cors' }, { mode: 'no-cors' }, { mode: 'no-cors', referrerPolicy: 'no-referrer' }, { mode: 'cors', method: 'PUT', body: 'x' }] as const) {
 			const outcome = await tab.evaluate(([u, i]) => fetch(u as string, i as RequestInit).then((r) => `answered ${r.status} ${r.type} ${r.headers.get('content-type')}`, (e: Error) => e.name), [url, init] as const)
-			expect(outcome, `${init.mode} ${url}`).toBe('TypeError')
+			// A no-cors fetch of a 404 is an opaque response (status 0, nothing readable); a cors fetch fails outright.
+			expect(['TypeError', 'answered 0 opaque null'], `${init.mode} ${url}`).toContain(outcome)
+			if (init.mode === 'cors') expect(outcome).toBe('TypeError')
 		}
 	}
 	const image = await tab.evaluate((u) => new Promise<string>((resolve) => {
