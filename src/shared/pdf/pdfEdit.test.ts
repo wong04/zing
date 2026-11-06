@@ -298,3 +298,33 @@ describe('imagesToPdf', () => {
 		await expect(imagesToPdf([{ name: 'bad.png', format: 'png', bytes: new Uint8Array([1, 2]) }])).rejects.toThrow(/bad\.png/)
 	})
 })
+
+describe('deleted pages do not leak through links', () => {
+	/** Three pages; page 1 links to page 3 by /Dest, page 2 by a GoTo action; page 3 holds SECRETPAGE3. */
+	async function linked(): Promise<Uint8Array> {
+		const doc = await PDFDocument.create()
+		const [p1, p2, p3] = [doc.addPage([100, 100]), doc.addPage([100, 100]), doc.addPage([100, 100])]
+		p3!.drawText('SECRETPAGE3', { x: 5, y: 50, size: 10 })
+		const { context } = doc
+		const link = (extra: object) => context.register(context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [0, 0, 50, 50], ...extra }))
+		p1!.node.set(PDFName.of('Annots'), context.obj([link({ Dest: [p3!.ref, 'Fit'] })]))
+		p2!.node.set(PDFName.of('Annots'), context.obj([link({ A: { S: 'GoTo', D: [p3!.ref, 'Fit'] } })]))
+		return doc.save({ useObjectStreams: false })
+	}
+	const pageCount = (doc: PDFDocument): number => doc.context.enumerateIndirectObjects().filter(([, o]) => (o as { get?: (n: PDFName) => unknown }).get?.(PDFName.of('Type')) === PDFName.of('Page')).length
+	const leaks = async (bytes: Uint8Array, kept: number): Promise<void> => {
+		expect(pageCount(await PDFDocument.load(bytes))).toBe(kept)
+		expect(Buffer.from(bytes).toString('latin1')).not.toContain('SECRETPAGE3')
+	}
+
+	it('delete', async () => leaks(await deletePages(await linked(), [3]), 2))
+	it('split', async () => leaks((await splitPdf(await linked(), [{ from: 1, to: 2 }]))[0]!, 2))
+	it('merge keeps every page of each file, so nothing is dropped', async () => {
+		const merged = await mergePdfs([await linked(), await fixture(1)])
+		expect(pageCount(await PDFDocument.load(merged))).toBe(4)
+	})
+	it('drops links to pages in a rebuilt file, since they would point at copies', async () => {
+		const out = await PDFDocument.load(await deletePages(await linked(), [2]))
+		expect(out.getPage(0).node.Annots()?.size() ?? 0).toBe(0)
+	})
+})

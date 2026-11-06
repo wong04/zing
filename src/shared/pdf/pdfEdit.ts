@@ -4,7 +4,7 @@
 // Every function loads its input afresh and returns new bytes; none changes what it was given. A file that is encrypted,
 // damaged, empty or past PDF_LIMITS.maxPages is refused with a PdfEditError naming it. `ignoreEncryption` is never used:
 // pdf-lib would then write the file without its encryption, which is not what the person asked for.
-import { EncryptedPDFError, PDFDocument, PDFName, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { EncryptedPDFError, PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import {
 	PDF_LIMITS,
 	PdfEditError,
@@ -216,6 +216,37 @@ function turnPages(doc: PDFDocument, plan: PdfPlan): void {
 	})
 }
 
+/** The destinations an action (and the actions it chains to) or a /Dest names, as page references. */
+function targetsOf(dict: PDFDict): PDFRef[] {
+	const found: PDFRef[] = []
+	const dest = dict.lookup(PDFName.of('Dest'))
+	if (dest instanceof PDFArray && dest.get(0) instanceof PDFRef) found.push(dest.get(0) as PDFRef)
+	let action = dict.lookupMaybe(PDFName.of('A'), PDFDict)
+	for (let hops = 0; action !== undefined && hops < 20; hops++) {
+		const d = action.lookup(PDFName.of('D'))
+		if (d instanceof PDFArray && d.get(0) instanceof PDFRef) found.push(d.get(0) as PDFRef)
+		action = action.lookupMaybe(PDFName.of('Next'), PDFDict)
+	}
+	return found
+}
+
+/**
+ * copyPages follows a link to the page it points at and copies that page too: a deleted page would stay in the file as an
+ * orphan, and in a merge a kept page would be copied twice. So before copying, every annotation on a kept page that points
+ * at a page (a link's /Dest, or a GoTo action) is dropped. Links to the web and form widgets are kept.
+ */
+function dropPageLinks(doc: PDFDocument, keep: ReadonlySet<number>): void {
+	for (const [i, page] of doc.getPages().entries()) {
+		if (!keep.has(i + 1)) continue
+		const annots = page.node.Annots()
+		if (annots === undefined) continue
+		for (let at = annots.size() - 1; at >= 0; at--) {
+			const annot = annots.lookupMaybe(at, PDFDict)
+			if (annot !== undefined && targetsOf(annot).length > 0) annots.remove(at)
+		}
+	}
+}
+
 async function copyPlanned(docs: readonly PDFDocument[], plan: PdfPlan): Promise<PDFDocument> {
 	const out = await PDFDocument.create()
 	// One copyPages call per file, so what pages share (fonts, images) is copied once; a page used twice is copied again.
@@ -223,6 +254,7 @@ async function copyPlanned(docs: readonly PDFDocument[], plan: PdfPlan): Promise
 	for (const [source, doc] of docs.entries()) {
 		if (doc === undefined) continue
 		const wanted = [...new Set(plan.pages.filter((p) => p.source === source).map((p) => p.page))]
+		dropPageLinks(doc, new Set(wanted))
 		const copied = await out.copyPages(doc, wanted.map((page) => page - 1))
 		wanted.forEach((page, i) => copies.set(`${source}:${page}`, copied[i]!))
 	}
