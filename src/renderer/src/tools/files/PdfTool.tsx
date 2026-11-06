@@ -150,6 +150,8 @@ export function PdfTool() {
 		setHistory(next)
 	}
 	const fail = (error: unknown): void => setProblem(describeFailure(error))
+	// The same words twice in a row are not read out again, so a trailing space tells the screen reader it is new.
+	const say = (text: string): void => setAnnouncement((now) => (now === text ? `${text} ` : text))
 
 	/** Runs an edit; a refusal is shown to the person, not thrown. */
 	const edit = (change: (m: Model) => Model, said?: string): void => {
@@ -158,7 +160,7 @@ export function PdfTool() {
 			apply(commit(historyRef.current, change(historyRef.current.present)))
 			setProblem(null)
 			setSaved([])
-			if (said !== undefined) setAnnouncement(said)
+			if (said !== undefined) say(said)
 		} catch (error) {
 			fail(error)
 		}
@@ -188,7 +190,7 @@ export function PdfTool() {
 			setOpened(openedRef.current)
 			apply(next)
 			setSaved([])
-			setAnnouncement(`${file.name} added: ${info.pageCount} ${info.pageCount === 1 ? 'page' : 'pages'}.`)
+			say(`${file.name} added: ${info.pageCount} ${info.pageCount === 1 ? 'page' : 'pages'}.`)
 		} catch (error) {
 			void preview.destroy()
 			throw error
@@ -246,7 +248,7 @@ export function PdfTool() {
 	const doMove = (key: number, by: -1 | 1): void => {
 		const to = positionOf(key) + by
 		if (to < 1 || to > model.pages.length) {
-			setAnnouncement(by < 0 ? 'Already the first page.' : 'Already the last page.')
+			say(by < 0 ? 'Already the first page.' : 'Already the last page.')
 			return
 		}
 		refocus.current = true
@@ -270,12 +272,12 @@ export function PdfTool() {
 	const doUndo = (): void => {
 		lastAmend.current = null
 		apply(undo(historyRef.current))
-		setAnnouncement('Undone.')
+		say('Undone.')
 	}
 	const doRedo = (): void => {
 		lastAmend.current = null
 		apply(redo(historyRef.current))
-		setAnnouncement('Redone.')
+		say('Redone.')
 	}
 
 	const toggle = (key: number): void => setSelected((now) => (now.includes(key) ? now.filter((k) => k !== key) : [...now, key]))
@@ -319,7 +321,7 @@ export function PdfTool() {
 			case ' ':
 				event.preventDefault()
 				toggle(entry.key)
-				setAnnouncement(selected.includes(entry.key) ? `Page ${at + 1} not selected.` : `Page ${at + 1} selected.`)
+				say(selected.includes(entry.key) ? `Page ${at + 1} not selected.` : `Page ${at + 1} selected.`)
 				return
 			case 'Enter':
 				event.preventDefault()
@@ -352,7 +354,7 @@ export function PdfTool() {
 				const bytes = await buildInWorker(sourcesFor(), toPlan(model))
 				const placed = await saveBytes(name, bytes)
 				setSaved([placed.name])
-				setAnnouncement(`Saved ${placed.name} to your Downloads folder.`)
+				say(`Saved ${placed.name} to your Downloads folder.`)
 			} catch (error) {
 				fail(error)
 			} finally {
