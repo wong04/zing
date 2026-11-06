@@ -55,13 +55,20 @@ public sealed class RendererView
 		core.ProcessFailed += renderer.OnProcessFailed;
 		// The viewer shows untrusted PDFs in a frame here: a link in one must not load a web page into Zing's own UI, where it
 		// could pass for it, nor open a window outside Zing's rules.
+		var home = $"https://{AppHost}/index.html#{hash}";
+		var opened = false;
 		core.NavigationStarting += (_, e) =>
 		{
-			if (!ZingOrigin.IsRendererDocument(e.Uri)) e.Cancel = true;
+			if (ZingOrigin.MayLoadAsView(home, e.Uri, first: !opened, reload: e.NavigationKind == CoreWebView2NavigationKind.Reload))
+			{
+				opened = true;
+				return;
+			}
+			e.Cancel = true;
 		};
 		core.FrameNavigationStarting += (_, e) =>
 		{
-			if (!ZingOrigin.IsRendererDocument(e.Uri)) e.Cancel = true;
+			if (!ZingOrigin.IsViewerDocument(e.Uri)) e.Cancel = true;
 		};
 		// FrameNavigationStarting sees only the top document's own frames; the PDF viewer's are nested deeper, so every frame is
 		// guarded as it is made, and so are the frames it makes.
@@ -88,7 +95,7 @@ public sealed class RendererView
 		core.NavigationCompleted += Completed;
 		// A closed view never completes its navigation; the scope (which closes the view) ends the wait.
 		using var gone = scope.Token.Register(() => loaded.TrySetException(new ViewGoneException(hash)));
-		core.Navigate($"https://{AppHost}/index.html#{hash}");
+		core.Navigate(home);
 		await loaded.Task;
 		scope.Checkpoint(hash);
 		return renderer;
@@ -98,7 +105,7 @@ public sealed class RendererView
 	{
 		frame.NavigationStarting += (_, e) =>
 		{
-			if (!ZingOrigin.IsRendererDocument(e.Uri)) e.Cancel = true;
+			if (!ZingOrigin.IsViewerDocument(e.Uri)) e.Cancel = true;
 		};
 		frame.FrameCreated += (_, e) => GuardFrame(e.Frame);
 	}

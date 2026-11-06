@@ -182,18 +182,26 @@ async function middleColour(surface: Page, element: Locator): Promise<string> {
 	return blue! > red! + 60 && blue! > green! + 40 ? 'blue' : `rgb(${red}, ${green}, ${blue})`
 }
 
-test('a link in a PDF neither moves the view nor opens a window, clicked or Ctrl+clicked', async () => {
+/** A PDF of one tall blue page that is all one link to `target`, taller than the frame so it fills the frame's middle. */
+async function linkedPdf(target: string): Promise<string> {
 	const doc = await PDFDocument.create()
-	// Taller than the frame, so the page fills the frame's width and its middle.
 	const page = doc.addPage([600, 2400])
 	page.drawRectangle({ x: 0, y: 0, width: 600, height: 2400, color: rgb(0.2, 0.4, 0.8) })
 	const { context } = doc
-	const link = context.register(context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [0, 0, 600, 2400], Border: [0, 0, 0], A: { Type: 'Action', S: 'URI', URI: PDFString.of(`${base}/followed`) } }))
+	const link = context.register(context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [0, 0, 600, 2400], Border: [0, 0, 0], A: { Type: 'Action', S: 'URI', URI: PDFString.of(target) } }))
 	page.node.set(PDFName.of('Annots'), context.obj([link]))
 	const pdf = join(work, 'linked.pdf')
 	writeFileSync(pdf, await doc.save())
-	followed = 0
+	return pdf
+}
 
+/**
+ * Shows a PDF that is all link to `target`, clicks it and Ctrl+clicks it, and checks that the surface is still the very
+ * document it was (a marker set on it survives, so it was neither replaced nor reloaded), that no window opened and that the
+ * frame still shows the PDF.
+ */
+async function clickLink(target: string): Promise<void> {
+	const pdf = await linkedPdf(target)
 	const zing = await launchZing()
 	const viewer = await openViewer(zing)
 	await choose(zing, viewer, pdf)
@@ -201,19 +209,39 @@ test('a link in a PDF neither moves the view nor opens a window, clicked or Ctrl
 	await expect(frame).toBeVisible()
 	const src = await frame.getAttribute('src')
 	const before = pages(zing.browser).map((p) => p.url())
-	// The page is blue all over and is all link: once the PDF viewer has drawn it, a click in the middle lands on the link.
+	const surfaceUrl = viewer.surface.url()
+	await viewer.surface.evaluate(() => {
+		;(globalThis as unknown as { stillHere: boolean }).stillHere = true
+	})
+	// Once the PDF viewer has drawn the page blue, a click in the middle lands on the link.
 	await expect.poll(() => middleColour(viewer.surface, frame), { timeout: 20_000 }).toEqual('blue')
 	await frame.click()
 	await viewer.surface.waitForTimeout(1500)
 	await frame.click({ modifiers: ['Control'] })
 	await viewer.surface.waitForTimeout(2000)
 
-	expect(followed).toBe(0)
 	expect(pages(zing.browser).map((p) => p.url())).toEqual(before)
-	expect(viewer.surface.url()).toMatch(/#surface$/)
-	expect(viewer.surface.frames().some((f) => f.url().includes('/followed'))).toBe(false)
+	expect(viewer.surface.url()).toBe(surfaceUrl)
+	expect(await viewer.surface.evaluate(() => (globalThis as unknown as { stillHere?: boolean }).stillHere)).toBe(true)
+	await expect(viewer.panel).toBeVisible()
 	expect(await frame.getAttribute('src')).toBe(src)
 	await zing.close()
+}
+
+test('a link in a PDF neither moves the view nor opens a window, clicked or Ctrl+clicked', async () => {
+	followed = 0
+	await clickLink(`${base}/followed`)
+	expect(followed).toBe(0)
+})
+
+test('a link in a PDF to a view.zing address does not replace the view', async () => {
+	await clickLink(`https://view.zing/${'a'.repeat(32)}`)
+})
+
+test("a link in a PDF to Zing's own surface address does not reload the view", async () => {
+	await clickLink('https://app.zing/index.html#surface')
+	// The same page under another address is a new document, not a jump within this one.
+	await clickLink('https://app.zing/index.html?again#surface')
 })
 
 test('a PDF over the whole-file limit is served without a Range header and in chunks with one', async () => {
