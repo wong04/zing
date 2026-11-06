@@ -29,6 +29,8 @@ public static class TestHooks
 		if (DebuggingPort is { } port) args.Add($"--remote-debugging-port={port}");
 		// A granted camera or microphone gets the engine's fake devices, never the PC's own.
 		args.Add("--use-fake-device-for-media-stream");
+		// With the updater on, a new profile blocks the engine's main thread for 5 s on most launches, and every e2e launch has a new profile.
+		args.Add("--disable-component-update");
 		if (Environment.GetEnvironmentVariable("ZING_E2E_OFFLINE") == "1") args.Add("--proxy-server=127.0.0.1:9 --proxy-bypass-list=<-loopback>");
 		return string.Join(' ', args);
 	}
