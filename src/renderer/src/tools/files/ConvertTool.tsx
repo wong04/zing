@@ -15,6 +15,7 @@ import { newPdfWorkerClient } from './pdfEditClient'
 import { handOffPdf, takeHandedPdf } from './pdfHandoff'
 import { usePanelId } from '../panelId'
 import { readGranted, saveResult, saveSessionFor } from './pdfHost'
+import { runParts } from './pdfRun'
 import { createPreviewSession } from './pdfRender'
 import { toPicture } from './pictureBytes'
 import { useEngineJob } from './useEngineJob'
@@ -130,12 +131,21 @@ export function ConvertTool() {
 				throw new ConvertRefusedError(`${name} has ${preview.pageCount} pages; Convert turns up to ${PDF_LIMITS.maxConvertPages} pages into pictures at a time. Split it in PDF Tools first.`)
 			}
 			const made: PickedFile[] = []
-			for (let page = 0; page < preview.pageCount && !stopPages.current; page++) {
-				setStage({ kind: 'working', cancellable: true, label: `Page ${page + 1} of ${preview.pageCount}` })
-				const bytes = await preview.toImage(page, plan.target, plan.quality / 100)
-				made.push(await saveResult(sessionId, pageFileName(plan.base, page + 1, plan.target), bytes, signal))
-			}
-			setStage(stopPages.current ? { kind: 'cancelled', kept: made.length } : { kind: 'done', outputs: made })
+			// Cancel aborts the save in flight too; runParts tells that stop from a failure, so the pages already made are counted.
+			const outcome = await runParts(
+				preview.pageCount,
+				(page) => {
+					setStage({ kind: 'working', cancellable: true, label: `Page ${page + 1} of ${preview.pageCount}` })
+					return preview.toImage(page, plan.target, plan.quality / 100)
+				},
+				async (page, bytes) => {
+					const file = await saveResult(sessionId, pageFileName(plan.base, page + 1, plan.target), bytes, signal)
+					made.push(file)
+					return file.name
+				},
+				() => stopPages.current,
+			)
+			setStage(outcome.stopped ? { kind: 'cancelled', kept: made.length } : { kind: 'done', outputs: made })
 		} finally {
 			runningPages.current = false
 			await preview.destroy()
