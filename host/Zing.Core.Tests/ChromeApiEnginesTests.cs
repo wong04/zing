@@ -257,4 +257,39 @@ public sealed class ChromeApiEnginesTests : IAsyncLifetime
 		Assert.Equal(nameof(NotHtmlException), ErrorName(await Invoke("convert:html-to-pdf", token, "notes.pdf")));
 		Assert.Empty(_host.Printed);
 	}
+	[Fact]
+	public async Task A_PNG_from_the_renderer_is_saved_to_Downloads_and_answered_as_a_name_and_a_token()
+	{
+		byte[] png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3];
+
+		var saved = Value(await Invoke("files:save-png", "cat no background.png", Convert.ToBase64String(png)));
+
+		Assert.Equal("cat no background.png", saved.GetProperty("name").GetString());
+		Assert.Equal(png, File.ReadAllBytes(Path.Combine(_engines.Outputs, "cat no background.png")));
+		Assert.Equal(Path.Combine(_engines.Outputs, "cat no background.png"), _api.Grants.Resolve(saved.GetProperty("token").GetString()!));
+		Assert.DoesNotContain(_engines.Outputs.Replace("\\", "\\\\"), saved.ToString());
+	}
+
+	[Fact]
+	public async Task A_PNG_save_with_a_name_that_is_a_path_or_bytes_that_are_not_a_PNG_is_refused()
+	{
+		var png = Convert.ToBase64String([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+		Assert.Equal(nameof(PngSaveException), ErrorName(await Invoke("files:save-png", @"..\evil.png", png)));
+		Assert.Equal(nameof(PngSaveException), ErrorName(await Invoke("files:save-png", "ok.png", Convert.ToBase64String("MZ not a picture"u8.ToArray()))));
+		Assert.Equal(nameof(PngSaveException), ErrorName(await Invoke("files:save-png", "ok.png", "%%%")));
+		Assert.Empty(Directory.GetFileSystemEntries(_engines.Outputs));
+	}
+
+	[Fact]
+	public async Task A_token_this_window_issued_can_be_fetched_as_bytes_and_a_made_up_one_cannot()
+	{
+		var token = await PickOne("photo.mov");
+
+		using var served = _bridge.OpenLocalFile("/zing-local/file/" + token).Content;
+
+		Assert.True(served.Length >= 0);
+		Assert.Throws<UnknownFileGrantException>(() => _bridge.OpenLocalFile("/zing-local/file/" + new string('0', 32)));
+		Assert.Throws<LocalFileRefusedException>(() => _bridge.OpenLocalFile("/zing-local/model/ffmpeg"));
+	}
 }

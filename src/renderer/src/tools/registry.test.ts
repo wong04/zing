@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { itemsIn, toolboxGroups } from '@shared/toolbox/catalog'
-import { panelContentFromId, panelId, tool, UtilityTool } from '@shared/toolbox/panelContent'
+import { panelContentFromId, panelId, section, Section, tool, UtilityTool } from '@shared/toolbox/panelContent'
 import { buildRegistry, DuplicateToolError, registeredToolIds, toolComponent } from './registry'
 
 /** Catalog items whose tool arrives in a later phase; their panel shows the empty state. */
@@ -9,14 +9,13 @@ const laterPhase: readonly string[] = [
 	'section:Files',
 	'section:Network & VPN',
 	'section:Open a Link',
-	'tool:Background Remover',
 ]
 
 const body = () => Promise.resolve({ default: () => null })
 
 describe('the tool registry', () => {
 	it('has no body for a tool nobody has registered yet', () => {
-		expect(toolComponent(tool(UtilityTool.bgRemove))).toBeNull()
+		expect(toolComponent(section(Section.diagnose))).toBeNull()
 	})
 	it('wraps each registered tool by its panel id', () => {
 		const registry = buildRegistry([{ 'tool:Hashes': body }, { 'tool:UUID': body }])

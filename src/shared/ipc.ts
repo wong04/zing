@@ -305,6 +305,12 @@ export interface InvokeContract {
 	 */
 	'convert:html-to-pdf': { args: [token: string, outputName: string]; result: PickedFile }
 	/**
+	 * The background remover's result: `pngBase64` is saved to the Downloads folder as `name` (a plain name ending in .png, at
+	 * most 150 characters; numbered if taken, never over a file). Rejects for anything that is not a PNG, one over 64 MB, or
+	 * a bad name. Answers with the saved name and a token.
+	 */
+	'files:save-png': { args: [name: string, pngBase64: string]; result: PickedFile }
+	/**
 	 * Files dropped on a Zing view. The host reads their paths from the drop itself (`postMessageWithAdditionalObjects`),
 	 * so the bridge carries the `File`s beside the message and not in its JSON args; a web page cannot send one.
 	 */
@@ -458,6 +464,8 @@ export interface ZingApi {
 	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>
 	/** Convert's HTML to PDF (see `convert:html-to-pdf`). */
 	printHtmlToPdf(token: string, outputName: string): Promise<PickedFile>
+	/** The background remover's result (see `files:save-png`). */
+	savePng(name: string, pngBase64: string): Promise<PickedFile>
 	/** Hand over the `File`s of a drop (`event.dataTransfer.files`); resolves with a token for each. */
 	openDropped(files: readonly File[]): Promise<PickedFile[]>
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe

@@ -133,6 +133,10 @@
 			"args": 1
 		},
 		{
+			"channel": "files:save-png",
+			"args": 2
+		},
+		{
 			"channel": "find:close",
 			"args": 0
 		},

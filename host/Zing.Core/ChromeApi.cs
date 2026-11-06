@@ -137,6 +137,7 @@ public sealed class ChromeApi : IDisposable
 		Permissions = new PermissionBroker(PageUi);
 		Drops = new DropInbox(Grants);
 		bridge.UseDropInbox(Drops);
+		bridge.UseLocalFiles(new LocalFiles(Grants, app.Engines));
 		Stacks = new StackDropdown(key => StackMembers.Of(Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")), Ordering.Stacks(), key), host.Scheduler, state =>
 		{
 			host.Push("stack:dropdown", state);
@@ -252,6 +253,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("files:pick", args => PickFilesAsync(Arg(args, 0)));
 		bridge.Register("convert:html-to-pdf", args => HtmlToPdfAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("files:open-dropped", _ => Drops.Take());
+		bridge.Register("files:save-png", args => SavePng(Text(args, 0), Text(args, 1)));
 		bridge.Register("page:save", _ => SavePageAsync());
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
@@ -498,6 +500,10 @@ public sealed class ChromeApi : IDisposable
 		var paths = await _host.PickFilesAsync(extensions);
 		return paths.Select(Grants.Issue).ToList();
 	}
+
+	/// <summary>The background remover's result: the PNG goes to Downloads under a plain name, numbered; answers with its name and a token.</summary>
+	private object SavePng(string name, string base64) =>
+		Grants.Issue(PngSave.Write(_host.DownloadsDirectory, name, PngSave.Decode(base64)));
 
 	/// <summary>Convert's HTML to PDF: prints the file a token stands for and answers with the PDF's name and a token.</summary>
 	private async Task<object?> HtmlToPdfAsync(string token, string outputName)

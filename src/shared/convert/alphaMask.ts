@@ -10,7 +10,7 @@ export class MaskSizeError extends Error {
  * @throws MaskSizeError the pixels or the mask do not fit `width` by `height`.
  * @throws RangeError a mask value is not a number, which means the model's output is broken.
  */
-export function applyMask(rgba: Uint8ClampedArray, mask: Float32Array, width: number, height: number): Uint8ClampedArray {
+export function applyMask(rgba: Uint8ClampedArray, mask: Float32Array, width: number, height: number): Uint8ClampedArray<ArrayBuffer> {
 	const pixels = width * height
 	if (rgba.length !== pixels * 4) throw new MaskSizeError(`${rgba.length} colour values do not fit ${width} by ${height} pixels`)
 	if (mask.length !== pixels) throw new MaskSizeError(`A mask of ${mask.length} values does not fit ${width} by ${height} pixels`)

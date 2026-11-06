@@ -1,5 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
+using Zing.Core.Engines;
 
 namespace Zing.Host;
 
@@ -48,6 +49,8 @@ public sealed class RendererView
 		core.Settings.AreDefaultContextMenusEnabled = false;
 		core.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
 		core.WebMessageReceived += renderer.OnMessage;
+		core.AddWebResourceRequestedFilter($"https://{AppHost}{LocalFiles.Prefix}*", CoreWebView2WebResourceContext.All);
+		core.WebResourceRequested += renderer.OnLocalFileRequested;
 		core.ProcessFailed += renderer.OnProcessFailed;
 		// Events sent before the root has loaded would be lost, so callers get the view once it has.
 		// Never resumed inside the engine's event, which may close the window (the e2e close-at hook does).
@@ -116,6 +119,41 @@ public sealed class RendererView
 	/// </summary>
 	private static IReadOnlyList<string> DroppedPaths(CoreWebView2WebMessageReceivedEventArgs e) =>
 		[.. e.AdditionalObjects?.OfType<CoreWebView2File>().Select(file => file.Path) ?? []];
+
+	/// <summary>
+	/// The background model and a granted file, as bytes, for a script in this Zing view (a worker included): GET
+	/// /zing-local/model/&lt;engine id&gt; or /zing-local/file/&lt;token&gt;, and nothing else. Registered on Zing's own views only,
+	/// so a page tab, which has no <c>app.zing</c> and no handler, gets nothing. The bytes are streamed from the file,
+	/// never read into memory here, and not through the JSON bridge.
+	/// </summary>
+	private static string ServedHeaders(long length) =>
+		$"Content-Type: application/octet-stream
+Content-Length: {length}
+Cache-Control: no-store
+X-Content-Type-Options: nosniff";
+
+	private void OnLocalFileRequested(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
+	{
+		var environment = sender.Environment;
+		if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri) || uri.Host != AppHost || e.Request.Method != "GET")
+		{
+			e.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", "Cache-Control: no-store");
+			return;
+		}
+		try
+		{
+			var file = _bridge.OpenLocalFile(uri.AbsolutePath);
+			e.Response = environment.CreateWebResourceResponse(file.Content.AsRandomAccessStream(), 200, "OK", ServedHeaders(file.Length));
+		}
+		catch (Exception error) when (error is LocalFileRefusedException or UnknownFileGrantException)
+		{
+			e.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", "Cache-Control: no-store");
+		}
+		catch (Exception error) when (error is EngineNotInstalledException or EngineBusyException or FileNotFoundException or DirectoryNotFoundException)
+		{
+			e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", "Cache-Control: no-store");
+		}
+	}
 
 	/// <summary>Every invoke gets a reply, even one the bridge can't read, so the renderer's promise never hangs.</summary>
 	private async Task AnswerAsync(CoreWebView2 sender, string source, string json, IReadOnlyList<string> dropped)
