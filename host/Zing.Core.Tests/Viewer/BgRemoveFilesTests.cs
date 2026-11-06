@@ -27,9 +27,15 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 		Directory.CreateDirectory(_dir);
 		_viewer = new ViewerFiles(Path.Combine(_dir, "viewer"), (what, error) => _errors.Add((what, error)))
 		{
-			ModelPath = () => _engines.Store.InstalledPath(EngineIds.BackgroundModel),
+			ModelOpener = Opener,
 			SaveDirectory = Path.Combine(_dir, "downloads"),
 		};
+	}
+
+	private (string Path, IDisposable Lease) Opener()
+	{
+		var lease = _engines.Store.Use(EngineIds.BackgroundModel);
+		return (_engines.Store.InstalledPath(EngineIds.BackgroundModel), lease);
 	}
 
 	public ValueTask DisposeAsync()
@@ -196,9 +202,9 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 	public async Task A_model_that_is_not_installed_is_404_and_a_busy_one_is_503()
 	{
 		Open();
-		_viewer.ModelPath = () => throw new EngineNotInstalledException(EngineIds.BackgroundModel);
+		_viewer.ModelOpener = () => throw new EngineNotInstalledException(EngineIds.BackgroundModel);
 		Assert.Equal(404, (await _viewer.ServeAsync(Get(Model))).Status);
-		_viewer.ModelPath = () => throw new EngineBusyException(EngineIds.BackgroundModel);
+		_viewer.ModelOpener = () => throw new EngineBusyException(EngineIds.BackgroundModel);
 		Assert.Equal(503, (await _viewer.ServeAsync(Get(Model))).Status);
 		Assert.Empty(_errors);
 	}
@@ -393,5 +399,215 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 		_viewer.OpenSession(Write("d.pdf", PdfBytes), "section:Pdf", [SessionKinds.Pdf]);
 
 		Assert.Equal(404, (await _viewer.ServeAsync(Get(Model))).Status);
+	}
+
+	private static ViewerRequest PutWithReferer(ViewerSession session, byte[] body, string method = "PUT") =>
+		new(method, $"https://{ViewerFiles.Host}/save/{session.Id}/a.png", null, null, "https://app.zing/index.html#surface", new MemoryStream(body), body.Length);
+
+	[Fact]
+	public async Task A_PUT_or_a_preflight_needs_Zing_s_origin_header_a_referer_is_not_enough()
+	{
+		var session = Open();
+
+		Assert.Equal(404, (await _viewer.ServeAsync(PutWithReferer(session, Png()))).Status);
+		Assert.Equal(404, (await _viewer.ServeAsync(PutWithReferer(session, Png(), "OPTIONS"))).Status);
+		Assert.Equal(200, (await _viewer.ServeAsync(Get(session.Url, origin: null, referer: "https://app.zing/index.html#surface"))).Status);
+		Assert.False(Directory.Exists(Path.Combine(_dir, "downloads")) && Directory.GetFileSystemEntries(Path.Combine(_dir, "downloads")).Length > 0);
+	}
+
+	[Fact]
+	public async Task A_PUT_with_no_body_is_a_400_and_nothing_goes_to_the_error_hook()
+	{
+		var session = Open();
+		var bodiless = new ViewerRequest("PUT", $"https://{ViewerFiles.Host}/save/{session.Id}/a.png", null, App, null, null, null);
+
+		var reply = await _viewer.ServeAsync(bodiless);
+
+		Assert.Equal(400, reply.Status);
+		Assert.Contains("no body", Encoding.UTF8.GetString(reply.Body));
+		Assert.Empty(_errors);
+	}
+
+	[Fact]
+	public async Task A_save_that_cannot_be_written_says_it_cannot_be_saved_not_that_it_cannot_be_read()
+	{
+		var session = Open();
+		_viewer.SaveDirectory = Write("not-a-folder", [1]);
+
+		var reply = await _viewer.ServeAsync(Put(session, "a.png", Png()));
+
+		Assert.Equal(500, reply.Status);
+		var text = Encoding.UTF8.GetString(reply.Body);
+		Assert.Contains("can't be saved", text);
+		Assert.DoesNotContain("read", text);
+		Assert.Single(_errors);
+		_errors.Clear();
+	}
+
+	[Fact]
+	public async Task A_body_that_stops_short_of_its_content_length_saves_nothing_and_gives_no_token()
+	{
+		var session = Open();
+		_viewer.IssueToken = _ => throw new Xunit.Sdk.XunitException("no token for a file that was not saved");
+
+		var reply = await _viewer.ServeAsync(Put(session, "a.png", Png(30), declared: Png(30).Length + 100));
+
+		Assert.Equal(400, reply.Status);
+		Assert.Contains("stopped early", Encoding.UTF8.GetString(reply.Body));
+		Assert.Empty(Directory.GetFileSystemEntries(Path.Combine(_dir, "downloads")));
+	}
+
+	/// <summary>A body that gives its bytes when released, so a save can be left in flight.</summary>
+	private sealed class GatedBody(byte[] bytes) : Stream
+	{
+		private readonly TaskCompletionSource _go = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		private readonly TaskCompletionSource _asked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		private int _at;
+		public Task Asked => _asked.Task;
+		public void Release() => _go.TrySetResult();
+		public override bool CanRead => true;
+		public override bool CanSeek => false;
+		public override bool CanWrite => false;
+		public override long Length => bytes.Length;
+		public override long Position { get => _at; set => throw new NotSupportedException(); }
+		public override void Flush() { }
+		public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+		public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+		{
+			_asked.TrySetResult();
+			await _go.Task.WaitAsync(cancellationToken);
+			var count = Math.Min(buffer.Length, bytes.Length - _at);
+			bytes.AsMemory(_at, count).CopyTo(buffer);
+			_at += count;
+			return count;
+		}
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+		public override void SetLength(long value) => throw new NotSupportedException();
+		public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+	}
+
+	[Fact]
+	public async Task Saves_in_flight_reserve_their_length_so_the_quota_cannot_be_overshot_and_a_failed_save_gives_it_back()
+	{
+		var session = Open();
+		_viewer.SaveBudget = 150;
+		var slow = new GatedBody(Png(92));
+		var first = _viewer.ServeAsync(Put(session, "a.png", [], declared: 100, stream: slow));
+		await slow.Asked;
+
+		var second = await _viewer.ServeAsync(Put(session, "b.png", Png(92), declared: 100));
+
+		Assert.Equal(507, second.Status);
+		slow.Release();
+		Assert.Equal(201, (await first).Status);
+
+		// A save that fails returns what it reserved.
+		_viewer.SaveBudget = 100 + 100;
+		var bad = await _viewer.ServeAsync(Put(session, "c.png", Encoding.ASCII.GetBytes(new string('x', 100)), declared: 100));
+		Assert.Equal(400, bad.Status);
+		Assert.Equal(201, (await _viewer.ServeAsync(Put(session, "d.png", Png(92), declared: 100))).Status);
+	}
+
+	[Fact]
+	public async Task Closing_the_session_while_a_save_is_arriving_stops_it_and_the_file_never_lands()
+	{
+		var session = Open();
+		var slow = new GatedBody(Png(40));
+		var save = _viewer.ServeAsync(Put(session, "a.png", [], declared: Png(40).Length, stream: slow));
+		await slow.Asked;
+
+		_viewer.Close(session.Id);
+		slow.Release();
+
+		Assert.Equal(404, (await save).Status);
+		Assert.Empty(Directory.GetFileSystemEntries(Path.Combine(_dir, "downloads")));
+	}
+
+	[Fact]
+	public async Task A_closed_panel_stops_its_save_too()
+	{
+		var session = Open();
+		var slow = new GatedBody(Png(40));
+		var save = _viewer.ServeAsync(Put(session, "a.png", [], declared: Png(40).Length, stream: slow));
+		await slow.Asked;
+
+		_viewer.CloseExcept(new HashSet<string>());
+		slow.Release();
+
+		Assert.Equal(404, (await save).Status);
+		Assert.Empty(Directory.GetFileSystemEntries(Path.Combine(_dir, "downloads")));
+	}
+
+	[Fact]
+	public async Task An_upload_that_stalls_is_ended_with_a_408_and_leaves_nothing()
+	{
+		var session = Open();
+		_viewer.SaveIdleTimeout = TimeSpan.FromMilliseconds(200);
+
+		var reply = await _viewer.ServeAsync(Put(session, "a.png", [], declared: 100, stream: new GatedBody(Png(92))));
+
+		Assert.Equal(408, reply.Status);
+		Assert.Contains("stalled", Encoding.UTF8.GetString(reply.Body));
+		Assert.Empty(Directory.GetFileSystemEntries(Path.Combine(_dir, "downloads")));
+	}
+
+	[Fact]
+	public async Task The_model_stays_held_while_its_reply_is_open_and_is_released_when_that_is_disposed()
+	{
+		Open();
+
+		var reply = await _viewer.ServeAsync(Get(Model));
+
+		Assert.NotNull(reply.Lease);
+		Assert.Throws<EngineInUseException>(() => _engines.Store.Remove(EngineIds.BackgroundModel));
+		reply.Lease.Dispose();
+		_engines.Store.Remove(EngineIds.BackgroundModel);
+	}
+
+	[Fact]
+	public async Task A_HEAD_for_the_model_holds_nothing()
+	{
+		Open();
+
+		var reply = await _viewer.ServeAsync(Get(Model, method: "HEAD"));
+
+		Assert.Equal(200, reply.Status);
+		Assert.Null(reply.Lease);
+		_engines.Store.Remove(EngineIds.BackgroundModel);
+	}
+
+	[Fact]
+	public async Task A_model_file_locked_by_another_program_is_a_503_and_the_hold_is_given_back()
+	{
+		Open();
+		using var hold = new FileStream(_engines.Store.InstalledPath(EngineIds.BackgroundModel), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+		var reply = await _viewer.ServeAsync(Get(Model));
+
+		Assert.Equal(503, reply.Status);
+		Assert.Null(reply.Lease);
+		Assert.Null(reply.WholeFile);
+		hold.Dispose();
+		_engines.Store.Remove(EngineIds.BackgroundModel);
+		_errors.Clear();
+	}
+
+	[Fact]
+	public async Task A_large_picture_locked_by_another_program_is_a_503_before_the_host_opens_it()
+	{
+		var path = Path.Combine(_dir, "large.png");
+		using (var file = File.Create(path))
+		{
+			file.Write(Png());
+			file.SetLength(ViewerFiles.WholeFileLimit + 1);
+		}
+		var session = _viewer.OpenSession(path, Panel, [SessionKinds.Image]);
+		using var hold = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+		var reply = await _viewer.ServeAsync(Get(session.Url));
+
+		Assert.Equal(503, reply.Status);
+		Assert.Null(reply.WholeFile);
+		_errors.Clear();
 	}
 }

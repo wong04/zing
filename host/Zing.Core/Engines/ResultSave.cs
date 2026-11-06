@@ -5,6 +5,9 @@ namespace Zing.Core.Engines;
 
 public class SaveRefusedException(string message) : Exception(message);
 
+/// <summary>The body stopped arriving for too long.</summary>
+public sealed class SaveStalledException(string message) : Exception(message);
+
 /// <summary>The file is longer than its format allows.</summary>
 public sealed class SaveTooLargeException(string message) : SaveRefusedException(message);
 
@@ -37,11 +40,13 @@ public static partial class ResultSave
 
 	/// <summary>Writes the PNG in <paramref name="body"/> and returns where it went and how long it is.</summary>
 	/// <param name="declared">The request's Content-Length, when it has one; checked before anything is read.</param>
+	/// <param name="idle">How long the body may go without a byte before the save is given up (<see cref="SaveStalledException"/>).</param>
+	/// <param name="stillOpen">Asked just before the file is moved into place; false means the session it belongs to was closed, and nothing lands.</param>
 	/// <param name="room">How many more bytes this window may save this way.</param>
 	/// <exception cref="SaveTooLargeException">Declared or actually longer than the format cap.</exception>
 	/// <exception cref="SaveBudgetException">It would take the window past <paramref name="room"/>.</exception>
 	/// <exception cref="SaveRefusedException">The name is not a plain name with an allowed extension, or the bytes are not that format.</exception>
-	public static async Task<(string Path, long Bytes)> WriteAsync(string directory, string name, IReadOnlyCollection<SaveFormat> allowed, Stream body, long? declared, long room, CancellationToken cancel)
+	public static async Task<(string Path, long Bytes)> WriteAsync(string directory, string name, IReadOnlyCollection<SaveFormat> allowed, Stream body, long? declared, long room, TimeSpan idle, Func<bool> stillOpen, CancellationToken cancel)
 	{
 		var format = CheckName(name, allowed);
 		if (declared is { } length)
@@ -56,8 +61,11 @@ public static partial class ResultSave
 			long written;
 			await using (var output = new FileStream(part, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous))
 			{
-				written = await Copy(body, output, format, Math.Min(format.Cap, room), cancel);
+				written = await Copy(body, output, format, Math.Min(format.Cap, room), declared, idle, cancel);
 			}
+			// The session may have been closed while the body arrived; then the file does not land.
+			cancel.ThrowIfCancellationRequested();
+			if (!stillOpen()) throw new OperationCanceledException("The session was closed");
 			var target = MoveIntoPlace(part, directory, name);
 			return (target, written);
 		}
@@ -67,20 +75,47 @@ public static partial class ResultSave
 		}
 	}
 
-	private static async Task<long> Copy(Stream body, FileStream output, SaveFormat format, long limit, CancellationToken cancel)
+	private static async Task<long> Copy(Stream body, FileStream output, SaveFormat format, long limit, long? declared, TimeSpan idle, CancellationToken cancel)
 	{
 		var buffer = new byte[81920];
 		long total = 0;
+		var checkedMagic = false;
+		var head = new byte[format.Magic.Length];
+		var headFilled = 0;
+		// A stream that never ends must not hold the request and the part file for ever: each read gets the idle time, no more.
+		using var stall = CancellationTokenSource.CreateLinkedTokenSource(cancel);
 		while (true)
 		{
-			var read = await body.ReadAsync(buffer, cancel);
+			stall.CancelAfter(idle);
+			int read;
+			try
+			{
+				read = await body.ReadAsync(buffer, stall.Token);
+			}
+			catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
+			{
+				throw new SaveStalledException("The upload stalled, so Zing gave it up");
+			}
 			if (read == 0) break;
-			if (total == 0 && (read < format.Magic.Length || !buffer.AsSpan(0, format.Magic.Length).SequenceEqual(format.Magic))) throw NotThat(format);
 			total += read;
+			if (declared is { } said && total > said) throw new SaveRefusedException("The file was longer than its Content-Length said");
 			if (total > limit) throw limit < format.Cap ? OutOfRoom() : TooLarge(format);
 			await output.WriteAsync(buffer.AsMemory(0, read), cancel);
+			// The first bytes may arrive in pieces; the magic is judged once there are enough of them.
+			if (!checkedMagic)
+			{
+				var take = Math.Min(read, head.Length - headFilled);
+				buffer.AsSpan(0, take).CopyTo(head.AsSpan(headFilled));
+				headFilled += take;
+				if (headFilled == head.Length)
+				{
+					if (!head.AsSpan().SequenceEqual(format.Magic)) throw NotThat(format);
+					checkedMagic = true;
+				}
+			}
 		}
-		if (total < format.Magic.Length) throw NotThat(format);
+		if (!checkedMagic) throw NotThat(format);
+		if (declared is { } expected && total != expected) throw new SaveRefusedException("The upload stopped early, so the file is incomplete");
 		return total;
 	}
 

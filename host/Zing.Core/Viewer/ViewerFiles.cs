@@ -16,7 +16,8 @@ public sealed record ViewerRequest(string Method, string Url, string? Range, str
 
 /// <param name="Body">Empty for a reply without one, and when <paramref name="WholeFile"/> names the file to hand over.</param>
 /// <param name="WholeFile">A finished file too big to buffer: the host streams it from disk instead.</param>
-public sealed record ViewerReply(int Status, string Reason, IReadOnlyDictionary<string, string> Headers, byte[] Body, string? WholeFile = null);
+/// <param name="Lease">Held for as long as the host reads <paramref name="WholeFile"/> (the model must not be removed meanwhile); the host disposes it when it is done with the stream, or at once if it never opens one.</param>
+public sealed record ViewerReply(int Status, string Reason, IReadOnlyDictionary<string, string> Headers, byte[] Body, string? WholeFile = null, IDisposable? Lease = null);
 
 /// <summary>One file open in a viewer panel.</summary>
 public sealed class ViewerSession
@@ -47,6 +48,9 @@ public sealed class ViewerSession
 
 	/// <summary>The kinds of file this tool session was opened for (see <see cref="SessionKinds"/>); empty for a viewer file. Only a session with kinds takes a save, and the model is served while one has the image kind.</summary>
 	public IReadOnlyList<SessionKind> Kinds { get; internal init; } = [];
+
+	/// <summary>Cancelled when the session is closed, so a save still arriving stops and its file never lands.</summary>
+	internal CancellationTokenSource Revoked { get; } = new();
 
 	internal bool Reads(string kind) => Kinds.Any(k => k.Name == kind);
 
@@ -109,9 +113,10 @@ public sealed class ViewerFiles : IDisposable
 	// Folders of files closed while their engine still ran: deleted again when its exit arrives, since it may place the file after the close.
 	private readonly Dictionary<string, string> _awaitingExit = new(StringComparer.Ordinal);
 	private long _saved;
+	private long _reserved;
 
-	/// <summary>The installed background model's file; throws what <c>EngineStore.InstalledPath</c> throws. Null on a host with no engines.</summary>
-	public Func<string>? ModelPath { get; set; }
+	/// <summary>The installed background model's file with a hold on it (the engine store will not remove it while held); throws what <c>EngineStore.InstalledPath</c> throws. Null on a host with no engines.</summary>
+	public Func<(string Path, IDisposable Lease)>? ModelOpener { get; set; }
 
 	/// <summary>Gives a saved file a token the renderer can hand back to other tools; null leaves it out of the answer.</summary>
 	public Func<string, string>? IssueToken { get; set; }
@@ -121,6 +126,9 @@ public sealed class ViewerFiles : IDisposable
 
 	/// <summary>How many more bytes this window may save for the background remover; about a gigabyte, so a runaway page can't fill the disk.</summary>
 	internal long SaveBudget { get; set; } = 1L << 30;
+
+	/// <summary>How long an upload may go without a byte before it is given up.</summary>
+	internal TimeSpan SaveIdleTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
 	/// <param name="root">Where converted copies go: a folder of Zing's own under the temp folder.</param>
 	/// <param name="onError">Called for a copy that couldn't be deleted yet (the next start's sweep takes it).</param>
@@ -260,6 +268,7 @@ public sealed class ViewerFiles : IDisposable
 		lock (_gate)
 		{
 			if (!_sessions.Remove(id, out var session)) return;
+			session.Revoked.Cancel();
 			folder = session.Folder;
 			if (folder is not null && awaitExit && session.State == ConversionState.Running) _awaitingExit[id] = folder;
 		}
@@ -315,8 +324,9 @@ public sealed class ViewerFiles : IDisposable
 	{
 		var address = Parse(request.Url);
 		if (address is null) return NotFound();
-		if (!FromZingView(request)) return NotFound();
 		var method = request.Method.ToUpperInvariant();
+		// A tool is writing or negotiating CORS: only the Origin header counts. A Referer is accepted for reading (an image or video element sends no Origin).
+		if (!(method is "PUT" or "OPTIONS" ? FromZingOrigin(request) : FromZingView(request))) return NotFound();
 		try
 		{
 			return address.Kind switch
@@ -391,18 +401,33 @@ public sealed class ViewerFiles : IDisposable
 		{
 			if (!_sessions.Values.Any(session => session.Reads("image"))) return NotFoundForView();
 		}
-		var path = (ModelPath ?? throw new InvalidOperationException("This host has no model to serve"))();
-		var length = new FileInfo(path).Length;
-		var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+		var (path, lease) = (ModelOpener ?? throw new InvalidOperationException("This host has no model to serve"))();
+		try
 		{
-			["Content-Type"] = "application/octet-stream",
-			["Content-Length"] = length.ToString(CultureInfo.InvariantCulture),
-			["Cache-Control"] = "no-store",
-			["X-Content-Type-Options"] = "nosniff",
-			["Referrer-Policy"] = "no-referrer",
-			["Access-Control-Expose-Headers"] = "Content-Length",
-		};
-		return new ViewerReply(200, "OK", Cors(headers), [], method == "HEAD" ? null : path);
+			var length = new FileInfo(path).Length;
+			var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+			{
+				["Content-Type"] = "application/octet-stream",
+				["Content-Length"] = length.ToString(CultureInfo.InvariantCulture),
+				["Cache-Control"] = "no-store",
+				["X-Content-Type-Options"] = "nosniff",
+				["Referrer-Policy"] = "no-referrer",
+				["Access-Control-Expose-Headers"] = "Content-Length",
+			};
+			if (method == "HEAD")
+			{
+				lease.Dispose();
+				return new ViewerReply(200, "OK", Cors(headers), []);
+			}
+			// Opened and closed once here so a locked or just-removed file is a status, not a failure when the host opens it.
+			OpenForReading(path).Dispose();
+			return new ViewerReply(200, "OK", Cors(headers), [], path, lease);
+		}
+		catch
+		{
+			lease.Dispose();
+			throw;
+		}
 	}
 
 	/// <summary>A tool result, PUT by the tool of the session it names: its extension (from the session kinds) decides the magic check and the cap; refusals say why in plain text.</summary>
@@ -413,13 +438,32 @@ public sealed class ViewerFiles : IDisposable
 		if (session is null || session.Kinds.Count == 0) return NotFoundForView();
 		if (method != "PUT") return Refuse(405, "Method Not Allowed");
 		var directory = SaveDirectory ?? throw new InvalidOperationException("This host has nowhere to save to");
-		var body = request.Body ?? throw new InvalidOperationException("The picture came with no body");
+		if (request.Body is null) return Failure(400, "Bad Request", "The file came with no body");
+		var allowed = session.Kinds.SelectMany(SaveFormats.For).DistinctBy(f => f.Extension).ToList();
+		long reserve;
 		try
 		{
-			long room;
-			lock (_gate) room = SaveBudget - _saved;
-			var saved = await ResultSave.WriteAsync(directory, address.Name, session.Kinds.SelectMany(SaveFormats.For).DistinctBy(f => f.Extension).ToList(), body, request.ContentLength, room, CancellationToken.None).ConfigureAwait(false);
-			lock (_gate) _saved += saved.Bytes;
+			// The most this save can take is held from the quota now, so saves running together cannot overshoot it.
+			var format = ResultSave.CheckName(address.Name, allowed);
+			reserve = request.ContentLength ?? format.Cap;
+			lock (_gate)
+			{
+				if (reserve > format.Cap) reserve = -1;
+				else if (reserve > SaveBudget - _saved - _reserved) reserve = -2;
+				else _reserved += reserve;
+			}
+		}
+		catch (SaveRefusedException refused)
+		{
+			return Failure(400, "Bad Request", refused.Message);
+		}
+		if (reserve == -1) return Failure(413, "Payload Too Large", $"The file is more than {allowed.Max(f => f.Cap) / (1024 * 1024)} MB, which Zing will not save");
+		if (reserve == -2) return Failure(507, "Insufficient Storage", "Zing has saved as much result data as it will in one session. Close Zing and open it again to save more");
+		long bytes = 0;
+		try
+		{
+			var saved = await ResultSave.WriteAsync(directory, address.Name, allowed, request.Body, request.ContentLength, reserve, SaveIdleTimeout, () => !session.Revoked.IsCancellationRequested, session.Revoked.Token).ConfigureAwait(false);
+			bytes = saved.Bytes;
 			var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { name = Path.GetFileName(saved.Path), token = IssueToken?.Invoke(saved.Path) });
 			var headers = Cors(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Content-Type"] = "application/json", ["Content-Length"] = json.Length.ToString(CultureInfo.InvariantCulture), ["Cache-Control"] = "no-store" });
 			return new ViewerReply(201, "Created", headers, json);
@@ -432,9 +476,32 @@ public sealed class ViewerFiles : IDisposable
 		{
 			return Failure(507, "Insufficient Storage", budget.Message);
 		}
+		catch (SaveStalledException stalled)
+		{
+			return Failure(408, "Request Timeout", stalled.Message);
+		}
 		catch (SaveRefusedException refused)
 		{
 			return Failure(400, "Bad Request", refused.Message);
+		}
+		catch (OperationCanceledException)
+		{
+			// The session was closed (Cancel, a new picture, the panel) while the file arrived: it does not land.
+			return NotFoundForView();
+		}
+		catch (Exception io) when (io is IOException or UnauthorizedAccessException)
+		{
+			// Disk full, access denied, the folder gone: this is about writing, not reading.
+			_onError("save a file", io);
+			return Failure(500, "Internal Server Error", "The file can't be saved. The Downloads folder may be full or not writable");
+		}
+		finally
+		{
+			lock (_gate)
+			{
+				_reserved -= reserve;
+				_saved += bytes;
+			}
 		}
 	}
 
@@ -495,6 +562,8 @@ public sealed class ViewerFiles : IDisposable
 	}
 
 	/// <summary>Only Zing's own pages may ask: by Origin when it is sent (a fetch), by Referer otherwise (an image or video element).</summary>
+	private static bool FromZingOrigin(ViewerRequest request) => request.Origin == App;
+
 	private static bool FromZingView(ViewerRequest request)
 	{
 		if (!string.IsNullOrEmpty(request.Origin)) return request.Origin == App;

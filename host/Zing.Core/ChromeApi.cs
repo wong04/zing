@@ -145,7 +145,7 @@ public sealed class ChromeApi : IDisposable
 		{
 			Viewer = new ViewerFiles(viewerRoot, (what, error) => host.Warn(what, error))
 			{
-				ModelPath = () => app.Engines?.InstalledPath(EngineIds.BackgroundModel) ?? throw new EngineNotInstalledException(EngineIds.BackgroundModel),
+				ModelOpener = () => OpenModel(app.Engines),
 				SaveDirectory = host.DownloadsDirectory,
 				IssueToken = path => Grants.Issue(path).Token,
 			};
@@ -525,6 +525,22 @@ public sealed class ChromeApi : IDisposable
 	/// against the kinds asked for (a fixed table: image, pdf) and the length cap, and answers with a session address; the token and
 	/// the path never reach the tool. Closing the panel, opening another file in it or <c>viewer:close</c> revokes it.
 	/// </summary>
+	/// <summary>The model and a hold on it, so the store will not remove it while the host streams it.</summary>
+	private static (string Path, IDisposable Lease) OpenModel(EngineStore? engines)
+	{
+		var store = engines ?? throw new EngineNotInstalledException(EngineIds.BackgroundModel);
+		var lease = store.Use(EngineIds.BackgroundModel);
+		try
+		{
+			return (store.InstalledPath(EngineIds.BackgroundModel), lease);
+		}
+		catch
+		{
+			lease.Dispose();
+			throw;
+		}
+	}
+
 	private static List<string> StringArray(JsonElement list) =>
 		list.ValueKind == JsonValueKind.Array ? [.. list.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.String ? item.GetString()! : throw new ArgumentException("Kinds must be a list of names"))] : throw new ArgumentException("Argument 2 must be a list of kinds");
 
