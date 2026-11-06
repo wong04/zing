@@ -551,7 +551,7 @@ export function PdfTool() {
 				<ul>
 					<li>Text already in a PDF can&apos;t be changed in place. A PDF stores each letter at a position, not a flowing paragraph. You can add new text on top.</li>
 					<li>A signature here is a picture you draw or type, placed on the page. It is not a digital signature: nothing proves who added it or that the page wasn&apos;t changed afterwards.</li>
-					<li>Merging, splitting and deleting pages build a new file from the pages that stay. That drops bookmarks and turns form fields into plain pictures; a deleted page&apos;s content is not in the result. Reordering, turning, adding items and filling a form edit the file itself and keep both.</li>
+					<li>Merging, splitting and deleting pages build a new file from the pages that stay. That drops bookmarks and links between pages, and a deleted page&apos;s content is not in the result. Merging also turns form fields into plain pictures; splitting and deleting keep a form field that still has a place on a page that stays. Reordering, turning, adding items and filling a form edit the file itself and keep everything.</li>
 					<li>A filled form is not flattened: its fields stay fillable.</li>
 					<li>Password-protected PDFs are refused; Zing won&apos;t remove protection. Damaged files are refused by name.</li>
 					<li>{`Files up to ${PDF_LIMITS.maxReadBytes / (1024 * 1024)} MB each, ${PDF_LIMITS.maxSessionBytes / (1024 * 1024)} MB open together, ${PDF_LIMITS.maxPages} pages in a file, ${PDF_LIMITS.maxMergeFiles} files in a merge. Results up to ${PDF_LIMITS.maxSaveBytes / (1024 * 1024)} MB.`}</li>

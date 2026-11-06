@@ -258,7 +258,7 @@ test('a filled form keeps its fields, and merging says what it drops', async () 
 	const form = (await PDFDocument.load(readFileSync(join(downloadsOf(zing), 'application-edited.pdf')))).getForm()
 	expect(form.getTextField('name').getText()).toBe('Zed')
 	await panel.getByText("What this can and can't do").click()
-	await expect(panel.getByText(/drops bookmarks and turns form fields into plain pictures/)).toBeVisible()
+	await expect(panel.getByText(/Merging also turns form fields into plain pictures/)).toBeVisible()
 	await zing.close()
 })
 

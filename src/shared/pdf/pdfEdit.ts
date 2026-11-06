@@ -4,7 +4,7 @@
 // Every function loads its input afresh and returns new bytes; none changes what it was given. A file that is encrypted,
 // damaged, empty or past PDF_LIMITS.maxPages is refused with a PdfEditError naming it. `ignoreEncryption` is never used:
 // pdf-lib would then write the file without its encryption, which is not what the person asked for.
-import { EncryptedPDFError, PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { EncryptedPDFError, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFStream, PDFString, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { checkPictureSize } from './pictureHeader'
 import {
 	PDF_LIMITS,
@@ -186,7 +186,14 @@ async function assemble(sources: readonly PdfFile[], docs: readonly PDFDocument[
 	}
 	const only = plan.pages[0]!.source
 	const single = plan.pages.every((p) => p.source === only)
-	const doc = single && keepsEveryPageOnce(plan, docs[only]!) ? reorderInPlace(docs[only]!, plan) : await copyPlanned(docs, plan)
+	let doc: PDFDocument
+	if (single && keepsEveryPageOnce(plan, docs[only]!)) {
+		doc = reorderInPlace(docs[only]!, plan)
+	} else {
+		doc = await copyPlanned(docs, plan)
+		if (single) rebuildForm(doc, docs[only]!)
+		removeLostPages(doc)
+	}
 	// Drawn before the pages are turned, so what is placed turns with its page.
 	for (const overlay of plan.overlays) {
 		checkPages('The finished file', [overlay.page], doc.getPageCount())
@@ -222,11 +229,17 @@ function targetsOf(dict: PDFDict): PDFRef[] {
 	const found: PDFRef[] = []
 	const dest = dict.lookup(PDFName.of('Dest'))
 	if (dest instanceof PDFArray && dest.get(0) instanceof PDFRef) found.push(dest.get(0) as PDFRef)
-	let action = dict.lookupMaybe(PDFName.of('A'), PDFDict)
-	for (let hops = 0; action !== undefined && hops < 20; hops++) {
-		const d = action.lookup(PDFName.of('D'))
-		if (d instanceof PDFArray && d.get(0) instanceof PDFRef) found.push(d.get(0) as PDFRef)
-		action = action.lookupMaybe(PDFName.of('Next'), PDFDict)
+	const pending: unknown[] = [dict.lookup(PDFName.of('A'))]
+	for (let hops = 0; pending.length > 0 && hops < 100; hops++) {
+		const action = pending.pop()
+		if (action instanceof PDFArray) {
+			// /Next is one action or an array of them.
+			for (let i = 0; i < action.size(); i++) pending.push(action.lookup(i))
+		} else if (action instanceof PDFDict) {
+			const d = action.lookup(PDFName.of('D'))
+			if (d instanceof PDFArray && d.get(0) instanceof PDFRef) found.push(d.get(0) as PDFRef)
+			pending.push(action.lookup(PDFName.of('Next')))
+		}
 	}
 	return found
 }
@@ -267,6 +280,102 @@ async function copyPlanned(docs: readonly PDFDocument[], plan: PdfPlan): Promise
 		out.addPage(page)
 	}
 	return out
+}
+
+const PAGE = PDFName.of('Type')
+const isPageObject = (object: unknown): object is PDFDict => object instanceof PDFDict && object.get(PAGE) === PDFName.of('Page')
+
+/**
+ * A rebuilt file keeps the form for fields that still have a widget on a page that stays: the fields are found from the kept
+ * pages' widgets and a new /AcroForm is made for them. A field whose widgets are all on deleted pages is not reached, so it and
+ * its value are gone. (A merge has several files' forms and does not call this.)
+ */
+function rebuildForm(out: PDFDocument, source: PDFDocument): void {
+	const sourceForm = source.catalog.lookupMaybe(PDFName.of('AcroForm'), PDFDict)
+	if (sourceForm === undefined) return
+	const roots: PDFRef[] = []
+	for (const page of out.getPages()) {
+		const annots = page.node.Annots()
+		if (annots === undefined) continue
+		for (const entry of annots.asArray()) {
+			if (!(entry instanceof PDFRef)) continue
+			let at = entry
+			for (let hops = 0; hops < 50; hops++) {
+				const dict = out.context.lookupMaybe(at, PDFDict)
+				const parent = dict?.get(PDFName.of('Parent'))
+				if (dict === undefined || !(parent instanceof PDFRef)) break
+				at = parent
+			}
+			const widget = out.context.lookupMaybe(entry, PDFDict)
+			const isWidget = widget?.get(PDFName.of('Subtype')) === PDFName.of('Widget')
+			if (isWidget && !roots.includes(at)) roots.push(at)
+		}
+	}
+	if (roots.length === 0) return
+	const form = out.context.obj({ Fields: roots })
+	const defaults = sourceForm.get(PDFName.of('DA'))
+	if (defaults instanceof PDFString || defaults instanceof PDFHexString) form.set(PDFName.of('DA'), defaults)
+	out.catalog.set(PDFName.of('AcroForm'), out.context.register(form))
+}
+
+/** Takes out of `object` (and the plain dictionaries and arrays inside it, not what its references lead to) every reference to a lost object. */
+function cutReferences(object: unknown, lost: ReadonlySet<PDFRef>): void {
+	if (object instanceof PDFStream) {
+		cutReferences(object.dict, lost)
+		return
+	}
+	if (object instanceof PDFDict) {
+		for (const [key, value] of object.entries()) {
+			if (value instanceof PDFRef && lost.has(value)) object.delete(key)
+			else cutReferences(value, lost)
+		}
+		return
+	}
+	if (object instanceof PDFArray) {
+		for (let at = object.size() - 1; at >= 0; at--) {
+			const value = object.get(at)
+			if (value instanceof PDFRef && lost.has(value)) object.remove(at)
+			else cutReferences(value, lost)
+		}
+	}
+}
+
+/**
+ * The guarantee that a left-out page is not in the file, however it was reached (a link, an action, a field's other widgets, an
+ * article bead): after copying, every page object that is not one of the output's pages is found, every reference to it, and to
+ * the widgets that sat on it, is cut, and whatever is no longer reachable from the document is removed from the file.
+ */
+function removeLostPages(doc: PDFDocument): void {
+	const { context } = doc
+	const kept = new Set(doc.getPages().map((p) => p.ref))
+	const lost = new Set<PDFRef>()
+	for (const [ref, object] of context.enumerateIndirectObjects()) if (isPageObject(object) && !kept.has(ref)) lost.add(ref)
+	if (lost.size === 0) return
+	// An annotation or widget whose own page is lost goes with it, and so does its place in a field's /Kids.
+	for (const [ref, object] of context.enumerateIndirectObjects()) {
+		const page = object instanceof PDFDict ? object.get(PDFName.of('P')) : undefined
+		if (page instanceof PDFRef && lost.has(page)) lost.add(ref)
+	}
+	for (const [ref, object] of context.enumerateIndirectObjects()) if (!lost.has(ref)) cutReferences(object, lost)
+	for (const ref of lost) context.delete(ref)
+	removeUnreachable(doc)
+}
+
+function removeUnreachable(doc: PDFDocument): void {
+	const { context } = doc
+	const seen = new Set<PDFRef>()
+	const pending: unknown[] = [context.trailerInfo.Root, context.trailerInfo.Info]
+	while (pending.length > 0) {
+		const object = pending.pop()
+		if (object instanceof PDFRef) {
+			if (seen.has(object)) continue
+			seen.add(object)
+			pending.push(context.lookup(object))
+		} else if (object instanceof PDFStream) pending.push(object.dict)
+		else if (object instanceof PDFDict) for (const [, value] of object.entries()) pending.push(value)
+		else if (object instanceof PDFArray) pending.push(...object.asArray())
+	}
+	for (const [ref] of context.enumerateIndirectObjects()) if (!seen.has(ref)) context.delete(ref)
 }
 
 async function helvetica(doc: PDFDocument): Promise<PDFFont> {
@@ -334,7 +443,7 @@ async function drawImage(doc: PDFDocument, page: PDFPage, item: Extract<OverlayI
 async function fill(doc: PDFDocument, name: string, values: Readonly<Record<string, string>>): Promise<void> {
 	const entries = Object.entries(values)
 	if (entries.length === 0) return
-	if (!doc.catalog.has(PDFName.of('AcroForm'))) throw new PdfEditError(`${name} has no form to fill.`)
+	if (!doc.catalog.has(PDFName.of('AcroForm'))) throw new PdfEditError(`${name} has no form field called "${entries[0]![0]}": it has no form to fill.`)
 	const form = doc.getForm()
 	const font = await helvetica(doc)
 	for (const [field, value] of entries) {
