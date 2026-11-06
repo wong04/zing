@@ -4,17 +4,17 @@ const MiB = 1024 * 1024
 
 /**
  * What Zing will take on, stated so the panel and the tests say the same numbers. The two byte limits are also in the host
- * (host/Zing.Core/PdfFiles.cs); a test keeps them equal.
+ * (host/Zing.Core/Viewer/SessionKinds.cs); a test keeps them equal.
  */
 export const PDF_LIMITS = {
 	/** Pages in any one file, loaded or made. A bigger file is refused, not worked on until the window stalls. */
 	maxPages: 2000,
 	maxMergeFiles: 20,
 	maxSplitParts: 50,
-	/** One file read from disk through the bridge (it travels as base64, a third larger). */
+	/** A PDF read through a viewer session (host/Zing.Core/Viewer/SessionKinds.cs). */
 	maxReadBytes: 50 * MiB,
-	/** One file written to Downloads through the bridge. */
-	maxSaveBytes: 100 * MiB,
+	/** A PDF written to Downloads through a viewer session (SaveFormats; page pictures are limited to 64 MB, far above what a page makes). */
+	maxSaveBytes: 50 * MiB,
 	/** An image placed on a page (a picture or a signature). */
 	maxOverlayImageBytes: 8 * MiB,
 	/** Pages Convert turns into pictures in one run. */

@@ -9,7 +9,8 @@ import { ToolPage } from '../parts'
 import './files.css'
 import { PdfPageEditor } from './PdfPageEditor'
 import { onHandedPdf, takeHandedPdf } from './pdfHandoff'
-import { readGranted, saveBytes } from './pdfHost'
+import { readGranted, saveResult, sessionFor } from './pdfHost'
+import { usePanelId } from '../panelId'
 import { describeRun, runParts, type RunOutcome } from './pdfRun'
 import {
 	addFile,
@@ -40,6 +41,8 @@ import { createPreviewSession, type PdfPreview } from './pdfRender'
 
 interface Opened {
 	readonly name: string
+	/** The grant it was opened from, to open a session again when saving. */
+	readonly token: string
 	readonly bytes: Uint8Array
 	readonly preview: PdfPreview
 	readonly fields: readonly FormFieldInfo[]
@@ -149,6 +152,8 @@ export function PdfTool() {
 	const [client] = useState(newPdfWorkerClient)
 	const [session] = useState(createPreviewSession)
 	const cancelled = useRef(false)
+	const panelId = usePanelId()
+	const aborter = useRef(new AbortController())
 
 	const model = history.present
 	const used = [...new Set(model.pages.map((p) => p.source))]
@@ -189,7 +194,7 @@ export function PdfTool() {
 		if (!/\.pdf$/i.test(file.name)) throw new PdfEditError(`${file.name} isn't a PDF. This tool opens PDF files; Convert makes a PDF from a picture or a saved web page.`)
 		const current = openedRef.current
 		if (current.length >= PDF_LIMITS.maxMergeFiles) throw new PdfEditError(`This tool opens at most ${PDF_LIMITS.maxMergeFiles} files at once.`)
-		const bytes = await readGranted(file.token)
+		const { bytes } = await readGranted(panelId, file.token)
 		// Each file is held twice: here, and as the copy the PDF viewer takes.
 		checkSessionBytes(current.reduce((sum, o) => sum + o.bytes.length * 2, 0), bytes.length * 2, file.name)
 		const info = await client.inspect({ name: file.name, bytes })
@@ -197,7 +202,7 @@ export function PdfTool() {
 		try {
 			const source = current.length
 			const next = commit(historyRef.current, addFile(historyRef.current.present, { source, name: file.name, pageCount: info.pageCount }))
-			openedRef.current = [...current, { name: file.name, bytes, preview, fields: info.fields }]
+			openedRef.current = [...current, { name: file.name, token: file.token, bytes, preview, fields: info.fields }]
 			setOpened(openedRef.current)
 			apply(next)
 			setSaved([])
@@ -369,17 +374,22 @@ export function PdfTool() {
 	/** Builds and saves each plan in turn; Cancel stops the next from starting and the panel says what was saved. */
 	const runPlans = (label: string, plans: readonly PdfPlan[], nameFor: (index: number) => string): void => {
 		cancelled.current = false
+		aborter.current = new AbortController()
+		const signal = aborter.current.signal
 		setBusy(label)
 		setProblem(null)
 		setSaved([])
 		const sources = sourcesFor()
+		const lastToken = openedRef.current.at(-1)!.token
 		void (async () => {
 			let outcome: RunOutcome | undefined
 			try {
+				// One session for the whole run, opened afresh: a refused file opened earlier would have ended the panel's old one.
+				const sessionId = await sessionFor(panelId, lastToken)
 				outcome = await runParts(
 					plans.length,
 					(i) => client.build(sources, plans[i]!),
-					async (i, bytes) => (await saveBytes(nameFor(i), bytes)).name,
+					async (i, bytes) => (await saveResult(sessionId, nameFor(i), bytes, signal)).name,
 					() => cancelled.current,
 				)
 			} catch (error) {
@@ -419,6 +429,7 @@ export function PdfTool() {
 	// Ends this panel's worker, which fails the file being built; one already being saved still lands and is reported.
 	const cancel = (): void => {
 		cancelled.current = true
+		aborter.current.abort()
 		client.stop()
 	}
 

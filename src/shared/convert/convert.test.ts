@@ -105,8 +105,8 @@ describe('Windows coverage matrix', () => {
 		expect(convertTargets('pdf').some((f) => f.ext === 'docx')).toBe(false)
 	})
 	it('pictures PDF can hold are offered PDF, made by pdf-lib; others and documents are not', () => {
-		for (const ext of ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']) expect(convertTargets(ext).find((f) => f.ext === 'pdf'), ext).toMatchObject({ backend: 'pdf-lib', lossy: false })
-		for (const ext of ['heic', 'tiff', 'avif', 'ico', 'md', 'docx', 'mp4']) expect(convertTargets(ext).some((f) => f.ext === 'pdf'), ext).toBe(false)
+		for (const ext of ['png', 'jpg', 'jpeg', 'webp']) expect(convertTargets(ext).find((f) => f.ext === 'pdf'), ext).toMatchObject({ backend: 'pdf-lib', lossy: false })
+		for (const ext of ['heic', 'tiff', 'avif', 'ico', 'gif', 'bmp', 'md', 'docx', 'mp4']) expect(convertTargets(ext).some((f) => f.ext === 'pdf'), ext).toBe(false)
 	})
 	it('never offers an output the host would refuse', () => {
 		// Mirrors the extensions in host/Zing.Core/Engines/EngineFlagPolicy.cs.

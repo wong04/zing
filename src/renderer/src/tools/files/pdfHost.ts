@@ -1,14 +1,15 @@
 import type { PickedFile } from '@shared/engines/engineJob'
 import { zing } from '../../api'
-import { base64ToBytes, bytesToBase64, checkSaveSize } from './pdfBytes'
+import { putResult, readSession, type ReadFile, type SessionDeps } from './pdfSession'
 
-/** The bytes of a file the person picked, dropped or saved earlier. The host refuses anything but a PDF or a picture, and a file over 50 MB. */
-export async function readGranted(token: string): Promise<Uint8Array> {
-	return base64ToBytes(await zing.readFileBase64(token))
+const deps: SessionDeps = { open: (panelId, token, kinds) => zing.openToolSession(panelId, token, kinds), fetchFn: (input, init) => fetch(input, init) }
+
+/** Reads a picked, dropped or saved file through a session of this panel (PDF and pictures only; the host judges the file). */
+export const readGranted = (panelId: string, token: string, signal?: AbortSignal): Promise<ReadFile> => readSession(deps, panelId, token, signal)
+
+/** A session to save results into, for a file this panel read before (a refused open ends the panel's earlier session). */
+export async function sessionFor(panelId: string, token: string): Promise<string> {
+	return (await deps.open(panelId, token, ['pdf', 'image'])).id
 }
 
-/** Puts bytes in Downloads under a numbered name (the host decides it); answers the name it got and a token for it. */
-export async function saveBytes(name: string, bytes: Uint8Array): Promise<PickedFile> {
-	checkSaveSize(bytes)
-	return zing.saveFileBase64(name, bytesToBase64(bytes))
-}
+export const saveResult = (sessionId: string, name: string, bytes: Uint8Array, signal?: AbortSignal): Promise<PickedFile> => putResult(deps, sessionId, name, bytes, signal)

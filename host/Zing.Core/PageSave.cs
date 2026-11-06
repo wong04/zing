@@ -93,7 +93,7 @@ public static class PageSave
 		return trimmed[..end];
 	}
 
-	internal static string MoveIntoPlace(string part, string directory, string name)
+	private static string MoveIntoPlace(string part, string directory, string name)
 	{
 		// File.Move refuses to overwrite, so a file that arrives after the name was chosen makes the next number be tried.
 		for (var attempt = 0; attempt < MaxNumbering; attempt++)

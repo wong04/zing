@@ -302,6 +302,8 @@ public sealed class WebView2Page : IPage
 		_core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+		// The file viewer's address belongs to Zing's own views; a page asking for it gets a 404, never a file (OnWebResourceRequested).
+		_core.AddWebResourceRequestedFilter($"https://{Zing.Core.Viewer.ViewerFiles.Host}/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
 		_core.WebResourceRequested += OnWebResourceRequested;
 		Wire(_core);
 		// A click into a split pane makes its tab the active one. The engine also moves the keyboard on its own (a page
@@ -465,6 +467,11 @@ public sealed class WebView2Page : IPage
 	private void OnWebResourceRequested(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
 	{
 		CoreWebView2WebResourceResponse response;
+		if (Zing.Core.Viewer.ViewerFiles.IsViewerAddress(e.Request.Uri))
+		{
+			e.Response = ViewerResponses.Make(sender.Environment, Zing.Core.Viewer.ViewerFiles.Unavailable());
+			return;
+		}
 		try
 		{
 			var page = _serveStartPage(e.Request.Uri);

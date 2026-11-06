@@ -4,5 +4,7 @@ export const filesTools: ToolLoaders = {
 	'section:Convert': () => import('./ConvertTool').then((m) => ({ default: m.ConvertTool })),
 	'tool:Engines': () => import('./EnginesTool').then((m) => ({ default: m.EnginesTool })),
 	'tool:PDF Tools': () => import('./PdfTool').then((m) => ({ default: m.PdfTool })),
+	'tool:Background Remover': () => import('./BgRemoveTool').then((m) => ({ default: m.BgRemoveTool })),
 	'section:Download': () => import('./DownloadTool').then((m) => ({ default: m.DownloadTool })),
+	'section:Files': () => import('./ViewerTool').then((m) => ({ default: m.ViewerTool })),
 }

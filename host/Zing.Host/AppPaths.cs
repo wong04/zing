@@ -48,6 +48,19 @@ public static class AppPaths
 	/// <summary>Where Convert's HTML to PDF keeps the throwaway browser profile of a print; removed when the print ends.</summary>
 	public static string PrintScratch => Path.Combine(Path.GetDirectoryName(Engines)!, "print-scratch");
 
+	/// <summary>
+	/// Where the file viewer keeps the converted copies it shows: a folder of Zing's own under the temp folder, emptied at every start
+	/// and by each file when it closes. A test run keeps it inside its scratch ZING_USER_DATA.
+	/// </summary>
+	public static string ViewerCopies
+	{
+		get
+		{
+			var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");
+			return string.IsNullOrEmpty(configured) ? Path.Combine(Path.GetTempPath(), "Zing-viewer") : Path.Combine(configured, "viewer-copies");
+		}
+	}
+
 	private static string Resolve()
 	{
 		var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");

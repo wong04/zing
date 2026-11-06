@@ -13,7 +13,8 @@ import { ToolPage } from '../parts'
 import './files.css'
 import { newPdfWorkerClient } from './pdfEditClient'
 import { handOffPdf, takeHandedPdf } from './pdfHandoff'
-import { readGranted, saveBytes } from './pdfHost'
+import { usePanelId } from '../panelId'
+import { readGranted, saveResult } from './pdfHost'
 import { createPreviewSession } from './pdfRender'
 import { toPicture } from './pictureBytes'
 import { useEngineJob } from './useEngineJob'
@@ -101,17 +102,24 @@ export function ConvertTool() {
 		},
 		[pdfClient, pdfViewer],
 	)
+	const ownPanel = usePanelId()
+	const aborter = useRef(new AbortController())
 	const stopPages = useRef(false)
 	const runningPages = useRef(false)
 
 	/** A PDF's pages as pictures, drawn by pdf.js and saved one at a time. No engine is involved, and the PDF is never handed to one. */
 	const runPages = async (plan: Extract<ConvertPlan, { kind: 'pages' }>, name: string): Promise<void> => {
 		stopPages.current = false
+		aborter.current = new AbortController()
+		const signal = aborter.current.signal
 		runningPages.current = true
 		setStage({ kind: 'working', cancellable: true, label: 'Opening the PDF…' })
 		let preview: Awaited<ReturnType<typeof pdfViewer.open>>
+		let sessionId: string
 		try {
-			preview = await pdfViewer.open(name, await readGranted(plan.token))
+			const read = await readGranted(ownPanel, plan.token, signal)
+			sessionId = read.sessionId
+			preview = await pdfViewer.open(name, read.bytes)
 		} catch (error) {
 			runningPages.current = false
 			throw error
@@ -124,7 +132,7 @@ export function ConvertTool() {
 			for (let page = 0; page < preview.pageCount && !stopPages.current; page++) {
 				setStage({ kind: 'working', cancellable: true, label: `Page ${page + 1} of ${preview.pageCount}` })
 				const bytes = await preview.toImage(page, plan.target, plan.quality / 100)
-				made.push(await saveBytes(pageFileName(plan.base, page + 1, plan.target), bytes))
+				made.push(await saveResult(sessionId, pageFileName(plan.base, page + 1, plan.target), bytes, signal))
 			}
 			setStage(stopPages.current ? { kind: 'cancelled', kept: made.length } : { kind: 'done', outputs: made })
 		} finally {
@@ -135,9 +143,10 @@ export function ConvertTool() {
 
 	const runPicture = async (plan: Extract<ConvertPlan, { kind: 'picture' }>, name: string): Promise<void> => {
 		setStage({ kind: 'working', cancellable: false })
-		const picture = await toPicture(name, await readGranted(plan.token))
+		const read = await readGranted(ownPanel, plan.token)
+		const picture = await toPicture(name, read.bytes)
 		const pdf = await pdfClient.imagesToPdf([{ name, format: picture.format, bytes: picture.bytes }])
-		setStage({ kind: 'done', outputs: [await saveBytes(plan.output, pdf)] })
+		setStage({ kind: 'done', outputs: [await saveResult(read.sessionId, plan.output, pdf)] })
 	}
 
 	const execute = async (plan: ConvertPlan, targetExt: string): Promise<void> => {
@@ -262,7 +271,10 @@ export function ConvertTool() {
 				onDownload={download}
 				onCancelDownload={(engine) => void zing.cancelEngine(engine.id).catch(fail)}
 				onCancelJob={() => {
-					if (runningPages.current) stopPages.current = true
+					if (runningPages.current) {
+						stopPages.current = true
+						aborter.current.abort()
+					}
 					else void job.cancel().catch(fail)
 				}}
 				onOpenPdf={openInPdfTools}

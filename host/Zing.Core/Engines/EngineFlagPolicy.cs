@@ -163,7 +163,9 @@ internal sealed class EngineFlagPolicy
 	private const string Mp4Selector = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b";
 
 	// Demuxer names, for telling FFmpeg what an input is instead of letting it sniff (Convert). None reads a list of other files.
-	private static readonly string[] FfmpegFormats = ["mp4", "mov", "matroska", "webm", "mp3", "wav", "flac", "ogg", "ipod", "gif", "avi", "flv", "asf", "mpeg", "mpegts", "aiff", "aac", "ac3", "amr"];
+	private static readonly string[] FfmpegFormats = ["mp4", "mov", "matroska", "webm", "mp3", "wav", "flac", "ogg", "ipod", "gif", "avi", "flv", "asf", "mpeg", "mpegts", "aiff", "aac", "ac3", "amr",
+		// More input demuxers, for the file viewer (ViewerConversion.Demuxers); each reads one file.
+		"mxf", "rm", "dts", "caf", "au", "ape", "wv", "voc", "w64"];
 
 	/// <summary>The even-size filter for H.264 (x264 refuses odd dimensions). A fixed text like the GIF one.</summary>
 	internal const string EvenSizeFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
@@ -216,13 +218,19 @@ internal sealed class EngineFlagPolicy
 				("-f", new FlagSpec(FlagValue.OneOf) { Choices = FfmpegFormats }),
 				// Encoder settings (Convert): numbers and fixed words only; none names a file, a filter or an address.
 				("-crf", new FlagSpec(FlagValue.Number)),
-				("-preset", new FlagSpec(FlagValue.OneOf) { Choices = ["medium"] }),
+				("-preset", new FlagSpec(FlagValue.OneOf) { Choices = ["medium", "ultrafast", "superfast", "veryfast", "faster", "fast"] }),
 				("-pix_fmt", new FlagSpec(FlagValue.OneOf) { Choices = ["yuv420p"] }),
 				("-b:v", new FlagSpec(FlagValue.OneOf) { Choices = ["0"] }),
 				("-profile:v", new FlagSpec(FlagValue.OneOf) { Choices = ["3"] }),
 				// 0 is "loop forever" in a GIF; any other number would loop an image input forever.
 				("-loop", new FlagSpec(FlagValue.OneOf) { Choices = ["0"] }),
-				("-vf", new FlagSpec(FlagValue.OneOf) { Choices = [GifFilter, EvenSizeFilter] })),
+				("-vf", new FlagSpec(FlagValue.OneOf) { Choices = [GifFilter, EvenSizeFilter] }),
+				// The file viewer's conversions: -sn and -dn drop streams; -g is a number; -ac is stereo; -movflags takes the one fixed set that makes a fragmented MP4.
+				("-sn", new FlagSpec()),
+				("-dn", new FlagSpec()),
+				("-g", new FlagSpec(FlagValue.Number)),
+				("-ac", new FlagSpec(FlagValue.OneOf) { Choices = ["2"] }),
+				("-movflags", new FlagSpec(FlagValue.OneOf) { Choices = ["frag_keyframe+empty_moov+default_base_moof"] })),
 			["-nostdin"],
 			new Dictionary<string, string[]> { ["-i"] = ["-protocol_whitelist", "file,pipe"] },
 			["mp4", "mov", "mkv", "webm", "mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "gif", "jpg", "jpeg", "png", "webp"],
@@ -251,7 +259,7 @@ internal sealed class EngineFlagPolicy
 				// "1--1" is every image but the first: a multi-frame file gives one picture to a single-frame format.
 				("-delete", new FlagSpec(FlagValue.OneOf) { Choices = ["1--1"] }),
 				// An icon can't be bigger than 256 pixels; ">" only ever shrinks.
-				("-resize", new FlagSpec(FlagValue.OneOf) { Choices = ["256x256>"] })),
+				("-resize", new FlagSpec(FlagValue.OneOf) { Choices = ["256x256>", "4096x4096>"] })),
 			[],
 			new Dictionary<string, string[]>(),
 			["jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff", "avif", "heic", "ico"],

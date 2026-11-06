@@ -15,10 +15,8 @@ const OUT_DIR = join(import.meta.dirname, '..', 'docs', 'screenshots', 'phase-6'
 const MODES = ['light', 'dark'] as const
 const LATER_PHASE: readonly string[] = [
 	'section:Diagnose',
-	'section:Files',
 	'section:Network & VPN',
 	'section:Open a Link',
-	'tool:Background Remover',
 ]
 const TOOL_IDS = toolboxGroups.flatMap((group) => itemsIn(group).map(panelId)).filter((id) => !LATER_PHASE.includes(id))
 

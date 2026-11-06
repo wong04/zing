@@ -277,7 +277,7 @@ test('an encrypted PDF and a damaged one are refused by name, and nothing is wri
 	await zing.close()
 })
 
-test('a web page cannot read a file or save one through the PDF channels', async () => {
+test('a web page cannot read a PDF panel session or save through it', async () => {
 	pageServer = createServer((_req, res) => {
 		res.setHeader('content-type', 'text/html; charset=utf-8')
 		res.end('<!DOCTYPE html><html><body>a page</body></html>')
@@ -285,22 +285,28 @@ test('a web page cannot read a file or save one through the PDF channels', async
 	await new Promise<void>((resolve) => pageServer!.listen(0, '127.0.0.1', resolve))
 	const base = `http://127.0.0.1:${(pageServer.address() as AddressInfo).port}`
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/x` } })
-	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/x`)
+	const pdf = await makePdf(join(zing.userDataDir, 'a.pdf'), [200])
+	const { surface, panel } = await openPdf(zing, pdf)
+	await expect(panel.getByText('1 file, 1 page')).toBeVisible()
+	// The address the panel read its file from, as the interface itself fetched it.
+	const session = await surface.evaluate(() => performance.getEntriesByType('resource').map((e) => e.name).find((n) => /^https:\/\/view\.zing\/[0-9a-f]{32}$/.test(n)))
+	expect(session, 'the panel should have read through a view.zing session').toBeDefined()
+	const id = session!.split('/').pop()!
 
-	// A page view has no host channel behind it: neither call is answered, and nothing is written.
-	const answered = await page.evaluate(
-		() =>
-			new Promise<boolean>((resolve) => {
-				const webview = (globalThis as unknown as { chrome?: { webview?: { postMessage(m: unknown): void; addEventListener(t: 'message', l: () => void): void } } }).chrome?.webview
-				// The page must be able to try: without chrome.webview the test would pass for the wrong reason.
-				if (webview === undefined) throw new Error('chrome.webview is missing on this page, so the test proves nothing')
-				webview.addEventListener('message', () => resolve(true))
-				webview.postMessage({ kind: 'invoke', id: 1, channel: 'files:save-bytes', args: ['evil.pdf', btoa('%PDF-1.4 evil')] })
-				webview.postMessage({ kind: 'invoke', id: 2, channel: 'files:read', args: ['00000000000000000000000000000000'] })
-				setTimeout(() => resolve(false), 1500)
-			}),
-	)
-	expect(answered).toBe(false)
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/x`)
+	const outcome = await page.evaluate(async ([read, save]) => {
+		if ((globalThis as unknown as { chrome?: { webview?: unknown } }).chrome?.webview === undefined) throw new Error('chrome.webview is missing on this page, so the test proves nothing')
+		const tried = async (url: string, init?: RequestInit): Promise<string> => {
+			try {
+				const response = await fetch(url, init)
+				return `answered ${response.status}`
+			} catch {
+				return 'refused'
+			}
+		}
+		return [await tried(read!), await tried(read!, { mode: 'no-cors' }), await tried(save!, { method: 'PUT', body: '%PDF-1.4 evil' })]
+	}, [session, `https://view.zing/save/${id}/evil.pdf`])
+	expect(outcome).toEqual(['refused', 'refused', 'refused'])
 	expect(filesIn(downloadsOf(zing))).toEqual([])
 	await zing.close()
 })

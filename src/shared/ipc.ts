@@ -1,4 +1,5 @@
 import type { EngineInfo, EngineProgress, EnsureOutcome, YtDlpUpdate } from './engines/engineInfo'
+import type { SessionKindName, ViewerOpened } from './convert/viewable'
 import type { EngineExit, EngineJobSpec, EngineOutput, FileKind, PickedFile } from './engines/engineJob'
 import type { FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
@@ -297,16 +298,6 @@ export interface InvokeContract {
 	 */
 	'page:save': { args: []; result: PickedFile }
 	/**
-	 * The PDF tools: the bytes of a file this window picked or was given, as base64. Only PDF, PNG, JPEG, GIF, WebP and BMP files whose
-	 * content is what their name says, up to 50 MB; anything else rejects with PdfFileRefusedException. A page view has no host channel.
-	 */
-	'files:read': { args: [token: string]; result: string }
-	/**
-	 * The PDF tools: puts base64 bytes in Downloads under `name` (a plain name ending in .pdf, .png or .jpg, up to 100 characters
-	 * before the extension; the bytes must be that kind; numbered if taken) and answers with the name it got and a token.
-	 * Up to 100 MB. Rejects with PdfFileRefusedException otherwise.
-	 */
-	'files:save-bytes': { args: [name: string, base64: string]; result: PickedFile }
 	/** The native open dialog; an empty list if the person cancelled. */
 	'files:pick': { args: [kinds: readonly FileKind[]]; result: PickedFile[] }
 	/**
@@ -316,10 +307,29 @@ export interface InvokeContract {
 	 */
 	'convert:html-to-pdf': { args: [token: string, outputName: string]; result: PickedFile }
 	/**
+	 * Opens a picked or dropped file for a tool panel as a read session on the viewer file server (`https://view.zing`). `kinds`
+	 * names what the tool takes, from a fixed table: `image` (PNG, JPEG or WebP, up to 120 MB) and `pdf` (`%PDF-` at the start, up
+	 * to 50 MB). The host judges the file first bytes and length and rejects anything else (SessionFileRefusedException),
+	 * an unknown kind or an unknown panel. The answer's `url` is `GET`able by the tool (a worker included) and nothing else is
+	 * revealed: no path, no token. Opening another file in the panel, `viewer:close(id)` or closing the panel revokes it.
+	 * The same session takes results: `PUT https://view.zing/save/<id>/<name>` (see docs in task-18-report).
+	 */
+	'session:open': { args: [panelId: string, token: string, kinds: readonly SessionKindName[]]; result: ViewerOpened }
+	/** The background remover's session: `session:open` with the `image` kind. */
+	'bgremove:open': { args: [panelId: string, token: string]; result: ViewerOpened }
+	/**
 	 * Files dropped on a Zing view. The host reads their paths from the drop itself (`postMessageWithAdditionalObjects`),
 	 * so the bridge carries the `File`s beside the message and not in its JSON args; a web page cannot send one.
 	 */
 	'files:open-dropped': { args: [files: readonly File[]]; result: PickedFile[] }
+	/**
+	 * Opens a picked or dropped file (by its token) in the viewer panel `panelId`, converting a copy when Chromium can't show it.
+	 * One file per panel: it replaces the panel's earlier one. Closing the panel (or the window) ends the conversion and deletes the copy.
+	 * Rejects for a format it can't show, an engine that isn't downloaded, or a file that has gone.
+	 */
+	'viewer:open': { args: [token: string, panelId: string]; result: ViewerOpened }
+	/** Forgets the open file: its address answers 404, a running conversion stops and the temporary copy is deleted. */
+	'viewer:close': { args: [id: string]; result: void }
 	'account:get': { args: []; result: AccountState }
 	'account:sign-up': { args: [username: string, displayName: string, email: string, password: string]; result: AccountOutcome }
 	'account:sign-in': { args: [password: string]; result: AccountOutcome }
@@ -469,11 +479,13 @@ export interface ZingApi {
 	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>
 	/** Convert's HTML to PDF (see `convert:html-to-pdf`). */
 	printHtmlToPdf(token: string, outputName: string): Promise<PickedFile>
-	/** The PDF tools' read of a granted PDF or picture as base64 (see `files:read`). */
-	readFileBase64(token: string): Promise<string>
-	/** The PDF tools' save of base64 bytes to Downloads (see `files:save-bytes`). */
-	saveFileBase64(name: string, base64: string): Promise<PickedFile>
+	/** Opens a read session for a tool panel (see `session:open`). */
+	openToolSession(panelId: string, token: string, kinds: readonly SessionKindName[]): Promise<ViewerOpened>
+	/** The background remover's session (see `bgremove:open`). */
+	openBackgroundPicture(panelId: string, token: string): Promise<ViewerOpened>
 	/** Hand over the `File`s of a drop (`event.dataTransfer.files`); resolves with a token for each. */
 	openDropped(files: readonly File[]): Promise<PickedFile[]>
+	openViewerFile(token: string, panelId: string): Promise<ViewerOpened>
+	closeViewerFile(id: string): Promise<void>
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe
 }

@@ -4,6 +4,7 @@ import { zing } from '../../api'
 import { InfoBanner, PillButton, PillField, PillSlider } from '../../components'
 import { describeFailure } from '../dev/parts'
 import { bytesToBase64 } from './pdfBytes'
+import { usePanelId } from '../panelId'
 import { readGranted } from './pdfHost'
 import type { PlacedItem } from './pdfModel'
 import type { PagePictureSize, PdfPreview } from './pdfRender'
@@ -45,6 +46,7 @@ export interface PdfPageEditorProps {
 
 /** One page, large, with its added text, pictures and signatures; each can be dragged, or moved with the arrow keys. */
 export function PdfPageEditor({ preview, index, position, turn, items, onAdd, onMove, onResize, onEditText, onRemove, onClose }: PdfPageEditorProps) {
+	const panelId = usePanelId()
 	const canvas = useRef<HTMLCanvasElement>(null)
 	const [size, setSize] = useState<PagePictureSize | null>(null)
 	const [selected, setSelected] = useState<number | null>(null)
@@ -86,8 +88,8 @@ export function PdfPageEditor({ preview, index, position, turn, items, onAdd, on
 	}
 
 	const addPicture = (file: { token: string; name: string }): void => {
-		readGranted(file.token)
-			.then(async (bytes) => {
+		readGranted(panelId, file.token)
+			.then(async ({ bytes }) => {
 				if (bytes.length > PDF_LIMITS.maxOverlayImageBytes) throw new PdfEditError(`${file.name} is over ${PDF_LIMITS.maxOverlayImageBytes / (1024 * 1024)} MB; use a smaller picture.`)
 				const picture = await toPicture(file.name, bytes)
 				const bitmap = await createImageBitmap(new Blob([picture.bytes as BlobPart]))

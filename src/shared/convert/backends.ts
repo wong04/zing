@@ -94,8 +94,8 @@ const DOCUMENT_TARGETS: readonly ConversionFormat[] = [
 // ImageMagick's PDF coder is switched off by the engine policy, so it is never asked to write one.
 const HTML_TARGETS: readonly ConversionFormat[] = [format('pdf', 'chromium-pdf', false), ...DOCUMENT_TARGETS]
 
-// The pictures pdf-lib can place as they are (PNG, JPEG) or after the browser decodes them (GIF's first frame, WebP, BMP).
-const PICTURES_FOR_PDF: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'])
+// The pictures a viewer session reads (PNG, JPEG, WebP): pdf-lib places PNG and JPEG as they are, and the browser decodes WebP first.
+const PICTURES_FOR_PDF: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'webp'])
 const PICTURE_TO_PDF: ConversionFormat = format('pdf', 'pdf-lib', false)
 
 // A PDF is drawn page by page by pdf.js and saved as one picture per page. There is no Word target: Pandoc can't read PDFs.
@@ -114,7 +114,7 @@ function targetsFor(ext: string, readBy: ConversionBackend): readonly Conversion
 		case 'pdfjs':
 			return PDF_TARGETS
 		case 'ffmpeg':
-			if (ext === 'gif') return [...VIDEO_TARGETS, ...IMAGE_TARGETS, PICTURE_TO_PDF]
+			if (ext === 'gif') return [...VIDEO_TARGETS, ...IMAGE_TARGETS]
 			return category(ext) === 'audio' ? AUDIO_TARGETS : [...VIDEO_TARGETS, ...AUDIO_TARGETS]
 		case 'pandoc':
 			return ext === 'html' || ext === 'htm' || ext === 'xhtml' ? HTML_TARGETS : DOCUMENT_TARGETS
