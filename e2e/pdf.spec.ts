@@ -286,8 +286,9 @@ test('a picture the browser cannot decode is reported, not left as a blank box',
 	await panel.getByRole('button', { name: 'Edit page…' }).click()
 	await queuePick(zing, broken)
 	await panel.getByRole('button', { name: 'Add picture…' }).click()
-	await expect(panel.getByRole('alert')).toContainText("A picture on this page can't be shown")
-	await expect(panel.getByRole('img', { name: "Picture that can't be shown" })).toBeVisible()
+	// Said plainly at once (the picture is decoded before it is placed), and nothing blank is left on the page.
+	await expect(panel.getByRole('alert')).toContainText('could not be decoded')
+	await expect(panel.getByRole('button', { name: 'Picture or signature' })).toHaveCount(0)
 	await zing.close()
 })
 

@@ -19,15 +19,10 @@ describe('isAllowedWorkerUrl', () => {
 	})
 })
 
-describe('schemes a worker is given on top', () => {
-	it('allows data and blob addresses only when told to, and the error names no tool', async () => {
-		expect(isAllowedWorkerUrl('data:text/plain,hi', own, host, `${own}/`, ['data:', 'blob:'])).toBe(true)
-		expect(isAllowedWorkerUrl('blob:https://app.zing/abc', own, host, `${own}/`, ['data:', 'blob:'])).toBe(true)
-		expect(isAllowedWorkerUrl('data:text/plain,hi', own, host, `${own}/`, ['blob:'])).toBe(false)
-		expect(isAllowedWorkerUrl('https://evil.example/x', own, host, `${own}/`, ['data:', 'blob:'])).toBe(false)
+describe('the error', () => {
+	it('names no tool', async () => {
 		const scope: Record<string, unknown> = { fetch: () => Promise.resolve('ok'), location: { href: 'https://app.zing/w.js' } }
-		restrictNetwork(scope, own, host, ['blob:'])
-		await expect((scope.fetch as (u: string) => Promise<string>)('blob:https://app.zing/abc')).resolves.toBe('ok')
+		restrictNetwork(scope, own, host)
 		const refused = await (scope.fetch as (u: string) => Promise<string>)('https://evil.example/x').catch((e: Error) => e.message)
 		expect(refused).toMatch(/This worker is not allowed to reach https:\/\/evil\.example/)
 		expect(refused).not.toMatch(/background/i)
