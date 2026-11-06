@@ -38,7 +38,7 @@ This plan covers:
 | User agent | stripped Electron UA | WebView2's own Edge UA, untouched. That's what passed Google, so `userAgent.ts` and the `defaultUserAgent` setting are retired |
 | Account gate secrets | `safeStorage` | DPAPI (`ProtectedData`) |
 | Window chrome | frameless + `titleBarOverlay` + Mica | WinUI 3 `ExtendsContentIntoTitleBar` + `MicaBackdrop` |
-| Single instance, default browser, taskbar icon | Electron `app` | Windows App SDK `AppInstance` redirection, registry capabilities, `AppWindow.SetIcon` |
+| Single instance, default browser, taskbar icon | Electron `app` | a named mutex and pipe (`ProfileOwner`), registry capabilities, `AppWindow.SetIcon` |
 | Security updates | ship a new Electron every Chromium fix | **The Evergreen runtime is updated by Windows,** which removes the biggest ongoing cost |
 | Installer | electron-builder, ~100 MB | Velopack (GitHub Releases auto-update), a few MB; the runtime is already on Windows 11 |
 
@@ -217,7 +217,7 @@ The last two items are ported and tested but not yet wired into the host (W3b).
 **Host:**
 - Native `MenuFlyout` menus.
 - Keyboard shortcuts from every view: WebView2 raises accelerator keys as `KeyDown` on the root grid.
-- Single instance per profile through `AppInstance` redirection. A second launch hands its links over and exits; launch links open in the first window.
+- Single instance per profile through a named mutex and pipe (`ProfileOwner`). A second launch hands its links over and exits; launch links open in the first window.
 - `zing://home` is served by `WebResourceRequested`. The start page's search and Edit Shortcuts links are intercepted, and no web page can open Settings. It restyles when the accent or theme changes, and reloads when the shortcuts or search engine change.
 - New tabs open the start page.
 - Tab arrangements and the strip menu.

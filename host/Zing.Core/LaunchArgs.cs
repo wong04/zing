@@ -10,35 +10,6 @@ public static class LaunchArgs
 	/// </summary>
 	public static List<string> Urls(IEnumerable<string> argv) => argv.Select(OpenableUrl).OfType<string>().ToList();
 
-	/// <summary>Splits a raw Windows command line the way the C runtime does, for activations that arrive as one string.</summary>
-	public static List<string> Split(string commandLine)
-	{
-		var tokens = new List<string>();
-		var current = new System.Text.StringBuilder();
-		var quoted = false;
-		var any = false;
-		foreach (var c in commandLine)
-		{
-			if (c == '"')
-			{
-				quoted = !quoted;
-				any = true;
-				continue;
-			}
-			if (char.IsWhiteSpace(c) && !quoted)
-			{
-				if (any) tokens.Add(current.ToString());
-				current.Clear();
-				any = false;
-				continue;
-			}
-			current.Append(c);
-			any = true;
-		}
-		if (any) tokens.Add(current.ToString());
-		return tokens;
-	}
-
 	private static string? OpenableUrl(string token)
 	{
 		var candidate = Unquote(token);
