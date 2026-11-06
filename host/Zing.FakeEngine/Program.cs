@@ -15,7 +15,7 @@ using System.Text.Json;
 //   --print-env               prints "env" and the environment as one JSON object
 //   --print-magick-policy     prints the policy.xml found through MAGICK_CONFIGURE_PATH, line by line
 //   (the file viewer's own commands) with "-movflags" it copies its "-i" file to the last argument in six pieces (an empty file is "invalid data"), saying how far it is on
-//   stderr as FFmpeg does; with "-delete" it copies its first argument to the last. The input is a file the test made.
+//   stderr as FFmpeg does; with the viewer's "-resize 4096x4096>" it copies its first argument to the last. The input is a file the test made.
 //   --no-playlist -o <path> -- <url>   acts as yt-dlp (see FakeDownload below)
 // Like a converter (Convert's e2e runs it as ffmpeg, magick and pandoc), when the last argument is a path with an extension that doesn't exist yet (ImageMagick is given it relative to the working folder)
 // in a folder that does, it writes a small file there; and an input file (any argument that is a small existing file) whose first
@@ -36,7 +36,7 @@ if (Array.IndexOf(args, "--no-playlist") >= 0 && outputFlag >= 0 && outputFlag +
 }
 
 if (args.Contains("-movflags")) return FakeViewerConversion.Video(args);
-if (args.Contains("-delete")) return FakeViewerConversion.Image(args);
+if (args.Contains("4096x4096>")) return FakeViewerConversion.Image(args);
 
 var code = 0;
 var wrote = false;
