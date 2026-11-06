@@ -56,7 +56,9 @@
 		"http://192．168．1．1/a",
 		"http://１０.０.０.１/a",
 		"http://ｌｏｃａｌｈｏｓｔ/a",
-		"http://nas。local/a"
+		"http://nas。local/a",
+		"http://localhost../a",
+		"http://nas.local../a"
 	],
 	"accept": [
 		"http://172.15.0.1/a",

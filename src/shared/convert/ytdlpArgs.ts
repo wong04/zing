@@ -70,7 +70,7 @@ function ipv6Local(bracketed: string): boolean {
 
 function isLocalHost(hostname: string): boolean {
 	if (hostname.startsWith('[')) return ipv6Local(hostname)
-	const name = hostname.toLowerCase().replace(/\.$/, '')
+	const name = hostname.toLowerCase().replace(/\.+$/, '')
 	const ipv4 = ipv4Local(name)
 	if (ipv4 !== null) return ipv4
 	// A name with no dot is an intranet machine; the URL parser has already turned every numeric spelling into dotted form.
