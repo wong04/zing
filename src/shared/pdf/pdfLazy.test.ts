@@ -28,7 +28,7 @@ describe('pdf-lib and pdf.js load only when a PDF tool opens', () => {
 	it('names pdf.js in one file, and only in dynamic imports', () => {
 		expect(importers(/pdfjs-dist/)).toEqual(['renderer/src/tools/files/pdfRender.ts'])
 		expect(render()).not.toMatch(/^import [^t].*pdfjs-dist/m)
-		expect(render()).toMatch(/await Promise\.all\(\[import\('pdfjs-dist'\)/)
+		expect(render()).toMatch(/= import\('pdfjs-dist'\)/)
 	})
 })
 

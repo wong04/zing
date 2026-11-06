@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { outputFileName } from '@shared/convert/commands'
+import { suffixedFileName } from '@shared/convert/commands'
 import type { PickedFile } from '@shared/engines/engineJob'
-import { PDF_LIMITS, PdfEditError, parsePageRanges, type FormFieldInfo, type RightAngle } from '@shared/pdf/pdfCore'
+import { PDF_LIMITS, PdfEditError, parsePageRanges, type FormFieldInfo, type PdfPlan, type RightAngle } from '@shared/pdf/pdfCore'
 import { zing } from '../../api'
 import { FileDropZone, FileRow, InfoBanner, PillButton, PillField } from '../../components'
 import { describeFailure } from '../dev/parts'
@@ -10,6 +10,7 @@ import './files.css'
 import { PdfPageEditor } from './PdfPageEditor'
 import { onHandedPdf, takeHandedPdf } from './pdfHandoff'
 import { readGranted, saveBytes } from './pdfHost'
+import { describeRun, runParts, type RunOutcome } from './pdfRun'
 import {
 	addFile,
 	addItem,
@@ -34,8 +35,8 @@ import {
 	type Model,
 	type PageEntry,
 } from './pdfModel'
-import { buildInWorker, inspectInWorker, stopPdfWork } from './pdfEditClient'
-import { openPreview, type PdfPreview } from './pdfRender'
+import { newPdfWorkerClient } from './pdfEditClient'
+import { createPreviewSession, type PdfPreview } from './pdfRender'
 
 interface Opened {
 	readonly name: string
@@ -144,6 +145,10 @@ export function PdfTool() {
 	const cells = useRef(new Map<number, HTMLElement>())
 	const refocus = useRef(false)
 	const lastAmend = useRef<string | null>(null)
+	// This panel's own workers: closing or cancelling here never touches another panel's.
+	const [client] = useState(newPdfWorkerClient)
+	const [session] = useState(createPreviewSession)
+	const cancelled = useRef(false)
 
 	const model = history.present
 	const used = [...new Set(model.pages.map((p) => p.source))]
@@ -185,9 +190,10 @@ export function PdfTool() {
 		const current = openedRef.current
 		if (current.length >= PDF_LIMITS.maxMergeFiles) throw new PdfEditError(`This tool opens at most ${PDF_LIMITS.maxMergeFiles} files at once.`)
 		const bytes = await readGranted(file.token)
-		checkSessionBytes(current.reduce((sum, o) => sum + o.bytes.length, 0), bytes.length, file.name)
-		const info = await inspectInWorker({ name: file.name, bytes })
-		const preview = await openPreview(file.name, bytes)
+		// Each file is held twice: here, and as the copy the PDF viewer takes.
+		checkSessionBytes(current.reduce((sum, o) => sum + o.bytes.length * 2, 0), bytes.length * 2, file.name)
+		const info = await client.inspect({ name: file.name, bytes })
+		const preview = await session.open(file.name, bytes)
 		try {
 			const source = current.length
 			const next = commit(historyRef.current, addFile(historyRef.current.present, { source, name: file.name, pageCount: info.pageCount }))
@@ -231,17 +237,19 @@ export function PdfTool() {
 	useEffect(
 		() => () => {
 			// Nothing is kept after the panel closes.
-			stopPdfWork()
-			for (const o of openedRef.current) void o.preview.destroy()
+			client.stop()
+			void session.destroy()
 		},
-		[],
+		[client, session],
 	)
 
 	const pick = (): void => {
 		zing.pickFiles(['pdf']).then(take, fail)
 	}
 
-	const targets = (): readonly number[] => (selected.length > 0 ? selected : focused === null ? [] : [focused])
+	// What Turn and Delete act on: the selection when the focused page is part of it, otherwise only the focused page, so a stale
+	// selection elsewhere is never changed by accident. The target is shown above the pages.
+	const targets = (): readonly number[] => (focused === null ? [] : selected.includes(focused) ? selected : [focused])
 	const positionOf = (key: number): number => model.pages.findIndex((p) => p.key === key) + 1
 
 	useLayoutEffect(() => {
@@ -343,29 +351,46 @@ export function PdfTool() {
 		}
 	}
 
-	const result = (name: string): string => outputFileName(name, 'pdf')
 	const baseName = (): string => withoutExtension(opened[used[0] ?? 0]?.name ?? 'document')
 
 	const sourcesFor = (): { name: string; bytes: Uint8Array }[] =>
 		openedRef.current.map((o, i) => ({ name: o.name, bytes: used.includes(i) ? o.bytes : new Uint8Array() }))
 
-	const save = (): void => {
-		if (busy !== null || model.pages.length === 0) return
-		setBusy('Saving…')
+	/** Builds and saves each plan in turn; Cancel stops the next from starting and the panel says what was saved. */
+	const runPlans = (label: string, plans: readonly PdfPlan[], nameFor: (index: number) => string): void => {
+		cancelled.current = false
+		setBusy(label)
 		setProblem(null)
-		const name = result(used.length > 1 ? 'merged' : `${baseName()}-edited`)
+		setSaved([])
+		const sources = sourcesFor()
 		void (async () => {
+			let outcome: RunOutcome | undefined
 			try {
-				const bytes = await buildInWorker(sourcesFor(), toPlan(model))
-				const placed = await saveBytes(name, bytes)
-				setSaved([placed.name])
-				say(`Saved ${placed.name} to your Downloads folder.`)
+				outcome = await runParts(
+					plans.length,
+					(i) => client.build(sources, plans[i]!),
+					async (i, bytes) => (await saveBytes(nameFor(i), bytes)).name,
+					() => cancelled.current,
+				)
 			} catch (error) {
-				fail(error)
+				const done = (error as { saved?: string[] }).saved ?? []
+				setSaved(done)
+				fail(done.length === 0 ? error : new PdfEditError(`${describeFailure(error)} ${done.length} of ${plans.length} files were saved before it.`))
+				return
 			} finally {
 				setBusy(null)
 			}
+			setSaved(outcome.saved)
+			const stopped = describeRun(outcome)
+			if (stopped !== null) setProblem(stopped)
+			else say(`Saved ${outcome.saved.length === 1 ? outcome.saved[0]! : `${outcome.saved.length} files`} to your Downloads folder.`)
 		})()
+	}
+
+	const save = (): void => {
+		if (busy !== null || model.pages.length === 0) return
+		const name = used.length > 1 ? 'merged.pdf' : suffixedFileName(baseName(), '-edited', 'pdf')
+		runPlans('Saving…', [toPlan(model)], () => name)
 	}
 
 	const split = (): void => {
@@ -378,27 +403,13 @@ export function PdfTool() {
 			fail(error)
 			return
 		}
-		setBusy('Splitting…')
-		void (async () => {
-			const names: string[] = []
-			try {
-				for (const [i, range] of parts.entries()) {
-					const bytes = await buildInWorker(sourcesFor(), toPlanRange(model, range))
-					names.push((await saveBytes(result(`${baseName()}-part-${String(i + 1).padStart(2, '0')}`), bytes)).name)
-				}
-			} catch (error) {
-				fail(error)
-			} finally {
-				setSaved(names)
-				setBusy(null)
-			}
-		})()
+		runPlans('Splitting…', parts.map((range) => toPlanRange(model, range)), (i) => suffixedFileName(baseName(), `-part-${String(i + 1).padStart(2, '0')}`, 'pdf'))
 	}
 
+	// Ends this panel's worker, which fails the file being built; one already being saved still lands and is reported.
 	const cancel = (): void => {
-		stopPdfWork()
-		setBusy(null)
-		setProblem('Stopped. Nothing more was saved.')
+		cancelled.current = true
+		client.stop()
 	}
 
 	const editorEntry = editing === null ? undefined : model.pages.find((p) => p.key === editing)

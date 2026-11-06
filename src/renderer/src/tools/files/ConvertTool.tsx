@@ -11,10 +11,10 @@ import { FileDropZone, FileRow, InfoBanner, PillButton, PillMenu, PillSlider } f
 import { describeFailure } from '../dev/parts'
 import { ToolPage } from '../parts'
 import './files.css'
-import { imagesToPdfInWorker } from './pdfEditClient'
+import { newPdfWorkerClient } from './pdfEditClient'
 import { handOffPdf, takeHandedPdf } from './pdfHandoff'
 import { readGranted, saveBytes } from './pdfHost'
-import { openPreview } from './pdfRender'
+import { createPreviewSession } from './pdfRender'
 import { toPicture } from './pictureBytes'
 import { useEngineJob } from './useEngineJob'
 
@@ -91,6 +91,16 @@ export function ConvertTool() {
 		zing.pickFiles(['image', 'video', 'audio', 'document']).then(take, fail)
 	}
 
+	// Convert's own PDF workers, ended when this tool closes; another panel's are never touched.
+	const [pdfClient] = useState(newPdfWorkerClient)
+	const [pdfViewer] = useState(createPreviewSession)
+	useEffect(
+		() => () => {
+			pdfClient.stop()
+			void pdfViewer.destroy()
+		},
+		[pdfClient, pdfViewer],
+	)
 	const stopPages = useRef(false)
 	const runningPages = useRef(false)
 
@@ -99,9 +109,9 @@ export function ConvertTool() {
 		stopPages.current = false
 		runningPages.current = true
 		setStage({ kind: 'working', cancellable: true, label: 'Opening the PDF…' })
-		let preview: Awaited<ReturnType<typeof openPreview>>
+		let preview: Awaited<ReturnType<typeof pdfViewer.open>>
 		try {
-			preview = await openPreview(name, await readGranted(plan.token))
+			preview = await pdfViewer.open(name, await readGranted(plan.token))
 		} catch (error) {
 			runningPages.current = false
 			throw error
@@ -126,7 +136,7 @@ export function ConvertTool() {
 	const runPicture = async (plan: Extract<ConvertPlan, { kind: 'picture' }>, name: string): Promise<void> => {
 		setStage({ kind: 'working', cancellable: false })
 		const picture = await toPicture(name, await readGranted(plan.token))
-		const pdf = await imagesToPdfInWorker([{ name, format: picture.format, bytes: picture.bytes }])
+		const pdf = await pdfClient.imagesToPdf([{ name, format: picture.format, bytes: picture.bytes }])
 		setStage({ kind: 'done', outputs: [await saveBytes(plan.output, pdf)] })
 	}
 
@@ -238,6 +248,7 @@ export function ConvertTool() {
 							<PillSlider aria-label="Quality" min={1} max={100} step={1} value={quality} onChange={setQuality} valueText={`${quality} out of 100`} />
 						</div>
 					) : null}
+					{ext === 'pdf' ? <span className="convert-hint">Pages with JPEG 2000, JBIG2 or CCITT pictures (common in scans) may come out blank; the PDF viewer here does not decode those.</span> : null}
 					{target.ext === 'pdf' ? <span className="convert-hint">The page is printed as UTF-8 text, with scripts and the network off.</span> : null}
 					<div className="convert-row">
 						<PillButton disabled={busy} onClick={start}>

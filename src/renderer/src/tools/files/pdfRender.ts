@@ -1,21 +1,23 @@
-// Pictures of PDF pages, drawn by pdf.js (Apache-2.0, 6.4.299) in its own worker. The PDF is untrusted, so what pdf.js is
-// allowed to do is fixed here and nowhere else: see OPEN_OPTIONS.
+// Pictures of PDF pages, drawn by pdf.js (Apache-2.0, 6.4.299) in a worker of its own for each panel. The PDF is untrusted, so
+// what pdf.js is allowed to do is fixed here and nowhere else: see OPEN_OPTIONS.
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
 import { PdfEditError } from '@shared/pdf/pdfCore'
 
 type PdfJs = typeof import('pdfjs-dist')
 
 let loading: Promise<PdfJs> | undefined
+let workerClass: Promise<new () => Worker> | undefined
 
-/** Loads pdf.js and its worker on first use only; the panel and Convert's PDF path are the only callers. */
+/** Loads pdf.js on first use only; the panel and Convert's PDF path are the only callers. */
 function loadPdfJs(): Promise<PdfJs> {
-	loading ??= (async () => {
-		const [lib, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?worker')])
-		// The worker is bundled with the rest of the interface (a .js file of Zing's own origin, not an address from anywhere else).
-		lib.GlobalWorkerOptions.workerPort = new worker.default()
-		return lib
-	})()
+	loading ??= import('pdfjs-dist')
 	return loading
+}
+
+/** The worker is bundled with the rest of the interface (a .js file of Zing's own origin, not an address from anywhere else). */
+function loadWorkerClass(): Promise<new () => Worker> {
+	workerClass ??= import('pdfjs-dist/build/pdf.worker.min.mjs?worker').then((m) => m.default)
+	return workerClass
 }
 
 /** Where the bundle keeps the fonts and character maps pdf.js reads (copied there at build time by vite.config.ts). */
@@ -64,79 +66,163 @@ export interface PdfPreview {
 
 const isCancelled = (error: unknown): boolean => error instanceof Error && error.name === 'RenderingCancelledException'
 
-export async function openPreview(name: string, bytes: Uint8Array): Promise<PdfPreview> {
-	const lib = await loadPdfJs()
-	// pdf.js takes the buffer it is given, so it gets a copy and the panel keeps its bytes.
-	const task = lib.getDocument({
-		...OPEN_OPTIONS,
-		data: bytes.slice(),
-		cMapUrl: bundleFolder('cmaps'),
-		cMapPacked: true,
-		standardFontDataUrl: bundleFolder('standard_fonts'),
-	})
-	let doc: PDFDocumentProxy
-	try {
-		doc = await task.promise
-	} catch (error) {
-		throw new PdfEditError(`${name} can't be shown: ${error instanceof Error ? error.message : String(error)}`)
+/** How long pdf.js may take before its worker is thrown away and made again; a page can be built to take forever. */
+export const TIMEOUTS = { open: 60_000, draw: 30_000, image: 60_000 } as const
+
+/**
+ * One panel's pdf.js worker and the documents open in it. Closing the panel destroys the worker. A call that takes too long
+ * destroys the worker, makes a new one and opens the documents again, so one pathological page does not hang every later
+ * preview; the call that was waiting fails with a plain message.
+ */
+export interface PreviewSession {
+	open(name: string, bytes: Uint8Array): Promise<PdfPreview>
+	destroy(): Promise<void>
+}
+
+interface Entry {
+	readonly name: string
+	readonly bytes: Uint8Array
+	doc?: PDFDocumentProxy
+	task?: ReturnType<PdfJs['getDocument']>
+}
+
+export function createPreviewSession(timeouts: typeof TIMEOUTS = TIMEOUTS): PreviewSession {
+	let pdfWorker: InstanceType<PdfJs['PDFWorker']> | undefined
+	const entries = new Set<Entry>()
+	let restarting: Promise<void> | undefined
+
+	async function load(entry: Entry): Promise<void> {
+		const lib = await loadPdfJs()
+		pdfWorker ??= new lib.PDFWorker({ port: new (await loadWorkerClass())() as never })
+		// pdf.js takes the buffer it is given, so it gets a copy and the panel keeps its bytes.
+		entry.task = lib.getDocument({
+			...OPEN_OPTIONS,
+			data: entry.bytes.slice(),
+			worker: pdfWorker,
+			cMapUrl: bundleFolder('cmaps'),
+			cMapPacked: true,
+			standardFontDataUrl: bundleFolder('standard_fonts'),
+		})
+		entry.doc = await entry.task.promise
 	}
-	return {
-		pageCount: doc.numPages,
-		async pageSize(index) {
-			const page = await doc.getPage(index + 1)
-			const view = page.getViewport({ scale: 1 })
-			return { width: view.width, height: view.height }
-		},
-		draw(index, canvas, width, turn) {
-			let render: RenderTask | undefined
-			let stopped = false
-			const done = (async () => {
-				const page = await doc.getPage(index + 1)
-				if (stopped) return false
-				const base = page.getViewport({ scale: 1, rotation: (page.rotate + turn) % 360 })
-				const scale = (width / base.width) * (globalThis.devicePixelRatio || 1)
-				const viewport = page.getViewport({ scale, rotation: (page.rotate + turn) % 360 })
-				canvas.width = Math.max(1, Math.floor(viewport.width))
-				canvas.height = Math.max(1, Math.floor(viewport.height))
-				render = page.render({ canvas, viewport, background: '#ffffff' })
+
+	function restart(): Promise<void> {
+		restarting ??= (async () => {
+			pdfWorker?.destroy()
+			pdfWorker = undefined
+			for (const entry of entries) {
 				try {
-					await render.promise
-					return true
-				} catch (error) {
-					if (isCancelled(error)) return false
-					throw error
-				} finally {
-					page.cleanup()
+					await load(entry)
+				} catch {
+					entry.doc = undefined
 				}
-			})()
+			}
+		})().finally(() => {
+			restarting = undefined
+		})
+		return restarting
+	}
+
+	/** Waits for `work`; past `ms` the worker is made again and the wait fails. */
+	async function within<T>(work: Promise<T>, ms: number, what: string, cancel?: () => void): Promise<T> {
+		let timer: ReturnType<typeof setTimeout> | undefined
+		const late = new Promise<never>((_, reject) => {
+			timer = setTimeout(() => {
+				cancel?.()
+				void restart()
+				reject(new PdfEditError(`${what} took longer than ${Math.round(ms / 1000)} seconds, so the PDF viewer was restarted. Pages drawn later will work; reopen the panel if one stays blank.`))
+			}, ms)
+		})
+		try {
+			return await Promise.race([work, late])
+		} finally {
+			clearTimeout(timer)
+		}
+	}
+
+	return {
+		async open(name, bytes) {
+			const entry: Entry = { name, bytes }
+			try {
+				await within(load(entry), timeouts.open, `Opening ${name}`)
+			} catch (error) {
+				if (error instanceof PdfEditError) throw error
+				throw new PdfEditError(`${name} can't be shown: ${error instanceof Error ? error.message : String(error)}`)
+			}
+			entries.add(entry)
+			const docOf = (): PDFDocumentProxy => {
+				if (entry.doc === undefined) throw new PdfEditError(`${name} could not be shown again after the PDF viewer restarted.`)
+				return entry.doc
+			}
 			return {
-				done,
-				cancel: () => {
-					stopped = true
-					render?.cancel()
+				pageCount: entry.doc!.numPages,
+				async pageSize(index) {
+					const page = await docOf().getPage(index + 1)
+					const view = page.getViewport({ scale: 1 })
+					return { width: view.width, height: view.height }
+				},
+				draw(index, canvas, width, turn) {
+					let render: RenderTask | undefined
+					let stopped = false
+					const run = (async () => {
+						const page = await docOf().getPage(index + 1)
+						if (stopped) return false
+						const base = page.getViewport({ scale: 1, rotation: (page.rotate + turn) % 360 })
+						const scale = (width / base.width) * (globalThis.devicePixelRatio || 1)
+						const viewport = page.getViewport({ scale, rotation: (page.rotate + turn) % 360 })
+						canvas.width = Math.max(1, Math.floor(viewport.width))
+						canvas.height = Math.max(1, Math.floor(viewport.height))
+						render = page.render({ canvas, viewport, background: '#ffffff' })
+						try {
+							await render.promise
+							return true
+						} catch (error) {
+							if (isCancelled(error)) return false
+							throw error
+						} finally {
+							page.cleanup()
+						}
+					})()
+					const cancel = (): void => {
+						stopped = true
+						render?.cancel()
+					}
+					return { done: within(run, timeouts.draw, `Drawing page ${index + 1} of ${name}`, cancel), cancel }
+				},
+				toImage(index, kind, quality) {
+					const work = (async () => {
+						const page = await docOf().getPage(index + 1)
+						const base = page.getViewport({ scale: 1 })
+						const scale = Math.min(150 / 72, 4096 / Math.max(base.width, base.height))
+						const viewport = page.getViewport({ scale })
+						const canvas = document.createElement('canvas')
+						canvas.width = Math.max(1, Math.floor(viewport.width))
+						canvas.height = Math.max(1, Math.floor(viewport.height))
+						try {
+							await page.render({ canvas, viewport, background: '#ffffff' }).promise
+						} finally {
+							page.cleanup()
+						}
+						const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, kind === 'png' ? 'image/png' : 'image/jpeg', quality))
+						// A cleared canvas size frees its pixels before the garbage collector gets to it.
+						canvas.width = 0
+						canvas.height = 0
+						if (blob === null) throw new PdfEditError(`Page ${index + 1} of ${name} is too large to turn into a picture.`)
+						return new Uint8Array(await blob.arrayBuffer())
+					})()
+					return within(work, timeouts.image, `Page ${index + 1} of ${name}`)
+				},
+				async destroy() {
+					entries.delete(entry)
+					await entry.task?.destroy()
 				},
 			}
 		},
-		async toImage(index, kind, quality) {
-			const page = await doc.getPage(index + 1)
-			const base = page.getViewport({ scale: 1 })
-			const scale = Math.min(150 / 72, 4096 / Math.max(base.width, base.height))
-			const viewport = page.getViewport({ scale })
-			const canvas = document.createElement('canvas')
-			canvas.width = Math.max(1, Math.floor(viewport.width))
-			canvas.height = Math.max(1, Math.floor(viewport.height))
-			try {
-				await page.render({ canvas, viewport, background: '#ffffff' }).promise
-			} finally {
-				page.cleanup()
-			}
-			const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, kind === 'png' ? 'image/png' : 'image/jpeg', quality))
-			// A cleared canvas size frees its pixels before the garbage collector gets to it.
-			canvas.width = 0
-			canvas.height = 0
-			if (blob === null) throw new PdfEditError(`Page ${index + 1} of ${name} is too large to turn into a picture.`)
-			return new Uint8Array(await blob.arrayBuffer())
+		async destroy() {
+			for (const entry of entries) void entry.task?.destroy()
+			entries.clear()
+			pdfWorker?.destroy()
+			pdfWorker = undefined
 		},
-		destroy: () => task.destroy(),
 	}
 }
