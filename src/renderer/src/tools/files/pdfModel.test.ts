@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PDF_LIMITS, PdfEditError } from '@shared/pdf/pdfCore'
+import { PDF_LIMITS, PdfEditError, type OverlayItem } from '@shared/pdf/pdfCore'
 import {
 	addFile,
 	amend,
@@ -203,8 +203,16 @@ describe('undo', () => {
 		for (let i = 0; i < PDF_LIMITS.undoBytes / PDF_LIMITS.maxOverlayImageBytes; i++) model = addItem(model, page, picture)
 		expect(() => addItem(model, page, picture)).toThrow(/pictures/)
 	})
-	it('trim never drops the present', () => {
-		const h = trim({ past: [], present: emptyModel(), future: [] })
-		expect(h.present).toBeDefined()
+	it('trim never drops the present, even when the history holds more pictures than the limit', () => {
+		const base = addFile(emptyModel(), { source: 0, name: 'a.pdf', pageCount: 1 })
+		const page = base.pages[0]!.key
+		const picture = (): OverlayItem => ({ kind: 'image', bytes: new Uint8Array(PDF_LIMITS.maxOverlayImageBytes), format: 'png', x: 0, y: 0, width: 10, height: 10 })
+		let present = base
+		for (let i = 0; i < PDF_LIMITS.undoBytes / PDF_LIMITS.maxOverlayImageBytes; i++) present = addItem(present, page, picture())
+		const older = addItem(base, page, picture())
+		const h = trim({ past: [older], present, future: [older] })
+		expect(h.present).toBe(present)
+		expect(h.past).toEqual([])
+		expect(h.future).toEqual([])
 	})
 })

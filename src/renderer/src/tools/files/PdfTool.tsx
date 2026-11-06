@@ -222,7 +222,7 @@ export function PdfTool() {
 	const take = (files: readonly PickedFile[]): void => {
 		if (files.length === 0) return
 		// Opening a file replaces the panel's session, which would end the one a save or split is writing into.
-		const reason = whyNotNow(busy)
+		const reason = editing !== null ? 'Close the page editor first: a file added now would end the session it reads pictures through.' : whyNotNow(busy)
 		if (reason !== null) {
 			setProblem(notAdded(files.map((f) => f.name), reason))
 			return

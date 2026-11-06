@@ -7,6 +7,7 @@ import { usePanelId } from '../panelId'
 import { describeFailure } from '../dev/parts'
 import { ToolPage } from '../parts'
 import { downloadReducer, initialDownload } from './downloadState'
+import './files.css'
 import './download.css'
 
 const NEEDED_ENGINES: readonly string[] = ['ytdlp', 'ffmpeg']
