@@ -26,7 +26,7 @@ public sealed partial class ChannelContractTests : IDisposable
 	public ChannelContractTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), BrowsingData: new FakeBrowsingData()), new FakeWindowHost(), "test");
+		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent(), BrowsingData: new FakeBrowsingData()), new FakeWindowHost(), "test");
 	}
 
 	public void Dispose() => _api.Dispose();

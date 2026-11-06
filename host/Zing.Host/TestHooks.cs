@@ -21,7 +21,7 @@ public static class TestHooks
 	/// <summary>Remote debugging port for Playwright; only honoured in e2e runs.</summary>
 	public static string? DebuggingPort => IsEndToEndRun ? Environment.GetEnvironmentVariable("ZING_CDP_PORT") : null;
 
-	/// <summary>Chromium switches for e2e runs: the debugging port, and with ZING_E2E_OFFLINE=1 a dead proxy so no test can reach a live site.</summary>
+	/// <summary>Chromium switches for e2e runs: the debugging port, and with ZING_E2E_OFFLINE=1 a dead proxy so no test can reach a live site, and with ZING_E2E_NO_DNS=1 names that do not resolve.</summary>
 	public static string BrowserArguments()
 	{
 		if (!IsEndToEndRun) return "";
@@ -32,11 +32,51 @@ public static class TestHooks
 		// With the updater on, a new profile blocks the engine's main thread for 5 s on most launches, and every e2e launch has a new profile.
 		args.Add("--disable-component-update");
 		if (Environment.GetEnvironmentVariable("ZING_E2E_OFFLINE") == "1") args.Add("--proxy-server=127.0.0.1:9 --proxy-bypass-list=<-loopback>");
+		// Every name fails to resolve (HostNameNotResolved, as a DNS block gives), without asking any DNS server; this machine's own addresses still work.
+		if (Environment.GetEnvironmentVariable("ZING_E2E_NO_DNS") == "1") args.Add("--host-resolver-rules=\"MAP * ~NOTFOUND , EXCLUDE 127.0.0.1\"");
 		return string.Join(' ', args);
+	}
+
+	/// <summary>
+	/// What link inspection looks at in an e2e run: ZING_E2E_INSPECT_AS is JSON {"127.0.0.1:port": "a.stand-in.host"}, so a test's local server
+	/// can stand for a flagged site without a real rule being weakened. Null outside an e2e run, and when it isn't set.
+	/// </summary>
+	public static Func<Uri, Uri>? InspectedAs()
+	{
+		if (!IsEndToEndRun || Environment.GetEnvironmentVariable("ZING_E2E_INSPECT_AS") is not { } json) return null;
+		var standIns = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? throw new InvalidOperationException("ZING_E2E_INSPECT_AS must be a JSON object");
+		return uri => standIns.TryGetValue(uri.Authority, out var host) ? new UriBuilder(uri) { Host = host, Port = -1 }.Uri : uri;
 	}
 
 	/// <summary>The app clock. ZING_TEST_CLOCK=1 in an e2e run gives one a test can move forward (test:advance-clock).</summary>
 	public static Zing.Core.IClock Clock { get; } = IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_TEST_CLOCK") == "1" ? new Zing.Core.OffsetClock() : new Zing.Core.SystemClock();
+
+	/// <summary>
+	/// The network Diagnose sees in an e2e run, so no test reaches the internet: ZING_E2E_DOH_URL is a local DoH server that every
+	/// provider is asked at, and ZING_E2E_PROBES is JSON {"system": [addresses], "tcp": bool, "tlsValid": bool} for what the probes find.
+	/// Null outside an e2e run, and when neither is set.
+	/// </summary>
+	public static Zing.Core.Net.NetServices? NetServices()
+	{
+		if (!IsEndToEndRun) return null;
+		var dohUrl = Environment.GetEnvironmentVariable("ZING_E2E_DOH_URL");
+		var probes = Environment.GetEnvironmentVariable("ZING_E2E_PROBES");
+		var relayUrl = Environment.GetEnvironmentVariable("ZING_E2E_RELAY_URL");
+		// Relayed pages' network: a local server stands in for every site and for the relay and archive.
+		if (relayUrl is not null)
+			return new Zing.Core.Net.NetServices(FixedProbes.FromJson(probes ?? LocalRelayTransport.NoProbes), new Zing.Core.Net.DohClient(Zing.Core.Net.DohClient.NewHttpClient(), _ => dohUrl ?? "http://127.0.0.1:9/dns-query"), new LocalRelayTransport(new Uri(relayUrl)));
+		if (dohUrl is null && probes is null) return null;
+		if (dohUrl is null || probes is null) throw new InvalidOperationException("ZING_E2E_DOH_URL and ZING_E2E_PROBES go together");
+		return new Zing.Core.Net.NetServices(FixedProbes.FromJson(probes), new Zing.Core.Net.DohClient(Zing.Core.Net.DohClient.NewHttpClient(), _ => dohUrl));
+	}
+
+	private static readonly StubDnsSystem Dns = new();
+
+	/// <summary>
+	/// What the app reads and changes DNS through in an e2e run: a stub that touches nothing (StubDnsSystem). The real
+	/// DnsSetup, which would show a UAC prompt and change the machine's DNS, is never created in a test run. Null outside one.
+	/// </summary>
+	public static Zing.Core.Net.IDnsSystem? DnsSystem() => IsEndToEndRun ? Dns : null;
 
 	private static int? _closeNextAt;
 	private static WindowScope? _newest;
@@ -46,7 +86,7 @@ public static class TestHooks
 	/// <summary>
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
-	/// "layers", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
+	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
 	public static bool TryHandle(string json, HostWindow window)
@@ -79,6 +119,23 @@ public static class TestHooks
 			var count = root.GetProperty("count").GetInt32();
 			var prefix = root.GetProperty("url").GetString()!;
 			for (var i = 0; i < count; i++) api.Tabs.Create($"{prefix}{i}");
+			return true;
+		}
+		if (action == "open-relayed")
+		{
+			var api = (Apis.TryGetValue(window, out var relayApi) ? relayApi() : null) ?? throw new InvalidOperationException("open-relayed needs a window with its chrome started");
+			api.Tabs.OpenRelayed(root.GetProperty("url").GetString()!);
+			return true;
+		}
+		if (action == "relay-consent")
+		{
+			var api = (Apis.TryGetValue(window, out var consentApi) ? consentApi() : null) ?? throw new InvalidOperationException("relay-consent needs a window with its chrome started");
+			api.Consent.Allow();
+			return true;
+		}
+		if (action == "dns-stub")
+		{
+			Dns.Configure(root);
 			return true;
 		}
 		if (action == "close-at")

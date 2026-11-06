@@ -267,3 +267,35 @@ input {
 		outline: 2px solid Highlight;
 	}
 }
+
+.notice.offer {
+	gap: 12px;
+	justify-content: space-between;
+}
+
+.offer-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.offer-detail {
+	color: var(--muted);
+	line-height: 1.35;
+	font-size: 0.9em;
+}
+
+.offer-address {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--muted);
+}
+
+.offer-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: none;
+}

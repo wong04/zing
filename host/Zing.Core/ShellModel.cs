@@ -289,6 +289,25 @@ public sealed class ShellModel : IDisposable
 		return AfterOpen(contentId, _panels.Open(content, at, page));
 	}
 
+	/// <summary>
+	/// From the failed-load offer or another tool: opens (or raises) the panel with an address filled in. It only fills the field;
+	/// starting anything is the person's click.
+	/// </summary>
+	public OpenPanelOutcome OpenPanelWithInput(string contentId, string input)
+	{
+		var content = Content(contentId);
+		var page = PageRect();
+		var at = new Point(page.X + page.Width / 2, page.Y + page.Height / 3);
+		// No notice when it is full: the caller has its own place to say so, and a notice would replace the offer.
+		var outcome = _panels.Open(content, at, page);
+		if (outcome == OpenPanelOutcome.Full) return outcome;
+		_panels.Hand(content, input);
+		return AfterOpen(contentId, outcome);
+	}
+
+	/// <summary>The failed address of the offer on screen. While it is set, Open a Link and Diagnose open with it filled in, however they were opened.</summary>
+	public string? OfferedAddress { get; set; }
+
 	public void ClosePanel(string id)
 	{
 		_panels.Close(id);
@@ -342,6 +361,8 @@ public sealed class ShellModel : IDisposable
 
 	// Internals
 
+	private static bool TakesOffer(PanelContent content) => content.Kind == PanelKind.Section && content.Name is PanelSection.Unblock or PanelSection.Diagnose;
+
 	private static PanelContent Content(string id) => PanelContent.FromId(id) ?? throw new UnknownPanelContentException(id);
 
 	private OpenPanelOutcome AfterOpen(string? contentId, OpenPanelOutcome outcome)
@@ -352,6 +373,7 @@ public sealed class ShellModel : IDisposable
 			return outcome;
 		}
 		if (contentId is not null) Remember(contentId);
+		if (OfferedAddress is { } offered && contentId is not null && TakesOffer(Content(contentId)) && _panels.HasNoInput(Content(contentId))) _panels.Hand(Content(contentId), offered);
 		// The sheet is how a tool was picked; the panel it opened is on the surface view already.
 		_toolboxOpen = false;
 		PanelsUpdated();

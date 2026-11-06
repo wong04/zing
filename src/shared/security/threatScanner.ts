@@ -8,7 +8,6 @@ import {
 	inspectURL,
 	ThreatLevel,
 	verdictLevel,
-	type ThreatFinding,
 	type ThreatVerdict,
 } from './threatModel'
 
@@ -80,52 +79,20 @@ export function inspectDownload(fileName: string, head: Uint8Array): ThreatVerdi
 }
 
 /**
- * Filtering resolvers answer `0.0.0.0`, an empty answer, or a sinkhole for
- * domains on their block lists — so the answer itself *is* the reputation
- * signal, no separate feed required. NXDOMAIN is also a refusal; the caller
- * sees that as a thrown `NXDomainError`.
- */
-export function isRefusalAnswer(addresses: readonly string[]): boolean {
-	if (addresses.length === 0) return true
-	return addresses.every((address) => address === '0.0.0.0' || address === '::')
-}
-
-export function knownMaliciousDomainFinding(host: string): ThreatFinding {
-	return {
-		level: ThreatLevel.dangerous,
-		title: 'Known-malicious domain',
-		detail:
-			`${host} is refused by the filtering DNS resolver, which `
-			+ 'means it appears on a current malware or phishing list.',
-	}
-}
-
-/**
  * Vets a URL before the browser requests it. Returns undefined to allow.
  *
  * Synchronous on purpose: it sits where the browser is waiting on the answer,
- * so it can only do pattern work. The slow, network-dependent half — asking a
- * filtering resolver whether the host is a known-bad one — runs separately
- * and fills `blockedDomains` (pass an empty set when domain blocking is off).
- * `allowedHosts` are hosts the user chose to visit anyway, so a warning isn't
- * re-shown for the rest of the session.
+ * so it can only do pattern work. `allowedHosts` are hosts the user chose to
+ * visit anyway, so a warning isn't re-shown for the rest of the session.
  */
-export function checkNavigation(
-	url: URL,
-	allowedHosts: ReadonlySet<string>,
-	blockedDomains: ReadonlySet<string>,
-): ThreatVerdict | undefined {
+export function checkNavigation(url: URL, allowedHosts: ReadonlySet<string>): ThreatVerdict | undefined {
 	const scheme = url.protocol.toLowerCase()
 	if (scheme !== 'http:' && scheme !== 'https:') return undefined
 
 	const host = url.hostname.toLowerCase()
 	if (allowedHosts.has(host)) return undefined
 
-	const inspected = inspectURL(url)
-	const verdict = blockedDomains.has(host)
-		? { subject: inspected.subject, findings: [...inspected.findings, knownMaliciousDomainFinding(host)] }
-		: inspected
-
+	const verdict = inspectURL(url)
 	if (verdictLevel(verdict) < ThreatLevel.suspicious) return undefined
 	return verdict
 }

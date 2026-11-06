@@ -4,14 +4,19 @@ import { describe, expect, it } from 'vitest'
 import {
 	allRelayStrategies,
 	BadURLError,
+	CredentialsInURLError,
 	EmptyBodyError,
 	HTTPStatusError,
+	isPrivateHost,
+	isPrivateHostName,
 	normalize,
+	RelayError,
 	returnsLiveDocument,
 	RelayStrategy,
 	validateStatus,
 	waybackSnapshotURL,
 } from './relayEngine'
+import vectors from './relayEngine.vectors.json'
 
 describe('RelayEngine.normalize', () => {
 	// Krackn only checks that these parse; the expected forms are kept for reference.
@@ -43,7 +48,7 @@ describe('RelayEngine.normalize', () => {
 			try {
 				normalize(weird)
 			} catch (error) {
-				if (!(error instanceof BadURLError)) throw error
+				if (!(error instanceof RelayError)) throw error
 			}
 		}
 		expect(true).toBe(true)
@@ -78,5 +83,36 @@ describe('waybackSnapshotURL', () => {
 		['not an object', 'nope'],
 	])('%s is an empty result', (_, json) => {
 		expect(() => waybackSnapshotURL(json)).toThrow(EmptyBodyError)
+	})
+})
+
+// The same cases drive the C# engine (host/Zing.Core.Tests/Net/RelayEngineTests.cs).
+describe('relay engine shared vectors', () => {
+	it.each(vectors.normalize)("normalize '$input' -> $href", ({ input, href }) => {
+		expect(normalize(input).href).toBe(href)
+	})
+	it.each(vectors.refused)("refuses '%s'", (input) => {
+		expect(() => normalize(input)).toThrow(BadURLError)
+	})
+	it.each(vectors.credentials)("refuses credentials in '%s'", (input) => {
+		expect(() => normalize(input)).toThrow(CredentialsInURLError)
+	})
+	it.each(vectors.privateHosts)("'$input' private: $private", ({ input, private: expected }) => {
+		expect(isPrivateHost(normalize(input))).toBe(expected)
+	})
+	it.each(vectors.privateHostNames)("host name '$host' private: $private", ({ host, private: expected }) => {
+		expect(isPrivateHostName(host)).toBe(expected)
+	})
+	it.each(vectors.status.ok)('status %s passes', (status) => {
+		expect(() => validateStatus(status)).not.toThrow()
+	})
+	it.each(vectors.status.failed)('status %s fails', (status) => {
+		expect(() => validateStatus(status)).toThrow(HTTPStatusError)
+	})
+	it.each(vectors.waybackSnapshot)('wayback snapshot $href', ({ answer, href }) => {
+		expect(waybackSnapshotURL(answer).href).toBe(href)
+	})
+	it.each(vectors.waybackEmpty.map((answer) => [JSON.stringify(answer), answer]))('wayback %s is empty', (_, answer) => {
+		expect(() => waybackSnapshotURL(answer)).toThrow(EmptyBodyError)
 	})
 })

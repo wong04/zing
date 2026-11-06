@@ -1,0 +1,110 @@
+.diagnose-form {
+	display: flex;
+	align-items: flex-end;
+	gap: 8px;
+}
+
+.diagnose-form .labeled-field {
+	flex: 1;
+	min-width: 0;
+}
+
+.diagnose-verdict {
+	font-size: 18px;
+	font-weight: 600;
+}
+
+.diagnose-detail {
+	margin: 0;
+	color: var(--muted);
+	line-height: 1.45;
+}
+
+.attempt-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.attempt {
+	display: grid;
+	grid-template-columns: 9.5em 1fr;
+	gap: 8px;
+	padding: 8px 12px;
+	border: 1px solid var(--border);
+	border-radius: var(--card-radius);
+	background: var(--raised);
+}
+
+.attempt-name {
+	font-weight: 600;
+}
+
+.attempt-result {
+	color: var(--muted);
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+
+.attempt.worked .attempt-result {
+	color: var(--text);
+}
+
+.consent-dialog {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 14px 16px;
+	border: 1px solid var(--border);
+	border-radius: var(--card-radius);
+	background: var(--raised);
+	box-shadow: var(--elevation-strong);
+}
+
+.consent-dialog p {
+	margin: 0;
+	line-height: 1.5;
+}
+
+.consent-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.net-guide {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.net-beats {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.net-beats li {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.net-beats-block {
+	font-weight: 600;
+}
+
+.net-undo-list {
+	margin: 0;
+	padding-left: 18px;
+	color: var(--text);
+	font-family: ui-monospace, Consolas, monospace;
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}

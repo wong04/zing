@@ -1,3 +1,5 @@
+using Zing.Core.Net;
+
 namespace Zing.Core;
 
 /// <summary>A tab's live page. The Win32 host implements it over a WebView2; tests use a fake.</summary>
@@ -77,6 +79,8 @@ public interface IPageEvents
 	/// page; the chrome offers Reload, and the next document the page starts clears the fault.
 	/// </summary>
 	void Crashed(PageFault fault);
+	/// <summary>Something the person should be told about this page that isn't a failure to load, e.g. a relayed web app that can't work.</summary>
+	void Notice(string text);
 }
 
 /// <summary>Makes pages and puts them on screen. The window owns layout and stacking.</summary>
@@ -105,8 +109,9 @@ public sealed class TabService
 	private readonly string _blankUrl;
 	private readonly Action _changed;
 	private readonly Action<TabRecord, string> _loadFailed;
-	private readonly Func<string, string, NavigationDecision?> _intercept;
+	private readonly Func<string, string, string, NavigationDecision?> _intercept;
 	private readonly SiteDataKeeper? _siteData;
+	private readonly Action<TabRecord, string> _pageNotice;
 
 	/// <summary>A page reported find results; the window's find bar decides whether they are for it.</summary>
 	public event Action<IPage, int, int>? FindResult;
@@ -127,10 +132,11 @@ public sealed class TabService
 
 	/// <param name="blankUrl">What a window that lost its last tab opens.</param>
 	/// <param name="intercept">The window's say over a navigation (the start page's search and settings links); null leaves it to tracker stripping.</param>
-	public TabService(TabStore store, IPageHost host, string blankUrl, Action changed, Action<TabRecord, string> loadFailed, Func<string, string, NavigationDecision?>? intercept = null, SiteDataKeeper? siteData = null)
+	public TabService(TabStore store, IPageHost host, string blankUrl, Action changed, Action<TabRecord, string> loadFailed, Func<string, string, string, NavigationDecision?>? intercept = null, SiteDataKeeper? siteData = null, Action<TabRecord, string>? pageNotice = null)
 	{
+		_pageNotice = pageNotice ?? ((_, _) => { });
 		_siteData = siteData;
-		_intercept = intercept ?? ((_, _) => null);
+		_intercept = intercept ?? ((_, _, _) => null);
 		_store = store;
 		_host = host;
 		_blankUrl = blankUrl;
@@ -194,6 +200,18 @@ public sealed class TabService
 		var record = Create(url);
 		Activate(record.Id);
 		return record;
+	}
+
+	/// <summary>
+	/// A new tab on a page fetched through the relay (Open a Link): it loads on the relay scheme, so its address bar says so.
+	/// The tab's navigation is one Zing starts, which is the only kind the relay scheme accepts.
+	/// </summary>
+	/// <param name="url">The real address, as Open a Link was given it.</param>
+	public TabRecord OpenRelayed(string url)
+	{
+		var web = RelayRules.Normalize(url);
+		var relay = RelayedContent.Encode(web) ?? throw new RelayedAddressError();
+		return Open(relay.AbsoluteUri);
 	}
 
 	/// <summary>Brings back saved tabs as records; only the one that was in front gets a page.</summary>
@@ -502,7 +520,7 @@ public sealed class TabService
 
 		private NavigationDecision Decide(string from, string to)
 		{
-			if (service._intercept(from, to) is { } decision)
+			if (service._intercept(id, from, to) is { } decision)
 			{
 				// Like typing it: the tab shows where it is going even before (or if never) the page commits.
 				if (decision is NavigationDecision.Redirect redirect) service.Update(id, new TabContentPatch(Url: redirect.Url));
@@ -561,6 +579,11 @@ public sealed class TabService
 			if (!service._pages.Remove(id, out var page)) return;
 			service._host.Hide(page);
 			if (service._store.Has(id)) service.Close(id);
+		}
+
+		public void Notice(string text)
+		{
+			if (service._store.Has(id)) service._pageNotice(service._store.Get(id), text);
 		}
 
 		public IPage Popup(string url, bool background) => service.AdoptPopup(id, url, background);

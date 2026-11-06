@@ -221,7 +221,7 @@ public sealed class ZingApp
 		var openedAccount = AccountStore.Open(Path.Combine(AppPaths.UserData, "account"), new DpapiCipher(), stamp, skipGate);
 		if (openedAccount.Problem is { } accountProblem) StartupProblem("account", "your Zing account", "without it", accountProblem);
 		var account = openedAccount.Value;
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, siteData, purger);
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()));
 	}
 
 	/// <summary>Opens the engine and listens to it: a browser process that dies, and a runtime update waiting for the next launch.</summary>
@@ -300,7 +300,7 @@ public sealed class ZingApp
 		var options = new CoreWebView2EnvironmentOptions();
 		options.AdditionalBrowserArguments = string.Join(" ", new[] { TestHooks.BrowserArguments(), acceleratedCanvas ? "" : "--disable-accelerated-2d-canvas" }.Where(a => a.Length > 0));
 		// zing://home parses with a host, as Electron's standard scheme did. The getter hands back a copy, so assign the whole list.
-		options.CustomSchemeRegistrations = new List<CoreWebView2CustomSchemeRegistration> { new(StartPage.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true } };
+		options.CustomSchemeRegistrations = new List<CoreWebView2CustomSchemeRegistration> { new(StartPage.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true }, new(Zing.Core.Net.RelayedContent.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true } };
 		// The engine's own data; an e2e run keeps it in its scratch profile, so a relaunch finds it and nothing is left in AppData.
 		var userData = TestHooks.IsEndToEndRun ? Path.Combine(AppPaths.UserData, "WebView2") : Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Zing", "WebView2");
 		return await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, options);

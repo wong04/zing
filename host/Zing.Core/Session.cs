@@ -99,8 +99,9 @@ public static class Session
 		if (File.Exists(path)) File.Delete(path);
 	}
 
+	/// <summary>A relayed tab is saved under its real address: the relay scheme only loads when Zing started it, and the consent for a relay is not kept, so a restored tab loads as an ordinary page.</summary>
 	public static List<SessionTab> ToSessionTabs(IEnumerable<TabRecord> records, string? activeId, IReadOnlyList<SplitLayout>? splits = null) =>
-		records.Select(t => new SessionTab(t.Url, t.Title, t.Pinned, t.Id == activeId, t.ItemId, SplitOf(t.Id, splits ?? []))).ToList();
+		records.Select(t => new SessionTab(Net.RelayedContent.ToWebAddress(t.Url), t.Title, t.Pinned, t.Id == activeId, t.ItemId, SplitOf(t.Id, splits ?? []))).ToList();
 
 	private static SessionSplit? SplitOf(string tabId, IReadOnlyList<SplitLayout> splits)
 	{

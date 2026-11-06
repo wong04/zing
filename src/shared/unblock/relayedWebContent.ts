@@ -6,15 +6,15 @@
  * Maps real URLs onto a private scheme the browser hands to us, keeping the
  * host and path intact:
  *
- *     https://example.com/a/style.css  <->  aiorelay://example.com/a/style.css
+ *     https://example.com/a/style.css  <->  zing-relay://example.com/a/style.css
  *
  * Preserving the structure is what makes this work. Because the *document
- * itself* is loaded from `aiorelay://`, every relative reference (`/w/load.php`)
+ * itself* is loaded from `zing-relay://`, every relative reference (`/w/load.php`)
  * and every protocol-relative one (`//upload.example.org/x.png`) resolves back
  * into our scheme automatically, with no HTML rewriting at all. Only absolute
  * `https://` links need patching.
  */
-export const relayScheme = 'aiorelay'
+export const relayScheme = 'zing-relay'
 
 // WHATWG URL refuses to switch a special scheme (https) to a non-special one
 // through the `protocol` setter, so the scheme is swapped on the string.
@@ -24,7 +24,9 @@ function withScheme(url: URL, scheme: string): URL | undefined {
 	return new URL(swapped)
 }
 
+/** Only https maps onto the relay scheme, which decodes back to https; any other scheme would not round-trip. */
 export function encodeRelayURL(url: URL): URL | undefined {
+	if (url.protocol !== 'https:') return undefined
 	return withScheme(url, relayScheme)
 }
 
@@ -61,6 +63,9 @@ const absoluteReferences: readonly RegExp[] = [
 	/(,\s*)https:\/\//gi,
 ]
 
+/** Hints that make the browser connect or look up a host on its own, which the content policy can't stop. */
+const connectionHints = /<link\b[^>]*\brel\s*=\s*["']?(?:preconnect|dns-prefetch|prefetch|prerender)\b[^>]*>/gi
+
 /** A <base> tag would re-anchor every relative URL back at https and undo the whole arrangement. */
 const baseTag = /<base[^>]*>/gi
 
@@ -74,7 +79,7 @@ export function patchText(text: string): string {
 		(current, pattern) => current.replace(pattern, `$1${relayScheme}://`),
 		text,
 	)
-	return pointed.replace(baseTag, '')
+	return pointed.replace(baseTag, '').replace(connectionHints, '')
 }
 
 // Charsets whose ASCII characters aren't single ASCII bytes.

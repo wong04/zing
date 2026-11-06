@@ -14,6 +14,12 @@ public static class AppPaths
 	public static string Session => Path.Combine(UserData, "session.json");
 
 	/// <summary>
+	/// The DNS settings from before Network &amp; VPN changed them, kept only until Undo. Local rather than roaming: they describe this
+	/// PC's adapters. e2e runs keep it in their scratch folder like everything else.
+	/// </summary>
+	public static string DnsBackup { get; } = Path.Combine(LocalData(), "dns-before.json");
+
+	/// <summary>
 	/// The local fault log (Faults), kept only by test runs: those set ZING_USER_DATA, and the log goes in
 	/// that scratch folder as logs\faults.log. Null otherwise, so a real install writes no log at all, since
 	/// Zing keeps nothing by default; an e2e run without ZING_USER_DATA is null too, as logging must not throw.
@@ -25,6 +31,13 @@ public static class AppPaths
 			var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");
 			return string.IsNullOrEmpty(configured) ? null : Path.Combine(configured, "logs", "faults.log");
 		}
+	}
+
+	private static string LocalData()
+	{
+		var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");
+		if (TestHooks.IsEndToEndRun && string.IsNullOrEmpty(configured)) throw new InvalidOperationException("e2e runs must set ZING_USER_DATA so they never use the real profile");
+		return string.IsNullOrEmpty(configured) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zing") : configured;
 	}
 
 	private static string Resolve()

@@ -553,4 +553,39 @@ public sealed class ShellModelTests
 	{
 		Assert.Throws<UnknownShellMenuKindException>(() => new Harness().Model.MenuItems("nope", "x"));
 	}
+
+	[Fact]
+	public void A_panel_opened_with_an_address_carries_it_and_a_second_handoff_reads_as_new()
+	{
+		var h = new Harness();
+		h.Model.OpenPanelWithInput("section:Open a Link", "https://blocked.test/a");
+		var first = Assert.Single(h.Model.PanelsState().Panels).Input;
+		Assert.Equal("https://blocked.test/a", first!.Value);
+		h.Model.OpenPanelWithInput("section:Open a Link", "https://blocked.test/a");
+		var second = Assert.Single(h.Model.PanelsState().Panels).Input;
+		Assert.Equal(first.Value, second!.Value);
+		Assert.NotEqual(first.Serial, second.Serial);
+	}
+
+	[Fact]
+	public void The_address_goes_with_the_panel_and_is_not_remembered_as_a_recent()
+	{
+		var h = new Harness();
+		h.Model.OpenPanelWithInput("section:Open a Link", "https://blocked.test/a");
+		Assert.DoesNotContain("blocked.test", string.Join(" ", h.Model.RecentFeatures));
+		h.Model.ClosePanel(h.Model.PanelsState().Panels[0].Id);
+		h.Model.OpenPanelCentred("section:Open a Link");
+		Assert.Null(h.Model.PanelsState().Panels[0].Input);
+	}
+
+	[Fact]
+	public void A_full_shell_takes_no_handoff()
+	{
+		var h = new Harness();
+		h.Model.OpenPanel("tool:Hashes", new Point(800, 450));
+		h.Model.OpenPanel("tool:HMAC", new Point(300, 200));
+		h.Model.OpenPanel("tool:JSON", new Point(500, 300));
+		Assert.Equal(OpenPanelOutcome.Full, h.Model.OpenPanelWithInput("section:Open a Link", "https://blocked.test/"));
+		Assert.DoesNotContain(h.Model.PanelsState().Panels, p => p.Input is not null);
+	}
 }

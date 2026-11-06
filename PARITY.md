@@ -75,7 +75,7 @@ Also dropped:
 | L16 | Port tracking-parameter stripper | port-logic | Features/Browser/BrowserTab.swift, UtilityTools.swift | [#27](https://github.com/wong04/zing/issues/27) | Done |
 
 **L rows, 2026-11-02:** re-verified by reading each port and its tests; the shared suites passed locally (1,265 tests) and CI passed on `7edc3dd`. Done here means the logic is ported and tested, not that the app uses it yet:
-- **Waiting for the toolbox:** L4 (X11–X13), L5 (X3) and L15 (X23) have no caller until those rows are built. L6, L7, L9 and L13 now have callers in the Toolbox. L4–L7, L9 and L13 exist only in TypeScript.
+- **Waiting for the toolbox:** L15 (X23) has no caller until its row is built. L6, L7, L9 and L13 now have callers in the Toolbox, and exist only in TypeScript. L4 (X11) and L5 (X1–X3) now run as C# ports in the host; their TypeScript versions have no caller, and shared vectors keep the pairs in step.
 - **L11, Partial:** `faviconChoice.ts` has no caller and no C# port. `WebView2Page` takes the engine's `FaviconUri`, so the best-icon rule isn't applied.
 - **L12, Partial:** `DownloadPolicy` is ported to both sides but nothing calls it. `DownloadHost` relies on the engine's own `DownloadStarting` decision. Either wire it in or confirm the engine decides the same way.
 
@@ -160,17 +160,17 @@ Also dropped:
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| X1 | Open a Link: four methods | parity | Features/Unblock/RelayEngine.swift, PinnedHTTPClient.swift, DoHResolver.swift, UnblockView.swift | [#72](https://github.com/wong04/zing/issues/72) | Open |
-| X2 | Relayed pages with subresources | parity | Features/Unblock/RelayedWebContent.swift | [#73](https://github.com/wong04/zing/issues/73) | Open |
-| X3 | Diagnose | parity | Features/Unblock/DiagnoseView.swift, BlockDiagnostics.swift | [#74](https://github.com/wong04/zing/issues/74) | Open |
-| X4 | DoH provider setting | parity | App/AppSettings.swift (dohProvider) | [#75](https://github.com/wong04/zing/issues/75) | Open |
-| X5 | Network & VPN for Windows | parity | Features/Network/DoHProfile.swift, NetworkView.swift | [#76](https://github.com/wong04/zing/issues/76) | Open |
+| X1 | Open a Link: four methods | parity | Features/Unblock/RelayEngine.swift, PinnedHTTPClient.swift, DoHResolver.swift, UnblockView.swift | [#72](https://github.com/wong04/zing/issues/72) | Done |
+| X2 | Relayed pages with subresources | parity | Features/Unblock/RelayedWebContent.swift | [#73](https://github.com/wong04/zing/issues/73) | Done |
+| X3 | Diagnose | parity | Features/Unblock/DiagnoseView.swift, BlockDiagnostics.swift | [#74](https://github.com/wong04/zing/issues/74) | Done |
+| X4 | DoH provider setting | parity | App/AppSettings.swift (dohProvider) | [#75](https://github.com/wong04/zing/issues/75) | Done |
+| X5 | Network & VPN for Windows | parity | Features/Network/DoHProfile.swift, NetworkView.swift | [#76](https://github.com/wong04/zing/issues/76) | Done |
 | X6 | Convert images | parity | Features/Convert/ConversionEngine.swift | [#77](https://github.com/wong04/zing/issues/77) | Open |
 | X7 | Convert documents | parity | Features/Convert/ConversionEngine.swift | [#78](https://github.com/wong04/zing/issues/78) | Open |
 | X8 | Convert audio/video + format matrix | parity | Features/Convert/FormatCatalog.swift, ConvertView.swift | [#79](https://github.com/wong04/zing/issues/79) | Open |
 | X9 | Media download + Save page | parity | Features/Download/DownloadView.swift, DownloadErrors.swift | [#80](https://github.com/wong04/zing/issues/80) | Open |
 | X10 | Engines on first use | parity | Core/ToolInstaller.swift, Features/Utilities/ToolSetupView.swift | [#81](https://github.com/wong04/zing/issues/81) | Open |
-| X11 | Link inspection before load | parity | Features/Security/ThreatScanner.swift (securityRealtime) | [#82](https://github.com/wong04/zing/issues/82) | Open |
+| X11 | Link inspection before load | parity | Features/Security/ThreatScanner.swift (securityRealtime) | [#82](https://github.com/wong04/zing/issues/82) | Done |
 | X12 | Domain reputation via filtering DoH | parity | Features/Security/ThreatScanner.swift (securityDomainBlocking) | [#83](https://github.com/wong04/zing/issues/83) | Dropped |
 | X13 | Download checks for Windows | parity | Features/Security/ThreatScanner.swift (securityDownloadScan, securitySignatureCheck) | [#84](https://github.com/wong04/zing/issues/84) | Dropped |
 | X14 | System posture for Windows | parity | Features/Security/SecurityView.swift | [#85](https://github.com/wong04/zing/issues/85) | Dropped |

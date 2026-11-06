@@ -26,7 +26,7 @@ public sealed class HistoryMenuTests
 		var host = new FakeWindowHost();
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
 		var bridge = new Bridge();
-		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest()), host, "test");
+		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent()), host, "test");
 		api.Start([], "https://x.test/e");
 		var page = (FakePage)api.Tabs.ActivePage!;
 		page.History = new PageHistory(Entries, 4);

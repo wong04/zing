@@ -59,6 +59,8 @@ export interface ToolPanelView {
 	/** Window content coordinates. */
 	readonly frame: Rect
 	readonly minimized: boolean
+	/** An address another part of Zing handed the panel to start from. `serial` changes with each handoff, even of the same address. */
+	readonly input?: { readonly value: string; readonly serial: number }
 }
 
 export interface ToolPanelsState {
@@ -68,6 +70,9 @@ export interface ToolPanelsState {
 }
 
 export const EMPTY_TOOL_PANELS: ToolPanelsState = { panels: [], frontId: undefined, dragging: false }
+
+/** What a tool says when it could not open a panel because three are already showing. */
+export const PANELS_FULL_MESSAGE = 'Three tools are already open. Close one, then try again.'
 
 export type OpenPanelOutcome =
 	| { readonly status: 'opened' | 'focused' | 'restored' }
