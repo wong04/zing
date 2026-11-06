@@ -35,6 +35,11 @@ describe('restrictNetwork', () => {
 		expect(scope.WebSocket).toBeUndefined()
 		expect(scope.EventSource).toBeUndefined()
 	})
+	it('removes importScripts as well', () => {
+		const scope: Record<string, unknown> = { fetch: () => Promise.resolve(), importScripts: () => undefined, location: { href: 'https://app.zing/a.js' } }
+		restrictNetwork(scope, own, host)
+		expect(scope.importScripts).toBeUndefined()
+	})
 	it('checks a Request object by its url', async () => {
 		const scope: Record<string, unknown> = { fetch: () => Promise.resolve('ok'), location: { href: 'https://app.zing/a.js' } }
 		restrictNetwork(scope, own, host)

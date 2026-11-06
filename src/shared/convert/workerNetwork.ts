@@ -34,5 +34,5 @@ export function restrictNetwork(scope: Record<string, unknown>, ownOrigin: strin
 		if (!isAllowedWorkerUrl(url, ownOrigin, hostOrigin, base)) return Promise.reject(new NetworkNotAllowedError(url))
 		return real(input, init)
 	}
-	for (const name of ['XMLHttpRequest', 'WebSocket', 'EventSource']) scope[name] = undefined
+	for (const name of ['XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts']) scope[name] = undefined
 }
