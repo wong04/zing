@@ -32,8 +32,8 @@ export type FailureKind = 'unsupported' | 'too-large' | 'corrupt' | 'model' | 'u
 export type RemoveMessage =
 	| { readonly type: 'progress'; readonly stage: RemoveStage; readonly fraction?: number }
 	| { readonly type: 'checked' }
-	/** The result is already saved by the host in Downloads, under `name`. */
-	| { readonly type: 'done'; readonly name: string; readonly width: number; readonly height: number; readonly seconds: number }
+	/** The result is already saved by the host in Downloads, under `name`; `token` stands for that file. */
+	| { readonly type: 'done'; readonly name: string; readonly token: string; readonly width: number; readonly height: number; readonly seconds: number }
 	| { readonly type: 'failed'; readonly kind: FailureKind; readonly message: string }
 
 /** The words shown beside the progress bar for each stage. */

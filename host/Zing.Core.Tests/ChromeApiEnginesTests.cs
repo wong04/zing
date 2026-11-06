@@ -257,4 +257,51 @@ public sealed class ChromeApiEnginesTests : IAsyncLifetime
 		Assert.Equal(nameof(NotHtmlException), ErrorName(await Invoke("convert:html-to-pdf", token, "notes.pdf")));
 		Assert.Empty(_host.Printed);
 	}
+
+	[Fact]
+	public async Task A_picked_file_is_copied_to_the_clipboard_by_the_path_the_host_holds()
+	{
+		var path = _engines.Make("report.pdf");
+		_host.PickedPaths = [path];
+		var token = Value(await Invoke("files:pick", (object)new[] { "pdf" }))[0].GetProperty("token").GetString()!;
+
+		Value(await Invoke("files:copy-to-clipboard", token));
+
+		Assert.Equal([[path]], _host.CopiedFiles);
+	}
+
+	[Fact]
+	public async Task A_path_the_renderer_made_up_is_not_put_on_the_clipboard()
+	{
+		Assert.Equal(nameof(UnknownFileGrantException), ErrorName(await Invoke("files:copy-to-clipboard", @"C:\Windows\win.ini")));
+		Assert.Empty(_host.CopiedFiles);
+	}
+
+	[Fact]
+	public async Task A_file_that_has_gone_is_refused_by_name()
+	{
+		var path = _engines.Make("gone.pdf");
+		_host.PickedPaths = [path];
+		var token = Value(await Invoke("files:pick", (object)new[] { "pdf" }))[0].GetProperty("token").GetString()!;
+		File.Delete(path);
+
+		var result = await Invoke("files:copy-to-clipboard", token);
+
+		Assert.Equal(nameof(FileNotFoundException), ErrorName(result));
+		Assert.Contains("gone.pdf", result.GetProperty("error").GetProperty("message").GetString());
+		Assert.Empty(_host.CopiedFiles);
+	}
+
+	[Fact]
+	public async Task A_clipboard_that_cannot_be_written_says_so()
+	{
+		var path = _engines.Make("busy.pdf");
+		_host.PickedPaths = [path];
+		var token = Value(await Invoke("files:pick", (object)new[] { "pdf" }))[0].GetProperty("token").GetString()!;
+		_host.ClipboardFailure = new InvalidOperationException("Another program is using the clipboard");
+
+		var result = await Invoke("files:copy-to-clipboard", token);
+
+		Assert.Equal(nameof(InvalidOperationException), ErrorName(result));
+	}
 }

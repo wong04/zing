@@ -141,6 +141,10 @@
 			"args": 0
 		},
 		{
+			"channel": "files:copy-to-clipboard",
+			"args": 1
+		},
+		{
 			"channel": "files:open-dropped",
 			"args": 1
 		},

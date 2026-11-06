@@ -6,7 +6,7 @@ import type { EngineInfo } from '@shared/engines/engineInfo'
 import type { PickedFile } from '@shared/engines/engineJob'
 import { formatBytes } from '@shared/format/formatBytes'
 import { zing } from '../../api'
-import { FileDropZone, FileRow, InfoBanner, PillButton } from '../../components'
+import { CopyFileButton, FileDropZone, FileRow, InfoBanner, PillButton } from '../../components'
 import { describeFailure } from '../dev/parts'
 import { usePanelId } from '../panelId'
 import { ToolPage } from '../parts'
@@ -23,7 +23,7 @@ type Stage =
 	| { readonly kind: 'offer'; readonly engine: EngineInfo }
 	| { readonly kind: 'downloading'; readonly engine: EngineInfo; readonly fraction: number }
 	| { readonly kind: 'working'; readonly stage: RemoveStage; readonly fraction: number | undefined }
-	| { readonly kind: 'done'; readonly name: string; readonly seconds: number }
+	| { readonly kind: 'done'; readonly result: PickedFile; readonly seconds: number }
 	| { readonly kind: 'failed'; readonly message: string }
 	| { readonly kind: 'cancelled' }
 
@@ -128,7 +128,7 @@ export function BgRemoveTool() {
 			}
 			endSession()
 			if (message.type === 'failed') setStage({ kind: 'failed', message: message.message })
-			else if (message.type === 'done') setStage({ kind: 'done', name: message.name, seconds: message.seconds })
+			else if (message.type === 'done') setStage({ kind: 'done', result: { name: message.name, token: message.token }, seconds: message.seconds })
 		})
 	}
 
@@ -224,13 +224,14 @@ export function BgRemoveTool() {
 					</PillButton>
 				</div>
 			)}
-			<StageView stage={stage} onDownload={download} onCancelDownload={(engine) => void zing.cancelEngine(engine.id).catch(fail)} onCancelRun={cancelRun} onDismiss={dismissOffer} />
+			<StageView stage={stage} onCopyError={(error) => setProblem(describeFailure(error))} onDownload={download} onCancelDownload={(engine) => void zing.cancelEngine(engine.id).catch(fail)} onCancelRun={cancelRun} onDismiss={dismissOffer} />
 		</ToolPage>
 	)
 }
 
-function StageView({ stage, onDownload, onCancelDownload, onCancelRun, onDismiss }: {
+function StageView({ stage, onDownload, onCancelDownload, onCancelRun, onDismiss, onCopyError }: {
 	stage: Stage
+	onCopyError: (error: Error) => void
 	onDownload: (engine: EngineInfo) => void
 	onCancelDownload: (engine: EngineInfo) => void
 	onCancelRun: () => void
@@ -290,7 +291,10 @@ function StageView({ stage, onDownload, onCancelDownload, onCancelRun, onDismiss
 				<InfoBanner kind="info">
 					<div className="convert-offer" role="status">
 						<span>{`Saved to your Downloads folder (${stage.seconds.toFixed(1)} seconds):`}</span>
-						<FileRow path={stage.name} />
+						<div className="convert-output">
+							<FileRow path={stage.result.name} dragFile={stage.result} />
+							<CopyFileButton file={stage.result} onError={onCopyError} />
+						</div>
 					</div>
 				</InfoBanner>
 			)

@@ -52,10 +52,12 @@ async function createSession(modelBytes: Uint8Array): Promise<ort.InferenceSessi
 }
 
 /** PUTs the PNG to the host, which checks it, names and numbers the file and writes it off the interface thread. */
-async function save(url: string, png: Blob): Promise<string> {
+async function save(url: string, png: Blob): Promise<{ name: string; token: string }> {
 	const response = await fetch(url, { method: 'PUT', body: png })
 	if (!response.ok) throw new WorkerFailure('unavailable', `The picture could not be saved: ${(await response.text()) || `the host answered ${response.status}`}.`)
-	return ((await response.json()) as { name: string }).name
+	const saved = (await response.json()) as { name: string; token?: string }
+	if (typeof saved.token !== 'string') throw new WorkerFailure('unavailable', 'The picture was saved, but the host gave no way to refer to it.')
+	return { name: saved.name, token: saved.token }
 }
 
 async function run(request: RunRequest): Promise<void> {
@@ -86,8 +88,8 @@ async function run(request: RunRequest): Promise<void> {
 		canvas.getContext('2d')!.putImageData(new ImageData(cut, picture.width, picture.height), 0, 0)
 		const png = await canvas.convertToBlob({ type: 'image/png' })
 		progress('saving')
-		const name = await save(request.saveUrl, png)
-		post({ type: 'done', name, width: picture.width, height: picture.height, seconds: (performance.now() - started) / 1000 })
+		const { name, token } = await save(request.saveUrl, png)
+		post({ type: 'done', name, token, width: picture.width, height: picture.height, seconds: (performance.now() - started) / 1000 })
 	} finally {
 		await session.release()
 	}
