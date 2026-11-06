@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OPENING, describeCancelledPages, describeRun, notAdded, runParts, whyNotNow } from './pdfRun'
+import { OPENING, describeCancelledPages, describeRun, describeStoppedOpen, notAdded, openInTurn, runParts, whyNotNow } from './pdfRun'
 
 const bytes = new Uint8Array([1])
 
@@ -84,5 +84,52 @@ describe('what the panel says about a run', () => {
 		expect(describeRun({ saved: [], total: 5, stopped: true })).toBe('Stopped. Nothing was saved.')
 		expect(describeRun({ saved: ['a.pdf'], total: 1, stopped: true })).toBe('Stopped. The file had already been saved to your Downloads folder.')
 		expect(describeRun({ saved: ['a.pdf'], total: 1, stopped: false })).toBeNull()
+	})
+})
+
+describe('opening several files can be cancelled', () => {
+	it('opens every file when nothing stops it', async () => {
+		const opened: string[] = []
+		const out = await openInTurn(['a', 'b', 'c'], async (f) => void opened.push(f), () => false)
+		expect(opened).toEqual(['a', 'b', 'c'])
+		expect(out).toEqual({ added: 3, stopped: false })
+	})
+	it('opens no further file once cancelled', async () => {
+		let stop = false
+		const opened: string[] = []
+		const out = await openInTurn(
+			['a', 'b', 'c', 'd'],
+			async (f) => {
+				opened.push(f)
+				if (f === 'b') stop = true
+			},
+			() => stop,
+		)
+		expect(opened).toEqual(['a', 'b'])
+		expect(out).toEqual({ added: 2, stopped: true })
+	})
+	it('counts a file whose opening Cancel broke off as not added, and does not throw', async () => {
+		let stop = false
+		const out = await openInTurn(
+			['a', 'b', 'c'],
+			async (f) => {
+				if (f !== 'b') return
+				stop = true
+				throw new Error('aborted')
+			},
+			() => stop,
+		)
+		expect(out).toEqual({ added: 1, stopped: true })
+	})
+	it('throws a failure that Cancel did not cause', async () => {
+		const run = openInTurn(['a', 'b'], async (f) => {
+			if (f === 'b') throw new Error('b is damaged')
+		}, () => false)
+		await expect(run).rejects.toThrow('b is damaged')
+	})
+	it('says how many files were added before the stop', () => {
+		expect(describeStoppedOpen(0)).toBe('Stopped. No file was added.')
+		expect(describeStoppedOpen(1)).toBe('Stopped. 1 file was added.')
+		expect(describeStoppedOpen(2)).toBe('Stopped. 2 files were added.')
 	})
 })

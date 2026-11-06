@@ -11,7 +11,7 @@ import { PdfPageEditor } from './PdfPageEditor'
 import { onHandedPdf, takeHandedPdf } from './pdfHandoff'
 import { readGranted, saveResult, saveSessionFor } from './pdfHost'
 import { usePanelId } from '../panelId'
-import { OPENING, describeRun, notAdded, runParts, whyNotNow, type RunOutcome } from './pdfRun'
+import { OPENING, describeRun, describeStoppedOpen, notAdded, openInTurn, runParts, whyNotNow, type RunOutcome } from './pdfRun'
 import {
 	addFile,
 	addItem,
@@ -192,16 +192,20 @@ export function PdfTool() {
 		setSaved([])
 	}
 
-	const addOpened = async (file: PickedFile): Promise<void> => {
+	// The signal is checked after each wait: Cancel has ended the worker, and asking it anything would start a new one.
+	const addOpened = async (file: PickedFile, signal: AbortSignal): Promise<void> => {
 		if (!/\.pdf$/i.test(file.name)) throw new PdfEditError(`${file.name} isn't a PDF. This tool opens PDF files; Convert makes a PDF from a picture or a saved web page.`)
 		const current = openedRef.current
 		if (current.length >= PDF_LIMITS.maxMergeFiles) throw new PdfEditError(`This tool opens at most ${PDF_LIMITS.maxMergeFiles} files at once.`)
-		const { bytes } = await readGranted(panelId, file.token)
+		const { bytes } = await readGranted(panelId, file.token, signal)
+		signal.throwIfAborted()
 		// Each file is held twice: here, and as the copy the PDF viewer takes.
 		checkSessionBytes(current.reduce((sum, o) => sum + o.bytes.length * 2, 0), bytes.length * 2, file.name)
 		const info = await client.inspect({ name: file.name, bytes })
+		signal.throwIfAborted()
 		const preview = await session.open(file.name, bytes)
 		try {
+			signal.throwIfAborted()
 			const source = current.length
 			const next = commit(historyRef.current, addFile(historyRef.current.present, { source, name: file.name, pageCount: info.pageCount }))
 			openedRef.current = [...current, { name: file.name, bytes, preview, fields: info.fields }]
@@ -223,11 +227,15 @@ export function PdfTool() {
 			setProblem(notAdded(files.map((f) => f.name), reason))
 			return
 		}
+		cancelled.current = false
+		aborter.current = new AbortController()
+		const signal = aborter.current.signal
 		setBusy(OPENING)
 		setProblem(null)
 		void (async () => {
 			try {
-				for (const file of files) await addOpened(file)
+				const outcome = await openInTurn(files, (file) => addOpened(file, signal), () => cancelled.current)
+				if (outcome.stopped) setProblem(describeStoppedOpen(outcome.added))
 			} catch (error) {
 				fail(error)
 			} finally {
