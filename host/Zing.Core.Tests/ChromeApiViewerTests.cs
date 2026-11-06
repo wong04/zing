@@ -248,7 +248,7 @@ public sealed class ChromeApiViewerTests : IAsyncLifetime
 		var heic = await PickPicture("IMG.png", [0, 0, 0, 24, .. "ftypheic"u8.ToArray()]);
 		var good = await PickPicture("good.png", PngHeader);
 
-		Assert.Equal(nameof(PictureRefusedException), ErrorName(await Invoke("bgremove:open", _panel, heic)));
+		Assert.Equal(nameof(SessionFileRefusedException), ErrorName(await Invoke("bgremove:open", _panel, heic)));
 		Assert.Equal(nameof(UnknownPanelException), ErrorName(await Invoke("bgremove:open", "panel-nobody", good)));
 		Assert.Equal(nameof(UnknownFileGrantException), ErrorName(await Invoke("bgremove:open", _panel, new string('0', 32))));
 		Assert.Null(_api.Viewer!.ForPanel(_panel));

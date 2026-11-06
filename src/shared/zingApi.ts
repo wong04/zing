@@ -102,6 +102,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		onEngineExit: (listener) => listen('engines:exit', listener),
 		pickFiles: (kinds) => invoke('files:pick', kinds),
 		printHtmlToPdf: (token, outputName) => invoke('convert:html-to-pdf', token, outputName),
+		openToolSession: (panelId, token, kinds) => invoke('session:open', panelId, token, kinds),
 		openBackgroundPicture: (panelId, token) => invoke('bgremove:open', panelId, token),
 		openDropped: (files) => invoke('files:open-dropped', files),
 		openViewerFile: (token, panelId) => invoke('viewer:open', token, panelId),

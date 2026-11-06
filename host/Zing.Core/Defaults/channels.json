@@ -217,6 +217,10 @@
 			"args": 1
 		},
 		{
+			"channel": "session:open",
+			"args": 3
+		},
+		{
 			"channel": "settings:get",
 			"args": 0
 		},

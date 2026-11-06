@@ -51,7 +51,7 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 	private static byte[] Jpeg() => [0xff, 0xd8, 0xff, 0xe0, 0, 16, .. "JFIF"u8.ToArray(), 0, 1, 1, 0, 0, 1, 0, 1, 0, 0];
 	private static byte[] WebP() => [.. "RIFF"u8.ToArray(), 30, 0, 0, 0, .. "WEBPVP8 "u8.ToArray(), 10, 0, 0, 0, 0, 0, 0, 0x9d, 1, 0x2a, 1, 0, 1, 0];
 
-	private ViewerSession Open(string name = "cat.png", byte[]? bytes = null) => _viewer.OpenPicture(Write(name, bytes ?? Png()), Panel);
+	private ViewerSession Open(string name = "cat.png", byte[]? bytes = null) => _viewer.OpenSession(Write(name, bytes ?? Png()), Panel, [SessionKinds.Image]);
 
 	private static ViewerRequest Get(string url, string? origin = App, string? referer = null, string method = "GET") => new(method, url, null, origin, referer);
 
@@ -87,7 +87,7 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 			_ => PngHead[..4],
 		};
 
-		Assert.Throws<PictureRefusedException>(() => _viewer.OpenPicture(Write("x.png", bytes), Panel));
+		Assert.Throws<SessionFileRefusedException>(() => _viewer.OpenSession(Write("x.png", bytes), Panel, [SessionKinds.Image]));
 		Assert.Null(_viewer.ForPanel(Panel));
 	}
 
@@ -98,10 +98,10 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 		using (var file = File.Create(path))
 		{
 			file.Write(Png());
-			file.SetLength(ViewerFiles.PictureLimit + 1);
+			file.SetLength(SessionKinds.Image.ReadCap + 1);
 		}
 
-		var error = Assert.Throws<PictureRefusedException>(() => _viewer.OpenPicture(path, Panel));
+		var error = Assert.Throws<SessionFileRefusedException>(() => _viewer.OpenSession(path, Panel, [SessionKinds.Image]));
 		Assert.Contains("MB", error.Message);
 	}
 
@@ -266,7 +266,7 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 
 		var name = await _viewer.ServeAsync(Put(session, @"..\evil.png", Png()));
 		var notPng = await _viewer.ServeAsync(Put(session, "ok.png", Encoding.ASCII.GetBytes("MZ not a picture")));
-		var big = await _viewer.ServeAsync(Put(session, "big.png", [], declared: PngSave.MaxBytes + 1L, stream: new MemoryStream(Png())));
+		var big = await _viewer.ServeAsync(Put(session, "big.png", [], declared: SaveFormats.Png.Cap + 1L, stream: new MemoryStream(Png())));
 
 		Assert.Equal(400, name.Status);
 		Assert.Contains("plain name", Encoding.UTF8.GetString(name.Body));
@@ -320,5 +320,78 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 		Assert.Equal(204, good.Status);
 		Assert.Contains("PUT", good.Headers["Access-Control-Allow-Methods"]);
 		Assert.Equal(404, bad.Status);
+	}
+
+	private static readonly byte[] PdfBytes = "%PDF-1.7 fake"u8.ToArray();
+
+	private ViewerSession OpenPdf(string name = "doc.pdf", byte[]? bytes = null, string panel = "section:Pdf") =>
+		_viewer.OpenSession(Write(name, bytes ?? PdfBytes), panel, [SessionKinds.Pdf, SessionKinds.Image]);
+
+	[Fact]
+	public void A_tool_that_takes_pdf_and_images_opens_either_by_first_bytes_and_refuses_the_rest()
+	{
+		Assert.Equal("application/pdf", OpenPdf("a.dat").Format.ContentType);
+		Assert.Equal("image/png", _viewer.OpenSession(Write("p.pdf", Png()), "section:Pdf", [SessionKinds.Pdf, SessionKinds.Image]).Format.ContentType);
+		Assert.Throws<SessionFileRefusedException>(() => OpenPdf("x.pdf", "not a pdf"u8.ToArray()));
+		Assert.Throws<SessionFileRefusedException>(() => _viewer.OpenSession(Write("y.png", PdfBytes), Panel, [SessionKinds.Image]));
+		Assert.Throws<SessionFileRefusedException>(() => _viewer.OpenSession(Write("z.pdf", Png()), Panel, [SessionKinds.Pdf]));
+	}
+
+	[Fact]
+	public void A_pdf_over_fifty_megabytes_is_refused_and_unknown_kinds_are_not_in_the_table()
+	{
+		var path = Path.Combine(_dir, "big.pdf");
+		using (var file = File.Create(path))
+		{
+			file.Write(PdfBytes);
+			file.SetLength(SessionKinds.Pdf.ReadCap + 1);
+		}
+
+		Assert.Throws<SessionFileRefusedException>(() => _viewer.OpenSession(path, Panel, [SessionKinds.Pdf]));
+		Assert.Throws<UnknownSessionKindException>(() => SessionKinds.Named(["image", "exe"]));
+		Assert.Throws<UnknownSessionKindException>(() => SessionKinds.Named([]));
+	}
+
+	[Fact]
+	public async Task A_pdf_session_saves_pdfs_and_jpegs_with_the_right_magic_and_a_token_and_not_pngs()
+	{
+		var session = _viewer.OpenSession(Write("only.pdf", PdfBytes), "section:Pdf", [SessionKinds.Pdf]);
+		_viewer.IssueToken = path => "token-for-" + Path.GetFileName(path);
+		byte[] jpg = [0xff, 0xd8, 0xff, 0xe0, 1, 2];
+
+		var pdf = await _viewer.ServeAsync(Put(session, "merged.pdf", PdfBytes));
+		var jpeg = await _viewer.ServeAsync(Put(session, "page 1.jpg", jpg));
+		var png = await _viewer.ServeAsync(Put(session, "page.png", Png()));
+		var wrongMagic = await _viewer.ServeAsync(Put(session, "fake.pdf", Png()));
+
+		Assert.Equal(201, pdf.Status);
+		Assert.Equal("token-for-merged.pdf", System.Text.Json.JsonDocument.Parse(pdf.Body).RootElement.GetProperty("token").GetString());
+		Assert.Equal(201, jpeg.Status);
+		Assert.Equal(400, png.Status);
+		Assert.Equal(400, wrongMagic.Status);
+		Assert.Equal(["merged.pdf", "page 1.jpg"], Directory.GetFiles(Path.Combine(_dir, "downloads")).Select(Path.GetFileName).Order());
+	}
+
+	[Fact]
+	public async Task A_pdf_save_over_fifty_megabytes_is_refused_before_reading_and_one_quota_covers_every_format()
+	{
+		var session = OpenPdf();
+		var untouched = new MemoryStream(PdfBytes);
+
+		var big = await _viewer.ServeAsync(Put(session, "huge.pdf", [], declared: SaveFormats.Pdf.Cap + 1, stream: untouched));
+
+		Assert.Equal(413, big.Status);
+		Assert.Equal(0, untouched.Position);
+		_viewer.SaveBudget = PdfBytes.Length + 4;
+		Assert.Equal(201, (await _viewer.ServeAsync(Put(session, "a.pdf", PdfBytes))).Status);
+		Assert.Equal(507, (await _viewer.ServeAsync(Put(session, "b.jpg", [0xff, 0xd8, 0xff, 1, 2, 3, 4, 5]))).Status);
+	}
+
+	[Fact]
+	public async Task The_model_is_not_served_to_a_tool_that_opened_only_a_pdf()
+	{
+		_viewer.OpenSession(Write("d.pdf", PdfBytes), "section:Pdf", [SessionKinds.Pdf]);
+
+		Assert.Equal(404, (await _viewer.ServeAsync(Get(Model))).Status);
 	}
 }

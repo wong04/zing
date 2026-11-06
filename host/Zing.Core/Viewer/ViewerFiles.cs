@@ -13,8 +13,6 @@ namespace Zing.Core.Viewer;
 /// <param name="ContentLength">The request's Content-Length, when it has one.</param>
 public sealed record ViewerRequest(string Method, string Url, string? Range, string? Origin, string? Referer, Stream? Body = null, long? ContentLength = null);
 
-/// <summary>The file is not a PNG, JPEG or WebP picture by its own first bytes, or is too large to read.</summary>
-public sealed class PictureRefusedException(string message) : Exception(message);
 
 /// <param name="Body">Empty for a reply without one, and when <paramref name="WholeFile"/> names the file to hand over.</param>
 /// <param name="WholeFile">A finished file too big to buffer: the host streams it from disk instead.</param>
@@ -47,8 +45,10 @@ public sealed class ViewerSession
 
 	public bool Stream => Format.Stream;
 
-	/// <summary>A picture opened for the background remover: the only kind of session the model and a save are tied to.</summary>
-	public bool Picture { get; internal init; }
+	/// <summary>The kinds of file this tool session was opened for (see <see cref="SessionKinds"/>); empty for a viewer file. Only a session with kinds takes a save, and the model is served while one has the image kind.</summary>
+	public IReadOnlyList<SessionKind> Kinds { get; internal init; } = [];
+
+	internal bool Reads(string kind) => Kinds.Any(k => k.Name == kind);
 
 	/// <summary>The file served, when it is shown as it is; the person's own file, never copied.</summary>
 	internal string? Source { get; }
@@ -90,8 +90,6 @@ public sealed class ViewerFiles : IDisposable
 	public const string Host = "view.zing";
 	public const int MaxChunk = 4 * 1024 * 1024;
 
-	/// <summary>A picture for the background remover may be this long; the pixel limit is the real guard, this one keeps a huge file from being read at all.</summary>
-	public const long PictureLimit = 120L * 1024 * 1024;
 
 	/// <summary>A finished file asked for whole and no bigger than this is read into memory; a bigger one is handed over as a file.</summary>
 	public const int WholeFileLimit = 8 * 1024 * 1024;
@@ -115,7 +113,10 @@ public sealed class ViewerFiles : IDisposable
 	/// <summary>The installed background model's file; throws what <c>EngineStore.InstalledPath</c> throws. Null on a host with no engines.</summary>
 	public Func<string>? ModelPath { get; set; }
 
-	/// <summary>Where the background remover's results go (the Downloads folder).</summary>
+	/// <summary>Gives a saved file a token the renderer can hand back to other tools; null leaves it out of the answer.</summary>
+	public Func<string, string>? IssueToken { get; set; }
+
+	/// <summary>Where tool results go (the Downloads folder).</summary>
 	public string? SaveDirectory { get; set; }
 
 	/// <summary>How many more bytes this window may save for the background remover; about a gigabyte, so a runaway page can't fill the disk.</summary>
@@ -137,32 +138,26 @@ public sealed class ViewerFiles : IDisposable
 	}
 
 	/// <summary>
-	/// Opens a picture for the background remover, in <paramref name="panel"/>. It is judged by its own first bytes (PNG, JPEG
-	/// or WebP) and its length, here and now, and served with the type those bytes give, whatever its name. The session is the
-	/// only thing the worker is told: the file path and its token stay in the host, and closing the panel, a new picture or
-	/// Cancel revokes it.
+	/// Opens a read session for a tool panel (the background remover, the PDF tools) on a file the person picked. The file must be one of
+	/// <paramref name="kinds"/> by its own first bytes (never its name) and within that kind length cap, here and now. The address
+	/// served is the only thing the tool is told: the path and the token stay in the host, and closing the panel, opening another
+	/// file in it or <see cref="Close"/> revokes it. The same session takes the tool result back (<c>PUT /save/&lt;id&gt;/&lt;name&gt;</c>).
 	/// </summary>
-	/// <exception cref="PictureRefusedException">Not one of those formats, or longer than <see cref="PictureLimit"/>.</exception>
-	public ViewerSession OpenPicture(string path, string panel)
+	/// <exception cref="SessionFileRefusedException">Not one of the kinds, or longer than a kind allows.</exception>
+	public ViewerSession OpenSession(string path, string panel, IReadOnlyList<SessionKind> kinds)
 	{
 		string contentType;
 		using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
 		{
-			if (file.Length > PictureLimit) throw new PictureRefusedException($"This file is {file.Length / (1024 * 1024)} MB, more than the background remover reads ({PictureLimit / (1024 * 1024)} MB)");
 			var head = new byte[16];
 			var read = file.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
-			contentType = PictureType(head.AsSpan(0, read)) ?? throw new PictureRefusedException("The background remover takes PNG, JPEG and WebP pictures. Use Convert to make one first, or open this file in the viewer");
+			var matches = kinds.Select(kind => (Kind: kind, Type: kind.Sniff(head.AsSpan(0, read)))).FirstOrDefault(m => m.Type is not null);
+			if (matches.Type is null) throw new SessionFileRefusedException($"This tool takes {string.Join(" and ", kinds.Select(k => k.Advice))}. Use Convert to make one first, or open this file in the viewer");
+			if (file.Length > matches.Kind.ReadCap) throw new SessionFileRefusedException($"This file is {file.Length / (1024 * 1024)} MB, more than this tool reads ({matches.Kind.ReadCap / (1024 * 1024)} MB)");
+			contentType = matches.Type;
 		}
-		var format = new ViewerFormat(ViewerKind.Native, "image", contentType);
-		return Add(panel, id => new ViewerSession(id, panel, Path.GetFileName(path), format, path, null) { Picture = true });
-	}
-
-	private static string? PictureType(ReadOnlySpan<byte> head)
-	{
-		if (head.StartsWith(new byte[] { 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a })) return "image/png";
-		if (head.Length >= 3 && head[0] == 0xff && head[1] == 0xd8 && head[2] == 0xff) return "image/jpeg";
-		if (head.Length >= 12 && head[..4].SequenceEqual("RIFF"u8) && head.Slice(8, 4).SequenceEqual("WEBP"u8)) return "image/webp";
-		return null;
+		var format = new ViewerFormat(ViewerKind.Native, contentType.StartsWith("image/", StringComparison.Ordinal) ? "image" : "pdf", contentType);
+		return Add(panel, id => new ViewerSession(id, panel, Path.GetFileName(path), format, path, null) { Kinds = kinds });
 	}
 
 	/// <summary>Opens a file that needs a converted copy; its folder is made now and the caller starts the engine.</summary>
@@ -394,7 +389,7 @@ public sealed class ViewerFiles : IDisposable
 		if (method is not ("GET" or "HEAD")) return Refuse(405, "Method Not Allowed");
 		lock (_gate)
 		{
-			if (!_sessions.Values.Any(session => session.Picture)) return NotFoundForView();
+			if (!_sessions.Values.Any(session => session.Reads("image"))) return NotFoundForView();
 		}
 		var path = (ModelPath ?? throw new InvalidOperationException("This host has no model to serve"))();
 		var length = new FileInfo(path).Length;
@@ -410,12 +405,12 @@ public sealed class ViewerFiles : IDisposable
 		return new ViewerReply(200, "OK", Cors(headers), [], method == "HEAD" ? null : path);
 	}
 
-	/// <summary>The result PNG, PUT by the worker of the picture session it names; refusals say why in plain text.</summary>
+	/// <summary>A tool result, PUT by the tool of the session it names: its extension (from the session kinds) decides the magic check and the cap; refusals say why in plain text.</summary>
 	private async Task<ViewerReply> SaveAsync(Address address, string method, ViewerRequest request)
 	{
 		ViewerSession? session;
 		lock (_gate) session = _sessions.GetValueOrDefault(address.Token);
-		if (session is not { Picture: true }) return NotFoundForView();
+		if (session is null || session.Kinds.Count == 0) return NotFoundForView();
 		if (method != "PUT") return Refuse(405, "Method Not Allowed");
 		var directory = SaveDirectory ?? throw new InvalidOperationException("This host has nowhere to save to");
 		var body = request.Body ?? throw new InvalidOperationException("The picture came with no body");
@@ -423,21 +418,21 @@ public sealed class ViewerFiles : IDisposable
 		{
 			long room;
 			lock (_gate) room = SaveBudget - _saved;
-			var saved = await PngSave.WriteAsync(directory, address.Name, body, request.ContentLength, room, CancellationToken.None).ConfigureAwait(false);
+			var saved = await ResultSave.WriteAsync(directory, address.Name, session.Kinds.SelectMany(SaveFormats.For).DistinctBy(f => f.Extension).ToList(), body, request.ContentLength, room, CancellationToken.None).ConfigureAwait(false);
 			lock (_gate) _saved += saved.Bytes;
-			var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { name = Path.GetFileName(saved.Path) });
+			var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { name = Path.GetFileName(saved.Path), token = IssueToken?.Invoke(saved.Path) });
 			var headers = Cors(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Content-Type"] = "application/json", ["Content-Length"] = json.Length.ToString(CultureInfo.InvariantCulture), ["Cache-Control"] = "no-store" });
 			return new ViewerReply(201, "Created", headers, json);
 		}
-		catch (PngTooLargeException tooLarge)
+		catch (SaveTooLargeException tooLarge)
 		{
 			return Failure(413, "Payload Too Large", tooLarge.Message);
 		}
-		catch (PngBudgetException budget)
+		catch (SaveBudgetException budget)
 		{
 			return Failure(507, "Insufficient Storage", budget.Message);
 		}
-		catch (PngSaveException refused)
+		catch (SaveRefusedException refused)
 		{
 			return Failure(400, "Bad Request", refused.Message);
 		}
