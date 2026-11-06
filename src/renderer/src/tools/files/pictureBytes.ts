@@ -22,8 +22,8 @@ export async function canvasToPng(canvas: HTMLCanvasElement, name: string): Prom
 }
 
 /**
- * A PNG or JPEG for a PDF page. Those two are used as they are; GIF (first frame), WebP and BMP are decoded by the browser
- * and re-saved as PNG, with transparency kept.
+ * A PNG or JPEG for a PDF page. Those two are used as they are; WebP is decoded by the browser and re-saved as PNG, with
+ * transparency kept.
  */
 export async function toPicture(name: string, bytes: Uint8Array): Promise<Picture> {
 	// The size is read from the header first: a small file can describe a canvas of billions of pixels.

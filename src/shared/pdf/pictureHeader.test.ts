@@ -21,17 +21,17 @@ describe('picture sizes are read from the header', () => {
 	it.each([
 		['png', png(640, 480)],
 		['jpeg', jpeg(640, 480)],
-		['gif', gif(640, 480)],
-		['bmp', bmp(640, 480)],
 		['webp lossy', webpLossy(640, 480)],
 		['webp lossless', webpLossless(640, 480)],
 		['webp extended', webpExtended(640, 480)],
 	])('%s', (_name, bytes) => expect(pictureSize(bytes)).toEqual({ width: 640, height: 480 }))
 
-	it('reads a bottom-up bmp (negative height) as its size', () => expect(pictureSize(bmp(10, -20))).toEqual({ width: 10, height: 20 }))
+	it('does not read a GIF or a BMP: a session never hands those over', () => {
+		for (const other of [gif(1, 1), bmp(1, 1)]) expect(() => pictureSize(other)).toThrow(/PNG, JPEG or WebP/)
+	})
 
 	it('refuses a header that is cut short or makes no sense', () => {
-		for (const bad of [new Uint8Array(), png(1, 1).slice(0, 20), jpeg(1, 1).slice(0, 12), gif(1, 1).slice(0, 8), riff([]), Uint8Array.from(ascii('not a picture at all')), png(0, 5)]) {
+		for (const bad of [new Uint8Array(), png(1, 1).slice(0, 20), jpeg(1, 1).slice(0, 12), riff([]), Uint8Array.from(ascii('not a picture at all')), png(0, 5)]) {
 			expect(() => pictureSize(bad)).toThrow(PdfEditError)
 		}
 	})
@@ -39,6 +39,6 @@ describe('picture sizes are read from the header', () => {
 		expect(MAX_PICTURE_PIXELS).toBe(100_000_000)
 		expect(() => checkPictureSize('bomb.png', png(20000, 20000))).toThrow(/bomb\.png.*megapixels/)
 		expect(() => checkPictureSize('ok.png', png(10000, 10000))).not.toThrow()
-		expect(() => checkPictureSize('bomb.gif', gif(65535, 65535))).toThrow(PdfEditError)
+		expect(() => checkPictureSize('bomb.jpg', jpeg(65535, 65535))).toThrow(PdfEditError)
 	})
 })

@@ -107,7 +107,7 @@ export function PdfPageEditor({ preview, index, position, turn, items, onAdd, on
 
 	const choosePicture = (): void => {
 		setProblem(null)
-		zing.pickFiles(['image']).then((files) => {
+		zing.pickFiles(['picture']).then((files) => {
 			const first = files[0]
 			if (first !== undefined) addPicture(first)
 		}, fail)

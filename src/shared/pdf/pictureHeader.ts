@@ -68,26 +68,16 @@ function webp(b: Uint8Array): PictureSize {
 	throw bad('WebP')
 }
 
-function bmp(b: Uint8Array): PictureSize {
-	need(b, 26, 'BMP')
-	if (u32le(b, 14) === 12) return { width: u16le(b, 18), height: u16le(b, 20) }
-	return { width: Math.abs(u32le(b, 18) | 0), height: Math.abs(u32le(b, 22) | 0) }
-}
-
 /**
- * The size a picture says it has, read from its header alone. PNG, JPEG, GIF, WebP and BMP.
+ * The size a picture says it has, read from its header alone: the PNG, JPEG and WebP pictures a tool session hands over.
  * @throws PdfEditError for a header that is cut short, malformed or of another kind, or a size of zero.
  */
 export function pictureSize(bytes: Uint8Array): PictureSize {
 	let size: PictureSize
 	if (tag(bytes, 1, 'PNG')) size = png(bytes)
 	else if (bytes[0] === 0xff && bytes[1] === 0xd8) size = jpeg(bytes)
-	else if (tag(bytes, 0, 'GIF8')) {
-		need(bytes, 10, 'GIF')
-		size = { width: u16le(bytes, 6), height: u16le(bytes, 8) }
-	} else if (tag(bytes, 0, 'RIFF')) size = webp(bytes)
-	else if (tag(bytes, 0, 'BM')) size = bmp(bytes)
-	else throw new PdfEditError("This isn't a PNG, JPEG, GIF, WebP or BMP picture.")
+	else if (tag(bytes, 0, 'RIFF')) size = webp(bytes)
+	else throw new PdfEditError("This isn't a PNG, JPEG or WebP picture.")
 	if (size.width < 1 || size.height < 1) throw bad('size zero')
 	return size
 }

@@ -84,6 +84,7 @@ public static class FileKinds
 		["audio"] = ["mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "wma", "aiff"],
 		["document"] = ["pdf", "docx", "doc", "odt", "rtf", "txt", "md", "html", "htm", "epub", "tex", "rst"],
 		["pdf"] = ["pdf"],
+		["picture"] = ["png", "jpg", "jpeg", "webp"],
 		["any"] = [],
 	};
 
