@@ -55,6 +55,42 @@
 	justify-content: space-between;
 	padding: 12px;
 	border: 1px dashed var(--separator);
+	border-radius: var(--control-radius);
+	background: var(--control);
+}
+
+.convert-drop.targeted {
+	border-color: var(--accent);
+}
+
+.convert-hint {
+	color: var(--muted);
+	font-size: 13px;
+}
+
+.convert-options {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.convert-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 12px;
+	align-items: center;
+}
+
+.convert-offer {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.convert-actions {
+	display: flex;
+	gap: 8px;
+}
 
 .viewer {
 	box-sizing: border-box;
@@ -125,10 +161,6 @@
 	flex-direction: column;
 	gap: 8px;
 }
-
-.convert-actions {
-	display: flex;
-	gap: 8px;
 
 .viewer-media {
 	max-width: 100%;
