@@ -49,7 +49,8 @@ public sealed class RendererView
 		core.Settings.AreDefaultContextMenusEnabled = false;
 		core.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
 		core.WebMessageReceived += renderer.OnMessage;
-		core.AddWebResourceRequestedFilter($"https://{AppHost}{LocalFiles.Prefix}*", CoreWebView2WebResourceContext.All);
+		// All kinds of source, so a worker's fetch is answered as well as the page's own.
+		core.AddWebResourceRequestedFilter($"https://{AppHost}{LocalFiles.Prefix}*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
 		core.WebResourceRequested += renderer.OnLocalFileRequested;
 		core.ProcessFailed += renderer.OnProcessFailed;
 		// Events sent before the root has loaded would be lost, so callers get the view once it has.
@@ -126,12 +127,6 @@ public sealed class RendererView
 	/// so a page tab, which has no <c>app.zing</c> and no handler, gets nothing. The bytes are streamed from the file,
 	/// never read into memory here, and not through the JSON bridge.
 	/// </summary>
-	private static string ServedHeaders(long length) =>
-		$"Content-Type: application/octet-stream
-Content-Length: {length}
-Cache-Control: no-store
-X-Content-Type-Options: nosniff";
-
 	private void OnLocalFileRequested(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs e)
 	{
 		var environment = sender.Environment;
@@ -154,6 +149,9 @@ X-Content-Type-Options: nosniff";
 			e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", "Cache-Control: no-store");
 		}
 	}
+
+	private static string ServedHeaders(long length) =>
+		string.Join("\r\n", "Content-Type: application/octet-stream", $"Content-Length: {length}", "Cache-Control: no-store", "X-Content-Type-Options: nosniff");
 
 	/// <summary>Every invoke gets a reply, even one the bridge can't read, so the renderer's promise never hangs.</summary>
 	private async Task AnswerAsync(CoreWebView2 sender, string source, string json, IReadOnlyList<string> dropped)
