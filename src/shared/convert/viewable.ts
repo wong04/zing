@@ -70,6 +70,9 @@ export function extensionOf(name: string): string {
 
 
 /** What `viewer:open` answers with. */
+/** The kinds of file a tool can ask a read session for (SessionKinds.cs). */
+export type SessionKindName = 'image' | 'pdf'
+
 export interface ViewerOpened {
 	/** Names this open file to `viewer:close`. */
 	readonly id: string

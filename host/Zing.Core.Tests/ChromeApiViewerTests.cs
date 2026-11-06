@@ -217,4 +217,55 @@ public sealed class ChromeApiViewerTests : IAsyncLifetime
 
 		await _engines.Until(() => Copies().Length == 0, "the copies to be deleted");
 	}
+
+	private static readonly byte[] PngHeader = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3];
+
+	private async Task<string> PickPicture(string name, byte[] bytes)
+	{
+		var path = Path.Combine(_engines.Inputs, name);
+		File.WriteAllBytes(path, bytes);
+		_host.PickedPaths = [path];
+		return Value(await Invoke("files:pick", (object)new[] { "image" }))[0].GetProperty("token").GetString()!;
+	}
+
+	[Fact]
+	public async Task A_picture_for_the_background_remover_opens_as_a_session_without_the_path_or_token()
+	{
+		var token = await PickPicture("cat.png", PngHeader);
+
+		var opened = Value(await Invoke("bgremove:open", _panel, token));
+
+		Assert.DoesNotContain(token, opened.ToString());
+		Assert.DoesNotContain(_engines.Inputs.Replace("\\", "\\\\"), opened.ToString());
+		Assert.Equal("cat.png", opened.GetProperty("name").GetString());
+		Assert.Equal(200, (await Fetch(opened.GetProperty("url").GetString()!)).Status);
+		Assert.Empty(Copies());
+	}
+
+	[Fact]
+	public async Task A_file_that_is_not_a_picture_or_for_a_panel_that_is_not_open_is_refused_and_opens_nothing()
+	{
+		var heic = await PickPicture("IMG.png", [0, 0, 0, 24, .. "ftypheic"u8.ToArray()]);
+		var good = await PickPicture("good.png", PngHeader);
+
+		Assert.Equal(nameof(SessionFileRefusedException), ErrorName(await Invoke("bgremove:open", _panel, heic)));
+		Assert.Equal(nameof(UnknownPanelException), ErrorName(await Invoke("bgremove:open", "panel-nobody", good)));
+		Assert.Equal(nameof(UnknownFileGrantException), ErrorName(await Invoke("bgremove:open", _panel, new string('0', 32))));
+		Assert.Null(_api.Viewer!.ForPanel(_panel));
+	}
+
+	[Fact]
+	public async Task Closing_the_session_or_opening_another_picture_revokes_the_first()
+	{
+		var first = Value(await Invoke("bgremove:open", _panel, await PickPicture("one.png", PngHeader)));
+		var firstUrl = first.GetProperty("url").GetString()!;
+
+		var second = Value(await Invoke("bgremove:open", _panel, await PickPicture("two.png", PngHeader)));
+		Assert.Equal(404, (await Fetch(firstUrl)).Status);
+		var secondUrl = second.GetProperty("url").GetString()!;
+		Assert.Equal(200, (await Fetch(secondUrl)).Status);
+
+		Value(await Invoke("viewer:close", second.GetProperty("id").GetString()!));
+		Assert.Equal(404, (await Fetch(secondUrl)).Status);
+	}
 }

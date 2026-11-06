@@ -143,7 +143,12 @@ public sealed class ChromeApi : IDisposable
 		bridge.UseDropInbox(Drops);
 		if (app.ViewerRoot is { } viewerRoot)
 		{
-			Viewer = new ViewerFiles(viewerRoot, (what, error) => host.Warn(what, error));
+			Viewer = new ViewerFiles(viewerRoot, (what, error) => host.Warn(what, error))
+			{
+				ModelOpener = () => OpenModel(app.Engines),
+				SaveDirectory = host.DownloadsDirectory,
+				IssueToken = path => Grants.Issue(path).Token,
+			};
 			bridge.UseViewer(Viewer);
 		}
 		Stacks = new StackDropdown(key => StackMembers.Of(Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")), Ordering.Stacks(), key), host.Scheduler, state =>
@@ -263,6 +268,8 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("files:pick", args => PickFilesAsync(Arg(args, 0)));
 		bridge.Register("convert:html-to-pdf", args => HtmlToPdfAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("files:open-dropped", _ => Drops.Take());
+		bridge.Register("session:open", args => OpenToolSession(Text(args, 0), Text(args, 1), StringArray(Arg(args, 2))));
+		bridge.Register("bgremove:open", args => OpenToolSession(Text(args, 0), Text(args, 1), ["image"]));
 		bridge.Register("page:save", _ => SavePageAsync());
 		bridge.Register("viewer:open", args => OpenViewerFile(Text(args, 0), Text(args, 1)));
 		bridge.Register("viewer:close", args => Do(() => CloseViewerFile(Text(args, 0))));
@@ -511,6 +518,41 @@ public sealed class ChromeApi : IDisposable
 		var extensions = FileKinds.Extensions([.. kinds.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : throw new ArgumentException("A file kind must be a string"))]);
 		var paths = await _host.PickFilesAsync(extensions);
 		return paths.Select(Grants.Issue).ToList();
+	}
+
+	/// <summary>
+	/// Opens a picked or dropped file for a tool panel as a read session on the viewer file server. The host judges the first bytes
+	/// against the kinds asked for (a fixed table: image, pdf) and the length cap, and answers with a session address; the token and
+	/// the path never reach the tool. Closing the panel, opening another file in it or <c>viewer:close</c> revokes it.
+	/// </summary>
+	/// <summary>The model and a hold on it, so the store will not remove it while the host streams it.</summary>
+	private static (string Path, IDisposable Lease) OpenModel(EngineStore? engines)
+	{
+		var store = engines ?? throw new EngineNotInstalledException(EngineIds.BackgroundModel);
+		var lease = store.Use(EngineIds.BackgroundModel);
+		try
+		{
+			return (store.InstalledPath(EngineIds.BackgroundModel), lease);
+		}
+		catch
+		{
+			lease.Dispose();
+			throw;
+		}
+	}
+
+	private static List<string> StringArray(JsonElement list) =>
+		list.ValueKind == JsonValueKind.Array ? [.. list.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.String ? item.GetString()! : throw new ArgumentException("Kinds must be a list of names"))] : throw new ArgumentException("Argument 2 must be a list of kinds");
+
+	private object OpenToolSession(string panelId, string token, IReadOnlyList<string> kindNames)
+	{
+		var viewer = Viewer ?? throw new InvalidOperationException("This host can't serve files to tools");
+		var kinds = SessionKinds.Named(kindNames);
+		var path = Grants.Resolve(token);
+		if (!File.Exists(path)) throw new FileNotFoundException($"{Path.GetFileName(path)} isn't there any more. Pick it again", path);
+		if (!Shell.PanelsState().Panels.Any(p => p.Id == panelId)) throw new UnknownPanelException(panelId);
+		CloseViewerPanel(panelId);
+		return Opened(viewer.OpenSession(path, panelId, kinds));
 	}
 
 	/// <summary>Convert's HTML to PDF: prints the file a token stands for and answers with the PDF's name and a token.</summary>

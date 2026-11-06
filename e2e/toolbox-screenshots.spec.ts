@@ -17,7 +17,6 @@ const LATER_PHASE: readonly string[] = [
 	'section:Diagnose',
 	'section:Network & VPN',
 	'section:Open a Link',
-	'tool:Background Remover',
 ]
 const TOOL_IDS = toolboxGroups.flatMap((group) => itemsIn(group).map(panelId)).filter((id) => !LATER_PHASE.includes(id))
 

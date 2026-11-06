@@ -129,8 +129,9 @@ public sealed class RendererView
 			var request = e.Request;
 			var reply = viewer is null
 				? ViewerFiles.Unavailable()
-				: await viewer.ServeAsync(new ViewerRequest(request.Method, request.Uri, Header(request, "Range"), Header(request, "Origin"), Header(request, "Referer")));
+				: await viewer.ServeAsync(new ViewerRequest(request.Method, request.Uri, Header(request, "Range"), Header(request, "Origin"), Header(request, "Referer"), request.Content?.AsStreamForRead(), long.TryParse(Header(request, "Content-Length"), out var declared) ? declared : null));
 			if (!IsClosed) e.Response = ViewerResponses.Make(sender.Environment, reply);
+			else reply.Lease?.Dispose();
 		}
 		catch (Exception) when (!IsClosed)
 		{
@@ -156,6 +157,7 @@ public sealed class RendererView
 	/// </summary>
 	private static IReadOnlyList<string> DroppedPaths(CoreWebView2WebMessageReceivedEventArgs e) =>
 		[.. e.AdditionalObjects?.OfType<CoreWebView2File>().Select(file => file.Path) ?? []];
+
 
 	/// <summary>Every invoke gets a reply, even one the bridge can't read, so the renderer's promise never hangs.</summary>
 	private async Task AnswerAsync(CoreWebView2 sender, string source, string json, IReadOnlyList<string> dropped)

@@ -5,5 +5,6 @@ public static class ZingOrigin
 {
 	public const string Host = "app.zing";
 
+
 	public static bool IsZingView(string source) => source.StartsWith($"https://{Host}/", StringComparison.Ordinal);
 }

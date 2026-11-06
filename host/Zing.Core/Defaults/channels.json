@@ -41,6 +41,10 @@
 			"args": 1
 		},
 		{
+			"channel": "bgremove:open",
+			"args": 2
+		},
+		{
 			"channel": "chrome:app-menu",
 			"args": 1
 		},
@@ -211,6 +215,10 @@
 		{
 			"channel": "permission:deny",
 			"args": 1
+		},
+		{
+			"channel": "session:open",
+			"args": 3
 		},
 		{
 			"channel": "settings:get",

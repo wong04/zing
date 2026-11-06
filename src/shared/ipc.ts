@@ -1,5 +1,5 @@
 import type { EngineInfo, EngineProgress, EnsureOutcome, YtDlpUpdate } from './engines/engineInfo'
-import type { ViewerOpened } from './convert/viewable'
+import type { SessionKindName, ViewerOpened } from './convert/viewable'
 import type { EngineExit, EngineJobSpec, EngineOutput, FileKind, PickedFile } from './engines/engineJob'
 import type { FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
@@ -306,6 +306,17 @@ export interface InvokeContract {
 	 */
 	'convert:html-to-pdf': { args: [token: string, outputName: string]; result: PickedFile }
 	/**
+	 * Opens a picked or dropped file for a tool panel as a read session on the viewer file server (`https://view.zing`). `kinds`
+	 * names what the tool takes, from a fixed table: `image` (PNG, JPEG or WebP, up to 120 MB) and `pdf` (`%PDF-` at the start, up
+	 * to 50 MB). The host judges the file first bytes and length and rejects anything else (SessionFileRefusedException),
+	 * an unknown kind or an unknown panel. The answer's `url` is `GET`able by the tool (a worker included) and nothing else is
+	 * revealed: no path, no token. Opening another file in the panel, `viewer:close(id)` or closing the panel revokes it.
+	 * The same session takes results: `PUT https://view.zing/save/<id>/<name>` (see docs in task-18-report).
+	 */
+	'session:open': { args: [panelId: string, token: string, kinds: readonly SessionKindName[]]; result: ViewerOpened }
+	/** The background remover's session: `session:open` with the `image` kind. */
+	'bgremove:open': { args: [panelId: string, token: string]; result: ViewerOpened }
+	/**
 	 * Files dropped on a Zing view. The host reads their paths from the drop itself (`postMessageWithAdditionalObjects`),
 	 * so the bridge carries the `File`s beside the message and not in its JSON args; a web page cannot send one.
 	 */
@@ -467,6 +478,10 @@ export interface ZingApi {
 	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>
 	/** Convert's HTML to PDF (see `convert:html-to-pdf`). */
 	printHtmlToPdf(token: string, outputName: string): Promise<PickedFile>
+	/** Opens a read session for a tool panel (see `session:open`). */
+	openToolSession(panelId: string, token: string, kinds: readonly SessionKindName[]): Promise<ViewerOpened>
+	/** The background remover's session (see `bgremove:open`). */
+	openBackgroundPicture(panelId: string, token: string): Promise<ViewerOpened>
 	/** Hand over the `File`s of a drop (`event.dataTransfer.files`); resolves with a token for each. */
 	openDropped(files: readonly File[]): Promise<PickedFile[]>
 	openViewerFile(token: string, panelId: string): Promise<ViewerOpened>
