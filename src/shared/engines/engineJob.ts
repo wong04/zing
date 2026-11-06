@@ -1,7 +1,7 @@
 // Running an engine and picking files (host/Zing.Core/Engines/EngineRunner.cs, FileGrants.cs).
 
 /** What the picker is asked for; the host turns each into a list of extensions. */
-export type FileKind = 'image' | 'video' | 'audio' | 'document' | 'any'
+export type FileKind = 'image' | 'video' | 'audio' | 'document' | 'pdf' | 'any'
 
 /**
  * A file the person picked or dropped, or an output a job made. The host does not hand the renderer its path: the token

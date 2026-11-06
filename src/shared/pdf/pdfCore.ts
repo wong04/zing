@@ -160,3 +160,27 @@ export function visualToUser(box: PageBox, rotation: number, vx: number, vy: num
 			throw new PdfEditError(`Zing can't place anything on a page turned ${rotation} degrees`)
 	}
 }
+
+/** A picture to make a page of. */
+export interface PictureFile {
+	readonly name: string
+	readonly format: 'png' | 'jpg'
+	readonly bytes: Uint8Array
+}
+
+/** What the panel learns about a file when it is added. */
+export interface PdfInfo {
+	readonly pageCount: number
+	readonly fields: readonly FormFieldInfo[]
+}
+
+/** The longest side of a PDF page in points; Acrobat's limit, 200 inches. */
+export const MAX_PAGE_POINTS = 14400
+
+/** A page for a picture of this many pixels: 96 pixels to the inch, shrunk (keeping its shape) to fit the page size limit. */
+export function pageSizeFor(widthPx: number, heightPx: number): { width: number; height: number } {
+	const width = widthPx * 0.75
+	const height = heightPx * 0.75
+	const shrink = Math.min(1, MAX_PAGE_POINTS / Math.max(width, height))
+	return { width: width * shrink, height: height * shrink }
+}

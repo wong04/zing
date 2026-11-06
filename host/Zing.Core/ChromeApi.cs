@@ -501,7 +501,7 @@ public sealed class ChromeApi : IDisposable
 		return paths.Select(Grants.Issue).ToList();
 	}
 
-	/// <summary>The PDF tools: the bytes of a granted PDF, PNG or JPEG as base64 (see <see cref="PdfFiles"/>).</summary>
+	/// <summary>The PDF tools: the bytes of a granted PDF or picture as base64 (see <see cref="PdfFiles"/>).</summary>
 	private async Task<object?> ReadFileAsync(string token)
 	{
 		var path = Grants.Resolve(token);

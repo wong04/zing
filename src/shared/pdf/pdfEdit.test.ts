@@ -8,6 +8,9 @@ import {
 	buildPdf,
 	deletePages,
 	fillForm,
+	imagesToPdf,
+	pageSizeFor,
+	inspectPdf,
 	listFormFields,
 	mergePdfs,
 	parsePageRanges,
@@ -264,3 +267,34 @@ describe('files Zing will not edit', () => {
 	})
 })
 
+
+describe('inspectPdf', () => {
+	it('answers the page count and the fillable fields, and refuses what the other functions refuse', async () => {
+		const info = await inspectPdf({ name: 'f.pdf', bytes: await formFixture() })
+		expect(info.pageCount).toBe(1)
+		expect(info.fields.map((f) => f.name)).toEqual(['name', 'agree', 'colour'])
+		await expect(inspectPdf({ name: 'secret.pdf', bytes: new Uint8Array(readFileSync(new URL('./fixtures/encrypted.pdf', import.meta.url))) })).rejects.toThrow(/secret\.pdf/)
+	})
+})
+
+describe('imagesToPdf', () => {
+	const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'))
+
+	it('makes one page for each picture, in order', async () => {
+		const out = await imagesToPdf([
+			{ name: 'a.png', format: 'png', bytes: png },
+			{ name: 'b.png', format: 'png', bytes: png },
+		])
+		expect((await PDFDocument.load(out)).getPageCount()).toBe(2)
+	})
+	it('sizes a page to its picture at 96 pixels to the inch, and shrinks one past the PDF size limit', () => {
+		expect(pageSizeFor(400, 200)).toEqual({ width: 300, height: 150 })
+		const huge = pageSizeFor(40000, 20000)
+		expect(Math.max(huge.width, huge.height)).toBeLessThanOrEqual(14400)
+		expect(huge.width / huge.height).toBeCloseTo(2)
+	})
+	it('refuses no pictures, too many, and bytes that are not the picture they say, naming the file', async () => {
+		await expect(imagesToPdf([])).rejects.toThrow(PdfEditError)
+		await expect(imagesToPdf([{ name: 'bad.png', format: 'png', bytes: new Uint8Array([1, 2]) }])).rejects.toThrow(/bad\.png/)
+	})
+})

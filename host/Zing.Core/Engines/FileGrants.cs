@@ -83,6 +83,7 @@ public static class FileKinds
 		["video"] = ["mp4", "mov", "mkv", "avi", "webm", "m4v", "wmv", "flv", "mpg", "mpeg", "3gp"],
 		["audio"] = ["mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "wma", "aiff"],
 		["document"] = ["pdf", "docx", "doc", "odt", "rtf", "txt", "md", "html", "htm", "epub", "tex", "rst"],
+		["pdf"] = ["pdf"],
 		["any"] = [],
 	};
 

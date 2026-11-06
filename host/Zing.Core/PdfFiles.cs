@@ -8,7 +8,7 @@ public sealed class PdfFileRefusedException(string reason) : IOException(reason)
 
 /// <summary>
 /// How the PDF tools get a granted file's bytes and put a result in Downloads (channels <c>files:read</c> and
-/// <c>files:save-bytes</c>). Both are narrow: reading takes only PDF, PNG and JPEG files whose content is what the name says;
+/// <c>files:save-bytes</c>). Both are narrow: reading takes only PDF, PNG, JPEG, GIF, WebP and BMP files (the pictures Convert can make into PDF pages) whose content is what the name says;
 /// saving takes a plain name ending in pdf, png or jpg, checks the bytes are that kind, never overwrites, and answers a
 /// numbered name. The bytes cross the bridge as base64 text, so both have a size limit (the same numbers are in
 /// src/shared/pdf/pdfCore.ts, which a test compares).
@@ -19,19 +19,19 @@ public static class PdfFiles
 	public const long MaxSaveBytes = 100L * 1024 * 1024;
 	private const int MaxBaseLength = 100;
 
-	private static readonly string[] ReadExtensions = ["pdf", "png", "jpg", "jpeg"];
+	private static readonly string[] ReadExtensions = ["pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp"];
 	private static readonly string[] SaveExtensions = ["pdf", "png", "jpg"];
 	private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
 	/// <summary>The size of base64 text that decodes to at most <see cref="MaxSaveBytes"/>; a longer text is refused unread.</summary>
 	public static readonly long MaxSaveText = (MaxSaveBytes + 2) / 3 * 4;
 
-	/// <exception cref="PdfFileRefusedException">Not a PDF, PNG or JPEG by name and by content, or over <see cref="MaxReadBytes"/>.</exception>
+	/// <exception cref="PdfFileRefusedException">Not a PDF or picture of a kind listed, by name and by content, or over <see cref="MaxReadBytes"/>.</exception>
 	public static byte[] Read(string path)
 	{
 		var name = Path.GetFileName(path);
 		var extension = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
-		if (!ReadExtensions.Contains(extension)) throw new PdfFileRefusedException($"{name} isn't a PDF, PNG or JPEG file, so the PDF tools won't read it.");
+		if (!ReadExtensions.Contains(extension)) throw new PdfFileRefusedException($"{name} isn't a PDF or a picture (PNG, JPEG, GIF, WebP or BMP), so the PDF tools won't read it.");
 		using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
 		if (stream.Length > MaxReadBytes) throw new PdfFileRefusedException($"{name} is {stream.Length / (1024 * 1024)} MB; the PDF tools read files up to {MaxReadBytes / (1024 * 1024)} MB.");
 		var bytes = new byte[stream.Length];
@@ -83,6 +83,9 @@ public static class PdfFiles
 		"pdf" => Encoding.ASCII.GetString(bytes, 0, Math.Min(bytes.Length, 1024)).Contains("%PDF-", StringComparison.Ordinal),
 		"png" => bytes.AsSpan().StartsWith(PngSignature),
 		"jpg" or "jpeg" => bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF,
+		"gif" => bytes.AsSpan().StartsWith("GIF87a"u8) || bytes.AsSpan().StartsWith("GIF89a"u8),
+		"webp" => bytes.Length >= 12 && bytes.AsSpan(0, 4).SequenceEqual("RIFF"u8) && bytes.AsSpan(8, 4).SequenceEqual("WEBP"u8),
+		"bmp" => bytes.AsSpan().StartsWith("BM"u8),
 		_ => false,
 	};
 }

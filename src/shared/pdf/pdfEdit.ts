@@ -9,20 +9,23 @@ import {
 	PDF_LIMITS,
 	PdfEditError,
 	asPdfFile,
+	pageSizeFor,
 	visualToUser,
 	type FormFieldInfo,
 	type OverlayItem,
 	type PageRange,
 	type PdfFile,
+	type PdfInfo,
 	type PdfOverlay,
 	type PdfPlan,
 	type PdfSource,
+	type PictureFile,
 	type PlannedPage,
 	type RightAngle,
 } from './pdfCore'
 
-export { PDF_LIMITS, PdfEditError, parsePageRanges, visualToUser } from './pdfCore'
-export type { FormFieldInfo, FormFieldKind, ImageItem, OverlayItem, PageBox, PageRange, PdfFile, PdfOverlay, PdfPlan, PdfSource, PlannedPage, RgbColor, RightAngle, TextItem } from './pdfCore'
+export { PDF_LIMITS, PdfEditError, pageSizeFor, parsePageRanges, visualToUser } from './pdfCore'
+export type { FormFieldInfo, FormFieldKind, ImageItem, OverlayItem, PageBox, PageRange, PdfFile, PdfInfo, PdfOverlay, PdfPlan, PdfSource, PictureFile, PlannedPage, RgbColor, RightAngle, TextItem } from './pdfCore'
 
 async function load(source: PdfSource): Promise<PDFDocument> {
 	const { name, bytes } = asPdfFile(source)
@@ -318,4 +321,28 @@ async function fill(doc: PDFDocument, name: string, values: Readonly<Record<stri
 		}
 	}
 	form.updateFieldAppearances(font)
+}
+
+/** What the panel needs to know when a file is added; refuses a file that can't be edited, so that is found out at once. */
+export async function inspectPdf(file: PdfSource): Promise<PdfInfo> {
+	const doc = await load(file)
+	return { pageCount: doc.getPageCount(), fields: await listFormFields(file) }
+}
+
+/** A new PDF with one page for each picture, in order, each page the size of its picture (see pageSizeFor). */
+export async function imagesToPdf(pictures: readonly PictureFile[]): Promise<Uint8Array> {
+	if (pictures.length === 0) throw new PdfEditError('Choose at least one picture.')
+	if (pictures.length > PDF_LIMITS.maxPages) throw new PdfEditError(`A PDF can have up to ${PDF_LIMITS.maxPages} pages; ${pictures.length} pictures were given.`)
+	const doc = await PDFDocument.create()
+	for (const picture of pictures) {
+		let image
+		try {
+			image = picture.format === 'png' ? await doc.embedPng(picture.bytes) : await doc.embedJpg(picture.bytes)
+		} catch (error) {
+			throw new PdfEditError(`${picture.name} can't be read as a ${picture.format.toUpperCase()} picture: ${error instanceof Error ? error.message : String(error)}`)
+		}
+		const size = pageSizeFor(image.width, image.height)
+		doc.addPage([size.width, size.height]).drawImage(image, { x: 0, y: 0, width: size.width, height: size.height })
+	}
+	return doc.save()
 }

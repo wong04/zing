@@ -297,8 +297,8 @@ export interface InvokeContract {
 	 */
 	'page:save': { args: []; result: PickedFile }
 	/**
-	 * The PDF tools: the bytes of a file this window picked or was given, as base64. Only PDF, PNG and JPEG files whose content
-	 * is what their name says, up to 50 MB; anything else rejects with PdfFileRefusedException. A page view has no host channel.
+	 * The PDF tools: the bytes of a file this window picked or was given, as base64. Only PDF, PNG, JPEG, GIF, WebP and BMP files whose
+	 * content is what their name says, up to 50 MB; anything else rejects with PdfFileRefusedException. A page view has no host channel.
 	 */
 	'files:read': { args: [token: string]; result: string }
 	/**
@@ -469,7 +469,7 @@ export interface ZingApi {
 	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>
 	/** Convert's HTML to PDF (see `convert:html-to-pdf`). */
 	printHtmlToPdf(token: string, outputName: string): Promise<PickedFile>
-	/** The PDF tools' read of a granted PDF, PNG or JPEG as base64 (see `files:read`). */
+	/** The PDF tools' read of a granted PDF or picture as base64 (see `files:read`). */
 	readFileBase64(token: string): Promise<string>
 	/** The PDF tools' save of base64 bytes to Downloads (see `files:save-bytes`). */
 	saveFileBase64(name: string, base64: string): Promise<PickedFile>
