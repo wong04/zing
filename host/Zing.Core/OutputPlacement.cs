@@ -21,6 +21,15 @@ public sealed class OutputPlacement(Func<bool> neverOverwrite)
 	public string Place(string source, string directory, string name, Action beforeMove)
 	{
 		if (!neverOverwrite()) return Replace(source, directory, name, beforeMove);
+		return PlaceNumbered(source, directory, name, beforeMove);
+	}
+
+	/// <summary>
+	/// Places the file under a free name whatever the setting says. For a job with several outputs: if a later one fails, the
+	/// ones already placed are undone, and a file one of them had replaced could not come back.
+	/// </summary>
+	public string PlaceNumbered(string source, string directory, string name, Action beforeMove)
+	{
 		// The name is chosen against what exists, and File.Move refuses to overwrite, so a file that arrives in between makes the next number be tried.
 		for (var attempt = 0; attempt < MaxNumbering; attempt++)
 		{

@@ -560,7 +560,10 @@ public sealed class EngineRunner
 		var staged = SameVolume(temp, job.OutputDirectory) ? null : Stage(job, temp, name);
 		try
 		{
-			return _placement.Place(staged ?? temp, job.OutputDirectory, name, () => BeforeMove?.Invoke(job.Id));
+			Action beforeMove = () => BeforeMove?.Invoke(job.Id);
+			return job.Names.Count > 1
+				? _placement.PlaceNumbered(staged ?? temp, job.OutputDirectory, name, beforeMove)
+				: _placement.Place(staged ?? temp, job.OutputDirectory, name, beforeMove);
 		}
 		finally
 		{
