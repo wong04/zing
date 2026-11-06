@@ -55,6 +55,42 @@
 	justify-content: space-between;
 	padding: 12px;
 	border: 1px dashed var(--separator);
+	border-radius: var(--control-radius);
+	background: var(--control);
+}
+
+.convert-drop.targeted {
+	border-color: var(--accent);
+}
+
+.convert-hint {
+	color: var(--muted);
+	font-size: 13px;
+}
+
+.convert-options {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.convert-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 12px;
+	align-items: center;
+}
+
+.convert-offer {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.convert-actions {
+	display: flex;
+	gap: 8px;
+}
 
 .viewer {
 	box-sizing: border-box;
@@ -97,38 +133,6 @@
 	border-radius: var(--control-radius);
 	background: var(--control);
 }
-
-.convert-drop.targeted {
-	border-color: var(--accent);
-}
-
-.convert-hint {
-	color: var(--muted);
-	font-size: 13px;
-}
-
-.convert-options {
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-}
-
-.convert-row {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px 12px;
-	align-items: center;
-}
-
-.convert-offer {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-}
-
-.convert-actions {
-	display: flex;
-	gap: 8px;
 
 .viewer-media {
 	max-width: 100%;
@@ -194,4 +198,140 @@ video.viewer-media {
 	width: 100%;
 	height: 6px;
 	accent-color: var(--accent);
+}
+
+/* PDF tools */
+.pdf-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.pdf-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+	gap: 10px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pdf-cell {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	align-items: center;
+	padding: 6px;
+	border: 1px solid var(--separator);
+	border-radius: var(--control-radius);
+	background: var(--control);
+	cursor: pointer;
+}
+
+.pdf-cell.selected {
+	border-color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 14%, var(--control));
+}
+
+.pdf-cell:focus,
+.pdf-item:focus {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.pdf-thumb {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 110px;
+	height: 150px;
+}
+
+.pdf-thumb-canvas {
+	max-width: 100%;
+	max-height: 100%;
+	box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+}
+
+.pdf-cell-number {
+	color: var(--muted);
+	font-size: 11px;
+}
+
+.pdf-section,
+.pdf-editor,
+.pdf-signature {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.pdf-limits {
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.pdf-limits summary {
+	cursor: pointer;
+}
+
+.pdf-limits ul {
+	margin: 6px 0 0;
+	padding-left: 18px;
+}
+
+.pdf-form-row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.pdf-editor-tools {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+
+.pdf-sheet {
+	position: relative;
+	flex: none;
+	align-self: center;
+	max-width: 100%;
+	box-shadow: 0 1px 6px rgb(0 0 0 / 30%);
+	background: #fff;
+	touch-action: none;
+}
+
+.pdf-sheet-canvas {
+	display: block;
+}
+
+.pdf-item {
+	position: absolute;
+	color: #000;
+	cursor: move;
+	user-select: none;
+}
+
+.pdf-item.selected {
+	outline: 1px dashed var(--accent);
+}
+
+.pdf-signature-canvas {
+	width: 320px;
+	max-width: 100%;
+	border: 1px dashed var(--separator);
+	border-radius: var(--control-radius);
+	background: #fff;
+	touch-action: none;
+}
+
+.pdf-live {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
 }

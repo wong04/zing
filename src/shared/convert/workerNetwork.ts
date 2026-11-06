@@ -1,6 +1,6 @@
 /**
  * Whether a worker may ask for this address: the app's own bundle or the host's file server, over https, on their default ports.
- * Data and blob addresses are not allowed, so a script cannot fetch what it built.
+ * Data and blob addresses are not allowed, so a script cannot fetch what it built. (pdf.js draws PDFs with pictures under this rule too.)
  */
 export function isAllowedWorkerUrl(url: string, ownOrigin: string, hostOrigin: string, base: string = `${ownOrigin}/`): boolean {
 	let parsed: URL
@@ -15,7 +15,7 @@ export function isAllowedWorkerUrl(url: string, ownOrigin: string, hostOrigin: s
 export class NetworkNotAllowedError extends Error {
 	override name = 'NetworkNotAllowedError'
 	constructor(url: string) {
-		super(`The background remover worker is not allowed to reach ${url}`)
+		super(`This worker is not allowed to reach ${url}`)
 	}
 }
 

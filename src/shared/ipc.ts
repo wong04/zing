@@ -307,7 +307,14 @@ export interface InvokeContract {
 	 * large one. A page view cannot call this: it has no host channel.
 	 */
 	'page:save': { args: []; result: PickedFile }
+	/**
 	/** The native open dialog; an empty list if the person cancelled. */
+	/**
+	 * A session that only takes results (`PUT https://view.zing/save/<id>/<name>`, for the formats of `kinds`) and serves no file. It
+	 * replaces the panel's earlier session, shares the save quota and ends with the panel. For a tool that has read its file and
+	 * must still be able to save when that file is gone.
+	 */
+	'session:open-save': { args: [panelId: string, kinds: readonly SessionKindName[]]; result: ViewerOpened }
 	'files:pick': { args: [kinds: readonly FileKind[]]; result: PickedFile[] }
 	/**
 	 * Convert's HTML to PDF: Chromium prints the HTML file the token stands for, with scripts and the network off, into the
@@ -529,6 +536,8 @@ export interface ZingApi {
 	printHtmlToPdf(token: string, outputName: string): Promise<PickedFile>
 	/** Opens a read session for a tool panel (see `session:open`). */
 	openToolSession(panelId: string, token: string, kinds: readonly SessionKindName[]): Promise<ViewerOpened>
+	/** A results-only session for a panel (see `session:open-save`). */
+	openSaveSession(panelId: string, kinds: readonly SessionKindName[]): Promise<ViewerOpened>
 	/** The background remover's session (see `bgremove:open`). */
 	openBackgroundPicture(panelId: string, token: string): Promise<ViewerOpened>
 	/** Hand over the `File`s of a drop (`event.dataTransfer.files`); resolves with a token for each. */

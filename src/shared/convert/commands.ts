@@ -3,6 +3,7 @@
 // from fixed constants here (never from a file's name or content), files as {input: token} and {output: n}. The
 // host refuses any flag its EngineFlagPolicy does not list, so a flag added here is added there too.
 import type { JobArg } from '../engines/engineJob'
+import { PDF_LIMITS } from '../pdf/pdfCore'
 import { convertTargets, ffmpegInputFormat, inputSupport, isLossyTarget, pandocReader } from './backends'
 import { AUDIO } from './formatCatalog'
 
@@ -161,6 +162,10 @@ export class ConvertRefusedError extends Error {
 export type ConvertPlan =
 	| { readonly kind: 'engine'; readonly engine: 'ffmpeg' | 'magick' | 'pandoc'; readonly args: JobArg[]; readonly outputs: string[] }
 	| { readonly kind: 'print'; readonly token: string; readonly output: string }
+	/** A PDF's pages drawn by pdf.js, one picture each, named by `pageFileName`. */
+	| { readonly kind: 'pages'; readonly token: string; readonly base: string; readonly target: 'png' | 'jpg'; readonly quality: number }
+	/** A picture made into a PDF page by pdf-lib. */
+	| { readonly kind: 'picture'; readonly token: string; readonly output: string }
 
 // ProRes lives in a .mov container; there is no .prores extension.
 function outputExtension(ext: string): string {
@@ -175,6 +180,19 @@ export function outputFileName(base: string, ext: string): string {
 	// "%" and brackets are patterns to ImageMagick and yt-dlp (the host refuses them in an output name), so they become "_".
 	const plain = safeFileBase(base).replace(/[%[\]]/g, '_')
 	return `${safeFileBase([...plain].slice(0, MAX_BASE_CHARACTERS).join(''))}.${outputExtension(ext)}`
+}
+
+/** `base` + `suffix` + `.ext`, with the base cut so the whole stays within the cap, and made safe like every output name. */
+export function suffixedFileName(base: string, suffix: string, ext: string): string {
+	const plain = safeFileBase(base).replace(/[%[\]]/g, '_')
+	const kept = safeFileBase([...plain].slice(0, MAX_BASE_CHARACTERS - suffix.length).join(''))
+	return `${kept}${suffix}.${outputExtension(ext)}`
+}
+
+/** The name of one page of a PDF turned into a picture: "Book-p001.png", numbered from 1 with three digits. */
+export function pageFileName(base: string, page: number, ext: 'png' | 'jpg'): string {
+	if (!Number.isInteger(page) || page < 1 || page > PDF_LIMITS.maxConvertPages) throw new ConvertRefusedError(`Convert turns at most ${PDF_LIMITS.maxConvertPages} pages into pictures at a time; page ${page} is past that.`)
+	return suffixedFileName(base, `-p${String(page).padStart(3, '0')}`, ext)
 }
 
 function splitName(name: string): { base: string; ext: string } {
@@ -212,6 +230,10 @@ export function convertPlan(input: { readonly name: string; readonly token: stri
 			return { kind: 'engine', engine: 'pandoc', args: pandocArgs(file, ext, target), outputs: [output] }
 		case 'chromium-pdf':
 			return { kind: 'print', token: input.token, output }
+		case 'pdfjs':
+			return { kind: 'pages', token: input.token, base, target: target as 'png' | 'jpg', quality }
+		case 'pdf-lib':
+			return { kind: 'picture', token: input.token, output }
 		case 'tar':
 			throw new ConvertRefusedError(`"${input.name}" can't be converted here`)
 	}

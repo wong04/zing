@@ -12,6 +12,7 @@ const order = [
 	'section:Convert',
 	'section:Download',
 	'tool:Background Remover',
+	'tool:PDF Tools',
 	'section:Open a Link',
 	'section:Diagnose',
 	'section:Network & VPN',
@@ -76,6 +77,8 @@ describe('what people type finds the right thing first', () => {
 		['colour', 'Color Converter'],
 		['rgb', 'Color Converter'],
 		['remove background', 'Background Remover'],
+		['merge pdfs', 'PDF Tools'],
+		['signature', 'PDF Tools'],
 		['json', 'JSON'],
 		['plot', 'Graphing Calculator'],
 		['graph', 'Graphing Calculator'],
@@ -89,11 +92,11 @@ describe('what people type finds the right thing first', () => {
 		['utm', 'Link Cleaner'],
 		['cron', 'Cron Parser'],
 		['password', 'Passwords'],
-		['pdf', 'Files'],
+		['pdf', 'PDF Tools'],
 		['qr', 'QR Code'],
 	]
-	it('has all 31 real queries', () => {
-		expect(cases).toHaveLength(31)
+	it('has all 33 real queries', () => {
+		expect(cases).toHaveLength(33)
 	})
 	it.each(cases)('"%s" → %s', (query, want) => {
 		expect(top(query)).toBe(want)

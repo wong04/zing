@@ -19,6 +19,16 @@ describe('isAllowedWorkerUrl', () => {
 	})
 })
 
+describe('the error', () => {
+	it('names no tool', async () => {
+		const scope: Record<string, unknown> = { fetch: () => Promise.resolve('ok'), location: { href: 'https://app.zing/w.js' } }
+		restrictNetwork(scope, own, host)
+		const refused = await (scope.fetch as (u: string) => Promise<string>)('https://evil.example/x').catch((e: Error) => e.message)
+		expect(refused).toMatch(/This worker is not allowed to reach https:\/\/evil\.example/)
+		expect(refused).not.toMatch(/background/i)
+	})
+})
+
 describe('restrictNetwork', () => {
 	it('lets an allowed fetch through and rejects any other before it reaches the network', async () => {
 		const real = vi.fn(() => Promise.resolve('ok'))

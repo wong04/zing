@@ -255,6 +255,25 @@ public sealed class ChromeApiViewerTests : IAsyncLifetime
 	}
 
 	[Fact]
+	public async Task A_refused_open_does_not_end_the_panels_live_session()
+	{
+		var live = Value(await Invoke("bgremove:open", _panel, await PickPicture("one.png", PngHeader))).GetProperty("url").GetString()!;
+		Assert.Equal(nameof(SessionFileRefusedException), ErrorName(await Invoke("bgremove:open", _panel, await PickPicture("heic.heic", [.. "ftypheic"u8.ToArray(), 0, 0, 0, 0]))));
+		Assert.Equal(200, (await Fetch(live)).Status);
+	}
+
+	[Fact]
+	public async Task A_save_only_session_is_opened_by_panel_and_kinds_without_a_file()
+	{
+		var opened = Value(await Invoke("session:open-save", _panel, (object)new[] { "pdf", "image" }));
+		Assert.Matches("^[A-Za-z0-9_-]{32}$", opened.GetProperty("id").GetString()!);
+		Assert.Equal(404, (await Fetch(opened.GetProperty("url").GetString()!)).Status);
+		Assert.Equal(nameof(UnknownPanelException), ErrorName(await Invoke("session:open-save", "panel-nobody", (object)new[] { "pdf" })));
+		Assert.Equal(nameof(UnknownSessionKindException), ErrorName(await Invoke("session:open-save", _panel, (object)new[] { "video" })));
+		Assert.Equal(nameof(UnknownSessionKindException), ErrorName(await Invoke("session:open-save", _panel, (object)Array.Empty<string>())));
+	}
+
+	[Fact]
 	public async Task Closing_the_session_or_opening_another_picture_revokes_the_first()
 	{
 		var first = Value(await Invoke("bgremove:open", _panel, await PickPicture("one.png", PngHeader)));

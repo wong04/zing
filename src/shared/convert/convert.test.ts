@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { JobArg } from '../engines/engineJob'
 import { ALL_CATALOG_EXTENSIONS, convertTargets, inputSupport, MAC_ONLY_INPUTS, type ConversionBackend } from './backends'
-import { convertPlan, EVEN_SIZE_FILTER, explainFfmpegFailure, GIF_FILTER, ffmpegArgs, magickArgs, outputFileName, pandocArgs, safeFileBase, tarArgs, uniqueOutputName } from './commands'
+import { PDF_LIMITS } from '../pdf/pdfCore'
+import { convertPlan, EVEN_SIZE_FILTER, explainFfmpegFailure, GIF_FILTER, ffmpegArgs, magickArgs, outputFileName, pageFileName, pandocArgs, safeFileBase, tarArgs, uniqueOutputName } from './commands'
 import { allInputs, category, label } from './formatCatalog'
 
 const token = { input: 'token-1' }
@@ -23,6 +24,17 @@ describe('format catalog (ported)', () => {
 	})
 })
 
+describe('numbered page names', () => {
+	it('pdf pages are base-p001.png, three digits, with the file name made safe', () => {
+		expect(pageFileName('My Book', 1, 'png')).toBe('My Book-p001.png')
+		expect(pageFileName('a%b[1]', 100, 'jpg')).toBe('a_b_1_-p100.jpg')
+		expect(pageFileName('x', 7, 'jpg')).toBe('x-p007.jpg')
+	})
+	it('refuses a page past the limit of pages in one run', () => {
+		expect(() => pageFileName('x', PDF_LIMITS.maxConvertPages + 1, 'png')).toThrow(/pages/)
+	})
+})
+
 describe('Windows coverage matrix', () => {
 	const matrix = ALL_CATALOG_EXTENSIONS.map(inputSupport)
 	const backends = new Set<string>()
@@ -36,14 +48,14 @@ describe('Windows coverage matrix', () => {
 		const used = [...backends] as ConversionBackend[]
 		expect(used).not.toContain('sharp' as ConversionBackend)
 		expect(used).not.toContain('meshio' as ConversionBackend)
-		expect(used.sort()).toEqual(['chromium-pdf', 'ffmpeg', 'imagemagick', 'pandoc'])
+		expect(used.sort()).toEqual(['chromium-pdf', 'ffmpeg', 'imagemagick', 'pandoc', 'pdf-lib', 'pdfjs'])
 	})
 	it('HEIC and HEIF are read by ImageMagick', () => {
 		expect(inputSupport('heic')).toMatchObject({ readBy: 'imagemagick' })
 		expect(inputSupport('heif')).toMatchObject({ readBy: 'imagemagick' })
 	})
-	it('3D models, archives, PDF and Apple-only formats are explained, not offered', () => {
-		for (const ext of ['stl', 'glb', 'zip', 'pdf', ...Object.keys(MAC_ONLY_INPUTS), 'doc']) {
+	it('3D models, archives and Apple-only formats are explained, not offered', () => {
+		for (const ext of ['stl', 'glb', 'zip', ...Object.keys(MAC_ONLY_INPUTS), 'doc']) {
 			expect(inputSupport(ext), ext).toMatchObject({ unavailable: expect.stringMatching(/\S/) })
 			expect(convertTargets(ext), ext).toEqual([])
 		}
@@ -84,6 +96,18 @@ describe('Windows coverage matrix', () => {
 		expect(convertTargets('htm').some((f) => f.ext === 'pdf')).toBe(true)
 		expect(convertTargets('md').some((f) => f.ext === 'pdf')).toBe(false)
 	})
+	it('a PDF is read by pdf.js and becomes PNG or JPEG pages, never a Word file and never an engine job', () => {
+		expect(inputSupport('pdf')).toMatchObject({ readBy: 'pdfjs' })
+		expect(convertTargets('pdf')).toEqual([
+			expect.objectContaining({ ext: 'png', backend: 'pdfjs', lossy: false }),
+			expect.objectContaining({ ext: 'jpg', backend: 'pdfjs', lossy: true }),
+		])
+		expect(convertTargets('pdf').some((f) => f.ext === 'docx')).toBe(false)
+	})
+	it('pictures PDF can hold are offered PDF, made by pdf-lib; others and documents are not', () => {
+		for (const ext of ['png', 'jpg', 'jpeg', 'webp']) expect(convertTargets(ext).find((f) => f.ext === 'pdf'), ext).toMatchObject({ backend: 'pdf-lib', lossy: false })
+		for (const ext of ['heic', 'tiff', 'avif', 'ico', 'gif', 'bmp', 'md', 'docx', 'mp4']) expect(convertTargets(ext).some((f) => f.ext === 'pdf'), ext).toBe(false)
+	})
 	it('never offers an output the host would refuse', () => {
 		// Mirrors the extensions in host/Zing.Core/Engines/EngineFlagPolicy.cs.
 		const allowed: Record<string, string[]> = {
@@ -91,6 +115,8 @@ describe('Windows coverage matrix', () => {
 			imagemagick: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tif', 'tiff', 'avif', 'heic', 'ico'],
 			pandoc: ['html', 'docx', 'odt', 'epub', 'rtf', 'tex', 'md', 'txt'],
 			'chromium-pdf': ['pdf'],
+			pdfjs: ['png', 'jpg'],
+			'pdf-lib': ['pdf'],
 		}
 		for (const ext of ALL_CATALOG_EXTENSIONS) {
 			for (const target of convertTargets(ext)) expect(allowed[target.backend], `${ext} to ${target.ext}`).toContain(outputFileName('x', target.ext).split('.').pop())
@@ -194,6 +220,13 @@ describe('the plan for one conversion', () => {
 	})
 	it('html to pdf is not an engine job: it is printed by Chromium', () => {
 		expect(convertPlan({ name: 'page.html', token: 'token-1' }, 'pdf', 80)).toEqual({ kind: 'print', token: 'token-1', output: 'page.pdf' })
+	})
+	it('pdf to png or jpeg is pages drawn by pdf.js, named from the file', () => {
+		expect(convertPlan({ name: 'My Book.PDF', token: 'token-1' }, 'png', 80)).toEqual({ kind: 'pages', token: 'token-1', base: 'My Book', target: 'png', quality: 80 })
+		expect(convertPlan({ name: 'a.pdf', token: 't' }, 'jpg', 55)).toMatchObject({ kind: 'pages', target: 'jpg', quality: 55 })
+	})
+	it('a picture to pdf is made in the panel, not by an engine', () => {
+		expect(convertPlan({ name: 'scan.png', token: 'token-1' }, 'pdf', 80)).toEqual({ kind: 'picture', token: 'token-1', output: 'scan.pdf' })
 	})
 	it('refuses an input the converter does not read, by name', () => {
 		expect(() => convertPlan({ name: 'logo.svg', token: 't' }, 'png', 80)).toThrow(/SVG/)

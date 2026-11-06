@@ -5,7 +5,7 @@ import { AUDIO, BASIC_IMAGES, category, DOCUMENTS, MAGICK_IMAGES, MESHES, MODEL_
 // EngineRunner (host/Zing.Core/Engines), which accepts only the flags and output extensions in its EngineFlagPolicy.
 // There is no sharp (it isn't bundled) and no meshio (it needs Python), so 3D models are listed as unavailable
 // rather than silently missing.
-export type ConversionBackend = 'imagemagick' | 'ffmpeg' | 'pandoc' | 'chromium-pdf' | 'tar'
+export type ConversionBackend = 'imagemagick' | 'ffmpeg' | 'pandoc' | 'chromium-pdf' | 'pdfjs' | 'pdf-lib' | 'tar'
 
 export interface ConversionFormat {
 	ext: string
@@ -54,7 +54,6 @@ export function pandocReader(ext: string): string | undefined {
 // line of defence, not a reason to trust the file.
 const REFUSED_INPUTS: Readonly<Record<string, string>> = {
 	svg: 'SVG files can point at other files and web addresses, so Zing does not open them for conversion',
-	pdf: 'PDF conversion is not part of Convert',
 	doc: 'Legacy .doc needs Word or LibreOffice; Pandoc only reads .docx',
 }
 
@@ -91,8 +90,16 @@ const DOCUMENT_TARGETS: readonly ConversionFormat[] = [
 	format('odt', 'pandoc', false, 'OpenDocument (.odt)'),
 ]
 
-// PDF comes only from HTML: Chromium prints the page. Pandoc would need a LaTeX engine.
+// PDF comes from HTML (Chromium prints the page; Pandoc would need a LaTeX engine) and from pictures (pdf-lib, in the panel).
+// ImageMagick's PDF coder is switched off by the engine policy, so it is never asked to write one.
 const HTML_TARGETS: readonly ConversionFormat[] = [format('pdf', 'chromium-pdf', false), ...DOCUMENT_TARGETS]
+
+// The pictures a viewer session reads (PNG, JPEG, WebP): pdf-lib places PNG and JPEG as they are, and the browser decodes WebP first.
+const PICTURES_FOR_PDF: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'webp'])
+const PICTURE_TO_PDF: ConversionFormat = format('pdf', 'pdf-lib', false)
+
+// A PDF is drawn page by page by pdf.js and saved as one picture per page. There is no Word target: Pandoc can't read PDFs.
+const PDF_TARGETS: readonly ConversionFormat[] = [format('png', 'pdfjs', false), format('jpg', 'pdfjs', true)]
 
 // Two extensions that are one format, so a file is never offered as a conversion to itself.
 const SAME_FORMAT: Readonly<Record<string, string>> = { jpeg: 'jpg', tif: 'tiff', htm: 'html', markdown: 'md', latex: 'tex' }
@@ -103,13 +110,16 @@ const sameFormat = (a: string, b: string): boolean => (SAME_FORMAT[a] ?? a) === 
 function targetsFor(ext: string, readBy: ConversionBackend): readonly ConversionFormat[] {
 	switch (readBy) {
 		case 'imagemagick':
-			return IMAGE_TARGETS
+			return PICTURES_FOR_PDF.has(ext) ? [...IMAGE_TARGETS, PICTURE_TO_PDF] : IMAGE_TARGETS
+		case 'pdfjs':
+			return PDF_TARGETS
 		case 'ffmpeg':
 			if (ext === 'gif') return [...VIDEO_TARGETS, ...IMAGE_TARGETS]
 			return category(ext) === 'audio' ? AUDIO_TARGETS : [...VIDEO_TARGETS, ...AUDIO_TARGETS]
 		case 'pandoc':
 			return ext === 'html' || ext === 'htm' || ext === 'xhtml' ? HTML_TARGETS : DOCUMENT_TARGETS
 		case 'chromium-pdf':
+		case 'pdf-lib':
 		case 'tar':
 			return []
 	}
@@ -136,6 +146,7 @@ export function inputSupport(extension: string): InputSupport {
 	if (!cat) return { ext, category: undefined, unavailable: `Not a format the converter knows (.${ext})` }
 	if (cat === 'model') return { ext, category: cat, unavailable: '3D models need Python tooling that Zing does not ship' }
 	if (cat === 'archive') return { ext, category: cat, unavailable: 'Archives are not converted here' }
+	if (ext === 'pdf') return { ext, category: cat, readBy: 'pdfjs' }
 	if (cat === 'image') return { ext, category: cat, readBy: 'imagemagick' }
 	if (cat === 'audio' || cat === 'video') {
 		if (ffmpegInputFormat(ext) === undefined) return { ext, category: cat, unavailable: `Zing can't yet check that a .${ext} file really is one before FFmpeg reads it` }
@@ -147,7 +158,7 @@ export function inputSupport(extension: string): InputSupport {
 
 export const ALL_CATALOG_EXTENSIONS: readonly string[] = [...new Set<string>([...BASIC_IMAGES, ...MAGICK_IMAGES, ...AUDIO, ...VIDEO, ...DOCUMENTS, ...MESHES, ...MODEL_INTERCHANGE, ...ARCHIVES])]
 
-const ALL_TARGETS: readonly ConversionFormat[] = [...IMAGE_TARGETS, ...AUDIO_TARGETS, ...VIDEO_TARGETS, ...HTML_TARGETS]
+const ALL_TARGETS: readonly ConversionFormat[] = [...IMAGE_TARGETS, ...AUDIO_TARGETS, ...VIDEO_TARGETS, ...HTML_TARGETS, ...PDF_TARGETS]
 
 /** Whether a quality setting changes a file of this type. */
 export function isLossyTarget(ext: string): boolean {

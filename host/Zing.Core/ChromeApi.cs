@@ -290,6 +290,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("convert:html-to-pdf", args => HtmlToPdfAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("files:open-dropped", _ => Drops.Take());
 		bridge.Register("session:open", args => OpenToolSession(Text(args, 0), Text(args, 1), StringArray(Arg(args, 2))));
+		bridge.Register("session:open-save", args => OpenSaveSession(Text(args, 0), StringArray(Arg(args, 1))));
 		bridge.Register("bgremove:open", args => OpenToolSession(Text(args, 0), Text(args, 1), ["image"]));
 		bridge.Register("page:save", _ => SavePageAsync());
 		bridge.Register("viewer:open", args => OpenViewerFile(Text(args, 0), Text(args, 1)));
@@ -582,8 +583,20 @@ public sealed class ChromeApi : IDisposable
 		var path = Grants.Resolve(token);
 		if (!File.Exists(path)) throw new FileNotFoundException($"{Path.GetFileName(path)} isn't there any more. Pick it again", path);
 		if (!Shell.PanelsState().Panels.Any(p => p.Id == panelId)) throw new UnknownPanelException(panelId);
+		// Judged before anything is closed: a refused file leaves the panel's live session as it was.
+		ViewerFiles.Judge(path, kinds);
 		CloseViewerPanel(panelId);
 		return Opened(viewer.OpenSession(path, panelId, kinds));
+	}
+
+	/// <summary>A session that takes results only (see <see cref="ViewerFiles.OpenSaveSession"/>), for a tool that has read its file and must not depend on it any more.</summary>
+	private object OpenSaveSession(string panelId, IReadOnlyList<string> kindNames)
+	{
+		var viewer = Viewer ?? throw new InvalidOperationException("This host can't serve files to tools");
+		var kinds = SessionKinds.Named(kindNames);
+		if (!Shell.PanelsState().Panels.Any(p => p.Id == panelId)) throw new UnknownPanelException(panelId);
+		CloseViewerPanel(panelId);
+		return Opened(viewer.OpenSaveSession(panelId, kinds));
 	}
 
 	/// <summary>Convert's HTML to PDF: prints the file a token stands for and answers with the PDF's name and a token.</summary>

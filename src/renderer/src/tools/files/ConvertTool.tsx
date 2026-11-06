@@ -1,14 +1,23 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { convertTargets, inputSupport } from '@shared/convert/backends'
-import { ConvertRefusedError, convertPlan, explainFfmpegFailure, lastLine, type ConvertPlan } from '@shared/convert/commands'
+import { ConvertRefusedError, convertPlan, explainFfmpegFailure, lastLine, pageFileName, type ConvertPlan } from '@shared/convert/commands'
 import type { EngineInfo } from '@shared/engines/engineInfo'
 import type { EngineExit, PickedFile } from '@shared/engines/engineJob'
 import { formatBytes } from '@shared/format/formatBytes'
+import { PDF_LIMITS } from '@shared/pdf/pdfCore'
+import { panelId, tool, UtilityTool } from '@shared/toolbox/panelContent'
 import { zing } from '../../api'
 import { FileDropZone, FileRow, InfoBanner, PillButton, PillMenu, PillSlider } from '../../components'
 import { describeFailure } from '../dev/parts'
 import { ToolPage } from '../parts'
 import './files.css'
+import { newPdfWorkerClient } from './pdfEditClient'
+import { handOffPdf, takeHandedPdf } from './pdfHandoff'
+import { usePanelId } from '../panelId'
+import { readGranted, saveResult, saveSessionFor } from './pdfHost'
+import { describeCancelledPages, runParts } from './pdfRun'
+import { createPreviewSession } from './pdfRender'
+import { toPicture } from './pictureBytes'
 import { useEngineJob } from './useEngineJob'
 
 const DEFAULT_QUALITY = 80
@@ -20,10 +29,10 @@ type Stage =
 	| { readonly kind: 'downloading'; readonly engine: EngineInfo; readonly fraction: number }
 	/** From the Convert click until the plan is running or the offer is shown: the file must not change under it. */
 	| { readonly kind: 'preparing' }
-	| { readonly kind: 'working'; readonly cancellable: boolean }
-	| { readonly kind: 'done'; readonly output: PickedFile }
+	| { readonly kind: 'working'; readonly cancellable: boolean; readonly label?: string }
+	| { readonly kind: 'done'; readonly outputs: readonly PickedFile[] }
 	| { readonly kind: 'failed'; readonly message: string }
-	| { readonly kind: 'cancelled' }
+	| { readonly kind: 'cancelled'; readonly kept?: number }
 
 const ENGINE_IDS = { ffmpeg: 'ffmpeg', magick: 'magick', pandoc: 'pandoc' } as const
 
@@ -84,12 +93,81 @@ export function ConvertTool() {
 		zing.pickFiles(['image', 'video', 'audio', 'document']).then(take, fail)
 	}
 
+	// Convert's own PDF workers, ended when this tool closes; another panel's are never touched.
+	const [pdfClient] = useState(newPdfWorkerClient)
+	const [pdfViewer] = useState(createPreviewSession)
+	useEffect(
+		() => () => {
+			pdfClient.stop()
+			void pdfViewer.destroy()
+		},
+		[pdfClient, pdfViewer],
+	)
+	const ownPanel = usePanelId()
+	const aborter = useRef(new AbortController())
+	const stopPages = useRef(false)
+	const runningPages = useRef(false)
+
+	/** A PDF's pages as pictures, drawn by pdf.js and saved one at a time. No engine is involved, and the PDF is never handed to one. */
+	const runPages = async (plan: Extract<ConvertPlan, { kind: 'pages' }>, name: string): Promise<void> => {
+		stopPages.current = false
+		aborter.current = new AbortController()
+		const signal = aborter.current.signal
+		runningPages.current = true
+		setStage({ kind: 'working', cancellable: true, label: 'Opening the PDF…' })
+		let preview: Awaited<ReturnType<typeof pdfViewer.open>>
+		let sessionId: string
+		try {
+			const read = await readGranted(ownPanel, plan.token, signal)
+			// Saves go into a session of their own, so they do not depend on the file just read.
+			sessionId = await saveSessionFor(ownPanel)
+			preview = await pdfViewer.open(name, read.bytes)
+		} catch (error) {
+			runningPages.current = false
+			throw error
+		}
+		try {
+			if (preview.pageCount > PDF_LIMITS.maxConvertPages) {
+				throw new ConvertRefusedError(`${name} has ${preview.pageCount} pages; Convert turns up to ${PDF_LIMITS.maxConvertPages} pages into pictures at a time. Split it in PDF Tools first.`)
+			}
+			const made: PickedFile[] = []
+			// Cancel aborts the save in flight too; runParts tells that stop from a failure, so the pages already made are counted.
+			const outcome = await runParts(
+				preview.pageCount,
+				(page) => {
+					setStage({ kind: 'working', cancellable: true, label: `Page ${page + 1} of ${preview.pageCount}` })
+					return preview.toImage(page, plan.target, plan.quality / 100)
+				},
+				async (page, bytes) => {
+					const file = await saveResult(sessionId, pageFileName(plan.base, page + 1, plan.target), bytes, signal)
+					made.push(file)
+					return file.name
+				},
+				() => stopPages.current,
+			)
+			setStage(outcome.stopped ? { kind: 'cancelled', kept: made.length } : { kind: 'done', outputs: made })
+		} finally {
+			runningPages.current = false
+			await preview.destroy()
+		}
+	}
+
+	const runPicture = async (plan: Extract<ConvertPlan, { kind: 'picture' }>, name: string): Promise<void> => {
+		setStage({ kind: 'working', cancellable: false })
+		const read = await readGranted(ownPanel, plan.token)
+		const picture = await toPicture(name, read.bytes)
+		const pdf = await pdfClient.imagesToPdf([{ name, format: picture.format, bytes: picture.bytes }])
+		setStage({ kind: 'done', outputs: [await saveResult(await saveSessionFor(ownPanel), plan.output, pdf)] })
+	}
+
 	const execute = async (plan: ConvertPlan, targetExt: string): Promise<void> => {
 		if (plan.kind === 'print') {
 			setStage({ kind: 'working', cancellable: false })
-			setStage({ kind: 'done', output: await zing.printHtmlToPdf(plan.token, plan.output) })
+			setStage({ kind: 'done', outputs: [await zing.printHtmlToPdf(plan.token, plan.output)] })
 			return
 		}
+		if (plan.kind === 'pages') return runPages(plan, file?.name ?? 'The PDF')
+		if (plan.kind === 'picture') return runPicture(plan, file?.name ?? 'The picture')
 		setStage({ kind: 'working', cancellable: true })
 		const exit = await job.run(ENGINE_IDS[plan.engine], { args: plan.args, outputs: plan.outputs })
 		if (exit.cancelled) {
@@ -98,7 +176,7 @@ export function ConvertTool() {
 		}
 		const output = exit.outputs[0]
 		if (exit.code === 0 && exit.error === undefined && output !== undefined) {
-			setStage({ kind: 'done', output })
+			setStage({ kind: 'done', outputs: [output] })
 			return
 		}
 		setStage({ kind: 'failed', message: describeEngineFailure(exit, plan, targetExt) })
@@ -153,10 +231,19 @@ export function ConvertTool() {
 		})
 	}
 
+	const openInPdfTools = (output: PickedFile): void => {
+		handOffPdf(output)
+		zing.openPanel(panelId(tool(UtilityTool.pdf)), { x: window.screenX + 560, y: window.screenY + 160 }).then((outcome) => {
+			if (outcome.status !== 'full') return
+			takeHandedPdf()
+			setProblem('Three panels are already open. Close one, then open the PDF again.')
+		}, fail)
+	}
+
 	const unavailable = support !== null && 'unavailable' in support ? support.unavailable : null
 
 	return (
-		<ToolPage subtitle="Images, documents, audio and video. The converted file goes to your Downloads folder; the original is never changed.">
+		<ToolPage subtitle="Images, documents, PDFs, audio and video. The converted file goes to your Downloads folder; the original is never changed.">
 			<FileDropZone onFiles={take} onError={fail}>
 				{({ targeted }) => (
 					<div className={targeted ? 'convert-drop targeted' : 'convert-drop'}>
@@ -181,6 +268,7 @@ export function ConvertTool() {
 							<PillSlider aria-label="Quality" min={1} max={100} step={1} value={quality} onChange={setQuality} valueText={`${quality} out of 100`} />
 						</div>
 					) : null}
+					{ext === 'pdf' ? <span className="convert-hint">Pages with JPEG 2000, JBIG2 or CCITT pictures (common in scans) may come out blank; the PDF viewer here does not decode those.</span> : null}
 					{target.ext === 'pdf' ? <span className="convert-hint">The page is printed as UTF-8 text, with scripts and the network off.</span> : null}
 					<div className="convert-row">
 						<PillButton disabled={busy} onClick={start}>
@@ -193,19 +281,27 @@ export function ConvertTool() {
 				stage={stage}
 				onDownload={download}
 				onCancelDownload={(engine) => void zing.cancelEngine(engine.id).catch(fail)}
-				onCancelJob={() => void job.cancel().catch(fail)}
+				onCancelJob={() => {
+					if (runningPages.current) {
+						stopPages.current = true
+						aborter.current.abort()
+					}
+					else void job.cancel().catch(fail)
+				}}
+				onOpenPdf={openInPdfTools}
 				onDismiss={() => setStage({ kind: 'idle' })}
 			/>
 		</ToolPage>
 	)
 }
 
-function StageView({ stage, onDownload, onCancelDownload, onCancelJob, onDismiss }: {
+function StageView({ stage, onDownload, onCancelDownload, onCancelJob, onDismiss, onOpenPdf }: {
 	stage: Stage
 	onDownload: (engine: EngineInfo, plan: ConvertPlan) => void
 	onCancelDownload: (engine: EngineInfo) => void
 	onCancelJob: () => void
 	onDismiss: () => void
+	onOpenPdf: (output: PickedFile) => void
 }) {
 	switch (stage.kind) {
 		case 'idle':
@@ -247,7 +343,7 @@ function StageView({ stage, onDownload, onCancelDownload, onCancelJob, onDismiss
 			return (
 				<InfoBanner kind="info">
 					<div className="convert-offer">
-						<span role="status">Converting…</span>
+						<span role="status">{stage.label ?? 'Converting…'}</span>
 						{stage.cancellable ? (
 							<div className="convert-actions">
 								<PillButton size="small" variant="outlined" aria-label="Cancel conversion" onClick={onCancelJob}>
@@ -263,13 +359,22 @@ function StageView({ stage, onDownload, onCancelDownload, onCancelJob, onDismiss
 				<InfoBanner kind="info">
 					<div className="convert-offer" role="status">
 						<span>Saved to your Downloads folder:</span>
-						<FileRow path={stage.output.name} />
+						{stage.outputs.map((output) => (
+							<FileRow key={output.token} path={output.name} />
+						))}
+						{stage.outputs.length === 1 && stage.outputs[0]!.name.toLowerCase().endsWith('.pdf') ? (
+							<div className="convert-actions">
+								<PillButton size="small" variant="outlined" onClick={() => onOpenPdf(stage.outputs[0]!)}>
+									Open in PDF Tools
+								</PillButton>
+							</div>
+						) : null}
 					</div>
 				</InfoBanner>
 			)
 		case 'failed':
 			return <InfoBanner kind="warning">{stage.message}</InfoBanner>
 		case 'cancelled':
-			return <InfoBanner kind="info">Cancelled. Nothing was kept.</InfoBanner>
+			return <InfoBanner kind="info">{describeCancelledPages(stage.kept)}</InfoBanner>
 	}
 }

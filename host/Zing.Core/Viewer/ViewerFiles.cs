@@ -154,6 +154,24 @@ public sealed class ViewerFiles : IDisposable
 	/// <exception cref="SessionFileRefusedException">Not one of the kinds, or longer than a kind allows.</exception>
 	public ViewerSession OpenSession(string path, string panel, IReadOnlyList<SessionKind> kinds)
 	{
+		var contentType = Judge(path, kinds);
+		var format = new ViewerFormat(ViewerKind.Native, contentType.StartsWith("image/", StringComparison.Ordinal) ? "image" : "pdf", contentType);
+		return Add(panel, id => new ViewerSession(id, panel, Path.GetFileName(path), format, path, null) { Kinds = kinds });
+	}
+
+	/// <summary>
+	/// Opens a session that only takes results (<c>PUT /save/&lt;id&gt;/&lt;name&gt;</c>, for the formats of <paramref name="kinds"/>) and serves no file,
+	/// so a tool can save whatever happened to the file it read: a moved or changed source does not matter. It shares the save quota, replaces the
+	/// panel's earlier session and ends with the panel like any other.
+	/// </summary>
+	public ViewerSession OpenSaveSession(string panel, IReadOnlyList<SessionKind> kinds) =>
+		Add(panel, id => new ViewerSession(id, panel, "results", new ViewerFormat(ViewerKind.Native, "pdf", "application/octet-stream"), null, null) { Kinds = kinds });
+
+	/// <summary>Judges a file for <see cref="OpenSession"/> without opening anything, so a refusal leaves the panel's session as it was.</summary>
+	/// <returns>The content type its first bytes give.</returns>
+	/// <exception cref="SessionFileRefusedException">Not one of the kinds, or longer than a kind allows.</exception>
+	public static string Judge(string path, IReadOnlyList<SessionKind> kinds)
+	{
 		string contentType;
 		using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
 		{
@@ -164,8 +182,7 @@ public sealed class ViewerFiles : IDisposable
 			if (file.Length > matches.Kind.ReadCap) throw new SessionFileRefusedException($"This file is {file.Length / (1024 * 1024)} MB, more than this tool reads ({matches.Kind.ReadCap / (1024 * 1024)} MB)");
 			contentType = matches.Type;
 		}
-		var format = new ViewerFormat(ViewerKind.Native, contentType.StartsWith("image/", StringComparison.Ordinal) ? "image" : "pdf", contentType);
-		return Add(panel, id => new ViewerSession(id, panel, Path.GetFileName(path), format, path, null) { Kinds = kinds });
+		return contentType;
 	}
 
 	/// <summary>Opens a file that needs a converted copy; its folder is made now and the caller starts the engine.</summary>
@@ -399,7 +416,7 @@ public sealed class ViewerFiles : IDisposable
 		if (method is not ("GET" or "HEAD")) return Refuse(405, "Method Not Allowed");
 		lock (_gate)
 		{
-			if (!_sessions.Values.Any(session => session.Reads("image"))) return NotFoundForView();
+			if (!_sessions.Values.Any(session => session.Source is not null && session.Reads("image"))) return NotFoundForView();
 		}
 		var (path, lease) = (ModelOpener ?? throw new InvalidOperationException("This host has no model to serve"))();
 		try

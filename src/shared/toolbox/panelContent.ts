@@ -44,6 +44,7 @@ export const UtilityTool = {
 	cron: 'Cron Parser',
 	color: 'Color Converter',
 	bgRemove: 'Background Remover',
+	pdf: 'PDF Tools',
 	qr: 'QR Code',
 	uuid: 'UUID',
 } as const
@@ -137,6 +138,9 @@ function toolSize(value: UtilityTool): Size {
 		// Needs room for the expression list beside the plot.
 		case UtilityTool.graphing:
 			return { width: 640, height: 560 }
+		// A grid of page thumbnails and a toolbar.
+		case UtilityTool.pdf:
+			return { width: 640, height: 640 }
 		case UtilityTool.bgRemove:
 		case UtilityTool.qr:
 			return { width: 500, height: 620 }
