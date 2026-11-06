@@ -166,6 +166,7 @@ export function PdfPageEditor({ preview, index, position, turn, items, onAdd, on
 				</PillButton>
 			</div>
 			<span className="convert-hint">Text uses Helvetica: Western European letters, digits and punctuation. Drag a piece, or select it and use the arrow keys (Shift for bigger steps); Delete removes it.</span>
+			<span className="convert-hint">A signature here is a picture of your signature placed on the page. It is not a digital signature: nothing proves who added it, or that the page was not changed afterwards.</span>
 			{signing ? (
 				<SignaturePad
 					onCancel={() => setSigning(false)}

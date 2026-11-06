@@ -104,6 +104,8 @@ test('pdf.js and pdf-lib load only when a PDF tool opens, and the page\'s conten
 	// The Toolbox and another tool are open: no PDF code has been fetched.
 	await surface.getByTestId('toolbox-tile').filter({ hasText: 'Hashes' }).click()
 	await expect(surface.getByRole('dialog', { name: 'Hashes', exact: true })).toBeVisible()
+	await zing.chrome.getByRole('button', { name: 'Toolbox' }).first().click()
+	await expect(surface.getByRole('dialog', { name: 'Toolbox' })).toBeVisible()
 	expect((await loaded()).filter((name) => /^(Pdf|pdf)/.test(name))).toEqual([])
 	expect(surface.workers()).toEqual([])
 
@@ -153,6 +155,8 @@ test('reorder by keyboard works, with visible focus and an announcement', async 
 
 	const first = panel.getByRole('option').first()
 	await first.focus()
+	await surface.keyboard.press('ArrowRight')
+	await surface.keyboard.press('ArrowLeft')
 	await surface.keyboard.press('Control+ArrowRight')
 	await expect(panel.getByRole('status').filter({ hasText: 'Page moved to position 2 of 3.' })).toHaveCount(1)
 	// Focus followed the page to its new place, and is drawn.

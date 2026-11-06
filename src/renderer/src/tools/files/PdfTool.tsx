@@ -75,6 +75,11 @@ function PageThumb({ preview, index, turn, onError }: { preview: PdfPreview; ind
 	const box = useRef<HTMLSpanElement>(null)
 	const canvas = useRef<HTMLCanvasElement>(null)
 	const [visible, setVisible] = useState(false)
+	// The parent makes a new function on every render; depending on it would restart the drawing each time.
+	const report = useRef(onError)
+	useEffect(() => {
+		report.current = onError
+	})
 
 	useEffect(() => {
 		const observer = new IntersectionObserver((entries) => setVisible(entries.some((e) => e.isIntersecting)), { rootMargin: '150px' })
@@ -99,7 +104,7 @@ function PageThumb({ preview, index, turn, onError }: { preview: PdfPreview; ind
 				() => done(),
 				(error: unknown) => {
 					done()
-					onError(error)
+					report.current(error)
 				},
 			)
 		})
@@ -111,7 +116,7 @@ function PageThumb({ preview, index, turn, onError }: { preview: PdfPreview; ind
 			target.width = 0
 			target.height = 0
 		}
-	}, [visible, preview, index, turn, onError])
+	}, [visible, preview, index, turn])
 
 	return (
 		<span ref={box} className="pdf-thumb">
@@ -151,7 +156,7 @@ export function PdfTool() {
 	}
 	const fail = (error: unknown): void => setProblem(describeFailure(error))
 	// The same words twice in a row are not read out again, so a trailing space tells the screen reader it is new.
-	const say = (text: string): void => setAnnouncement((now) => (now === text ? `${text}00a0` : text))
+	const say = (text: string): void => setAnnouncement((now) => (now === text ? `${text}${String.fromCharCode(160)}` : text))
 
 	/** Runs an edit; a refusal is shown to the person, not thrown. */
 	const edit = (change: (m: Model) => Model, said?: string): void => {

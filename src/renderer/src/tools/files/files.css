@@ -125,8 +125,8 @@
 	background: color-mix(in srgb, var(--accent) 14%, var(--control));
 }
 
-.pdf-cell:focus-visible,
-.pdf-item:focus-visible {
+.pdf-cell:focus,
+.pdf-item:focus {
 	outline: 2px solid var(--accent);
 	outline-offset: 2px;
 }
