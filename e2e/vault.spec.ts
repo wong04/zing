@@ -367,6 +367,23 @@ document.addEventListener('submit', (e) => {
 })
 </script>`
 
+// A sign-in that takes 1.5 s to be checked. In one the form is replaced by a spinner meanwhile, in the other it is only
+// disabled; a wrong password brings the same form back. A form that only goes dim is still the form (Ruling 37).
+const slowPage = (mode: 'spinner' | 'disabled') => `<!doctype html><title>App</title><div id="root">${SIGN_IN_FORM}</div>
+<template id="again"><p>Wrong password</p>${SIGN_IN_FORM}</template>
+<script>
+document.addEventListener('submit', (e) => {
+	e.preventDefault()
+	const root = document.querySelector('#root')
+	const wrong = document.querySelector('#pass').value === 'wrong'
+	if ('${mode}' === 'spinner') root.innerHTML = '<p>Signing in...</p>'
+	else document.querySelectorAll('input, button').forEach((el) => (el.disabled = true))
+	setTimeout(() => {
+		root.innerHTML = wrong ? document.querySelector('#again').innerHTML : '<h1>Dashboard</h1>'
+	}, 1500)
+})
+</script>`
+
 let signInSite: Server
 let signInBase = ''
 
@@ -390,6 +407,8 @@ test.beforeAll(async () => {
 		}
 		if (url === '/dashboard') return void res.end('<!doctype html><title>Dashboard</title><h1>Welcome back</h1>')
 		if (url === '/spa') return void res.end(SPA)
+		if (url === '/spa-spinner') return void res.end(slowPage('spinner'))
+		if (url === '/spa-disabled') return void res.end(slowPage('disabled'))
 		res.end(`<!doctype html><title>Sign in</title>${SIGN_IN_FORM}`)
 	})
 	await new Promise<void>((resolve) => signInSite.listen(0, '127.0.0.1', () => resolve()))
@@ -492,19 +511,54 @@ test('a changed password prompts an update that names the saved login, and Updat
 	await zing.close()
 })
 
-test('signing in with the saved password prompts nothing', async () => {
+test('signing in with the saved password by hand offers an update, and Update finds it the same and stores nothing', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await save(zing, signInBase, USERNAME, PASSWORD)
+	const page = await open(zing, `${signInBase}/login`)
+
+	await signIn(page, USERNAME, PASSWORD)
+	await expect.poll(() => savePrompt(zing)).toMatchObject({ kind: 'update', replaces: USERNAME })
+	await answer(zing, 'Update')
+
+	await expect.poll(() => savePrompt(zing)).toBeNull()
+	const saved = await logins(zing)
+	expect(await zing.chrome.evaluate((id) => window.zing.loginHistory(id), saved[0]!.id)).toHaveLength(0)
+	await zing.close()
+})
+
+test('a login Zing filled and the user submitted unchanged prompts nothing', async () => {
 	const zing = await launchZing({ userDataDir: vaultProfile(true) })
 	await save(zing, signInBase, USERNAME, PASSWORD)
 	const page = await open(zing, `${signInBase}/login`)
 	await countPrompts(zing)
 
-	await signIn(page, USERNAME, PASSWORD)
+	await page.click('#user')
+	const ui = await picker(zing)
+	await choose(ui, USERNAME)
+	await expect(page.locator('#pass')).toHaveValue(PASSWORD)
+	await page.click('button')
 	await page.waitForURL(`${signInBase}/dashboard`)
 	await settle(page)
 
 	expect(await promptsOpened(zing)).toBe(0)
 	await zing.close()
 })
+
+for (const mode of ['spinner', 'disabled'] as const) {
+	test(`a wrong password behind a ${mode === 'spinner' ? 'spinner that replaces the form' : 'disabled form'} ends with no prompt on screen and nothing saved`, async () => {
+		const zing = await launchZing({ userDataDir: vaultProfile(true) })
+		const page = await open(zing, `${signInBase}/spa-${mode}`)
+
+		await signIn(page, USERNAME, 'wrong')
+		await expect(page.getByText('Wrong password')).toBeVisible()
+		await page.waitForTimeout(3000)
+
+		// The prompt may have shown while the form was out of the page; it goes when the form returns.
+		expect(await savePrompt(zing)).toBeNull()
+		expect(await logins(zing)).toHaveLength(0)
+		await zing.close()
+	})
+}
 
 test('Never for this site stops every later prompt for it, saving and updating alike, and is kept in the vault', async () => {
 	const zing = await launchZing({ userDataDir: vaultProfile(true) })
@@ -596,7 +650,7 @@ test('a single-page sign-in that swaps the form for a dashboard prompts exactly 
 	await zing.close()
 })
 
-test('a page that re-renders the same form, as after a wrong password, does not prompt', async () => {
+test('a page that re-renders the same form, as after a wrong password, leaves no prompt on screen', async () => {
 	const zing = await launchZing({ userDataDir: vaultProfile(true) })
 	const page = await open(zing, `${signInBase}/spa`)
 	await countPrompts(zing)
@@ -605,8 +659,9 @@ test('a page that re-renders the same form, as after a wrong password, does not 
 	await expect(page.getByText('Wrong password')).toBeVisible()
 	await page.waitForTimeout(3000)
 
-	expect(await promptsOpened(zing)).toBe(0)
+	// The old form left the page for a moment, so a prompt may have shown; it is withdrawn when the form comes back.
 	expect(await savePrompt(zing)).toBeNull()
+	expect(await logins(zing)).toHaveLength(0)
 	await zing.close()
 })
 

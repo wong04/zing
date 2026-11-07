@@ -227,13 +227,20 @@ public sealed class VaultStore : IDisposable
 	}
 
 	/// <summary>Asks Hello once. The replaced password goes into the history as it is, without being decrypted.</summary>
-	public Task UpdatePasswordAsync(string id, string password) => ChangePasswordAsync(id, password, s => s);
+	public Task UpdatePasswordAsync(string id, string password) => ChangePasswordAsync(id, password, s => s, skipIfSame: false);
 
 	/// <summary>A new password and the summary's fields in one change: one Hello call, one version, one queued change. A cancel changes nothing.</summary>
 	public Task UpdateLoginAsync(string id, string title, string note, string username, string password) =>
-		ChangePasswordAsync(id, password, s => s with { Title = title, Note = note, Username = username });
+		ChangePasswordAsync(id, password, s => s with { Title = title, Note = note, Username = username }, skipIfSame: false);
 
-	private async Task ChangePasswordAsync(string id, string password, Func<SummaryPayload, SummaryPayload> edit)
+	/// <summary>
+	/// Like <see cref="UpdateLoginAsync"/>, but compares with the saved password inside the same single Hello and changes nothing
+	/// when it is the same. False when it was the same.
+	/// </summary>
+	public Task<bool> UpdateLoginIfChangedAsync(string id, string title, string note, string username, string password) =>
+		ChangePasswordAsync(id, password, s => s with { Title = title, Note = note, Username = username }, skipIfSame: true);
+
+	private async Task<bool> ChangePasswordAsync(string id, string password, Func<SummaryPayload, SummaryPayload> edit, bool skipIfSame)
 	{
 		Find(id);
 		RequireHello();
@@ -245,6 +252,7 @@ public sealed class VaultStore : IDisposable
 			{
 				// Read again: another change may have landed while Hello was asking.
 				var (record, summary) = Find(id);
+				if (skipIfSame && IsSame(secretKey, keys, record, summary, password)) return false;
 				var version = record.Version + 1;
 				var now = _clock.Now();
 				var changed = edit(summary) with
@@ -258,10 +266,26 @@ public sealed class VaultStore : IDisposable
 				Commit(record, record with { Version = version, Summary = SealSummary(keys, id, version, changed), Password = sealedPassword, History = [record.Password, .. record.History] }, changed);
 			}
 			Changed?.Invoke();
+			return true;
 		}
 		finally
 		{
 			CryptographicOperations.ZeroMemory(secretKey);
+		}
+	}
+
+	private static bool IsSame(byte[] secretKey, VaultKeys keys, LoginRecord record, SummaryPayload summary, string password)
+	{
+		var current = VaultCrypto.Open(secretKey, record.Password, new ItemAd(keys.VaultId, record.ItemId, summary.PasswordVersion, ItemPart.Password));
+		var typed = Encoding.UTF8.GetBytes(password);
+		try
+		{
+			return CryptographicOperations.FixedTimeEquals(current, typed);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(current);
+			CryptographicOperations.ZeroMemory(typed);
 		}
 	}
 

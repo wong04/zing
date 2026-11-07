@@ -51,8 +51,9 @@ export const autofillFillFunction = fill
  *     it. A form with two different passwords (change password) reports nothing.
  *   - `landed`: whether the page now has a visible password box. Sent once for every new
  *     document, and, after a submit, for a page that swaps its form for something else
- *     without navigating (only when the box has gone for good: a form that stays is never
- *     reported, as a slow sign-in looks the same until it ends).
+ *     without navigating (only when the submitted password field has left the document for two
+ *     checks; a hidden, disabled or covered form is still the form), and again with
+ *     password:true if a password box comes back afterwards, so the host can withdraw a prompt.
  * The host decides what they mean, takes the origin from WebView2's own Source for the
  * message, and holds the credentials for 10 seconds at most.
  *
@@ -149,19 +150,27 @@ export const detectionScript = `(() => {
     const before = inputs.slice(0, inputs.indexOf(boxes[0])).filter(el => kind(el) === 'username' && el.value && visible(el));
     const username = before.length ? before[before.length - 1].value : '';
     if (!username || username.length > ${signInLimits.usernameMax}) return null;
-    return { username, password };
+    return { username, password, boxes };
   };
   // After a submit, a page that stays put (a single-page app) may swap the form for something else. A page that
-  // navigates posts its own 'landed' when it loads. Two checks in a row without a password box is a landing.
+  // navigates posts its own 'landed' when it loads. Two checks in a row without the submitted field is a landing.
   let watching = 0;
-  const watchLanding = () => {
+  // Only the submitted password field leaving the document counts: a form that is hidden, disabled or covered by a spinner is
+  // still the form. Once it has gone, the watch goes on for the rest of the hold, and a password box back on the page
+  // is reported so the host can withdraw a prompt (the form was only unmounted while the sign-in was checked).
+  const watchLanding = boxes => {
     const token = ++watching;
     const started = Date.now();
-    let gone = 0;
+    let gone = 0, left = false;
     const tick = () => {
       if (token !== watching || Date.now() - started > ${signInLimits.holdMs}) return;
-      gone = hasPasswordBox() ? 0 : gone + 1;
-      if (gone >= 2) { report({ kind: 'landed', password: false }); return; }
+      if (!left) {
+        gone = boxes.every(b => !b.isConnected) ? gone + 1 : 0;
+        if (gone >= 2) { left = true; report({ kind: 'landed', password: false }); }
+      } else if (hasPasswordBox()) {
+        report({ kind: 'landed', password: true });
+        return;
+      }
       setTimeout(tick, 400);
     };
     setTimeout(tick, 400);
@@ -176,7 +185,7 @@ export const detectionScript = `(() => {
     if (key === lastSubmit && now - lastSubmitAt < 1000) return;
     lastSubmit = key; lastSubmitAt = now; submittedHere = true;
     report({ kind: 'submit', username: c.username, password: c.password });
-    watchLanding();
+    watchLanding(c.boxes);
   };
   const onSubmit = e => { if (e.target && e.target.tagName === 'FORM') submitted(e.target); };
   const onEnter = e => {

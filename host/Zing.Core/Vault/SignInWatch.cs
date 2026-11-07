@@ -17,6 +17,10 @@ public static class SignInOutcomes
 		if (landedOrigin != submittedOrigin) return SignInOutcome.Pending;
 		return hasVisiblePasswordBox ? SignInOutcome.Failed : SignInOutcome.Success;
 	}
+
+	/// <summary>Ruling 37: the sign-in form came back in the origin a prompt is open for.</summary>
+	public static bool PromptWithdrawn(string promptOrigin, string landedOrigin, bool hasVisiblePasswordBox) =>
+		landedOrigin == promptOrigin && hasVisiblePasswordBox;
 }
 
 /// <summary>Pushed in the page-UI state. Names the origin and the username only: the password never leaves the host.</summary>
@@ -33,6 +37,8 @@ public static class SaveAnswers
 
 public static class SaveOutcomes
 {
+	/// <summary>An update whose password turned out to be the one already saved: nothing was stored.</summary>
+	public const string Unchanged = "unchanged";
 	public const string Saved = "saved";
 	public const string Updated = "updated";
 	/// <summary>Not now, or never for this site.</summary>
@@ -83,6 +89,7 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		public IDisposable? Timer { get; set; }
 		/// <summary>The page landed: this submit has had its one prompt.</summary>
 		public bool Landed { get; set; }
+
 	}
 
 	/// <summary>A class, not a record: a record's ToString would print the password.</summary>
@@ -109,11 +116,15 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 	/// <summary>A message from a page's script; <paramref name="frameSource"/> is WebView2's Source for it.</summary>
 	public void Message(string pageId, Uri frameSource, AutofillMessage message)
 	{
-		if (message is not (AutofillMessage.Submitted or AutofillMessage.Landed)) return;
+		if (message is not (AutofillMessage.Submitted or AutofillMessage.Landed or AutofillMessage.Left)) return;
 		if (frameSource.Scheme != Uri.UriSchemeHttps && frameSource.Scheme != Uri.UriSchemeHttp) return;
 		var origin = VaultModel.OriginOf(frameSource.AbsoluteUri);
 		switch (message)
 		{
+			case AutofillMessage.Left:
+				// The page is going to another origin: a prompt for the old one no longer fits over it.
+				if (_shown is { } open && open.Prompt.PageId == pageId && open.Prompt.Origin != origin) CloseShown();
+				return;
 			case AutofillMessage.Submitted submitted:
 				Submitted(pageId, origin, submitted.Username, submitted.Password);
 				return;
@@ -126,8 +137,10 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 	/// <summary>A form was submitted. The latest submit of a page replaces the one held, and a prompt for the old one closes.</summary>
 	public void Submitted(string pageId, string origin, string username, string password)
 	{
-		if (vault() is null) return;
+		if (vault() is not { } store) return;
 		Drop(pageId);
+		// Nothing will be offered for it, so don't hold its password at all.
+		if (store.IsNeverSave(origin)) return;
 		var held = new Held(origin, username, password, FilledByZing(pageId, origin, username, password));
 		held.Timer = scheduler.Schedule(HoldFor, () => Expire(pageId, held));
 		_held[pageId] = held;
@@ -139,7 +152,12 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 	/// </summary>
 	public void Landed(string pageId, string origin, bool hasVisiblePasswordBox)
 	{
-		if (!_held.TryGetValue(pageId, out var held) || held.Landed) return;
+		if (!_held.TryGetValue(pageId, out var held))
+		{
+			Withdraw(pageId, origin, hasVisiblePasswordBox);
+			return;
+		}
+		if (held.Landed) return;
 		switch (SignInOutcomes.Of(held.Origin, origin, hasVisiblePasswordBox))
 		{
 			case SignInOutcome.Pending:
@@ -153,14 +171,24 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		background(DecideAsync(pageId, held), "save prompt");
 	}
 
+	/// <summary>Ruling 37: the sign-in page is back in the origin a prompt is open for, so that sign-in failed after all.</summary>
+	private void Withdraw(string pageId, string origin, bool hasVisiblePasswordBox)
+	{
+		if (_shown is { } open && open.Prompt.PageId == pageId && SignInOutcomes.PromptWithdrawn(open.Prompt.Origin, origin, hasVisiblePasswordBox)) CloseShown();
+	}
+
 	/// <summary>Zing filled this login into the page, so signing in with it again isn't a changed password.</summary>
 	public void Filled(string pageId, string origin, string username, string password)
 	{
-		if (_fills.Remove(pageId, out var old)) old.Timer.Dispose();
+		if (_fills.Remove(pageId, out var old)) Forget(old);
 		var token = new object();
 		_fills[pageId] = new Fill(origin, username, Digest(password), token, scheduler.Schedule(FillFor, () =>
 		{
-			if (_fills.TryGetValue(pageId, out var current) && ReferenceEquals(current.Token, token)) _fills.Remove(pageId);
+			if (_fills.TryGetValue(pageId, out var current) && ReferenceEquals(current.Token, token))
+			{
+				_fills.Remove(pageId);
+				Forget(current);
+			}
 		}));
 	}
 
@@ -169,52 +197,44 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 
 	private byte[] Digest(string password) => HMACSHA256.HashData(_digestKey, Encoding.UTF8.GetBytes(password));
 
-	private async Task DecideAsync(string pageId, Held held)
+	/// <summary>
+	/// A landing never asks Hello (Ruling 36, a page could otherwise make it pop up at will). A saved login gets an update
+	/// prompt unless Zing filled that password itself; whether it really changed is checked inside the one Hello of the click.
+	/// Whatever goes wrong, what is held is dropped unless it moved into a prompt.
+	/// </summary>
+	private Task DecideAsync(string pageId, Held held)
 	{
-		if (vault() is not { } store)
+		try
+		{
+			Decide(pageId, held);
+			return Task.CompletedTask;
+		}
+		catch (Exception e)
+		{
+			return Task.FromException(e);
+		}
+		finally
 		{
 			Drop(pageId, held);
-			return;
 		}
+	}
+
+	private void Decide(string pageId, Held held)
+	{
+		if (vault() is not { } store) return;
 		var summaries = store.Summaries();
-		// passwordChanged is true here so a saved login comes out as Update; whether it really changed is checked below.
+		// passwordChanged is true here so a saved login comes out as Update; whether it really changed is checked on the click.
 		var choice = VaultModel.SaveDecision(summaries, held.Origin, held.Username, passwordChanged: true, store.NeverSaves());
-		if (choice == SaveChoice.None)
-		{
-			Drop(pageId, held);
-			return;
-		}
+		if (choice == SaveChoice.None || !isShown(pageId)) return;
 		string? savedId = null;
 		if (choice == SaveChoice.Update)
 		{
-			var saved = summaries.First(s => s.DeletedAt is null && s.Origin == held.Origin && s.Username == held.Username);
-			savedId = saved.Id;
-			if (held.FromVault || !await ChangedAsync(store, saved.Id, held.Password))
-			{
-				Drop(pageId, held);
-				return;
-			}
+			if (held.FromVault) return;
+			savedId = summaries.First(s => s.DeletedAt is null && s.Origin == held.Origin && s.Username == held.Username).Id;
 		}
-		// A newer submit, a closed tab or a vault turned off during Hello took the held sign-in away.
-		if (!_held.TryGetValue(pageId, out var current) || !ReferenceEquals(current, held) || !ReferenceEquals(vault(), store)) return;
 		_held.Remove(pageId);
-		if (!isShown(pageId)) return;
+		held.Timer?.Dispose();
 		Show(new SaveLoginPrompt(pageId, choice == SaveChoice.Update ? "update" : "save", held.Origin, held.Username, choice == SaveChoice.Update ? held.Username : null), held.Password, savedId);
-	}
-
-	/// <summary>Reads the saved password, with one Hello prompt, to see if the typed one differs. A cancelled Hello means no prompt, quietly.</summary>
-	private static async Task<bool> ChangedAsync(VaultStore store, string id, string typed)
-	{
-		string stored;
-		try
-		{
-			stored = await store.PasswordAsync(id);
-		}
-		catch (Exception e) when (e is HelloCancelledException or HelloUnavailableException)
-		{
-			return false;
-		}
-		return !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(stored), Encoding.UTF8.GetBytes(typed));
 	}
 
 	private void Show(SaveLoginPrompt prompt, string password, string? savedId)
@@ -238,7 +258,7 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		CloseShown();
 		var prompt = shown.Prompt;
 		if (answer == SaveAnswers.NotNow) return SaveOutcomes.Dismissed;
-		var store = vault() ?? throw new VaultOffException();
+		if (vault() is not { } store) return SaveOutcomes.Gone;
 		try
 		{
 			if (answer == SaveAnswers.Never)
@@ -249,9 +269,10 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 			if (prompt.Kind == "update")
 			{
 				var saved = store.Summaries().FirstOrDefault(s => s.Id == shown.SavedId && s.DeletedAt is null) ?? throw new VaultItemNotFoundException(shown.SavedId ?? "");
-				await store.UpdateLoginAsync(saved.Id, saved.Title, saved.Note, saved.Username, shown.Password);
-				return SaveOutcomes.Updated;
+				return await store.UpdateLoginIfChangedAsync(saved.Id, saved.Title, saved.Note, saved.Username, shown.Password) ? SaveOutcomes.Updated : SaveOutcomes.Unchanged;
 			}
+			// Another window, or a sync, may have saved this login while the prompt was open.
+			if (store.Summaries().Any(s => s.DeletedAt is null && s.Origin == prompt.Origin && s.Username == prompt.Username)) return SaveOutcomes.Gone;
 			await store.SaveAsync(new NewLogin(prompt.Origin, prompt.Username, shown.Password, new Uri(prompt.Origin).Host, ""));
 			return SaveOutcomes.Saved;
 		}
@@ -259,13 +280,18 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		{
 			return SaveOutcomes.Cancelled;
 		}
+		catch (VaultClosedException)
+		{
+			// The vault was turned off while Hello was up: nothing was stored, and there's nothing to tell the user.
+			return SaveOutcomes.Gone;
+		}
 	}
 
 	/// <summary>The tab closed.</summary>
 	public void PageClosed(string pageId)
 	{
 		Drop(pageId);
-		if (_fills.Remove(pageId, out var fill)) fill.Timer.Dispose();
+		if (_fills.Remove(pageId, out var fill)) Forget(fill);
 	}
 
 	/// <summary>The tabs changed: a prompt whose tab is no longer on screen goes, and its password with it.</summary>
@@ -279,7 +305,7 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 	{
 		foreach (var held in _held.Values) held.Timer?.Dispose();
 		_held.Clear();
-		foreach (var fill in _fills.Values) fill.Timer.Dispose();
+		foreach (var fill in _fills.Values) Forget(fill);
 		_fills.Clear();
 		CloseShown();
 	}
@@ -307,5 +333,15 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		changed(null);
 	}
 
-	public void Dispose() => Clear();
+	private static void Forget(Fill fill)
+	{
+		fill.Timer.Dispose();
+		CryptographicOperations.ZeroMemory(fill.Digest);
+	}
+
+	public void Dispose()
+	{
+		Clear();
+		CryptographicOperations.ZeroMemory(_digestKey);
+	}
 }

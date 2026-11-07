@@ -483,6 +483,7 @@ describe('sign-in reports', () => {
 		submit(form)
 		vi.advanceTimersByTime(1000)
 		expect(messages).toHaveLength(1)
+		inputs.forEach((i) => (i.isConnected = false))
 		doc.frames = []
 		vi.advanceTimersByTime(400)
 		expect(kindsOf('landed')).toHaveLength(0)
@@ -490,6 +491,33 @@ describe('sign-in reports', () => {
 		expect(kindsOf('landed')).toEqual([{ kind: 'landed', password: false }])
 		vi.advanceTimersByTime(5000)
 		expect(kindsOf('landed')).toHaveLength(1)
+	})
+	it('a form that is hidden, disabled or covered while the sign-in is checked is still the form: no landing', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'wrong')
+		doc.frames = inputs
+		submit(form)
+		win['getComputedStyle'] = () => ({ display: 'none', visibility: 'hidden' })
+		inputs[1]!.disabled = true
+		vi.advanceTimersByTime(9000)
+		expect(kindsOf('landed')).toEqual([])
+	})
+	it('a password box that comes back after the form went is reported, once, so a prompt can be withdrawn', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'wrong')
+		doc.frames = inputs
+		submit(form)
+		inputs.forEach((i) => (i.isConnected = false))
+		doc.frames = []
+		vi.advanceTimersByTime(1000)
+		expect(kindsOf('landed')).toEqual([{ kind: 'landed', password: false }])
+		doc.frames = [new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })]
+		vi.advanceTimersByTime(1000)
+		vi.advanceTimersByTime(5000)
+		expect(kindsOf('landed')).toEqual([
+			{ kind: 'landed', password: false },
+			{ kind: 'landed', password: true },
+		])
 	})
 	it('a page that keeps its form after a submit reports no landing, and the watch ends after ten seconds', () => {
 		install()
@@ -510,6 +538,7 @@ describe('sign-in reports', () => {
 		vi.advanceTimersByTime(1500)
 		inputs[1]!.value = 'hunter3'
 		submit(form)
+		inputs.forEach((i) => (i.isConnected = false))
 		doc.frames = []
 		vi.advanceTimersByTime(2000)
 		expect(kindsOf('landed')).toHaveLength(1)

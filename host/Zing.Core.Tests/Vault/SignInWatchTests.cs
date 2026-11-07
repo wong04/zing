@@ -181,14 +181,121 @@ public sealed class SignInWatchTests : IDisposable
 	}
 
 	[Fact]
-	public async Task A_saved_login_signed_in_with_its_own_password_gets_no_prompt()
+	public async Task A_landing_never_asks_Hello_and_a_saved_username_gets_an_update_prompt_straight_away()
 	{
 		await Save("ada@example.test", "same password");
+		var calls = _sealer.Calls;
 
 		await SignIn("ada@example.test", "same password");
 
+		Assert.Equal(calls, _sealer.Calls);
+		Assert.Equal("update", Shown?.Kind);
+	}
+
+	[Fact]
+	public async Task Update_with_the_password_already_saved_stores_nothing_in_the_one_Hello_and_closes()
+	{
+		var id = await Save("ada@example.test", "same password");
+		await SignIn("ada@example.test", "same password");
+		var calls = _sealer.Calls;
+
+		Assert.Equal(SaveOutcomes.Unchanged, await _watch.AnswerAsync(Page, "save"));
+
+		Assert.Equal(calls + 1, _sealer.Calls);
 		Assert.Null(Shown);
+		Assert.Empty(Store.History(id));
+	}
+
+	[Fact]
+	public async Task A_forged_submit_and_landing_loop_never_asks_Hello()
+	{
+		await Save("ada@example.test", "real password");
+		var calls = _sealer.Calls;
+
+		for (var i = 0; i < 20; i++)
+		{
+			_watch.Message(Page, new Uri(Site), new AutofillMessage.Submitted("ada@example.test", "x" + i));
+			_watch.Message(Page, new Uri(Site), new AutofillMessage.Landed(false));
+		}
+		await Settle();
+
+		Assert.Equal(calls, _sealer.Calls);
+		Assert.Equal("update", Shown?.Kind);
+	}
+
+	[Fact]
+	public async Task The_form_coming_back_while_a_prompt_is_open_withdraws_it_and_its_password()
+	{
+		await SignIn("ada@example.test", "wrong password");
+		Assert.NotNull(Shown);
+
+		_watch.Landed(Page, "https://other.example", hasVisiblePasswordBox: true);
+		Assert.NotNull(Shown);
+		_watch.Landed(Page, Site, hasVisiblePasswordBox: true);
+
+		Assert.Null(Shown);
+		Assert.Equal(SaveOutcomes.Gone, await _watch.AnswerAsync(Page, "save"));
+		Assert.Empty(Store.Summaries());
+	}
+
+	[Fact]
+	public async Task Leaving_for_another_origin_closes_the_prompt_but_staying_does_not()
+	{
+		await SignIn("ada@example.test", "s3cret");
+
+		_watch.Message(Page, new Uri(Site + "/next"), new AutofillMessage.Left());
+		Assert.NotNull(Shown);
+		_watch.Message(Page, new Uri("https://b.example/"), new AutofillMessage.Left());
+		Assert.Null(Shown);
+	}
+
+	[Fact]
+	public async Task An_exception_in_the_landing_path_still_drops_what_was_held()
+	{
+		var broken = false;
+		var watch = new SignInWatch(() => broken ? throw new InvalidOperationException("the vault broke") : _store, _ => true, _scheduler, _ => { }, (task, _) => _background.Add(task));
+		watch.Submitted(Page, Site, "ada@example.test", "s3cret");
+		broken = true;
+
+		watch.Landed(Page, Site, hasVisiblePasswordBox: false);
+
+		var failed = Assert.Single(_background);
+		await Assert.ThrowsAsync<InvalidOperationException>(() => failed);
+		Assert.Equal(0, watch.HeldCount);
+		Assert.Null(watch.Prompt);
+		_background.Clear();
+		watch.Dispose();
+	}
+
+	[Fact]
+	public async Task A_never_marked_origin_holds_nothing()
+	{
+		await Store.NeverSave(Site);
+
+		_watch.Submitted(Page, Site, "ada@example.test", "s3cret");
+
 		Assert.Equal(0, _watch.HeldCount);
+	}
+
+	[Fact]
+	public async Task Saving_when_the_login_was_saved_meanwhile_stores_a_duplicate_of_nothing()
+	{
+		await SignIn("ada@example.test", "s3cret");
+		await Save("ada@example.test", "other");
+
+		Assert.Equal(SaveOutcomes.Gone, await _watch.AnswerAsync(Page, "save"));
+
+		Assert.Single(Store.Summaries());
+	}
+
+	[Fact]
+	public async Task A_vault_closed_during_the_answers_Hello_is_gone_not_an_error()
+	{
+		await Save("other@example.test");
+		await SignIn("ada@example.test", "s3cret");
+		_sealer.Unsealing = () => Store.Dispose();
+
+		Assert.Equal(SaveOutcomes.Gone, await _watch.AnswerAsync(Page, "save"));
 	}
 
 	[Fact]
@@ -216,15 +323,16 @@ public sealed class SignInWatchTests : IDisposable
 	}
 
 	[Fact]
-	public async Task A_cancelled_Hello_while_comparing_gives_no_prompt_and_no_error()
+	public async Task A_cancelled_Hello_on_the_updates_compare_stores_nothing()
 	{
-		await Save("ada@example.test", "old password");
+		var id = await Save("ada@example.test", "old password");
+		await SignIn("ada@example.test", "new password");
 		_sealer.Result = HelloResult.Cancel;
 
-		await SignIn("ada@example.test", "new password");
+		Assert.Equal(SaveOutcomes.Cancelled, await _watch.AnswerAsync(Page, "save"));
 
-		Assert.Null(Shown);
-		Assert.Equal(0, _watch.HeldCount);
+		_sealer.Result = HelloResult.Pass;
+		Assert.Equal("old password", await Store.PasswordAsync(id));
 	}
 
 	[Fact]
@@ -402,20 +510,6 @@ public sealed class SignInWatchTests : IDisposable
 		await SignIn("ada@example.test", "s3cret");
 
 		_watch.Clear();
-
-		Assert.Null(Shown);
-		Assert.Equal(0, _watch.HeldCount);
-	}
-
-	[Fact]
-	public async Task A_vault_turned_off_during_Hello_gets_no_prompt()
-	{
-		await Save("ada@example.test", "old password");
-		_watch.Submitted(Page, Site, "ada@example.test", "new password");
-		_sealer.Unsealing = () => _watch.Clear();
-
-		_watch.Landed(Page, Site, hasVisiblePasswordBox: false);
-		await Settle();
 
 		Assert.Null(Shown);
 		Assert.Equal(0, _watch.HeldCount);

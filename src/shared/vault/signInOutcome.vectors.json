@@ -1,5 +1,10 @@
 {
 	"limits": { "usernameMax": 512, "passwordMax": 1024, "holdMs": 10000 },
+	"withdrawals": [
+		{ "name": "the form back in the same origin withdraws the prompt", "promptOrigin": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": true, "expected": true },
+		{ "name": "no password box does not", "promptOrigin": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": false, "expected": false },
+		{ "name": "a form in another origin does not", "promptOrigin": "https://a.example", "landed": "https://b.example", "hasVisiblePasswordBox": true, "expected": false }
+	],
 	"outcomes": [
 		{ "name": "the same origin with no password box any more is a success", "submitted": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": false, "expected": "success" },
 		{ "name": "the same origin with the password box back is a failure", "submitted": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": true, "expected": "failed" },
