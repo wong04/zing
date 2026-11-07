@@ -135,24 +135,42 @@ public sealed class VaultCryptoTests
 	}
 
 	[Fact]
-	public void AdEncodingIsLengthPrefixedThenVersionThenPart()
+	public void AdEncodingIsDomainTagThenLengthPrefixedFieldsThenVersionThenPart()
 	{
-		byte[] expected = [0, 0, 0, 1, (byte)'u', 0, 0, 0, 2, (byte)'i', (byte)'d', 0, 0, 0, 0, 0, 0, 1, 2, 2];
+		byte[] expected = [0, 0, 0, 12, .. "zing-item-v1"u8, 0, 0, 0, 1, (byte)'u', 0, 0, 0, 2, (byte)'i', (byte)'d', 0, 0, 0, 0, 0, 0, 1, 2, 2];
 		Assert.Equal(expected, new ItemAd("u", "id", 258, ItemPart.History).ToBytes());
+	}
+
+	[Fact]
+	public void KeyWrapAdIsDomainTagThenLengthPrefixedLabel()
+	{
+		byte[] expected = [0, 0, 0, 12, .. "zing-wrap-v1"u8, 0, 0, 0, 5, .. "index"u8];
+		Assert.Equal(expected, KeyWrap.Ad("index"));
 	}
 
 	public static TheoryData<KdfParams> WeakKdfs() => new(
 		new KdfParams(64 * 1024, 3, 1, new byte[16]),
 		new KdfParams(KdfParams.FloorMemoryKiB, 2, 1, new byte[16]),
 		new KdfParams(KdfParams.FloorMemoryKiB, 3, 0, new byte[16]),
-		new KdfParams(KdfParams.FloorMemoryKiB, 3, 1, new byte[8]));
+		new KdfParams(KdfParams.FloorMemoryKiB, 3, 1, new byte[8]),
+		new KdfParams(KdfParams.FloorMemoryKiB, 3, 1, null!),
+		new KdfParams(KdfParams.MaxMemoryKiB + 1, 3, 1, new byte[16]),
+		new KdfParams(KdfParams.FloorMemoryKiB, KdfParams.MaxIterations + 1, 1, new byte[16]),
+		new KdfParams(long.MaxValue, 3, 1, new byte[16]));
 
 	[Theory]
 	[MemberData(nameof(WeakKdfs))]
-	public void KdfParamsBelowTheFloorAreRefused(KdfParams kdf)
+	public void KdfParamsOutsideTheFloorAndCapsAreRefused(KdfParams kdf)
 	{
-		Assert.Throws<KdfTooWeakException>(kdf.EnforceFloor);
-		Assert.Throws<KdfTooWeakException>(() => PasswordKey.Derive("correct horse battery staple", kdf));
+		Assert.Throws<KdfParamsRejectedException>(kdf.EnforceFloor);
+		Assert.Throws<KdfParamsRejectedException>(() => PasswordKey.Derive("correct horse battery staple", kdf));
+	}
+
+	// EnforceFloor only: running Argon2id at 1 GiB would be too slow for a test.
+	[Fact]
+	public void KdfParamsAtTheCapsAreAccepted()
+	{
+		new KdfParams(1024 * 1024, 10, 1, new byte[16]).EnforceFloor();
 	}
 
 	[Fact]
@@ -216,6 +234,13 @@ public sealed class VaultCryptoTests
 		Assert.Equal(vaultKey, KeyWrap.Unwrap(RecoveryKey.ToKey(code), wrapped, "secret"));
 	}
 
+	// Computed independently with Python's hmac: HKDF-SHA256 over bytes 00..0f, an empty salt (32 zero bytes), info "zing-recovery-v1".
+	[Fact]
+	public void RecoveryKeyDerivesAKnownKey()
+	{
+		Assert.Equal(Convert.FromHexString("21805934d2949a8300163a53e870877833c5009cad3eaca7c1483793f3c0134e"), RecoveryKey.ToKey("AAAQ-EAYE-AUDA-OCAJ-BIFQ-YDIO-B6"));
+	}
+
 	[Fact]
 	public void RecoveryKeyAcceptsLowercaseAndSpaces()
 	{
@@ -229,6 +254,8 @@ public sealed class VaultCryptoTests
 	[InlineData("AAAQ-EAYE-AUDA-OCAJ-BIFQ-YDIO-B6A")] // a character over
 	[InlineData("AAAQ-EAYE-AUDA-OCAJ-BIFQ-YDIO-B1")] // 1 isn't in the alphabet
 	[InlineData("")]
+	[InlineData("AAAQ-EAYE-AUDA-OCAJ-BıFQ-YDIO-B6")] // dotless i, which ToUpperInvariant folds to I
+	[InlineData("AIBQ-IBIG-A4EA-ſCQL-BQGQ-4DYQ-CH")] // long s, which ToUpperInvariant folds to S
 	public void RecoveryKeyRejectsAMistypedCode(string code)
 	{
 		Assert.Throws<RecoveryKeyFormatException>(() => RecoveryKey.ToKey(code));

@@ -14,25 +14,35 @@ public enum ItemPart : byte { Summary = 0, Password = 1, History = 2 }
 /// <summary>Binds a ciphertext to its user, item, version and part, so the server can't move, swap or relabel one.</summary>
 public sealed record ItemAd(string UserId, string ItemId, long Version, ItemPart Part)
 {
-	/// <summary>Length-prefixed UTF-8 strings, then the version as a big-endian int64, then the part as one byte.</summary>
+	private static readonly byte[] DomainTag = "zing-item-v1"u8.ToArray();
+
+	/// <summary>The domain tag and both strings as length-prefixed UTF-8, then the version as a big-endian int64, then the part as one byte.</summary>
 	public byte[] ToBytes()
 	{
 		if (!Enum.IsDefined(Part)) throw new ArgumentOutOfRangeException(nameof(Part), Part, "Not an item part");
-		var userId = Encoding.UTF8.GetBytes(UserId);
-		var itemId = Encoding.UTF8.GetBytes(ItemId);
-		var bytes = new byte[4 + userId.Length + 4 + itemId.Length + 8 + 1];
-		var at = WriteString(bytes, 0, userId);
-		at = WriteString(bytes, at, itemId);
-		BinaryPrimitives.WriteInt64BigEndian(bytes.AsSpan(at), Version);
-		bytes[at + 8] = (byte)Part;
+		var strings = AdEncoding.Strings(DomainTag, Encoding.UTF8.GetBytes(UserId), Encoding.UTF8.GetBytes(ItemId));
+		var bytes = new byte[strings.Length + 8 + 1];
+		strings.CopyTo(bytes, 0);
+		BinaryPrimitives.WriteInt64BigEndian(bytes.AsSpan(strings.Length), Version);
+		bytes[^1] = (byte)Part;
 		return bytes;
 	}
+}
 
-	private static int WriteString(byte[] into, int at, byte[] utf8)
+internal static class AdEncoding
+{
+	/// <summary>Each string as a big-endian uint32 length then its bytes, so no field boundary can shift.</summary>
+	public static byte[] Strings(params byte[][] strings)
 	{
-		BinaryPrimitives.WriteUInt32BigEndian(into.AsSpan(at), (uint)utf8.Length);
-		utf8.CopyTo(into, at + 4);
-		return at + 4 + utf8.Length;
+		var bytes = new byte[strings.Sum(s => 4 + s.Length)];
+		var at = 0;
+		foreach (var s in strings)
+		{
+			BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(at), (uint)s.Length);
+			s.CopyTo(bytes, at + 4);
+			at += 4 + s.Length;
+		}
+		return bytes;
 	}
 }
 
@@ -104,7 +114,12 @@ public static class VaultCrypto
 /// <summary>Wraps one key under another, with a label as associated data so a wrapped index key can't pass as the secret key.</summary>
 public static class KeyWrap
 {
-	public static byte[] Wrap(byte[] wrappingKey, byte[] key, string label) => VaultCrypto.Encrypt(wrappingKey, key, Encoding.UTF8.GetBytes(label));
+	private static readonly byte[] DomainTag = "zing-wrap-v1"u8.ToArray();
 
-	public static byte[] Unwrap(byte[] wrappingKey, byte[] wrapped, string label) => VaultCrypto.Decrypt(wrappingKey, wrapped, Encoding.UTF8.GetBytes(label));
+	public static byte[] Wrap(byte[] wrappingKey, byte[] key, string label) => VaultCrypto.Encrypt(wrappingKey, key, Ad(label));
+
+	public static byte[] Unwrap(byte[] wrappingKey, byte[] wrapped, string label) => VaultCrypto.Decrypt(wrappingKey, wrapped, Ad(label));
+
+	/// <summary>The domain tag then the label, both as length-prefixed UTF-8.</summary>
+	internal static byte[] Ad(string label) => AdEncoding.Strings(DomainTag, Encoding.UTF8.GetBytes(label));
 }

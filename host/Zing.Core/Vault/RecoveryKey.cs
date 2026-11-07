@@ -68,24 +68,42 @@ public static class RecoveryKey
 
 	private static byte[] Parse(string code)
 	{
-		var chars = code.ToUpperInvariant().Where(c => c != '-' && c != ' ').ToArray();
-		if (chars.Length != Characters) throw new RecoveryKeyFormatException($"A recovery key has {Characters} characters, not {chars.Length}");
+		var chars = code.Where(c => c != '-' && c != ' ').ToArray();
 		var key = new byte[KeyBytes];
-		int buffer = 0, bits = 0, at = 0;
-		foreach (var c in chars)
+		try
 		{
-			var value = Alphabet.IndexOf(c);
-			if (value < 0) throw new RecoveryKeyFormatException($"'{c}' isn't a recovery key character");
-			buffer = (buffer << 5 | value) & 0xFFF;
-			bits += 5;
-			if (bits < 8) continue;
-			bits -= 8;
-			key[at++] = (byte)(buffer >> bits);
+			if (chars.Length != Characters) throw new RecoveryKeyFormatException($"A recovery key has {Characters} characters, not {chars.Length}");
+			int buffer = 0, bits = 0, at = 0;
+			foreach (var c in chars)
+			{
+				buffer = (buffer << 5 | Value(c)) & 0xFFF;
+				bits += 5;
+				if (bits < 8) continue;
+				bits -= 8;
+				key[at++] = (byte)(buffer >> bits);
+			}
+			// 130 bits read, 128 into the key: the 2 left over are the checksum.
+			if ((buffer & 3) != Checksum(key)) throw new RecoveryKeyFormatException("The recovery key's checksum doesn't match, so a character is mistyped");
+			return key;
 		}
-		// 130 bits read, 128 into the key: the 2 left over are the checksum.
-		if ((buffer & 3) == Checksum(key)) return key;
-		CryptographicOperations.ZeroMemory(key);
-		throw new RecoveryKeyFormatException("The recovery key's checksum doesn't match, so a character is mistyped");
+		catch
+		{
+			CryptographicOperations.ZeroMemory(key);
+			throw;
+		}
+		finally
+		{
+			Array.Clear(chars);
+		}
+	}
+
+	/// <summary>ASCII only: ToUpperInvariant would otherwise fold letters such as ı and ſ into the alphabet.</summary>
+	private static int Value(char c)
+	{
+		if (!char.IsAscii(c)) throw new RecoveryKeyFormatException("A recovery key has a character outside the base32 alphabet");
+		var value = Alphabet.IndexOf(char.ToUpperInvariant(c));
+		if (value < 0) throw new RecoveryKeyFormatException("A recovery key has a character outside the base32 alphabet");
+		return value;
 	}
 
 	private static int Checksum(ReadOnlySpan<byte> key) => SHA256.HashData(key)[0] >> 6;
