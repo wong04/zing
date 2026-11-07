@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Zing.Core.Engines;
 using Zing.Core.Viewer;
 using Zing.Core.Net;
+using Zing.Core.Vault;
 
 namespace Zing.Core;
 
@@ -73,7 +74,8 @@ public interface IWindowHost
 /// <param name="Dns">Encrypted DNS for the whole PC (Network &amp; VPN); null where the host can't change DNS.</param>
 /// <param name="Threats">Link inspection, with the hosts allowed this session; one per app. Null where the host doesn't inspect links.</param>
 /// <param name="Consent">Whether third parties may be asked to open a link, for the session and every window. One per app: required, so a window cannot end up with its own.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null)
+/// <param name="Vault">The password vault, shared by every window; null when <c>passwordAutofill</c> is off.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -336,6 +338,17 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("permission:allow", args => Do(() => Permissions.Answer(Int(args, 0), true)));
 		bridge.Register("permission:deny", args => Do(() => Permissions.Answer(Int(args, 0), false)));
 
+		bridge.Register("vault:get", _ => CurrentVaultState());
+		bridge.Register("vault:summaries", _ => Vault().Summaries());
+		bridge.Register("vault:reveal", async args => await Vault().PasswordAsync(Text(args, 0)));
+		bridge.Register("vault:reveal-history", async args => await Vault().HistoryPasswordAsync(Text(args, 0), Int(args, 1)));
+		bridge.Register("vault:save", async args => await Vault().SaveAsync(NewLoginArg(Arg(args, 0))));
+		bridge.Register("vault:update", async args => await UpdateLoginAsync(Text(args, 0), Arg(args, 1)));
+		bridge.Register("vault:delete", args => Do(() => Vault().Delete(Text(args, 0))));
+		bridge.Register("vault:restore", args => Do(() => Vault().Restore(Text(args, 0))));
+		bridge.Register("vault:history", args => Vault().History(Text(args, 0)));
+		if (app.Vault is { } vault) vault.Changed += PushVaultState;
+
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
 		_unsubscribeLibrary = app.Library.Subscribe(_ => host.Push("library:state", LibraryState()));
 	}
@@ -449,6 +462,7 @@ public sealed class ChromeApi : IDisposable
 		_closing.Dispose();
 		_host.OfferEnded -= EndOffer;
 		foreach (var subscription in _subscriptions) subscription.Dispose();
+		if (_app.Vault is { } vault) vault.Changed -= PushVaultState;
 		Shell.Dispose();
 		Ordering.Dispose();
 		Lifecycle.Dispose();
@@ -779,6 +793,33 @@ public sealed class ChromeApi : IDisposable
 	private async Task<object?> UpdateYtDlpAsync() => await Engines().UpdateYtDlpAsync(_closing.Token);
 
 	private static async Task<object?> HashFileAsync(string path, string algorithm) => await Hashing.FileAsync(path, algorithm);
+
+	private VaultStore Vault() => _app.Vault ?? throw new VaultOffException();
+
+	private VaultState CurrentVaultState() => _app.Vault is { } vault ? new(true, vault.HelloAvailable, vault.Summaries().Count) : new(false, false, 0);
+
+	private void PushVaultState() => _host.Push("vault:state", CurrentVaultState());
+
+	/// <summary>The password first: it asks Hello, and a cancelled prompt leaves the summary unchanged too.</summary>
+	private async Task<object?> UpdateLoginAsync(string id, JsonElement edit)
+	{
+		var vault = Vault();
+		var username = RequiredText(edit, "username");
+		var title = RequiredText(edit, "title");
+		var note = RequiredText(edit, "note");
+		if (edit.TryGetProperty("password", out var password) && password.ValueKind != JsonValueKind.Null)
+		{
+			await vault.UpdatePasswordAsync(id, password.ValueKind == JsonValueKind.String ? password.GetString()! : throw new ArgumentException("A login's password must be a string"));
+		}
+		vault.UpdateSummary(id, title, note, username);
+		return null;
+	}
+
+	private static NewLogin NewLoginArg(JsonElement login) =>
+		new(RequiredText(login, "origin"), RequiredText(login, "username"), RequiredText(login, "password"), RequiredText(login, "title"), RequiredText(login, "note"));
+
+	private static string RequiredText(JsonElement value, string name) =>
+		value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out var text) && text.ValueKind == JsonValueKind.String ? text.GetString()! : throw new ArgumentException($"A login needs a string {name}");
 
 	private DnsService DnsSetup() => _app.Dns ?? throw new InvalidOperationException("This host can't change DNS");
 

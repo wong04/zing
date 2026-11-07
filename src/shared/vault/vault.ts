@@ -18,6 +18,39 @@ export interface LoginSummary {
 	deletedAt: number | null
 }
 
+// A login to save (vault:save). The host stores the origin of `origin`, so any
+// address on the site will do. The password goes to the host and never comes back
+// except through vault:reveal, after Windows Hello.
+export interface NewLogin {
+	origin: string
+	username: string
+	password: string
+	title: string
+	note: string
+}
+
+// An edit (vault:update). With `password` the host asks Windows Hello and moves
+// the old password into the history; without it, nothing is asked.
+export interface LoginEdit {
+	username: string
+	title: string
+	note: string
+	password?: string
+}
+
+// One old password, without the password; newest first.
+export interface PasswordHistoryEntry {
+	replacedAt: number
+}
+
+// What the host pushes as vault:state. `enabled` follows passwordAutofill;
+// without Windows Hello the vault reads but refuses every write.
+export interface VaultState {
+	enabled: boolean
+	helloAvailable: boolean
+	count: number
+}
+
 // "Never for this site", kept per exact origin apart from the logins.
 export interface NeverSave {
 	origin: string

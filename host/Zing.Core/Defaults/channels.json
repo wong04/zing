@@ -438,6 +438,42 @@
 			"args": 1
 		},
 		{
+			"channel": "vault:delete",
+			"args": 1
+		},
+		{
+			"channel": "vault:get",
+			"args": 0
+		},
+		{
+			"channel": "vault:history",
+			"args": 1
+		},
+		{
+			"channel": "vault:restore",
+			"args": 1
+		},
+		{
+			"channel": "vault:reveal",
+			"args": 1
+		},
+		{
+			"channel": "vault:reveal-history",
+			"args": 2
+		},
+		{
+			"channel": "vault:save",
+			"args": 1
+		},
+		{
+			"channel": "vault:summaries",
+			"args": 0
+		},
+		{
+			"channel": "vault:update",
+			"args": 2
+		},
+		{
 			"channel": "viewer:close",
 			"args": 1
 		},
@@ -461,6 +497,7 @@
 		"shell:state",
 		"stack:dropdown",
 		"tabs:state",
-		"toolpanel:state"
+		"toolpanel:state",
+		"vault:state"
 	]
 }

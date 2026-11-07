@@ -68,6 +68,9 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public Microsoft.UI.Windowing.AppWindow AppWindow => _window.AppWindow;
 
+	/// <summary>The window's handle, which owns a Windows Hello prompt (HelloSealer).</summary>
+	public nint Hwnd => _window.Hwnd;
+
 	/// <summary>Shows the window; test runs never take focus (AGENTS.md).</summary>
 	public void Show() => _window.Show(activate: !TestHooks.KeepsOutOfTheWay);
 

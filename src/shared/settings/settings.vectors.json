@@ -6,7 +6,7 @@
 		"theme": "system", "accent": "yellow", "customColor": "#D9B872", "searchEngine": "google", "homepage": "", "startShortcuts": null,
 		"blockTrackers": true, "preserveOriginals": true, "defaultQuality": 80, "dohProvider": "cloudflare",
 		"tabOrganization": "manual", "autoCloseRule": "day", "autoCloseCustomHours": 12, "autoCloseHour": 3, "autoCloseMinute": 0,
-		"acceleratedCanvas": true, "securityRealtime": true, "sidebarPinned": true, "showFavouritesBar": true, "passwordAutofill": true,
+		"acceleratedCanvas": true, "securityRealtime": true, "sidebarPinned": true, "showFavouritesBar": true, "passwordAutofill": false,
 		"persistentProfile": false, "restoreTabs": false, "tabDropdowns": false, "tabBarPosition": "left", "tabColours": "colour", "verticalTabWidth": 240, "verticalTabsCollapsed": false
 	},
 	"parseAccepted": [

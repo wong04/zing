@@ -127,6 +127,10 @@ internal static class Native
 
 	[DllImport("user32.dll")]
 	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool IsWindowVisible(nint hwnd);
+
+	[DllImport("user32.dll")]
+	[return: MarshalAs(UnmanagedType.Bool)]
 	public static extern bool SetForegroundWindow(nint hwnd);
 
 	[DllImport("user32.dll")]

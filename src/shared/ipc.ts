@@ -10,6 +10,7 @@ import type { Settings, SettingKey } from './settings'
 import type { DiagnosticReport } from './unblock/blockDiagnostics'
 import type { DnsOutcome, DnsPreview } from './unblock/dnsSetup'
 import type { RelayAttemptEvent, RelayOpenResult } from './unblock/relayOpen'
+import type { LoginEdit, LoginSummary, NewLogin, PasswordHistoryEntry, VaultState } from './vault/vault'
 import type {
 	AccountOutcome,
 	AccountState,
@@ -386,6 +387,24 @@ export interface InvokeContract {
 	'account:update-profile': { args: [displayName: string, email: string]; result: AccountOutcome }
 	'account:require-password': { args: [required: boolean]; result: AccountOutcome }
 	'account:delete': { args: []; result: AccountOutcome }
+	/** Whether the vault is on, whether Windows Hello is set up, and how many logins it holds. Asks nothing. */
+	'vault:get': { args: []; result: VaultState }
+	/** Every login without its password, those in Recently deleted included. Never asks Windows Hello. Rejects (VaultOffException) while the vault is off. */
+	'vault:summaries': { args: []; result: LoginSummary[] }
+	/** One login's password, after Windows Hello. Rejects with HelloCancelledException when the prompt is dismissed, HelloUnavailableException without Hello. */
+	'vault:reveal': { args: [id: string]; result: string }
+	/** One of a login's old passwords, after Windows Hello; index 0 is the one replaced most recently. */
+	'vault:reveal-history': { args: [id: string, index: number]; result: string }
+	/** Saves a new login after Windows Hello and answers its ID. The origin may be any address on the site. */
+	'vault:save': { args: [login: NewLogin]; result: string }
+	/** Edits a login. A `password` asks Windows Hello first and moves the old one into the history; without one there's no prompt. */
+	'vault:update': { args: [id: string, edit: LoginEdit]; result: void }
+	/** Moves a login to Recently deleted. No prompt. */
+	'vault:delete': { args: [id: string]; result: void }
+	/** Brings a login back from Recently deleted. No prompt. */
+	'vault:restore': { args: [id: string]; result: void }
+	/** When each old password was replaced, newest first. No passwords and no prompt. */
+	'vault:history': { args: [id: string]; result: PasswordHistoryEntry[] }
 	'overview:close': { args: []; result: void }
 }
 
@@ -402,6 +421,7 @@ export interface EventContract {
 	'shell:state': ShellState
 	'toolpanel:state': ToolPanelsState
 	'account:state': AccountState
+	'vault:state': VaultState
 	'engines:progress': EngineProgress
 	'engines:output': EngineOutput
 	'engines:exit': EngineExit
@@ -551,4 +571,14 @@ export interface ZingApi {
 	openViewerFile(token: string, panelId: string): Promise<ViewerOpened>
 	closeViewerFile(id: string): Promise<void>
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe
+	getVaultState(): Promise<VaultState>
+	vaultSummaries(): Promise<LoginSummary[]>
+	revealPassword(id: string): Promise<string>
+	revealOldPassword(id: string, index: number): Promise<string>
+	saveLogin(login: NewLogin): Promise<string>
+	updateLogin(id: string, edit: LoginEdit): Promise<void>
+	deleteLogin(id: string): Promise<void>
+	restoreLogin(id: string): Promise<void>
+	loginHistory(id: string): Promise<PasswordHistoryEntry[]>
+	onVaultState(listener: (state: VaultState) => void): Unsubscribe
 }

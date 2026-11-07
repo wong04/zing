@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Zing.Core.Vault;
 
 /// <summary>What the renderer may know about a login: everything but the password. Times are Unix milliseconds.</summary>
@@ -10,7 +12,8 @@ public sealed record LoginSummary(
 	long CreatedAt,
 	long UpdatedAt,
 	long PasswordUpdatedAt,
-	long? DeletedAt);
+	// The renderer tests deletedAt === null, so it must be an explicit null, not an absent key.
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] long? DeletedAt);
 
 /// <summary>"Never for this site", kept per exact origin apart from the logins.</summary>
 public sealed record NeverSave(string Origin);

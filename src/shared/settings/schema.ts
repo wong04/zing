@@ -117,7 +117,8 @@ export const SETTINGS_SCHEMA = {
 	showFavouritesBar: flag(true),
 	/** The empty favourites bar's "Press Ctrl+D" hint, until its close button is clicked. */
 	favouritesHint: flag(true),
-	passwordAutofill: flag(true),
+	/** The password vault's switch. Off by default: on, Zing keeps logins in vault/ in the profile, behind Windows Hello. */
+	passwordAutofill: flag(false),
 	tabDropdowns: flag(false),
 	/** Zing: where the tabs sit. On the side by default, as in Arc and Dia (docs/phase-4.md). */
 	tabBarPosition: oneOf(TAB_BAR_POSITIONS, 'left'),

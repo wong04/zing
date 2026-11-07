@@ -13,6 +13,9 @@ public static class AppPaths
 	public static string Library => Path.Combine(UserData, "library.json");
 	public static string Session => Path.Combine(UserData, "session.json");
 
+	/// <summary>The password vault: vault.zing, keys.bin and sync.json (Zing.Core.Vault.VaultStore). Not created until the first save.</summary>
+	public static string Vault => Path.Combine(UserData, "vault");
+
 	/// <summary>
 	/// The DNS settings from before Network &amp; VPN changed them, kept only until Undo. Local rather than roaming: they describe this
 	/// PC's adapters. e2e runs keep it in their scratch folder like everything else.

@@ -106,6 +106,11 @@ public static class TestHooks
 	/// </summary>
 	public static Zing.Core.Net.IDnsSystem? DnsSystem() => IsEndToEndRun ? Dns : null;
 
+	private static readonly FakeHelloSealer Hello = new();
+
+	/// <summary>What the vault asks for Windows Hello in an e2e run: a fake that never prompts, answering as "vault-hello" set it (FakeHelloSealer). Null outside one, so a real launch gets the real HelloSealer.</summary>
+	public static FakeHelloSealer? HelloSealer() => IsEndToEndRun ? Hello : null;
+
 	private static int? _closeNextAt;
 	private static WindowScope? _newest;
 	private static int _windows;
@@ -114,6 +119,7 @@ public static class TestHooks
 	/// <summary>
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
+	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers;
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
@@ -172,6 +178,11 @@ public static class TestHooks
 		{
 			var api = (Apis.TryGetValue(window, out var consentApi) ? consentApi() : null) ?? throw new InvalidOperationException("relay-consent needs a window with its chrome started");
 			api.Consent.Allow();
+			return true;
+		}
+		if (action == "vault-hello")
+		{
+			Hello.Answer(root.GetProperty("result").GetString()!);
 			return true;
 		}
 		if (action == "dns-stub")

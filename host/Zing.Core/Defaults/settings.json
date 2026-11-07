@@ -25,7 +25,7 @@
 	"recentFeatures": [],
 	"showFavouritesBar": true,
 	"favouritesHint": true,
-	"passwordAutofill": true,
+	"passwordAutofill": false,
 	"tabDropdowns": false,
 	"tabBarPosition": "left",
 	"tabColours": "colour",

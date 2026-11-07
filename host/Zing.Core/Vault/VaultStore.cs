@@ -1,0 +1,402 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+namespace Zing.Core.Vault;
+
+/// <summary>A login to save: the origin may be any address on the site, and is stored as its exact origin.</summary>
+public sealed record NewLogin(string Origin, string Username, string Password, string Title, string Note);
+
+/// <summary>One old password, without the password: when it was replaced. Newest first; the index is what <see cref="VaultStore.HistoryPasswordAsync"/> takes.</summary>
+public sealed record PasswordHistoryEntry(long ReplacedAt);
+
+/// <summary>One stored item, sealed and exactly as the server stores it. Nothing but the ID, the version and the tombstone flag is in the clear.</summary>
+public sealed record LoginRecord(string ItemId, long Version, byte[] Summary, byte[] Password, byte[][] History, bool Tombstone);
+
+/// <summary>A change waiting in vault/sync.json for sync (Task 13) to send: the item and the version the change made.</summary>
+public sealed record QueuedChange(string ItemId, long Version);
+
+/// <summary>What the renderer shows about the vault without asking for any of it: on or off, Hello set up, and how many logins.</summary>
+public sealed record VaultState(bool Enabled, bool HelloAvailable, int Count);
+
+/// <summary>A vault call while <c>passwordAutofill</c> is off: there's no store to answer it.</summary>
+public sealed class VaultOffException() : Exception("The password vault is off. Turn on \"Offer to fill saved passwords\" in Settings.");
+
+public sealed class VaultItemNotFoundException(string id) : Exception($"No login with ID {id} in the vault");
+
+/// <summary>Deleting a login that's already in Recently deleted, or restoring one that isn't.</summary>
+public sealed class VaultItemStateException(string message) : Exception(message);
+
+/// <summary>A vault file exists but can't be read, doesn't decrypt, or has no keys for its items. Nothing is moved aside: the file may hold the only copy of the passwords.</summary>
+public sealed class VaultFileException(string path, Exception inner) : Exception($"Could not read the vault at {path}: {inner.Message}", inner)
+{
+	public string Path { get; } = path;
+}
+
+/// <summary>
+/// The local password vault (vault/ in the profile). Summaries are decrypted once, with the DPAPI-sealed index key, and kept in
+/// memory, so listing and searching never ask Windows Hello. Every password read and every write that seals a password asks Hello
+/// exactly once; the secret key is never cached and is wiped as soon as that operation is done. With no Hello, every write is refused.
+/// </summary>
+/// <remarks>
+/// A password or old password is sealed under the version its item had when it was sealed, and the summary (sealed under the item's
+/// current version) records each of those versions. So a summary-only change, a delete, and sync's merge, which keeps the winning
+/// password's ciphertext and moves the losing one into the history as it is, bump the version without needing the secret key; and a
+/// password can't be swapped for another item's, or for an older one, because its sealed version is pinned by the summary.
+/// </remarks>
+public sealed class VaultStore
+{
+	public const string VaultFileName = "vault.zing";
+	public const string KeysFileName = "keys.bin";
+	public const string SyncFileName = "sync.json";
+
+	private const int Format = 1;
+
+	private readonly string _dir;
+	private readonly ISecretCipher _cipher;
+	private readonly IHelloSealer _sealer;
+	private readonly IClock _clock;
+	private readonly Lock _gate = new();
+	private readonly SemaphoreSlim _creatingKeys = new(1, 1);
+	private readonly List<LoginRecord> _records;
+	private readonly List<QueuedChange> _queued;
+	private readonly Dictionary<string, SummaryPayload> _summaries;
+	private VaultKeys? _keys;
+
+	/// <summary>Fires after every write, and when Hello becomes available or stops being.</summary>
+	public event Action? Changed;
+
+	/// <exception cref="VaultFileException">A vault file can't be read or doesn't decrypt.</exception>
+	public VaultStore(string dir, ISecretCipher cipher, IHelloSealer sealer, IClock clock)
+	{
+		_dir = dir;
+		_cipher = cipher;
+		_sealer = sealer;
+		_clock = clock;
+		_keys = Guard(KeysFile, VaultKeys.Load);
+		_records = Guard(VaultFile, LoadRecords);
+		_queued = Guard(SyncFile, LoadQueue);
+		_summaries = Guard(VaultFile, _ => DecryptSummaries());
+		_sealer.AvailabilityChanged += () => Changed?.Invoke();
+	}
+
+	public bool HelloAvailable => _sealer.Available;
+
+	/// <summary>Null until the first save makes the keys.</summary>
+	public string? VaultId => _keys?.VaultId;
+
+	public IReadOnlyList<LoginRecord> Records
+	{
+		get
+		{
+			lock (_gate) return [.. _records];
+		}
+	}
+
+	public IReadOnlyList<QueuedChange> Queued
+	{
+		get
+		{
+			lock (_gate) return [.. _queued];
+		}
+	}
+
+	/// <summary>Every login, those in Recently deleted included. No Hello.</summary>
+	public IReadOnlyList<LoginSummary> Summaries()
+	{
+		lock (_gate) return [.. _records.Where(r => !r.Tombstone).Select(r => _summaries[r.ItemId].ToSummary(r.ItemId))];
+	}
+
+	/// <summary>No Hello.</summary>
+	public IReadOnlyList<PasswordHistoryEntry> History(string id)
+	{
+		lock (_gate) return [.. Summary(id).History.Select(h => new PasswordHistoryEntry(h.ReplacedAt))];
+	}
+
+	/// <summary>Asks Hello once.</summary>
+	public async Task<string> PasswordAsync(string id)
+	{
+		var (record, summary) = Find(id);
+		return await OpenSecretAsync(record.ItemId, record.Password, summary.PasswordVersion);
+	}
+
+	/// <summary>Asks Hello once. Index 0 is the password replaced most recently.</summary>
+	public async Task<string> HistoryPasswordAsync(string id, int index)
+	{
+		var (record, summary) = Find(id);
+		if (index < 0 || index >= summary.History.Count) throw new ArgumentOutOfRangeException(nameof(index), index, $"The login has {summary.History.Count} old passwords");
+		return await OpenSecretAsync(record.ItemId, record.History[index], summary.History[index].Version);
+	}
+
+	/// <summary>Asks Hello once (the first save also makes the keys, with that one Hello call). Returns the new login's ID.</summary>
+	public async Task<string> SaveAsync(NewLogin login)
+	{
+		var origin = VaultModel.OriginOf(login.Origin);
+		RequireHello();
+		var (keys, secretKey) = await SecretKeyForWriteAsync();
+		try
+		{
+			string id;
+			lock (_gate)
+			{
+				id = Guid.NewGuid().ToString("N");
+				var now = _clock.Now();
+				var summary = new SummaryPayload(origin, login.Username, login.Title, login.Note, now, now, now, null, 1, []);
+				var password = Seal(secretKey, keys, id, 1, ItemPart.Password, login.Password);
+				Commit(null, new LoginRecord(id, 1, SealSummary(keys, id, 1, summary), password, [], false), summary);
+			}
+			Changed?.Invoke();
+			return id;
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(secretKey);
+		}
+	}
+
+	/// <summary>Asks Hello once. The replaced password goes into the history as it is, without being decrypted.</summary>
+	public async Task UpdatePasswordAsync(string id, string password)
+	{
+		Find(id);
+		RequireHello();
+		var keys = Keys();
+		var secretKey = await keys.SecretKeyAsync(_cipher, _sealer);
+		try
+		{
+			lock (_gate)
+			{
+				// Read again: another change may have landed while Hello was asking.
+				var (record, summary) = Find(id);
+				var version = record.Version + 1;
+				var now = _clock.Now();
+				var changed = summary with
+				{
+					UpdatedAt = now,
+					PasswordUpdatedAt = now,
+					PasswordVersion = version,
+					History = [new HistoryPayload(summary.PasswordVersion, now), .. summary.History],
+				};
+				var sealedPassword = Seal(secretKey, keys, id, version, ItemPart.Password, password);
+				Commit(record, record with { Version = version, Summary = SealSummary(keys, id, version, changed), Password = sealedPassword, History = [record.Password, .. record.History] }, changed);
+			}
+			Changed?.Invoke();
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(secretKey);
+		}
+	}
+
+	/// <summary>No Hello.</summary>
+	public void UpdateSummary(string id, string title, string note, string username) =>
+		EditSummary(id, (s, now) => s with { Title = title, Note = note, Username = username, UpdatedAt = now });
+
+	/// <summary>Moves the login to Recently deleted. No Hello.</summary>
+	public void Delete(string id) =>
+		EditSummary(id, (s, now) => s.DeletedAt is null ? s with { DeletedAt = now, UpdatedAt = now } : throw new VaultItemStateException($"Login {id} is already in Recently deleted"));
+
+	/// <summary>Brings a login back from Recently deleted. No Hello.</summary>
+	public void Restore(string id) =>
+		EditSummary(id, (s, now) => s.DeletedAt is not null ? s with { DeletedAt = null, UpdatedAt = now } : throw new VaultItemStateException($"Login {id} isn't in Recently deleted"));
+
+	private void EditSummary(string id, Func<SummaryPayload, long, SummaryPayload> edit)
+	{
+		RequireHello();
+		lock (_gate)
+		{
+			var (record, summary) = Find(id);
+			var keys = Keys();
+			var changed = edit(summary, _clock.Now());
+			var version = record.Version + 1;
+			Commit(record, record with { Version = version, Summary = SealSummary(keys, id, version, changed) }, changed);
+		}
+		Changed?.Invoke();
+	}
+
+	/// <summary>Writes the change: queued first, then the item, so a crash between the two leaves a queued change that's already stored, never a stored one that isn't queued.</summary>
+	private void Commit(LoginRecord? replaced, LoginRecord record, SummaryPayload summary)
+	{
+		List<LoginRecord> records = replaced is null ? [.. _records, record] : [.. _records.Select(r => ReferenceEquals(r, replaced) ? record : r)];
+		List<QueuedChange> queued = [.. _queued, new QueuedChange(record.ItemId, record.Version)];
+		JsonFiles.WriteAllBytesAtomic(SyncFile, JsonSerializer.SerializeToUtf8Bytes(new SyncFileContent(Format, queued), VaultJson.Options));
+		JsonFiles.WriteAllBytesAtomic(VaultFile, JsonSerializer.SerializeToUtf8Bytes(new VaultFileContent(Format, records), VaultJson.Options));
+		_records.Clear();
+		_records.AddRange(records);
+		_queued.Add(queued[^1]);
+		_summaries[record.ItemId] = summary;
+	}
+
+	/// <summary>The secret key for a write: unsealed with one Hello call, or, before the first save, made (and sealed) with one.</summary>
+	private async Task<(VaultKeys Keys, byte[] SecretKey)> SecretKeyForWriteAsync()
+	{
+		if (_keys is { } existing) return (existing, await existing.SecretKeyAsync(_cipher, _sealer));
+		await _creatingKeys.WaitAsync();
+		try
+		{
+			// Another first save may have made them while this one waited.
+			if (_keys is { } made) return (made, await made.SecretKeyAsync(_cipher, _sealer));
+			var created = await VaultKeys.CreateAsync(_cipher, _sealer);
+			try
+			{
+				lock (_gate)
+				{
+					created.Keys.Save(KeysFile);
+					_keys = created.Keys;
+				}
+				return created;
+			}
+			catch
+			{
+				CryptographicOperations.ZeroMemory(created.SecretKey);
+				throw;
+			}
+		}
+		finally
+		{
+			_creatingKeys.Release();
+		}
+	}
+
+	private async Task<string> OpenSecretAsync(string id, byte[] sealedBytes, long version)
+	{
+		var keys = Keys();
+		var secretKey = await keys.SecretKeyAsync(_cipher, _sealer);
+		byte[]? plain = null;
+		try
+		{
+			plain = VaultCrypto.Open(secretKey, sealedBytes, new ItemAd(keys.VaultId, id, version, ItemPart.Password));
+			return Encoding.UTF8.GetString(plain);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(secretKey);
+			if (plain is not null) CryptographicOperations.ZeroMemory(plain);
+		}
+	}
+
+	private static byte[] Seal(byte[] secretKey, VaultKeys keys, string id, long version, ItemPart part, string text)
+	{
+		var plain = Encoding.UTF8.GetBytes(text);
+		try
+		{
+			return VaultCrypto.Seal(secretKey, plain, new ItemAd(keys.VaultId, id, version, part));
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(plain);
+		}
+	}
+
+	private byte[] SealSummary(VaultKeys keys, string id, long version, SummaryPayload summary)
+	{
+		var indexKey = keys.IndexKey(_cipher);
+		try
+		{
+			return VaultCrypto.Seal(indexKey, JsonSerializer.SerializeToUtf8Bytes(summary, VaultJson.Options), new ItemAd(keys.VaultId, id, version, ItemPart.Summary));
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(indexKey);
+		}
+	}
+
+	private void RequireHello()
+	{
+		if (!_sealer.Available) throw new HelloUnavailableException("Set up Windows Hello to use the password vault. Zing keeps passwords only behind Hello.");
+	}
+
+	private VaultKeys Keys() => _keys ?? throw new InvalidOperationException("The vault has no keys yet: only a save makes them");
+
+	private (LoginRecord Record, SummaryPayload Summary) Find(string id)
+	{
+		lock (_gate)
+		{
+			var record = _records.Find(r => r.ItemId == id && !r.Tombstone) ?? throw new VaultItemNotFoundException(id);
+			return (record, _summaries[id]);
+		}
+	}
+
+	private SummaryPayload Summary(string id) => Find(id).Summary;
+
+	private string KeysFile => System.IO.Path.Combine(_dir, KeysFileName);
+
+	private string VaultFile => System.IO.Path.Combine(_dir, VaultFileName);
+
+	private string SyncFile => System.IO.Path.Combine(_dir, SyncFileName);
+
+	/// <summary>Any failure to read or open a vault file is a <see cref="VaultFileException"/> naming it.</summary>
+	private static T Guard<T>(string path, Func<string, T> load)
+	{
+		try
+		{
+			return load(path);
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or CryptographicException or VaultTamperedException or PaddingException)
+		{
+			throw new VaultFileException(path, error);
+		}
+	}
+
+	private static List<LoginRecord> LoadRecords(string path)
+	{
+		if (!File.Exists(path)) return [];
+		var file = JsonSerializer.Deserialize<VaultFileContent>(File.ReadAllBytes(path), VaultJson.Options) ?? throw new InvalidDataException($"{path} is empty");
+		if (file.Format != Format) throw new InvalidDataException($"{path} is format {file.Format}; this Zing reads {Format}");
+		return [.. file.Items];
+	}
+
+	private static List<QueuedChange> LoadQueue(string path)
+	{
+		if (!File.Exists(path)) return [];
+		var file = JsonSerializer.Deserialize<SyncFileContent>(File.ReadAllBytes(path), VaultJson.Options) ?? throw new InvalidDataException($"{path} is empty");
+		if (file.Format != Format) throw new InvalidDataException($"{path} is format {file.Format}; this Zing reads {Format}");
+		return [.. file.Queued];
+	}
+
+	private Dictionary<string, SummaryPayload> DecryptSummaries()
+	{
+		var summaries = new Dictionary<string, SummaryPayload>(StringComparer.Ordinal);
+		var live = _records.Where(r => !r.Tombstone).ToList();
+		if (live.Count == 0) return summaries;
+		var keys = _keys ?? throw new InvalidDataException($"The vault has {live.Count} logins but no {KeysFileName} to open them");
+		var indexKey = keys.IndexKey(_cipher);
+		try
+		{
+			foreach (var record in live)
+			{
+				var plain = VaultCrypto.Open(indexKey, record.Summary, new ItemAd(keys.VaultId, record.ItemId, record.Version, ItemPart.Summary));
+				var summary = JsonSerializer.Deserialize<SummaryPayload>(plain, VaultJson.Options) ?? throw new InvalidDataException($"Login {record.ItemId} has an empty summary");
+				if (summary.History.Count != record.History.Length) throw new InvalidDataException($"Login {record.ItemId}'s summary lists {summary.History.Count} old passwords but it holds {record.History.Length}");
+				summaries[record.ItemId] = summary;
+			}
+			return summaries;
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(indexKey);
+		}
+	}
+
+	private sealed record VaultFileContent(int Format, IReadOnlyList<LoginRecord> Items);
+
+	private sealed record SyncFileContent(int Format, IReadOnlyList<QueuedChange> Queued);
+}
+
+/// <summary>What the summary ciphertext holds: the login's fields, and the version each password ciphertext was sealed under.</summary>
+internal sealed record SummaryPayload(
+	string Origin,
+	string Username,
+	string Title,
+	string Note,
+	long CreatedAt,
+	long UpdatedAt,
+	long PasswordUpdatedAt,
+	long? DeletedAt,
+	long PasswordVersion,
+	IReadOnlyList<HistoryPayload> History)
+{
+	public LoginSummary ToSummary(string id) => new(id, Origin, Username, Title, Note, CreatedAt, UpdatedAt, PasswordUpdatedAt, DeletedAt);
+}
+
+/// <summary>One old password: the version it was sealed under (as the password), and when it was replaced.</summary>
+internal sealed record HistoryPayload(long Version, long ReplacedAt);
