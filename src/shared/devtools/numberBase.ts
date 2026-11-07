@@ -68,12 +68,17 @@ export function formatBinaryByteCount(count: bigint): string {
 	if (magnitude < 1024n) return `${grouped(Number(count), 0)} bytes`
 	let scaled = Number(count) / 1024
 	let index = 0
-	while (Math.abs(scaled) >= 1024 && index < byteUnits.length - 1) {
+	// Compared as written, so 1,048,575 bytes is "1 MB" and never "1,024 KB".
+	while (Math.abs(roundedIn(scaled, index)) >= 1024 && index < byteUnits.length - 1) {
 		scaled /= 1024
 		index += 1
 	}
 	const { unit, fractionDigits } = byteUnits[index] as (typeof byteUnits)[number]
 	return `${grouped(scaled, fractionDigits)} ${unit}`
+}
+
+function roundedIn(value: number, index: number): number {
+	return Number(value.toFixed((byteUnits[index] as (typeof byteUnits)[number]).fractionDigits))
 }
 
 function grouped(value: number, maximumFractionDigits: number): string {
