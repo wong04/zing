@@ -17,6 +17,7 @@
 		"gen:reader": "rolldown scripts/reader-entry.ts --format iife --file host/Zing.Host/Assets/reader.js && rolldown scripts/gen-reader.ts --platform node --format esm --file out/gen-reader.mjs && node out/gen-reader.mjs",
 		"build:host": "npm run gen:reader && dotnet build host/Zing.Host -c Release",
 		"test:host": "dotnet test host/Zing.Core.Tests",
+		"test:server": "dotnet test server/Zing.Server.Tests",
 		"test:e2e": "npm run build && npm run build:host && playwright test",
 		"test:e2e:real-input": "npm run build && npm run build:host && playwright test --grep @real-input",
 		"start": "npm run build && npm run build:host && \"host\\Zing.Host\\bin\\Release\\net9.0-windows10.0.22621.0\\win-x64\\Zing.exe\""

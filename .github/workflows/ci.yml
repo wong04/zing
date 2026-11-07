@@ -33,6 +33,41 @@ jobs:
       - run: npm test
       - run: npm run test:host
 
+  # The sync server: its tests, then the Docker image booted with throwaway values and probed on /health.
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('server/**/*.csproj', 'global.json') }}
+      - run: dotnet test server/Zing.Server.Tests
+      - run: docker build -t zing-server server
+      - name: Boot the image and wait for /health
+        run: |
+          docker run -d --name zing-server -p 8080:8080 \
+            -e PORT=8080 \
+            -e ASPNETCORE_ENVIRONMENT=Staging \
+            -e ZING_SERVER_FAKE_GOOGLE=1 \
+            -e ZING_SESSION_KEY="$(openssl rand -base64 32)" \
+            -e ZING_ALLOWED_SUBS=ci-throwaway-sub \
+            -e ZING_DB_PATH=/tmp/zing.db \
+            zing-server
+          for attempt in $(seq 1 30); do
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health)" = "200" ]; then
+              echo "healthy after $attempt attempt(s)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "no 200 from /health within 60s"
+          docker logs zing-server
+          exit 1
+
   # The e2e suite split across runners (Playwright sharding): each builds Zing and runs its third.
   e2e:
     runs-on: windows-latest
