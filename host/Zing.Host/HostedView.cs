@@ -210,9 +210,16 @@ public sealed class HostedView
 		Live--;
 		_tracked.Dispose();
 		_window.Forget(this);
-		Controller.Close();
-		// A view's window goes with the main window, so it may already be gone.
-		if (!_window.IsClosed && !Native.DestroyWindow(_hwnd)) throw new NativeCallException("DestroyWindow view");
+		try
+		{
+			Controller.Close();
+		}
+		finally
+		{
+			// Even when the controller's close failed, or its window would be left behind. A view's window goes with the
+			// main window, so it may already be gone.
+			if (!_window.IsClosed && !Native.DestroyWindow(_hwnd)) throw new NativeCallException("DestroyWindow view");
+		}
 	}
 
 	private void Stack(nint insertAfter)

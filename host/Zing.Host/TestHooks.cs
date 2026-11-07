@@ -332,6 +332,9 @@ public static class TestHooks
 		Faults.Error(kind, error);
 		var file = Environment.GetEnvironmentVariable("ZING_ERRORS_FILE");
 		if (!IsEndToEndRun || string.IsNullOrEmpty(file)) return;
-		File.AppendAllText(file, $"{kind}: {error}\n\n");
+		// Called from thread-pool continuations too: two appends at once would hit a sharing violation.
+		lock (RecordGate) File.AppendAllText(file, $"{kind}: {error}\n\n");
 	}
+
+	private static readonly object RecordGate = new();
 }
