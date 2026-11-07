@@ -17,7 +17,9 @@ public sealed record LoginRecord(string ItemId, long Version, byte[] Summary, by
 public sealed record QueuedChange(string ItemId, long Version);
 
 /// <summary>What the renderer shows about the vault without asking for any of it: on or off, Hello set up, and how many logins.</summary>
-public sealed record VaultState(bool Enabled, bool HelloAvailable, int Count);
+/// <param name="Count">Logins not in Recently deleted.</param>
+/// <param name="Error">"unreadable" when a vault file couldn't be read at launch, so the vault is off and its files are left as they are.</param>
+public sealed record VaultState(bool Enabled, bool HelloAvailable, int Count, string? Error = null);
 
 /// <summary>A vault call while <c>passwordAutofill</c> is off: there's no store to answer it.</summary>
 public sealed class VaultOffException() : Exception("The password vault is off. Turn on \"Offer to fill saved passwords\" in Settings.");
@@ -155,7 +157,13 @@ public sealed class VaultStore
 	}
 
 	/// <summary>Asks Hello once. The replaced password goes into the history as it is, without being decrypted.</summary>
-	public async Task UpdatePasswordAsync(string id, string password)
+	public Task UpdatePasswordAsync(string id, string password) => ChangePasswordAsync(id, password, s => s);
+
+	/// <summary>A new password and the summary's fields in one change: one Hello call, one version, one queued change. A cancel changes nothing.</summary>
+	public Task UpdateLoginAsync(string id, string title, string note, string username, string password) =>
+		ChangePasswordAsync(id, password, s => s with { Title = title, Note = note, Username = username });
+
+	private async Task ChangePasswordAsync(string id, string password, Func<SummaryPayload, SummaryPayload> edit)
 	{
 		Find(id);
 		RequireHello();
@@ -169,7 +177,7 @@ public sealed class VaultStore
 				var (record, summary) = Find(id);
 				var version = record.Version + 1;
 				var now = _clock.Now();
-				var changed = summary with
+				var changed = edit(summary) with
 				{
 					UpdatedAt = now,
 					PasswordUpdatedAt = now,
@@ -213,7 +221,10 @@ public sealed class VaultStore
 		Changed?.Invoke();
 	}
 
-	/// <summary>Writes the change: queued first, then the item, so a crash between the two leaves a queued change that's already stored, never a stored one that isn't queued.</summary>
+	/// <summary>
+	/// Writes the change: queued first, then the item. A crash between the two leaves a change queued but not stored (and the next write
+	/// reuses that version), never one stored but not queued. So queue entries are hints: sync (Task 13) sends each item as it's stored now.
+	/// </summary>
 	private void Commit(LoginRecord? replaced, LoginRecord record, SummaryPayload summary)
 	{
 		List<LoginRecord> records = replaced is null ? [.. _records, record] : [.. _records.Select(r => ReferenceEquals(r, replaced) ? record : r)];
@@ -342,6 +353,16 @@ public sealed class VaultStore
 		if (!File.Exists(path)) return [];
 		var file = JsonSerializer.Deserialize<VaultFileContent>(File.ReadAllBytes(path), VaultJson.Options) ?? throw new InvalidDataException($"{path} is empty");
 		if (file.Format != Format) throw new InvalidDataException($"{path} is format {file.Format}; this Zing reads {Format}");
+		if (file.Items is null) throw new InvalidDataException($"{path} has no items list");
+		var ids = new HashSet<string>(StringComparer.Ordinal);
+		foreach (var item in file.Items)
+		{
+			if (item is null) throw new InvalidDataException($"{path} has a null item");
+			if (string.IsNullOrEmpty(item.ItemId)) throw new InvalidDataException($"{path} has an item without an ID");
+			if (!ids.Add(item.ItemId)) throw new InvalidDataException($"{path} holds item {item.ItemId} twice");
+			if (item.Version < 1) throw new InvalidDataException($"Item {item.ItemId} has version {item.Version}; versions start at 1");
+			if (item.Summary is null || item.Password is null || item.History is null || item.History.Any(h => h is null)) throw new InvalidDataException($"Item {item.ItemId} is missing a ciphertext");
+		}
 		return [.. file.Items];
 	}
 
@@ -350,24 +371,27 @@ public sealed class VaultStore
 		if (!File.Exists(path)) return [];
 		var file = JsonSerializer.Deserialize<SyncFileContent>(File.ReadAllBytes(path), VaultJson.Options) ?? throw new InvalidDataException($"{path} is empty");
 		if (file.Format != Format) throw new InvalidDataException($"{path} is format {file.Format}; this Zing reads {Format}");
+		if (file.Queued is null) throw new InvalidDataException($"{path} has no queued list");
+		if (file.Queued.Any(c => c is null || string.IsNullOrEmpty(c.ItemId))) throw new InvalidDataException($"{path} has a queued change without an item ID");
 		return [.. file.Queued];
 	}
 
 	private Dictionary<string, SummaryPayload> DecryptSummaries()
 	{
 		var summaries = new Dictionary<string, SummaryPayload>(StringComparer.Ordinal);
-		var live = _records.Where(r => !r.Tombstone).ToList();
-		if (live.Count == 0) return summaries;
-		var keys = _keys ?? throw new InvalidDataException($"The vault has {live.Count} logins but no {KeysFileName} to open them");
+		if (_records.Count == 0) return summaries;
+		var keys = _keys ?? throw new InvalidDataException($"The vault has {_records.Count} items but no {KeysFileName} to open them");
 		var indexKey = keys.IndexKey(_cipher);
 		try
 		{
-			foreach (var record in live)
+			foreach (var record in _records)
 			{
 				var plain = VaultCrypto.Open(indexKey, record.Summary, new ItemAd(keys.VaultId, record.ItemId, record.Version, ItemPart.Summary));
 				var summary = JsonSerializer.Deserialize<SummaryPayload>(plain, VaultJson.Options) ?? throw new InvalidDataException($"Login {record.ItemId} has an empty summary");
-				if (summary.History.Count != record.History.Length) throw new InvalidDataException($"Login {record.ItemId}'s summary lists {summary.History.Count} old passwords but it holds {record.History.Length}");
-				summaries[record.ItemId] = summary;
+				CheckSummary(record, summary);
+				// Ruling 25: the tombstone flag is outside every ciphertext's associated data, so it counts only if the sealed summary is deleted too.
+				if (record.Tombstone && summary.DeletedAt is null) throw new VaultTamperedException($"Item {record.ItemId} is flagged as a tombstone but its sealed summary isn't deleted");
+				if (!record.Tombstone) summaries[record.ItemId] = summary;
 			}
 			return summaries;
 		}
@@ -375,6 +399,14 @@ public sealed class VaultStore
 		{
 			CryptographicOperations.ZeroMemory(indexKey);
 		}
+	}
+
+	private static void CheckSummary(LoginRecord record, SummaryPayload summary)
+	{
+		if (summary.Origin is null || summary.Username is null || summary.Title is null || summary.Note is null) throw new InvalidDataException($"Login {record.ItemId}'s summary is missing a field");
+		if (summary.History is null || summary.History.Any(h => h is null)) throw new InvalidDataException($"Login {record.ItemId}'s summary has no history list");
+		if (summary.History.Count != record.History.Length) throw new InvalidDataException($"Login {record.ItemId}'s summary lists {summary.History.Count} old passwords but it holds {record.History.Length}");
+		if (summary.PasswordVersion < 1 || summary.PasswordVersion > record.Version) throw new InvalidDataException($"Login {record.ItemId}'s password is sealed at version {summary.PasswordVersion}, outside 1 to {record.Version}");
 	}
 
 	private sealed record VaultFileContent(int Format, IReadOnlyList<LoginRecord> Items);

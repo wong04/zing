@@ -77,6 +77,32 @@ public sealed class VaultBridgeTests : IDisposable
 	}
 
 	[Fact]
+	public async Task AnEditWithAPasswordIsOneChange()
+	{
+		var id = Value(await Invoke(_bridge, "vault:save", Login)).GetString()!;
+
+		Ok(await Invoke(_bridge, "vault:update", id, new { username = "ada2", title = "t", note = "n", password = "new one" }));
+
+		Assert.Equal(2, _vault.Records.Single().Version);
+		Assert.Equal(2, _vault.Queued.Count);
+		Assert.Equal("ada2", _vault.Summaries().Single().Username);
+	}
+
+	[Fact]
+	public async Task AVaultThatCouldntBeReadSaysSoInItsState()
+	{
+		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+		var bridge = new Bridge();
+		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), VaultUnreadable: true), new FakeWindowHost(), "test");
+
+		var state = Value(await Invoke(bridge, "vault:get"));
+
+		Assert.False(state.GetProperty("enabled").GetBoolean());
+		Assert.Equal("unreadable", state.GetProperty("error").GetString());
+		Assert.Equal(nameof(VaultOffException), ErrorName(await Invoke(bridge, "vault:summaries")));
+	}
+
+	[Fact]
 	public async Task AnEditWithoutAPasswordNeverAsksHello()
 	{
 		var id = Value(await Invoke(_bridge, "vault:save", Login)).GetString()!;
@@ -109,7 +135,8 @@ public sealed class VaultBridgeTests : IDisposable
 		_sealer.Result = HelloResult.Unavailable;
 		_sealer.Announce();
 
-		Assert.Equal([new VaultState(true, true, 1), new VaultState(true, true, 1), new VaultState(true, false, 1)], PushedStates());
+		// A login in Recently deleted isn't counted.
+		Assert.Equal([new VaultState(true, true, 1), new VaultState(true, true, 0), new VaultState(true, false, 0)], PushedStates());
 	}
 
 	[Fact]

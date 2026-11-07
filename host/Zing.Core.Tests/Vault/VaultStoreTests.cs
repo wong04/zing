@@ -353,6 +353,255 @@ public sealed class VaultStoreTests : IDisposable
 		Assert.Equal(VaultFile, error.Path);
 	}
 
+	/// <summary>Opening must raise VaultFileException naming the file, and leave every file's bytes as they were.</summary>
+	private void AssertRefusedUnchanged(string path)
+	{
+		var files = Snapshot();
+
+		var error = Assert.Throws<VaultFileException>(() => Open());
+
+		Assert.Equal(path, error.Path);
+		Assert.Equal(files, Snapshot());
+	}
+
+	private async Task<JsonNode> SavedVaultJson()
+	{
+		var store = Open();
+		var id = await store.SaveAsync(Login);
+		await store.UpdatePasswordAsync(id, "second");
+		return JsonNode.Parse(File.ReadAllText(VaultFile))!;
+	}
+
+	public static TheoryData<string> MalformedVaultFiles() =>
+	[
+		"",
+		"""{"format":1""",
+		"null",
+		"[]",
+		"""{"format":1}""",
+		"""{"format":2,"items":[]}""",
+		"""{"items":[]}""",
+		"""{"format":1,"items":null}""",
+		"""{"format":1,"items":[null]}""",
+	];
+
+	[Theory]
+	[MemberData(nameof(MalformedVaultFiles))]
+	public async Task AMalformedVaultFileIsRefusedAndLeftAsItIs(string content)
+	{
+		await Open().SaveAsync(Login);
+		File.WriteAllText(VaultFile, content);
+
+		AssertRefusedUnchanged(VaultFile);
+	}
+
+	[Theory]
+	[InlineData("itemId", null)]
+	[InlineData("itemId", "")]
+	[InlineData("summary", null)]
+	[InlineData("password", null)]
+	[InlineData("history", null)]
+	[InlineData("version", 0)]
+	public async Task AnItemWithANullOrEmptyFieldIsRefused(string field, object? value)
+	{
+		var file = await SavedVaultJson();
+		file["items"]![0]![field] = value switch
+		{
+			null => null,
+			string text => JsonValue.Create(text),
+			int number => JsonValue.Create(number),
+			_ => throw new ArgumentException($"No JSON for {value}"),
+		};
+		File.WriteAllText(VaultFile, file.ToJsonString());
+
+		AssertRefusedUnchanged(VaultFile);
+	}
+
+	[Theory]
+	[InlineData("itemId")]
+	[InlineData("summary")]
+	[InlineData("password")]
+	[InlineData("history")]
+	[InlineData("version")]
+	public async Task AnItemWithoutAFieldIsRefused(string field)
+	{
+		var file = await SavedVaultJson();
+		file["items"]![0]!.AsObject().Remove(field);
+		File.WriteAllText(VaultFile, file.ToJsonString());
+
+		AssertRefusedUnchanged(VaultFile);
+	}
+
+	[Fact]
+	public async Task ANullHistoryEntryIsRefused()
+	{
+		var file = await SavedVaultJson();
+		file["items"]![0]!["history"]!.AsArray().Add(null);
+		File.WriteAllText(VaultFile, file.ToJsonString());
+
+		AssertRefusedUnchanged(VaultFile);
+	}
+
+	[Fact]
+	public async Task ATruncatedVaultFileIsRefused()
+	{
+		await SavedVaultJson();
+		var bytes = File.ReadAllBytes(VaultFile);
+		File.WriteAllBytes(VaultFile, bytes[..(bytes.Length / 2)]);
+
+		AssertRefusedUnchanged(VaultFile);
+	}
+
+	[Fact]
+	public async Task TwoItemsWithOneIdAreRefused()
+	{
+		var file = await SavedVaultJson();
+		var items = file["items"]!.AsArray();
+		items.Add(items[0]!.DeepClone());
+		File.WriteAllText(VaultFile, file.ToJsonString());
+
+		AssertRefusedUnchanged(VaultFile);
+	}
+
+	[Theory]
+	[InlineData("""{"origin":null,"username":"u","title":"","note":"","passwordVersion":1,"history":[]}""")]
+	[InlineData("""{"origin":"https://a.example","username":"u","title":"","note":"","passwordVersion":1}""")]
+	[InlineData("""{"origin":"https://a.example","username":"u","title":"","note":"","passwordVersion":1,"history":[null]}""")]
+	[InlineData("""{"origin":"https://a.example","title":"","note":"","passwordVersion":1,"history":[]}""")]
+	[InlineData("""{"origin":"https://a.example","username":"u","title":"","note":"","passwordVersion":0,"history":[]}""")]
+	[InlineData("null")]
+	public async Task AMalformedSealedSummaryIsRefused(string payload)
+	{
+		var store = Open();
+		var id = await store.SaveAsync(Login);
+		var indexKey = new FakeCipher().Decrypt(Convert.FromBase64String(JsonNode.Parse(File.ReadAllText(KeysFile))!["indexKey"]!.GetValue<string>()));
+		var file = JsonNode.Parse(File.ReadAllText(VaultFile))!;
+		file["items"]![0]!["summary"] = Convert.ToBase64String(VaultCrypto.Seal(indexKey, Encoding.UTF8.GetBytes(payload), new ItemAd(store.VaultId!, id, 1, ItemPart.Summary)));
+		File.WriteAllText(VaultFile, file.ToJsonString());
+
+		AssertRefusedUnchanged(VaultFile);
+	}
+
+	public static TheoryData<string> MalformedSyncFiles() =>
+	[
+		"",
+		"""{"format":1""",
+		"null",
+		"""{"format":1}""",
+		"""{"format":2,"queued":[]}""",
+		"""{"format":1,"queued":null}""",
+		"""{"format":1,"queued":[null]}""",
+		"""{"format":1,"queued":[{"version":1}]}""",
+	];
+
+	[Theory]
+	[MemberData(nameof(MalformedSyncFiles))]
+	public async Task AMalformedSyncFileIsRefusedAndLeftAsItIs(string content)
+	{
+		await Open().SaveAsync(Login);
+		File.WriteAllText(SyncFile, content);
+
+		AssertRefusedUnchanged(SyncFile);
+	}
+
+	public static TheoryData<string> MalformedKeysFiles() =>
+	[
+		"",
+		"""{"format":1""",
+		"null",
+		"""{"format":1}""",
+		"""{"format":2,"vaultId":"v","indexKey":"AA==","secretKey":"AA=="}""",
+		"""{"format":1,"vaultId":"v","indexKey":null,"secretKey":"AA=="}""",
+		"""{"format":1,"vaultId":null,"indexKey":"AA==","secretKey":"AA=="}""",
+		"""{"format":1,"vaultId":"v","indexKey":"not base64!","secretKey":"AA=="}""",
+	];
+
+	[Theory]
+	[MemberData(nameof(MalformedKeysFiles))]
+	public async Task AMalformedKeysFileIsRefusedAndLeftAsItIs(string content)
+	{
+		await Open().SaveAsync(Login);
+		File.WriteAllText(KeysFile, content);
+
+		AssertRefusedUnchanged(KeysFile);
+	}
+
+	[Fact]
+	public async Task ATombstoneFlagTheSealedSummaryDoesntBackIsTampering()
+	{
+		var file = await SavedVaultJson();
+		file["items"]![0]!["tombstone"] = true;
+		File.WriteAllText(VaultFile, file.ToJsonString());
+
+		var error = Assert.Throws<VaultFileException>(() => Open());
+		Assert.IsType<VaultTamperedException>(error.InnerException);
+	}
+
+	[Fact]
+	public async Task ATombstoneWhoseSealedSummaryIsDeletedOpens()
+	{
+		var store = Open();
+		var id = await store.SaveAsync(Login);
+		store.Delete(id);
+		var file = JsonNode.Parse(File.ReadAllText(VaultFile))!;
+		file["items"]![0]!["tombstone"] = true;
+		File.WriteAllText(VaultFile, file.ToJsonString());
+
+		var reopened = Open();
+		Assert.Empty(reopened.Summaries());
+		Assert.Single(reopened.Records);
+	}
+
+	[Fact]
+	public async Task SwappingThePasswordWithAHistoryEntryFailsToOpen()
+	{
+		var file = await SavedVaultJson();
+		var item = file["items"]![0]!;
+		var password = item["password"]!.DeepClone();
+		item["password"] = item["history"]![0]!.DeepClone();
+		item["history"]![0] = password;
+		File.WriteAllText(VaultFile, file.ToJsonString());
+
+		var store = Open();
+		var id = store.Summaries().Single().Id;
+		await Assert.ThrowsAsync<VaultTamperedException>(() => store.PasswordAsync(id));
+		await Assert.ThrowsAsync<VaultTamperedException>(() => store.HistoryPasswordAsync(id, 0));
+	}
+
+	[Fact]
+	public async Task UpdateLoginChangesThePasswordAndSummaryInOneChange()
+	{
+		var store = Open();
+		var id = await store.SaveAsync(Login);
+		var changes = 0;
+		store.Changed += () => changes++;
+
+		await store.UpdateLoginAsync(id, "Renamed", "new note", "ada", "second");
+
+		var reopened = Open();
+		var summary = reopened.Summaries().Single();
+		Assert.Equal(("Renamed", "new note", "ada"), (summary.Title, summary.Note, summary.Username));
+		Assert.Equal("second", await reopened.PasswordAsync(id));
+		Assert.Equal("correct horse battery staple", await reopened.HistoryPasswordAsync(id, 0));
+		Assert.Equal(2, reopened.Records.Single().Version);
+		Assert.Equal([1L, 2], reopened.Queued.Select(c => c.Version));
+		Assert.Equal(1, changes);
+	}
+
+	[Fact]
+	public async Task ACancelledUpdateLoginChangesNothing()
+	{
+		var store = Open();
+		var id = await store.SaveAsync(Login);
+		var files = Snapshot();
+		_sealer.Result = HelloResult.Cancel;
+
+		await Assert.ThrowsAsync<HelloCancelledException>(() => store.UpdateLoginAsync(id, "Renamed", "n", "u", "second"));
+
+		Assert.Equal(files, Snapshot());
+		Assert.Equal("ada.lovelace", store.Summaries().Single().Username);
+	}
+
 	[Fact]
 	public async Task AnUnknownIdIsRefused()
 	{

@@ -48,7 +48,10 @@ export interface PasswordHistoryEntry {
 export interface VaultState {
 	enabled: boolean
 	helloAvailable: boolean
+	// Logins not in Recently deleted.
 	count: number
+	// Set when a vault file couldn't be read at launch: the vault is off and its files are left as they are.
+	error?: 'unreadable'
 }
 
 // "Never for this site", kept per exact origin apart from the logins.

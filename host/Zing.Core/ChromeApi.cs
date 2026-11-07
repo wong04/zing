@@ -74,8 +74,9 @@ public interface IWindowHost
 /// <param name="Dns">Encrypted DNS for the whole PC (Network &amp; VPN); null where the host can't change DNS.</param>
 /// <param name="Threats">Link inspection, with the hosts allowed this session; one per app. Null where the host doesn't inspect links.</param>
 /// <param name="Consent">Whether third parties may be asked to open a link, for the session and every window. One per app: required, so a window cannot end up with its own.</param>
-/// <param name="Vault">The password vault, shared by every window; null when <c>passwordAutofill</c> is off.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null)
+/// <param name="Vault">The password vault, shared by every window; null when <c>passwordAutofill</c> is off, or when it couldn't be read.</param>
+/// <param name="VaultUnreadable">The vault is off because its files couldn't be read at launch; vault:state says so.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false)
 {
 	public long Now() => Clock.Now();
 }
@@ -796,22 +797,26 @@ public sealed class ChromeApi : IDisposable
 
 	private VaultStore Vault() => _app.Vault ?? throw new VaultOffException();
 
-	private VaultState CurrentVaultState() => _app.Vault is { } vault ? new(true, vault.HelloAvailable, vault.Summaries().Count) : new(false, false, 0);
+	private VaultState CurrentVaultState() => _app.Vault is { } vault
+		? new(true, vault.HelloAvailable, vault.Summaries().Count(s => s.DeletedAt is null))
+		: new(false, false, 0, _app.VaultUnreadable ? "unreadable" : null);
 
 	private void PushVaultState() => _host.Push("vault:state", CurrentVaultState());
 
-	/// <summary>The password first: it asks Hello, and a cancelled prompt leaves the summary unchanged too.</summary>
+	/// <summary>With a password, one store change that asks Hello once; a cancelled prompt changes nothing. Without one, no prompt.</summary>
 	private async Task<object?> UpdateLoginAsync(string id, JsonElement edit)
 	{
 		var vault = Vault();
 		var username = RequiredText(edit, "username");
 		var title = RequiredText(edit, "title");
 		var note = RequiredText(edit, "note");
-		if (edit.TryGetProperty("password", out var password) && password.ValueKind != JsonValueKind.Null)
+		if (!edit.TryGetProperty("password", out var password) || password.ValueKind == JsonValueKind.Null)
 		{
-			await vault.UpdatePasswordAsync(id, password.ValueKind == JsonValueKind.String ? password.GetString()! : throw new ArgumentException("A login's password must be a string"));
+			vault.UpdateSummary(id, title, note, username);
+			return null;
 		}
-		vault.UpdateSummary(id, title, note, username);
+		if (password.ValueKind != JsonValueKind.String) throw new ArgumentException("A login's password must be a string");
+		await vault.UpdateLoginAsync(id, title, note, username, password.GetString()!);
 		return null;
 	}
 
