@@ -27,6 +27,9 @@ internal sealed class FakeSealer : IHelloSealer
 
 	public void Announce() => AvailabilityChanged?.Invoke();
 
+	/// <summary>How many stores listen for availability: one per store not yet disposed.</summary>
+	public int Listeners => AvailabilityChanged?.GetInvocationList().Length ?? 0;
+
 	public Task<byte[]> SealAsync(byte[] key)
 	{
 		Seals++;

@@ -24,6 +24,9 @@ public sealed record VaultState(bool Enabled, bool HelloAvailable, int Count, st
 /// <summary>A vault call while <c>passwordAutofill</c> is off: there's no store to answer it.</summary>
 public sealed class VaultOffException() : Exception("The password vault is off. Turn on \"Offer to fill saved passwords\" in Settings.");
 
+/// <summary>A write to a store that was closed meanwhile (passwordAutofill turned off): nothing was written, so it can't land after a new store has read the files.</summary>
+public sealed class VaultClosedException() : Exception("The password vault was turned off before this change was saved, so nothing was saved.");
+
 public sealed class VaultItemNotFoundException(string id) : Exception($"No login with ID {id} in the vault");
 
 /// <summary>Deleting a login that's already in Recently deleted, or restoring one that isn't.</summary>
@@ -46,8 +49,9 @@ public sealed class VaultFileException(string path, Exception inner) : Exception
 /// password's ciphertext and moves the losing one into the history as it is, bump the version without needing the secret key; and a
 /// password can't be swapped for another item's, or for an older one, because its sealed version is pinned by the summary.
 /// </remarks>
-public sealed class VaultStore
+public sealed class VaultStore : IDisposable
 {
+
 	public const string VaultFileName = "vault.zing";
 	public const string KeysFileName = "keys.bin";
 	public const string SyncFileName = "sync.json";
@@ -64,6 +68,9 @@ public sealed class VaultStore
 	private readonly List<QueuedChange> _queued;
 	private readonly Dictionary<string, SummaryPayload> _summaries;
 	private VaultKeys? _keys;
+	private readonly Action _availabilityChanged;
+	/// <summary>Set under <c>_gate</c>; every write checks it under the same lock, so none lands once Dispose has returned.</summary>
+	private bool _disposed;
 
 	/// <summary>Fires after every write, and when Hello becomes available or stops being.</summary>
 	public event Action? Changed;
@@ -79,7 +86,29 @@ public sealed class VaultStore
 		_records = Guard(VaultFile, LoadRecords);
 		_queued = Guard(SyncFile, LoadQueue);
 		_summaries = Guard(VaultFile, _ => DecryptSummaries());
-		_sealer.AvailabilityChanged += () => Changed?.Invoke();
+		_availabilityChanged = () => Changed?.Invoke();
+		_sealer.AvailabilityChanged += _availabilityChanged;
+	}
+
+	/// <summary>
+	/// Closes the store (passwordAutofill turned off): it stops listening to Hello, and every write from now on, one already
+	/// waiting on Hello included, is refused with <see cref="VaultClosedException"/>. Writes commit under the same lock, so once
+	/// this returns nothing more reaches the files, and a store opened afterwards reads them as they finally are.
+	/// </summary>
+	public void Dispose()
+	{
+		lock (_gate)
+		{
+			if (_disposed) return;
+			_disposed = true;
+		}
+		_sealer.AvailabilityChanged -= _availabilityChanged;
+	}
+
+	/// <summary>Called under <c>_gate</c> before any file is written.</summary>
+	private void RequireOpen()
+	{
+		if (_disposed) throw new VaultClosedException();
 	}
 
 	public bool HelloAvailable => _sealer.Available;
@@ -212,6 +241,7 @@ public sealed class VaultStore
 		RequireHello();
 		lock (_gate)
 		{
+			RequireOpen();
 			var (record, summary) = Find(id);
 			var keys = Keys();
 			var changed = edit(summary, _clock.Now());
@@ -227,6 +257,7 @@ public sealed class VaultStore
 	/// </summary>
 	private void Commit(LoginRecord? replaced, LoginRecord record, SummaryPayload summary)
 	{
+		RequireOpen();
 		List<LoginRecord> records = replaced is null ? [.. _records, record] : [.. _records.Select(r => ReferenceEquals(r, replaced) ? record : r)];
 		List<QueuedChange> queued = [.. _queued, new QueuedChange(record.ItemId, record.Version)];
 		JsonFiles.WriteAllBytesAtomic(SyncFile, JsonSerializer.SerializeToUtf8Bytes(new SyncFileContent(Format, queued), VaultJson.Options));
@@ -251,6 +282,7 @@ public sealed class VaultStore
 			{
 				lock (_gate)
 				{
+					RequireOpen();
 					created.Keys.Save(KeysFile);
 					_keys = created.Keys;
 				}

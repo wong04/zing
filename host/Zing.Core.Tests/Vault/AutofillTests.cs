@@ -21,7 +21,6 @@ public sealed class AutofillTests : IDisposable
 	private readonly FakeWindowHost _host = new();
 	private readonly TestClock _clock = new(1_000_000);
 	private readonly SettingsStore _settings = new();
-	private readonly VaultStore _vault;
 	private readonly VaultSwitch _switch;
 	private readonly ChromeApi _api;
 	private int _opens;
@@ -29,7 +28,6 @@ public sealed class AutofillTests : IDisposable
 	public AutofillTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_vault = new VaultStore(_dir, new FakeCipher(), _sealer, new TickingClock());
 		_settings.Set("passwordAutofill", true);
 		_switch = new VaultSwitch(_settings, Open, e => throw new Xunit.Sdk.XunitException($"the vault couldn't be read: {e}"));
 		_api = new ChromeApi(_bridge, new AppServices(_settings, library, Address.FromDefaults(), _clock, Accounts.Guest(), new RelayConsent(), Switch: _switch), _host, "test");
@@ -39,8 +37,13 @@ public sealed class AutofillTests : IDisposable
 	private VaultStore Open()
 	{
 		_opens++;
-		return _vault;
+		return NewStore();
 	}
+
+	private VaultStore NewStore() => new(_dir, new FakeCipher(), _sealer, new TickingClock());
+
+	/// <summary>The store open now; turning the vault off and on opens a new one.</summary>
+	private VaultStore Vault => _switch.Current ?? throw new Xunit.Sdk.XunitException("the vault is off");
 
 	public void Dispose()
 	{
@@ -53,7 +56,7 @@ public sealed class AutofillTests : IDisposable
 	private FakePage Page => (FakePage)_api.Tabs.ActivePage!;
 
 	private async Task<string> Save(string origin, string username, string password = "hunter22") =>
-		await _vault.SaveAsync(new NewLogin(origin, username, password, "", ""));
+		await Vault.SaveAsync(new NewLogin(origin, username, password, "", ""));
 
 	private void OnPage(string url) => Page.Url = url;
 
@@ -150,7 +153,7 @@ public sealed class AutofillTests : IDisposable
 		using var off = new VaultSwitch(settings, () =>
 		{
 			opens++;
-			return _vault;
+			return NewStore();
 		}, _ => { });
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
 		var host = new FakeWindowHost();
@@ -176,6 +179,7 @@ public sealed class AutofillTests : IDisposable
 		Assert.NotNull(Picker);
 		var switched = 0;
 		_switch.Changed += () => switched++;
+		var first = Vault;
 
 		_settings.Set("passwordAutofill", false);
 
@@ -191,7 +195,7 @@ public sealed class AutofillTests : IDisposable
 
 		_settings.Set("passwordAutofill", true);
 
-		Assert.Same(_vault, _switch.Current);
+		Assert.NotSame(first, _switch.Current);
 		Assert.Equal(2, _opens);
 		_host.FakeScheduler.Advance(TimeSpan.FromMilliseconds(100));
 		Focus($"{Site}/login");
@@ -320,8 +324,8 @@ public sealed class AutofillTests : IDisposable
 		Assert.True(_api.Autofill.Key(PickerKey.Up));
 		Assert.Equal(0, Picker!.Active);
 		var picked = Picker.Entries[0];
+		Wait();
 
-		// A real Enter is the user's own choice: no click guard.
 		Assert.True(_api.Autofill.Key(PickerKey.Enter));
 
 		Assert.Equal(Fill(picked.Username, "hunter22"), Assert.Single(Page.Evaluated));
@@ -333,6 +337,69 @@ public sealed class AutofillTests : IDisposable
 		Assert.True(_api.Autofill.Key(PickerKey.Escape));
 		Assert.Null(Picker);
 		Assert.False(_api.Autofill.Key(PickerKey.Down));
+	}
+
+	[Fact]
+	public async Task EnterCountsOnlyOnceThePickerHasBeenOnScreenUnmovedFor500MsButTheArrowsWorkAtOnce()
+	{
+		await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		Focus($"{Site}/login");
+		Page.ProbeResult = JsonDocument.Parse("true").RootElement;
+		var unseals = _sealer.Unseals;
+
+		Assert.True(_api.Autofill.Key(PickerKey.Down));
+		Assert.Equal(0, Picker!.Active);
+		_clock.Jump(499);
+		// Ruling 31: taken from the page (it was aimed at the picker's selection) but ignored: no Hello, no fill.
+		Assert.True(_api.Autofill.Key(PickerKey.Enter));
+		Assert.Empty(Page.Evaluated);
+		Assert.Equal(unseals, _sealer.Unseals);
+		Assert.Equal(0, Picker!.Active);
+
+		// Moving it starts the guard again.
+		_host.FakeScheduler.Advance(TimeSpan.FromMilliseconds(100));
+		Focus($"{Site}/login", FieldRect with { X = 300 });
+		_clock.Jump(499);
+		Assert.True(_api.Autofill.Key(PickerKey.Enter));
+		Assert.Empty(Page.Evaluated);
+
+		_clock.Jump(1);
+		Assert.True(_api.Autofill.Key(PickerKey.Enter));
+		Assert.Equal(Fill("ada", "hunter22"), Assert.Single(Page.Evaluated));
+	}
+
+	[Fact]
+	public async Task TurningTheVaultOffDuringHelloStopsTheFill()
+	{
+		var id = await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		Focus($"{Site}/login");
+		Wait();
+		_sealer.Unsealing = () => _settings.Set("passwordAutofill", false);
+
+		Assert.Equal("refused", Value(await Invoke("vault:fill", TabId, id)).GetString());
+
+		Assert.Empty(Page.Evaluated);
+	}
+
+	[Fact]
+	public async Task TurningTheVaultOffAndOnDuringHelloStopsTheFillToo()
+	{
+		var id = await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		Focus($"{Site}/login");
+		Wait();
+		_sealer.Unsealing = () =>
+		{
+			_sealer.Unsealing = null;
+			_settings.Set("passwordAutofill", false);
+			_settings.Set("passwordAutofill", true);
+		};
+
+		Assert.Equal("refused", Value(await Invoke("vault:fill", TabId, id)).GetString());
+
+		Assert.Empty(Page.Evaluated);
 	}
 
 	[Fact]

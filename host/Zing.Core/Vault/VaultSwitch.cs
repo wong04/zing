@@ -54,6 +54,8 @@ public sealed class VaultSwitch : IDisposable
 		Unreadable = false;
 		if (!on)
 		{
+			// Disposed before any new store can open, so a write still waiting on Hello is refused rather than landing after it.
+			Current?.Dispose();
 			Current = null;
 			return;
 		}
@@ -69,5 +71,12 @@ public sealed class VaultSwitch : IDisposable
 		}
 	}
 
-	public void Dispose() => _subscription?.Dispose();
+	/// <summary>Stops following the setting; a store this switch opened is closed with it.</summary>
+	public void Dispose()
+	{
+		if (_subscription is null) return;
+		_subscription.Dispose();
+		Current?.Dispose();
+		Current = null;
+	}
 }

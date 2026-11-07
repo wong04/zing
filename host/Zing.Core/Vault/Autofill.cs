@@ -262,7 +262,10 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 				return true;
 			case PickerKey.Enter:
 				if (open.Picker.Active < 0) return false;
-				// The user's own key press: no click guard.
+				// Ruling 31: like a click, Enter counts only once the picker has been on screen, unmoved, for the guard. Before
+				// then it is still taken from the page (it was aimed at the picker's selection, and a page form submitting
+				// half-filled would surprise more), but does nothing.
+				if (!Settled(open)) return true;
 				background(ChooseAsync(open, open.Picker.Entries[open.Picker.Active].Id), "autofill");
 				return true;
 			default:
@@ -283,9 +286,12 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 		// A choice that arrives after the picker closed (the page moved on meanwhile) has nothing to fill.
 		if (_open is not { } open || open.Picker.PageId != pageId) return FillOutcomes.Refused;
 		if (!open.Picker.Entries.Any(e => e.Id == id)) throw new AutofillEntryException(id);
-		if (clock.Now() - open.ShownAt < ClickGuardMs) return FillOutcomes.Ignored;
+		if (!Settled(open)) return FillOutcomes.Ignored;
 		return await ChooseAsync(open, id);
 	}
+
+	/// <summary>The picker has been on screen, where it is, for the guard: a page can't move it under a click or a quick Enter.</summary>
+	private bool Settled(Open open) => clock.Now() - open.ShownAt >= ClickGuardMs;
 
 	private async Task<string> ChooseAsync(Open open, string id)
 	{
@@ -304,8 +310,9 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 			// Review Focus 3: nothing is filled and there's no error to show; the picker has already closed.
 			return FillOutcomes.Cancelled;
 		}
-		// The page may have gone elsewhere while Hello was up; the script checks the origin once more as it runs.
-		if (!StillOn(open)) return FillOutcomes.Refused;
+		// The page may have gone elsewhere while Hello was up, or the vault been turned off (or off and on, a new store);
+		// the script checks the origin once more as it runs.
+		if (!StillOn(open) || !ReferenceEquals(vault(), store)) return FillOutcomes.Refused;
 		var filled = await open.Page.EvaluateAsync(AutofillScripts.Fill(open.Origin, login.Username, password));
 		return filled.ValueKind == JsonValueKind.True ? FillOutcomes.Filled : FillOutcomes.NotFilled;
 	}
