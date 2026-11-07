@@ -180,7 +180,7 @@ public sealed class AccountGateTests
 	{
 		var host = new FakeWindowHost();
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-account-").FullName, new FakeCipher());
+		var account = new AccountStore(Accounts.Folder(), new FakeCipher());
 		var bridge = new Bridge();
 		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), account, new Zing.Core.Net.RelayConsent()), host, "test");
 		api.Start([], "about:blank");
