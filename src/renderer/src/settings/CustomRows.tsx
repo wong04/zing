@@ -11,6 +11,7 @@ import { InfoBanner, PillButton, PillField, PillSlider, Toggle } from '../compon
 import { ShieldAlertIcon, ShieldCheckIcon } from '../components/icons'
 import { AccountPane } from '../account/AccountPane'
 import { privacyStatus } from './privacy'
+import { VaultSection } from './VaultSection'
 import type { CustomId } from './rows'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
@@ -285,6 +286,8 @@ export function CustomRow({ id, handle, version }: { id: CustomId; handle: Setti
 			return <EnginesRow />
 		case 'sleeping-tabs':
 			return <SleepingTabsRows handle={handle} />
+		case 'vault':
+			return <VaultSection />
 		case 'privacy-banner':
 			return <PrivacyBanner handle={handle} />
 		case 'clear-session':

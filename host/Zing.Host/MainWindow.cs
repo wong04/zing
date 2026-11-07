@@ -64,9 +64,14 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_window.DefaultFocus = () => _shown?.View ?? _chrome?.View;
 		TestHooks.Watch(_scope, () => Faults.Enqueue(_dispatcher, _window.Close, "test close"));
 		TestHooks.Register(_window, () => Api);
+		TestHooks.RegisterPickerKeys(_window, PickerKeyOnPage);
+		_app.Services.Vaults.Changed += FollowAutofill;
 	}
 
 	public Microsoft.UI.Windowing.AppWindow AppWindow => _window.AppWindow;
+
+	/// <summary>The window's handle, which owns a Windows Hello prompt (HelloSealer).</summary>
+	public nint Hwnd => _window.Hwnd;
 
 	/// <summary>Shows the window; test runs never take focus (AGENTS.md).</summary>
 	public void Show() => _window.Show(activate: !TestHooks.KeepsOutOfTheWay);
@@ -394,6 +399,10 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		return [.. picked.Select(file => file.Path)];
 	}
 
+	private SecretClipboard? _secretClipboard;
+
+	public Zing.Core.Vault.ISecretClipboard SecretClipboard => _secretClipboard ??= new SecretClipboard(_window.Hwnd);
+
 	public void CopyFilesToClipboard(IReadOnlyList<string> paths)
 	{
 		if (!_window.OnUiThread) throw new InvalidOperationException("Files can only be put on the clipboard from the window's own thread");
@@ -470,6 +479,20 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public void FocusPageUi() => _pageUi?.Focus();
 
+	public void AccountPickerChanged(Zing.Core.Vault.AccountPicker? picker) => _pageUi?.PickerChanged(picker);
+
+	public void SetAccountPickerHeight(int height) => _pageUi?.SetPickerHeight(height);
+
+	public bool AutofillOn => _app.Services.Vaults.Current is not null;
+
+	/// <summary>passwordAutofill was turned on or off: every open page's channel and script follow it (Ruling 30).</summary>
+	private void FollowAutofill()
+	{
+		if (Api is not { } api) return;
+		foreach (var page in api.Tabs.Records.Select(r => api.Tabs.PageOf(r.Id)).OfType<WebView2Page>().Where(p => p.IsOpen))
+			TestHooks.Background(page.FollowAutofillAsync(), "autofill setting");
+	}
+
 	public void Report(string what, Exception error) => TestHooks.Record(what, error);
 
 	public void StackDropdownChanged(StackDropdownState? state) => _stacks?.Changed(state is not null);
@@ -505,11 +528,36 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private void OnKey(HostedView view, CoreWebView2AcceleratorKeyPressedEventArgs e)
 	{
 		if (e.KeyEventKind is not (CoreWebView2KeyEventKind.KeyDown or CoreWebView2KeyEventKind.SystemKeyDown)) return;
+		if (PickerKey(view, (int)e.VirtualKey))
+		{
+			e.Handled = true;
+			return;
+		}
 		if (Api is null || Commands.CodeOf((int)e.VirtualKey) is not { } code) return;
 		const int VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
 		var input = new KeyInput(code, Native.IsDown(VK_CONTROL), Native.IsDown(VK_SHIFT), Native.IsDown(VK_MENU));
 		if (Api.HandleKey(input)) e.Handled = true;
 	}
+
+	/// <summary>
+	/// The account picker's keys (Ruling 28): real key presses while it's open, on its page's view or the picker's own,
+	/// never anything a page posts. True when the picker took the key, so the page mustn't get it.
+	/// </summary>
+	private bool PickerKey(HostedView view, int virtualKey)
+	{
+		if (Api?.Autofill.Picker is not { } picker || Zing.Core.Vault.PickerKeys.FromVirtualKey(virtualKey) is not { } key) return false;
+		var onPage = Api.Tabs.PageOf(picker.PageId) is WebView2Page page && ReferenceEquals(page.View, view);
+		if (!onPage && _pageUi?.HostsPicker(view) != true) return false;
+		return Api.Autofill.Key(key);
+	}
+
+	/// <summary>
+	/// The e2e seam (picker-key): CDP input never reaches AcceleratorKeyPressed, so a test enters PickerKey as the picker's page
+	/// would. Plain Enter never reaches it either way (it isn't an accelerator key to WebView2): it comes through the page
+	/// channel (Ruling 46), which CDP input does reach.
+	/// </summary>
+	private bool PickerKeyOnPage(int virtualKey) =>
+		Api?.Autofill.Picker is { } picker && Api.Tabs.PageOf(picker.PageId) is WebView2Page { View: { } view } && PickerKey(view, virtualKey);
 
 	// MARK: Surface
 
@@ -550,6 +598,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	{
 		// The tabs first (Tabs.Destroy closes their pages while they are still open), then everything else
 		// the window started: renderer views, those still loading included, and the theme subscription.
+		_app.Services.Vaults.Changed -= FollowAutofill;
 		Api?.Dispose();
 		_scope.Close();
 		_notices?.Destroy();

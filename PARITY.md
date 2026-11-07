@@ -190,9 +190,16 @@ Also dropped:
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| V1 | Vault storage + Windows Hello unlock | new | Features/Browser/KeychainAutofill.swift (replaced) | [#95](https://github.com/wong04/zing/issues/95) | Open |
-| V2 | Sign-in field detection and fill | parity | Features/Browser/KeychainAutofill.swift | [#96](https://github.com/wong04/zing/issues/96) | Open |
-| V3 | Save prompt, manage page, privacy banner | new | App/AppSettings.swift (passwordAutofill) | [#97](https://github.com/wong04/zing/issues/97) | Open |
+| V1 | Vault storage + Windows Hello unlock | new | Features/Browser/KeychainAutofill.swift (replaced) | [#95](https://github.com/wong04/zing/issues/95) | Done |
+| V2 | Sign-in field detection and fill | parity | Features/Browser/KeychainAutofill.swift | [#96](https://github.com/wong04/zing/issues/96) | Done |
+| V3 | Save prompt, manage page, privacy banner | new | App/AppSettings.swift (passwordAutofill) | [#97](https://github.com/wong04/zing/issues/97) | Done |
+
+Evidence (e2e/vault.spec.ts unless noted; screenshots in [docs/screenshots/phase-6b](docs/screenshots/phase-6b)):
+
+- V1: host tests `VaultStoreTests` (`SavedPasswordReadsBackAfterReopening`, `AKeyHelloCantOpenAsksToSetTheVaultUpAgainOnEveryPathThatNeedsIt`), `VaultCryptoTests` (`KdfParamsOutsideTheFloorAndCapsAreRefused`), `SettingsTests.ThePasswordVaultIsOffUntilThePersonTurnsItOn`; e2e `without Windows Hello the page says so and a password cannot be shown`, `after a reset Windows Hello key the page says to set the vault up again on this PC when a password is shown`, `WebView2 password saving and general autofill are off in every view, in the chrome and in pages`. Screenshots: `vault-hello-error-light.png`, `vault-hello-error-dark.png`.
+- V2: e2e `focusing the username box shows the saved username under it, and choosing it fills both boxes`, `the picker follows real keys: arrows move, Enter chooses, Esc closes; page-relayed keys do nothing`, `an iframe from another local port gets no picker, even posting a forged message itself, while the top page still does`, `with the vault off, no picker appears, even with a login saved for the page`.
+- V3: e2e `a successful sign-in to a new site prompts Save, and Save stores the login after Hello`, `a changed password prompts an update that names the saved login, and Update replaces it`, `Never for this site stops every later prompt for it, saving and updating alike, and is kept in the vault`, `the Settings switch turns the vault on, and the privacy banner warns once it holds an entry`, `showing a password asks Windows Hello, a cancel shows and copies nothing, and a passed Hello is not asked again for 5 minutes`, `export warns first, writes Chrome-format CSV to Downloads after Hello, and a fresh vault re-imports the same entries`. Screenshots: `vault-empty-*.png`, `vault-list-*.png` (light and dark).
+- The rows stay marked pending until the owner has checked the real Windows Hello prompt: save, fill, reveal, a cancel, the picker's arrow keys, Enter and Esc, and the copied password missing from Win+V with the 30 s clear leaving a newer copy alone. Remove the marker and these lines' hedging once that is done.
 
 ## M6c Import
 

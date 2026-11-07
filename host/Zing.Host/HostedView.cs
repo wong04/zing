@@ -124,6 +124,9 @@ public sealed class HostedView
 			controller.Close();
 			throw;
 		}
+		// Zing's vault is the only password manager: WebView2's own saving and form autofill stay off in every view and profile, Zing's own UI included (Ruling 5).
+		controller.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
+		controller.CoreWebView2.Settings.IsGeneralAutofillEnabled = false;
 		if (overlay) controller.DefaultBackgroundColor = Windows.UI.Color.FromArgb(0, 255, 255, 255);
 		view = new HostedView(window, hwnd, overlay, controller, tracked);
 		window.Adopt(view);

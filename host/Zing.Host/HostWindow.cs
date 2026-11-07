@@ -30,6 +30,10 @@ public sealed class HostWindow
 		Hwnd = Native.CreateWindowExW(0, ClassName, title, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0, _instance, 0);
 		if (Hwnd == 0) throw new NativeCallException("CreateWindowEx");
 		Open[Hwnd] = this;
+		// Windows locking or the session switching wipes the vault's held secret key (SessionEvents). Ruling 47: a window that
+		// can't be told still opens; the failure is reported, and the vault stops holding the key, so Hello asks every time.
+		_watchingSession = Native.WTSRegisterSessionNotification(Hwnd, Native.NOTIFY_FOR_THIS_SESSION);
+		if (!_watchingSession) SessionEvents.Instance.Unwatched(new NativeCallException("WTSRegisterSessionNotification"));
 		AppWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(Hwnd));
 		AppWindow.Resize(FitToScreen(width, height));
 		AppWindow.TitleBar.ExtendsContentIntoTitleBar = true;
@@ -38,6 +42,9 @@ public sealed class HostWindow
 	}
 
 	public nint Hwnd { get; }
+
+	/// <summary>Windows tells this window when it locks or the session switches.</summary>
+	private readonly bool _watchingSession;
 
 	/// <summary>The caller is on the thread that owns this window.</summary>
 	public bool OnUiThread => _dispatcher.HasThreadAccess;
@@ -174,7 +181,11 @@ public sealed class HostWindow
 				var suggested = System.Runtime.InteropServices.Marshal.PtrToStructure<Native.RECT>(lParam);
 				Native.SetWindowPos(hwnd, 0, suggested.Left, suggested.Top, suggested.Right - suggested.Left, suggested.Bottom - suggested.Top, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
 				return 0;
+			case Native.WM_WTSSESSION_CHANGE:
+				SessionEvents.Instance.Raise();
+				break;
 			case Native.WM_DESTROY:
+				if (window._watchingSession && !Native.WTSUnRegisterSessionNotification(hwnd)) Faults.Warning("session notification", new NativeCallException("WTSUnRegisterSessionNotification"));
 				window.IsClosed = true;
 				Open.Remove(hwnd);
 				TestHooks.Guard(() => window.Destroyed?.Invoke(), "window destroyed");

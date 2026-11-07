@@ -44,6 +44,7 @@ export type CustomId =
 	| 'tool-links'
 	| 'engines'
 	| 'sleeping-tabs'
+	| 'vault'
 	| 'privacy-banner'
 	| 'clear-session'
 	| 'recent-tools'
@@ -170,6 +171,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 		toggle('passwordAutofill', 'Offer to fill saved passwords', {
 			detail: 'A key appears in sign-in fields. Passwords are kept only in the vault on this PC.',
 		}),
+		{ type: 'custom', id: 'vault', keys: [], visible: (s) => s.passwordAutofill },
 		toggle('blockTrackers', 'Block trackers', { detail: 'Refuses tracking domains and strips tracking parameters.' }),
 		toggle('restoreTabs', 'Reopen tabs from last time', {
 			detail: (s) => (s.restoreTabs ? 'Your open tabs are saved to a file on this PC. Relaunch to apply.' : undefined),

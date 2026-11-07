@@ -1,7 +1,7 @@
 import type { EngineInfo, EngineProgress, EnsureOutcome, YtDlpUpdate } from './engines/engineInfo'
 import type { SessionKindName, ViewerOpened } from './convert/viewable'
 import type { EngineExit, EngineJobSpec, EngineOutput, FileKind, PickedFile } from './engines/engineJob'
-import type { FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
+import type { AccountPickerState, FillOutcome, FindDirection, HistoryDirection, PageUiState, SaveAnswer, SaveOutcome } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
 import type { BrowserLibrary } from './library/library'
 import type { TabId, TabRecord } from './model/tab'
@@ -10,6 +10,7 @@ import type { Settings, SettingKey } from './settings'
 import type { DiagnosticReport } from './unblock/blockDiagnostics'
 import type { DnsOutcome, DnsPreview } from './unblock/dnsSetup'
 import type { RelayAttemptEvent, RelayOpenResult } from './unblock/relayOpen'
+import type { LoginEdit, LoginSummary, NeverSave, NewLogin, PasswordHistoryEntry, VaultImportResult, VaultState } from './vault/vault'
 import type {
 	AccountOutcome,
 	AccountState,
@@ -240,6 +241,12 @@ export interface InvokeContract {
 	'chrome:history-menu': { args: [direction: HistoryDirection, anchor: MenuAnchor]; result: void }
 	'pageui:get': { args: []; result: PageUiState }
 	'pageui:height': { args: [height: number]; result: void }
+	/** The account picker on screen, or null. Usernames only, never a password; the page itself never sees them. */
+	'pageui:picker-get': { args: []; result: AccountPickerState | null }
+	/** The picker view measured what it shows. */
+	'pageui:picker-height': { args: [height: number]; result: void }
+	/** Esc in the picker: closes it and gives the keyboard back to the page. */
+	'pageui:picker-close': { args: []; result: void }
 	'find:update': { args: [text: string]; result: void }
 	'find:step': { args: [direction: FindDirection]; result: void }
 	'find:close': { args: []; result: void }
@@ -387,6 +394,45 @@ export interface InvokeContract {
 	'account:update-profile': { args: [displayName: string, email: string]; result: AccountOutcome }
 	'account:require-password': { args: [required: boolean]; result: AccountOutcome }
 	'account:delete': { args: []; result: AccountOutcome }
+	/** Whether the vault is on, whether Windows Hello is set up, and how many logins it holds. Asks nothing. */
+	'vault:get': { args: []; result: VaultState }
+	/** Every login without its password, those in Recently deleted included. Never asks Windows Hello. Rejects (VaultOffException) while the vault is off. */
+	'vault:summaries': { args: []; result: LoginSummary[] }
+	/** One login's password, after Windows Hello. Rejects with HelloCancelledException when the prompt is dismissed, HelloUnavailableException without Hello. */
+	'vault:reveal': { args: [id: string]; result: string }
+	/** One of a login's old passwords, after Windows Hello; index 0 is the one replaced most recently. */
+	'vault:reveal-history': { args: [id: string, index: number]; result: string }
+	/** Saves a new login after Windows Hello and answers its ID. The origin may be any address on the site. */
+	'vault:save': { args: [login: NewLogin]; result: string }
+	/** Edits a login. A `password` asks Windows Hello first and moves the old one into the history; without one there's no prompt. */
+	'vault:update': { args: [id: string, edit: LoginEdit]; result: void }
+	/** Moves a login to Recently deleted. No prompt. */
+	'vault:delete': { args: [id: string]; result: void }
+	/** Brings a login back from Recently deleted. No prompt. */
+	'vault:restore': { args: [id: string]; result: void }
+	/** When each old password was replaced, newest first. No passwords and no prompt. */
+	'vault:history': { args: [id: string]; result: PasswordHistoryEntry[] }
+	/** Asks Windows Hello unless it was passed in the last 5 minutes, then copies the login's password from the host (kept out of clipboard history and cloud sync) and clears it 30 s later if nothing else was copied. The password never comes back. */
+	'vault:copy': { args: [id: string]; result: void }
+	/** Imports the CSV a picker token stands for (kind 'csv'), with one Windows Hello prompt for the whole file. Rows it cannot use come back with the reason. */
+	'vault:import-csv': { args: [token: string]; result: VaultImportResult }
+	/** Always asks Windows Hello, even inside the 5 minutes other uses share, then saves every password into Downloads as "Zing Passwords.csv" in Chrome's format, unencrypted. */
+	'vault:export-csv': { args: []; result: PickedFile }
+	/** The sites marked "never for this site". No prompt. */
+	'vault:never-saves': { args: []; result: NeverSave[] }
+	/** Takes a site off that list so Zing offers to save there again. No prompt. */
+	'vault:remove-never-save': { args: [origin: string]; result: void }
+	/**
+	 * The user chose a login in the account picker: asks Windows Hello unless it was passed in the last 5 minutes, then fills that page's field and its other half.
+	 * `cancelled` when Hello was cancelled or unavailable (nothing filled, no error); `refused` when the page is no longer
+	 * on the origin the picker was shown for; `not-filled` when the field had gone. The picker closes either way.
+	 */
+	'vault:fill': { args: [pageId: TabId, id: string]; result: FillOutcome }
+	/**
+	 * The user's answer to the save or update prompt on a tab. `save` (also the update prompt's Update) asks Windows Hello
+	 * once; a cancelled Hello stores nothing and closes the prompt without an error. `never` marks the site, for every prompt.
+	 */
+	'vault:answer-save': { args: [pageId: TabId, answer: SaveAnswer]; result: SaveOutcome }
 	'overview:close': { args: []; result: void }
 }
 
@@ -397,12 +443,14 @@ export interface EventContract {
 	'stack:dropdown': StackDropdownState | undefined
 	'overlay:notice': Notice | undefined
 	'pageui:state': PageUiState
+	'pageui:account-picker': AccountPickerState | null
 	'library:state': LibraryViewState
 	'overlay:overview': OverviewState | undefined
 	'settings:changed': Settings
 	'shell:state': ShellState
 	'toolpanel:state': ToolPanelsState
 	'account:state': AccountState
+	'vault:state': VaultState
 	'engines:progress': EngineProgress
 	'engines:output': EngineOutput
 	'engines:exit': EngineExit
@@ -455,6 +503,10 @@ export interface ZingApi {
 	openHistoryMenu(direction: HistoryDirection, anchor: MenuAnchor): Promise<void>
 	getPageUi(): Promise<PageUiState>
 	setPageUiHeight(height: number): Promise<void>
+	getAccountPicker(): Promise<AccountPickerState | null>
+	setAccountPickerHeight(height: number): Promise<void>
+	closeAccountPicker(): Promise<void>
+	onAccountPicker(listener: (state: AccountPickerState | null) => void): Unsubscribe
 	updateFind(text: string): Promise<void>
 	stepFind(direction: FindDirection): Promise<void>
 	closeFind(): Promise<void>
@@ -552,4 +604,21 @@ export interface ZingApi {
 	openViewerFile(token: string, panelId: string): Promise<ViewerOpened>
 	closeViewerFile(id: string): Promise<void>
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe
+	getVaultState(): Promise<VaultState>
+	vaultSummaries(): Promise<LoginSummary[]>
+	revealPassword(id: string): Promise<string>
+	revealOldPassword(id: string, index: number): Promise<string>
+	saveLogin(login: NewLogin): Promise<string>
+	updateLogin(id: string, edit: LoginEdit): Promise<void>
+	deleteLogin(id: string): Promise<void>
+	restoreLogin(id: string): Promise<void>
+	loginHistory(id: string): Promise<PasswordHistoryEntry[]>
+	copyPassword(id: string): Promise<void>
+	importPasswordsCsv(token: string): Promise<VaultImportResult>
+	exportPasswordsCsv(): Promise<PickedFile>
+	neverSaves(): Promise<NeverSave[]>
+	removeNeverSave(origin: string): Promise<void>
+	onVaultState(listener: (state: VaultState) => void): Unsubscribe
+	fillLogin(pageId: TabId, id: string): Promise<FillOutcome>
+	answerSaveLogin(pageId: TabId, answer: SaveAnswer): Promise<SaveOutcome>
 }

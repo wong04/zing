@@ -24,6 +24,7 @@ const NAMES: Record<string, string> = {
 	backslash: 'x.\\sub\\f',
 	reserved: 'CON.txt',
 }
+const IN_PROGRESS = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\.tmp$/
 
 test.beforeAll(async () => {
 	server = createServer((req, res) => {
@@ -98,7 +99,11 @@ test('another launch hands over only web links, never a file, script, zing: addr
 test('a server cannot name a download to hide its type, write a stream, reach a folder or name a device', async () => {
 	const zing = await launchZing()
 	const directory = join(zing.userDataDir, 'downloads')
-	const files = () => (existsSync(directory) ? readdirSync(directory, { recursive: true }).length : 0)
+	// Chromium writes a download as <guid>.tmp and renames it when done: a folder holding one isn't counted yet.
+	const files = () => {
+		const names = existsSync(directory) ? readdirSync(directory, { recursive: true }).map(String) : []
+		return names.some((name) => IN_PROGRESS.test(name)) ? -1 : names.length
+	}
 	for (const name of Object.keys(NAMES)) {
 		const count = files()
 		await zing.chrome.evaluate(async (url) => {

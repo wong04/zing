@@ -85,6 +85,7 @@ public static class FileKinds
 		["document"] = ["pdf", "docx", "doc", "odt", "rtf", "txt", "md", "html", "htm", "epub", "tex", "rst"],
 		["pdf"] = ["pdf"],
 		["picture"] = ["png", "jpg", "jpeg", "webp"],
+		["csv"] = ["csv"],
 		["any"] = [],
 	};
 

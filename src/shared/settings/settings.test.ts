@@ -13,6 +13,11 @@ describe('settings schema', () => {
 		expect([...SETTING_KEYS].sort()).toEqual([...KRACKN_KEYS, ...vectors.zingKeys].filter((k) => !vectors.retiredKeys.includes(k)).sort())
 	})
 
+	it('keeps the password vault off until the person turns it on', () => {
+		expect(DEFAULT_SETTINGS.passwordAutofill).toBe(false)
+		expect(new SettingsStore().get('passwordAutofill')).toBe(false)
+	})
+
 	it('gives every key a default its own validator accepts, readable through the typed accessor', () => {
 		const store = new SettingsStore()
 		for (const key of SETTING_KEYS) {

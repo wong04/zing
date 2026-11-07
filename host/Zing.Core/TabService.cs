@@ -81,6 +81,8 @@ public interface IPageEvents
 	void Crashed(PageFault fault);
 	/// <summary>Something the person should be told about this page that isn't a failure to load, e.g. a relayed web app that can't work.</summary>
 	void Notice(string text);
+	/// <summary>The page's autofill script posted <paramref name="message"/>; <paramref name="frameSource"/> is the engine's own Source for it, never anything the page said.</summary>
+	void Autofill(Uri frameSource, Vault.AutofillMessage message);
 }
 
 /// <summary>Makes pages and puts them on screen. The window owns layout and stacking.</summary>
@@ -115,6 +117,9 @@ public sealed class TabService
 
 	/// <summary>A page reported find results; the window's find bar decides whether they are for it.</summary>
 	public event Action<IPage, int, int>? FindResult;
+
+	/// <summary>A tab's autofill script reported a sign-in field (Vault.Autofill decides what it gets).</summary>
+	public event Action<string, Uri, Vault.AutofillMessage>? AutofillMessage;
 	private readonly Dictionary<string, IPage> _pages = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, string> _openers = new(StringComparer.Ordinal);
 	private readonly HashSet<string> _sleeping = new(StringComparer.Ordinal);
@@ -592,5 +597,10 @@ public sealed class TabService
 		}
 
 		public IPage Popup(string url, bool background) => service.AdoptPopup(id, url, background);
+
+		public void Autofill(Uri frameSource, Vault.AutofillMessage message)
+		{
+			if (service._pages.ContainsKey(id)) service.AutofillMessage?.Invoke(id, frameSource, message);
+		}
 	}
 }

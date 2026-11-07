@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Zing.Core.Engines;
 using Zing.Core.Viewer;
 using Zing.Core.Net;
+using Zing.Core.Vault;
 
 namespace Zing.Core;
 
@@ -39,6 +40,10 @@ public interface IWindowHost
 	/// <summary>The page UI renderer measured what it shows.</summary>
 	void SetPageUiHeight(int height);
 	void FocusPageUi();
+	/// <summary>The vault's account picker opened, moved or closed (null); show, place or hide its view.</summary>
+	void AccountPickerChanged(AccountPicker? picker);
+	/// <summary>The picker view measured what it shows.</summary>
+	void SetAccountPickerHeight(int height);
 	/// <summary>The stack dropdown opened, changed or closed (null).</summary>
 	void StackDropdownChanged(StackDropdownState? state);
 	/// <summary>The tab overview opened, changed or closed (null).</summary>
@@ -56,6 +61,8 @@ public interface IWindowHost
 	Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions);
 	/// <summary>Puts these files on the clipboard as files (CF_HDROP), so Explorer can paste them. Called on the UI thread; throws if the clipboard can't be written. An e2e run leaves the real clipboard alone.</summary>
 	void CopyFilesToClipboard(IReadOnlyList<string> paths);
+	/// <summary>Where a copied password goes (Ruling 41). An e2e run never touches the real clipboard.</summary>
+	ISecretClipboard SecretClipboard { get; }
 	/// <summary>Has Chromium print this HTML text to a PDF at this path (Convert). Scripts and the network are off while it does.</summary>
 	Task PrintHtmlToPdfAsync(string html, string pdfPath, CancellationToken cancellation);
 	/// <summary>Runs delayed work on the window's UI thread.</summary>
@@ -73,9 +80,15 @@ public interface IWindowHost
 /// <param name="Dns">Encrypted DNS for the whole PC (Network &amp; VPN); null where the host can't change DNS.</param>
 /// <param name="Threats">Link inspection, with the hosts allowed this session; one per app. Null where the host doesn't inspect links.</param>
 /// <param name="Consent">Whether third parties may be asked to open a link, for the session and every window. One per app: required, so a window cannot end up with its own.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null)
+/// <param name="Vault">A vault already open that never follows the setting (tests); <paramref name="Switch"/> is the real one.</param>
+/// <param name="VaultUnreadable">With <paramref name="Vault"/>: the vault is off because its files couldn't be read.</param>
+/// <param name="Switch">The password vault, shared by every window, open only while <c>passwordAutofill</c> is on.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null)
 {
 	public long Now() => Clock.Now();
+
+	/// <summary>The vault as it is now: <see cref="VaultSwitch.Current"/> is null while it's off.</summary>
+	public VaultSwitch Vaults { get; } = Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable);
 }
 
 /// <summary>
@@ -135,6 +148,12 @@ public sealed class ChromeApi : IDisposable
 
 	public PermissionBroker Permissions { get; }
 
+	/// <summary>The vault's account picker and fill for this window's pages.</summary>
+	public Autofill Autofill { get; }
+
+	/// <summary>The save and update prompts for this window's pages.</summary>
+	public SignInWatch SignIn { get; }
+
 	public TabLifecycle Lifecycle { get; }
 
 	/// <summary>Whether the reader relay and the archive may be asked this session.</summary>
@@ -162,6 +181,19 @@ public sealed class ChromeApi : IDisposable
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
 		Permissions = new PermissionBroker(PageUi, HiddenTabOf);
+		_secretCopy = new TimedSecretCopy(host.SecretClipboard, host.Scheduler, error => host.Report("clearing a copied password", error));
+		SignIn = new SignInWatch(() => app.Vaults.Current, id => Tabs.IsShown(id), host.Scheduler, prompt => PageUi.Update(s => s with { SaveLogin = prompt }), host.Background);
+		Autofill = new Autofill(() => app.Vaults.Current, id => Tabs.IsShown(id) ? Tabs.PageOf(id) : null, picker =>
+		{
+			host.Push("pageui:account-picker", picker);
+			host.AccountPickerChanged(picker);
+		}, app.Clock, host.Scheduler, host.Background, (pageId, origin, username, password) => SignIn.Filled(pageId, origin, username, password));
+		Tabs.AutofillMessage += (pageId, source, message) =>
+		{
+			Autofill.Message(pageId, source, message);
+			SignIn.Message(pageId, source, message);
+		};
+		Tabs.Closed += SignIn.PageClosed;
 		Drops = new DropInbox(Grants);
 		bridge.UseDropInbox(Drops);
 		if (app.ViewerRoot is { } viewerRoot)
@@ -336,6 +368,29 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("permission:allow", args => Do(() => Permissions.Answer(Int(args, 0), true)));
 		bridge.Register("permission:deny", args => Do(() => Permissions.Answer(Int(args, 0), false)));
 
+		bridge.Register("vault:get", _ => CurrentVaultState());
+		bridge.Register("vault:summaries", _ => Vault().Summaries());
+		bridge.Register("vault:reveal", async args => await Vault().PasswordAsync(Text(args, 0)));
+		bridge.Register("vault:reveal-history", async args => await Vault().HistoryPasswordAsync(Text(args, 0), Int(args, 1)));
+		bridge.Register("vault:save", async args => await Vault().SaveAsync(NewLoginArg(Arg(args, 0))));
+		bridge.Register("vault:update", async args => await UpdateLoginAsync(Text(args, 0), Arg(args, 1)));
+		bridge.Register("vault:delete", args => Do(() => Vault().Delete(Text(args, 0))));
+		bridge.Register("vault:restore", args => Do(() => Vault().Restore(Text(args, 0))));
+		bridge.Register("vault:history", args => Vault().History(Text(args, 0)));
+		bridge.Register("vault:copy", async args => await CopyPasswordAsync(Text(args, 0)));
+		bridge.Register("vault:import-csv", async args => await ImportCsvAsync(Text(args, 0)));
+		bridge.Register("vault:export-csv", async _ => await ExportCsvAsync());
+		bridge.Register("vault:never-saves", _ => Vault().NeverSaves());
+		bridge.Register("vault:remove-never-save", args => Do(() => Vault().RemoveNeverSave(Text(args, 0))));
+		bridge.Register("vault:fill", async args => await Autofill.FillAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("vault:answer-save", async args => await SignIn.AnswerAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
+		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
+		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
+		_watchedVault = app.Vaults.Current;
+		if (_watchedVault is { } vault) vault.Changed += PushVaultState;
+		app.Vaults.Changed += VaultSwitched;
+
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
 		_unsubscribeLibrary = app.Library.Subscribe(_ => host.Push("library:state", LibraryState()));
 	}
@@ -449,6 +504,11 @@ public sealed class ChromeApi : IDisposable
 		_closing.Dispose();
 		_host.OfferEnded -= EndOffer;
 		foreach (var subscription in _subscriptions) subscription.Dispose();
+		_app.Vaults.Changed -= VaultSwitched;
+		if (_watchedVault is { } vault) vault.Changed -= PushVaultState;
+		Autofill.Dispose();
+		SignIn.Dispose();
+		_secretCopy.Dispose();
 		Shell.Dispose();
 		Ordering.Dispose();
 		Lifecycle.Dispose();
@@ -781,6 +841,77 @@ public sealed class ChromeApi : IDisposable
 	/// <summary>A file the person picked, by its token: a typed path could name a share, and opening one sends their Windows sign-in hash.</summary>
 	private async Task<object?> HashFileAsync(string token, string algorithm) => await Hashing.FileAsync(Grants.Resolve(token), algorithm);
 
+	private readonly TimedSecretCopy _secretCopy;
+
+	private VaultStore Vault() => _app.Vaults.Current ?? throw new VaultOffException();
+
+	private VaultState CurrentVaultState() => _app.Vaults.Current is { } vault
+		? new(true, vault.HelloAvailable, vault.Summaries().Count(s => s.DeletedAt is null), null, _app.Vaults.FilesExist)
+		: new(false, false, 0, _app.Vaults.Unreadable ? "unreadable" : null, _app.Vaults.FilesExist);
+
+	/// <summary>The store vault:state follows; it changes when passwordAutofill is turned on or off.</summary>
+	private VaultStore? _watchedVault;
+
+	/// <summary>passwordAutofill was turned on or off: follow the new store, and a picker on screen goes (Ruling 30).</summary>
+	private void VaultSwitched()
+	{
+		if (_watchedVault is { } old) old.Changed -= PushVaultState;
+		_watchedVault = _app.Vaults.Current;
+		if (_watchedVault is { } now) now.Changed += PushVaultState;
+		Autofill.Close();
+		SignIn.Clear();
+		PushVaultState();
+	}
+
+	private void PushVaultState() => _host.Push("vault:state", CurrentVaultState());
+
+	/// <summary>With a password, one store change that asks Hello at most once; a cancelled prompt changes nothing. Without one, no prompt.</summary>
+	private async Task<object?> UpdateLoginAsync(string id, JsonElement edit)
+	{
+		var vault = Vault();
+		var username = RequiredText(edit, "username");
+		var title = RequiredText(edit, "title");
+		var note = RequiredText(edit, "note");
+		if (!edit.TryGetProperty("password", out var password) || password.ValueKind == JsonValueKind.Null)
+		{
+			vault.UpdateSummary(id, title, note, username);
+			return null;
+		}
+		if (password.ValueKind != JsonValueKind.String) throw new ArgumentException("A login's password must be a string");
+		await vault.UpdateLoginAsync(id, title, note, username, password.GetString()!);
+		return null;
+	}
+
+	/// <summary>Asks Hello, then copies the password from the host: it never reaches the renderer, and it is cleared 30 s later if still the clipboard's content.</summary>
+	private async Task<object?> CopyPasswordAsync(string id)
+	{
+		var password = await Vault().PasswordAsync(id);
+		_secretCopy.Copy(password);
+		return null;
+	}
+
+	/// <summary>Reads the picked CSV (a token, never a path) and imports it with one Hello call; rows that can't be used come back with the reason.</summary>
+	private async Task<object?> ImportCsvAsync(string token)
+	{
+		var vault = Vault();
+		var csv = VaultCsv.ParsePasswords(VaultCsv.ReadFile(Grants.Resolve(token)));
+		var outcome = await vault.ImportAsync([.. csv.Logins.Select(l => new NewLogin(l.Url, l.Username, l.Password, l.Title, l.Note))]);
+		return new { outcome.Added, outcome.Merged, csv.Skipped };
+	}
+
+	/// <summary>One Hello call, then every password in Chrome's CSV format, saved into Downloads. The renderer is told the file's name and gets a token for it.</summary>
+	private async Task<object?> ExportCsvAsync()
+	{
+		var logins = await Vault().ExportAsync();
+		return Grants.Issue(VaultCsv.SaveExport(_placement, _host.DownloadsDirectory, logins));
+	}
+
+	private static NewLogin NewLoginArg(JsonElement login) =>
+		new(RequiredText(login, "origin"), RequiredText(login, "username"), RequiredText(login, "password"), RequiredText(login, "title"), RequiredText(login, "note"));
+
+	private static string RequiredText(JsonElement value, string name) =>
+		value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out var text) && text.ValueKind == JsonValueKind.String ? text.GetString()! : throw new ArgumentException($"A login needs a string {name}");
+
 	private DnsService DnsSetup() => _app.Dns ?? throw new InvalidOperationException("This host can't change DNS");
 
 	private async Task<object?> DiagnoseAsync(string host)
@@ -1060,6 +1191,8 @@ public sealed class ChromeApi : IDisposable
 		Ordering?.ScheduleReorganize();
 		Permissions?.Refresh();
 		Find?.ActiveChanged();
+		Autofill?.PagesChanged();
+		SignIn?.PagesChanged();
 		Lifecycle?.Reschedule();
 		Stacks?.Refresh();
 		Overview?.Refresh();

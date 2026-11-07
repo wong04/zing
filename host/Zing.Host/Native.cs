@@ -69,6 +69,9 @@ internal static class Native
 	public const uint WM_CLOSE = 0x0010;
 	public const uint WM_NCACTIVATE = 0x0086;
 	public const uint WM_DPICHANGED = 0x02E0;
+	public const uint WM_WTSSESSION_CHANGE = 0x02B1;
+
+	public const int NOTIFY_FOR_THIS_SESSION = 0;
 
 	public const int SW_HIDE = 0;
 	public const int SW_SHOWNOACTIVATE = 4;
@@ -124,6 +127,10 @@ internal static class Native
 	[DllImport("user32.dll")]
 	[return: MarshalAs(UnmanagedType.Bool)]
 	public static extern bool IsIconic(nint hwnd);
+
+	[DllImport("user32.dll")]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool IsWindowVisible(nint hwnd);
 
 	[DllImport("user32.dll")]
 	[return: MarshalAs(UnmanagedType.Bool)]
@@ -200,6 +207,14 @@ internal static class Native
 
 	[DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
 	public static extern nint GetModuleHandleW(string? name);
+
+	[DllImport("wtsapi32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool WTSRegisterSessionNotification(nint hwnd, int flags);
+
+	[DllImport("wtsapi32.dll")]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool WTSUnRegisterSessionNotification(nint hwnd);
 
 	[DllImport("dwmapi.dll")]
 	public static extern int DwmSetWindowAttribute(nint hwnd, uint attribute, ref int value, int size);

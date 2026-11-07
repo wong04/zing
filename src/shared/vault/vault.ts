@@ -1,34 +1,71 @@
-// The password vault's pure side: entries, origin matching, import, and the
-// on-disk shape. Encryption (safeStorage/DPAPI) and the Windows Hello prompt
-// live in the main process; nothing here ever sees a key.
+// The password vault's display-side rules, over login summaries: origin
+// matching, whether to offer saving, and what "Recently deleted" holds. The
+// host owns the file format, the encryption and every password; the C# twin,
+// Zing.Core.Vault.VaultModel, is the source of truth and vault.vectors.json
+// holds both to the same cases. Nothing here ever sees a password.
 
-export interface VaultEntry {
+// What the host lets the renderer know about a login: everything but the
+// password. Times are Unix milliseconds.
+export interface LoginSummary {
 	id: string
+	origin: string
+	username: string
+	title: string
+	note: string
+	createdAt: number
+	updatedAt: number
+	passwordUpdatedAt: number
+	deletedAt: number | null
+}
+
+// A login to save (vault:save). The host stores the origin of `origin`, so any
+// address on the site will do. The password goes to the host and never comes back
+// except through vault:reveal, after Windows Hello.
+export interface NewLogin {
 	origin: string
 	username: string
 	password: string
 	title: string
 	note: string
-	createdAt: number
-	updatedAt: number
 }
 
-export interface Vault {
-	version: 1
-	entries: VaultEntry[]
+// An edit (vault:update). With `password` the host asks Windows Hello and moves
+// the old password into the history; without it, nothing is asked.
+export interface LoginEdit {
+	username: string
+	title: string
+	note: string
+	password?: string
 }
 
-export class VaultFormatError extends Error {
-	override name = 'VaultFormatError'
+// One old password, without the password; newest first.
+export interface PasswordHistoryEntry {
+	replacedAt: number
+}
+
+// What the host pushes as vault:state. `enabled` follows passwordAutofill;
+// without Windows Hello the vault reads but refuses every write.
+export interface VaultState {
+	enabled: boolean
+	helloAvailable: boolean
+	// Logins not in Recently deleted.
+	count: number
+	// Set when a vault file couldn't be read at launch: the vault is off and its files are left as they are.
+	error?: 'unreadable'
+	// Vault files are on disk, whether or not the vault is on or could be read. The privacy banner warns about them.
+	filesExist: boolean
+}
+
+// "Never for this site", kept per exact origin apart from the logins.
+export interface NeverSave {
+	origin: string
 }
 
 export class NotAWebOriginError extends Error {
 	override name = 'NotAWebOriginError'
 }
 
-export function emptyVault(): Vault {
-	return { version: 1, entries: [] }
-}
+export const DELETED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
 // Exact origin, not the registrable domain: a password saved on
 // accounts.example.com must not be offered to evil.example.com. URL already
@@ -52,88 +89,46 @@ export function canFill(context: FillContext): boolean {
 	return originOf(context.frameUrl) === originOf(context.topUrl)
 }
 
-export function entriesFor(vault: Vault, context: FillContext): VaultEntry[] {
+export function entriesFor(summaries: readonly LoginSummary[], context: FillContext): LoginSummary[] {
 	if (!canFill(context)) return []
 	const origin = originOf(context.topUrl)
-	return vault.entries.filter((entry) => entry.origin === origin).sort((a, b) => b.updatedAt - a.updatedAt)
+	return summaries.filter((s) => s.deletedAt === null && s.origin === origin).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-export interface NewLogin {
-	url: string
-	username: string
-	password: string
-	title?: string
-	note?: string
+export type SaveDecision = 'save' | 'update' | 'none'
+
+// The host compares the typed password with the stored one, since only it can
+// read passwords, and passes the answer in. One login per (origin, username):
+// a changed password on the site updates it. A login in Recently deleted
+// doesn't count as saved.
+export function saveDecision(summaries: readonly LoginSummary[], origin: string, username: string, passwordChanged: boolean, neverSave: readonly NeverSave[]): SaveDecision {
+	if (neverSave.some((n) => n.origin === origin)) return 'none'
+	const saved = summaries.some((s) => s.deletedAt === null && s.origin === origin && s.username === username)
+	if (!saved) return 'save'
+	return passwordChanged ? 'update' : 'none'
 }
 
-export type SaveOutcome = { kind: 'added'; entry: VaultEntry } | { kind: 'updated'; entry: VaultEntry } | { kind: 'unchanged'; entry: VaultEntry }
-
-// One entry per (origin, username): saving again with a new password updates
-// it, which is what a password change on the site should do.
-export function saveLogin(vault: Vault, login: NewLogin, now = Date.now()): { vault: Vault; outcome: SaveOutcome } {
-	const origin = originOf(login.url)
-	const existing = vault.entries.find((e) => e.origin === origin && e.username === login.username)
-	if (existing && existing.password === login.password) return { vault, outcome: { kind: 'unchanged', entry: existing } }
-	if (existing) {
-		const entry = { ...existing, password: login.password, updatedAt: now }
-		return { vault: { ...vault, entries: vault.entries.map((e) => (e.id === existing.id ? entry : e)) }, outcome: { kind: 'updated', entry } }
-	}
-	const entry: VaultEntry = {
-		id: crypto.randomUUID(),
-		origin,
-		username: login.username,
-		password: login.password,
-		title: login.title?.trim() || new URL(origin).hostname,
-		note: login.note ?? '',
-		createdAt: now,
-		updatedAt: now,
-	}
-	return { vault: { ...vault, entries: [...vault.entries, entry] }, outcome: { kind: 'added', entry } }
+export function recentlyDeleted(summaries: readonly LoginSummary[], now: number): LoginSummary[] {
+	return summaries.filter((s) => s.deletedAt !== null && !dueForTombstone(s, now)).sort((a, b) => (b.deletedAt ?? 0) - (a.deletedAt ?? 0))
 }
 
-export function removeEntry(vault: Vault, id: string): Vault {
-	if (!vault.entries.some((e) => e.id === id)) throw new VaultFormatError(`No vault entry ${id}`)
-	return { ...vault, entries: vault.entries.filter((e) => e.id !== id) }
+export function dueForTombstone(summary: LoginSummary, now: number): boolean {
+	if (summary.deletedAt === null) return false
+	return now - summary.deletedAt >= DELETED_RETENTION_MS
 }
 
-export interface ImportSummary {
+// Holding any login, deleted ones included, or a "never for this site" mark
+// (Ruling 39: it names a site) is a stored record, so Settings' privacy banner
+// warns.
+export function vaultKeepsData(summaries: readonly LoginSummary[], neverSave: readonly NeverSave[]): boolean {
+	return summaries.length > 0 || neverSave.length > 0
+}
+
+// What vault:import-csv did: logins added, rows that matched a login the vault
+// already held (or an earlier row) and were merged into it, and each row it
+// could not use. `row` counts the file's header as row 1.
+export interface VaultImportResult {
 	added: number
-	updated: number
-	unchanged: number
-}
-
-export function importLogins(vault: Vault, logins: readonly NewLogin[], now = Date.now()): { vault: Vault; summary: ImportSummary } {
-	const summary: ImportSummary = { added: 0, updated: 0, unchanged: 0 }
-	let current = vault
-	for (const login of logins) {
-		const result = saveLogin(current, login, now)
-		current = result.vault
-		summary[result.outcome.kind]++
-	}
-	return { vault: current, summary }
-}
-
-// Holding any entry is a stored record, so Settings' privacy banner warns.
-export function vaultKeepsData(vault: Vault): boolean {
-	return vault.entries.length > 0
-}
-
-export function serializeVault(vault: Vault): string {
-	return JSON.stringify(vault)
-}
-
-export function parseVault(json: string): Vault {
-	const data = JSON.parse(json) as Partial<Vault>
-	if (data.version !== 1) throw new VaultFormatError(`Unsupported vault version: ${String(data.version)}`)
-	if (!Array.isArray(data.entries)) throw new VaultFormatError('Vault has no entries array')
-	data.entries.forEach((entry, index) => assertEntry(entry, index))
-	return { version: 1, entries: data.entries }
-}
-
-function assertEntry(entry: unknown, index: number): asserts entry is VaultEntry {
-	const e = entry as Record<string, unknown>
-	const strings = ['id', 'origin', 'username', 'password', 'title', 'note'] as const
-	const numbers = ['createdAt', 'updatedAt'] as const
-	for (const key of strings) if (typeof e[key] !== 'string') throw new VaultFormatError(`Entry ${index}: "${key}" must be a string`)
-	for (const key of numbers) if (typeof e[key] !== 'number') throw new VaultFormatError(`Entry ${index}: "${key}" must be a number`)
+	merged: number
+	skipped: { row: number; reason: string }[]
 }

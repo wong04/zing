@@ -31,6 +31,15 @@ public sealed class PageUiTests
 	}
 
 	[Fact]
+	public void A_save_prompt_serialises_like_the_TS_one_and_without_a_password()
+	{
+		var state = PageUiState.Empty with { SaveLogin = new Zing.Core.Vault.SaveLoginPrompt("t1", "update", "https://a.test", "ada", "ada") };
+		var expected = """{"findFocus":0,"downloads":[],"downloadsOpen":false,"saveLogin":{"pageId":"t1","kind":"update","origin":"https://a.test","username":"ada","replaces":"ada"}}""";
+		Assert.True(JsonNode.DeepEquals(JsonNode.Parse(expected), Json(state)));
+		Assert.True(state.HasVisiblePageUi);
+	}
+
+	[Fact]
 	public void Page_ui_is_visible_for_a_find_bar_a_prompt_or_an_open_download_list()
 	{
 		Assert.False(PageUiState.Empty.HasVisiblePageUi);

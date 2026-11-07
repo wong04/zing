@@ -3,6 +3,8 @@
 		{"name": "empty", "state": {"findFocus": 0, "downloads": [], "downloadsOpen": false}, "visible": false},
 		{"name": "an empty find bar", "state": {"find": {"query": "", "active": 0, "matches": 0}, "findFocus": 0, "downloads": [], "downloadsOpen": false}, "visible": true},
 		{"name": "a find bar with matches", "state": {"find": {"query": "a", "active": 2, "matches": 5}, "findFocus": 3, "downloads": [], "downloadsOpen": false}, "visible": true},
+		{"name": "a save prompt", "state": {"findFocus": 0, "downloads": [], "downloadsOpen": false, "saveLogin": {"pageId": "t1", "kind": "save", "origin": "https://a.test", "username": "ada"}}, "visible": true},
+		{"name": "an update prompt", "state": {"findFocus": 0, "downloads": [], "downloadsOpen": false, "saveLogin": {"pageId": "t1", "kind": "update", "origin": "https://a.test", "username": "ada", "replaces": "ada"}}, "visible": true},
 		{"name": "a permission prompt", "state": {"findFocus": 0, "downloads": [], "downloadsOpen": false, "permission": {"id": 4, "origin": "https://a.test", "kind": "camera and microphone"}}, "visible": true},
 		{"name": "downloads, list closed", "state": {"findFocus": 0, "downloads": [{"id": 1, "filename": "a.pdf", "status": "completed", "received": 10, "total": 10}], "downloadsOpen": false}, "visible": false},
 		{"name": "list open, no downloads", "state": {"findFocus": 0, "downloads": [], "downloadsOpen": true}, "visible": false},

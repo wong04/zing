@@ -25,14 +25,26 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public void Reload() => Calls.Add("reload");
 	public void Stop() => Calls.Add("stop");
 	public void Focus() => Calls.Add("focus");
-	public void Run(string script) => Calls.Add("run");
+	/// <summary>Every script <see cref="Run"/> was given, in order.</summary>
+	public List<string> Ran { get; } = [];
+	public void Run(string script)
+	{
+		Calls.Add("run");
+		Ran.Add(script);
+	}
 	public void Find(string query, FindDirection direction, FindMode mode) => Calls.Add($"find {query} {direction} {mode}");
 	public void StopFind() => Calls.Add("stop find");
 	public bool IsAudible { get; set; }
 	public System.Text.Json.JsonElement ProbeResult { get; set; } = System.Text.Json.JsonDocument.Parse("{\"scrollY\":0,\"dirty\":false}").RootElement;
 	/// <summary>When set, answers <see cref="EvaluateAsync"/> instead of <see cref="ProbeResult"/>, so a test can navigate, hang or fail mid-script.</summary>
 	public Func<Task<System.Text.Json.JsonElement>>? Evaluating { get; set; }
-	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script) => Evaluating?.Invoke() ?? Task.FromResult(ProbeResult);
+	/// <summary>Every script <see cref="EvaluateAsync"/> was given, in order.</summary>
+	public List<string> Evaluated { get; } = [];
+	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script)
+	{
+		Evaluated.Add(script);
+		return Evaluating?.Invoke() ?? Task.FromResult(ProbeResult);
+	}
 	public void RunWhenLoaded(string script) => Calls.Add($"when loaded {script}");
 	public int TextSize { get; set; } = Zing.Core.TextSize.Default;
 	public double Zoom { get; set; } = Zing.Core.Zoom.Default;
@@ -178,12 +190,18 @@ public sealed class FakeWindowHost : IWindowHost
 	public List<int> PageUiHeights { get; } = [];
 	public void SetPageUiHeight(int height) => PageUiHeights.Add(height);
 	public void FocusPageUi() { }
+	public List<Zing.Core.Vault.AccountPicker?> Pickers { get; } = [];
+	public void AccountPickerChanged(Zing.Core.Vault.AccountPicker? picker) => Pickers.Add(picker);
+	public void SetAccountPickerHeight(int height) { }
 
 	public string DownloadsDirectory { get; set; } = Path.GetTempPath();
 	public IDownloadHost DownloadHost { get; } = new FakeDownloads();
 
 	public ManualScheduler FakeScheduler { get; } = new();
 	public IScheduler Scheduler => FakeScheduler;
+
+	public FakeSecretClipboard FakeSecret { get; } = new();
+	public Zing.Core.Vault.ISecretClipboard SecretClipboard => FakeSecret;
 
 	public FakeShell FakeShell { get; } = new();
 	public IShellActions Shell => FakeShell;
@@ -253,4 +271,36 @@ public sealed class TickingClock : IClock
 public static class Accounts
 {
 	public static AccountStore Guest() => new(Directory.CreateTempSubdirectory("zing-account-").FullName, new FakeCipher(), startAsGuest: true);
+}
+
+/// <summary>The clipboard a password is copied to, in memory: the real one is never touched. Every write or clear is a change, as on Windows.</summary>
+public sealed class FakeSecretClipboard : Zing.Core.Vault.ISecretClipboard
+{
+	public string? Text { get; private set; }
+	public long SequenceNumber { get; private set; }
+	public List<string> Writes { get; } = [];
+
+	public long Write(string text)
+	{
+		Text = text;
+		Writes.Add(text);
+		return ++SequenceNumber;
+	}
+
+	/// <summary>Something else copied: the sequence number moves and the text is no longer ours.</summary>
+	public void CopiedElsewhere(string text)
+	{
+		Text = text;
+		SequenceNumber++;
+	}
+
+	/// <summary>Makes Clear fail as it does when another program holds the clipboard.</summary>
+	public Exception? ClearFailure { get; set; }
+
+	public void Clear()
+	{
+		if (ClearFailure is { } failure) throw failure;
+		Text = null;
+		SequenceNumber++;
+	}
 }

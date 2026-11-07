@@ -332,3 +332,148 @@
 		animation: none;
 	}
 }
+
+/* The saved-passwords manage page (VaultSection): lists in the shortcut list's style. */
+
+.vault {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.vault-actions {
+	display: flex;
+	gap: 6px;
+}
+
+.vault-list {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.vault-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 6px 0;
+	border-bottom: 1px solid var(--separator);
+}
+
+.vault-row.editing {
+	display: block;
+}
+
+.vault-text {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.vault-text strong {
+	overflow: hidden;
+	font-weight: 500;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.vault-text small {
+	overflow: hidden;
+	color: var(--muted);
+	font-size: 11px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.vault-secret {
+	margin-top: 3px;
+	font-family: var(--mono, ui-monospace, monospace);
+	font-size: 12px;
+	user-select: text;
+	word-break: break-all;
+}
+
+.vault-subtitle {
+	margin-top: 10px;
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.vault-empty {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 22px 12px;
+	border-radius: var(--card-radius);
+	background: color-mix(in srgb, var(--control) 60%, transparent);
+	font-size: 12px;
+	text-align: center;
+}
+
+.vault-empty span,
+.vault-none {
+	color: var(--muted);
+	font-size: 11.5px;
+}
+
+.vault-edit {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 6px 0 4px;
+}
+
+.vault-edit-site {
+	color: var(--muted);
+	font-size: 11.5px;
+}
+
+.vault-password-field {
+	display: grid;
+	grid-template-columns: 1fr auto auto;
+	align-items: end;
+	gap: 6px;
+}
+
+.vault-edit-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 6px;
+}
+
+.vault-history {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	font-size: 12px;
+}
+
+.vault-history-title {
+	color: var(--muted);
+	font-size: 11.5px;
+}
+
+.vault-history-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.vault-confirm,
+.vault-import {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.vault-skipped {
+	margin: 0;
+	padding-left: 18px;
+	color: var(--muted);
+	font-size: 11.5px;
+}

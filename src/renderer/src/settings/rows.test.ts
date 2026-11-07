@@ -40,4 +40,13 @@ describe('settings rows', () => {
 		expect(isVisible(after, DEFAULT_SETTINGS)).toBe(false)
 		expect(isVisible(after, { ...DEFAULT_SETTINGS, autoCloseEnabled: true })).toBe(true)
 	})
+
+	it('puts the saved passwords right after their switch, shown only while it is on', () => {
+		const items = PANES.browsing
+		const at = items.findIndex((i) => i.type === 'setting' && i.key === 'passwordAutofill')
+		const vault = items[at + 1]
+		expect(vault).toMatchObject({ type: 'custom', id: 'vault' })
+		expect(isVisible(vault!, DEFAULT_SETTINGS)).toBe(false)
+		expect(isVisible(vault!, { ...DEFAULT_SETTINGS, passwordAutofill: true })).toBe(true)
+	})
 })

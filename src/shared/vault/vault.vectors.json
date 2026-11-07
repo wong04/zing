@@ -1,0 +1,146 @@
+{
+	"origins": [
+		{ "name": "normalises case and default ports", "input": "HTTPS://Accounts.Example.com:443/login?x=1", "origin": "https://accounts.example.com" },
+		{ "name": "keeps non-default ports distinct", "input": "https://a.example:8443/", "origin": "https://a.example:8443" },
+		{ "name": "drops userinfo", "input": "https://user:pw@accounts.example.com/", "origin": "https://accounts.example.com" },
+		{ "name": "drops userinfo and keeps the port", "input": "https://user@A.example:444/", "origin": "https://a.example:444" },
+		{ "name": "an IDN host is punycode", "input": "https://bücher.example/", "origin": "https://xn--bcher-kva.example" },
+		{ "name": "an uppercase scheme and host are lower-cased", "input": "HTTPS://EXAMPLE.COM/x", "origin": "https://example.com" },
+		{ "name": "the default https port is dropped", "input": "https://a.example:443/", "origin": "https://a.example" },
+		{ "name": "the default http port is dropped", "input": "http://a.example:80/", "origin": "http://a.example" },
+		{ "name": "443 is not default for http", "input": "http://a.example:443/", "origin": "http://a.example:443" },
+		{ "name": "an IPv6 host keeps its brackets", "input": "http://[::1]:3000/x", "origin": "http://[::1]:3000" },
+		{ "name": "http origin", "input": "http://a.example", "origin": "http://a.example" },
+		{ "name": "https origin", "input": "https://a.example", "origin": "https://a.example" }
+	],
+	"notWebOrigins": [
+		{ "name": "a file page", "input": "file:///C:/x.html" },
+		{ "name": "not a url", "input": "not a url" }
+	],
+	"entriesFor": [
+		{
+			"name": "the exact origin, newest first",
+			"summaries": [
+				{ "id": "a", "origin": "https://accounts.example.com", "username": "me", "updatedAt": 1, "deletedAt": null },
+				{ "id": "b", "origin": "https://accounts.example.com", "username": "alt", "updatedAt": 2, "deletedAt": null },
+				{ "id": "c", "origin": "https://example.com", "username": "other", "updatedAt": 3, "deletedAt": null }
+			],
+			"topUrl": "https://accounts.example.com/signin",
+			"frameUrl": "https://accounts.example.com/signin",
+			"expected": ["b", "a"]
+		},
+		{
+			"name": "not the registrable domain",
+			"summaries": [{ "id": "c", "origin": "https://example.com", "username": "other", "updatedAt": 3, "deletedAt": null }],
+			"topUrl": "https://accounts.example.com/",
+			"frameUrl": "https://accounts.example.com/",
+			"expected": []
+		},
+		{
+			"name": "accounts.google.com is not google.com",
+			"summaries": [{ "id": "g", "origin": "https://google.com", "username": "me", "updatedAt": 1, "deletedAt": null }],
+			"topUrl": "https://accounts.google.com/",
+			"frameUrl": "https://accounts.google.com/",
+			"expected": []
+		},
+		{
+			"name": "a same-origin frame is offered the logins",
+			"summaries": [{ "id": "a", "origin": "https://accounts.example.com", "username": "me", "updatedAt": 1, "deletedAt": null }],
+			"topUrl": "https://accounts.example.com/a",
+			"frameUrl": "https://accounts.example.com/frame",
+			"expected": ["a"]
+		},
+		{
+			"name": "a cross-origin frame gets nothing, even with its own logins",
+			"summaries": [{ "id": "a", "origin": "https://accounts.example.com", "username": "me", "updatedAt": 1, "deletedAt": null }],
+			"topUrl": "https://shop.example/",
+			"frameUrl": "https://accounts.example.com/embed",
+			"expected": []
+		},
+		{
+			"name": "a deleted login is not offered",
+			"summaries": [
+				{ "id": "a", "origin": "https://a.example", "username": "gone", "updatedAt": 5, "deletedAt": 6 },
+				{ "id": "b", "origin": "https://a.example", "username": "kept", "updatedAt": 1, "deletedAt": null }
+			],
+			"topUrl": "https://a.example/",
+			"frameUrl": "https://a.example/",
+			"expected": ["b"]
+		}
+	],
+	"saveDecision": [
+		{
+			"name": "a new origin is saved",
+			"summaries": [],
+			"neverSave": [],
+			"origin": "https://a.example",
+			"username": "me",
+			"passwordChanged": true,
+			"expected": "save"
+		},
+		{
+			"name": "a new username on a known origin is saved",
+			"summaries": [{ "id": "a", "origin": "https://a.example", "username": "me", "deletedAt": null }],
+			"neverSave": [],
+			"origin": "https://a.example",
+			"username": "other",
+			"passwordChanged": true,
+			"expected": "save"
+		},
+		{
+			"name": "the same username with a changed password is an update",
+			"summaries": [{ "id": "a", "origin": "https://a.example", "username": "me", "deletedAt": null }],
+			"neverSave": [],
+			"origin": "https://a.example",
+			"username": "me",
+			"passwordChanged": true,
+			"expected": "update"
+		},
+		{
+			"name": "the same password is nothing to do",
+			"summaries": [{ "id": "a", "origin": "https://a.example", "username": "me", "deletedAt": null }],
+			"neverSave": [],
+			"origin": "https://a.example",
+			"username": "me",
+			"passwordChanged": false,
+			"expected": "none"
+		},
+		{
+			"name": "a never-save origin is never offered",
+			"summaries": [],
+			"neverSave": [{ "origin": "https://a.example" }],
+			"origin": "https://a.example",
+			"username": "me",
+			"passwordChanged": true,
+			"expected": "none"
+		},
+		{
+			"name": "never-save is for the exact origin only",
+			"summaries": [],
+			"neverSave": [{ "origin": "https://a.example" }],
+			"origin": "https://b.a.example",
+			"username": "me",
+			"passwordChanged": true,
+			"expected": "save"
+		},
+		{
+			"name": "a login in Recently deleted does not count as saved",
+			"summaries": [{ "id": "a", "origin": "https://a.example", "username": "me", "deletedAt": 5 }],
+			"neverSave": [],
+			"origin": "https://a.example",
+			"username": "me",
+			"passwordChanged": false,
+			"expected": "save"
+		}
+	],
+	"retention": {
+		"now": 2000000000000,
+		"summaries": [
+			{ "name": "live", "id": "live", "deletedAt": null, "recentlyDeleted": false, "dueForTombstone": false },
+			{ "name": "deleted just now", "id": "now", "deletedAt": 2000000000000, "recentlyDeleted": true, "dueForTombstone": false },
+			{ "name": "deleted 29 days ago", "id": "d29", "deletedAt": 1997494400000, "recentlyDeleted": true, "dueForTombstone": false },
+			{ "name": "deleted 30 days ago", "id": "d30", "deletedAt": 1997408000000, "recentlyDeleted": false, "dueForTombstone": true },
+			{ "name": "deleted 31 days ago", "id": "d31", "deletedAt": 1997321600000, "recentlyDeleted": false, "dueForTombstone": true }
+		]
+	}
+}

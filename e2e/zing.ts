@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { test as base, chromium, expect, type Browser, type Page, type TestInfo } from '@playwright/test'
 
 const ROOT = join(import.meta.dirname, '..')
-export const HOST_EXE = join(ROOT, 'host', 'Zing.Host', 'bin', 'Release', 'net9.0-windows10.0.22621.0', 'win-x64', 'Zing.exe')
+export const HOST_EXE = join(ROOT, 'host', 'Zing.Host', 'bin', 'Release', 'net9.0-windows10.0.26100.0', 'win-x64', 'Zing.exe')
 export const BUILT_RENDERER = join(ROOT, 'out', 'renderer')
 const CHROME_URL = 'https://app.zing/index.html#chrome'
 
@@ -206,6 +206,16 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 	running.add(self)
 	const chrome = await pageWhere(browser, (p) => p.url() === CHROME_URL)
 	await chrome.waitForLoadState('domcontentloaded')
+	// Loaded isn't started: on a cold runner the host's first answer and the chrome's first frame, where it applies host
+	// state (useTabsState), have come more than 15 s later, past a test's first expect. Launching is allowed the cold start.
+	await chrome.waitForFunction(
+		async () => {
+			await (globalThis as unknown as { zing: { getTabs(): Promise<unknown> } }).zing.getTabs()
+			return new Promise<boolean>((resolve) => requestAnimationFrame(() => resolve(true)))
+		},
+		undefined,
+		{ timeout: LAUNCH_TIMEOUT },
+	)
 	return {
 		browser,
 		chrome,

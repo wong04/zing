@@ -24,6 +24,13 @@ public class SettingsTests
 	}
 
 	[Fact]
+	public void ThePasswordVaultIsOffUntilThePersonTurnsItOn()
+	{
+		Assert.False(SettingsSchema.Defaults()["passwordAutofill"]!.GetValue<bool>());
+		Assert.False(new SettingsStore().Get("passwordAutofill")!.GetValue<bool>());
+	}
+
+	[Fact]
 	public void EveryDefaultIsAcceptedByItsOwnRule()
 	{
 		var defaults = SettingsSchema.Defaults();

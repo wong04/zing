@@ -1,0 +1,66 @@
+using System.Security.Cryptography;
+using System.Text;
+using NSec.Cryptography;
+
+namespace Zing.Core.Vault;
+
+/// <summary>
+/// Argon2id parameters the vault won't run: below the floor, as a server trying a KDF downgrade would send,
+/// or above the caps, as a server trying to hang this PC or run it out of memory on unlock would send.
+/// </summary>
+public sealed class KdfParamsRejectedException(string message) : Exception(message);
+
+/// <summary>Argon2id parameters, stored beside the wrapped keys. Memory is in KiB.</summary>
+public sealed record KdfParams(long MemoryKiB, long Iterations, int Parallelism, byte[] Salt)
+{
+	public const long FloorMemoryKiB = 256 * 1024;
+	public const long MaxMemoryKiB = 1024 * 1024;
+	public const long FloorIterations = 3;
+	public const long MaxIterations = 10;
+	public const int SaltSize = 16;
+
+	public static KdfParams Generate() => new(FloorMemoryKiB, FloorIterations, 1, RandomNumberGenerator.GetBytes(SaltSize));
+
+	/// <summary>
+	/// Parameters come back from the server, so they are checked before every use (the ETH Zurich KDF-downgrade attack).
+	/// The caps also keep every value inside NSec's range.
+	/// </summary>
+	public void EnforceFloor()
+	{
+		if (MemoryKiB < FloorMemoryKiB) throw new KdfParamsRejectedException($"Argon2id memory {MemoryKiB} KiB is below the floor of {FloorMemoryKiB} KiB");
+		if (MemoryKiB > MaxMemoryKiB) throw new KdfParamsRejectedException($"Argon2id memory {MemoryKiB} KiB is above the cap of {MaxMemoryKiB} KiB");
+		if (Iterations < FloorIterations) throw new KdfParamsRejectedException($"Argon2id iterations {Iterations} are below the floor of {FloorIterations}");
+		if (Iterations > MaxIterations) throw new KdfParamsRejectedException($"Argon2id iterations {Iterations} are above the cap of {MaxIterations}");
+		// libsodium, under NSec, runs one lane only.
+		if (Parallelism != 1) throw new KdfParamsRejectedException($"Argon2id parallelism {Parallelism} isn't 1");
+		// Deserialised from the server, so the salt can be missing whatever its type says.
+		if (Salt is null) throw new KdfParamsRejectedException("Argon2id salt is missing");
+		if (Salt.Length != SaltSize) throw new KdfParamsRejectedException($"Argon2id salt is {Salt.Length} bytes, not {SaltSize}");
+	}
+}
+
+/// <summary>The key derived from the Zing password. It only wraps the vault's keys; it never encrypts a login.</summary>
+public static class PasswordKey
+{
+	public static byte[] Derive(string password, KdfParams kdf)
+	{
+		kdf.EnforceFloor();
+		// The same password typed with a precomposed or a combining accent must give the same key.
+		var bytes = Encoding.UTF8.GetBytes(password.Normalize(NormalizationForm.FormC));
+		try
+		{
+			return Argon2id(bytes, kdf, VaultCrypto.KeySize);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+		}
+	}
+
+	/// <summary>No floor check, so the known-answer test can run small parameters.</summary>
+	internal static byte[] Argon2id(ReadOnlySpan<byte> password, KdfParams kdf, int length)
+	{
+		var parameters = new Argon2Parameters { DegreeOfParallelism = kdf.Parallelism, MemorySize = kdf.MemoryKiB, NumberOfPasses = kdf.Iterations };
+		return PasswordBasedKeyDerivationAlgorithm.Argon2id(parameters).DeriveBytes(password, kdf.Salt, length);
+	}
+}

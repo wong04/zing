@@ -137,6 +137,8 @@ test('after the first window closes, the session saved is the window that is lef
 	await run(first.chrome, 'window.new')
 	await expect.poll(() => pages(first.browser).filter((p) => p.url() === first.chrome.url()).length).toBe(2)
 	const other = pages(first.browser).find((p) => p.url() === first.chrome.url() && p !== first.chrome)!
+	// Listed once its document commits, before its bundle has put zing on window; that has run by DOMContentLoaded.
+	await other.waitForLoadState('domcontentloaded')
 	await visit(other, await activeId(other), 'two')
 	// Closing the first window hands the session to the second, which is quit without being touched again.
 	const gone = new Promise<void>((resolve) => first.chrome.once('close', () => resolve()))

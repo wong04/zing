@@ -3,7 +3,11 @@
 	<PropertyGroup>
 		<OutputType>WinExe</OutputType>
 		<AssemblyName>Zing</AssemblyName>
-		<TargetFramework>net9.0-windows10.0.22621.0</TargetFramework>
+		<TargetFramework>net9.0-windows10.0.26100.0</TargetFramework>
+		<!-- KeyCredentialManager.RequestCreateForWindowAsync and KeyCredential.RequestSignForWindowAsync, the only Hello calls that work unpackaged (check C1), are in the 26100 SDK. -->
+		<WindowsSdkPackageVersion>10.0.26100.87</WindowsSdkPackageVersion>
+		<!-- That SDK's CsWinRT flags collection expressions typed as read-only interfaces, which only matters for trimming and AOT; Zing is neither. -->
+		<NoWarn>$(NoWarn);CsWinRT1032</NoWarn>
 		<TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
 		<UseWinUI>true</UseWinUI>
 		<WindowsPackageType>None</WindowsPackageType>

@@ -106,6 +106,11 @@ public static class TestHooks
 	/// </summary>
 	public static Zing.Core.Net.IDnsSystem? DnsSystem() => IsEndToEndRun ? Dns : null;
 
+	private static readonly FakeHelloSealer Hello = new();
+
+	/// <summary>What the vault asks for Windows Hello in an e2e run: a fake that never prompts, answering as "vault-hello" set it (FakeHelloSealer). Null outside one, so a real launch gets the real HelloSealer.</summary>
+	public static FakeHelloSealer? HelloSealer() => IsEndToEndRun ? Hello : null;
+
 	private static int? _closeNextAt;
 
 	/// <summary>"exit-code-on-quit": the code Zing ends with once its last window is gone, as a crash during quit would; e2e/harness.spec.ts.</summary>
@@ -117,7 +122,10 @@ public static class TestHooks
 	/// <summary>
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
-	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
+	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers, and reset makes it forget the key it sealed with;
+	/// "picker-key" with <c>vk</c> enters the account picker's key handler as a real key press on its page would;
+	/// "page-messages" writes how many page messages were dropped to <c>file</c>;
+	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
 	/// <summary>Written beside and moved into place: the test polls for the file and must never read half of it.</summary>
@@ -148,9 +156,20 @@ public static class TestHooks
 			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { format = "CF_HDROP", paths = Zing.Core.DropFiles.Parse(block) }));
 			return true;
 		}
+		if (action == "read-secret-clipboard")
+		{
+			// What a copied password put on the clipboard (the real clipboard is never opened in an e2e run), and the formats that keep it out of history and cloud sync.
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { text = SecretClipboard.Held, formats = Zing.Core.Vault.SecretClipboardWriter.ExclusionFormats }));
+			return true;
+		}
 		if (action == "layers")
 		{
 			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(Layers(window)));
+			return true;
+		}
+		if (action == "autofill-settings")
+		{
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(window.Views.Select(v => new { url = v.Core.Source, passwordAutosave = v.Core.Settings.IsPasswordAutosaveEnabled, generalAutofill = v.Core.Settings.IsGeneralAutofillEnabled })));
 			return true;
 		}
 		if (action == "caption")
@@ -183,6 +202,22 @@ public static class TestHooks
 		{
 			var api = (Apis.TryGetValue(window, out var consentApi) ? consentApi() : null) ?? throw new InvalidOperationException("relay-consent needs a window with its chrome started");
 			api.Consent.Allow();
+			return true;
+		}
+		if (action == "picker-key")
+		{
+			var handler = PickerKeyHandlers.TryGetValue(window, out var keys) ? keys : throw new InvalidOperationException("picker-key needs a window with its chrome started");
+			handler(root.GetProperty("vk").GetInt32());
+			return true;
+		}
+		if (action == "page-messages")
+		{
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { dropped = Volatile.Read(ref _droppedPageMessages) }));
+			return true;
+		}
+		if (action == "vault-hello")
+		{
+			Hello.Answer(root.GetProperty("result").GetString()!);
 			return true;
 		}
 		if (action == "dns-stub")
@@ -246,6 +281,21 @@ public static class TestHooks
 		Apis[window] = api;
 		window.Destroyed += () => Apis.Remove(window);
 	}
+
+	/// <summary>Each window's account-picker key handler (MainWindow.PickerKey), for picker-key; e2e runs only.</summary>
+	private static readonly Dictionary<HostWindow, Func<int, bool>> PickerKeyHandlers = [];
+
+	public static void RegisterPickerKeys(HostWindow window, Func<int, bool> handler)
+	{
+		if (!IsEndToEndRun) return;
+		PickerKeyHandlers[window] = handler;
+		window.Destroyed += () => PickerKeyHandlers.Remove(window);
+	}
+
+	private static int _droppedPageMessages;
+
+	/// <summary>A page message was dropped unread: too big, too deep, not JSON, or not a shape the autofill script sends (Ruling 29).</summary>
+	public static void PageMessageDropped() => Interlocked.Increment(ref _droppedPageMessages);
 
 	/// <summary>A new window's scope, in an e2e run: counted, and closed at a checkpoint if a test asked (close-at).</summary>
 	public static void Watch(WindowScope scope, Action closeWindow)

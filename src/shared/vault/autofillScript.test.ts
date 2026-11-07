@@ -1,7 +1,7 @@
 // There is no DOM in the test environment, so the script runs against a small fake one.
 // What matters is that its decisions match `fieldKind` and its messages `parseFieldMessage`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { autofillBridgeName, detectionScript, fillScript } from './autofillScript'
+import { autofillBridgeName, autofillPickerEnterFlag, detectionScript, fillScript } from './autofillScript'
 import { fieldKind, fieldMessageKey, parseFieldMessage, type InputDescription } from './autofillFields'
 
 type Listener = () => void
@@ -24,7 +24,8 @@ class FakeEl {
 	clientTop = 0
 	rect = { left: 0, top: 0, width: 100, height: 20 }
 	events: string[] = []
-	ownerDocument: { defaultView: unknown } = { defaultView: null }
+	ownerDocument: { defaultView: unknown; querySelectorAll?: () => FakeEl[] } = { defaultView: null }
+	form: { querySelectorAll: () => FakeEl[] } | null = null
 	constructor(init: Partial<FakeEl> = {}) {
 		Object.assign(this, init)
 	}
@@ -59,6 +60,7 @@ class FakeDoc {
 	frames: FakeEl[] = []
 	listeners = new Map<string, Listener[]>()
 	focused = true
+	location = { origin: 'https://example.com' }
 	addEventListener(type: string, fn: Listener): void {
 		this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn])
 	}
@@ -91,11 +93,16 @@ let windowListeners: Map<string, Listener[]>
 let win: Record<string, unknown>
 
 function makeWindow(): Record<string, unknown> {
-	return {
-		[autofillBridgeName]: (m: unknown) => messages.push(m),
+	const w: Record<string, unknown> = {
+		// Every message goes out under the script's key; the test unwraps it.
+		chrome: { webview: { postMessage: (m: Record<string, unknown>) => messages.push(m[autofillBridgeName]) } },
 		HTMLInputElement: FakeInput,
+		location: { origin: 'https://example.com' },
 		addEventListener: (type: string, fn: Listener) => windowListeners.set(type, [...(windowListeners.get(type) ?? []), fn]),
+		getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
 	}
+	w['top'] = w
+	return w
 }
 
 function run(target: Record<string, unknown> = win): void {
@@ -117,8 +124,18 @@ function focus(el: FakeEl): void {
 	vi.advanceTimersByTime(0)
 }
 
-function evalFill(value: string, kind: 'username' | 'password'): unknown {
-	return new Function('window', `return ${fillScript(value, kind)}`)(win)
+function evalFill(username: string, password: string, origin = 'https://example.com'): unknown {
+	return new Function('window', 'location', `return ${fillScript(origin, username, password)}`)(win, win['location'])
+}
+
+/** A username box and a password box in one form, in that order. */
+function signInForm(): { user: FakeEl; pass: FakeEl } {
+	const inputs: FakeEl[] = []
+	const form = { querySelectorAll: () => inputs }
+	const user = new FakeEl({ type: 'email', form, ownerDocument: { defaultView: win } })
+	const pass = new FakeEl({ type: 'password', form, ownerDocument: { defaultView: win } })
+	inputs.push(new FakeEl({ type: 'checkbox', name: 'remember', form }), user, pass)
+	return { user, pass }
 }
 
 beforeEach(() => {
@@ -238,11 +255,11 @@ describe('detection', () => {
 		const innerDoc = new FakeDoc()
 		doc.frames = [new FakeEl({ tagName: 'IFRAME', contentDocument: innerDoc }), new FakeEl({ tagName: 'IFRAME' })]
 		for (const fn of windowListeners.get('load') ?? []) fn()
-		expect([...innerDoc.listeners.keys()].sort()).toEqual(['focusin', 'focusout', 'keyup', 'pointerdown'])
+		expect([...innerDoc.listeners.keys()].sort()).toEqual(['click', 'focusin', 'focusout', 'keydown', 'keyup', 'pointerdown', 'submit'])
 	})
 	it('re-checks on load, click, key and focus', () => {
 		install()
-		expect([...doc.listeners.keys()].sort()).toEqual(['focusin', 'focusout', 'keyup', 'load', 'pointerdown'])
+		expect([...doc.listeners.keys()].sort()).toEqual(['click', 'focusin', 'focusout', 'keydown', 'keyup', 'load', 'pointerdown', 'submit'])
 		expect(windowListeners.has('focus')).toBe(true)
 		expect(windowListeners.has('load')).toBe(true)
 	})
@@ -262,37 +279,380 @@ describe('detection', () => {
 		run()
 		expect(doc.listeners.get('focusin')?.length).toBe(before)
 	})
-	it('fails loudly when the bridge is missing', () => {
+	it('fails loudly when chrome.webview is missing', () => {
 		install()
-		expect(() => run({ addEventListener: () => {} })).toThrow(/bridge is missing/)
+		const bare: Record<string, unknown> = { addEventListener: () => {} }
+		bare['top'] = bare
+		expect(() => run(bare)).toThrow(/chrome.webview is missing/)
+	})
+	it('does nothing in a frame: the top frame reaches same-origin frames itself', () => {
+		install()
+		const framed = makeWindow()
+		framed['top'] = win
+		doc = new FakeDoc()
+		doc.activeElement = new FakeEl({ type: 'password' })
+		run(framed)
+		expect(messages).toEqual([])
+		expect(doc.listeners.size).toBe(0)
+	})
+	it('never reports keys: the host reads real key presses itself', () => {
+		install()
+		focus(new FakeEl({ type: 'password' }))
+		// It listens for Enter in a password box to see a submit, but never posts a key.
+		const other = new FakeEl({ type: 'text' })
+		for (const fn of doc.listeners.get('keydown') ?? []) (fn as (e: unknown) => void)({ key: 'ArrowDown', target: other })
+		vi.advanceTimersByTime(0)
+		expect(detectionScript).not.toContain("kind: 'key'")
+		expect(messages).toHaveLength(1)
+	})
+	it('skips a frame of another origin even when its document is readable', () => {
+		install()
+		const innerDoc = new FakeDoc()
+		innerDoc.location = { origin: 'https://other.example' }
+		innerDoc.activeElement = new FakeEl({ type: 'password' })
+		const frame = new FakeEl({ tagName: 'IFRAME', contentDocument: innerDoc })
+		doc.frames = [frame]
+		for (const fn of windowListeners.get('load') ?? []) fn()
+		expect(innerDoc.listeners.size).toBe(0)
+		focus(frame)
+		expect(messages).toEqual([])
 	})
 })
 
 describe('filling', () => {
-	it('sets through the native setter then fires input and change', () => {
+	it('fills the focused username box and the password box after it, through the native setter', () => {
 		install()
-		const el = new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })
-		focus(el)
-		expect(evalFill('hunter2', 'password')).toBe(true)
-		expect(setterCalls).toEqual([[el, 'hunter2']])
-		expect(el.events).toEqual(['input', 'change'])
+		const { user, pass } = signInForm()
+		focus(user)
+		expect(evalFill('ada', 'hunter2')).toBe(true)
+		expect(setterCalls).toEqual([
+			[pass, 'hunter2'],
+			[user, 'ada'],
+		])
+		expect(user.events).toEqual(['input', 'change'])
+		expect(pass.events).toEqual(['input', 'change'])
 	})
-	it('refuses the wrong half, a detached field, or no field', () => {
+	it('from the password box, fills the username box before it', () => {
 		install()
-		const el = new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })
-		expect(evalFill('x', 'password')).toBe(false)
+		const { user, pass } = signInForm()
+		focus(pass)
+		expect(evalFill('ada', 'hunter2')).toBe(true)
+		expect(setterCalls).toEqual([
+			[user, 'ada'],
+			[pass, 'hunter2'],
+		])
+	})
+	it('fills just the field when it has no other half', () => {
+		install()
+		const el = new FakeEl({ type: 'password', ownerDocument: { defaultView: win, querySelectorAll: () => [] } })
 		focus(el)
-		expect(evalFill('x', 'username')).toBe(false)
-		el.isConnected = false
-		expect(evalFill('x', 'password')).toBe(false)
+		expect(evalFill('ada', 'hunter2')).toBe(true)
+		expect(setterCalls).toEqual([[el, 'hunter2']])
+	})
+	it('refuses when the page is no longer on the origin the host checked', () => {
+		install()
+		const { user } = signInForm()
+		focus(user)
+		expect(evalFill('ada', 'hunter2', 'https://evil.example')).toBe(false)
 		expect(setterCalls).toEqual([])
 	})
-	it('a value with quotes, script tags or line separators stays a string literal', () => {
+	it('refuses a detached field, or no field', () => {
 		install()
-		const el = new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })
-		focus(el)
-		const value = '"\'</script>\n '
-		expect(evalFill(value, 'password')).toBe(true)
-		expect(setterCalls[0]?.[1]).toBe(value)
+		const { user } = signInForm()
+		expect(evalFill('a', 'x')).toBe(false)
+		focus(user)
+		user.isConnected = false
+		expect(evalFill('a', 'x')).toBe(false)
+		expect(setterCalls).toEqual([])
+	})
+	it('values with quotes, script tags or line separators stay string literals', () => {
+		install()
+		const { user } = signInForm()
+		focus(user)
+		const value = '"\'</script>\n  '
+		expect(evalFill(value, value)).toBe(true)
+		expect(setterCalls.map(([, v]) => v)).toEqual([value, value])
+	})
+})
+
+/** A sign-in form with the user's typed values, as a submit event's target. */
+function filledForm(username: string, password: string): { form: { tagName: string; querySelectorAll: () => FakeEl[] }; inputs: FakeEl[] } {
+	const inputs: FakeEl[] = []
+	const form = { tagName: 'FORM', querySelectorAll: () => inputs }
+	const owner = { defaultView: win }
+	inputs.push(new FakeEl({ type: 'email', value: username, form, ownerDocument: owner }), new FakeEl({ type: 'password', value: password, form, ownerDocument: owner }))
+	return { form, inputs }
+}
+
+const submit = (target: unknown): void => {
+	for (const fn of doc.listeners.get('submit') ?? []) (fn as (e: unknown) => void)({ target })
+}
+
+const kindsOf = (kind: string): unknown[] => messages.filter((m) => (m as { kind: string }).kind === kind)
+
+describe('sign-in reports', () => {
+	it('a submitted form reports its username and password', () => {
+		install()
+		submit(filledForm('ada@example.test', 'hunter2').form)
+		expect(messages).toEqual([{ kind: 'submit', username: 'ada@example.test', password: 'hunter2' }])
+	})
+	it('the same submit seen again within a second (click, Enter, submit) is reported once', () => {
+		install()
+		const { form } = filledForm('ada', 'hunter2')
+		submit(form)
+		submit(form)
+		vi.advanceTimersByTime(1100)
+		submit(form)
+		expect(kindsOf('submit')).toHaveLength(2)
+	})
+	it('a sign-up form that repeats the password reports it; a change-password form does not', () => {
+		install()
+		const repeated = filledForm('ada', 'hunter2')
+		repeated.inputs.push(new FakeEl({ type: 'password', value: 'hunter2', form: repeated.form, ownerDocument: { defaultView: win } }))
+		submit(repeated.form)
+		expect(messages).toHaveLength(1)
+
+		install()
+		const changing = filledForm('ada', 'old')
+		changing.inputs.push(new FakeEl({ type: 'password', value: 'new', form: changing.form, ownerDocument: { defaultView: win } }))
+		submit(changing.form)
+		expect(messages).toEqual([])
+	})
+	it('reports nothing without a username or a password, or past the limits', () => {
+		install()
+		submit(filledForm('', 'hunter2').form)
+		submit(filledForm('ada', '').form)
+		submit(filledForm('ada', 'p'.repeat(1025)).form)
+		submit(filledForm('u'.repeat(513), 'hunter2').form)
+		expect(messages).toEqual([])
+		submit(filledForm('u'.repeat(512), 'p'.repeat(1024)).form)
+		expect(messages).toHaveLength(1)
+	})
+	it('ignores a hidden password box and anything that is not a form', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'hunter2')
+		win['getComputedStyle'] = (el: FakeEl) => ({ display: el === inputs[1] ? 'none' : 'block', visibility: 'visible' })
+		submit(form)
+		submit({ tagName: 'DIV' })
+		expect(messages).toEqual([])
+	})
+	it('Enter in a form-less password box reports a submit; Enter in a text box does not', () => {
+		install()
+		const { inputs } = filledForm('ada', 'hunter2')
+		const [user, pass] = inputs as [FakeEl, FakeEl]
+		const owner = Object.assign(doc, { defaultView: win })
+		doc.frames = inputs
+		user.form = null
+		pass.form = null
+		user.ownerDocument = owner
+		pass.ownerDocument = owner
+		const press = (target: FakeEl): void => {
+			for (const fn of doc.listeners.get('keydown') ?? []) (fn as (e: unknown) => void)({ key: 'Enter', target })
+		}
+		press(user)
+		expect(messages).toEqual([])
+		press(pass)
+		expect(messages).toEqual([{ kind: 'submit', username: 'ada', password: 'hunter2' }])
+	})
+	it('reports a landing for each new document, with whether a password box is on it', () => {
+		install()
+		for (const fn of windowListeners.get('load') ?? []) fn()
+		vi.advanceTimersByTime(300)
+		expect(messages).toEqual([{ kind: 'landed', password: false }])
+
+		install()
+		doc.frames = [new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })]
+		for (const fn of windowListeners.get('load') ?? []) fn()
+		vi.advanceTimersByTime(300)
+		expect(messages).toEqual([{ kind: 'landed', password: true }])
+	})
+	it('a document submitted before its own load report is the page being left, so it reports no landing', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'hunter2')
+		doc.frames = inputs
+		for (const fn of windowListeners.get('load') ?? []) fn()
+		submit(form)
+		vi.advanceTimersByTime(300)
+		expect(kindsOf('landed')).toEqual([])
+		expect(kindsOf('submit')).toHaveLength(1)
+	})
+	it('a single-page sign-in that swaps the form away reports one landing, once the box is gone for five checks (about 2 s)', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'hunter2')
+		doc.frames = inputs
+		submit(form)
+		vi.advanceTimersByTime(1000)
+		expect(messages).toHaveLength(1)
+		inputs.forEach((i) => (i.isConnected = false))
+		doc.frames = []
+		vi.advanceTimersByTime(1600)
+		expect(kindsOf('landed')).toHaveLength(0)
+		vi.advanceTimersByTime(400)
+		expect(kindsOf('landed')).toEqual([{ kind: 'landed', password: false }])
+		vi.advanceTimersByTime(5000)
+		expect(kindsOf('landed')).toHaveLength(1)
+	})
+	it('a form that is hidden, disabled or covered while the sign-in is checked is still the form: no landing', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'wrong')
+		doc.frames = inputs
+		submit(form)
+		win['getComputedStyle'] = () => ({ display: 'none', visibility: 'hidden' })
+		inputs[1]!.disabled = true
+		vi.advanceTimersByTime(9000)
+		expect(kindsOf('landed')).toEqual([])
+	})
+	it('a password box that comes back after the form went is reported, once, so a prompt can be withdrawn', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'wrong')
+		doc.frames = inputs
+		submit(form)
+		inputs.forEach((i) => (i.isConnected = false))
+		doc.frames = []
+		vi.advanceTimersByTime(2000)
+		expect(kindsOf('landed')).toEqual([{ kind: 'landed', password: false }])
+		doc.frames = [new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })]
+		vi.advanceTimersByTime(6000)
+		expect(kindsOf('landed')).toEqual([
+			{ kind: 'landed', password: false },
+			{ kind: 'landed', password: true },
+		])
+	})
+	it('a page that keeps its form after a submit reports no landing, and the watch ends after ten seconds', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'wrong')
+		doc.frames = inputs
+		submit(form)
+		vi.advanceTimersByTime(12_000)
+		expect(messages).toHaveLength(1)
+		doc.frames = []
+		vi.advanceTimersByTime(5000)
+		expect(messages).toHaveLength(1)
+	})
+	it('a newer submit takes over the watch', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'hunter2')
+		doc.frames = inputs
+		submit(form)
+		vi.advanceTimersByTime(1500)
+		inputs[1]!.value = 'hunter3'
+		submit(form)
+		inputs.forEach((i) => (i.isConnected = false))
+		doc.frames = []
+		vi.advanceTimersByTime(2400)
+		expect(kindsOf('landed')).toHaveLength(1)
+	})
+	it('a spinner that unmounts the form and brings it back inside the settle time reports nothing at all', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'wrong')
+		doc.frames = inputs
+		submit(form)
+		inputs.forEach((i) => (i.isConnected = false))
+		doc.frames = []
+		vi.advanceTimersByTime(1600)
+		const again = filledForm('ada', 'wrong')
+		doc.frames = again.inputs
+		vi.advanceTimersByTime(20_000)
+		expect(kindsOf('landed')).toEqual([])
+	})
+	it('keeps watching for a returning password box for as long as a prompt can stay open, not only the ten-second hold', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'wrong')
+		doc.frames = inputs
+		submit(form)
+		inputs.forEach((i) => (i.isConnected = false))
+		doc.frames = []
+		vi.advanceTimersByTime(2400)
+		expect(kindsOf('landed')).toEqual([{ kind: 'landed', password: false }])
+		vi.advanceTimersByTime(60_000)
+		doc.frames = [new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })]
+		vi.advanceTimersByTime(1000)
+		expect(kindsOf('landed')).toHaveLength(2)
+	})
+})
+
+// Ruling 46: plain Enter never reaches the host's AcceleratorKeyPressed, so the script takes it for the picker.
+describe('Enter for the account picker', () => {
+	class KeyEvent {
+		prevented = false
+		stopped = false
+		isComposing = false
+		ctrlKey = false
+		altKey = false
+		metaKey = false
+		constructor(
+			public key: string,
+			init: Partial<KeyEvent> = {},
+		) {
+			Object.assign(this, init)
+		}
+		preventDefault(): void {
+			this.prevented = true
+		}
+		stopImmediatePropagation(): void {
+			this.stopped = true
+		}
+	}
+	const press = (key: string, init: Partial<KeyEvent> = {}): KeyEvent => {
+		const event = new KeyEvent(key, init)
+		for (const fn of windowListeners.get('keydown') ?? []) (fn as unknown as (e: KeyEvent) => void)(event)
+		return event
+	}
+	const pickerEnters = (): unknown[] => messages.filter((m) => (m as { kind?: string }).kind === 'picker-enter')
+
+	it('leaves Enter to the page until the host says an entry is highlighted', () => {
+		install()
+		const event = press('Enter')
+		expect(event.prevented).toBe(false)
+		expect(event.stopped).toBe(false)
+		expect(pickerEnters()).toEqual([])
+	})
+	it('takes Enter from the page while the host says so, before any page listener, and posts picker-enter', () => {
+		install()
+		win[autofillPickerEnterFlag] = true
+		const event = press('Enter')
+		expect(event.prevented).toBe(true)
+		expect(event.stopped).toBe(true)
+		expect(pickerEnters()).toEqual([{ kind: 'picker-enter' }])
+		win[autofillPickerEnterFlag] = false
+		expect(press('Enter').prevented).toBe(false)
+	})
+	it('takes only plain Enter: other keys, Ctrl or Alt with it, and an IME composition stay the page\'s', () => {
+		install()
+		win[autofillPickerEnterFlag] = true
+		for (const event of [press('a'), press('ArrowDown'), press('Enter', { ctrlKey: true }), press('Enter', { altKey: true }), press('Enter', { isComposing: true })]) expect(event.prevented).toBe(false)
+		expect(pickerEnters()).toEqual([])
+	})
+	it('in a same-origin frame, follows the top document and posts through it', () => {
+		install()
+		windowListeners = new Map()
+		const framed = makeWindow()
+		framed['top'] = win
+		run(framed)
+		win[autofillPickerEnterFlag] = true
+		expect(press('Enter').prevented).toBe(true)
+		expect(pickerEnters()).toEqual([{ kind: 'picker-enter' }])
+	})
+	it('in a cross-origin frame, which cannot read the top document, never takes Enter', () => {
+		install()
+		windowListeners = new Map()
+		const framed = makeWindow()
+		// Another site's window: it can be compared, but reading anything on it throws.
+		framed['top'] = new Proxy(
+			{},
+			{
+				get: () => {
+					throw new Error('cross-origin')
+				},
+			},
+		)
+		run(framed)
+		expect(press('Enter').prevented).toBe(false)
+		expect(pickerEnters()).toEqual([])
+	})
+	it('installs its listener once however often the script runs', () => {
+		install()
+		run()
+		expect(windowListeners.get('keydown')).toHaveLength(1)
 	})
 })
