@@ -269,10 +269,10 @@ test('in a contrast theme cards are plain outlined rows', async () => {
 			expect(card).toMatchObject({ height: '32px', margin: '0px 0px 0px 0px', borderWidth: '1px', boxShadow: 'none' })
 		}
 
-		const [ribbon] = await railPaint(zing.chrome.locator('.rail-favourites > .rail-ribbon:not(.empty)'))
+		const [ribbon] = await railPaint(zing.chrome.locator('.rail-favourites > .rail-ribbon'))
 		expect(ribbon).toMatchObject({ height: '32px', clipPath: 'none', borderWidth: '1px', boxShadow: 'none' })
 
-		const focused = zing.chrome.locator('.rail-favourites > .rail-ribbon:not(.empty)').first()
+		const focused = zing.chrome.locator('.rail-favourites > .rail-ribbon').first()
 		await focused.focus()
 		await zing.chrome.keyboard.press('Shift+Tab')
 		await zing.chrome.keyboard.press('Tab')
