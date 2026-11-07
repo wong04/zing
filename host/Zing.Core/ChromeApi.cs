@@ -161,7 +161,7 @@ public sealed class ChromeApi : IDisposable
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
-		Permissions = new PermissionBroker(PageUi);
+		Permissions = new PermissionBroker(PageUi, HiddenTabOf);
 		Drops = new DropInbox(Grants);
 		bridge.UseDropInbox(Drops);
 		if (app.ViewerRoot is { } viewerRoot)
@@ -1048,9 +1048,17 @@ public sealed class ChromeApi : IDisposable
 		}
 	}
 
+	/// <summary>The title of the tab whose page this is, when that tab isn't on screen.</summary>
+	private string? HiddenTabOf(object page)
+	{
+		var tab = Tabs.Records.FirstOrDefault(r => ReferenceEquals(Tabs.PageOf(r.Id), page));
+		return tab is null || Tabs.IsShown(tab.Id) ? null : tab.Title;
+	}
+
 	private void OnTabsChanged()
 	{
 		Ordering?.ScheduleReorganize();
+		Permissions?.Refresh();
 		Find?.ActiveChanged();
 		Lifecycle?.Reschedule();
 		Stacks?.Refresh();

@@ -140,6 +140,72 @@ test('Allow grants a notification, and the camera and microphone, each asked in 
 	await zing.close()
 })
 
+test('a click that lands on Allow the moment a prompt opens is ignored', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/perm` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/perm`)
+	await page.waitForLoadState('domcontentloaded')
+	const result = () => page.evaluate(() => (globalThis as unknown as { result?: string }).result)
+	const ask = () =>
+		page.evaluate(() => {
+			const g = globalThis as unknown as { result?: string; Notification: { requestPermission(): Promise<string> } }
+			g.result = 'pending'
+			void g.Notification.requestPermission().then((r) => (g.result = r))
+		})
+	// A first prompt brings up the page UI's view, so the second can be watched from the moment it is added.
+	await ask()
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(ui.getByText('wants to show notifications')).toBeVisible()
+	await ui.getByRole('button', { name: 'Deny' }).click()
+	await expect.poll(result).toBe('denied')
+	await expect(ui.getByRole('alertdialog')).toHaveCount(0)
+
+	// The second half of a double-click: a click on Allow as soon as the card is in the page.
+	await ui.evaluate(() => {
+		const g = globalThis as unknown as { earlyClicks?: number; document: Document; MutationObserver: typeof MutationObserver }
+		g.earlyClicks = 0
+		new g.MutationObserver(() => {
+			const allow = g.document.querySelector<HTMLButtonElement>('[role="alertdialog"] button.primary')
+			if (!allow || g.earlyClicks !== 0) return
+			g.earlyClicks = 1
+			allow.click()
+		}).observe(g.document.body, { childList: true, subtree: true })
+	})
+	await page.evaluate(() => {
+		const g = globalThis as unknown as {
+			result?: string
+			navigator: { mediaDevices: { getUserMedia(c: object): Promise<unknown> } }
+		}
+		g.result = 'pending'
+		g.navigator.mediaDevices.getUserMedia({ video: true }).then(
+			() => (g.result = 'granted'),
+			(error: Error) => (g.result = error.name),
+		)
+	})
+	await expect(ui.getByText('wants to use your camera')).toBeVisible()
+	expect(await ui.evaluate(() => (globalThis as unknown as { earlyClicks: number }).earlyClicks)).toBe(1)
+	await expect(ui.getByRole('button', { name: 'Allow' })).toBeEnabled()
+	await ui.getByRole('button', { name: 'Deny' }).click()
+	await expect.poll(result).toBe('NotAllowedError')
+	await zing.close()
+})
+
+test("a background tab's prompt names that tab, and stops once the tab is shown", async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/perm` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/perm`)
+	await page.waitForLoadState('domcontentloaded')
+	await zing.chrome.evaluate(() => window.zing.runCommand('tab.new'))
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.length).toBe(2)
+	await page.evaluate(() => void (globalThis as unknown as { Notification: { requestPermission(): Promise<string> } }).Notification.requestPermission())
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(ui.getByText('wants to show notifications')).toBeVisible()
+	await expect(ui.getByText('From the tab “Permissions”')).toBeVisible()
+	const first = (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs[0]!.id
+	await zing.chrome.evaluate((id) => window.zing.activateTab(id), first)
+	await expect(ui.getByText('From the tab')).toHaveCount(0)
+	await ui.getByRole('button', { name: 'Deny' }).click()
+	await zing.close()
+})
+
 test("a page's icon reaches its tab as an in-memory image", async () => {
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/iconic` } })
 	await expect

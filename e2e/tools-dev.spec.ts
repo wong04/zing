@@ -171,7 +171,7 @@ test('a pattern matching every character of a long text shows the first 500 matc
 	const { panel } = await openTool(zing, 'Regex Tester')
 	await panel.getByRole('textbox', { name: 'Test string' }).fill('x'.repeat(200_000))
 	await panel.getByRole('textbox', { name: 'Pattern' }).fill('.')
-	await expect(panel.getByText('500 matches')).toBeVisible()
+	await expect(panel.getByText('500 matches', { exact: true })).toBeVisible()
 	await expect(panel.getByText('Showing the first 500 matches. There are more.')).toBeVisible()
 	await zing.close()
 })

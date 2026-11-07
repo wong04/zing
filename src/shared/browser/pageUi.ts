@@ -25,6 +25,8 @@ export interface PermissionPrompt {
 	readonly id: number
 	readonly origin: string
 	readonly kind: PermissionKind
+	/** The asking tab's title when it isn't the tab on screen. */
+	readonly tab?: string
 }
 
 export interface PageUiState {
