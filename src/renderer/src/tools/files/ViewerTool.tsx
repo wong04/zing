@@ -89,7 +89,7 @@ export function ViewerTool() {
 			setNotice({ kind: 'failed', message: failureText(showing?.opened.name ?? 'the file', exit) })
 			setFile(null)
 			// The host has dropped the copy; this forgets the address too.
-			if (showing) void zing.closeViewerFile(showing.opened.id).catch((error: unknown) => console.error('Closing the viewer file failed', error))
+			if (showing) void zing.closeViewerFile(showing.opened.id)
 		}
 		const offOutput = zing.onEngineOutput((output) => {
 			if (job.current !== undefined && job.current !== output.jobId) return
@@ -112,7 +112,7 @@ export function ViewerTool() {
 			offOutput()
 			offExit()
 			const showing = current.current
-			if (showing) void zing.closeViewerFile(showing.opened.id).catch((error: unknown) => console.error('Closing the viewer file failed', error))
+			if (showing) void zing.closeViewerFile(showing.opened.id)
 		}
 	}, [])
 
