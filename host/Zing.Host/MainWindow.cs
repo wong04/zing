@@ -457,6 +457,14 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public void FocusPageUi() => _pageUi?.Focus();
 
+	public void AccountPickerChanged(Zing.Core.Vault.AccountPicker? picker) => _pageUi?.PickerChanged(picker);
+
+	public void SetAccountPickerHeight(int height) => _pageUi?.SetPickerHeight(height);
+
+	public void FocusAccountPicker() => _pageUi?.FocusPicker();
+
+	public bool AutofillOn => _app.Services.Vault is not null;
+
 	public void Report(string what, Exception error) => TestHooks.Record(what, error);
 
 	public void StackDropdownChanged(StackDropdownState? state) => _stacks?.Changed(state is not null);

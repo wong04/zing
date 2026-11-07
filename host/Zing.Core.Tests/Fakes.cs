@@ -32,7 +32,13 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public System.Text.Json.JsonElement ProbeResult { get; set; } = System.Text.Json.JsonDocument.Parse("{\"scrollY\":0,\"dirty\":false}").RootElement;
 	/// <summary>When set, answers <see cref="EvaluateAsync"/> instead of <see cref="ProbeResult"/>, so a test can navigate, hang or fail mid-script.</summary>
 	public Func<Task<System.Text.Json.JsonElement>>? Evaluating { get; set; }
-	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script) => Evaluating?.Invoke() ?? Task.FromResult(ProbeResult);
+	/// <summary>Every script <see cref="EvaluateAsync"/> was given, in order.</summary>
+	public List<string> Evaluated { get; } = [];
+	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script)
+	{
+		Evaluated.Add(script);
+		return Evaluating?.Invoke() ?? Task.FromResult(ProbeResult);
+	}
 	public void RunWhenLoaded(string script) => Calls.Add($"when loaded {script}");
 	public int TextSize { get; set; } = Zing.Core.TextSize.Default;
 	public double Zoom { get; set; } = Zing.Core.Zoom.Default;
@@ -169,6 +175,11 @@ public sealed class FakeWindowHost : IWindowHost
 	public List<int> PageUiHeights { get; } = [];
 	public void SetPageUiHeight(int height) => PageUiHeights.Add(height);
 	public void FocusPageUi() { }
+	public List<Zing.Core.Vault.AccountPicker?> Pickers { get; } = [];
+	public void AccountPickerChanged(Zing.Core.Vault.AccountPicker? picker) => Pickers.Add(picker);
+	public void SetAccountPickerHeight(int height) { }
+	public int PickerFocuses { get; private set; }
+	public void FocusAccountPicker() => PickerFocuses++;
 
 	public string DownloadsDirectory { get; set; } = Path.GetTempPath();
 	public IDownloadHost DownloadHost { get; } = new FakeDownloads();

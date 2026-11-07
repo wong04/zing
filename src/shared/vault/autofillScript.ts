@@ -1,28 +1,26 @@
 // Port of the sign-in field detection and fill scripts from Krackn's `KeychainAutofill`
 // (Features/Browser/KeychainAutofill.swift). Krackn handed the field to Apple's Passwords
-// picker; here the script reports it to the host through a function the preload exposes
-// into the same isolated world, and the host answers with `fillScript`.
+// picker; here the script reports it to the host with `chrome.webview.postMessage`, and the
+// host shows Zing's own account picker and answers a choice with `fillScript`.
 //
-// Inject `detectionScript` into the *main frame only*, in the isolated world
-// `autofillWorldId` (`webContents.executeJavaScriptInIsolatedWorld`, on each load). It
-// reaches same-origin frames itself. The isolated world shares the DOM but not globals,
-// so the site's scripts can't see the target, read the messages or spoof them.
+// The host injects `detectionScript` with `AddScriptToExecuteOnDocumentCreatedAsync`, which
+// runs it in every frame; it installs itself in the top frame only and reaches same-origin
+// frames itself. WebView2 has no isolated world, so the page shares these globals and can
+// read, replace or forge anything here. That's why the host takes the origin from WebView2's
+// own `Source` for the message, never from the message, and why no saved username or password
+// is ever handed to the page before the user chooses one in Zing's picker.
 import { usernameHint } from './autofillFields'
 
-/** Isolated world for the autofill scripts (Electron reserves 999; any other positive id works). */
-export const autofillWorldId = 1100
-
-/**
- * The function the preload exposes in `autofillWorldId`
- * (`contextBridge.exposeInIsolatedWorld(autofillWorldId, autofillBridgeName, report)`).
- * It receives each message `parseFieldMessage` reads.
- */
+/** The key every message from the script is posted under: `{ zingCredentialField: message }`. Anything else isn't the script's. */
 export const autofillBridgeName = 'zingCredentialField'
 
-/** Isolated-world globals the scripts share. */
+/** Page globals the scripts share. */
 const target = '__zingAutofillTarget'
 const fill = '__zingAutofillFill'
 const installed = '__zingAutofillInstalled'
+
+/** The page function `fillScript` calls; the host builds the same call (Defaults/autofill.json). */
+export const autofillFillFunction = fill
 
 /**
  * Reports which sign-in field has focus, and where it is.
@@ -42,13 +40,20 @@ const installed = '__zingAutofillInstalled'
  * can't be read (`contentDocument` is null), which is the browser enforcing
  * that third-party frames are never filled.
  *
+ * In a sign-in field, the down arrow and Esc are reported too (`{ kind: 'key' }`):
+ * the down arrow moves the keyboard into the picker (or opens it again), Esc closes it.
+ *
  * `kind` here is `fieldKind` in autofillFields.ts; keep the two in step.
  */
 export const detectionScript = `(() => {
+  // The top frame reaches same-origin frames itself; a frame's own copy does nothing.
+  if (window.top !== window) return;
   // Installed once per document, however often the host injects it.
   if (window.${installed}) return;
-  const report = window[${JSON.stringify(autofillBridgeName)}];
-  if (typeof report !== 'function') throw new Error('Zing autofill: the ${autofillBridgeName} bridge is missing');
+  const webview = window.chrome && window.chrome.webview;
+  if (!webview || typeof webview.postMessage !== 'function') throw new Error('Zing autofill: chrome.webview is missing');
+  const post = webview.postMessage.bind(webview);
+  const report = m => post({ ${JSON.stringify(autofillBridgeName)}: m });
   window.${installed} = true;
 
   const kind = el => {
@@ -96,8 +101,17 @@ export const detectionScript = `(() => {
     if (key !== lastKey) { lastKey = key; report(m); }
   };
   const soon = () => setTimeout(check, 0);
+  const pickerKeys = { ArrowDown: 'down', Escape: 'escape' };
+  const onKey = e => {
+    const key = pickerKeys[e.key];
+    if (key && kind(focused().el)) report({ kind: 'key', key });
+  };
   const events = ['focusin', 'focusout', 'pointerdown', 'keyup'];
-  events.forEach(t => document.addEventListener(t, soon, true));
+  const listen = doc => {
+    events.forEach(t => doc.addEventListener(t, soon, true));
+    doc.addEventListener('keydown', onKey, true);
+  };
+  listen(document);
   // Focus and clicks inside a frame never reach this document, so listen
   // inside each same-origin frame too, as it loads. Cross-origin frames
   // throw or give null on access and are skipped — never watched, never filled.
@@ -108,7 +122,7 @@ export const detectionScript = `(() => {
       try { doc = f.contentDocument; } catch (e) { doc = null; }
       if (!doc || hooked.has(doc)) return;
       hooked.add(doc);
-      events.forEach(t => doc.addEventListener(t, soon, true));
+      listen(doc);
     });
   };
   document.addEventListener('load', () => { hookFrames(); soon(); }, true);   // frames loading
@@ -119,19 +133,36 @@ export const detectionScript = `(() => {
   window.addEventListener('load', () => { hookFrames(); soon(); });
   setInterval(() => { if (document.hasFocus()) check(); }, 700);
 
-  // Puts a value into the field that was focused, as if typed: the native
-  // value setter of the field's *own* window (it may be inside a frame), so
-  // frameworks like React see it, then input and change events. Only if the
-  // field is still in the page and still wants this half of the credential.
-  window.${fill} = (value, wanted) => {
-    const el = window.${target};
-    if (!el || !el.isConnected || kind(el) !== wanted) return false;
+  // Puts a value into a field as if typed: the native value setter of the
+  // field's *own* window (it may be inside a frame), so frameworks like React
+  // see it, then input and change events. Never moves the focus, which would
+  // report another field and open the picker again.
+  const put = (el, value) => {
     const proto = (el.ownerDocument.defaultView || window).HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-    el.focus();
     setter.call(el, value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  // The other half of the credential: the first password box after a username
+  // box, or the last username box before a password box, in its form (or document).
+  const partner = (el, wanted) => {
+    const scope = el.form || el.ownerDocument;
+    const inputs = Array.prototype.slice.call(scope.querySelectorAll('input'));
+    const at = inputs.indexOf(el);
+    if (at < 0) return null;
+    const candidates = wanted === 'password' ? inputs.slice(at + 1) : inputs.slice(0, at).reverse();
+    return candidates.find(other => kind(other) === wanted) || null;
+  };
+  // Fills the field that was focused and its other half; only if the field is
+  // still in the page and still a sign-in field.
+  window.${fill} = (username, password) => {
+    const el = window.${target};
+    const k = el && el.isConnected ? kind(el) : null;
+    if (!k) return false;
+    const other = partner(el, k === 'username' ? 'password' : 'username');
+    if (other) put(other, k === 'username' ? password : username);
+    put(el, k === 'username' ? username : password);
     return true;
   };
 
@@ -139,10 +170,10 @@ export const detectionScript = `(() => {
 })();`
 
 /**
- * Run in `autofillWorldId` after the user picks a login: fills the reported
- * field and evaluates to whether it did. The value travels as a JSON string
- * literal, which is a safe JavaScript literal for any text.
+ * Run in the page after the user picks a login and passes Windows Hello: fills the
+ * reported field and its other half, and evaluates to whether it did. The values
+ * travel as JSON string literals, which are safe JavaScript literals for any text.
  */
-export function fillScript(value: string, kind: 'username' | 'password'): string {
-	return `window.${fill}(${JSON.stringify(value)}, ${JSON.stringify(kind)})`
+export function fillScript(username: string, password: string): string {
+	return `window.${fill}(${JSON.stringify(username)}, ${JSON.stringify(password)})`
 }

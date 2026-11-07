@@ -1,7 +1,7 @@
 import type { EngineInfo, EngineProgress, EnsureOutcome, YtDlpUpdate } from './engines/engineInfo'
 import type { SessionKindName, ViewerOpened } from './convert/viewable'
 import type { EngineExit, EngineJobSpec, EngineOutput, FileKind, PickedFile } from './engines/engineJob'
-import type { FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
+import type { AccountPickerState, FillOutcome, FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
 import type { BrowserLibrary } from './library/library'
 import type { TabId, TabRecord } from './model/tab'
@@ -241,6 +241,12 @@ export interface InvokeContract {
 	'chrome:history-menu': { args: [direction: HistoryDirection, anchor: MenuAnchor]; result: void }
 	'pageui:get': { args: []; result: PageUiState }
 	'pageui:height': { args: [height: number]; result: void }
+	/** The account picker on screen, or null. Usernames only, never a password; the page itself never sees them. */
+	'pageui:picker-get': { args: []; result: AccountPickerState | null }
+	/** The picker view measured what it shows. */
+	'pageui:picker-height': { args: [height: number]; result: void }
+	/** Esc in the picker: closes it and gives the keyboard back to the page. */
+	'pageui:picker-close': { args: []; result: void }
 	'find:update': { args: [text: string]; result: void }
 	'find:step': { args: [direction: FindDirection]; result: void }
 	'find:close': { args: []; result: void }
@@ -405,6 +411,12 @@ export interface InvokeContract {
 	'vault:restore': { args: [id: string]; result: void }
 	/** When each old password was replaced, newest first. No passwords and no prompt. */
 	'vault:history': { args: [id: string]; result: PasswordHistoryEntry[] }
+	/**
+	 * The user chose a login in the account picker: asks Windows Hello once, then fills that page's field and its other half.
+	 * `cancelled` when Hello was cancelled or unavailable (nothing filled, no error); `refused` when the page is no longer
+	 * on the origin the picker was shown for; `not-filled` when the field had gone. The picker closes either way.
+	 */
+	'vault:fill': { args: [pageId: TabId, id: string]; result: FillOutcome }
 	'overview:close': { args: []; result: void }
 }
 
@@ -415,6 +427,7 @@ export interface EventContract {
 	'stack:dropdown': StackDropdownState | null
 	'overlay:notice': Notice | null
 	'pageui:state': PageUiState
+	'pageui:account-picker': AccountPickerState | null
 	'library:state': LibraryViewState
 	'overlay:overview': OverviewState | null
 	'settings:changed': Settings
@@ -474,6 +487,10 @@ export interface ZingApi {
 	openHistoryMenu(direction: HistoryDirection, anchor: MenuAnchor): Promise<void>
 	getPageUi(): Promise<PageUiState>
 	setPageUiHeight(height: number): Promise<void>
+	getAccountPicker(): Promise<AccountPickerState | null>
+	setAccountPickerHeight(height: number): Promise<void>
+	closeAccountPicker(): Promise<void>
+	onAccountPicker(listener: (state: AccountPickerState | null) => void): Unsubscribe
 	updateFind(text: string): Promise<void>
 	stepFind(direction: FindDirection): Promise<void>
 	closeFind(): Promise<void>
@@ -581,4 +598,5 @@ export interface ZingApi {
 	restoreLogin(id: string): Promise<void>
 	loginHistory(id: string): Promise<PasswordHistoryEntry[]>
 	onVaultState(listener: (state: VaultState) => void): Unsubscribe
+	fillLogin(pageId: TabId, id: string): Promise<FillOutcome>
 }

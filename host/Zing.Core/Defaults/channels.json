@@ -237,6 +237,18 @@
 			"args": 1
 		},
 		{
+			"channel": "pageui:picker-close",
+			"args": 0
+		},
+		{
+			"channel": "pageui:picker-get",
+			"args": 0
+		},
+		{
+			"channel": "pageui:picker-height",
+			"args": 1
+		},
+		{
 			"channel": "permission:allow",
 			"args": 1
 		},
@@ -442,6 +454,10 @@
 			"args": 1
 		},
 		{
+			"channel": "vault:fill",
+			"args": 2
+		},
+		{
 			"channel": "vault:get",
 			"args": 0
 		},
@@ -491,6 +507,7 @@
 		"library:state",
 		"overlay:notice",
 		"overlay:overview",
+		"pageui:account-picker",
 		"pageui:state",
 		"relay:attempt",
 		"settings:changed",

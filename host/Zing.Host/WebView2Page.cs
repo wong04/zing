@@ -330,11 +330,16 @@ public sealed class WebView2Page : IPage
 		_view.Visible = _visible;
 		_view.Place(_bounds);
 		_core = _view.Core;
-		// A page is not Zing's UI. Nothing here listens for a page's messages (only the renderer views do, and they refuse every origin
-		// but their own), and no host object is added; these two settings are belt and braces. chrome.webview itself stays on the page
-		// (the engine injects it) and postMessage still returns without error, as the relayed-page e2e observes.
+		// A page is not Zing's UI. No host object is added, and the only page messages anything listens for are the autofill
+		// script's (OnPageMessage), and only while the vault is on: with it off, web messages stay off as belt and braces.
+		// chrome.webview itself stays on the page (the engine injects it) and postMessage still returns without error, as the
+		// relayed-page e2e observes.
+		var autofill = _features.AutofillOn;
 		_core.Settings.AreHostObjectsAllowed = false;
-		_core.Settings.IsWebMessageEnabled = false;
+		_core.Settings.IsWebMessageEnabled = autofill;
+		// Zing's vault is the only password manager: WebView2's own saving and form autofill stay off in every profile (Ruling 5).
+		_core.Settings.IsPasswordAutosaveEnabled = false;
+		_core.Settings.IsGeneralAutofillEnabled = false;
 		_core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
@@ -354,8 +359,51 @@ public sealed class WebView2Page : IPage
 			if (_view.HasKeyboard && Native.MouseButtonDown()) _events.Focused();
 		};
 
+		if (autofill)
+		{
+			// Before any queued navigation, so every document gets it; it installs itself in the top frame only.
+			await _core.AddScriptToExecuteOnDocumentCreatedAsync(Zing.Core.Vault.AutofillScripts.Detection);
+			if (!IsOpen) return;
+			_core.WebMessageReceived += OnPageMessage;
+		}
+
 		foreach (var action in _queued) action(_core);
 		_queued.Clear();
+	}
+
+	/// <summary>
+	/// The autofill script's messages, from the top document only (frames post to their own CoreWebView2Frame, which nothing
+	/// here listens to). The page can post the same thing, so the origin is the engine's <c>Source</c> for the message, never
+	/// anything in it. Anything that isn't under the script's key is some other page message and is ignored.
+	/// </summary>
+	private void OnPageMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e)
+	{
+		Zing.Core.Vault.AutofillMessage? message;
+		try
+		{
+			message = Zing.Core.Vault.AutofillMessage.Parse(e.WebMessageAsJson);
+		}
+		catch (Zing.Core.Vault.AutofillMessageException error)
+		{
+			// A page can forge one; it gets no picker, and it is not Zing's failure, so it is a warning, not a recorded error.
+			Faults.Warning("autofill message", error);
+			return;
+		}
+		if (message is null) return;
+		if (!Uri.TryCreate(e.Source, UriKind.Absolute, out var source))
+		{
+			Faults.Warning("autofill message", new UriFormatException($"The engine gave a message source that is not an address: {e.Source}"));
+			return;
+		}
+		if (message is Zing.Core.Vault.AutofillMessage.Focused focused) message = new Zing.Core.Vault.AutofillMessage.Focused(focused.Field with { Rect = InWindow(focused.Field.Rect) });
+		_events.Autofill(source, message);
+	}
+
+	/// <summary>A rect in the page's CSS pixels, in DIPs of the window's content: the page's place plus the rect at its zoom.</summary>
+	private Rect InWindow(Rect css)
+	{
+		var zoom = Zoom;
+		return new Rect(_bounds.X + css.X * zoom, _bounds.Y + css.Y * zoom, css.Width * zoom, css.Height * zoom);
 	}
 
 	private void Wire(CoreWebView2 core)
@@ -400,6 +448,8 @@ public sealed class WebView2Page : IPage
 			// The warning page itself starts after the cancelled navigation and must not lift the refusal.
 			if (!e.Uri.StartsWith(StartPage.Scheme + "://", StringComparison.OrdinalIgnoreCase)) _warnedDocument = null;
 			_navigation = e.NavigationId;
+			// A new document: its sign-in fields are not the last one's, so a picker for them goes.
+			if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var leaving)) _events.Autofill(leaving, new Zing.Core.Vault.AutofillMessage.Left());
 			// A new document: what the last one was still asking for is no longer wanted.
 			_relayRuns.LeaveDocument();
 			var toRelay = RelayedContent.IsRelayUrl(e.Uri);

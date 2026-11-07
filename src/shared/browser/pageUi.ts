@@ -50,3 +50,20 @@ export function hasVisiblePageUi(state: PageUiState): boolean {
 
 export type HistoryDirection = 'back' | 'forward'
 export type FindDirection = 'next' | 'previous'
+
+export interface AccountPickerEntry {
+	readonly id: string
+	readonly username: string
+}
+
+/** The vault's account picker, drawn by Zing under the focused sign-in field; the page never sees it. */
+export interface AccountPickerState {
+	/** The tab whose field it is for. */
+	readonly pageId: string
+	/** The field, in DIPs of the window's content. */
+	readonly rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+	/** Newest first. Usernames only, never a password. */
+	readonly entries: readonly AccountPickerEntry[]
+}
+
+export type FillOutcome = 'filled' | 'not-filled' | 'cancelled' | 'refused'

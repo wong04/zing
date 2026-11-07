@@ -5,6 +5,7 @@ import './api'
 import './theme/tokens.css'
 import './base.css'
 import { App } from './App'
+import { AccountPicker } from './overlay/AccountPicker'
 import { Overlay } from './overlay/Overlay'
 import { PageUi } from './overlay/PageUi'
 import { Surface } from './surface/Surface'
@@ -12,10 +13,11 @@ import { Surface } from './surface/Surface'
 const root = document.getElementById('root')
 if (!root) throw new Error('index.html has no #root element')
 
-// One bundle serves two views: main loads it with #chrome for the window and #overlay for the top layer.
+// One bundle serves every view: the host loads it with #chrome for the window, #overlay for the top layer, #pageui and #picker over the page.
 const isPageUi = location.hash === '#pageui'
+const isPicker = location.hash === '#picker'
 const isSurface = location.hash === '#surface'
-const isOverlay = location.hash.startsWith('#overlay') || isPageUi
+const isOverlay = location.hash.startsWith('#overlay') || isPageUi || isPicker
 document.documentElement.dataset['view'] = isSurface ? 'surface' : isOverlay ? 'overlay' : 'chrome'
 
-createRoot(root).render(<StrictMode>{isSurface ? <Surface /> : isPageUi ? <PageUi /> : isOverlay ? <Overlay /> : <App />}</StrictMode>)
+createRoot(root).render(<StrictMode>{isSurface ? <Surface /> : isPageUi ? <PageUi /> : isPicker ? <AccountPicker /> : isOverlay ? <Overlay /> : <App />}</StrictMode>)

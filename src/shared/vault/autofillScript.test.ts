@@ -24,7 +24,8 @@ class FakeEl {
 	clientTop = 0
 	rect = { left: 0, top: 0, width: 100, height: 20 }
 	events: string[] = []
-	ownerDocument: { defaultView: unknown } = { defaultView: null }
+	ownerDocument: { defaultView: unknown; querySelectorAll?: () => FakeEl[] } = { defaultView: null }
+	form: { querySelectorAll: () => FakeEl[] } | null = null
 	constructor(init: Partial<FakeEl> = {}) {
 		Object.assign(this, init)
 	}
@@ -91,11 +92,14 @@ let windowListeners: Map<string, Listener[]>
 let win: Record<string, unknown>
 
 function makeWindow(): Record<string, unknown> {
-	return {
-		[autofillBridgeName]: (m: unknown) => messages.push(m),
+	const w: Record<string, unknown> = {
+		// Every message goes out under the script's key; the test unwraps it.
+		chrome: { webview: { postMessage: (m: Record<string, unknown>) => messages.push(m[autofillBridgeName]) } },
 		HTMLInputElement: FakeInput,
 		addEventListener: (type: string, fn: Listener) => windowListeners.set(type, [...(windowListeners.get(type) ?? []), fn]),
 	}
+	w['top'] = w
+	return w
 }
 
 function run(target: Record<string, unknown> = win): void {
@@ -117,8 +121,18 @@ function focus(el: FakeEl): void {
 	vi.advanceTimersByTime(0)
 }
 
-function evalFill(value: string, kind: 'username' | 'password'): unknown {
-	return new Function('window', `return ${fillScript(value, kind)}`)(win)
+function evalFill(username: string, password: string): unknown {
+	return new Function('window', `return ${fillScript(username, password)}`)(win)
+}
+
+/** A username box and a password box in one form, in that order. */
+function signInForm(): { user: FakeEl; pass: FakeEl } {
+	const inputs: FakeEl[] = []
+	const form = { querySelectorAll: () => inputs }
+	const user = new FakeEl({ type: 'email', form, ownerDocument: { defaultView: win } })
+	const pass = new FakeEl({ type: 'password', form, ownerDocument: { defaultView: win } })
+	inputs.push(new FakeEl({ type: 'checkbox', name: 'remember', form }), user, pass)
+	return { user, pass }
 }
 
 beforeEach(() => {
@@ -238,11 +252,11 @@ describe('detection', () => {
 		const innerDoc = new FakeDoc()
 		doc.frames = [new FakeEl({ tagName: 'IFRAME', contentDocument: innerDoc }), new FakeEl({ tagName: 'IFRAME' })]
 		for (const fn of windowListeners.get('load') ?? []) fn()
-		expect([...innerDoc.listeners.keys()].sort()).toEqual(['focusin', 'focusout', 'keyup', 'pointerdown'])
+		expect([...innerDoc.listeners.keys()].sort()).toEqual(['focusin', 'focusout', 'keydown', 'keyup', 'pointerdown'])
 	})
 	it('re-checks on load, click, key and focus', () => {
 		install()
-		expect([...doc.listeners.keys()].sort()).toEqual(['focusin', 'focusout', 'keyup', 'load', 'pointerdown'])
+		expect([...doc.listeners.keys()].sort()).toEqual(['focusin', 'focusout', 'keydown', 'keyup', 'load', 'pointerdown'])
 		expect(windowListeners.has('focus')).toBe(true)
 		expect(windowListeners.has('load')).toBe(true)
 	})
@@ -262,37 +276,86 @@ describe('detection', () => {
 		run()
 		expect(doc.listeners.get('focusin')?.length).toBe(before)
 	})
-	it('fails loudly when the bridge is missing', () => {
+	it('fails loudly when chrome.webview is missing', () => {
 		install()
-		expect(() => run({ addEventListener: () => {} })).toThrow(/bridge is missing/)
+		const bare: Record<string, unknown> = { addEventListener: () => {} }
+		bare['top'] = bare
+		expect(() => run(bare)).toThrow(/chrome.webview is missing/)
+	})
+	it('does nothing in a frame: the top frame reaches same-origin frames itself', () => {
+		install()
+		const framed = makeWindow()
+		framed['top'] = win
+		doc = new FakeDoc()
+		doc.activeElement = new FakeEl({ type: 'password' })
+		run(framed)
+		expect(messages).toEqual([])
+		expect(doc.listeners.size).toBe(0)
+	})
+	it('reports the down arrow and Esc in a sign-in field, and nothing in another field', () => {
+		install()
+		const press = (key: string): void => {
+			for (const fn of doc.listeners.get('keydown') ?? []) (fn as unknown as (e: { key: string }) => void)({ key })
+		}
+		focus(new FakeEl({ type: 'password' }))
+		press('ArrowDown')
+		press('Escape')
+		press('a')
+		expect(messages.slice(1)).toEqual([
+			{ kind: 'key', key: 'down' },
+			{ kind: 'key', key: 'escape' },
+		])
+		focus(new FakeEl({ name: 'q' }))
+		press('ArrowDown')
+		expect(messages.at(-1)).toEqual({ kind: 'none' })
 	})
 })
 
 describe('filling', () => {
-	it('sets through the native setter then fires input and change', () => {
+	it('fills the focused username box and the password box after it, through the native setter', () => {
 		install()
-		const el = new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })
-		focus(el)
-		expect(evalFill('hunter2', 'password')).toBe(true)
-		expect(setterCalls).toEqual([[el, 'hunter2']])
-		expect(el.events).toEqual(['input', 'change'])
+		const { user, pass } = signInForm()
+		focus(user)
+		expect(evalFill('ada', 'hunter2')).toBe(true)
+		expect(setterCalls).toEqual([
+			[pass, 'hunter2'],
+			[user, 'ada'],
+		])
+		expect(user.events).toEqual(['input', 'change'])
+		expect(pass.events).toEqual(['input', 'change'])
 	})
-	it('refuses the wrong half, a detached field, or no field', () => {
+	it('from the password box, fills the username box before it', () => {
 		install()
-		const el = new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })
-		expect(evalFill('x', 'password')).toBe(false)
+		const { user, pass } = signInForm()
+		focus(pass)
+		expect(evalFill('ada', 'hunter2')).toBe(true)
+		expect(setterCalls).toEqual([
+			[user, 'ada'],
+			[pass, 'hunter2'],
+		])
+	})
+	it('fills just the field when it has no other half', () => {
+		install()
+		const el = new FakeEl({ type: 'password', ownerDocument: { defaultView: win, querySelectorAll: () => [] } })
 		focus(el)
-		expect(evalFill('x', 'username')).toBe(false)
-		el.isConnected = false
-		expect(evalFill('x', 'password')).toBe(false)
+		expect(evalFill('ada', 'hunter2')).toBe(true)
+		expect(setterCalls).toEqual([[el, 'hunter2']])
+	})
+	it('refuses a detached field, or no field', () => {
+		install()
+		const { user } = signInForm()
+		expect(evalFill('a', 'x')).toBe(false)
+		focus(user)
+		user.isConnected = false
+		expect(evalFill('a', 'x')).toBe(false)
 		expect(setterCalls).toEqual([])
 	})
-	it('a value with quotes, script tags or line separators stays a string literal', () => {
+	it('values with quotes, script tags or line separators stay string literals', () => {
 		install()
-		const el = new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })
-		focus(el)
-		const value = '"\'</script>\n '
-		expect(evalFill(value, 'password')).toBe(true)
-		expect(setterCalls[0]?.[1]).toBe(value)
+		const { user } = signInForm()
+		focus(user)
+		const value = '"\'</script>\n  '
+		expect(evalFill(value, value)).toBe(true)
+		expect(setterCalls.map(([, v]) => v)).toEqual([value, value])
 	})
 })

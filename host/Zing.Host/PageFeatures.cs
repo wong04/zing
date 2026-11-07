@@ -15,6 +15,8 @@ public interface IPageFeatureHost
 	void Left(WebView2Page page);
 	/// <summary>An element of the page entered or left fullscreen (a video's fullscreen button, requestFullscreen).</summary>
 	void FullScreenChanged(WebView2Page page);
+	/// <summary>The password vault is on, so pages get the autofill script and may post its messages.</summary>
+	bool AutofillOn { get; }
 }
 
 /// <summary>

@@ -8,6 +8,8 @@ public enum OverlayLevel
 {
 	/// <summary>The find bar, downloads list and permission prompt (PageUiLayer).</summary>
 	PageUi,
+	/// <summary>The vault's account picker under a sign-in field (PageUiLayer, #picker).</summary>
+	AccountPicker,
 	/// <summary>The stack dropdown, #overlay-stack (CoveringLayer).</summary>
 	StackDropdown,
 	/// <summary>The tab overview, #overlay-overview (CoveringLayer).</summary>
