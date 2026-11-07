@@ -140,19 +140,9 @@
 	font-weight: 800;
 }
 
-/* Nothing saved yet: a faint outline of where a ribbon will hang. The clip-path cuts a border off, so the outline is the faint fill
-   showing through a 1.5px inset of the window colour. */
-.rail-favourites > .rail-ribbon.empty {
-	position: relative;
-	background: color-mix(in srgb, var(--window-ink) 18%, transparent);
-}
-
-.rail-favourites > .rail-ribbon.empty::before {
-	content: '';
-	position: absolute;
-	inset: 1.5px;
-	clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%);
-	background: var(--window);
+/* Nothing saved yet: a dashed slot like Pinned's, filling the row the ribbons will hang in. */
+.rail-favourites > .rail-favourites-hint {
+	flex: 1;
 }
 
 .rail-ribbon.active,
@@ -242,9 +232,11 @@
 	padding: 10px 8px;
 	border: 1px dashed var(--separator);
 	border-radius: 10px;
-	color: var(--window-ink);
+	color: color-mix(in srgb, var(--window-ink) 62%, transparent);
 	font-size: 12px;
+	line-height: 1.35;
 	text-align: center;
+	text-wrap: balance;
 }
 
 .rail-pinned-items {
@@ -666,8 +658,18 @@
 .rail.collapsed .rail-group-count,
 .rail.collapsed .rail-chevron,
 .rail.collapsed .rail-section-head,
-.rail.collapsed .rail-hint {
+.rail.collapsed .rail-pinned-items .rail-hint {
 	display: none;
+}
+
+/* Collapsed, the empty Favourites keeps its dashed slot as a drop target, without the words. */
+.rail.collapsed .rail-favourites-hint {
+	flex: none;
+	width: 36px;
+	height: 32px;
+	padding: 0;
+	overflow: hidden;
+	font-size: 0;
 }
 
 .rail.collapsed .rail-row {
@@ -740,10 +742,6 @@
 	.rail-ribbon.active,
 	.rail-ribbon.more.holds-active {
 		border-color: Highlight;
-	}
-
-	.rail-favourites > .rail-ribbon.empty::before {
-		display: none;
 	}
 
 	.rail-favourites-panel {

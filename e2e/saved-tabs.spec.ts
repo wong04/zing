@@ -155,11 +155,12 @@ test('resizing the rail changes how many ribbons show', async () => {
 	await zing.close()
 })
 
-test('an empty Favourites is one faint ribbon, and a tab dragged onto it becomes a favourite', async () => {
+test('an empty Favourites is one dashed hint, and a tab dragged onto it becomes a favourite', async () => {
 	const zing = await launchZing()
-	const empty = favourites(zing.chrome).locator('.rail-ribbon.empty')
+	const empty = favourites(zing.chrome).locator('.rail-favourites-hint')
+	await expect(empty).toHaveText('Drag a tab here to favourite it')
 	await expect(empty).toHaveAttribute('title', 'Drag a tab here, or press Ctrl+D')
-	await expect(favourites(zing.chrome).locator('.rail-hint')).toHaveCount(0)
+	await expect(favourites(zing.chrome).locator('.rail-ribbon')).toHaveCount(0)
 
 	await openPage(zing.chrome, 'Notes')
 	const row = zing.chrome.locator('.rail-tabs [role="tab"]').filter({ hasText: 'Notes' })
@@ -332,16 +333,18 @@ test('a panel left open does not reopen when the rail widens to fit all and narr
 	await zing.close()
 })
 
-test('an empty favourites ribbon is outlined, not just filled', async () => {
+test('an empty Favourites hint is a compact dashed slot, like the empty Pinned one', async () => {
 	const zing = await launchZing()
-	const empty = favourites(zing.chrome).locator('.rail-ribbon.empty')
+	const empty = favourites(zing.chrome).locator('.rail-favourites-hint')
+	const pinned = pinnedSection(zing.chrome).locator('.rail-hint')
 	await expect(empty).toBeVisible()
-	const outline = await empty.evaluate((el) => {
-		const style = getComputedStyle(el, '::before')
-		return { content: style.content, position: style.position }
-	})
-	expect(outline.content).not.toBe('none')
-	expect(outline.position).toBe('absolute')
+	await expect(pinned).toBeVisible()
+	const style = (el: Element) => {
+		const s = getComputedStyle(el)
+		return { border: s.borderStyle, radius: s.borderRadius, color: s.color, font: s.fontSize }
+	}
+	expect(await empty.evaluate(style)).toEqual(await pinned.evaluate(style))
+	expect((await empty.boundingBox())!.height).toBeLessThanOrEqual((await pinned.boundingBox())!.height)
 	await zing.close()
 })
 

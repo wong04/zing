@@ -8,7 +8,8 @@ import { AT_END } from './dropTarget'
 import { FavouritesPanel } from './FavouritesPanel'
 import { ItemIcon, itemMenu, open, savedFolderProps, savedItemProps, type SavedFrame } from './savedItem'
 
-const EMPTY_HINT = 'Drag a tab here, or press Ctrl+D'
+const EMPTY_HINT = 'Drag a tab here to favourite it'
+const EMPTY_TITLE = 'Drag a tab here, or press Ctrl+D'
 
 /** The Favourites as ribbons hanging along the top of the rail: as many as the width fits, the rest behind "+N". Ctrl+D adds the page in front. */
 export function FavouriteRibbons({ nodes, frame, innerWidth }: { nodes: readonly BookmarkNode[]; frame: SavedFrame; innerWidth: number }) {
@@ -33,7 +34,11 @@ export function FavouriteRibbons({ nodes, frame, innerWidth }: { nodes: readonly
 	})
 	return (
 		<div className="rail-favourites" role="list" aria-label="Favourites" data-drop-folder={FAVOURITES_ID}>
-			{nodes.length === 0 ? <div className="rail-ribbon empty" role="listitem" title={EMPTY_HINT} aria-label={EMPTY_HINT} /> : null}
+			{nodes.length === 0 ? (
+				<div className="rail-hint rail-favourites-hint" role="listitem" title={EMPTY_TITLE}>
+					{EMPTY_HINT}
+				</div>
+			) : null}
 			{nodes.slice(0, shown).map((node, index) => {
 				const place = { 'data-drop-item': node.id, 'data-drop-parent': FAVOURITES_ID, 'data-drop-index': index, 'data-drop-axis': 'x' }
 				if (isFolder(node)) {
