@@ -107,6 +107,9 @@ public static class TestHooks
 	public static Zing.Core.Net.IDnsSystem? DnsSystem() => IsEndToEndRun ? Dns : null;
 
 	private static int? _closeNextAt;
+
+	/// <summary>"exit-code-on-quit": the code Zing ends with once its last window is gone, as a crash during quit would; e2e/harness.spec.ts.</summary>
+	public static int? QuitExitCode { get; private set; }
 	private static WindowScope? _newest;
 	private static int _windows;
 	private static bool _newestStarted;
@@ -117,6 +120,14 @@ public static class TestHooks
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
+	/// <summary>Written beside and moved into place: the test polls for the file and must never read half of it.</summary>
+	private static void WriteWhole(string path, string json)
+	{
+		var part = path + ".part";
+		File.WriteAllText(part, json);
+		File.Move(part, path, overwrite: true);
+	}
+
 	public static bool TryHandle(string json, HostWindow window)
 	{
 		if (!IsEndToEndRun) return false;
@@ -134,23 +145,23 @@ public static class TestHooks
 		{
 			// The real clipboard is never opened in an e2e run (FileClipboard); this is the CF_HDROP block it would have been given, read back.
 			var block = FileClipboard.Held ?? throw new InvalidOperationException("Nothing was copied to the clipboard");
-			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { format = "CF_HDROP", paths = Zing.Core.DropFiles.Parse(block) }));
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { format = "CF_HDROP", paths = Zing.Core.DropFiles.Parse(block) }));
 			return true;
 		}
 		if (action == "layers")
 		{
-			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(Layers(window)));
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(Layers(window)));
 			return true;
 		}
 		if (action == "caption")
 		{
 			var bar = window.AppWindow.TitleBar;
-			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { background = bar.ButtonBackgroundColor, ink = bar.ButtonForegroundColor, height = bar.Height / window.Scale, buttonsHeight = bar.Height, buttonsWidth = bar.RightInset, passedBand = window.PassedThrough.Band, passedButtons = window.PassedThrough.Buttons }));
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { background = bar.ButtonBackgroundColor, ink = bar.ButtonForegroundColor, height = bar.Height / window.Scale, buttonsHeight = bar.Height, buttonsWidth = bar.RightInset, passedBand = window.PassedThrough.Band, passedButtons = window.PassedThrough.Buttons }));
 			return true;
 		}
 		if (action == "live-counts")
 		{
-			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(LiveCounts()));
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(LiveCounts()));
 			return true;
 		}
 		if (action == "add-tabs")
@@ -177,6 +188,11 @@ public static class TestHooks
 		if (action == "dns-stub")
 		{
 			Dns.Configure(root);
+			return true;
+		}
+		if (action == "exit-code-on-quit")
+		{
+			QuitExitCode = root.GetProperty("code").GetInt32();
 			return true;
 		}
 		if (action == "close-at")
@@ -283,6 +299,27 @@ public static class TestHooks
 			Record(what, t.Exception);
 		}, TaskContinuationOptions.OnlyOnFaulted);
 
+	/// <summary>
+	/// The same boundary for synchronous work the UI thread runs on its own: a timer, a queued action, a window event, a
+	/// menu click. An exception out of a dispatcher callback or the window procedure ends the process, so nothing rethrows:
+	/// a view that went with its closing window is expected, and everything else is recorded.
+	/// </summary>
+	public static void Guard(Action action, string what)
+	{
+		try
+		{
+			action();
+		}
+		catch (ViewGoneException)
+		{
+			// Expected, as in Background: the window closed while the work was queued.
+		}
+		catch (Exception error)
+		{
+			Record(what, error);
+		}
+	}
+
 	public static void RecordUnhandledErrors()
 	{
 		AppDomain.CurrentDomain.UnhandledException += (_, e) => Record("unhandled", e.ExceptionObject);
@@ -295,6 +332,9 @@ public static class TestHooks
 		Faults.Error(kind, error);
 		var file = Environment.GetEnvironmentVariable("ZING_ERRORS_FILE");
 		if (!IsEndToEndRun || string.IsNullOrEmpty(file)) return;
-		File.AppendAllText(file, $"{kind}: {error}\n\n");
+		// Called from thread-pool continuations too: two appends at once would hit a sharing violation.
+		lock (RecordGate) File.AppendAllText(file, $"{kind}: {error}\n\n");
 	}
+
+	private static readonly object RecordGate = new();
 }

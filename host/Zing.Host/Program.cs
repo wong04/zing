@@ -23,7 +23,17 @@ public static class Program
 		// thread pool, where WebView2 calls fail (RPC_E_WRONG_THREAD).
 		var dispatcher = Microsoft.UI.Dispatching.DispatcherQueueController.CreateOnCurrentThread();
 		SynchronizationContext.SetSynchronizationContext(new Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext(dispatcher.DispatcherQueue));
-		new ZingApp().Launch();
+		try
+		{
+			new ZingApp().Launch();
+		}
+		catch (Exception error)
+		{
+			TestHooks.Record("startup", error);
+			StartupFailure.Tell(error);
+			System.Environment.ExitCode = 1;
+			return;
+		}
 		// A plain Win32 message loop, as Microsoft's WebView2Browser sample runs; the last window posts WM_QUIT.
 		while (Native.GetMessageW(out var message, 0, 0, 0) > 0)
 		{
@@ -31,6 +41,7 @@ public static class Program
 			Native.DispatchMessageW(ref message);
 		}
 		dispatcher.ShutdownQueue();
+		if (TestHooks.QuitExitCode is { } code) System.Environment.ExitCode = code;
 	}
 }
 
@@ -172,9 +183,15 @@ public sealed class ZingApp
 
 	public void Closed(MainWindow window)
 	{
+		var wasPrimary = window == Primary;
 		_windows.Remove(window);
 		_taskbar?.Remove(window.AppWindow);
-		if (_windows.Count > 0) return;
+		if (_windows.Count > 0)
+		{
+			// The next window is now the one saved; without this, quitting it untouched restores the closed one.
+			if (wasPrimary) _session?.Changed();
+			return;
+		}
 		// The windows went with a dead engine, not because the person quit: Zing comes back instead.
 		if (_rebuild is { } rebuild)
 		{
@@ -419,6 +436,26 @@ internal static class EngineRuntime
 			// No app to open links with; the address is in the message the person just read.
 			TestHooks.Record("open runtime installer", error);
 		}
+	}
+
+	[System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+	private static extern int MessageBoxW(nint owner, string text, string caption, uint type);
+}
+
+/// <summary>
+/// A launch or a window that failed to start (a locked profile, a runtime too old). A real install keeps no fault log,
+/// so without this the person gets a blank window or a silent exit. An e2e run shows no dialogs (AGENTS.md): there the
+/// caller's record fails the test.
+/// </summary>
+internal static class StartupFailure
+{
+	private const uint MB_OK = 0x0;
+	private const uint MB_ICONERROR = 0x10;
+
+	public static void Tell(Exception error)
+	{
+		if (TestHooks.IsEndToEndRun) return;
+		MessageBoxW(0, $"Zing couldn't start.\n\n{error.Message}", "Zing can't start", MB_OK | MB_ICONERROR);
 	}
 
 	[System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]

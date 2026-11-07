@@ -199,4 +199,19 @@ public sealed class EngineFlagPolicyTests
 		Assert.Contains(policies, p => (string?)p.Attribute("domain") == "path" && (string?)p.Attribute("pattern") == "@*" && (string?)p.Attribute("rights") == "none");
 		Assert.Contains(policies, p => (string?)p.Attribute("domain") == "delegate" && (string?)p.Attribute("rights") == "none");
 	}
+
+	// A small file can declare 60000×60000 pixels; without limits the pixel cache spills tens of GB to the job's TEMP.
+	[Theory]
+	[InlineData("width", "16KP")]
+	[InlineData("height", "16KP")]
+	[InlineData("area", "128MP")]
+	[InlineData("memory", "256MiB")]
+	[InlineData("map", "512MiB")]
+	[InlineData("disk", "1GiB")]
+	[InlineData("time", "300")]
+	public void The_ImageMagick_policy_caps_each_resource(string name, string value)
+	{
+		var policies = XDocument.Parse(MagickPolicy.Xml).Root!.Elements("policy");
+		Assert.Contains(policies, p => (string?)p.Attribute("domain") == "resource" && (string?)p.Attribute("name") == name && (string?)p.Attribute("value") == value);
+	}
 }

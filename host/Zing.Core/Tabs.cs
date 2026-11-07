@@ -179,7 +179,7 @@ public sealed partial class TabStore(Func<long> now, Func<string>? newId = null)
 	public TabRecord AddRestored(string url, string title, bool pinned, string? itemId = null)
 	{
 		var record = Create(url) with { Title = title, Pinned = pinned || itemId is not null, ItemId = itemId };
-		_tabs.Insert(pinned ? PinnedCount : _tabs.Count, record);
+		_tabs.Insert(record.Pinned ? PinnedCount : _tabs.Count, record);
 		return record;
 	}
 

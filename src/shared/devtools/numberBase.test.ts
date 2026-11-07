@@ -55,4 +55,9 @@ describe('known answers', () => {
 		expect(formatBinaryByteCount(1_572_864n)).toBe('1.5 MB')
 		expect(formatBinaryByteCount(2n ** 30n)).toBe('1 GB')
 	})
+	it('a count that rounds up to the next unit is written in that unit', () => {
+		expect(formatBinaryByteCount(1_048_575n)).toBe('1 MB')
+		expect(formatBinaryByteCount(2n ** 30n - 1n)).toBe('1 GB')
+		expect(formatBinaryByteCount(-1_048_575n)).toBe('-1 MB')
+	})
 })

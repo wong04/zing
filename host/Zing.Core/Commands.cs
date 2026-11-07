@@ -106,7 +106,7 @@ public static class Menus
 			items.Add(new MenuItem("Back to Saved Page", () => saved.Reset(id), Enabled: saved.HasLeftItsAddress(id)));
 			items.Add(new MenuItem("Save This Page Here", () => saved.Update(id), Enabled: saved.HasLeftItsAddress(id) && web));
 		}
-		return
+		IReadOnlyList<MenuItem> menu =
 		[
 			.. items,
 			MenuItem.Separator,
@@ -118,6 +118,8 @@ public static class Menus
 			new MenuItem("Close Tab", () => tabs.Close(id), Enabled: !record.Pinned || record.ItemId is not null),
 			new MenuItem("Close Other Tabs", () => tabs.CloseOthers(id), Enabled: loose),
 		];
+		// The native menu runs its own loop, and the page may close its tab (window.close) while it is open.
+		return [.. menu.Select(item => item.Click is { } click ? item with { Click = () => { if (tabs.Has(id)) click(); } } : item)];
 	}
 
 	/// <summary>A stack chip offers its lead page's menu plus closing the whole stack.</summary>
@@ -128,7 +130,7 @@ public static class Menus
 		var lead = stack.Ids.FirstOrDefault(id => id == tabs.ActiveId) ?? stack.Ids[0];
 		return [.. Tab(tabs, saved, lead, shell), MenuItem.Separator, new MenuItem($"Close All {stack.Ids.Count} Tabs from {stack.Name}", () =>
 		{
-			foreach (var id in stack.Ids.ToList()) tabs.Close(id);
+			foreach (var id in stack.Ids.Where(tabs.Has).ToList()) tabs.Close(id);
 		})];
 	}
 

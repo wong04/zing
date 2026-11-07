@@ -48,6 +48,12 @@ describe('known answers', () => {
 	it.each(['rgb(999, 0, 0)', 'rgb(0, 256, 0)', 'rgb(0, 0, 255.5)', 'rgba(300, 300, 300, 1)'])('refuses %s, whose channel is past 255', (input) => {
 		expect(convertColor(input)).toBeNull()
 	})
+	it.each(['1234567', '#12345', '#123456789'])('refuses %s, which has the wrong number of hex digits', (input) => {
+		expect(convertColor(input)).toBeNull()
+	})
+	it.each(['rgb(-5, 0, 0)', 'rgb(50%, 0%, 0%)', 'rgb(1, 2, 3, 4, 5)'])('refuses %s instead of misreading it', (input) => {
+		expect(convertColor(input)).toBeNull()
+	})
 	it('accepts the edges of the range', () => {
 		expect(convertColor('rgb(255, 0, 0)')?.hex).toBe('#FF0000')
 		expect(convertColor('rgb(0, 0, 0)')?.hex).toBe('#000000')

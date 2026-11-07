@@ -3,8 +3,9 @@
 // Kept free of any UI so every part is unit-testable.
 
 import { formatFixed, formatG } from './cFormat'
+import { EvalError } from './expression'
 
-/** A plotted function. Throwing means "undefined here", like returning NaN. */
+/** A plotted function. Throwing an `EvalError` means "undefined here", like returning NaN. */
 export type PlotFunction = (x: number) => number
 
 export interface Size {
@@ -139,7 +140,7 @@ export function axisLabel(value: number, step: number): string {
 export type Segment = Point[]
 
 /**
- * The finite value of `f` at `x`, or undefined where it has none. A throw is
+ * The finite value of `f` at `x`, or undefined where it has none. An `EvalError` is
  * the function saying "undefined here" (sqrt of a negative, an unbound
  * symbol), which for a plot is data, not a failure.
  */
@@ -147,8 +148,9 @@ function finiteValue(f: PlotFunction, x: number): number | undefined {
 	let y: number
 	try {
 		y = f(x)
-	} catch {
-		return undefined
+	} catch (error) {
+		if (error instanceof EvalError) return undefined
+		throw error
 	}
 	return Number.isFinite(y) ? y : undefined
 }
@@ -275,7 +277,7 @@ export function roots(f: PlotFunction, viewport: Viewport, samples = 600): numbe
 	return zeros(f, viewport, samples)
 }
 
-class UndefinedValueError extends Error {
+class UndefinedValueError extends EvalError {
 	override name = 'UndefinedValueError'
 }
 

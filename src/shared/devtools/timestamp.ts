@@ -31,7 +31,7 @@ export function describeTimestamp(raw: string, context: DateContext): TimestampR
 	const trimmed = raw.replace(/^[\t\p{Zs}]+|[\t\p{Zs}]+$/gu, '')
 	if (!decimalNumber.test(trimmed)) return []
 	const value = Number(trimmed)
-	const seconds = value > millisecondsThreshold ? value / 1000 : value
+	const seconds = Math.abs(value) > millisecondsThreshold ? value / 1000 : value
 	const date = new Date(seconds * 1000)
 	if (Number.isNaN(date.getTime())) return []
 

@@ -23,7 +23,8 @@ public static class PermissionKinds
 	public const string Notifications = "notifications";
 }
 
-public sealed record PermissionPrompt(int Id, string Origin, string Kind);
+/// <param name="Tab">The asking tab's title when it isn't the tab on screen, so a background tab's prompt says whose it is.</param>
+public sealed record PermissionPrompt(int Id, string Origin, string Kind, string? Tab = null);
 
 /// <summary>Serialises, with <see cref="ZingJson.Options"/>, exactly like the TS `PageUiState`.</summary>
 public sealed record PageUiState(

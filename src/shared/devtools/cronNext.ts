@@ -46,7 +46,7 @@ export function nextCronRuns(expression: string, from: Date, count: number): Dat
 }
 
 function parse(expression: string): Schedule {
-	const values = expression.split(' ').filter((value) => value !== '')
+	const values = expression.split(/\s+/).filter((value) => value !== '')
 	if (values.length !== specs.length) throw new CronProblem(`A cron expression has 5 fields, this has ${values.length}.`)
 	const [minutes, hours, daysOfMonth, months, daysOfWeek] = values.map((value, index) => parseField(value, specs[index] as Spec))
 	return {

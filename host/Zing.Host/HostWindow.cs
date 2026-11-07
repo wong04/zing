@@ -133,7 +133,7 @@ public sealed class HostWindow
 		view.FollowTheme(Theme);
 		if (!view.IsOverlay) _backmost?.SendToBack();
 		view.Controller.GotFocus += (_, _) => _focused = view;
-		view.Controller.AcceleratorKeyPressed += (_, e) => KeyPressed?.Invoke(view, e);
+		view.Controller.AcceleratorKeyPressed += (_, e) => TestHooks.Guard(() => KeyPressed?.Invoke(view, e), "key press");
 	}
 
 	internal void Forget(HostedView view)
@@ -152,7 +152,7 @@ public sealed class HostWindow
 				const int SIZE_MINIMIZED = 1;
 				if (wParam == SIZE_MINIMIZED) break;
 				window.PassThroughTitleBar();
-				window.Resized?.Invoke();
+				TestHooks.Guard(() => window.Resized?.Invoke(), "window resized");
 				break;
 			case Native.WM_NCACTIVATE:
 				// An overlay taking the keyboard (the find box, Settings) is still this window: keep its frame active.
@@ -164,7 +164,7 @@ public sealed class HostWindow
 				break;
 			case Native.WM_ACTIVATE:
 				const int WA_INACTIVE = 0;
-				if ((wParam & 0xFFFF) != WA_INACTIVE) window.Activated?.Invoke();
+				if ((wParam & 0xFFFF) != WA_INACTIVE) TestHooks.Guard(() => window.Activated?.Invoke(), "window activated");
 				break;
 			case Native.WM_SETFOCUS:
 				// After the queued messages, so a click that activated the window places focus itself first.
@@ -177,7 +177,7 @@ public sealed class HostWindow
 			case Native.WM_DESTROY:
 				window.IsClosed = true;
 				Open.Remove(hwnd);
-				window.Destroyed?.Invoke();
+				TestHooks.Guard(() => window.Destroyed?.Invoke(), "window destroyed");
 				return 0;
 		}
 		return Native.DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -230,11 +230,6 @@ public sealed class HostWindow
 	internal bool IsOverlay(nint hwnd) => hwnd != 0 && _views.Any(v => v.IsOverlayWindow(hwnd));
 
 	/// <summary>
-	/// The window itself never keeps the keyboard: keys there reach no view, so no shortcut works. It gets it
-	/// on activation and when the focused view closes (Ctrl+W); like a dialog handing focus to a control, it
-	/// passes it on to the view that had it, else the default one.
-	/// </summary>
-	/// <summary>
 	/// The page that last had the keyboard isn't the one in front any more (another tab, or another pane of a split, became
 	/// active): when the window gets the keyboard back, it goes to <see cref="DefaultFocus"/> rather than to that page.
 	/// </summary>
@@ -243,6 +238,11 @@ public sealed class HostWindow
 		if (_focused is { } last && last != front && isPage(last)) _focused = null;
 	}
 
+	/// <summary>
+	/// The window itself never keeps the keyboard: keys there reach no view, so no shortcut works. It gets it
+	/// on activation and when the focused view closes (Ctrl+W); like a dialog handing focus to a control, it
+	/// passes it on to the view that had it, else the default one.
+	/// </summary>
 	private void PassFocus()
 	{
 		if (IsClosed || Native.GetFocus() != Hwnd) return;

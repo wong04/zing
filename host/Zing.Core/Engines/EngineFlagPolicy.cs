@@ -130,8 +130,7 @@ internal sealed partial record EnginePolicy(
 }
 
 /// <summary>
-/// The only flags an engine may be given, with the reason none can reach a file, the network or a program (see
-/// engine-rules.md). A new flag is a new entry here, reviewed on its own. Tool code builds its option text from these
+/// The only flags an engine may be given, with the reason none can reach a file, the network or a program. A new flag is a new entry here, reviewed on its own. Tool code builds its option text from these
 /// and never passes a person's text through.
 /// </summary>
 internal sealed class EngineFlagPolicy

@@ -9,6 +9,9 @@ describe('cron (Krackn Tests/unit F)', () => {
 	it('cron: wrong arity -> nil', () => {
 		expect(describeCron('0 9 *')).toBeNull()
 	})
+	it('fields may be split by tabs or several spaces, as in a crontab', () => {
+		expect(describeCron('0	9  *	* 1-5')).toBe(describeCron('0 9 * * 1-5'))
+	})
 })
 
 // Zing additions.

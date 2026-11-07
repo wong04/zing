@@ -41,7 +41,7 @@ function UnblockOffer({ address }: { address: string }) {
 
 /** The notice layer: one short message near the bottom of the page, or the offer after a page failed to load. */
 function Notices() {
-	const [notice, setNotice] = useState<Notice | null>(null)
+	const [notice, setNotice] = useState<Notice | undefined>(undefined)
 	useEffect(() => zing.onNotice(setNotice), [])
 	if (!notice) return null
 	if (notice.offer) return <UnblockOffer key={notice.id} address={notice.offer.address} />

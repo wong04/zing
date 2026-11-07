@@ -15,7 +15,8 @@ public sealed record PermissionDetails(string? RequestingUrl = null, IReadOnlyLi
 /// ('media' with <c>MediaTypes</c> 'video'/'audio', 'geolocation', 'notifications', ...); the
 /// host maps WebView2's kinds onto them.
 /// </summary>
-public sealed class PermissionBroker(PageUiStore ui)
+/// <param name="hiddenTabOf">The title of the tab a page belongs to when that tab isn't on screen; null when it is shown.</param>
+public sealed class PermissionBroker(PageUiStore ui, Func<object, string?> hiddenTabOf)
 {
 	private static readonly IReadOnlySet<string> AlwaysAllowed = new HashSet<string> { "fullscreen", "clipboard-sanitized-write", "pointerLock" };
 
@@ -96,10 +97,15 @@ public sealed class PermissionBroker(PageUiStore ui)
 		foreach (var key in pending.Grants) held.Add(key);
 	}
 
+	/// <summary>Call after the tabs change: the prompt names its tab only while that tab isn't the one shown.</summary>
+	public void Refresh() => ShowNext();
+
 	private void ShowNext()
 	{
 		var next = _queue.FirstOrDefault();
-		ui.Update(s => s with { Permission = next is null ? null : new PermissionPrompt(next.Id, next.Origin, next.Kind) });
+		var prompt = next is null ? null : new PermissionPrompt(next.Id, next.Origin, next.Kind, hiddenTabOf(next.Page));
+		if (ui.State.Permission == prompt) return;
+		ui.Update(s => s with { Permission = prompt });
 	}
 
 	// Like JS `URL.origin`: only http(s) pages have a usable one.

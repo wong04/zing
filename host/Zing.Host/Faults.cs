@@ -30,7 +30,7 @@ public static class Faults
 	/// </summary>
 	public static void Enqueue(DispatcherQueue dispatcher, DispatcherQueueHandler action, string what)
 	{
-		if (!dispatcher.TryEnqueue(action)) TestHooks.Record("dispatch", new DispatcherRefusedException(what));
+		if (!dispatcher.TryEnqueue(() => TestHooks.Guard(() => action(), what))) TestHooks.Record("dispatch", new DispatcherRefusedException(what));
 	}
 
 	/// <summary>

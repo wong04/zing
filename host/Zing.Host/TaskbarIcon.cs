@@ -16,7 +16,8 @@ public sealed class TaskbarIcon
 
 	private readonly List<AppWindow> _windows = [];
 	private readonly UISettings _ui = new();
-	private string _icon;
+	// Null when the icon files are missing: the window keeps the exe's icon, since an optional feature never fails startup.
+	private string? _icon;
 
 	public TaskbarIcon(Microsoft.UI.Dispatching.DispatcherQueue dispatcher)
 	{
@@ -28,7 +29,7 @@ public sealed class TaskbarIcon
 	public void Add(AppWindow window)
 	{
 		_windows.Add(window);
-		window.SetIcon(_icon);
+		if (_icon is not null) window.SetIcon(_icon);
 	}
 
 	public void Remove(AppWindow window) => _windows.Remove(window);
@@ -38,16 +39,18 @@ public sealed class TaskbarIcon
 		var icon = IconForTaskbar();
 		if (icon == _icon) return;
 		_icon = icon;
+		if (icon is null) return;
 		foreach (var window in _windows) window.SetIcon(icon);
 	}
 
 	/// <summary>Windows before the light taskbar (pre-1903) have no value, and their taskbar is always dark.</summary>
-	private static string IconForTaskbar()
+	private static string? IconForTaskbar()
 	{
 		using var key = Registry.CurrentUser.OpenSubKey(PersonalizeKey);
 		var light = key?.GetValue("SystemUsesLightTheme") is int value && value != 0;
 		var path = Path.Combine(AppContext.BaseDirectory, "Assets", light ? "icon-dark-tile.ico" : "icon.ico");
-		if (!File.Exists(path)) throw new FileNotFoundException($"Taskbar icon missing: {path}", path);
-		return path;
+		if (File.Exists(path)) return path;
+		Faults.Warning("taskbar icon", new FileNotFoundException($"Taskbar icon missing: {path}", path));
+		return null;
 	}
 }

@@ -8,6 +8,9 @@ describe('next cron runs', () => {
 	it('every 15 minutes', () => {
 		expect(nextCronRuns('*/15 * * * *', at(2026, 1, 1, 10, 7), 3)).toEqual([at(2026, 1, 1, 10, 15), at(2026, 1, 1, 10, 30), at(2026, 1, 1, 10, 45)])
 	})
+	it('fields may be split by tabs or several spaces, as in a crontab', () => {
+		expect(nextCronRuns('0	9  * *	*', at(2026, 1, 1, 8, 0), 1)).toEqual([at(2026, 1, 1, 9, 0)])
+	})
 	it('a run at exactly the start time is not the next one', () => {
 		expect(nextCronRuns('0 9 * * *', at(2026, 1, 1, 9, 0), 1)).toEqual([at(2026, 1, 2, 9, 0)])
 	})

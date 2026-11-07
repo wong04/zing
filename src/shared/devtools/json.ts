@@ -24,7 +24,18 @@ export class JSONTooDeepError extends Error {
 
 const maxDepth = 1000
 
-type JSONValue = null | boolean | number | string | JSONValue[] | { [key: string]: JSONValue }
+/** A number kept as the text it was typed as, so big integers and `1.0` survive (JSON.rawJSON, ES2025). */
+interface RawNumber {
+	readonly rawJSON: string
+}
+
+// JSON.parse source text access and JSON.rawJSON are in V8 (Chromium 114, Node 21) but not in the ES2023 lib.
+const sourceJSON = JSON as JSON & {
+	rawJSON(text: string): RawNumber
+	isRawJSON(value: unknown): value is RawNumber
+}
+
+type JSONValue = null | boolean | number | RawNumber | string | JSONValue[] | { [key: string]: JSONValue }
 
 const indentUnit = '  '
 
@@ -44,9 +55,9 @@ export function minifyJSON(text: string): string {
 }
 
 function parsedWithinDepth(text: string): JSONValue {
-	const value = parse(text)
-	if (nestingOf(value) > maxDepth) throw new JSONTooDeepError()
-	return value
+	if (nestingOf(parse(text)) > maxDepth) throw new JSONTooDeepError()
+	// Parsed again only once the depth is known to be safe: a reviver makes the engine recurse.
+	return JSON.parse(text, keepNumberText) as JSONValue
 }
 
 /** Walks with its own stack: the document may be deeper than the call stack allows. */
@@ -55,7 +66,7 @@ function nestingOf(root: JSONValue): number {
 	const pending: [JSONValue, number][] = [[root, 1]]
 	for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
 		const [value, depth] = next
-		if (value === null || typeof value !== 'object') continue
+		if (value === null || typeof value !== 'object' || sourceJSON.isRawJSON(value)) continue
 		deepest = Math.max(deepest, depth)
 		for (const member of Object.values(value)) pending.push([member, depth + 1])
 	}
@@ -69,6 +80,12 @@ function parse(text: string): JSONValue {
 		if (error instanceof SyntaxError) throw new JSONProblem(error.message, errorLine(error.message, text), { cause: error })
 		throw error
 	}
+}
+
+function keepNumberText(_key: string, value: unknown, context?: { source: string }): unknown {
+	if (typeof value !== 'number') return value
+	if (context === undefined) throw new TypeError('JSON.parse gave the reviver no source text')
+	return sourceJSON.rawJSON(context.source)
 }
 
 const reportedLine = /\(line (\d+) column \d+\)/
@@ -165,6 +182,7 @@ function firstBadOffset(text: string): number {
 // enumerates integer-like keys ("2", "10") first in numeric order, so a sorted
 // copy can't be expressed as an object.
 function writeSorted(value: JSONValue, indent: string): string {
+	if (sourceJSON.isRawJSON(value)) return value.rawJSON
 	if (Array.isArray(value)) {
 		if (value.length === 0) return '[]'
 		const inner = indent + indentUnit

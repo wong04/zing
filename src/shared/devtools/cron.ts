@@ -14,9 +14,9 @@ const fields: readonly Field[] = [
 	{ name: 'day of week', plural: 'days of the week' },
 ]
 
-/** Null unless the expression has exactly five space-separated fields. */
+/** Null unless the expression has exactly five fields, split by any whitespace. */
 export function describeCron(expression: string): string | null {
-	const values = expression.split(' ').filter((value) => value !== '')
+	const values = expression.split(/\s+/).filter((value) => value !== '')
 	if (values.length !== fields.length) return null
 	const parts = values.map((value, index) => describeField(value, fields[index] as Field))
 	return `Runs at ${parts.join(', ')}.`

@@ -12,7 +12,7 @@ public sealed class PermissionsTests
 	private static (PermissionBroker Broker, PageUiStore Ui, object Page) Setup()
 	{
 		var ui = new PageUiStore();
-		return (new PermissionBroker(ui), ui, new object());
+		return (new PermissionBroker(ui, _ => null), ui, new object());
 	}
 
 	private const string Url = "https://a.test/";
@@ -161,6 +161,20 @@ public sealed class PermissionsTests
 		broker.DropFor(page);
 		broker.Answer(id, true);
 		Assert.Equal([false], resolver.Answers);
+	}
+
+	[Fact]
+	public void A_prompt_from_a_tab_that_is_not_shown_names_that_tab_until_it_is_shown()
+	{
+		var ui = new PageUiStore();
+		var page = new object();
+		string? hidden = "Background tab";
+		var broker = new PermissionBroker(ui, asking => ReferenceEquals(asking, page) ? hidden : null);
+		broker.Request(page, Url, "geolocation", new PermissionDetails(), new Resolver());
+		Assert.Equal(new PermissionPrompt(1, "https://a.test", "location", "Background tab"), ui.State.Permission);
+		hidden = null;
+		broker.Refresh();
+		Assert.Equal(new PermissionPrompt(1, "https://a.test", "location"), ui.State.Permission);
 	}
 
 	[Fact]
