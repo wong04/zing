@@ -72,6 +72,7 @@ describe('reportingInvoke', () => {
 		let deliver: (data: unknown) => void = () => undefined
 		const webview: WebViewChannel = {
 			postMessage: (message) => sent.push(message as InvokeMessage),
+			postMessageWithAdditionalObjects: () => undefined,
 			addEventListener: (_type, listener) => {
 				deliver = (data) => listener({ data })
 			},

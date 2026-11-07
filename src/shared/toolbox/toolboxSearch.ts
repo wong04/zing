@@ -105,6 +105,7 @@ export const keywords: Readonly<Record<string, readonly string[]>> = {
 		'export',
 	],
 	'section:Download': ['youtube', 'video', 'audio', 'save page', 'yt-dlp', 'music', 'save video', 'rip'],
+	'tool:PDF Tools': ['pdf', 'merge', 'combine', 'split', 'rotate', 'reorder', 'delete pages', 'sign', 'signature', 'fill form', 'annotate', 'add text', 'stamp', 'pages'],
 	'tool:Background Remover': ['remove background', 'cutout', 'transparent', 'photo', 'erase background', 'mask'],
 	'section:Open a Link': ['unblock', 'blocked', 'relay', 'proxy', 'bypass', 'reader', 'censored'],
 	'section:Diagnose': ['blocked', 'why', 'test site', 'censorship', 'firewall', 'dns', 'troubleshoot'],

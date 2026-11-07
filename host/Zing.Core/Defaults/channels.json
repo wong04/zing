@@ -41,6 +41,10 @@
 			"args": 1
 		},
 		{
+			"channel": "bgremove:open",
+			"args": 2
+		},
+		{
 			"channel": "chrome:app-menu",
 			"args": 1
 		},
@@ -67,6 +71,10 @@
 		{
 			"channel": "command:run",
 			"args": 1
+		},
+		{
+			"channel": "convert:html-to-pdf",
+			"args": 2
 		},
 		{
 			"channel": "default-browser:open-settings",
@@ -102,6 +110,46 @@
 		},
 		{
 			"channel": "downloads:show",
+			"args": 1
+		},
+		{
+			"channel": "engines:cancel",
+			"args": 1
+		},
+		{
+			"channel": "engines:cancel-job",
+			"args": 1
+		},
+		{
+			"channel": "engines:ensure",
+			"args": 1
+		},
+		{
+			"channel": "engines:list",
+			"args": 0
+		},
+		{
+			"channel": "engines:remove",
+			"args": 1
+		},
+		{
+			"channel": "engines:run",
+			"args": 3
+		},
+		{
+			"channel": "engines:update-ytdlp",
+			"args": 0
+		},
+		{
+			"channel": "files:copy-to-clipboard",
+			"args": 1
+		},
+		{
+			"channel": "files:open-dropped",
+			"args": 1
+		},
+		{
+			"channel": "files:pick",
 			"args": 1
 		},
 		{
@@ -177,6 +225,10 @@
 			"args": 0
 		},
 		{
+			"channel": "page:save",
+			"args": 0
+		},
+		{
 			"channel": "pageui:get",
 			"args": 0
 		},
@@ -198,6 +250,14 @@
 		},
 		{
 			"channel": "relay:open",
+			"args": 2
+		},
+		{
+			"channel": "session:open",
+			"args": 3
+		},
+		{
+			"channel": "session:open-save",
 			"args": 2
 		},
 		{
@@ -376,11 +436,22 @@
 		{
 			"channel": "toolpanel:restore",
 			"args": 1
+		},
+		{
+			"channel": "viewer:close",
+			"args": 1
+		},
+		{
+			"channel": "viewer:open",
+			"args": 2
 		}
 	],
 	"events": [
 		"account:state",
 		"chrome:focus-address",
+		"engines:exit",
+		"engines:output",
+		"engines:progress",
 		"library:state",
 		"overlay:notice",
 		"overlay:overview",

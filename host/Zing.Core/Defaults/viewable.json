@@ -1,0 +1,153 @@
+{
+	"native": {
+		"jpg": {
+			"show": "image",
+			"contentType": "image/jpeg"
+		},
+		"jpeg": {
+			"show": "image",
+			"contentType": "image/jpeg"
+		},
+		"png": {
+			"show": "image",
+			"contentType": "image/png"
+		},
+		"gif": {
+			"show": "image",
+			"contentType": "image/gif"
+		},
+		"webp": {
+			"show": "image",
+			"contentType": "image/webp"
+		},
+		"bmp": {
+			"show": "image",
+			"contentType": "image/bmp"
+		},
+		"ico": {
+			"show": "image",
+			"contentType": "image/x-icon"
+		},
+		"avif": {
+			"show": "image",
+			"contentType": "image/avif"
+		},
+		"mp4": {
+			"show": "video",
+			"contentType": "video/mp4"
+		},
+		"m4v": {
+			"show": "video",
+			"contentType": "video/mp4"
+		},
+		"webm": {
+			"show": "video",
+			"contentType": "video/webm"
+		},
+		"ogv": {
+			"show": "video",
+			"contentType": "video/ogg"
+		},
+		"mp3": {
+			"show": "audio",
+			"contentType": "audio/mpeg"
+		},
+		"wav": {
+			"show": "audio",
+			"contentType": "audio/wav"
+		},
+		"ogg": {
+			"show": "audio",
+			"contentType": "audio/ogg"
+		},
+		"oga": {
+			"show": "audio",
+			"contentType": "audio/ogg"
+		},
+		"opus": {
+			"show": "audio",
+			"contentType": "audio/ogg"
+		},
+		"flac": {
+			"show": "audio",
+			"contentType": "audio/flac"
+		},
+		"m4a": {
+			"show": "audio",
+			"contentType": "audio/mp4"
+		},
+		"aac": {
+			"show": "audio",
+			"contentType": "audio/aac"
+		},
+		"pdf": {
+			"show": "pdf",
+			"contentType": "application/pdf"
+		}
+	},
+	"image": [
+		"heic",
+		"heif",
+		"tif",
+		"tiff",
+		"jp2",
+		"tga",
+		"psd",
+		"pcx",
+		"ppm",
+		"pgm",
+		"pbm",
+		"pnm",
+		"dds",
+		"hdr",
+		"jxl",
+		"cr2",
+		"nef",
+		"arw",
+		"dng",
+		"orf",
+		"raf",
+		"rw2",
+		"pef",
+		"srw"
+	],
+	"video": [
+		"mov",
+		"mkv",
+		"avi",
+		"flv",
+		"wmv",
+		"mpg",
+		"mpeg",
+		"mts",
+		"m2ts",
+		"vob",
+		"3gp",
+		"3g2",
+		"asf",
+		"f4v",
+		"mxf",
+		"divx",
+		"rm",
+		"rmvb"
+	],
+	"audio": [
+		"wma",
+		"aiff",
+		"aif",
+		"alac",
+		"amr",
+		"ac3",
+		"dts",
+		"caf",
+		"au",
+		"mka",
+		"spx",
+		"ape",
+		"wv",
+		"mp2",
+		"voc",
+		"w64",
+		"ra"
+	]
+}

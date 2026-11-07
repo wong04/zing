@@ -33,6 +33,40 @@ public static class AppPaths
 		}
 	}
 
+	/// <summary>
+	/// Where downloaded engines live: %LOCALAPPDATA%Zingengines, beside Zing's other local data, since they are
+	/// big and per-machine and are not settings. A test run keeps them inside its scratch ZING_USER_DATA. Not created
+	/// until something is downloaded.
+	/// </summary>
+	public static string Engines
+	{
+		get
+		{
+			var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");
+			if (!string.IsNullOrEmpty(configured)) return Path.Combine(configured, "engines");
+			return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zing", "engines");
+		}
+	}
+
+	/// <summary>Where each engine job gets its private working folder; emptied at every start, and a job removes its own when it ends.</summary>
+	public static string EngineJobs => Path.Combine(Path.GetDirectoryName(Engines)!, "engine-jobs");
+
+	/// <summary>Where Convert's HTML to PDF keeps the throwaway browser profile of a print; removed when the print ends.</summary>
+	public static string PrintScratch => Path.Combine(Path.GetDirectoryName(Engines)!, "print-scratch");
+
+	/// <summary>
+	/// Where the file viewer keeps the converted copies it shows: a folder of Zing's own under the temp folder, emptied at every start
+	/// and by each file when it closes. A test run keeps it inside its scratch ZING_USER_DATA.
+	/// </summary>
+	public static string ViewerCopies
+	{
+		get
+		{
+			var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");
+			return string.IsNullOrEmpty(configured) ? Path.Combine(Path.GetTempPath(), "Zing-viewer") : Path.Combine(configured, "viewer-copies");
+		}
+	}
+
 	private static string LocalData()
 	{
 		var configured = Environment.GetEnvironmentVariable("ZING_USER_DATA");

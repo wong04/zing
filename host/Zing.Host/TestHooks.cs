@@ -52,6 +52,34 @@ public static class TestHooks
 	public static Zing.Core.IClock Clock { get; } = IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_TEST_CLOCK") == "1" ? new Zing.Core.OffsetClock() : new Zing.Core.SystemClock();
 
 	/// <summary>
+	/// In an e2e run, ZING_ENGINE_BASE_URL points the engine catalog at a fixture server on this PC, and
+	/// ZING_ENGINE_CATALOG names the JSON file listing what it serves (the hashes depend on the files the test made).
+	/// Null otherwise, and in a real run the pinned catalog is the only one.
+	/// </summary>
+	public static Zing.Core.Engines.EngineCatalog? EngineCatalog()
+	{
+		if (!IsEndToEndRun) return null;
+		var baseUrl = Environment.GetEnvironmentVariable("ZING_ENGINE_BASE_URL");
+		if (string.IsNullOrEmpty(baseUrl)) return null;
+		var manifest = Environment.GetEnvironmentVariable("ZING_ENGINE_CATALOG") ?? throw new InvalidOperationException("ZING_ENGINE_BASE_URL needs ZING_ENGINE_CATALOG, the JSON file the fixture serves");
+		return Zing.Core.Engines.EngineCatalog.FromFixture(new Uri(baseUrl), File.ReadAllText(manifest));
+	}
+
+	private static readonly Queue<string[]> PickedFiles = new();
+
+	/// <summary>
+	/// What the file picker answers in an e2e run, which shows no dialog. A test queues each answer first with the test
+	/// message {kind: "test", action: "pick-files", files: [...]}; an unqueued pick is an error, never a dialog.
+	/// </summary>
+	public static IReadOnlyList<string> TakePickedFiles()
+	{
+		lock (PickedFiles)
+		{
+			return PickedFiles.Count > 0 ? PickedFiles.Dequeue() : throw new InvalidOperationException("An e2e run shows no file dialog: queue the answer first with the pick-files test message");
+		}
+	}
+
+	/// <summary>
 	/// The network Diagnose sees in an e2e run, so no test reaches the internet: ZING_E2E_DOH_URL is a local DoH server that every
 	/// provider is asked at, and ZING_E2E_PROBES is JSON {"system": [addresses], "tcp": bool, "tlsValid": bool} for what the probes find.
 	/// Null outside an e2e run, and when neither is set.
@@ -96,6 +124,19 @@ public static class TestHooks
 		var root = message.RootElement;
 		if (!root.TryGetProperty("kind", out var kind) || kind.GetString() != "test") return false;
 		var action = root.GetProperty("action").GetString();
+		if (action == "pick-files")
+		{
+			var files = root.GetProperty("files").EnumerateArray().Select(f => f.GetString()!).ToArray();
+			lock (PickedFiles) PickedFiles.Enqueue(files);
+			return true;
+		}
+		if (action == "read-clipboard")
+		{
+			// The real clipboard is never opened in an e2e run (FileClipboard); this is the CF_HDROP block it would have been given, read back.
+			var block = FileClipboard.Held ?? throw new InvalidOperationException("Nothing was copied to the clipboard");
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { format = "CF_HDROP", paths = Zing.Core.DropFiles.Parse(block) }));
+			return true;
+		}
 		if (action == "layers")
 		{
 			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(Layers(window)));

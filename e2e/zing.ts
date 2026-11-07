@@ -1,8 +1,7 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
 import type { AddressInfo } from 'node:net'
-import { closeSync, copyFileSync, existsSync, openSync, readFileSync } from 'node:fs'
-import { mkdtemp } from 'node:fs/promises'
+import { closeSync, copyFileSync, existsSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test as base, chromium, expect, type Browser, type Page, type TestInfo } from '@playwright/test'
@@ -65,6 +64,17 @@ interface Running {
 
 const running = new Set<Running>()
 
+/** The scratch folders this test made: removed when it passes, kept for a look when it fails. */
+const scratchDirs = new Set<string>()
+
+/** A new empty folder under the temp folder for this test, removed after it unless it fails. */
+export function scratchDir(prefix: string): string {
+	// The long form: a CI runner's temp folder is an 8.3 path (RUNNER~1), and the host reports the paths it hands out in full.
+	const dir = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)))
+	scratchDirs.add(dir)
+	return dir
+}
+
 /**
  * Every spec's `test`: Playwright's, plus an automatic fixture that, when a test fails, attaches a
  * picture of each Zing view and the host's recorded errors and fault log (CI uploads them as an
@@ -102,8 +112,16 @@ async function collect(testInfo: TestInfo): Promise<void> {
 			}
 		}
 		if (zing.browser?.isConnected()) await zing.browser.close().catch(() => undefined)
-		if (zing.host.exitCode === null) zing.host.kill()
+		if (zing.host.exitCode !== null) continue
+		const exited = new Promise<void>((resolve) => zing.host.once('exit', () => resolve()))
+		zing.host.kill()
+		await exited
 	}
+	const made = [...scratchDirs]
+	scratchDirs.clear()
+	if (failed) return
+	// WebView2's own processes can hold profile files for a moment after Zing exits; one still holding them after the retries is a leak worth seeing.
+	for (const dir of made) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
 }
 
 // A cold start on a CI runner has taken 29 s and more, while a warm one takes under 5.
@@ -125,12 +143,12 @@ function hostEnvironment(port: string, errors: string, userData: string): NodeJS
 export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOptions = {}): Promise<Launched> {
 	if (!existsSync(HOST_EXE)) throw new HostProcessError(`No host build at ${HOST_EXE}: run npm run build:host`)
 	const port = await freePort()
-	const scratch = await mkdtemp(join(tmpdir(), 'zing-host-e2e-'))
+	const scratch = scratchDir('zing-host-e2e-')
 	const errors = join(scratch, 'errors.log')
 	const menus = join(scratch, 'menus.jsonl')
 	const dialogs = join(scratch, 'dialogs.jsonl')
 	// Never the user's real profile: every run gets its own folder unless a test relaunches into one.
-	const userData = userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-host-data-')))
+	const userData = userDataDir === undefined ? scratchDir('zing-host-data-') : realpathSync.native(userDataDir)
 	const hostEnv = { ...hostEnvironment(port, errors, userData), ZING_MENUS_FILE: menus, ZING_DIALOGS_FILE: dialogs, ...env }
 	const host: ChildProcess = spawn(HOST_EXE, [...args], { env: hostEnv, stdio: 'ignore' })
 	let closing = false
@@ -213,7 +231,7 @@ export interface BareZing {
  */
 export async function launchBare(userDataDir: string): Promise<BareZing> {
 	const port = await freePort()
-	const errors = join(await mkdtemp(join(tmpdir(), 'zing-host-e2e-')), 'errors.log')
+	const errors = join(scratchDir('zing-host-e2e-'), 'errors.log')
 	const host = spawn(HOST_EXE, [], { env: hostEnvironment(port, errors, userDataDir), stdio: 'ignore' })
 	const self: Running = { host, errors, userData: userDataDir }
 	running.add(self)
@@ -334,7 +352,7 @@ export interface Layer {
 
 /** What the window really shows, bottom to top (TestHooks "layers"); page-side visibility doesn't follow a hidden view. */
 export async function layers(chrome: Page): Promise<Layer[]> {
-	const file = join(await mkdtemp(join(tmpdir(), 'zing-layers-')), 'layers.json')
+	const file = join(scratchDir('zing-layers-'), 'layers.json')
 	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'layers', file: path }), file)
 	await expect.poll(() => existsSync(file)).toBe(true)
 	return JSON.parse(readFileSync(file, 'utf8')) as Layer[]
@@ -342,7 +360,7 @@ export async function layers(chrome: Page): Promise<Layer[]> {
 
 /** The colours the host gave Windows' caption buttons, as channels, and their height in DIPs. */
 export async function captionColours(chrome: Page): Promise<CaptionState> {
-	const file = join(await mkdtemp(join(tmpdir(), 'zing-caption-')), 'caption.json')
+	const file = join(scratchDir('zing-caption-'), 'caption.json')
 	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'caption', file: path }), file)
 	await expect.poll(() => existsSync(file)).toBe(true)
 	return JSON.parse(readFileSync(file, 'utf8')) as CaptionState
@@ -380,7 +398,7 @@ export interface LiveCounts {
 
 /** What is still alive in the host (TestHooks "live-counts"), for teardown tests. */
 export async function liveCounts(chrome: Page): Promise<LiveCounts> {
-	const file = join(await mkdtemp(join(tmpdir(), 'zing-live-')), 'live.json')
+	const file = join(scratchDir('zing-live-'), 'live.json')
 	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'live-counts', file: path }), file)
 	let counts: LiveCounts | undefined
 	// Read until whole: the host may still be writing the file when it first appears.

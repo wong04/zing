@@ -1,0 +1,61 @@
+.download-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+
+.download-progress {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 12px;
+	color: var(--muted);
+}
+
+.download-progress progress {
+	width: 100%;
+	accent-color: var(--accent);
+}
+
+.download-update {
+	margin-top: 8px;
+}
+
+.download-missing-list,
+.download-saved {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.download-missing {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+	padding: 10px 12px;
+	border: 1px solid var(--separator);
+	border-radius: var(--control-radius);
+	background: var(--control);
+	font-size: 13px;
+}
+
+.download-page {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+	padding-top: 8px;
+	border-top: 1px solid var(--separator);
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.download-saved li {
+	overflow-wrap: anywhere;
+	font-size: 13px;
+}

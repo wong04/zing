@@ -1,0 +1,75 @@
+// Port of Krackn's DownloadErrors.swift: reading yt-dlp's failures. Pure, so the choice of whether to offer an update is testable.
+
+export interface MediaFailure {
+	/** In plain words, for the panel. */
+	readonly message: string
+	/** The extractor looks out of date: the panel offers the Update button (never updates by itself). */
+	readonly offerUpdate: boolean
+}
+
+/** Ordinary refusals that no update can fix; several mention a status code that would otherwise look like breakage. */
+const BENIGN = ['private video', 'video unavailable', 'members-only', 'is not a valid url', 'unsupported url', 'no space left', 'sign in to confirm your age']
+
+const BREAKAGE = [
+	'unable to download video data',
+	'unable to extract',
+	'nsig extraction failed',
+	'signature extraction failed',
+	'unable to extract player response',
+	'requested format is not available',
+]
+
+/** A site refusing as a robot (YouTube's wording has a straight or curly apostrophe), limiting requests, or putting up a challenge. */
+const BOT_CHECK = /confirm you.{0,3}re not a bot|http error 429|too many requests|captcha|cloudflare|just a moment\.\.\./
+
+/** An HTTP 403 as yt-dlp prints it, never a "403" inside a video id. */
+const HTTP_403 = /http error 403|\b403:? forbidden/
+
+const FFMPEG_MISSING = /(ffmpeg|ffprobe).{0,30}not found|not found.{0,30}(ffmpeg|ffprobe)/
+
+export function isBotCheck(stderr: string): boolean {
+	return BOT_CHECK.test(stderr.toLowerCase())
+}
+
+/** An out-of-date extractor, as opposed to a bad link or a private video. A newer yt-dlp fixes only these. */
+export function looksLikeExtractorBreakage(stderr: string): boolean {
+	const text = stderr.toLowerCase()
+	if (isBotCheck(text) || BENIGN.some((phrase) => text.includes(phrase))) return false
+	return HTTP_403.test(text) || BREAKAGE.some((signal) => text.includes(signal))
+}
+
+function lastLine(stderr: string): string | null {
+	const lines = stderr.split('\n').map((line) => line.trim()).filter((line) => line !== '')
+	const last = lines.at(-1)
+	return last === undefined ? null : last.replace(/^ERROR:\s*/, '')
+}
+
+/** Turns yt-dlp's stderr into something a person can act on. */
+export function explainMediaFailure(stderr: string, exitCode: number): MediaFailure {
+	const text = stderr.toLowerCase()
+	const plain = (message: string): MediaFailure => ({ message, offerUpdate: false })
+	// Before everything: this is a refusal by the site, and nothing Zing does about it is a fix.
+	if (isBotCheck(text)) {
+		return plain("The site is asking to confirm this connection is not a bot, or is limiting requests. Zing doesn't work around that, so this download can't go ahead. Try again later, or watch it in a normal tab.")
+	}
+	if (text.includes('private video')) return plain('This video is private.')
+	if (text.includes('video unavailable')) return plain("This video isn't available.")
+	if (text.includes('sign in to confirm your age') || text.includes('age-restricted')) {
+		return plain("This video is age-restricted, so it can't be downloaded without signing in.")
+	}
+	if (text.includes('no space left')) return plain('The disk is full.')
+	if (text.includes('is not a valid url') || text.includes('unsupported url')) return plain("That link isn't one yt-dlp recognises.")
+	if (HTTP_403.test(text)) {
+		return {
+			message:
+				'The site refused the download (HTTP 403). This often means yt-dlp needs updating: sites change how they sign media links every few weeks, and an older copy stops being able to follow them.',
+			offerUpdate: true,
+		}
+	}
+	// FFmpeg is required before a download starts, so this means yt-dlp couldn't use the copy Zing gave it.
+	if (FFMPEG_MISSING.test(text)) return plain("yt-dlp couldn't find FFmpeg to finish the file. Remove it and download it again in Settings, Files, Engines.")
+	const last = lastLine(stderr)
+	// yt-dlp's own advice may be to hand it cookies, which Zing never does.
+	if (last !== null && /cookie/i.test(last)) return plain("This site needs a sign-in. Zing doesn't use your browser's sign-ins.")
+	return { message: last ?? `yt-dlp exited with code ${exitCode}.`, offerUpdate: looksLikeExtractorBreakage(stderr) }
+}

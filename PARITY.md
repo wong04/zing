@@ -165,26 +165,26 @@ Also dropped:
 | X3 | Diagnose | parity | Features/Unblock/DiagnoseView.swift, BlockDiagnostics.swift | [#74](https://github.com/wong04/zing/issues/74) | Done |
 | X4 | DoH provider setting | parity | App/AppSettings.swift (dohProvider) | [#75](https://github.com/wong04/zing/issues/75) | Done |
 | X5 | Network & VPN for Windows | parity | Features/Network/DoHProfile.swift, NetworkView.swift | [#76](https://github.com/wong04/zing/issues/76) | Done |
-| X6 | Convert images | parity | Features/Convert/ConversionEngine.swift | [#77](https://github.com/wong04/zing/issues/77) | Open |
-| X7 | Convert documents | parity | Features/Convert/ConversionEngine.swift | [#78](https://github.com/wong04/zing/issues/78) | Open |
-| X8 | Convert audio/video + format matrix | parity | Features/Convert/FormatCatalog.swift, ConvertView.swift | [#79](https://github.com/wong04/zing/issues/79) | Open |
-| X9 | Media download + Save page | parity | Features/Download/DownloadView.swift, DownloadErrors.swift | [#80](https://github.com/wong04/zing/issues/80) | Open |
-| X10 | Engines on first use | parity | Core/ToolInstaller.swift, Features/Utilities/ToolSetupView.swift | [#81](https://github.com/wong04/zing/issues/81) | Open |
+| X6 | Convert images | parity | Features/Convert/ConversionEngine.swift | [#77](https://github.com/wong04/zing/issues/77) | Done |
+| X7 | Convert documents | parity | Features/Convert/ConversionEngine.swift | [#78](https://github.com/wong04/zing/issues/78) | Done |
+| X8 | Convert audio/video + format matrix | parity | Features/Convert/FormatCatalog.swift, ConvertView.swift | [#79](https://github.com/wong04/zing/issues/79) | Done |
+| X9 | Media download + Save page | parity | Features/Download/DownloadView.swift, DownloadErrors.swift | [#80](https://github.com/wong04/zing/issues/80) | Done |
+| X10 | Engines on first use | parity | Core/ToolInstaller.swift, Features/Utilities/ToolSetupView.swift | [#81](https://github.com/wong04/zing/issues/81) | Done |
 | X11 | Link inspection before load | parity | Features/Security/ThreatScanner.swift (securityRealtime) | [#82](https://github.com/wong04/zing/issues/82) | Done |
 | X12 | Domain reputation via filtering DoH | parity | Features/Security/ThreatScanner.swift (securityDomainBlocking) | [#83](https://github.com/wong04/zing/issues/83) | Dropped |
 | X13 | Download checks for Windows | parity | Features/Security/ThreatScanner.swift (securityDownloadScan, securitySignatureCheck) | [#84](https://github.com/wong04/zing/issues/84) | Dropped |
 | X14 | System posture for Windows | parity | Features/Security/SecurityView.swift | [#85](https://github.com/wong04/zing/issues/85) | Dropped |
-| X15 | File viewer (3D models dropped) | parity | Features/Viewer/FileViewerView.swift, PreviewBackends.swift | [#86](https://github.com/wong04/zing/issues/86) | Open |
-| X16 | Background remover | parity | Features/Utilities/BackgroundRemover.swift; Tests/bgremove | [#87](https://github.com/wong04/zing/issues/87) | Open |
+| X15 | File viewer (3D models dropped) | parity | Features/Viewer/FileViewerView.swift, PreviewBackends.swift | [#86](https://github.com/wong04/zing/issues/86) | Done (no 3D models) |
+| X16 | Background remover | parity | Features/Utilities/BackgroundRemover.swift; Tests/bgremove | [#87](https://github.com/wong04/zing/issues/87) | Done |
 | X17 | Graphing calculator | parity | Features/Utilities/GraphingCalculator.swift, GraphSurface.swift | [#88](https://github.com/wong04/zing/issues/88) | Done |
 | X18 | Calculator, units, number base | parity | Features/Utilities/UtilitiesView.swift | [#89](https://github.com/wong04/zing/issues/89) | Done |
 | X19 | Developer tools | parity | Features/Utilities/DevToolViews.swift | [#90](https://github.com/wong04/zing/issues/90) | Done |
 | X20 | Text & design tools | parity | Features/Utilities/UtilitiesView.swift | [#91](https://github.com/wong04/zing/issues/91) | Done |
 | X21 | Password generator + link cleaner | parity | Features/Utilities/UtilityTools.swift | [#92](https://github.com/wong04/zing/issues/92) | Done |
 | X22 | Toolbox page, search and recents | parity | App/Navigation.swift, ToolboxSearch.swift | [#93](https://github.com/wong04/zing/issues/93) | Done |
-| X23 | Drag files between tools | parity | App/DropRouter.swift, FileComponents.swift | [#94](https://github.com/wong04/zing/issues/94) | Open |
+| X23 | Drag files between tools | parity | App/DropRouter.swift, FileComponents.swift | [#94](https://github.com/wong04/zing/issues/94) | Done |
 | X24 | Links page | new | - | [#141](https://github.com/wong04/zing/issues/141) | Done |
-| X25 | PDF tools | new | - | [#142](https://github.com/wong04/zing/issues/142) | Open |
+| X25 | PDF tools | new | - | [#142](https://github.com/wong04/zing/issues/142) | Done |
 
 ## M6b Password vault
 

@@ -1,3 +1,6 @@
+import type { EngineInfo, EngineProgress, EnsureOutcome, YtDlpUpdate } from './engines/engineInfo'
+import type { SessionKindName, ViewerOpened } from './convert/viewable'
+import type { EngineExit, EngineJobSpec, EngineOutput, FileKind, PickedFile } from './engines/engineJob'
 import type { FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
 import type { BrowserLibrary } from './library/library'
@@ -280,6 +283,73 @@ export interface InvokeContract {
 	'hash:text': { args: [text: string, algorithm: string]; result: string }
 	'hash:file': { args: [path: string, algorithm: string]; result: string }
 	'hash:hmac': { args: [message: string, key: string, algorithm: string]; result: string }
+	/** Every engine with its size and whether it is downloaded. Reads the disk; makes no request. */
+	'engines:list': { args: []; result: EngineInfo[] }
+	/** Downloads one, only because a person asked. Pushes `engines:progress`; rejects with the engine's name and the address to fetch it by hand. */
+	'engines:ensure': { args: [id: string]; result: EnsureOutcome }
+	/** Stops this window's download of one engine. `engines:ensure` then answers 'cancelled' once nothing is left on disk. */
+	'engines:cancel': { args: [id: string]; result: void }
+	/** Rejects with EngineInUseException while a tool is using it. */
+	'engines:remove': { args: [id: string]; result: void }
+	/** Checks the newest yt-dlp release against its published SHA2-256SUMS; a mismatch keeps the old version. */
+	'engines:update-ytdlp': { args: []; result: YtDlpUpdate }
+	/**
+	 * Starts an engine on a job owned by an open panel and answers with the job's id. Closing that panel (not minimizing it)
+	 * or the window stops the job. Pushes `engines:output` and, once, `engines:exit`. Rejects when the engine isn't downloaded
+	 * (it never downloads), when 3 jobs already run, or with the reason an argument or file was refused.
+	 */
+	'engines:run': { args: [engineId: string, panelId: string, job: EngineJobSpec]; result: string }
+	/** Stops a job of this window; its outputs are discarded. (`engines:cancel` stops a download.) */
+	'engines:cancel-job': { args: [jobId: string]; result: void }
+	/**
+	 * Saves the active tab's HTML (only what is on the page, no images or styles) to Downloads (a taken name is numbered unless "Never overwrite files" is off), and
+	 * answers with the file's name and a token. Rejects for a page that isn't http or https, one in reader mode, or a very
+	 * large one. A page view cannot call this: it has no host channel.
+	 */
+	'page:save': { args: []; result: PickedFile }
+	/**
+	 * A session that only takes results (`PUT https://view.zing/save/<id>/<name>`, for the formats of `kinds`) and serves no file. It
+	 * replaces the panel's earlier session, shares the save quota and ends with the panel. For a tool that has read its file and
+	 * must still be able to save when that file is gone.
+	 */
+	'session:open-save': { args: [panelId: string, kinds: readonly SessionKindName[]]; result: ViewerOpened }
+	/** The native open dialog; an empty list if the person cancelled. */
+	'files:pick': { args: [kinds: readonly FileKind[]]; result: PickedFile[] }
+	/**
+	 * Puts the file a token stands for on the clipboard as a file (CF_HDROP), so Explorer can paste it. Takes a token, never a
+	 * path: the host looks the path up, and rejects a token it never issued here or a file that has gone.
+	 */
+	'files:copy-to-clipboard': { args: [token: string]; result: void }
+	/**
+	 * Convert's HTML to PDF: Chromium prints the HTML file the token stands for, with scripts and the network off, into the
+	 * Downloads folder under `outputName` (a plain name ending in .pdf; numbered if taken). Answers with the PDF's name and a
+	 * token. Rejects for a file that isn't HTML or is over 1.5 MB.
+	 */
+	'convert:html-to-pdf': { args: [token: string, outputName: string]; result: PickedFile }
+	/**
+	 * Opens a picked or dropped file for a tool panel as a read session on the viewer file server (`https://view.zing`). `kinds`
+	 * names what the tool takes, from a fixed table: `image` (PNG, JPEG or WebP, up to 120 MB) and `pdf` (`%PDF-` at the start, up
+	 * to 50 MB). The host judges the file first bytes and length and rejects anything else (SessionFileRefusedException),
+	 * an unknown kind or an unknown panel. The answer's `url` is `GET`able by the tool (a worker included) and nothing else is
+	 * revealed: no path, no token. Opening another file in the panel, `viewer:close(id)` or closing the panel revokes it.
+	 * The same session takes results: `PUT https://view.zing/save/<id>/<name>` (ViewerFiles.cs).
+	 */
+	'session:open': { args: [panelId: string, token: string, kinds: readonly SessionKindName[]]; result: ViewerOpened }
+	/** The background remover's session: `session:open` with the `image` kind. */
+	'bgremove:open': { args: [panelId: string, token: string]; result: ViewerOpened }
+	/**
+	 * Files dropped on a Zing view. The host reads their paths from the drop itself (`postMessageWithAdditionalObjects`),
+	 * so the bridge carries the `File`s beside the message and not in its JSON args; a web page cannot send one.
+	 */
+	'files:open-dropped': { args: [files: readonly File[]]; result: PickedFile[] }
+	/**
+	 * Opens a picked or dropped file (by its token) in the viewer panel `panelId`, converting a copy when Chromium can't show it.
+	 * One file per panel: it replaces the panel's earlier one. Closing the panel (or the window) ends the conversion and deletes the copy.
+	 * Rejects for a format it can't show, an engine that isn't downloaded, or a file that has gone.
+	 */
+	'viewer:open': { args: [token: string, panelId: string]; result: ViewerOpened }
+	/** Forgets the open file: its address answers 404, a running conversion stops and the temporary copy is deleted. */
+	'viewer:close': { args: [id: string]; result: void }
 	/** Runs the Diagnose ladder for a site name (or a pasted address) with the DoH provider chosen in Settings. Resolver failures are part of the report; a name that isn't a site is an error. */
 	'net:diagnose': { args: [host: string]; result: DiagnosticReport }
 	/**
@@ -332,6 +402,9 @@ export interface EventContract {
 	'shell:state': ShellState
 	'toolpanel:state': ToolPanelsState
 	'account:state': AccountState
+	'engines:progress': EngineProgress
+	'engines:output': EngineOutput
+	'engines:exit': EngineExit
 	'relay:attempt': RelayAttemptEvent
 }
 
@@ -451,5 +524,31 @@ export interface ZingApi {
 	updateProfile(displayName: string, email: string): Promise<AccountOutcome>
 	setRequirePassword(required: boolean): Promise<AccountOutcome>
 	deleteAccount(): Promise<AccountOutcome>
+	listEngines(): Promise<EngineInfo[]>
+	ensureEngine(id: string): Promise<EnsureOutcome>
+	cancelEngine(id: string): Promise<void>
+	removeEngine(id: string): Promise<void>
+	updateYtDlp(): Promise<YtDlpUpdate>
+	onEngineProgress(listener: (progress: EngineProgress) => void): Unsubscribe
+	runEngine(engineId: string, panelId: string, job: EngineJobSpec): Promise<string>
+	cancelEngineJob(jobId: string): Promise<void>
+	savePage(): Promise<PickedFile>
+	onEngineOutput(listener: (output: EngineOutput) => void): Unsubscribe
+	onEngineExit(listener: (exit: EngineExit) => void): Unsubscribe
+	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>
+	/** Copies a picked, dropped or made file to the clipboard as a file (see `files:copy-to-clipboard`). */
+	copyFileToClipboard(token: string): Promise<void>
+	/** Convert's HTML to PDF (see `convert:html-to-pdf`). */
+	printHtmlToPdf(token: string, outputName: string): Promise<PickedFile>
+	/** Opens a read session for a tool panel (see `session:open`). */
+	openToolSession(panelId: string, token: string, kinds: readonly SessionKindName[]): Promise<ViewerOpened>
+	/** A results-only session for a panel (see `session:open-save`). */
+	openSaveSession(panelId: string, kinds: readonly SessionKindName[]): Promise<ViewerOpened>
+	/** The background remover's session (see `bgremove:open`). */
+	openBackgroundPicture(panelId: string, token: string): Promise<ViewerOpened>
+	/** Hand over the `File`s of a drop (`event.dataTransfer.files`); resolves with a token for each. */
+	openDropped(files: readonly File[]): Promise<PickedFile[]>
+	openViewerFile(token: string, panelId: string): Promise<ViewerOpened>
+	closeViewerFile(id: string): Promise<void>
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe
 }

@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { BridgeProtocolError, HostError, webViewZingApi, type InvokeMessage, type WebViewChannel } from './webviewBridge'
 
-function fakeWebView(): WebViewChannel & { sent: InvokeMessage[]; deliver: (data: unknown) => void } {
+function fakeWebView(): WebViewChannel & { sent: InvokeMessage[]; objects: unknown[][]; deliver: (data: unknown) => void } {
 	const sent: InvokeMessage[] = []
+	const objects: unknown[][] = []
 	let listener: ((event: { data: unknown }) => void) | undefined
 	return {
 		sent,
+		objects,
 		postMessage: (message) => sent.push(message as InvokeMessage),
+		postMessageWithAdditionalObjects: (message, files) => {
+			sent.push(message as InvokeMessage)
+			objects.push([...files])
+		},
 		addEventListener: (_type, l) => {
 			listener = l
 		},
@@ -22,6 +28,17 @@ describe('WebView2 bridge', () => {
 		expect(webview.sent).toEqual([{ kind: 'invoke', id: 1, channel: 'tabs:get', args: [] }])
 		webview.deliver({ kind: 'result', id: 1, ok: true, value: { tabs: [], activeId: undefined } })
 		await expect(tabs).resolves.toEqual({ tabs: [], activeId: undefined })
+	})
+
+	it('sends dropped files as additional objects so the host reads their paths, and none of them in the JSON', async () => {
+		const webview = fakeWebView()
+		const zing = webViewZingApi(webview)
+		const files = [{ name: 'a.mov' }, { name: 'b.png' }] as unknown as File[]
+		const dropped = zing.openDropped(files)
+		expect(webview.sent).toEqual([{ kind: 'invoke', id: 1, channel: 'files:open-dropped', args: [] }])
+		expect(webview.objects).toEqual([files])
+		webview.deliver({ kind: 'result', id: 1, ok: true, value: [{ token: 't1', name: 'a.mov' }] })
+		await expect(dropped).resolves.toEqual([{ token: 't1', name: 'a.mov' }])
 	})
 
 	it('passes arguments in order on the same channels as Electron', async () => {

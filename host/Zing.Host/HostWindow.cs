@@ -39,6 +39,9 @@ public sealed class HostWindow
 
 	public nint Hwnd { get; }
 
+	/// <summary>The caller is on the thread that owns this window.</summary>
+	public bool OnUiThread => _dispatcher.HasThreadAccess;
+
 	/// <summary>Windows created and not yet destroyed (the e2e live-counts hook).</summary>
 	internal static int OpenCount => Open.Count;
 

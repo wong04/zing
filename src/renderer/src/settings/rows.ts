@@ -42,6 +42,7 @@ export type CustomId =
 	| 'default-browser'
 	| 'shortcuts'
 	| 'tool-links'
+	| 'engines'
 	| 'sleeping-tabs'
 	| 'privacy-banner'
 	| 'clear-session'
@@ -261,9 +262,10 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 			control: { kind: 'slider', min: 10, max: 100, step: 5, unit: '' },
 		},
 		toggle('preserveOriginals', 'Never overwrite files', {
-			detail: (s) => (s.preserveOriginals ? 'A clashing name gets a number added.' : 'Converted files replace existing ones.'),
+			detail: (s) => (s.preserveOriginals ? 'A clashing name gets a number added.' : 'A file a tool makes replaces one of the same name in Downloads.'),
 			warning: (s) => !s.preserveOriginals,
 		}),
+		{ type: 'custom', id: 'engines', keys: [] },
 	],
 	privacy: [
 		{ type: 'custom', id: 'privacy-banner', keys: [] },

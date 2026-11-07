@@ -91,7 +91,7 @@ const extensionForMimeType: Readonly<Record<string, string>> = {
 /** Which features do something with a dropped file. */
 export function acceptsFiles(content: PanelContent): boolean {
 	if (content.kind === 'section') return content.section === Section.viewer || content.section === Section.convert
-	return content.tool === UtilityTool.bgRemove
+	return content.tool === UtilityTool.bgRemove || content.tool === UtilityTool.pdf
 }
 
 export function acceptsDrag(types: readonly string[]): boolean {

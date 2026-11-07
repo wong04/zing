@@ -338,6 +338,8 @@ public sealed class WebView2Page : IPage
 		_core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+		// The file viewer's address belongs to Zing's own views; a page asking for it gets a 404, never a file (OnWebResourceRequested).
+		_core.AddWebResourceRequestedFilter($"https://{Zing.Core.Viewer.ViewerFiles.Host}/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
 		_core.AddWebResourceRequestedFilter(RelayedContent.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
 		// A cancelled navigation has already sent its request by the time it is cancelled, so documents are held back here, before the network.
 		_core.AddWebResourceRequestedFilter("http://*", CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.All);
@@ -544,6 +546,12 @@ public sealed class WebView2Page : IPage
 		if (RelayedContent.IsRelayUrl(e.Request.Uri))
 		{
 			ServeRelayed(sender, e);
+			return;
+		}
+		// Before the http rule: view.zing is an https address, and a page must get its 404, never a request to the network.
+		if (Zing.Core.Viewer.ViewerFiles.IsViewerAddress(e.Request.Uri))
+		{
+			e.Response = ViewerResponses.Make(sender.Environment, Zing.Core.Viewer.ViewerFiles.Unavailable());
 			return;
 		}
 		if (e.Request.Uri.StartsWith("http", StringComparison.OrdinalIgnoreCase))

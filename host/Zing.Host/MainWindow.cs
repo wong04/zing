@@ -371,6 +371,24 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public IDownloadHost DownloadHost => _downloads.Files;
 
+	public async Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions)
+	{
+		if (TestHooks.IsEndToEndRun) return TestHooks.TakePickedFiles();
+		var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(_window.AppWindow.Id);
+		if (extensions.Count == 0) picker.FileTypeFilter.Add("*");
+		foreach (var extension in extensions) picker.FileTypeFilter.Add("." + extension);
+		var picked = await picker.PickMultipleFilesAsync();
+		return [.. picked.Select(file => file.Path)];
+	}
+
+	public void CopyFilesToClipboard(IReadOnlyList<string> paths)
+	{
+		if (!_window.OnUiThread) throw new InvalidOperationException("Files can only be put on the clipboard from the window's own thread");
+		FileClipboard.Copy(_window.Hwnd, paths);
+	}
+
+	public Task PrintHtmlToPdfAsync(string html, string pdfPath, CancellationToken cancellation) => HtmlPdfPrinter.PrintAsync(_window, _scope, html, pdfPath, cancellation);
+
 	// MARK: IPageFeatureHost
 
 	public void DownloadStarting(WebView2Page page, CoreWebView2DownloadStartingEventArgs e) => _downloads.Starting(page, e);

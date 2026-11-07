@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Zing.Core.Engines;
+using Zing.Core.Viewer;
 using Zing.Core.Net;
 
 namespace Zing.Core;
@@ -50,6 +52,12 @@ public interface IWindowHost
 	/// <summary>Where downloads are saved, and the file actions on them.</summary>
 	string DownloadsDirectory { get; }
 	IDownloadHost DownloadHost { get; }
+	/// <summary>Shows the native open dialog for these extensions (none means every file) and returns what the person picked; empty if they cancelled. An e2e run shows no dialog.</summary>
+	Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions);
+	/// <summary>Puts these files on the clipboard as files (CF_HDROP), so Explorer can paste them. Called on the UI thread; throws if the clipboard can't be written. An e2e run leaves the real clipboard alone.</summary>
+	void CopyFilesToClipboard(IReadOnlyList<string> paths);
+	/// <summary>Has Chromium print this HTML text to a PDF at this path (Convert). Scripts and the network are off while it does.</summary>
+	Task PrintHtmlToPdfAsync(string html, string pdfPath, CancellationToken cancellation);
 	/// <summary>Runs delayed work on the window's UI thread.</summary>
 	IScheduler Scheduler { get; }
 	IShellActions Shell { get; }
@@ -59,11 +67,13 @@ public interface IWindowHost
 /// <param name="Clock">The app's clock; an e2e run swaps in an <see cref="OffsetClock"/> it can move forward.</param>
 /// <param name="SiteData">Purges a site when its last tab closes; null with a persistent profile.</param>
 /// <param name="BrowsingData">Settings' Clear browsing session; null where the host has no engine to clear.</param>
+/// <param name="Engines">The downloaded engines (FFmpeg and the rest), shared by every window; null where the host has none.</param>
+/// <param name="Runner">Runs them; shared so that "at most 3 jobs" holds for all of Zing. Null where the host has none.</param>
 /// <param name="Net">The network checks Diagnose makes; null uses the real ones, a test passes fakes.</param>
 /// <param name="Dns">Encrypted DNS for the whole PC (Network &amp; VPN); null where the host can't change DNS.</param>
 /// <param name="Threats">Link inspection, with the hosts allowed this session; one per app. Null where the host doesn't inspect links.</param>
 /// <param name="Consent">Whether third parties may be asked to open a link, for the session and every window. One per app: required, so a window cannot end up with its own.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null)
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null)
 {
 	public long Now() => Clock.Now();
 }
@@ -89,9 +99,26 @@ public sealed class ChromeApi : IDisposable
 
 	internal IWindowHost Host => _host;
 	private readonly string _appVersion;
+	private readonly OutputPlacement _placement;
 	private readonly List<IDisposable> _subscriptions = [];
 	private readonly Action _unsubscribeLibrary;
 	private string? _libraryPanel;
+	// Cancelled when the window closes, so a download it started doesn't outlive it.
+	private readonly CancellationTokenSource _closing = new();
+	// This window's downloads by engine id, so Cancel can stop one.
+	private readonly Dictionary<string, CancellationTokenSource> _downloads = new(StringComparer.Ordinal);
+	// Names this window's jobs to the runner, which is shared by every window.
+	private readonly string _windowId = Guid.NewGuid().ToString("N");
+	private volatile bool _disposed;
+
+	/// <summary>The files this window's renderer may give an engine: what the picker or a drop issued.</summary>
+	public FileGrants Grants { get; } = new();
+
+	/// <summary>Where the host leaves what a Zing view dropped until the renderer collects it.</summary>
+	public DropInbox Drops { get; }
+
+	/// <summary>The files open in this window's viewer panels; null on a host with no temporary folder for converted copies.</summary>
+	public ViewerFiles? Viewer { get; }
 
 	public TabService Tabs { get; }
 
@@ -128,12 +155,25 @@ public sealed class ChromeApi : IDisposable
 		_consent = app.Consent;
 		_host = host;
 		_appVersion = appVersion;
+		_placement = OutputPlacement.ForSettings(app.Settings);
 		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text));
 		Saved = new SavedTabs(Tabs, app.Library);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
 		Permissions = new PermissionBroker(PageUi);
+		Drops = new DropInbox(Grants);
+		bridge.UseDropInbox(Drops);
+		if (app.ViewerRoot is { } viewerRoot)
+		{
+			Viewer = new ViewerFiles(viewerRoot, _placement, (what, error) => host.Warn(what, error))
+			{
+				ModelOpener = () => OpenModel(app.Engines),
+				SaveDirectory = host.DownloadsDirectory,
+				IssueToken = path => Grants.Issue(path).Token,
+			};
+			bridge.UseViewer(Viewer);
+		}
 		Stacks = new StackDropdown(key => StackMembers.Of(Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")), Ordering.Stacks(), key), host.Scheduler, state =>
 		{
 			host.Push("stack:dropdown", state);
@@ -152,6 +192,10 @@ public sealed class ChromeApi : IDisposable
 		host.OfferEnded += EndOffer;
 		Shell.StateChanged += state => host.Push("shell:state", state);
 		Shell.PanelsChanged += state => host.Push("toolpanel:state", state);
+		// A job belongs to its panel: once the panel is gone (minimized is not gone) its engine is stopped.
+		Shell.PanelsChanged += state => app.Runner?.KillPanelsExcept(_windowId, state.Panels.Select(p => p.Id).ToHashSet(StringComparer.Ordinal));
+		// A viewer file is shown in its panel and goes with it; its copy is deleted.
+		Shell.PanelsChanged += state => Viewer?.CloseExcept(state.Panels.Select(p => p.Id).ToHashSet(StringComparer.Ordinal));
 		Shell.SurfaceRegionChanged += host.SurfaceRegionChanged;
 		Shell.FocusSurfaceRequested += host.FocusSurface;
 		Shell.SetSidebarWidth(SidebarWidth());
@@ -238,6 +282,24 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("hash:text", args => Hashing.Text(Text(args, 0), Text(args, 1)));
 		bridge.Register("hash:file", args => HashFileAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("hash:hmac", args => Hashing.Hmac(Text(args, 0), Text(args, 1), Text(args, 2)));
+		bridge.Register("engines:list", _ => Engines().List().Select(EngineInfo.Of).ToList());
+		bridge.Register("engines:ensure", args => EnsureEngineAsync(Text(args, 0)));
+		bridge.Register("engines:cancel", args => Do(() => CancelEngineDownload(Text(args, 0))));
+		bridge.Register("engines:remove", args => Do(() => Engines().Remove(Text(args, 0))));
+		bridge.Register("engines:update-ytdlp", _ => UpdateYtDlpAsync());
+		bridge.Register("engines:run", args => RunEngine(Text(args, 0), Text(args, 1), Arg(args, 2)));
+		// Not "engines:cancel": that one stops a download by engine id.
+		bridge.Register("engines:cancel-job", args => Do(() => Runner().Cancel(Text(args, 0), _windowId)));
+		bridge.Register("files:pick", args => PickFilesAsync(Arg(args, 0)));
+		bridge.Register("convert:html-to-pdf", args => HtmlToPdfAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("files:open-dropped", _ => Drops.Take());
+		bridge.Register("files:copy-to-clipboard", args => Do(() => CopyFileToClipboard(Text(args, 0))));
+		bridge.Register("session:open", args => OpenToolSession(Text(args, 0), Text(args, 1), StringArray(Arg(args, 2))));
+		bridge.Register("session:open-save", args => OpenSaveSession(Text(args, 0), StringArray(Arg(args, 1))));
+		bridge.Register("bgremove:open", args => OpenToolSession(Text(args, 0), Text(args, 1), ["image"]));
+		bridge.Register("page:save", _ => SavePageAsync());
+		bridge.Register("viewer:open", args => OpenViewerFile(Text(args, 0), Text(args, 1)));
+		bridge.Register("viewer:close", args => Do(() => CloseViewerFile(Text(args, 0))));
 		bridge.Register("net:diagnose", args => DiagnoseAsync(Text(args, 0)));
 		bridge.Register("dns:preview", async _ => await DnsSetup().PreviewAsync(Setting("dohProvider")));
 		bridge.Register("dns:apply", async args => await DnsSetup().ApplyAsync(Setting("dohProvider"), Text(args, 0)));
@@ -380,6 +442,11 @@ public sealed class ChromeApi : IDisposable
 
 	public void Dispose()
 	{
+		_disposed = true;
+		_app.Runner?.KillWindow(_windowId);
+		Viewer?.Dispose();
+		_closing.Cancel();
+		_closing.Dispose();
 		_host.OfferEnded -= EndOffer;
 		foreach (var subscription in _subscriptions) subscription.Dispose();
 		Shell.Dispose();
@@ -466,6 +533,250 @@ public sealed class ChromeApi : IDisposable
 		_host.Notify("Browsing session cleared");
 		return null;
 	}
+
+	/// <summary>
+	/// Writes the active tab's HTML to Downloads. Only a Zing view can ask: a page view has no handler on the bridge. The
+	/// direct route, by script; a relay route would fetch the text elsewhere and call <see cref="PageSave.Write"/> the same way.
+	/// </summary>
+	private async Task<object?> SavePageAsync()
+	{
+		var page = Tabs.ActivePage ?? throw new PageNotSavableException("There is no page open to save.");
+		var text = await PageSave.ReadAsync(page);
+		return Grants.Issue(PageSave.Write(_placement, _host.DownloadsDirectory, text.Title, text.Html));
+	}
+
+	private EngineStore Engines() => _app.Engines ?? throw new InvalidOperationException("This host has no engine store");
+
+	private EngineRunner Runner() => _app.Runner ?? throw new InvalidOperationException("This host can't run engines");
+
+	private void CopyFileToClipboard(string token)
+	{
+		var path = Grants.Resolve(token);
+		if (!File.Exists(path)) throw new FileNotFoundException($"{Path.GetFileName(path)} is no longer there, so it can't be copied", path);
+		_host.CopyFilesToClipboard([path]);
+	}
+
+	private async Task<object?> PickFilesAsync(JsonElement kinds)
+	{
+		if (kinds.ValueKind != JsonValueKind.Array) throw new ArgumentException("Argument 0 must be a list of file kinds");
+		var extensions = FileKinds.Extensions([.. kinds.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : throw new ArgumentException("A file kind must be a string"))]);
+		var paths = await _host.PickFilesAsync(extensions);
+		return paths.Select(Grants.Issue).ToList();
+	}
+
+	/// <summary>The model and a hold on it, so the store will not remove it while the host streams it.</summary>
+	private static (string Path, IDisposable Lease) OpenModel(EngineStore? engines)
+	{
+		var store = engines ?? throw new EngineNotInstalledException(EngineIds.BackgroundModel);
+		var lease = store.Use(EngineIds.BackgroundModel);
+		try
+		{
+			return (store.InstalledPath(EngineIds.BackgroundModel), lease);
+		}
+		catch
+		{
+			lease.Dispose();
+			throw;
+		}
+	}
+
+	private static List<string> StringArray(JsonElement list) =>
+		list.ValueKind == JsonValueKind.Array ? [.. list.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.String ? item.GetString()! : throw new ArgumentException("Kinds must be a list of names"))] : throw new ArgumentException("Argument 2 must be a list of kinds");
+
+	/// <summary>
+	/// Opens a picked or dropped file for a tool panel as a read session on the viewer file server. The host judges the first bytes
+	/// against the kinds asked for (a fixed table: image, pdf) and the length cap, and answers with a session address; the token and
+	/// the path never reach the tool. Closing the panel, opening another file in it or <c>viewer:close</c> revokes it.
+	/// </summary>
+	private object OpenToolSession(string panelId, string token, IReadOnlyList<string> kindNames)
+	{
+		var viewer = Viewer ?? throw new InvalidOperationException("This host can't serve files to tools");
+		var kinds = SessionKinds.Named(kindNames);
+		var path = Grants.Resolve(token);
+		if (!File.Exists(path)) throw new FileNotFoundException($"{Path.GetFileName(path)} isn't there any more. Pick it again", path);
+		if (!Shell.PanelsState().Panels.Any(p => p.Id == panelId)) throw new UnknownPanelException(panelId);
+		// Judged before anything is closed: a refused file leaves the panel's live session as it was.
+		ViewerFiles.Judge(path, kinds);
+		CloseViewerPanel(panelId);
+		return Opened(viewer.OpenSession(path, panelId, kinds));
+	}
+
+	/// <summary>A session that takes results only (see <see cref="ViewerFiles.OpenSaveSession"/>), for a tool that has read its file and must not depend on it any more.</summary>
+	private object OpenSaveSession(string panelId, IReadOnlyList<string> kindNames)
+	{
+		var viewer = Viewer ?? throw new InvalidOperationException("This host can't serve files to tools");
+		var kinds = SessionKinds.Named(kindNames);
+		if (!Shell.PanelsState().Panels.Any(p => p.Id == panelId)) throw new UnknownPanelException(panelId);
+		CloseViewerPanel(panelId);
+		return Opened(viewer.OpenSaveSession(panelId, kinds));
+	}
+
+	/// <summary>Convert's HTML to PDF: prints the file a token stands for and answers with the PDF's name and a token.</summary>
+	private async Task<object?> HtmlToPdfAsync(string token, string outputName)
+	{
+		var path = Grants.Resolve(token);
+		var placed = await HtmlPdf.PrintAsync(path, outputName, _host.DownloadsDirectory, _placement, _host.PrintHtmlToPdfAsync, _closing.Token);
+		return Grants.Issue(placed);
+	}
+
+	/// <summary>
+	/// <c>spec</c> is <c>{ args: (string | {input: token} | {output: n})[], outputs?: string[], urls?: string[] }</c>.
+	/// Files come only as tokens this window's picker or a drop issued, so the renderer can't name another path.
+	/// </summary>
+	private object RunEngine(string engineId, string panelId, JsonElement spec)
+	{
+		var runner = Runner();
+		if (!Shell.PanelsState().Panels.Any(p => p.Id == panelId)) throw new UnknownPanelException(panelId);
+		if (spec.ValueKind != JsonValueKind.Object || !spec.TryGetProperty("args", out var args) || args.ValueKind != JsonValueKind.Array) throw new ArgumentException("The job needs a list of args");
+		var request = new EngineJobRequest(
+			engineId,
+			[.. args.EnumerateArray().Select(JobArgument)],
+			_host.DownloadsDirectory,
+			Strings(spec, "outputs"),
+			Strings(spec, "urls"));
+		return runner.Start(new JobOwner(_windowId, panelId), request, PushJobOutput, PushJobExit);
+	}
+
+	/// <summary>
+	/// Shows a picked or dropped file in a viewer panel. Chromium's own formats are served from where they are; the rest are converted
+	/// into a temporary copy by an engine owned by the panel, so closing the panel stops the job and deletes the copy.
+	/// </summary>
+	private object OpenViewerFile(string token, string panelId)
+	{
+		var viewer = Viewer ?? throw new InvalidOperationException("This host can't show files");
+		var path = Grants.Resolve(token);
+		if (!File.Exists(path)) throw new FileNotFoundException($"{Path.GetFileName(path)} isn't there any more. Pick it again", path);
+		if (!Shell.PanelsState().Panels.Any(p => p.Id == panelId)) throw new UnknownPanelException(panelId);
+		var format = ViewerFormats.For(Path.GetExtension(path)) ?? throw new UnsupportedViewerFormatException(Path.GetExtension(path).TrimStart('.'));
+		CloseViewerPanel(panelId);
+		if (!format.Converted) return Opened(viewer.OpenNative(path, panelId, format));
+		var runner = Runner();
+		var session = viewer.OpenConverted(path, panelId, format);
+		try
+		{
+			var request = new EngineJobRequest(
+				ViewerConversion.EngineFor(format.Kind),
+				ViewerConversion.Args(format.Kind, path, Path.GetExtension(path)),
+				session.Folder!,
+				[session.OutputName!],
+				[],
+				staged => viewer.BeginLive(session.Id, staged[0]));
+			session.JobId = runner.Start(new JobOwner(_windowId, panelId), request, PushJobOutput, exit => EndViewerJob(viewer, session, exit));
+		}
+		catch
+		{
+			viewer.Abandon(session.Id);
+			throw;
+		}
+		return Opened(session);
+	}
+
+	private sealed record ViewerOpened(string Id, string Name, string Show, string Url, string? JobId, bool Stream);
+
+	private static ViewerOpened Opened(ViewerSession session) => new(session.Id, session.Name, session.Format.Show, session.Url, session.JobId, session.Stream);
+
+	/// <summary>The copy is done, or it isn't. The renderer is told by the usual exit event, without a token for the temporary file.</summary>
+	private void EndViewerJob(ViewerFiles viewer, ViewerSession session, JobExit exit)
+	{
+		if (exit.Code == 0 && !exit.Cancelled && exit.Error is null && exit.Outputs.Count == 1) viewer.Complete(session.Id, exit.Outputs[0]);
+		else viewer.Fail(session.Id);
+		if (!_disposed) _host.Push("engines:exit", new JobExitEvent(exit.JobId, exit.Code, exit.Cancelled, [], exit.StderrTail, exit.Error));
+	}
+
+	private void CloseViewerFile(string id)
+	{
+		if (Viewer?.Find(id) is { } session) CloseViewerSession(session);
+	}
+
+	private void CloseViewerPanel(string panelId)
+	{
+		if (Viewer?.ForPanel(panelId) is { } session) CloseViewerSession(session);
+	}
+
+	private void CloseViewerSession(ViewerSession session)
+	{
+		if (session.JobId is { } job) StopJob(job);
+		Viewer!.Close(session.Id);
+	}
+
+	private void StopJob(string jobId)
+	{
+		try
+		{
+			Runner().Cancel(jobId, _windowId);
+		}
+		catch (UnknownJobException)
+		{
+			// So long ago that the runner has forgotten it: it is not running.
+		}
+	}
+
+	private JobArg JobArgument(JsonElement arg)
+	{
+		if (arg.ValueKind == JsonValueKind.String) return new JobArg.Literal(arg.GetString()!);
+		if (arg.ValueKind == JsonValueKind.Object && arg.TryGetProperty("input", out var token) && token.ValueKind == JsonValueKind.String)
+		{
+			var path = Grants.Resolve(token.GetString()!);
+			return File.Exists(path) ? new JobArg.Input(path) : throw new FileNotFoundException($"{Path.GetFileName(path)} isn't there any more. Pick it again", path);
+		}
+		if (arg.ValueKind == JsonValueKind.Object && arg.TryGetProperty("output", out var index) && index.TryGetInt32(out var number)) return new JobArg.Output(number);
+		throw new ArgumentException("A job argument is a string, {input: token} or {output: number}");
+	}
+
+	private static List<string> Strings(JsonElement spec, string name)
+	{
+		if (!spec.TryGetProperty(name, out var list) || list.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return [];
+		if (list.ValueKind != JsonValueKind.Array) throw new ArgumentException($"{name} must be a list of strings");
+		return [.. list.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.String ? item.GetString()! : throw new ArgumentException($"{name} must be a list of strings"))];
+	}
+
+	// A closed window has no renderer to tell.
+	private void PushJobOutput(JobOutputBatch batch)
+	{
+		if (!_disposed) _host.Push("engines:output", batch);
+	}
+
+	/// <summary>
+	/// What the renderer is told when a job ends. Each output is a name and a token (to show, and to give a later job as an
+	/// input), not a path. The engine's own lines and <c>StderrTail</c> can still contain paths: FFmpeg prints the files it
+	/// reads, and a tool needs those lines to show progress and errors.
+	/// </summary>
+	private sealed record JobExitEvent(string JobId, int Code, bool Cancelled, IReadOnlyList<FileGrant> Outputs, IReadOnlyList<string> StderrTail, string? Error);
+
+	private void PushJobExit(JobExit exit)
+	{
+		if (_disposed) return;
+		_host.Push("engines:exit", new JobExitEvent(exit.JobId, exit.Code, exit.Cancelled, [.. exit.Outputs.Select(Grants.Issue)], exit.StderrTail, exit.Error));
+	}
+
+	/// <summary>A person asked for the download (a button, after being told its size and source); progress reaches this window.</summary>
+	private async Task<object?> EnsureEngineAsync(string id)
+	{
+		var progress = new PercentProgress(fraction => _host.Push("engines:progress", new { id, fraction }));
+		using var own = CancellationTokenSource.CreateLinkedTokenSource(_closing.Token);
+		if (!_downloads.TryAdd(id, own)) throw new InvalidOperationException($"{id} is already downloading in this window");
+		try
+		{
+			await Engines().EnsureAsync(id, progress, own.Token);
+			return "installed";
+		}
+		// A cancel is an ordinary answer, not an error; EnsureAsync has removed everything it left before it throws.
+		catch (OperationCanceledException) when (own.IsCancellationRequested)
+		{
+			return "cancelled";
+		}
+		finally
+		{
+			_downloads.Remove(id);
+		}
+	}
+
+	private void CancelEngineDownload(string id)
+	{
+		if (_downloads.TryGetValue(id, out var download)) download.Cancel();
+	}
+
+	private async Task<object?> UpdateYtDlpAsync() => await Engines().UpdateYtDlpAsync(_closing.Token);
 
 	private static async Task<object?> HashFileAsync(string path, string algorithm) => await Hashing.FileAsync(path, algorithm);
 

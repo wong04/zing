@@ -1,7 +1,11 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type DragEvent, type ReactNode } from 'react'
+import type { PickedFile } from '../../../shared/engines/engineJob'
+import { zing } from '../api'
 import { extension, fileName, folderName } from './filePath'
 import { CopyIcon, FolderOpenIcon } from './icons'
+import { PillButton } from './PillButton'
 import { FadingScroll } from './ScrollFade'
+import { beginToolDrag, droppedToolFile, endToolDrag, isToolDrag } from './toolDrag'
 
 export interface FileIconProps {
 	readonly path: string
@@ -26,18 +30,57 @@ export interface FileRowProps {
 	readonly subtitle?: string
 	readonly iconSize?: number
 	readonly selected?: boolean
+	/** A file this tool made: the row can be dragged into another tool's drop zone, which gets the file by its token. */
+	readonly dragFile?: PickedFile
 }
 
 /** A file's icon with its name and an optional second line (Krackn `FileRow`). */
-export function FileRow({ path, subtitle, iconSize = 20, selected = false }: FileRowProps) {
+export function FileRow({ path, subtitle, iconSize = 20, selected = false, dragFile }: FileRowProps) {
+	useEffect(() => (dragFile ? () => endToolDrag(dragFile) : undefined), [dragFile])
+	const classes = ['file-row', selected ? 'selected' : '', dragFile ? 'draggable' : ''].filter(Boolean).join(' ')
 	return (
-		<span className={selected ? 'file-row selected' : 'file-row'}>
+		<span
+			className={classes}
+			draggable={dragFile ? true : undefined}
+			title={dragFile ? 'Drag this into another tool' : undefined}
+			onDragStart={dragFile ? (event) => beginToolDrag(event.dataTransfer, dragFile) : undefined}
+			onDragEnd={dragFile ? () => endToolDrag() : undefined}
+		>
 			<FileIcon path={path} size={iconSize} />
 			<span className="file-row-text">
 				<span className="file-row-name">{fileName(path)}</span>
 				{subtitle ? <span className="file-row-subtitle">{subtitle}</span> : null}
 			</span>
 		</span>
+	)
+}
+
+export interface CopyFileButtonProps {
+	readonly file: PickedFile
+	/** The host refused or the clipboard could not be written. */
+	readonly onError: (error: Error) => void
+}
+
+const COPIED_SHOWN_MS = 2000
+
+/** Puts a file this tool made on the clipboard as a file, so it pastes into Explorer, a mail or a chat. */
+export function CopyFileButton({ file, onError }: CopyFileButtonProps) {
+	const [copied, setCopied] = useState(false)
+	useEffect(() => {
+		if (!copied) return
+		const timer = setTimeout(() => setCopied(false), COPIED_SHOWN_MS)
+		return () => clearTimeout(timer)
+	}, [copied])
+	return (
+		<PillButton
+			size="small"
+			variant="outlined"
+			icon={<CopyIcon size={13} />}
+			aria-label={`Copy ${file.name} to the clipboard`}
+			onClick={() => zing.copyFileToClipboard(file.token).then(() => setCopied(true), onError)}
+		>
+			{copied ? 'Copied' : 'Copy file'}
+		</PillButton>
 	)
 }
 
@@ -132,6 +175,62 @@ export function ToolEmptyState({
 					</div>
 				) : null}
 			</div>
+		</div>
+	)
+}
+
+export interface FileDropZoneProps {
+	/** What the drop gave: a name for each file and the token to hand an engine job. The path stays in the host. */
+	readonly onFiles: (files: readonly PickedFile[]) => void
+	/** The host refused the drop or couldn't read it. */
+	readonly onError: (error: Error) => void
+	readonly children: (state: { readonly targeted: boolean }) => ReactNode
+}
+
+const isFileDrag = (event: DragEvent): boolean => event.dataTransfer.types.includes('Files')
+const isAcceptedDrag = (event: DragEvent): boolean => isFileDrag(event) || isToolDrag(event.dataTransfer.types)
+
+class ForeignToolDragError extends Error {
+	override name = 'ForeignToolDragError'
+	constructor() {
+		super('That drag is not a file from one of the tools, so it was not taken.')
+	}
+}
+
+/**
+ * Takes files dropped on a Zing view (Spike S4). The host reads each file's path from the drop itself, so what comes
+ * back is a token and a name; a page can't do this, since only Zing's own views reach the host. A file another tool
+ * made (a `FileRow` with `dragFile`) is taken by its token and never touches the host. Text and links are refused.
+ */
+export function FileDropZone({ onFiles, onError, children }: FileDropZoneProps) {
+	const [targeted, setTargeted] = useState(false)
+	return (
+		<div
+			onDragEnter={(event) => {
+				if (!isAcceptedDrag(event)) return
+				event.preventDefault()
+				setTargeted(true)
+			}}
+			onDragOver={(event) => {
+				if (isAcceptedDrag(event)) event.preventDefault()
+			}}
+			onDragLeave={(event) => {
+				if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setTargeted(false)
+			}}
+			onDrop={(event) => {
+				if (!isAcceptedDrag(event)) return
+				event.preventDefault()
+				setTargeted(false)
+				if (isToolDrag(event.dataTransfer.types)) {
+					const file = droppedToolFile(event.dataTransfer.types)
+					if (file === undefined) onError(new ForeignToolDragError())
+					else onFiles([file])
+					return
+				}
+				zing.openDropped([...event.dataTransfer.files]).then(onFiles, onError)
+			}}
+		>
+			{children({ targeted })}
 		</div>
 	)
 }

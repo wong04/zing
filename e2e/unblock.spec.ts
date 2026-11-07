@@ -1,12 +1,10 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdtemp } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { createServer as createSocketServer, type AddressInfo } from 'node:net'
 import { expect, type Locator, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, pageWhere, pages, test, type Launched } from './zing'
+import { launchZing, pageWhere, pages, scratchDir, test, type Launched } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -1100,7 +1098,7 @@ test('adapters that changed after the script was shown give a new script to read
 })
 
 test('saved settings that can not be read are a named error naming the file', async () => {
-	const userDataDir = await mkdtemp(join(tmpdir(), 'zing-host-data-'))
+	const userDataDir = scratchDir('zing-host-data-')
 	writeFileSync(join(userDataDir, 'dns-before.json'), '{ not json')
 	const zing = await launchZing({ userDataDir })
 	const { panel } = await openNetwork(zing)

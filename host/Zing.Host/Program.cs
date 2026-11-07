@@ -1,6 +1,7 @@
 using Microsoft.Web.WebView2.Core;
 using WinRT;
 using Zing.Core;
+using Zing.Core.Engines;
 
 namespace Zing.Host;
 
@@ -221,7 +222,45 @@ public sealed class ZingApp
 		var openedAccount = AccountStore.Open(Path.Combine(AppPaths.UserData, "account"), new DpapiCipher(), stamp, skipGate);
 		if (openedAccount.Problem is { } accountProblem) StartupProblem("account", "your Zing account", "without it", accountProblem);
 		var account = openedAccount.Value;
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()));
+		var engines = OpenEngines();
+		// Reached only by the Zing that owns this profile (the single-instance check came first), so what is in the folder is a dead Zing's.
+		Zing.Core.Viewer.ViewerFiles.SweepLeftovers(AppPaths.ViewerCopies, Zing.Core.Viewer.ViewerFiles.IsZingRunning, (what, error) => TestHooks.Record(what, error));
+		// HTML to PDF needs no engine, so its print folders are swept whether or not the engines folder opened.
+		HtmlPdfPrinter.SweepLeftovers();
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies);
+	}
+
+	/// <summary>Clears the job folders a killed Zing left. A folder that can't be tidied costs running engines, not startup.</summary>
+	private static EngineRunner? OpenRunner(EngineStore engines, OutputPlacement placement)
+	{
+		try
+		{
+			// The e2e fixture serves Zing.FakeEngine as every engine, so a run against it also accepts that program's flags.
+			return TestHooks.EngineCatalog() is null
+				? new EngineRunner(engines, AppPaths.EngineJobs, placement, (what, error) => TestHooks.Record(what, error))
+				: EngineRunner.ForFakeEngine(engines, AppPaths.EngineJobs, placement, (what, error) => TestHooks.Record(what, error));
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+		{
+			TestHooks.Record("engine jobs folder", error);
+			return null;
+		}
+	}
+
+	/// <summary>Nothing is fetched here: engines download only when a person asks. A folder that can't be tidied costs the engines feature, not startup.</summary>
+	private static EngineStore? OpenEngines()
+	{
+		try
+		{
+			var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+			http.DefaultRequestHeaders.UserAgent.ParseAdd("Zing");
+			return new EngineStore(AppPaths.Engines, TestHooks.EngineCatalog() ?? EngineCatalog.Pinned, http, (what, error) => TestHooks.Record(what, error));
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+		{
+			TestHooks.Record("engines folder", error);
+			return null;
+		}
 	}
 
 	/// <summary>Opens the engine and listens to it: a browser process that dies, and a runtime update waiting for the next launch.</summary>

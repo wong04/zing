@@ -51,13 +51,14 @@ public static class PanelTool
 	public const string Cron = "Cron Parser";
 	public const string Color = "Color Converter";
 	public const string BgRemove = "Background Remover";
+	public const string Pdf = "PDF Tools";
 	public const string Qr = "QR Code";
 	public const string Uuid = "UUID";
 
 	public static readonly IReadOnlyList<string> All =
 	[
 		Tools, Json, Base64, UrlCode, NumberBase, Regex, Hash, Hmac, Jwt, Password, CaseConvert, TextStats,
-		LinkCleaner, Calculator, Graphing, Units, Timestamp, Cron, Color, BgRemove, Qr, Uuid,
+		LinkCleaner, Calculator, Graphing, Units, Timestamp, Cron, Color, BgRemove, Pdf, Qr, Uuid,
 	];
 }
 
@@ -107,7 +108,7 @@ public sealed record PanelContent(PanelKind Kind, string Name)
 	public PanelSize PreferredSize => Kind == PanelKind.Section ? SectionSize(Name) : ToolSize(Name);
 
 	/// <summary>Which features do something with a dropped file (src/shared/shell/dropRouter.ts).</summary>
-	public bool AcceptsFiles => Kind == PanelKind.Section ? Name is PanelSection.Viewer or PanelSection.Convert : Name == PanelTool.BgRemove;
+	public bool AcceptsFiles => Kind == PanelKind.Section ? Name is PanelSection.Viewer or PanelSection.Convert : Name is PanelTool.BgRemove or PanelTool.Pdf;
 
 	private static PanelSize SectionSize(string name) => name switch
 	{
@@ -120,6 +121,7 @@ public sealed record PanelContent(PanelKind Kind, string Name)
 	private static PanelSize ToolSize(string name) => name switch
 	{
 		PanelTool.Graphing => new(640, 560),
+		PanelTool.Pdf => new(640, 640),
 		PanelTool.BgRemove or PanelTool.Qr => new(500, 620),
 		PanelTool.Regex or PanelTool.Jwt or PanelTool.Json or PanelTool.TextStats or PanelTool.Hash or PanelTool.Hmac or PanelTool.Base64 => new(520, 580),
 		PanelTool.Calculator => new(520, 540),

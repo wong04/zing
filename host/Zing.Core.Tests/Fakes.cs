@@ -30,7 +30,9 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public void StopFind() => Calls.Add("stop find");
 	public bool IsAudible { get; set; }
 	public System.Text.Json.JsonElement ProbeResult { get; set; } = System.Text.Json.JsonDocument.Parse("{\"scrollY\":0,\"dirty\":false}").RootElement;
-	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script) => Task.FromResult(ProbeResult);
+	/// <summary>When set, answers <see cref="EvaluateAsync"/> instead of <see cref="ProbeResult"/>, so a test can navigate, hang or fail mid-script.</summary>
+	public Func<Task<System.Text.Json.JsonElement>>? Evaluating { get; set; }
+	public Task<System.Text.Json.JsonElement> EvaluateAsync(string script) => Evaluating?.Invoke() ?? Task.FromResult(ProbeResult);
 	public void RunWhenLoaded(string script) => Calls.Add($"when loaded {script}");
 	public int TextSize { get; set; } = Zing.Core.TextSize.Default;
 	public double Zoom { get; set; } = Zing.Core.Zoom.Default;
@@ -95,7 +97,40 @@ public sealed class FakeWindowHost : IWindowHost
 	public int Closes { get; private set; }
 	public int Relayouts { get; private set; }
 
-	public void Push(string channel, object? payload) => Pushed.Add((channel, payload));
+	// Engine jobs push from their own threads.
+	public void Push(string channel, object? payload)
+	{
+		lock (Pushed) Pushed.Add((channel, payload));
+	}
+
+	/// <summary>What the file picker "returns"; the extensions it was asked for are kept.</summary>
+	public IReadOnlyList<string> PickedPaths { get; set; } = [];
+	public IReadOnlyList<string>? PickedExtensions { get; private set; }
+
+	public Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions)
+	{
+		PickedExtensions = extensions;
+		return Task.FromResult(PickedPaths);
+	}
+
+	/// <summary>The paths of each copy to the clipboard.</summary>
+	public List<IReadOnlyList<string>> CopiedFiles { get; } = [];
+	public Exception? ClipboardFailure { get; set; }
+
+	public void CopyFilesToClipboard(IReadOnlyList<string> paths)
+	{
+		if (ClipboardFailure is { } failure) throw failure;
+		CopiedFiles.Add(paths);
+	}
+	/// <summary>The HTML text each print was given.</summary>
+	public List<string> Printed { get; } = [];
+
+	public Task PrintHtmlToPdfAsync(string html, string pdfPath, CancellationToken cancellation)
+	{
+		Printed.Add(html);
+		File.WriteAllText(pdfPath, "%PDF-fake");
+		return Task.CompletedTask;
+	}
 	public void Notify(string text) => Notices.Add(text);
 	public List<string> Offers { get; } = [];
 	public int OfferDismissals { get; private set; }
@@ -135,7 +170,7 @@ public sealed class FakeWindowHost : IWindowHost
 	public void SetPageUiHeight(int height) => PageUiHeights.Add(height);
 	public void FocusPageUi() { }
 
-	public string DownloadsDirectory => Path.GetTempPath();
+	public string DownloadsDirectory { get; set; } = Path.GetTempPath();
 	public IDownloadHost DownloadHost { get; } = new FakeDownloads();
 
 	public ManualScheduler FakeScheduler { get; } = new();

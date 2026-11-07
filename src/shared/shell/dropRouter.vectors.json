@@ -115,6 +115,7 @@
 		{ "name": "Files takes dropped files", "content": "section:Files", "want": true },
 		{ "name": "Convert takes dropped files", "content": "section:Convert", "want": true },
 		{ "name": "the background remover takes dropped files", "content": "tool:Background Remover", "want": true },
+		{ "name": "the PDF tools take dropped files", "content": "tool:PDF Tools", "want": true },
 		{ "name": "Download does not", "content": "section:Download", "want": false },
 		{ "name": "Hashes does not", "content": "tool:Hashes", "want": false }
 	],

@@ -17,16 +17,22 @@ public sealed class RelayEngineTests
 		public Func<RelayRequest, Task<RelayResponse>> Pinned { get; set; } = request => throw new HttpRequestException($"no route to {request.Url.Host}");
 		public List<(string Via, RelayRequest Request)> Calls { get; } = [];
 
+		// Relayed sites fetch up to six files at once, and a plain List loses adds made at the same moment.
+		private void Record(string via, RelayRequest request)
+		{
+			lock (Calls) Calls.Add((via, request));
+		}
+
 		public Task<RelayResponse> GetAsync(RelayRequest request, CancellationToken ct)
 		{
-			Calls.Add(("plain", request));
+			Record("plain", request);
 			// A real transport stops when its token does; WaitAsync gives a script that never answers the same behaviour.
 			return Plain(request).WaitAsync(ct);
 		}
 
 		public Task<RelayResponse> GetPinnedAsync(RelayRequest request, string dohProvider, CancellationToken ct)
 		{
-			Calls.Add(("pinned", request));
+			Record("pinned", request);
 			return Pinned(request).WaitAsync(ct);
 		}
 	}
