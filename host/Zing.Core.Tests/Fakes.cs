@@ -185,6 +185,9 @@ public sealed class FakeWindowHost : IWindowHost
 	public ManualScheduler FakeScheduler { get; } = new();
 	public IScheduler Scheduler => FakeScheduler;
 
+	public FakeSecretClipboard FakeSecret { get; } = new();
+	public Zing.Core.Vault.ISecretClipboard SecretClipboard => FakeSecret;
+
 	public FakeShell FakeShell { get; } = new();
 	public IShellActions Shell => FakeShell;
 }
@@ -253,4 +256,32 @@ public sealed class TickingClock : IClock
 public static class Accounts
 {
 	public static AccountStore Guest() => new(Directory.CreateTempSubdirectory("zing-account-").FullName, new FakeCipher(), startAsGuest: true);
+}
+
+/// <summary>The clipboard a password is copied to, in memory: the real one is never touched. Every write or clear is a change, as on Windows.</summary>
+public sealed class FakeSecretClipboard : Zing.Core.Vault.ISecretClipboard
+{
+	public string? Text { get; private set; }
+	public long SequenceNumber { get; private set; }
+	public List<string> Writes { get; } = [];
+
+	public long Write(string text)
+	{
+		Text = text;
+		Writes.Add(text);
+		return ++SequenceNumber;
+	}
+
+	/// <summary>Something else copied: the sequence number moves and the text is no longer ours.</summary>
+	public void CopiedElsewhere(string text)
+	{
+		Text = text;
+		SequenceNumber++;
+	}
+
+	public void Clear()
+	{
+		Text = null;
+		SequenceNumber++;
+	}
 }

@@ -99,6 +99,7 @@ public sealed class VaultBridgeTests : IDisposable
 
 		Assert.False(state.GetProperty("enabled").GetBoolean());
 		Assert.Equal("unreadable", state.GetProperty("error").GetString());
+		Assert.True(state.GetProperty("filesExist").GetBoolean());
 		Assert.Equal(nameof(VaultOffException), ErrorName(await Invoke(bridge, "vault:summaries")));
 	}
 
@@ -136,7 +137,7 @@ public sealed class VaultBridgeTests : IDisposable
 		_sealer.Announce();
 
 		// A login in Recently deleted isn't counted.
-		Assert.Equal([new VaultState(true, true, 1), new VaultState(true, true, 0), new VaultState(true, false, 0)], PushedStates());
+		Assert.Equal([new VaultState(true, true, 1, null, true), new VaultState(true, true, 0, null, true), new VaultState(true, false, 0, null, true)], PushedStates());
 	}
 
 	[Fact]

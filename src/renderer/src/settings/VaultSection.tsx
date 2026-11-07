@@ -4,7 +4,6 @@ import { recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type Vau
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { SettingRowShell } from './SettingRowShell'
-import { copySecret } from './vaultClipboard'
 import { useVault } from './useVaultData'
 
 /** A password stays shown for this long, then hides itself. */
@@ -19,13 +18,14 @@ const dateOf = (ms: number): string => new Date(ms).toLocaleString()
 function matches(login: LoginSummary, query: string): boolean {
 	const needle = query.trim().toLowerCase()
 	if (needle === '') return true
-	return [login.origin, login.title, login.username].some((field) => field.toLowerCase().includes(needle))
+	return [login.origin, login.title, login.username, login.note].some((field) => field.toLowerCase().includes(needle))
 }
 
 /** What went wrong, for the person. A refused host call carries the host's own sentence. */
 function messageOf(error: unknown): string {
-	if (error instanceof Error) return error.message
-	throw error
+	if (!(error instanceof Error)) throw error
+	// The bridge puts the channel in front ("vault:reveal: ..."); the person doesn't need it.
+	return error.message.replace(/^[a-z-]+:[a-z-]+: /, '')
 }
 
 interface Revealed {
@@ -80,7 +80,7 @@ function EditForm({ login, onDone, run }: { login: LoginSummary; onDone: () => v
 			}}
 		>
 			<div className="vault-edit-site">{login.origin}</div>
-			<PillField label="Name" value={title} onChange={setTitle} placeholder={new URL(login.origin).host} />
+			<PillField label="Name" value={title} onChange={setTitle} placeholder={new URL(login.origin).host} autoFocus />
 			<PillField label="Username" value={username} onChange={setUsername} autoComplete="off" />
 			<div className="vault-password-field">
 				<PillField
@@ -94,7 +94,7 @@ function EditForm({ login, onDone, run }: { login: LoginSummary; onDone: () => v
 				<PillButton variant="outlined" size="small" onClick={generate}>
 					Generate
 				</PillButton>
-				<PillButton variant="ghost" size="small" onClick={() => setShown(!shown)}>
+				<PillButton variant="ghost" size="small" aria-label={shown ? 'Hide password' : 'Show password'} onClick={() => setShown(!shown)}>
 					{shown ? 'Hide' : 'Show'}
 				</PillButton>
 			</div>
@@ -106,7 +106,7 @@ function EditForm({ login, onDone, run }: { login: LoginSummary; onDone: () => v
 						const key = `${login.id}/${index}`
 						const shownOld = old?.key === key
 						return (
-							<div key={entry.replacedAt} className="vault-history-row">
+							<div key={`${entry.replacedAt}/${index}`} className="vault-history-row">
 								<span>Replaced {dateOf(entry.replacedAt)}</span>
 								{shownOld ? <code className="vault-secret">{old.password}</code> : null}
 								<PillButton
@@ -138,11 +138,12 @@ function EditForm({ login, onDone, run }: { login: LoginSummary; onDone: () => v
 
 type Run = (work: () => Promise<void>) => Promise<void>
 
-function LoginRow({ login, revealed, editing, run, setRevealed, setEditing }: {
+function LoginRow({ login, revealed, editing, run, notify, setRevealed, setEditing }: {
 	login: LoginSummary
 	revealed: Revealed | undefined
 	editing: boolean
 	run: Run
+	notify: (text: string) => void
 	setRevealed: (value: Revealed | undefined) => void
 	setEditing: (id: string | undefined) => void
 }) {
@@ -156,6 +157,7 @@ function LoginRow({ login, revealed, editing, run, setRevealed, setEditing }: {
 				<small>
 					{login.username === '' ? 'No username' : login.username} · {new URL(login.origin).host}
 				</small>
+				{login.note === '' ? null : <small>{login.note.split(/\r?\n/)[0]}</small>}
 				{shown ? <code className="vault-secret">{revealed.password}</code> : null}
 			</span>
 			<PillButton
@@ -170,7 +172,12 @@ function LoginRow({ login, revealed, editing, run, setRevealed, setEditing }: {
 				variant="ghost"
 				size="small"
 				aria-label={`Copy password for ${name}`}
-				onClick={() => void run(async () => copySecret(await zing.revealPassword(login.id)))}
+				onClick={() =>
+					void run(async () => {
+						await zing.copyPassword(login.id)
+						notify('Copied. Zing clears the clipboard in 30 seconds unless you copy something else first.')
+					})
+				}
 			>
 				Copy
 			</PillButton>
@@ -268,12 +275,15 @@ export function VaultSection() {
 			{notice ? <InfoBanner kind="info">{notice}</InfoBanner> : null}
 
 			{confirmingExport ? (
-				<div className="vault-confirm" role="alertdialog" aria-label="Export passwords">
+				<div className="vault-confirm" role="alertdialog" aria-label="Export passwords" aria-describedby="vault-export-warning">
 					<InfoBanner kind="warning">
-						The file will hold every password as plain text. Anyone who gets it can read them, and Zing can&rsquo;t protect it once it is saved. Delete it when you&rsquo;re done.
+						<span id="vault-export-warning">
+							The file will hold every password as plain text. Anyone who gets it can read them, and Zing can&rsquo;t protect it once it is saved. Delete it when you&rsquo;re done.
+							It is for importing into a password manager, not for opening in a spreadsheet.
+						</span>
 					</InfoBanner>
 					<div className="vault-edit-actions">
-						<PillButton variant="ghost" size="small" onClick={() => setConfirmingExport(false)}>
+						<PillButton variant="ghost" size="small" autoFocus onClick={() => setConfirmingExport(false)}>
 							Cancel
 						</PillButton>
 						<PillButton size="small" disabled={busy} onClick={exportCsv}>
@@ -310,7 +320,7 @@ export function VaultSection() {
 					<PillField aria-label="Search saved passwords" placeholder="Search by site or username" value={query} onChange={setQuery} />
 					<ul className="vault-list" aria-label="Saved logins">
 						{shownLogins.map((login) => (
-							<LoginRow key={login.id} login={login} revealed={revealed} editing={editing === login.id} run={guarded} setRevealed={setRevealed} setEditing={setEditing} />
+							<LoginRow key={login.id} login={login} revealed={revealed} editing={editing === login.id} run={guarded} notify={setNotice} setRevealed={setRevealed} setEditing={setEditing} />
 						))}
 					</ul>
 					{shownLogins.length === 0 ? <div className="vault-none">No login matches &ldquo;{query.trim()}&rdquo;.</div> : null}

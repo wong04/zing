@@ -27,6 +27,11 @@ public static class VaultCsv
 
 	public const string ExportFileName = "Zing Passwords.csv";
 
+	/// <summary>A part file older than this is left over from a crash; the next export removes it.</summary>
+	public static readonly TimeSpan PartFileLifetime = TimeSpan.FromMinutes(10);
+
+	private const string PartFilePattern = "*.zing-part";
+
 	private static readonly string[] ChromeHeader = ["name", "url", "username", "password", "note"];
 
 	private sealed record ColumnMap(string? Title, string Url, string Username, string Password, string? Note);
@@ -85,8 +90,8 @@ public static class VaultCsv
 				skipped.Add(new SkippedRow(row, "No password"));
 				continue;
 			}
-			var title = map.Title is null ? "" : record[map.Title].Trim();
-			logins.Add(new CsvLogin(title.Length > 0 ? title : new Uri(url).Host, url, record[map.Username], password, map.Note is null ? "" : record[map.Note]));
+			var title = (map.Title is null ? "" : record.GetValueOrDefault(map.Title, "")).Trim();
+			logins.Add(new CsvLogin(title.Length > 0 ? title : new Uri(url).Host, url, record[map.Username], password, map.Note is null ? "" : record.GetValueOrDefault(map.Note, "")));
 		}
 		return new PasswordCsv(format, logins, skipped);
 	}
@@ -108,16 +113,29 @@ public static class VaultCsv
 	{
 		var bytes = Write([.. logins.Select(l => new CsvLogin(l.Title.Length > 0 ? l.Title : new Uri(l.Origin).Host, l.Origin, l.Username, l.Password, l.Note))]);
 		Directory.CreateDirectory(directory);
+		RemoveStalePartFiles(directory);
 		var part = Path.Combine(directory, $".{Guid.NewGuid():N}.zing-part");
 		try
 		{
-			File.WriteAllBytes(part, bytes);
+			// Hidden while it holds the passwords, and normal again before it becomes the export.
+			using (var stream = new FileStream(part, FileMode.CreateNew, FileAccess.Write))
+			{
+				File.SetAttributes(part, FileAttributes.Hidden);
+				stream.Write(bytes);
+			}
+			File.SetAttributes(part, FileAttributes.Normal);
 			return placement.Place(part, directory, ExportFileName);
 		}
 		finally
 		{
 			if (File.Exists(part)) File.Delete(part);
 		}
+	}
+
+	private static void RemoveStalePartFiles(string directory)
+	{
+		foreach (var file in Directory.EnumerateFiles(directory, PartFilePattern))
+			if (DateTime.UtcNow - File.GetLastWriteTimeUtc(file) > PartFileLifetime) File.Delete(file);
 	}
 
 	private static void AppendRow(StringBuilder text, string[] fields)

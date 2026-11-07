@@ -12,11 +12,14 @@ public sealed class VaultSwitch : IDisposable
 	private readonly Func<VaultStore>? _open;
 	private readonly Action<VaultFileException>? _unreadable;
 	private readonly IDisposable? _subscription;
+	private readonly Func<bool>? _filesExist;
 
 	/// <param name="open">Opens the store; throws <see cref="VaultFileException"/> when its files can't be read.</param>
 	/// <param name="unreadable">Told when an open failed.</param>
-	public VaultSwitch(SettingsStore settings, Func<VaultStore> open, Action<VaultFileException> unreadable)
+	/// <param name="filesExist">Whether the vault file is on disk, for the times no store is open.</param>
+	public VaultSwitch(SettingsStore settings, Func<VaultStore> open, Action<VaultFileException> unreadable, Func<bool>? filesExist = null)
 	{
+		_filesExist = filesExist;
 		_open = open;
 		_unreadable = unreadable;
 		Follow(On(settings.Get(Setting)));
@@ -39,6 +42,9 @@ public sealed class VaultSwitch : IDisposable
 
 	/// <summary>The open store; null while the setting is off, or the files couldn't be read.</summary>
 	public VaultStore? Current { get; private set; }
+
+	/// <summary>The vault's files are on disk, whatever the setting says, found without opening the store. An unreadable vault has files by definition.</summary>
+	public bool FilesExist => Unreadable || Current is { Records.Count: > 0 } || (_filesExist?.Invoke() ?? false);
 
 	/// <summary>The setting is on but the vault's files couldn't be read.</summary>
 	public bool Unreadable { get; private set; }

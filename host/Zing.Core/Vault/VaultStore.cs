@@ -24,8 +24,9 @@ public sealed record ExportedLogin(string Title, string Origin, string Username,
 
 /// <summary>What the renderer shows about the vault without asking for any of it: on or off, Hello set up, and how many logins.</summary>
 /// <param name="Count">Logins not in Recently deleted.</param>
+/// <param name="FilesExist">Vault files are on disk, whether or not the vault is on or could be read: the privacy banner in Settings must warn about them.</param>
 /// <param name="Error">"unreadable" when a vault file couldn't be read at launch, so the vault is off and its files are left as they are.</param>
-public sealed record VaultState(bool Enabled, bool HelloAvailable, int Count, string? Error = null);
+public sealed record VaultState(bool Enabled, bool HelloAvailable, int Count, string? Error = null, bool FilesExist = false);
 
 /// <summary>A vault call while <c>passwordAutofill</c> is off: there's no store to answer it.</summary>
 public sealed class VaultOffException() : Exception("The password vault is off. Turn on \"Offer to fill saved passwords\" in Settings.");
@@ -308,6 +309,7 @@ public sealed class VaultStore : IDisposable
 		try
 		{
 			ImportOutcome outcome;
+			bool wrote;
 			lock (_gate)
 			{
 				RequireOpen();
@@ -318,6 +320,7 @@ public sealed class VaultStore : IDisposable
 					var held = _summaries[record.ItemId];
 					live[(held.Origin, held.Username)] = record.ItemId;
 				}
+				var byId = _records.ToDictionary(r => r.ItemId, StringComparer.Ordinal);
 				var changed = new Dictionary<string, (LoginRecord Record, SummaryPayload Summary)>(StringComparer.Ordinal);
 				List<string> added = [];
 				var merged = 0;
@@ -327,7 +330,7 @@ public sealed class VaultStore : IDisposable
 					if (live.TryGetValue((origins[i], login.Username), out var id))
 					{
 						merged++;
-						var (record, summary) = changed.TryGetValue(id, out var latest) ? latest : (_records.First(r => r.ItemId == id), _summaries[id]);
+						var (record, summary) = changed.TryGetValue(id, out var latest) ? latest : (byId[id], _summaries[id]);
 						if (IsSame(secretKey, keys, record, summary, login.Password)) continue;
 						changed[id] = WithNewPassword(secretKey, keys, record, summary, login.Password, s => s);
 						continue;
@@ -339,10 +342,11 @@ public sealed class VaultStore : IDisposable
 					added.Add(newId);
 					live[(origins[i], login.Username)] = newId;
 				}
-				if (changed.Count > 0) CommitBatch(changed, added);
+				wrote = changed.Count > 0;
+				if (wrote) CommitBatch(changed, added);
 				outcome = new ImportOutcome(added.Count, merged);
 			}
-			if (outcome.Added + outcome.Merged > 0) Changed?.Invoke();
+			if (wrote) Changed?.Invoke();
 			return outcome;
 		}
 		finally
@@ -363,6 +367,8 @@ public sealed class VaultStore : IDisposable
 		{
 			lock (_gate)
 			{
+				// Read again: the vault may have been turned off while Hello was asking.
+				RequireOpen();
 				return [.. _records
 					.Where(r => !r.Tombstone && IsLive(_summaries[r.ItemId]))
 					.Select(r => (Record: r, Summary: _summaries[r.ItemId]))

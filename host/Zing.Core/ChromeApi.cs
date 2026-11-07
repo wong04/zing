@@ -61,6 +61,8 @@ public interface IWindowHost
 	Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions);
 	/// <summary>Puts these files on the clipboard as files (CF_HDROP), so Explorer can paste them. Called on the UI thread; throws if the clipboard can't be written. An e2e run leaves the real clipboard alone.</summary>
 	void CopyFilesToClipboard(IReadOnlyList<string> paths);
+	/// <summary>Where a copied password goes (Ruling 41). An e2e run never touches the real clipboard.</summary>
+	ISecretClipboard SecretClipboard { get; }
 	/// <summary>Has Chromium print this HTML text to a PDF at this path (Convert). Scripts and the network are off while it does.</summary>
 	Task PrintHtmlToPdfAsync(string html, string pdfPath, CancellationToken cancellation);
 	/// <summary>Runs delayed work on the window's UI thread.</summary>
@@ -179,6 +181,7 @@ public sealed class ChromeApi : IDisposable
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
 		Permissions = new PermissionBroker(PageUi);
+		_secretCopy = new TimedSecretCopy(host.SecretClipboard, host.Scheduler);
 		SignIn = new SignInWatch(() => app.Vaults.Current, id => Tabs.IsShown(id), host.Scheduler, prompt => PageUi.Update(s => s with { SaveLogin = prompt }), host.Background);
 		Autofill = new Autofill(() => app.Vaults.Current, id => Tabs.IsShown(id) ? Tabs.PageOf(id) : null, picker =>
 		{
@@ -374,6 +377,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("vault:delete", args => Do(() => Vault().Delete(Text(args, 0))));
 		bridge.Register("vault:restore", args => Do(() => Vault().Restore(Text(args, 0))));
 		bridge.Register("vault:history", args => Vault().History(Text(args, 0)));
+		bridge.Register("vault:copy", async args => await CopyPasswordAsync(Text(args, 0)));
 		bridge.Register("vault:import-csv", async args => await ImportCsvAsync(Text(args, 0)));
 		bridge.Register("vault:export-csv", async _ => await ExportCsvAsync());
 		bridge.Register("vault:never-saves", _ => Vault().NeverSaves());
@@ -504,6 +508,7 @@ public sealed class ChromeApi : IDisposable
 		if (_watchedVault is { } vault) vault.Changed -= PushVaultState;
 		Autofill.Dispose();
 		SignIn.Dispose();
+		_secretCopy.Dispose();
 		Shell.Dispose();
 		Ordering.Dispose();
 		Lifecycle.Dispose();
@@ -835,11 +840,13 @@ public sealed class ChromeApi : IDisposable
 
 	private static async Task<object?> HashFileAsync(string path, string algorithm) => await Hashing.FileAsync(path, algorithm);
 
+	private readonly TimedSecretCopy _secretCopy;
+
 	private VaultStore Vault() => _app.Vaults.Current ?? throw new VaultOffException();
 
 	private VaultState CurrentVaultState() => _app.Vaults.Current is { } vault
-		? new(true, vault.HelloAvailable, vault.Summaries().Count(s => s.DeletedAt is null))
-		: new(false, false, 0, _app.Vaults.Unreadable ? "unreadable" : null);
+		? new(true, vault.HelloAvailable, vault.Summaries().Count(s => s.DeletedAt is null), null, _app.Vaults.FilesExist)
+		: new(false, false, 0, _app.Vaults.Unreadable ? "unreadable" : null, _app.Vaults.FilesExist);
 
 	/// <summary>The store vault:state follows; it changes when passwordAutofill is turned on or off.</summary>
 	private VaultStore? _watchedVault;
@@ -871,6 +878,14 @@ public sealed class ChromeApi : IDisposable
 		}
 		if (password.ValueKind != JsonValueKind.String) throw new ArgumentException("A login's password must be a string");
 		await vault.UpdateLoginAsync(id, title, note, username, password.GetString()!);
+		return null;
+	}
+
+	/// <summary>Asks Hello, then copies the password from the host: it never reaches the renderer, and it is cleared 30 s later if still the clipboard's content.</summary>
+	private async Task<object?> CopyPasswordAsync(string id)
+	{
+		var password = await Vault().PasswordAsync(id);
+		_secretCopy.Copy(password);
 		return null;
 	}
 

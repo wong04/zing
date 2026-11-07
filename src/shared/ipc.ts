@@ -411,6 +411,8 @@ export interface InvokeContract {
 	'vault:restore': { args: [id: string]; result: void }
 	/** When each old password was replaced, newest first. No passwords and no prompt. */
 	'vault:history': { args: [id: string]; result: PasswordHistoryEntry[] }
+	/** Asks Windows Hello once, then copies the login's password from the host (kept out of clipboard history and cloud sync) and clears it 30 s later if nothing else was copied. The password never comes back. */
+	'vault:copy': { args: [id: string]; result: void }
 	/** Imports the CSV a picker token stands for (kind 'csv'), with one Windows Hello prompt for the whole file. Rows it cannot use come back with the reason. */
 	'vault:import-csv': { args: [token: string]; result: VaultImportResult }
 	/** Asks Windows Hello once, then saves every password into Downloads as "Zing Passwords.csv" in Chrome's format, unencrypted. */
@@ -610,6 +612,7 @@ export interface ZingApi {
 	deleteLogin(id: string): Promise<void>
 	restoreLogin(id: string): Promise<void>
 	loginHistory(id: string): Promise<PasswordHistoryEntry[]>
+	copyPassword(id: string): Promise<void>
 	importPasswordsCsv(token: string): Promise<VaultImportResult>
 	exportPasswordsCsv(): Promise<PickedFile>
 	neverSaves(): Promise<NeverSave[]>

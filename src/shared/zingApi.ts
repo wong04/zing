@@ -143,6 +143,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		deleteLogin: (id) => invoke('vault:delete', id),
 		restoreLogin: (id) => invoke('vault:restore', id),
 		loginHistory: (id) => invoke('vault:history', id),
+		copyPassword: (id) => invoke('vault:copy', id),
 		importPasswordsCsv: (token) => invoke('vault:import-csv', token),
 		exportPasswordsCsv: () => invoke('vault:export-csv'),
 		neverSaves: () => invoke('vault:never-saves'),

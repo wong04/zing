@@ -658,4 +658,28 @@ public sealed class SignInWatchTests : IDisposable
 	{
 		await Assert.ThrowsAsync<NotAWebOriginException>(() => Store.NeverSave("file:///C:/x.html"));
 	}
+
+	// Task 6 review I3: a window closing with a prompt up pushed "no prompt" to a view that was closing, which threw and
+	// stopped ChromeApi.Dispose half way.
+	[Fact]
+	public async Task DisposingWithAPromptUpPushesNothingToTheClosingView()
+	{
+		var pushes = new List<SaveLoginPrompt?>();
+		var closing = false;
+		var background = new List<Task>();
+		var watch = new SignInWatch(() => _store, _ => _shown, _scheduler, prompt =>
+		{
+			if (closing) throw new InvalidOperationException("the view is closing");
+			pushes.Add(prompt);
+		}, (task, _) => background.Add(task));
+		watch.Submitted(Page, Site, "ada", "hunter22");
+		watch.Landed(Page, Site, hasVisiblePasswordBox: false);
+		await Task.WhenAll(background);
+		Assert.NotNull(watch.Prompt);
+		closing = true;
+
+		watch.Dispose();
+
+		Assert.Single(pushes);
+	}
 }

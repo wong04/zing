@@ -13,7 +13,7 @@ public sealed class VaultSwitchTests : IDisposable
 	public VaultSwitchTests()
 	{
 		_settings.Set("passwordAutofill", true);
-		_switch = new VaultSwitch(_settings, Open, e => throw new Xunit.Sdk.XunitException($"the vault couldn't be read: {e}"));
+		_switch = new VaultSwitch(_settings, Open, e => throw new Xunit.Sdk.XunitException($"the vault couldn't be read: {e}"), VaultFilesExist);
 	}
 
 	public void Dispose()
@@ -21,6 +21,8 @@ public sealed class VaultSwitchTests : IDisposable
 		_switch.Dispose();
 		Directory.Delete(_dir, recursive: true);
 	}
+
+	private bool VaultFilesExist() => File.Exists(Path.Combine(_dir, VaultStore.VaultFileName));
 
 	private VaultStore Open() => new(_dir, new FakeCipher(), _sealer, new TickingClock());
 
@@ -84,5 +86,33 @@ public sealed class VaultSwitchTests : IDisposable
 
 		Assert.Throws<VaultClosedException>(() => store.UpdateSummary("any", "", "", ""));
 		Assert.Equal(1, _sealer.Listeners);
+	}
+
+	[Fact]
+	public async Task VaultFilesAreReportedWhileTheVaultIsOffToo()
+	{
+		Assert.False(_switch.FilesExist);
+		await _switch.Current!.SaveAsync(new NewLogin("https://example.com", "ada", "pw", "", ""));
+		Assert.True(_switch.FilesExist);
+
+		_settings.Set("passwordAutofill", false);
+
+		Assert.Null(_switch.Current);
+		Assert.True(_switch.FilesExist);
+	}
+
+	[Fact]
+	public void VaultFilesAreReportedWhenTheyCouldntBeRead()
+	{
+		File.WriteAllText(Path.Combine(_dir, VaultStore.VaultFileName), "not a vault");
+		var settings = new SettingsStore();
+		settings.Set("passwordAutofill", true);
+		VaultFileException? told = null;
+
+		using var broken = new VaultSwitch(settings, Open, e => told = e, VaultFilesExist);
+
+		Assert.NotNull(told);
+		Assert.True(broken.Unreadable);
+		Assert.True(broken.FilesExist);
 	}
 }

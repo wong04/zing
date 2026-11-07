@@ -67,8 +67,8 @@ describe('the password vault', () => {
 		expect(status.detail).toBe('Your open tabs and saved passwords are written to disk.')
 	})
 
-	it('says nothing once the setting is off, since the store is closed', () => {
+	it('still warns once the setting is off, because the files stay on disk', () => {
 		setVaultKeepsData(true)
-		expect(privacyStatus(withSettings({ passwordAutofill: false })).traceless).toBe(true)
+		expect(privacyStatus(withSettings({ passwordAutofill: false }))).toMatchObject({ traceless: false, detail: 'Saved passwords are written to disk.' })
 	})
 })

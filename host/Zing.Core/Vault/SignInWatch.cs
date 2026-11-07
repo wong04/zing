@@ -303,11 +303,16 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 	/// <summary>Everything held goes: the vault turned off.</summary>
 	public void Clear()
 	{
+		ForgetHeld();
+		CloseShown();
+	}
+
+	private void ForgetHeld()
+	{
 		foreach (var held in _held.Values) held.Timer?.Dispose();
 		_held.Clear();
 		foreach (var fill in _fills.Values) Forget(fill);
 		_fills.Clear();
-		CloseShown();
 	}
 
 	private void Expire(string pageId, Held held)
@@ -339,9 +344,24 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		CryptographicOperations.ZeroMemory(fill.Digest);
 	}
 
+	/// <summary>
+	/// The window is closing, so nothing is pushed to its views: telling a closing view that the prompt went throws, and that
+	/// once stopped ChromeApi.Dispose half way (Task 6 review I3). The key is zeroed whatever happens.
+	/// </summary>
 	public void Dispose()
 	{
-		Clear();
-		CryptographicOperations.ZeroMemory(_digestKey);
+		try
+		{
+			ForgetHeld();
+			if (_shown is { } shown)
+			{
+				_shown = null;
+				shown.Timer.Dispose();
+			}
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(_digestKey);
+		}
 	}
 }

@@ -21,7 +21,8 @@ export function useVaultData(): VaultData | undefined {
 	useEffect(() => {
 		if (!state) return
 		if (!state.enabled) {
-			setVaultKeepsData(false)
+			// Off or unreadable: the store is closed but the files stay on disk.
+			setVaultKeepsData(state.filesExist)
 			return
 		}
 		let current = true

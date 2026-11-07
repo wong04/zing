@@ -230,4 +230,18 @@ public sealed class VaultImportExportTests : IDisposable
 		Assert.True(store.IsNeverSave("https://never.example"));
 		Assert.Single(store.NeverSaves());
 	}
+
+	[Fact]
+	public async Task AnImportThatChangesNothingTellsNobody()
+	{
+		var store = Open();
+		await store.SaveAsync(Login);
+		var changes = 0;
+		store.Changed += () => changes++;
+
+		var outcome = await store.ImportAsync([Row("https://accounts.example.com", "ada.lovelace", "correct horse battery staple")]);
+
+		Assert.Equal(new ImportOutcome(0, 1), outcome);
+		Assert.Equal(0, changes);
+	}
 }

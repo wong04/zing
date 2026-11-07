@@ -16,10 +16,11 @@ export interface StoresDataCondition {
 	readonly plural?: boolean
 }
 
-// The vault's contents are known only while its store is open (passwordAutofill on), so the Settings sheet reports them as they change.
+// The Settings sheet reports what the vault holds as it changes: its logins and never-saved sites while it is on, and whether
+// its files are on disk while it is off or unreadable. The files stay when the setting goes off, so the banner can't follow the setting.
 let vaultKeepsData = false
 
-/** Whether the vault holds a login (deleted ones too) or a never-saved site; see `vaultKeepsData` in the vault's shared rules. */
+/** Whether the vault keeps anything on disk; see `vaultKeepsData` in the vault's shared rules, and `filesExist` in the vault's state. */
 export function setVaultKeepsData(keeps: boolean): void {
 	vaultKeepsData = keeps
 }
@@ -27,7 +28,7 @@ export function setVaultKeepsData(keeps: boolean): void {
 const conditions: StoresDataCondition[] = [
 	{ id: 'persistentProfile', active: (s) => s.persistentProfile, what: 'cookies and cache', plural: true },
 	{ id: 'restoreTabs', active: (s) => s.restoreTabs, what: 'your open tabs', plural: true },
-	{ id: 'vault', active: (s) => s.passwordAutofill && vaultKeepsData, what: 'saved passwords', plural: true },
+	{ id: 'vault', active: () => vaultKeepsData, what: 'saved passwords', plural: true },
 ]
 
 export class DuplicateConditionError extends Error {

@@ -246,7 +246,7 @@ public sealed class ZingApp
 			var text = $"Zing couldn't open your saved passwords ({Path.GetFileName(error.Path)}), so they're off for now. The file was left as it is.";
 			if (starting) _startupNotices.Add(text);
 			else MostRecent?.Notify(text);
-		});
+		}, () => File.Exists(Path.Combine(AppPaths.Vault, VaultStore.VaultFileName)));
 		starting = false;
 		return vaults;
 	}

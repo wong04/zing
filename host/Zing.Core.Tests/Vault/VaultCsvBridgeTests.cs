@@ -191,4 +191,109 @@ public sealed class VaultCsvBridgeTests : IDisposable
 		Assert.Equal(0, Value(await Invoke(_bridge, "vault:never-saves")).GetArrayLength());
 		Assert.Equal(calls, _sealer.Calls);
 	}
+
+	// -- Copy (Ruling 41): the password goes from the host to the clipboard, never through the renderer --
+
+	[Fact]
+	public async Task CopyAsksHelloOnceAndPutsThePasswordOnTheHostClipboardWithoutReturningIt()
+	{
+		var id = await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "s3cret pw", "", ""));
+		var calls = _sealer.Calls;
+
+		var result = await Invoke(_bridge, "vault:copy", id);
+
+		Assert.True(result.GetProperty("ok").GetBoolean());
+		Assert.DoesNotContain("s3cret", result.ToString());
+		Assert.Equal(calls + 1, _sealer.Calls);
+		Assert.Equal(["s3cret pw"], _host.FakeSecret.Writes);
+	}
+
+	[Fact]
+	public async Task ACancelledCopyPutsNothingOnTheClipboard()
+	{
+		var id = await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "s3cret pw", "", ""));
+		_sealer.Result = HelloResult.Cancel;
+
+		Assert.Equal(nameof(HelloCancelledException), ErrorName(await Invoke(_bridge, "vault:copy", id)));
+		Assert.Empty(_host.FakeSecret.Writes);
+	}
+
+	[Fact]
+	public async Task TheCopiedPasswordIsClearedAfterThirtySecondsOnlyIfNothingElseWasCopied()
+	{
+		var id = await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "s3cret pw", "", ""));
+		await Invoke(_bridge, "vault:copy", id);
+
+		_host.FakeScheduler.Advance(TimedSecretCopy.ClearAfter - TimeSpan.FromSeconds(1));
+		Assert.Equal("s3cret pw", _host.FakeSecret.Text);
+		_host.FakeScheduler.Advance(TimeSpan.FromSeconds(1));
+
+		Assert.Null(_host.FakeSecret.Text);
+	}
+
+	[Fact]
+	public async Task ACopyMadeMeanwhileByAnotherProgramIsLeftAlone()
+	{
+		var id = await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "s3cret pw", "", ""));
+		await Invoke(_bridge, "vault:copy", id);
+		_host.FakeSecret.CopiedElsewhere("something else");
+
+		_host.FakeScheduler.Advance(TimedSecretCopy.ClearAfter);
+
+		Assert.Equal("something else", _host.FakeSecret.Text);
+	}
+
+	[Fact]
+	public async Task ClosingTheWindowClearsAPasswordStillOnTheClipboard()
+	{
+		var id = await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "s3cret pw", "", ""));
+		var host = new FakeWindowHost();
+		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+		var bridge = new Bridge();
+		var window = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), Vault: _vault), host, "test");
+		await Invoke(bridge, "vault:copy", id);
+		Assert.Equal("s3cret pw", host.FakeSecret.Text);
+
+		window.Dispose();
+
+		Assert.Null(host.FakeSecret.Text);
+	}
+
+	// -- Review minors --
+
+	[Fact]
+	public async Task AnExportWhoseStoreWasClosedDuringHelloWritesNoFile()
+	{
+		await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "pw", "", ""));
+		_sealer.Unsealing = _vault.Dispose;
+
+		Assert.Equal(nameof(VaultClosedException), ErrorName(await Invoke(_bridge, "vault:export-csv")));
+		Assert.Empty(Directory.GetFileSystemEntries(Downloads));
+	}
+
+	[Fact]
+	public async Task AnExportRemovesAnOldPartFileLeftByACrashAndLeavesAFreshOne()
+	{
+		await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "pw", "", ""));
+		var stale = Path.Combine(Downloads, ".stale.zing-part");
+		var fresh = Path.Combine(Downloads, ".fresh.zing-part");
+		File.WriteAllText(stale, "passwords");
+		File.WriteAllText(fresh, "another export in flight");
+		File.SetLastWriteTimeUtc(stale, DateTime.UtcNow - VaultCsv.PartFileLifetime - TimeSpan.FromMinutes(1));
+
+		await Invoke(_bridge, "vault:export-csv");
+
+		Assert.False(File.Exists(stale));
+		Assert.True(File.Exists(fresh));
+	}
+
+	[Fact]
+	public async Task TheExportedFileIsNotHidden()
+	{
+		await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "pw", "", ""));
+
+		await Invoke(_bridge, "vault:export-csv");
+
+		Assert.False(File.GetAttributes(Path.Combine(Downloads, "Zing Passwords.csv")).HasFlag(FileAttributes.Hidden));
+	}
 }

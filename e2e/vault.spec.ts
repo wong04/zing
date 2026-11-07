@@ -723,14 +723,12 @@ async function openManage(zing: Launched): Promise<Page> {
 const manage = (sheet: Page) => sheet.getByRole('group', { name: 'Saved passwords' })
 const loginList = (sheet: Page) => manage(sheet).getByRole('list', { name: 'Saved logins' }).getByRole('listitem')
 
-/** Replaces the Settings page's clipboard with a recorder; the returned function reads what was written. */
-async function fakeClipboard(sheet: Page): Promise<() => Promise<string[]>> {
-	await sheet.evaluate(() => {
-		const recorded: string[] = []
-		;(globalThis as unknown as { __copied: string[] }).__copied = recorded
-		Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (text: string) => Promise.resolve(void recorded.push(text)) } })
-	})
-	return () => sheet.evaluate(() => (globalThis as unknown as { __copied: string[] }).__copied)
+/** What the last Copy put on the clipboard (the real clipboard is never opened in an e2e run), and the formats set with it. */
+async function copiedPassword(zing: Launched): Promise<{ text: string | null; formats: string[] }> {
+	const file = join(scratchDir('zing-secret-clipboard-'), 'clipboard.json')
+	await testHook(zing, { action: 'read-secret-clipboard', file })
+	await expect.poll(() => existsSync(file)).toBe(true)
+	return JSON.parse(readFileSync(file, 'utf8')) as { text: string | null; formats: string[] }
 }
 
 const summaries = (zing: Launched) => zing.chrome.evaluate(() => window.zing.vaultSummaries())
@@ -787,7 +785,6 @@ test('showing and copying a password each ask Windows Hello, and a cancel shows 
 	const zing = await launchZing({ userDataDir: vaultProfile(true) })
 	await saveTitled(zing, { origin: 'https://example.com', username: 'ada', password: PASSWORD, title: 'Example', note: '' })
 	const sheet = await openManage(zing)
-	const copied = await fakeClipboard(sheet)
 	// The list has no password in it, only on request.
 	await expect(manage(sheet).getByText(PASSWORD)).toHaveCount(0)
 
@@ -796,7 +793,7 @@ test('showing and copying a password each ask Windows Hello, and a cancel shows 
 	await expect(manage(sheet).getByRole('alert')).toContainText('cancelled the Windows Hello prompt')
 	await manage(sheet).getByRole('button', { name: 'Copy password for Example' }).click()
 	await expect(manage(sheet).getByText(PASSWORD)).toHaveCount(0)
-	expect(await copied()).toEqual([])
+	expect((await copiedPassword(zing)).text).toBeNull()
 
 	await hello(zing, 'pass')
 	await manage(sheet).getByRole('button', { name: 'Show password for Example' }).click()
@@ -804,7 +801,10 @@ test('showing and copying a password each ask Windows Hello, and a cancel shows 
 	await manage(sheet).getByRole('button', { name: 'Hide password for Example' }).click()
 	await expect(manage(sheet).getByText(PASSWORD)).toHaveCount(0)
 	await manage(sheet).getByRole('button', { name: 'Copy password for Example' }).click()
-	await expect.poll(copied).toEqual([PASSWORD])
+	await expect(manage(sheet).getByText(/^Copied\./)).toBeVisible()
+	const copied = await copiedPassword(zing)
+	expect(copied.text).toBe(PASSWORD)
+	expect(copied.formats).toEqual(['ExcludeClipboardContentFromMonitorProcessing', 'CanIncludeInClipboardHistory', 'CanUploadToCloudClipboard'])
 	await zing.close()
 })
 
@@ -865,7 +865,7 @@ test('export warns first, writes Chrome-format CSV to Downloads after Hello, and
 	const file = join(zing.userDataDir, 'downloads', 'Zing Passwords.csv')
 
 	await manage(sheet).getByRole('button', { name: 'Export CSV' }).click()
-	await expect(manage(sheet).getByRole('alertdialog', { name: 'Export passwords' })).toContainText('plain text')
+	await expect(manage(sheet).getByRole('alertdialog', { name: 'Export passwords' })).toContainText('not for opening in a spreadsheet')
 	expect(existsSync(file)).toBe(false)
 	await hello(zing, 'cancel')
 	await manage(sheet).getByRole('button', { name: 'Save CSV to Downloads' }).click()
@@ -983,5 +983,19 @@ test('Never saved lists the sites marked so, counts for the privacy banner, and 
 	// Closing the window with a prompt still up raises a COMException in the host's teardown (a Task 5 matter); answer it first.
 	await answer(zing, 'Not now')
 	await expect.poll(() => savePrompt(zing)).toBeNull()
+	await zing.close()
+})
+
+test('the privacy banner still warns once the vault is turned off, because its files stay on disk', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await save(zing, 'https://example.com', 'ada', 'pw one')
+	const sheet = await openManage(zing)
+	await sheet.getByRole('button', { name: 'Privacy' }).click()
+	await expect(sheet.locator('.privacy-banner')).toHaveAttribute('data-traceless', 'false')
+
+	await zing.chrome.evaluate(() => window.zing.setSetting('passwordAutofill', false))
+
+	await expect(sheet.locator('.privacy-banner')).toHaveAttribute('data-traceless', 'false')
+	await expect(sheet.locator('.privacy-banner')).toContainText('Saved passwords are written to disk.')
 	await zing.close()
 })

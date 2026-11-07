@@ -52,6 +52,8 @@ export interface VaultState {
 	count: number
 	// Set when a vault file couldn't be read at launch: the vault is off and its files are left as they are.
 	error?: 'unreadable'
+	// Vault files are on disk, whether or not the vault is on or could be read. The privacy banner warns about them.
+	filesExist: boolean
 }
 
 // "Never for this site", kept per exact origin apart from the logins.

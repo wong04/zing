@@ -386,6 +386,10 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		return [.. picked.Select(file => file.Path)];
 	}
 
+	private SecretClipboard? _secretClipboard;
+
+	public Zing.Core.Vault.ISecretClipboard SecretClipboard => _secretClipboard ??= new SecretClipboard(_window.Hwnd);
+
 	public void CopyFilesToClipboard(IReadOnlyList<string> paths)
 	{
 		if (!_window.OnUiThread) throw new InvalidOperationException("Files can only be put on the clipboard from the window's own thread");

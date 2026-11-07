@@ -454,6 +454,10 @@
 			"args": 2
 		},
 		{
+			"channel": "vault:copy",
+			"args": 1
+		},
+		{
 			"channel": "vault:delete",
 			"args": 1
 		},
