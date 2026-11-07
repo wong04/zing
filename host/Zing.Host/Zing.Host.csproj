@@ -24,7 +24,7 @@
 	<ItemGroup>
 		<!-- Built from TypeScript by `npm run gen:reader` (part of `npm run build:host`). -->
 		<Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
-		<!-- The taskbar tiles (C3 logo), shared with the Electron build until W4. -->
+		<!-- The taskbar tiles (C3 logo), from `npm run make-icons`. -->
 		<Content Include="..\..\build\icons\icon.ico" Link="Assets\icon.ico" CopyToOutputDirectory="PreserveNewest" />
 		<Content Include="..\..\build\icons-dark-tile\icon.ico" Link="Assets\icon-dark-tile.ico" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
