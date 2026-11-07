@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { IconButton, PillButton, PillField, SectionCard, SegmentedControl, Toggle } from '../../components'
 import { CloseGlyph } from '../../components/icons'
-import { AngleMode, EvalError, evaluate, format, makeFunction } from '@shared/math/expression'
+import { AngleMode, format, makeFunction } from '@shared/math/expression'
 import {
 	axisLabel,
 	defaultViewport,
@@ -23,7 +23,7 @@ import {
 	type Size,
 	type Viewport,
 } from '@shared/math/graphEngine'
-import { evalMessage } from './evalMessage'
+import { plotProblem } from './plotProblem'
 import { CopyButton, ToolPage } from '../parts'
 import { angleOptions } from './angleOptions'
 import './math.css'
@@ -60,21 +60,9 @@ const markerLabel: Record<MarkerKind, string> = {
 
 const colourOf = (index: number): string => plotColors[index % plotColors.length] ?? plotColors[0]
 
-/** What is wrong with an expression, tried at x = 1; null when it is fine or empty. */
-function problemWith(text: string, angle: AngleMode): string | null {
-	if (text.trim() === '') return null
-	try {
-		evaluate(text, angle, { x: 1 })
-		return null
-	} catch (error) {
-		if (error instanceof EvalError) return evalMessage(error)
-		throw error
-	}
-}
-
 /** The plots that are shown and valid: what the canvas draws and what the markers are found on. */
 function drawable(plots: readonly Plot[], angle: AngleMode): Plot[] {
-	return plots.filter((plot) => plot.visible && plot.text.trim() !== '' && problemWith(plot.text, angle) === null)
+	return plots.filter((plot) => plot.visible && plot.text.trim() !== '' && plotProblem(plot.text, angle) === null)
 }
 
 /** Roots, turning points and every pairwise intersection of the visible curves: the dots Desmos shows. */
@@ -395,7 +383,7 @@ export function GraphingTool() {
 					</div>
 					<div className="graph-expression-list">
 						{plots.map((plot, index) => {
-							const problem = problemWith(plot.text, angle)
+							const problem = plotProblem(plot.text, angle)
 							const colour = colourOf(plot.colorIndex)
 							return (
 								<div key={plot.id} className="graph-expression">

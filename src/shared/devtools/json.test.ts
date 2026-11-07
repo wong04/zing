@@ -37,6 +37,12 @@ describe('known answers', () => {
 		expect(() => validateJSON('{"a":}')).toThrow(/\S/)
 		expect(() => validateJSON('{"a":1}')).not.toThrow()
 	})
+	it('numbers are written exactly as they were typed', () => {
+		const text = '{"id": 12345678901234567890, "f": 1.0, "e": 1E+2, "z": -0}'
+		expect(prettyJSON(text)).toBe('{\n  "e": 1E+2,\n  "f": 1.0,\n  "id": 12345678901234567890,\n  "z": -0\n}')
+		expect(minifyJSON(text)).toBe('{"id":12345678901234567890,"f":1.0,"e":1E+2,"z":-0}')
+		expect(minifyJSON('12345678901234567890')).toBe('12345678901234567890')
+	})
 	it('strings are escaped on the way out', () => {
 		expect(prettyJSON('["a\\"b\\u00e9"]')).toBe('[\n  "a\\"bé"\n]')
 	})

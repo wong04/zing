@@ -2,7 +2,7 @@
 // Swift ones: `near` defaults to 1e-6.
 
 import { describe, expect, it } from 'vitest'
-import { evaluate, makeFunction } from './expression'
+import { BadArgumentError, evaluate, makeFunction } from './expression'
 import {
 	axisLabel,
 	defaultViewport,
@@ -104,9 +104,16 @@ describe('sampling', () => {
 	// A function that throws everywhere yields nothing, and doesn't crash.
 	it('all-undefined is empty', () => {
 		const undefinedEverywhere: PlotFunction = () => {
-			throw new Error('undefined')
+			throw new BadArgumentError('sqrt')
 		}
 		expect(sample(undefinedEverywhere, vp, size)).toEqual([])
+	})
+	// Only an evaluation error means "undefined here": a bug in the function still surfaces.
+	it('a non-evaluation error is not swallowed', () => {
+		const broken: PlotFunction = () => {
+			throw new TypeError('broken')
+		}
+		expect(() => sample(broken, vp, size)).toThrow(TypeError)
 	})
 	it('zero-size is safe', () => expect(sample((x) => x, vp, { width: 0, height: 0 })).toEqual([]))
 })

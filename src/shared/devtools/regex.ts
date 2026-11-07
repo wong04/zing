@@ -17,13 +17,24 @@ export type RegexMatch = {
 	readonly groups: readonly string[]
 }
 
-export function testRegex(pattern: string, subject: string): RegexMatch[] {
-	if (pattern === '') return []
+/** Past this many matches the rows would freeze the page, so matching stops and says there are more. */
+export const regexMatchLimit = 500
+
+export type RegexResult = {
+	/** The first `regexMatchLimit` at most. */
+	readonly matches: readonly RegexMatch[]
+	readonly more: boolean
+}
+
+const noMatches: RegexResult = { matches: [], more: false }
+
+export function testRegex(pattern: string, subject: string): RegexResult {
+	if (pattern === '') return noMatches
 	return matchesOf(compile(pattern, 'g'), subject)
 }
 
-export function testRegexIgnoringCase(pattern: string, subject: string): RegexMatch[] {
-	if (pattern === '') return []
+export function testRegexIgnoringCase(pattern: string, subject: string): RegexResult {
+	if (pattern === '') return noMatches
 	return matchesOf(compile(pattern, 'gi'), subject)
 }
 
@@ -36,13 +47,16 @@ function compile(pattern: string, flags: string): RegExp {
 	}
 }
 
-function matchesOf(regex: RegExp, subject: string): RegexMatch[] {
-	return [...subject.matchAll(regex)].map((match) => {
+function matchesOf(regex: RegExp, subject: string): RegexResult {
+	const matches: RegexMatch[] = []
+	for (const match of subject.matchAll(regex)) {
+		if (matches.length === regexMatchLimit) return { matches, more: true }
 		const start = match.index
-		return {
+		matches.push({
 			text: match[0],
 			range: `${start}–${start + match[0].length}`,
 			groups: match.slice(1).map((group) => group ?? ''),
-		}
-	})
+		})
+	}
+	return { matches, more: false }
 }

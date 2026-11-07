@@ -166,6 +166,16 @@ test('a catastrophic regex gives up after 2 seconds and the tool still responds'
 	await zing.close()
 })
 
+test('a pattern matching every character of a long text shows the first 500 matches and says there are more', async () => {
+	const zing = await launchZing()
+	const { panel } = await openTool(zing, 'Regex Tester')
+	await panel.getByRole('textbox', { name: 'Test string' }).fill('x'.repeat(200_000))
+	await panel.getByRole('textbox', { name: 'Pattern' }).fill('.')
+	await expect(panel.getByText('500 matches')).toBeVisible()
+	await expect(panel.getByText('Showing the first 500 matches. There are more.')).toBeVisible()
+	await zing.close()
+})
+
 test('a 5 MB JSON paste keeps the tool and the chrome responsive', async () => {
 	const zing = await launchZing()
 	const { panel } = await openTool(zing, 'JSON')

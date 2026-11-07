@@ -35,18 +35,20 @@ function parseHex(text: string): RGB | null {
 	let hex = text.startsWith('#') ? text.slice(1) : text
 	// Expand shorthand (#abc -> #aabbcc).
 	if (hex.length === 3) hex = [...hex].map((c) => c + c).join('')
-	if (hex.length < 6 || !hexDigits.test(hex)) return null
+	// Six digits, or eight with an alpha that is ignored.
+	if ((hex.length !== 6 && hex.length !== 8) || !hexDigits.test(hex)) return null
 	const value = parseInt(hex.slice(0, 6), 16)
 	return { r: (value >> 16) & 0xff, g: (value >> 8) & 0xff, b: value & 0xff }
 }
 
+// `rgb(r, g, b)`, `rgba(r, g, b, a)` or `rgb(r g b / a)`: plain non-negative channels; the alpha is ignored.
+const channelPattern = String.raw`(\d+\.?\d*|\.\d+)`
+const rgbFunction = new RegExp(String.raw`^rgba?\(\s*${channelPattern}(?:\s*,\s*|\s+)${channelPattern}(?:\s*,\s*|\s+)${channelPattern}\s*(?:[,/]\s*(?:\d+\.?\d*|\.\d+)%?\s*)?\)$`)
+
 function parseRGBFunction(text: string): RGB | null {
-	const numbers = text
-		.split(/[^0-9.]+/)
-		.filter((part) => /^(?:\d+\.?\d*|\.\d+)$/.test(part))
-		.map(Number)
-	const [r, g, b] = numbers
-	if (r === undefined || g === undefined || b === undefined) return null
+	const match = rgbFunction.exec(text)
+	if (!match) return null
+	const [r, g, b] = match.slice(1, 4).map(Number) as [number, number, number]
 	if ([r, g, b].some((channel) => channel > 255)) return null
 	return { r, g, b }
 }
