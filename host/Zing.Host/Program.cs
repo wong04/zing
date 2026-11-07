@@ -41,6 +41,7 @@ public static class Program
 			Native.DispatchMessageW(ref message);
 		}
 		dispatcher.ShutdownQueue();
+		if (TestHooks.QuitExitCode is { } code) System.Environment.ExitCode = code;
 	}
 }
 

@@ -56,10 +56,36 @@ async function freePort(): Promise<string> {
 /** A Zing this test started and hasn't closed yet; on a failure its views and logs go into the report. */
 interface Running {
 	readonly host: ChildProcess
+	/** Made when the host is spawned, so an exit before close() is still seen; the exit code, or null after a signal. */
+	readonly exit: Promise<number | null>
 	/** None on a launchBare run. */
 	readonly browser?: Browser
 	readonly errors: string
 	readonly userData: string
+}
+
+function exitOf(host: ChildProcess): Promise<number | null> {
+	return new Promise((resolve) => host.once('exit', (code) => resolve(code)))
+}
+
+function describeExit(code: number | null): string {
+	return code === null ? 'a signal' : `exit code ${code} (0x${(code >>> 0).toString(16).toUpperCase()})`
+}
+
+const QUIT_TIMEOUT = 15_000
+
+/**
+ * The end of close(), once every window was asked to close: the host must exit, with code 0 (a native crash during
+ * quit, 0xC0000409 or an access violation, writes nothing to ZING_ERRORS_FILE), having recorded no error. The errors
+ * are read first, so a lock the engine keeps can't hide them.
+ */
+async function quitCleanly(self: Running): Promise<void> {
+	const code = await Promise.race([self.exit, new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), QUIT_TIMEOUT))])
+	if (code === 'timeout') self.host.kill()
+	if (existsSync(self.errors)) throw new HostProcessError(`The host recorded errors during this test:\n\n${readFileSync(self.errors, 'utf8')}\n${hostLogs(undefined, self.userData)}`)
+	await engineReleased(self.userData)
+	if (code === 'timeout') throw new HostProcessError(`Zing did not quit within ${QUIT_TIMEOUT / 1000} s of its last window closing`)
+	if (code !== 0) throw new HostProcessError(`Zing quit with ${describeExit(code)}\n${hostLogs(undefined, self.userData)}`)
 }
 
 const running = new Set<Running>()
@@ -96,6 +122,8 @@ async function collect(testInfo: TestInfo): Promise<void> {
 	const left = [...running]
 	running.clear()
 	const failed = testInfo.status !== testInfo.expectedStatus
+	// A passing test that never called close() skipped its error check; it fails, with what the host recorded.
+	const unclosed = failed ? [] : left.map((zing) => (existsSync(zing.errors) ? readFileSync(zing.errors, 'utf8') : '(no errors recorded)'))
 	for (const [n, zing] of left.entries()) {
 		if (failed) {
 			for (const [i, page] of (zing.browser ? pages(zing.browser) : []).entries()) {
@@ -113,13 +141,13 @@ async function collect(testInfo: TestInfo): Promise<void> {
 		}
 		if (zing.browser?.isConnected()) await zing.browser.close().catch(() => undefined)
 		if (zing.host.exitCode !== null) continue
-		const exited = new Promise<void>((resolve) => zing.host.once('exit', () => resolve()))
 		zing.host.kill()
-		await exited
+		await zing.exit
 	}
 	const made = [...scratchDirs]
 	scratchDirs.clear()
 	if (failed) return
+	if (unclosed.length > 0) throw new HostProcessError(`The test left ${unclosed.length} Zing without zing.close(), so its errors were never checked:\n\n${unclosed.join('\n\n')}`)
 	// WebView2's own processes can hold profile files for a moment after Zing exits; one still holding them after the retries is a leak worth seeing.
 	for (const dir of made) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
 }
@@ -127,9 +155,17 @@ async function collect(testInfo: TestInfo): Promise<void> {
 // A cold start on a CI runner has taken 29 s and more, while a warm one takes under 5.
 const LAUNCH_TIMEOUT = 60_000
 
+/** What the harness sets itself: a test can't change them, and the shell's own values never reach the host. */
+const PROTECTED = ['ZING_E2E', 'ZING_CDP_PORT', 'ZING_ERRORS_FILE', 'ZING_USER_DATA', 'ZING_MENUS_FILE', 'ZING_DIALOGS_FILE']
+
+/** The shell's environment without its ZING_* variables: a stray one (ZING_START_URL, ZING_USER_DATA) would change the run. */
+function inheritedEnvironment(): NodeJS.ProcessEnv {
+	return Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('ZING_')))
+}
+
 function hostEnvironment(port: string, errors: string, userData: string): NodeJS.ProcessEnv {
 	return {
-		...process.env,
+		...inheritedEnvironment(),
 		ZING_E2E: '1',
 		ZING_CDP_PORT: port,
 		ZING_ERRORS_FILE: errors,
@@ -142,6 +178,8 @@ function hostEnvironment(port: string, errors: string, userData: string): NodeJS
 
 export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOptions = {}): Promise<Launched> {
 	if (!existsSync(HOST_EXE)) throw new HostProcessError(`No host build at ${HOST_EXE}: run npm run build:host`)
+	const overridden = Object.keys(env).filter((key) => PROTECTED.includes(key.toUpperCase()))
+	if (overridden.length > 0) throw new HostProcessError(`launchZing sets ${overridden.join(', ')} itself; a test can't override it`)
 	const port = await freePort()
 	const scratch = scratchDir('zing-host-e2e-')
 	const errors = join(scratch, 'errors.log')
@@ -151,18 +189,18 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 	const userData = userDataDir === undefined ? scratchDir('zing-host-data-') : realpathSync.native(userDataDir)
 	const hostEnv = { ...hostEnvironment(port, errors, userData), ZING_MENUS_FILE: menus, ZING_DIALOGS_FILE: dialogs, ...env }
 	const host: ChildProcess = spawn(HOST_EXE, [...args], { env: hostEnv, stdio: 'ignore' })
+	const exit = exitOf(host)
 	let closing = false
 	// A host that goes before close() leaves the test only "target closed"; say how it went and what it logged.
-	host.once('exit', (code, signal) => {
+	void exit.then((code) => {
 		if (closing) return
-		const how = code === null ? `signal ${signal}` : `exit code ${code} (0x${(code >>> 0).toString(16).toUpperCase()})`
-		process.stderr.write(`Zing exited before close(), with ${how}.\n${hostLogs(errors, userData)}\n`)
+		process.stderr.write(`Zing exited before close(), with ${describeExit(code)}.\n${hostLogs(errors, userData)}\n`)
 	})
 	await expect
 		.poll(async () => (await fetch(`http://127.0.0.1:${port}/json/version`).catch(() => undefined))?.ok ?? false, { timeout: LAUNCH_TIMEOUT })
 		.toBe(true)
 	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
-	const self: Running = { host, browser, errors, userData }
+	const self: Running = { host, exit, browser, errors, userData }
 	running.add(self)
 	const chrome = await pageWhere(browser, (p) => p.url() === CHROME_URL)
 	await chrome.waitForLoadState('domcontentloaded')
@@ -195,7 +233,7 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 			closing = true
 			running.delete(self)
 			// Quit as a person would, by closing every window, so pending writes are flushed.
-			const exited = new Promise<void>((resolve) => host.once('exit', () => resolve()))
+			const exited = exit.then(() => undefined)
 			const chromes = pages(browser).filter((p) => p.url() === CHROME_URL)
 			// One window at a time, as a person closes them. A window that closes takes its renderer
 			// with it, so the evaluate may never answer; the page's close event is the answer.
@@ -204,14 +242,11 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 				void page.evaluate(() => (globalThis as unknown as { zing: { runCommand(id: string): Promise<unknown> } }).zing.runCommand('window.close')).catch(() => undefined)
 				await Promise.race([gone, exited, new Promise((resolve) => setTimeout(resolve, 5_000))])
 			}
-			const quit = await Promise.race([exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15_000))])
+			await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, QUIT_TIMEOUT))])
 			// An exited host has already dropped the DevTools connection; closing it again crashed the
 			// Playwright worker (0xC0000409) about once per full run.
 			if (browser.isConnected()) await browser.close()
-			if (!quit) host.kill()
-			await engineReleased(userData)
-			if (existsSync(errors)) throw new HostProcessError(`The host recorded errors during this test:\n\n${readFileSync(errors, 'utf8')}\n${hostLogs(undefined, userData)}`)
-			if (!quit) throw new HostProcessError('Zing did not quit within 15 s of its last window closing')
+			await quitCleanly(self)
 		},
 	}
 }
@@ -233,9 +268,8 @@ export async function launchBare(userDataDir: string): Promise<BareZing> {
 	const port = await freePort()
 	const errors = join(scratchDir('zing-host-e2e-'), 'errors.log')
 	const host = spawn(HOST_EXE, [], { env: hostEnvironment(port, errors, userDataDir), stdio: 'ignore' })
-	const self: Running = { host, errors, userData: userDataDir }
+	const self: Running = { host, exit: exitOf(host), errors, userData: userDataDir }
 	running.add(self)
-	const exited = new Promise<void>((resolve) => host.once('exit', () => resolve()))
 	const targets = async () => {
 		const response = await fetch(`http://127.0.0.1:${port}/json/list`)
 		const all = (await response.json()) as { type: string; url: string; webSocketDebuggerUrl: string }[]
@@ -248,14 +282,7 @@ export async function launchBare(userDataDir: string): Promise<BareZing> {
 			running.delete(self)
 			// The window closing takes its view with it, so this may never answer; the host exiting is the answer.
 			void bare.evaluate((url) => url === CHROME_URL, "zing.runCommand('window.close')").catch(() => undefined)
-			const quit = await Promise.race([exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15_000))])
-			if (!quit) host.kill()
-			await engineReleased(userDataDir)
-			if (existsSync(errors)) throw new HostProcessError(`The host recorded errors during this test:
-
-${readFileSync(errors, 'utf8')}
-${hostLogs(undefined, userDataDir)}`)
-			if (!quit) throw new HostProcessError('Zing did not quit within 15 s of its last window closing')
+			await quitCleanly(self)
 		},
 	}
 	await expect

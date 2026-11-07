@@ -107,6 +107,9 @@ public static class TestHooks
 	public static Zing.Core.Net.IDnsSystem? DnsSystem() => IsEndToEndRun ? Dns : null;
 
 	private static int? _closeNextAt;
+
+	/// <summary>"exit-code-on-quit": the code Zing ends with once its last window is gone, as a crash during quit would; e2e/harness.spec.ts.</summary>
+	public static int? QuitExitCode { get; private set; }
 	private static WindowScope? _newest;
 	private static int _windows;
 	private static bool _newestStarted;
@@ -177,6 +180,11 @@ public static class TestHooks
 		if (action == "dns-stub")
 		{
 			Dns.Configure(root);
+			return true;
+		}
+		if (action == "exit-code-on-quit")
+		{
+			QuitExitCode = root.GetProperty("code").GetInt32();
 			return true;
 		}
 		if (action == "close-at")
