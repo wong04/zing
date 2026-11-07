@@ -321,7 +321,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public void NewWindow() => _app.NewWindow();
 
 	// Not inside the bridge call that asked: the window takes its renderer views with it.
-	public void CloseWindow() => _dispatcher.TryEnqueue(_window.Close);
+	public void CloseWindow() => Faults.Enqueue(_dispatcher, _window.Close, "closing the window");
 
 	public void Relayout()
 	{
@@ -495,7 +495,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			return;
 		}
 		// Not inside the bridge call that asked: a menu runs its own message loop until it closes.
-		_dispatcher.TryEnqueue(() => NativeMenus.Show(_window, items, x, y));
+		Faults.Enqueue(_dispatcher, () => NativeMenus.Show(_window, items, x, y), "showing a menu");
 	}
 
 	/// <summary>Zing's shortcuts win over the page's and the engine's own (Ctrl+F is Zing's find, not Edge's).</summary>

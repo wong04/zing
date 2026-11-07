@@ -3,7 +3,7 @@ using Zing.Core;
 
 namespace Zing.Host;
 
-/// <summary>Draws Zing.Core's men/// <summary>
+/// <summary>
 /// Shows Zing.Core's menu model as a Win32 popup menu: a window of its own, above the window's views.
 /// A XAML MenuFlyout would draw inside WinUI's content, which Zing's window no longer has.
 /// </summary>
@@ -24,7 +24,7 @@ public static class NativeMenus
 			// The menu only closes on a click elsewhere when its owner is the foreground window.
 			Native.SetForegroundWindow(window.Hwnd);
 			var chosen = Native.TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, origin.X + (int)Math.Round(x * scale), origin.Y + (int)Math.Round(y * scale), window.Hwnd, 0);
-			if (chosen > 0) clicks[chosen - 1]();
+			if (chosen > 0) TestHooks.Guard(clicks[chosen - 1], "menu click");
 		}
 		finally
 		{

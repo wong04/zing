@@ -14,7 +14,7 @@ public sealed class DispatcherScheduler(DispatcherQueue dispatcher) : IScheduler
 		timer.Tick += (_, _) =>
 		{
 			timer.Stop();
-			action();
+			TestHooks.Guard(action, "scheduled work");
 		};
 		timer.Start();
 		return new Stop(timer);

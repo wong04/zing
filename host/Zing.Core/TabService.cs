@@ -179,6 +179,8 @@ public sealed class TabService
 		_changed();
 	}
 
+	public bool Has(string id) => _store.Has(id);
+
 	public bool HasPage(string id) => _pages.ContainsKey(id);
 
 	public IPage? PageOf(string id) => _pages.GetValueOrDefault(id);

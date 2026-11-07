@@ -283,6 +283,27 @@ public static class TestHooks
 			Record(what, t.Exception);
 		}, TaskContinuationOptions.OnlyOnFaulted);
 
+	/// <summary>
+	/// The same boundary for synchronous work the UI thread runs on its own: a timer, a queued action, a window event, a
+	/// menu click. An exception out of a dispatcher callback or the window procedure ends the process, so nothing rethrows:
+	/// a view that went with its closing window is expected, and everything else is recorded.
+	/// </summary>
+	public static void Guard(Action action, string what)
+	{
+		try
+		{
+			action();
+		}
+		catch (ViewGoneException)
+		{
+			// Expected, as in Background: the window closed while the work was queued.
+		}
+		catch (Exception error)
+		{
+			Record(what, error);
+		}
+	}
+
 	public static void RecordUnhandledErrors()
 	{
 		AppDomain.CurrentDomain.UnhandledException += (_, e) => Record("unhandled", e.ExceptionObject);
