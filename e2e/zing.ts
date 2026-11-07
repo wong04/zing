@@ -1,7 +1,7 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
 import type { AddressInfo } from 'node:net'
-import { closeSync, copyFileSync, existsSync, openSync, readFileSync } from 'node:fs'
+import { closeSync, copyFileSync, existsSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -130,7 +130,8 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 	const menus = join(scratch, 'menus.jsonl')
 	const dialogs = join(scratch, 'dialogs.jsonl')
 	// Never the user's real profile: every run gets its own folder unless a test relaunches into one.
-	const userData = userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-host-data-')))
+	// The long form: a CI runner's temp folder is an 8.3 path (RUNNER~1), and the host reports the paths it hands out in full.
+	const userData = realpathSync.native(userDataDir ?? (await mkdtemp(join(tmpdir(), 'zing-host-data-'))))
 	const hostEnv = { ...hostEnvironment(port, errors, userData), ZING_MENUS_FILE: menus, ZING_DIALOGS_FILE: dialogs, ...env }
 	const host: ChildProcess = spawn(HOST_EXE, [...args], { env: hostEnv, stdio: 'ignore' })
 	let closing = false
