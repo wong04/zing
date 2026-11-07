@@ -122,8 +122,9 @@ async function collect(testInfo: TestInfo): Promise<void> {
 	const left = [...running]
 	running.clear()
 	const failed = testInfo.status !== testInfo.expectedStatus
-	// A passing test that never called close() skipped its error check; it fails, with what the host recorded.
-	const unclosed = failed ? [] : left.map((zing) => (existsSync(zing.errors) ? readFileSync(zing.errors, 'utf8') : '(no errors recorded)'))
+	// A passing test that never called close() skipped its error check; it fails, with what the host recorded. A host
+	// already gone is left out: a test that kills it on purpose (a crash) can't close it.
+	const unclosed = failed ? [] : left.filter((zing) => zing.host.exitCode === null && zing.host.signalCode === null).map((zing) => (existsSync(zing.errors) ? readFileSync(zing.errors, 'utf8') : '(no errors recorded)'))
 	for (const [n, zing] of left.entries()) {
 		if (failed) {
 			for (const [i, page] of (zing.browser ? pages(zing.browser) : []).entries()) {
