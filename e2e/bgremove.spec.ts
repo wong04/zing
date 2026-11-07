@@ -137,6 +137,11 @@ test('the viewer file server gives the model and the picture only to a Zing view
 	expect(await asked('https://view.zing/model/ffmpeg')).toBe('TypeError')
 	expect(await asked('https://view.zing/model/ytdlp')).toBe('TypeError')
 	expect(await asked('https://view.zing/model/bgmodel/../ffmpeg')).toBe('TypeError')
+	// Encoded and Windows-style traversal reach no other file either.
+	expect(await asked('https://view.zing/model/bgmodel/%2e%2e/ffmpeg')).toBe('TypeError')
+	expect(await asked('https://view.zing/model/bgmodel%2f..%2fffmpeg')).toBe('TypeError')
+	expect(await asked('https://view.zing/model/bgmodel%5c..%5cffmpeg')).toBe('TypeError')
+	expect(await asked('https://view.zing/model/bgmodel%252f..%252fffmpeg')).toBe('TypeError')
 	expect(await asked('https://view.zing/model/bgmodel?x=1')).toBe('TypeError')
 	expect(await asked(`https://view.zing/${'0'.repeat(32)}`)).toBe(404)
 	// A refused method gets no CORS answer, which the page sees as a failed fetch.
