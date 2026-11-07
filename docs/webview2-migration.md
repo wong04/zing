@@ -70,7 +70,7 @@ This plan covers:
 | 6 toolbox | Node `src/platform` | `src/platform` ported to C#: .NET `HttpClient` with `ConnectCallback` for IP pinning plus SNI, `Process` for tools, Windows security APIs. The TS pure logic is unchanged. |
 | 6b vault | `safeStorage` + isolated world | DPAPI; the autofill script is injected with `AddScriptToExecuteOnDocumentCreatedAsync`, which is easier than before |
 | 6c import | Node `fs` | Unchanged parsers; files are read by the host |
-| 7 logo | done (C3) | Unchanged; `make-icons` still generates the `.ico` |
+| 7 logo | done (C3) | `npm run make-icons` now draws with headless Edge instead of Electron, and also makes the Velopack installer art |
 | 8 packaging | electron-builder, Electron auto-update | **Velopack** + GitHub Releases. WebView2 runtime check/bootstrapper for Windows 10. Default-browser registration. Signing unchanged. |
 | 10 ongoing | Electron security bumps every ~7 days | **Gone.** The Evergreen runtime self-updates. Instead: Windows App SDK / .NET updates, and the weekly Krackn watch |
 | 11 extensions (roadmap) | after v1 | **Moved up to right after W**, because it gives full ad blocking (uBO Lite) and the password managers |

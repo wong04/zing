@@ -65,3 +65,12 @@ These are quick checks (web search plus `winget search`, which also covers the M
 Checked and **rejected**: **Vela** (an existing privacy browser with 50+ colour themes: https://velabrowser.com/), **Tangram** (an existing GNOME browser for pinned tabs: https://apps.gnome.org/Tangram), **Tilo** (a tabbed, tiling OS: https://tilo.so/), and **Zuno** (already in winget as `noFAYZ.Zuno`).
 
 **If you rename:** Paneo is the cleanest of these, and Tinge is the safest real word. Logo concepts B (Panes) and C (Slice) don't depend on the letter Z, so they survive a rename. A (Bolt) leans on the meaning of "zing", and D (Ribbon) is literally a Z.
+
+## Re-check 2026-11-07 (BR3)
+
+The same quick scan a week later: web search plus `winget search zing` (the winget and Microsoft Store sources). **Nothing has changed, and the verdict stays medium-high risk.**
+
+- There's still no browser called "Zing". Searches for "Zing" plus browser turn up Zen Browser, a long-gone 1998 Zing page-loading add-on, ZingChart and Zing MP3.
+- winget still has no `Zing` id. The Microsoft Store still lists "Zing – Private Chat Messenger" (`9MVPPH9DQMN6`), and nothing new has appeared beside it.
+- One addition to the "noise" list: **Zing Preview**, a companion app for a project-preview tool called Zing Studio (Mac and PC) (https://apps.apple.com/py/app/zing-preview/id1177406648). It isn't a browser.
+- I didn't re-check the trademark register. The TMview search recommended above is still open.

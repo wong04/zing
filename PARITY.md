@@ -207,9 +207,13 @@ Also dropped:
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| BR1 | Zing logo concepts | new | App/KracknLogo.swift | [#102](https://github.com/wong04/zing/issues/102) | Open |
-| BR2 | Icon generator + logo test | parity | Tools/make-icon.swift, Tools/make-icon.sh; Tests/logo | [#103](https://github.com/wong04/zing/issues/103) | Open |
-| BR3 | Name collision check for 'Zing' | new | - | [#104](https://github.com/wong04/zing/issues/104) | Open |
+| BR1 | Zing logo concepts | new | App/KracknLogo.swift | [#102](https://github.com/wong04/zing/issues/102) | Done |
+| BR2 | Icon generator + logo test | parity | Tools/make-icon.swift, Tools/make-icon.sh; Tests/logo | [#103](https://github.com/wong04/zing/issues/103) | Done |
+| BR3 | Name collision check for 'Zing' | new | - | [#104](https://github.com/wong04/zing/issues/104) | Done |
+
+- **BR1:** the logo is the C3 Slice. The first concepts (A–D) are in `assets/brand/concepts/`, and the Slice versions in `assets/brand/concepts/slice/`. The chosen tiles are `assets/brand/zing.svg` (frosted) and `assets/brand/zing-dark-tile.svg`.
+- **BR2:** `npm run make-icons` draws the SVGs with headless Edge into `build/icons*` (PNGs 16–1024 and a `.ico` with 16–256) and into `build/installer` (Velopack's splash image and the two MSI bitmaps). `src/shared/brand/logo.test.ts` is the port of `Tests/logo`. `e2e/brand.spec.ts` checks the live window and `Zing.exe`, and its screenshots are in `docs/screenshots/phase-7/`. There's no `.icns`, because Zing is Windows-only.
+- **BR3:** `assets/brand/NAME-CHECK.md`. No browser is called Zing, but the word is a crowded trademark (medium-high risk).
 
 ## M8 Packaging + release
 
