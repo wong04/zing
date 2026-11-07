@@ -215,7 +215,7 @@ function Panel({ state }: { state: StackDropdownState }) {
 
 /** The dropdown view's whole content: a backdrop that closes on click, and the stack's page list. */
 export function StackDropdownView() {
-	const [state, setState] = useState<StackDropdownState | null>(null)
+	const [state, setState] = useState<StackDropdownState | undefined>(undefined)
 	useEffect(() => {
 		const unsubscribe = zing.onStackDropdown(setState)
 		// The first push can land before this view has mounted; ask for it.

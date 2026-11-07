@@ -28,6 +28,17 @@ public sealed class BridgeTests
 		Assert.False(result.GetProperty("value").TryGetProperty("activeId", out _));
 	}
 
+	// The TS contracts type these channels `T | undefined` (overview:get, overlay:overview, stack:current, ...).
+	[Fact]
+	public async Task A_null_result_or_payload_is_left_out_so_the_renderer_sees_undefined()
+	{
+		var bridge = new Bridge();
+		bridge.Register("overview:get", (Func<JsonElement[], object?>)(_ => null));
+		var result = await Run(bridge, """{"kind":"invoke","id":1,"channel":"overview:get","args":[]}""");
+		Assert.False(result.TryGetProperty("value", out _));
+		Assert.False(JsonDocument.Parse(Bridge.Event("overlay:overview", null)).RootElement.TryGetProperty("payload", out _));
+	}
+
 	[Fact]
 	public async Task Passes_arguments_in_order()
 	{
