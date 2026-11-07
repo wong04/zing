@@ -45,6 +45,7 @@ app.Services.GetRequiredService<Db>();
 app.UseForwardedHeaders();
 app.UseRateLimiter();
 app.MapAuth();
+app.MapSync();
 app.Run();
 
 public partial class Program;

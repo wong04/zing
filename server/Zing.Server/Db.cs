@@ -40,7 +40,8 @@ public sealed class Db
 				profile_blob BLOB,
 				manifest_blob BLOB,
 				manifest_version INTEGER NOT NULL DEFAULT 0,
-				revision INTEGER NOT NULL DEFAULT 0
+				revision INTEGER NOT NULL DEFAULT 0,
+				horizon INTEGER NOT NULL DEFAULT 0
 			);
 			CREATE TABLE IF NOT EXISTS items (
 				user_id TEXT NOT NULL,
@@ -63,6 +64,15 @@ public sealed class Db
 			);
 			CREATE INDEX IF NOT EXISTS refresh_tokens_by_user ON refresh_tokens (user_id);
 			""");
+		AddHorizonColumn(connection);
+	}
+
+	// Databases created by Task 8 predate the column, and CREATE TABLE IF NOT EXISTS leaves them alone.
+	private static void AddHorizonColumn(SqliteConnection connection)
+	{
+		using var info = Command(connection, "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'horizon'");
+		if ((long)info.ExecuteScalar()! != 0) return;
+		Execute(connection, "ALTER TABLE users ADD COLUMN horizon INTEGER NOT NULL DEFAULT 0");
 	}
 
 	public string FindOrCreateUser(string sub)
@@ -145,7 +155,7 @@ public sealed class Db
 		insert.ExecuteNonQuery();
 	}
 
-	private static SqliteCommand Command(SqliteConnection connection, string sql, SqliteTransaction? transaction = null)
+	internal static SqliteCommand Command(SqliteConnection connection, string sql, SqliteTransaction? transaction = null)
 	{
 		var command = connection.CreateCommand();
 		command.CommandText = sql;
