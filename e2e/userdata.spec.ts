@@ -1,12 +1,11 @@
 // W-3: a user data file that can't be used never stops Zing starting. An invalid file is set aside as
 // `<name>.corrupt-<stamp>`, Zing starts without it, and the first window says so. The recovery is logged
 // as a warning, not recorded as an error, so these runs pass the harness's error check (e2e/zing.ts).
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, test, pageWhere } from './zing'
+import { launchZing, test, pageWhere, scratchDir } from './zing'
 
 // Evaluated in the chrome renderer, where api.ts puts the bridge on window.
 declare const window: { readonly zing: ZingApi }
@@ -15,7 +14,7 @@ const GARBAGE = '{ "this is": not json'
 
 /** A scratch profile holding `files` (paths relative to it), as a previous run might have left it. */
 function profileWith(files: Readonly<Record<string, string>>): string {
-	const dir = mkdtempSync(join(tmpdir(), 'zing-host-data-'))
+	const dir = scratchDir('zing-host-data-')
 	for (const [name, content] of Object.entries(files)) {
 		const path = join(dir, name)
 		mkdirSync(join(path, '..'), { recursive: true })
