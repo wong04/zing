@@ -34,9 +34,13 @@ internal sealed class FakeSealer : IHelloSealer
 		return Task.FromResult<byte[]>([.. Mark, .. key.Reverse()]);
 	}
 
+	/// <summary>Runs while the fake prompt is "up", e.g. to navigate the page during Hello.</summary>
+	public Action? Unsealing { get; set; }
+
 	public Task<byte[]> UnsealAsync(byte[] sealedBytes)
 	{
 		Unseals++;
+		Unsealing?.Invoke();
 		Answer();
 		if (!sealedBytes.AsSpan().StartsWith(Mark)) throw new CryptographicException("not sealed by this fake");
 		return Task.FromResult<byte[]>([.. sealedBytes.Skip(Mark.Length).Reverse()]);

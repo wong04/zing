@@ -61,9 +61,16 @@ export interface AccountPickerState {
 	/** The tab whose field it is for. */
 	readonly pageId: string
 	/** The field, in DIPs of the window's content. */
-	readonly rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+	readonly rect: PickerRect
+	/** The page's own bounds, in the same DIPs: the picker is kept inside them. */
+	readonly viewport: PickerRect
 	/** Newest first. Usernames only, never a password. */
 	readonly entries: readonly AccountPickerEntry[]
+	/** The entry the arrow keys selected, -1 for none: it opens with nothing selected. */
+	readonly active: number
 }
 
-export type FillOutcome = 'filled' | 'not-filled' | 'cancelled' | 'refused'
+type PickerRect = { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+
+/** `ignored`: a click on a picker that hadn't been on screen, where it is, for 500 ms yet. */
+export type FillOutcome = 'filled' | 'not-filled' | 'cancelled' | 'refused' | 'ignored'

@@ -5,24 +5,55 @@ namespace Zing.Core.Vault;
 
 public enum CredentialFieldKind { Username, Password }
 
-/// <summary>The focused sign-in field. <see cref="Rect"/> is in the page's CSS pixels as the script reports it, and in DIPs of the window's content once the page has placed it.</summary>
-public sealed record CredentialField(CredentialFieldKind Kind, Rect Rect);
+/// <summary>
+/// The focused sign-in field. <see cref="Rect"/> is in the page's CSS pixels as the script reports it, and in DIPs of
+/// the window's content once the page has placed it; <see cref="Viewport"/> is then the page's own bounds there, which
+/// the picker is kept inside. The script never reports a viewport (it's <c>default</c> until the page places the field).
+/// </summary>
+public sealed record CredentialField(CredentialFieldKind Kind, Rect Rect, Rect Viewport);
 
-public enum PickerKey { Down, Escape }
+/// <summary>The picker's keys. They come only from real key presses the host sees, never from the page (Ruling 28).</summary>
+public enum PickerKey { Up, Down, Enter, Escape }
 
-/// <summary>A message under the script's key that isn't one the script sends: a page forged it, or the script and host disagree.</summary>
-public sealed class AutofillMessageException(string message) : Exception(message);
+public static class PickerKeys
+{
+	/// <summary>The picker key for a Windows virtual-key code; null for any other key, which stays the page's.</summary>
+	public static PickerKey? FromVirtualKey(int virtualKey) => virtualKey switch
+	{
+		0x26 => PickerKey.Up,
+		0x28 => PickerKey.Down,
+		0x0D => PickerKey.Enter,
+		0x1B => PickerKey.Escape,
+		_ => null,
+	};
+}
 
 /// <summary>vault:fill named a login the picker on screen doesn't offer.</summary>
 public sealed class AutofillEntryException(string id) : Exception($"The account picker doesn't offer login {id}");
 
+/// <summary>What became of a message a page posted.</summary>
+public enum PageMessageVerdict
+{
+	/// <summary>Not under the script's key: pages may post anything, and it isn't autofill's.</summary>
+	NotAutofill,
+	/// <summary>Too big, too deep, not JSON, or under the script's key but not a shape the script sends: dropped (Ruling 29).</summary>
+	Dropped,
+	Autofill,
+}
+
 /// <summary>
-/// What the detection script (src/shared/vault/autofillScript.ts) posts: <c>{zingCredentialField: {kind, x, y, w, h}}</c>,
-/// <c>{kind: "none"}</c> or <c>{kind: "key", key}</c>. It never carries an origin the host would believe: a page can post
-/// exactly the same thing, so the origin always comes from WebView2's own <c>Source</c> for the message.
+/// What the detection script (src/shared/vault/autofillScript.ts) posts: <c>{zingCredentialField: {kind, x, y, w, h}}</c>
+/// or <c>{kind: "none"}</c>. It never carries an origin the host would believe: a page can post exactly the same thing,
+/// so the origin always comes from WebView2's own <c>Source</c> for the message. Nor keys: those the host reads itself.
 /// </summary>
 public abstract record AutofillMessage
 {
+	/// <summary>The longest page message read at all; the script's are under 100 characters.</summary>
+	public const int MaxLength = 4096;
+
+	/// <summary>The script's messages are two objects deep; anything deeper isn't one, and isn't parsed further.</summary>
+	private static readonly JsonDocumentOptions Options = new() { MaxDepth = 4 };
+
 	private AutofillMessage() { }
 
 	public sealed record Focused(CredentialField Field) : AutofillMessage;
@@ -30,45 +61,55 @@ public abstract record AutofillMessage
 	/// <summary>No sign-in field has focus any more, or the page started a new document.</summary>
 	public sealed record Left() : AutofillMessage;
 
-	public sealed record Key(PickerKey Pressed) : AutofillMessage;
-
-	/// <summary>Null for a message that isn't under the script's key (pages may post anything); throws for one that is but makes no sense.</summary>
-	/// <exception cref="AutofillMessageException"/>
-	public static AutofillMessage? Parse(string json)
+	/// <summary>Reads a page message. Never throws: any page can post anything (Ruling 29).</summary>
+	public static PageMessageVerdict Read(string json, out AutofillMessage? message)
 	{
-		using var document = JsonDocument.Parse(json);
-		var root = document.RootElement;
-		if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty(AutofillScripts.MessageKey, out var body)) return null;
-		if (body.ValueKind != JsonValueKind.Object) throw new AutofillMessageException("autofill message is not an object");
-		var kind = body.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.String ? k.GetString() : null;
-		switch (kind)
+		message = null;
+		if (json.Length > MaxLength) return PageMessageVerdict.Dropped;
+		JsonDocument document;
+		try
 		{
-			case "none":
-				return new Left();
-			case "key":
-				return new Key(body.TryGetProperty("key", out var key) ? key.GetString() switch
-				{
-					"down" => PickerKey.Down,
-					"escape" => PickerKey.Escape,
-					var other => throw new AutofillMessageException($"unknown picker key: {other}"),
-				} : throw new AutofillMessageException("autofill key message has no key"));
-			case "username":
-			case "password":
-				var (x, y, w, h) = (Number(body, "x"), Number(body, "y"), Number(body, "w"), Number(body, "h"));
-				// A field with no size has nothing to show a picker under.
-				if (w <= 0 || h <= 0) return new Left();
-				return new Focused(new CredentialField(kind == "username" ? CredentialFieldKind.Username : CredentialFieldKind.Password, new Rect(x, y, w, h)));
-			default:
-				throw new AutofillMessageException($"unknown autofill field kind: {kind}");
+			document = JsonDocument.Parse(json, Options);
+		}
+		catch (JsonException)
+		{
+			return PageMessageVerdict.Dropped;
+		}
+		using (document)
+		{
+			var root = document.RootElement;
+			if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty(AutofillScripts.MessageKey, out var body)) return PageMessageVerdict.NotAutofill;
+			message = Shape(body);
+			return message is null ? PageMessageVerdict.Dropped : PageMessageVerdict.Autofill;
 		}
 	}
 
-	private static double Number(JsonElement body, string name)
+	/// <summary>The message the body is, or null when it isn't one the script sends.</summary>
+	private static AutofillMessage? Shape(JsonElement body)
 	{
-		if (!body.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Number) throw new AutofillMessageException("autofill message has no usable position");
-		var number = value.GetDouble();
-		return double.IsFinite(number) ? number : throw new AutofillMessageException("autofill message has no usable position");
+		if (body.ValueKind != JsonValueKind.Object || !body.TryGetProperty("kind", out var kind) || kind.ValueKind != JsonValueKind.String) return null;
+		CredentialFieldKind field;
+		switch (kind.GetString())
+		{
+			case "none":
+				return new Left();
+			case "username":
+				field = CredentialFieldKind.Username;
+				break;
+			case "password":
+				field = CredentialFieldKind.Password;
+				break;
+			default:
+				return null;
+		}
+		if (Number(body, "x") is not { } x || Number(body, "y") is not { } y || Number(body, "w") is not { } w || Number(body, "h") is not { } h) return null;
+		// A field with no size has nothing to show a picker under.
+		if (w <= 0 || h <= 0) return new Left();
+		return new Focused(new CredentialField(field, new Rect(x, y, w, h), default));
 	}
+
+	private static double? Number(JsonElement body, string name) =>
+		body.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && double.IsFinite(number) ? number : null;
 }
 
 /// <summary>The page scripts, from Defaults/autofill.json, which is generated from autofillScript.ts.</summary>
@@ -83,15 +124,21 @@ public static class AutofillScripts
 
 	public static string MessageKey => Value("messageKey");
 
-	/// <summary>fillScript's call: fills the reported field and its other half, and evaluates to whether it did.</summary>
-	public static string Fill(string username, string password) =>
-		$"window.{Value("fillFunction")}({JsonSerializer.Serialize(username)}, {JsonSerializer.Serialize(password)})";
+	/// <summary>
+	/// fillScript's call: fills the reported field and its other half, and evaluates to whether it did. It runs only in a
+	/// document still on <paramref name="origin"/>, so a navigation that commits after the host's last check gets nothing.
+	/// </summary>
+	public static string Fill(string origin, string username, string password) =>
+		$"location.origin === {JsonSerializer.Serialize(origin)} && window.{Value("fillFunction")}({JsonSerializer.Serialize(username)}, {JsonSerializer.Serialize(password)})";
 }
 
 public sealed record PickerEntry(string Id, string Username);
 
-/// <summary>Pushed as pageui:account-picker. Usernames only: the picker never shows a password, and the page never sees any of it.</summary>
-public sealed record AccountPicker(string PageId, Rect Rect, IReadOnlyList<PickerEntry> Entries);
+/// <summary>
+/// Pushed as pageui:account-picker. Usernames only: the picker never shows a password, and the page never sees any of it.
+/// <see cref="Active"/> is the entry the arrows have selected, -1 for none: it opens with nothing selected.
+/// </summary>
+public sealed record AccountPicker(string PageId, Rect Rect, Rect Viewport, IReadOnlyList<PickerEntry> Entries, int Active);
 
 public static class FillOutcomes
 {
@@ -102,25 +149,38 @@ public static class FillOutcomes
 	public const string Cancelled = "cancelled";
 	/// <summary>The page is no longer on the origin the picker was shown for (canFill).</summary>
 	public const string Refused = "refused";
+	/// <summary>A click on a picker that had been on screen, where it is, for less than the click guard: a page may have moved it under the pointer.</summary>
+	public const string Ignored = "ignored";
 }
 
 /// <summary>
 /// One window's account picker and fill. The picker's origin is the frame's actual source as WebView2 reports it, never
 /// anything the page sent; a frame whose origin isn't the top page's gets nothing (<see cref="VaultModel.CanFill"/>).
-/// A password is read, with one Hello prompt, only once the user has chosen a login, and goes only into the page whose
-/// origin the picker was shown for.
+/// A password is read, with one Hello prompt, only once the user has chosen a login with a click or a real Enter, and
+/// goes only into the page whose origin the picker was shown for.
 /// </summary>
 /// <param name="vault">The vault; null while it's off.</param>
 /// <param name="pageOf">The page of a tab that is on screen; null for one that isn't, or has gone.</param>
 /// <param name="changed">The picker opened, changed or closed (null).</param>
-/// <param name="focusPicker">Moves the keyboard into the picker.</param>
-public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageOf, Action<AccountPicker?> changed, Action focusPicker)
+/// <param name="background">Runs a fill nobody awaits (a real Enter), reporting its failure.</param>
+public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageOf, Action<AccountPicker?> changed, IClock clock, IScheduler scheduler, Action<Task, string> background) : IDisposable
 {
-	private sealed record Open(AccountPicker Picker, IPage Page, string Origin);
+	/// <summary>At most one picker update per page in this long; the latest report wins (Ruling 29).</summary>
+	public static readonly TimeSpan Throttle = TimeSpan.FromMilliseconds(100);
+
+	/// <summary>A click counts only once the picker has been on screen, where it is, this long (Ruling 28).</summary>
+	public const long ClickGuardMs = 500;
+
+	private sealed record Open(AccountPicker Picker, IPage Page, string Origin, long ShownAt);
+
+	private sealed class Window
+	{
+		public IDisposable? Timer;
+		public (Uri FrameSource, CredentialField Field)? Pending;
+	}
 
 	private Open? _open;
-	/// <summary>The last field each page reported, so the down arrow can bring a closed picker back.</summary>
-	private readonly Dictionary<string, (Uri FrameSource, CredentialField Field)> _fields = new(StringComparer.Ordinal);
+	private readonly Dictionary<string, Window> _windows = new(StringComparer.Ordinal);
 
 	public AccountPicker? Picker => _open?.Picker;
 
@@ -133,23 +193,38 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 				FieldFocused(pageId, frameSource, focused.Field);
 				return;
 			case AutofillMessage.Left:
-				_fields.Remove(pageId);
+				if (_windows.TryGetValue(pageId, out var window)) window.Pending = null;
 				CloseFor(pageId);
-				return;
-			case AutofillMessage.Key { Pressed: PickerKey.Escape }:
-				CloseFor(pageId);
-				return;
-			case AutofillMessage.Key { Pressed: PickerKey.Down }:
-				Down(pageId);
 				return;
 		}
 	}
 
-	/// <summary>Shows the picker for the logins of the frame's actual origin, or closes it when there are none to offer.</summary>
+	/// <summary>Shows the picker for the logins of the frame's actual origin, or closes it when there are none to offer; throttled per page.</summary>
 	public void FieldFocused(string pageId, Uri frameSource, CredentialField field)
 	{
-		_fields[pageId] = (frameSource, field);
+		if (_windows.TryGetValue(pageId, out var window))
+		{
+			window.Pending = (frameSource, field);
+			return;
+		}
 		Show(pageId, frameSource, field);
+		StartWindow(pageId);
+	}
+
+	private void StartWindow(string pageId)
+	{
+		var window = new Window();
+		_windows[pageId] = window;
+		window.Timer = scheduler.Schedule(Throttle, () => EndWindow(pageId, window));
+	}
+
+	private void EndWindow(string pageId, Window window)
+	{
+		if (!_windows.TryGetValue(pageId, out var current) || !ReferenceEquals(current, window)) return;
+		_windows.Remove(pageId);
+		if (window.Pending is not { } pending) return;
+		Show(pageId, pending.FrameSource, pending.Field);
+		StartWindow(pageId);
 	}
 
 	/// <summary>The tabs changed: a picker whose tab has left the screen goes.</summary>
@@ -158,7 +233,7 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 		if (_open is { } open && !ReferenceEquals(pageOf(open.Picker.PageId), open.Page)) Close();
 	}
 
-	/// <summary>Esc in the picker: it closes and the page gets the keyboard back.</summary>
+	/// <summary>Closed from the picker: the page gets the keyboard back.</summary>
 	public void Dismiss()
 	{
 		if (_open is not { } open) return;
@@ -166,12 +241,54 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 		open.Page.Focus();
 	}
 
+	/// <summary>
+	/// A real key press while the picker is open, from its page or the picker. True when the picker took it (the page
+	/// mustn't get it); false when it stays the page's: no picker, or Enter with nothing selected.
+	/// </summary>
+	public bool Key(PickerKey key)
+	{
+		if (_open is not { } open) return false;
+		var count = open.Picker.Entries.Count;
+		switch (key)
+		{
+			case PickerKey.Down:
+				Select(open, (open.Picker.Active + 1) % count);
+				return true;
+			case PickerKey.Up:
+				Select(open, open.Picker.Active <= 0 ? count - 1 : open.Picker.Active - 1);
+				return true;
+			case PickerKey.Escape:
+				Close();
+				return true;
+			case PickerKey.Enter:
+				if (open.Picker.Active < 0) return false;
+				// The user's own key press: no click guard.
+				background(ChooseAsync(open, open.Picker.Entries[open.Picker.Active].Id), "autofill");
+				return true;
+			default:
+				throw new ArgumentOutOfRangeException(nameof(key), key, "not a picker key");
+		}
+	}
+
+	private void Select(Open open, int active)
+	{
+		_open = open with { Picker = open.Picker with { Active = active } };
+		changed(_open.Picker);
+	}
+
+	/// <summary>A click on a login in the picker.</summary>
 	/// <exception cref="AutofillEntryException">The picker on screen doesn't offer <paramref name="id"/>.</exception>
 	public async Task<string> FillAsync(string pageId, string id)
 	{
 		// A choice that arrives after the picker closed (the page moved on meanwhile) has nothing to fill.
 		if (_open is not { } open || open.Picker.PageId != pageId) return FillOutcomes.Refused;
 		if (!open.Picker.Entries.Any(e => e.Id == id)) throw new AutofillEntryException(id);
+		if (clock.Now() - open.ShownAt < ClickGuardMs) return FillOutcomes.Ignored;
+		return await ChooseAsync(open, id);
+	}
+
+	private async Task<string> ChooseAsync(Open open, string id)
+	{
 		Close();
 		open.Page.Focus();
 		if (!StillOn(open)) return FillOutcomes.Refused;
@@ -187,9 +304,9 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 			// Review Focus 3: nothing is filled and there's no error to show; the picker has already closed.
 			return FillOutcomes.Cancelled;
 		}
-		// The page may have gone elsewhere while Hello was up.
+		// The page may have gone elsewhere while Hello was up; the script checks the origin once more as it runs.
 		if (!StillOn(open)) return FillOutcomes.Refused;
-		var filled = await open.Page.EvaluateAsync(AutofillScripts.Fill(login.Username, password));
+		var filled = await open.Page.EvaluateAsync(AutofillScripts.Fill(open.Origin, login.Username, password));
 		return filled.ValueKind == JsonValueKind.True ? FillOutcomes.Filled : FillOutcomes.NotFilled;
 	}
 
@@ -201,20 +318,18 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 			return;
 		}
 		var context = new FillContext(top.AbsoluteUri, frameSource.AbsoluteUri);
-		var entries = VaultModel.EntriesFor(store.Summaries(), context);
+		List<PickerEntry> entries = [.. VaultModel.EntriesFor(store.Summaries(), context).Select(e => new PickerEntry(e.Id, e.Username))];
 		if (entries.Count == 0)
 		{
 			CloseFor(pageId);
 			return;
 		}
-		_open = new Open(new AccountPicker(pageId, field.Rect, [.. entries.Select(e => new PickerEntry(e.Id, e.Username))]), page, VaultModel.OriginOf(frameSource.AbsoluteUri));
+		var same = _open is { } was && was.Picker.PageId == pageId && ReferenceEquals(was.Page, page);
+		var unmoved = same && _open!.Picker.Rect == field.Rect && _open.Picker.Viewport == field.Viewport;
+		var active = same && _open!.Picker.Entries.SequenceEqual(entries) ? _open.Picker.Active : -1;
+		var shownAt = unmoved ? _open!.ShownAt : clock.Now();
+		_open = new Open(new AccountPicker(pageId, field.Rect, field.Viewport, entries, active), page, VaultModel.OriginOf(frameSource.AbsoluteUri), shownAt);
 		changed(_open.Picker);
-	}
-
-	private void Down(string pageId)
-	{
-		if (_open?.Picker.PageId != pageId && _fields.TryGetValue(pageId, out var last)) Show(pageId, last.FrameSource, last.Field);
-		if (_open?.Picker.PageId == pageId) focusPicker();
 	}
 
 	/// <summary>canFill against the origin the entries were chosen for, with the page's source now.</summary>
@@ -230,10 +345,17 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 		if (_open?.Picker.PageId == pageId) Close();
 	}
 
-	private void Close()
+	/// <summary>Closes the picker, if one is open; the vault turning off does this.</summary>
+	public void Close()
 	{
 		if (_open is null) return;
 		_open = null;
 		changed(null);
+	}
+
+	public void Dispose()
+	{
+		foreach (var window in _windows.Values) window.Timer?.Dispose();
+		_windows.Clear();
 	}
 }

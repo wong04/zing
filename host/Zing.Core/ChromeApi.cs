@@ -44,8 +44,6 @@ public interface IWindowHost
 	void AccountPickerChanged(AccountPicker? picker);
 	/// <summary>The picker view measured what it shows.</summary>
 	void SetAccountPickerHeight(int height);
-	/// <summary>Moves the keyboard into the picker view (the down arrow in a sign-in field).</summary>
-	void FocusAccountPicker();
 	/// <summary>The stack dropdown opened, changed or closed (null).</summary>
 	void StackDropdownChanged(StackDropdownState? state);
 	/// <summary>The tab overview opened, changed or closed (null).</summary>
@@ -80,11 +78,15 @@ public interface IWindowHost
 /// <param name="Dns">Encrypted DNS for the whole PC (Network &amp; VPN); null where the host can't change DNS.</param>
 /// <param name="Threats">Link inspection, with the hosts allowed this session; one per app. Null where the host doesn't inspect links.</param>
 /// <param name="Consent">Whether third parties may be asked to open a link, for the session and every window. One per app: required, so a window cannot end up with its own.</param>
-/// <param name="Vault">The password vault, shared by every window; null when <c>passwordAutofill</c> is off, or when it couldn't be read.</param>
-/// <param name="VaultUnreadable">The vault is off because its files couldn't be read at launch; vault:state says so.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false)
+/// <param name="Vault">A vault already open that never follows the setting (tests); <paramref name="Switch"/> is the real one.</param>
+/// <param name="VaultUnreadable">With <paramref name="Vault"/>: the vault is off because its files couldn't be read.</param>
+/// <param name="Switch">The password vault, shared by every window, open only while <c>passwordAutofill</c> is on.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null)
 {
 	public long Now() => Clock.Now();
+
+	/// <summary>The vault as it is now: <see cref="VaultSwitch.Current"/> is null while it's off.</summary>
+	public VaultSwitch Vaults { get; } = Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable);
 }
 
 /// <summary>
@@ -174,11 +176,11 @@ public sealed class ChromeApi : IDisposable
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
 		Permissions = new PermissionBroker(PageUi);
-		Autofill = new Autofill(() => app.Vault, id => Tabs.IsShown(id) ? Tabs.PageOf(id) : null, picker =>
+		Autofill = new Autofill(() => app.Vaults.Current, id => Tabs.IsShown(id) ? Tabs.PageOf(id) : null, picker =>
 		{
 			host.Push("pageui:account-picker", picker);
 			host.AccountPickerChanged(picker);
-		}, host.FocusAccountPicker);
+		}, app.Clock, host.Scheduler, host.Background);
 		Tabs.AutofillMessage += Autofill.Message;
 		Drops = new DropInbox(Grants);
 		bridge.UseDropInbox(Drops);
@@ -367,7 +369,9 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
-		if (app.Vault is { } vault) vault.Changed += PushVaultState;
+		_watchedVault = app.Vaults.Current;
+		if (_watchedVault is { } vault) vault.Changed += PushVaultState;
+		app.Vaults.Changed += VaultSwitched;
 
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
 		_unsubscribeLibrary = app.Library.Subscribe(_ => host.Push("library:state", LibraryState()));
@@ -482,7 +486,9 @@ public sealed class ChromeApi : IDisposable
 		_closing.Dispose();
 		_host.OfferEnded -= EndOffer;
 		foreach (var subscription in _subscriptions) subscription.Dispose();
-		if (_app.Vault is { } vault) vault.Changed -= PushVaultState;
+		_app.Vaults.Changed -= VaultSwitched;
+		if (_watchedVault is { } vault) vault.Changed -= PushVaultState;
+		Autofill.Dispose();
 		Shell.Dispose();
 		Ordering.Dispose();
 		Lifecycle.Dispose();
@@ -814,11 +820,24 @@ public sealed class ChromeApi : IDisposable
 
 	private static async Task<object?> HashFileAsync(string path, string algorithm) => await Hashing.FileAsync(path, algorithm);
 
-	private VaultStore Vault() => _app.Vault ?? throw new VaultOffException();
+	private VaultStore Vault() => _app.Vaults.Current ?? throw new VaultOffException();
 
-	private VaultState CurrentVaultState() => _app.Vault is { } vault
+	private VaultState CurrentVaultState() => _app.Vaults.Current is { } vault
 		? new(true, vault.HelloAvailable, vault.Summaries().Count(s => s.DeletedAt is null))
-		: new(false, false, 0, _app.VaultUnreadable ? "unreadable" : null);
+		: new(false, false, 0, _app.Vaults.Unreadable ? "unreadable" : null);
+
+	/// <summary>The store vault:state follows; it changes when passwordAutofill is turned on or off.</summary>
+	private VaultStore? _watchedVault;
+
+	/// <summary>passwordAutofill was turned on or off: follow the new store, and a picker on screen goes (Ruling 30).</summary>
+	private void VaultSwitched()
+	{
+		if (_watchedVault is { } old) old.Changed -= PushVaultState;
+		_watchedVault = _app.Vaults.Current;
+		if (_watchedVault is { } now) now.Changed += PushVaultState;
+		Autofill.Close();
+		PushVaultState();
+	}
 
 	private void PushVaultState() => _host.Push("vault:state", CurrentVaultState());
 

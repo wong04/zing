@@ -120,6 +120,8 @@ public static class TestHooks
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
 	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers;
+	/// "picker-key" with <c>vk</c> enters the account picker's key handler as a real key press on its page would;
+	/// "page-messages" writes how many page messages were dropped to <c>file</c>;
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
@@ -178,6 +180,17 @@ public static class TestHooks
 		{
 			var api = (Apis.TryGetValue(window, out var consentApi) ? consentApi() : null) ?? throw new InvalidOperationException("relay-consent needs a window with its chrome started");
 			api.Consent.Allow();
+			return true;
+		}
+		if (action == "picker-key")
+		{
+			var handler = PickerKeyHandlers.TryGetValue(window, out var keys) ? keys : throw new InvalidOperationException("picker-key needs a window with its chrome started");
+			handler(root.GetProperty("vk").GetInt32());
+			return true;
+		}
+		if (action == "page-messages")
+		{
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { dropped = Volatile.Read(ref _droppedPageMessages) }));
 			return true;
 		}
 		if (action == "vault-hello")
@@ -241,6 +254,21 @@ public static class TestHooks
 		Apis[window] = api;
 		window.Destroyed += () => Apis.Remove(window);
 	}
+
+	/// <summary>Each window's account-picker key handler (MainWindow.PickerKey), for picker-key; e2e runs only.</summary>
+	private static readonly Dictionary<HostWindow, Func<int, bool>> PickerKeyHandlers = [];
+
+	public static void RegisterPickerKeys(HostWindow window, Func<int, bool> handler)
+	{
+		if (!IsEndToEndRun) return;
+		PickerKeyHandlers[window] = handler;
+		window.Destroyed += () => PickerKeyHandlers.Remove(window);
+	}
+
+	private static int _droppedPageMessages;
+
+	/// <summary>A page message was dropped unread: too big, too deep, not JSON, or not a shape the autofill script sends (Ruling 29).</summary>
+	public static void PageMessageDropped() => Interlocked.Increment(ref _droppedPageMessages);
 
 	/// <summary>A new window's scope, in an e2e run: counted, and closed at a checkpoint if a test asked (close-at).</summary>
 	public static void Watch(WindowScope scope, Action closeWindow)

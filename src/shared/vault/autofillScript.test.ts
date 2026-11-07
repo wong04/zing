@@ -60,6 +60,7 @@ class FakeDoc {
 	frames: FakeEl[] = []
 	listeners = new Map<string, Listener[]>()
 	focused = true
+	location = { origin: 'https://example.com' }
 	addEventListener(type: string, fn: Listener): void {
 		this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn])
 	}
@@ -96,6 +97,7 @@ function makeWindow(): Record<string, unknown> {
 		// Every message goes out under the script's key; the test unwraps it.
 		chrome: { webview: { postMessage: (m: Record<string, unknown>) => messages.push(m[autofillBridgeName]) } },
 		HTMLInputElement: FakeInput,
+		location: { origin: 'https://example.com' },
 		addEventListener: (type: string, fn: Listener) => windowListeners.set(type, [...(windowListeners.get(type) ?? []), fn]),
 	}
 	w['top'] = w
@@ -121,8 +123,8 @@ function focus(el: FakeEl): void {
 	vi.advanceTimersByTime(0)
 }
 
-function evalFill(username: string, password: string): unknown {
-	return new Function('window', `return ${fillScript(username, password)}`)(win)
+function evalFill(username: string, password: string, origin = 'https://example.com'): unknown {
+	return new Function('window', 'location', `return ${fillScript(origin, username, password)}`)(win, win['location'])
 }
 
 /** A username box and a password box in one form, in that order. */
@@ -252,11 +254,11 @@ describe('detection', () => {
 		const innerDoc = new FakeDoc()
 		doc.frames = [new FakeEl({ tagName: 'IFRAME', contentDocument: innerDoc }), new FakeEl({ tagName: 'IFRAME' })]
 		for (const fn of windowListeners.get('load') ?? []) fn()
-		expect([...innerDoc.listeners.keys()].sort()).toEqual(['focusin', 'focusout', 'keydown', 'keyup', 'pointerdown'])
+		expect([...innerDoc.listeners.keys()].sort()).toEqual(['focusin', 'focusout', 'keyup', 'pointerdown'])
 	})
 	it('re-checks on load, click, key and focus', () => {
 		install()
-		expect([...doc.listeners.keys()].sort()).toEqual(['focusin', 'focusout', 'keydown', 'keyup', 'load', 'pointerdown'])
+		expect([...doc.listeners.keys()].sort()).toEqual(['focusin', 'focusout', 'keyup', 'load', 'pointerdown'])
 		expect(windowListeners.has('focus')).toBe(true)
 		expect(windowListeners.has('load')).toBe(true)
 	})
@@ -292,22 +294,24 @@ describe('detection', () => {
 		expect(messages).toEqual([])
 		expect(doc.listeners.size).toBe(0)
 	})
-	it('reports the down arrow and Esc in a sign-in field, and nothing in another field', () => {
+	it('never reports keys: the host reads real key presses itself', () => {
 		install()
-		const press = (key: string): void => {
-			for (const fn of doc.listeners.get('keydown') ?? []) (fn as unknown as (e: { key: string }) => void)({ key })
-		}
 		focus(new FakeEl({ type: 'password' }))
-		press('ArrowDown')
-		press('Escape')
-		press('a')
-		expect(messages.slice(1)).toEqual([
-			{ kind: 'key', key: 'down' },
-			{ kind: 'key', key: 'escape' },
-		])
-		focus(new FakeEl({ name: 'q' }))
-		press('ArrowDown')
-		expect(messages.at(-1)).toEqual({ kind: 'none' })
+		expect(doc.listeners.has('keydown')).toBe(false)
+		expect(detectionScript).not.toContain("'key'")
+		expect(messages).toHaveLength(1)
+	})
+	it('skips a frame of another origin even when its document is readable', () => {
+		install()
+		const innerDoc = new FakeDoc()
+		innerDoc.location = { origin: 'https://other.example' }
+		innerDoc.activeElement = new FakeEl({ type: 'password' })
+		const frame = new FakeEl({ tagName: 'IFRAME', contentDocument: innerDoc })
+		doc.frames = [frame]
+		for (const fn of windowListeners.get('load') ?? []) fn()
+		expect(innerDoc.listeners.size).toBe(0)
+		focus(frame)
+		expect(messages).toEqual([])
 	})
 })
 
@@ -340,6 +344,13 @@ describe('filling', () => {
 		focus(el)
 		expect(evalFill('ada', 'hunter2')).toBe(true)
 		expect(setterCalls).toEqual([[el, 'hunter2']])
+	})
+	it('refuses when the page is no longer on the origin the host checked', () => {
+		install()
+		const { user } = signInForm()
+		focus(user)
+		expect(evalFill('ada', 'hunter2', 'https://evil.example')).toBe(false)
+		expect(setterCalls).toEqual([])
 	})
 	it('refuses a detached field, or no field', () => {
 		install()

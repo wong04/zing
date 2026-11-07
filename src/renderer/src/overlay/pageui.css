@@ -180,11 +180,13 @@
 	cursor: pointer;
 }
 
-.picker-entry.active {
+.picker-entry:hover {
 	background: var(--selection);
 }
 
-.picker-list:focus-visible .picker-entry.active {
+/* The host's selection, from the arrow keys on the page: outlined, since the view itself never has focus. */
+.picker-entry.active {
+	background: var(--selection);
 	outline: 2px solid var(--outline);
 	outline-offset: -2px;
 }

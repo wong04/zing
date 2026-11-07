@@ -38,10 +38,11 @@ export const autofillFillFunction = fill
  * when the window comes back, and on a light poll while the page has focus —
  * reaching through shadow roots and same-origin frames. A cross-origin frame
  * can't be read (`contentDocument` is null), which is the browser enforcing
- * that third-party frames are never filled.
+ * that third-party frames are never filled. A frame whose document is readable
+ * but whose origin differs (a `document.domain` relaxation) is skipped too.
  *
- * In a sign-in field, the down arrow and Esc are reported too (`{ kind: 'key' }`):
- * the down arrow moves the keyboard into the picker (or opens it again), Esc closes it.
+ * Keys are never reported: the page could forge them. The host reads the
+ * picker's arrows, Enter and Esc from real key presses itself.
  *
  * `kind` here is `fieldKind` in autofillFields.ts; keep the two in step.
  */
@@ -67,6 +68,13 @@ export const detectionScript = `(() => {
     if ((type === 'text' || type === '' || type === 'tel') && /${usernameHint.source}/.test(hint)) return 'username';
     return null;
   };
+  // A frame's document, only when it is on this page's own origin.
+  const sameOrigin = frame => {
+    let doc = null;
+    try { doc = frame.contentDocument; } catch (e) { return null; }
+    if (!doc) return null;
+    try { return doc.location && doc.location.origin === window.location.origin ? doc : null; } catch (e) { return null; }
+  };
   // The focused element, through shadow roots and same-origin frames,
   // with the offset of any frames it's inside.
   const focused = () => {
@@ -74,8 +82,7 @@ export const detectionScript = `(() => {
     for (let depth = 0; depth < 6 && el; depth++) {
       if (el.shadowRoot && el.shadowRoot.activeElement) { el = el.shadowRoot.activeElement; continue; }
       if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
-        let doc = null;
-        try { doc = el.contentDocument; } catch (e) { doc = null; }
+        const doc = sameOrigin(el);
         if (!doc) return { el: null, x, y };   // another site's frame: never
         const r = el.getBoundingClientRect();
         x += r.left + el.clientLeft; y += r.top + el.clientTop;
@@ -101,16 +108,8 @@ export const detectionScript = `(() => {
     if (key !== lastKey) { lastKey = key; report(m); }
   };
   const soon = () => setTimeout(check, 0);
-  const pickerKeys = { ArrowDown: 'down', Escape: 'escape' };
-  const onKey = e => {
-    const key = pickerKeys[e.key];
-    if (key && kind(focused().el)) report({ kind: 'key', key });
-  };
   const events = ['focusin', 'focusout', 'pointerdown', 'keyup'];
-  const listen = doc => {
-    events.forEach(t => doc.addEventListener(t, soon, true));
-    doc.addEventListener('keydown', onKey, true);
-  };
+  const listen = doc => events.forEach(t => doc.addEventListener(t, soon, true));
   listen(document);
   // Focus and clicks inside a frame never reach this document, so listen
   // inside each same-origin frame too, as it loads. Cross-origin frames
@@ -118,8 +117,7 @@ export const detectionScript = `(() => {
   const hooked = new WeakSet();
   const hookFrames = () => {
     document.querySelectorAll('iframe, frame').forEach(f => {
-      let doc = null;
-      try { doc = f.contentDocument; } catch (e) { doc = null; }
+      const doc = sameOrigin(f);
       if (!doc || hooked.has(doc)) return;
       hooked.add(doc);
       listen(doc);
@@ -173,7 +171,9 @@ export const detectionScript = `(() => {
  * Run in the page after the user picks a login and passes Windows Hello: fills the
  * reported field and its other half, and evaluates to whether it did. The values
  * travel as JSON string literals, which are safe JavaScript literals for any text.
+ * It fills only while the page is still on `origin`, the one the host checked
+ * before Hello: a navigation during Hello must not receive the login.
  */
-export function fillScript(username: string, password: string): string {
-	return `window.${fill}(${JSON.stringify(username)}, ${JSON.stringify(password)})`
+export function fillScript(origin: string, username: string, password: string): string {
+	return `location.origin === ${JSON.stringify(origin)} && window.${fill}(${JSON.stringify(username)}, ${JSON.stringify(password)})`
 }

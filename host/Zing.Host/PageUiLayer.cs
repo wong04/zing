@@ -24,7 +24,6 @@ public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebVie
 	private Task<RendererView>? _pickerReady;
 	private Zing.Core.Vault.AccountPicker? _picker;
 	private double _pickerHeight;
-	private bool _pickerWantsFocus;
 
 	public void Changed(PageUiState state)
 	{
@@ -85,7 +84,6 @@ public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebVie
 	public void PickerChanged(Zing.Core.Vault.AccountPicker? picker)
 	{
 		_picker = picker;
-		if (picker is null) _pickerWantsFocus = false;
 		// Never opened and nothing to show: don't pay for a renderer.
 		if (_pickerReady is null && picker is null) return;
 		TestHooks.Background(ShowPickerAsync(), "account picker");
@@ -97,12 +95,8 @@ public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebVie
 		LayoutPicker();
 	}
 
-	/// <summary>The down arrow in the field: the picker takes the keyboard once it shows.</summary>
-	public void FocusPicker()
-	{
-		_pickerWantsFocus = true;
-		LayoutPicker();
-	}
+	/// <summary>Whether this is the picker's view: its keys are the picker's too.</summary>
+	public bool HostsPicker(HostedView view) => _pickerReady is { IsCompletedSuccessfully: true } ready && ReferenceEquals(ready.Result.View, view);
 
 	private async Task ShowPickerAsync()
 	{
@@ -130,25 +124,28 @@ public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebVie
 			return;
 		}
 		// Shown even before its height is known: a hidden view never lays out, so it could never report one.
-		view.Place(PickerBounds(picker.Rect));
+		// It never takes the keyboard: its keys are real key presses on the page (MainWindow.PickerKey).
+		view.Place(PickerBounds(picker.Rect, picker.Viewport));
 		overlays.Show(OverlayLevel.AccountPicker);
 		view.Visible = true;
-		if (!_pickerWantsFocus) return;
-		_pickerWantsFocus = false;
-		view.View.Focus();
 	}
 
-	/// <summary>Under the field (above it when there's no room below), at least as wide as the field, inside the content.</summary>
-	private Rect PickerBounds(Rect field)
+	/// <summary>
+	/// Under the field (above it when there's no room below), at least as wide as the field, and always inside the page's
+	/// own bounds on both axes, so a page can't place it over Zing's chrome or another pane, whatever rect it reports.
+	/// </summary>
+	private Rect PickerBounds(Rect field, Rect page)
 	{
-		var area = content();
-		var width = Math.Min(Math.Max(field.Width, PickerMinWidth), area.Width);
-		var x = Math.Clamp(field.X, 0, Math.Max(0, area.Width - width));
-		var height = Math.Max(1, _pickerHeight);
+		var width = Math.Max(1, Math.Min(Math.Max(field.Width, PickerMinWidth), page.Width));
+		var height = Math.Max(1, Math.Min(Math.Max(1, _pickerHeight), page.Height));
+		var right = page.X + page.Width;
+		var bottom = page.Y + page.Height;
+		var x = Math.Clamp(field.X, page.X, Math.Max(page.X, right - width));
 		var below = field.Y + field.Height + PickerGap;
 		var above = field.Y - PickerGap - height;
-		var y = below + height <= area.Height || above < 0 ? below : above;
-		return new Rect(x, y, width, Math.Max(1, Math.Min(height, area.Height - y)));
+		var y = below + height <= bottom ? below : above >= page.Y ? above : below;
+		y = Math.Clamp(y, page.Y, Math.Max(page.Y, bottom - height));
+		return new Rect(x, y, width, height);
 	}
 
 	private Rect Bounds()

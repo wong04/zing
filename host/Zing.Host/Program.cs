@@ -228,28 +228,27 @@ public sealed class ZingApp
 		Zing.Core.Viewer.ViewerFiles.SweepLeftovers(AppPaths.ViewerCopies, Zing.Core.Viewer.ViewerFiles.IsZingRunning, (what, error) => TestHooks.Record(what, error));
 		// HTML to PDF needs no engine, so its print folders are swept whether or not the engines folder opened.
 		HtmlPdfPrinter.SweepLeftovers();
-		var (vault, vaultUnreadable) = OpenVault(settings, clock);
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Vault: vault, VaultUnreadable: vaultUnreadable);
+		var vaults = OpenVault(settings, clock);
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults);
 	}
 
 	/// <summary>
-	/// The password vault, only while passwordAutofill is on (read at launch). A vault that can't be read is left as it is, since it may hold
-	/// the only copy of the passwords: this launch runs without it and says so.
+	/// The password vault, open only while passwordAutofill is on, following the setting as it changes (VaultSwitch). A vault that can't be
+	/// read is left as it is, since it may hold the only copy of the passwords: Zing runs without it and says so.
 	/// </summary>
-	private (VaultStore? Vault, bool Unreadable) OpenVault(SettingsStore settings, IClock clock)
+	private VaultSwitch OpenVault(SettingsStore settings, IClock clock)
 	{
-		if (!(settings.Get("passwordAutofill")?.GetValue<bool>() ?? throw new InvalidDataException("Setting passwordAutofill is missing"))) return (null, false);
 		IHelloSealer sealer = TestHooks.HelloSealer() is { } fake ? fake : new HelloSealer(() => MostRecent?.Hwnd);
-		try
-		{
-			return (new VaultStore(AppPaths.Vault, new DpapiCipher(), sealer, clock), false);
-		}
-		catch (VaultFileException error)
+		var starting = true;
+		var vaults = new VaultSwitch(settings, () => new VaultStore(AppPaths.Vault, new DpapiCipher(), sealer, clock), error =>
 		{
 			Faults.Warning("vault load", error);
-			_startupNotices.Add($"Zing couldn't open your saved passwords ({Path.GetFileName(error.Path)}), so they're off for now. The file was left as it is.");
-			return (null, true);
-		}
+			var text = $"Zing couldn't open your saved passwords ({Path.GetFileName(error.Path)}), so they're off for now. The file was left as it is.";
+			if (starting) _startupNotices.Add(text);
+			else MostRecent?.Notify(text);
+		});
+		starting = false;
+		return vaults;
 	}
 
 	/// <summary>Clears the job folders a killed Zing left. A folder that can't be tidied costs running engines, not startup.</summary>
