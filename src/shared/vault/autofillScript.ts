@@ -51,9 +51,10 @@ export const autofillFillFunction = fill
  *     it. A form with two different passwords (change password) reports nothing.
  *   - `landed`: whether the page now has a visible password box. Sent once for every new
  *     document, and, after a submit, for a page that swaps its form for something else
- *     without navigating (only when the submitted password field has left the document for two
+ *     without navigating (only when the submitted password field has left the document for five
  *     checks; a hidden, disabled or covered form is still the form), and again with
- *     password:true if a password box comes back afterwards, so the host can withdraw a prompt.
+ *     password:true if a password box comes back afterwards, so the host can withdraw a prompt (watched for as long as a
+ *     prompt can stay open).
  * The host decides what they mean, takes the origin from WebView2's own Source for the
  * message, and holds the credentials for 10 seconds at most.
  *
@@ -153,20 +154,21 @@ export const detectionScript = `(() => {
     return { username, password, boxes };
   };
   // After a submit, a page that stays put (a single-page app) may swap the form for something else. A page that
-  // navigates posts its own 'landed' when it loads. Two checks in a row without the submitted field is a landing.
+  // navigates posts its own 'landed' when it loads. Five checks in a row (about 2 s) without the submitted field is a landing: a spinner that unmounts the form is not one.
   let watching = 0;
   // Only the submitted password field leaving the document counts: a form that is hidden, disabled or covered by a spinner is
-  // still the form. Once it has gone, the watch goes on for the rest of the hold, and a password box back on the page
+  // still the form. Once it has gone, the watch goes on for as long as a prompt can stay open, and a password box back on the page
   // is reported so the host can withdraw a prompt (the form was only unmounted while the sign-in was checked).
   const watchLanding = boxes => {
     const token = ++watching;
     const started = Date.now();
     let gone = 0, left = false;
     const tick = () => {
-      if (token !== watching || Date.now() - started > ${signInLimits.holdMs}) return;
+      if (token !== watching || Date.now() - started > (left ? ${signInLimits.watchMs} : ${signInLimits.holdMs})) return;
       if (!left) {
-        gone = boxes.every(b => !b.isConnected) ? gone + 1 : 0;
-        if (gone >= 2) { left = true; report({ kind: 'landed', password: false }); }
+        // A form mounted again (a new element) restarts the count: it is the sign-in page back, not a landing.
+        gone = boxes.every(b => !b.isConnected) && !hasPasswordBox() ? gone + 1 : 0;
+        if (gone >= ${signInLimits.settleChecks}) { left = true; report({ kind: 'landed', password: false }); }
       } else if (hasPasswordBox()) {
         report({ kind: 'landed', password: true });
         return;

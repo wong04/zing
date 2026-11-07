@@ -1,5 +1,5 @@
 {
-	"limits": { "usernameMax": 512, "passwordMax": 1024, "holdMs": 10000 },
+	"limits": { "usernameMax": 512, "passwordMax": 1024, "holdMs": 10000, "settleChecks": 5, "watchMs": 120000 },
 	"withdrawals": [
 		{ "name": "the form back in the same origin withdraws the prompt", "promptOrigin": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": true, "expected": true },
 		{ "name": "no password box does not", "promptOrigin": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": false, "expected": false },

@@ -2,7 +2,7 @@
 // (SignInOutcomes), held to it by signInOutcome.vectors.json.
 
 /** What the page channel accepts of a submit (Ruling 33), in UTF-16 code units. The script keeps to them; the host enforces them. */
-export const signInLimits = { usernameMax: 512, passwordMax: 1024, holdMs: 10_000 } as const
+export const signInLimits = { usernameMax: 512, passwordMax: 1024, holdMs: 10_000, settleChecks: 5, watchMs: 120_000 } as const
 
 /**
  * `success`: the page the browser landed on, in the origin the form was submitted from, has no visible password box.

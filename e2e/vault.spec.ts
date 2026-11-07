@@ -545,15 +545,17 @@ test('a login Zing filled and the user submitted unchanged prompts nothing', asy
 })
 
 for (const mode of ['spinner', 'disabled'] as const) {
-	test(`a wrong password behind a ${mode === 'spinner' ? 'spinner that replaces the form' : 'disabled form'} ends with no prompt on screen and nothing saved`, async () => {
+	test(`a wrong password behind a ${mode === 'spinner' ? 'spinner that replaces the form' : 'disabled form'} never shows a prompt and saves nothing`, async () => {
 		const zing = await launchZing({ userDataDir: vaultProfile(true) })
 		const page = await open(zing, `${signInBase}/spa-${mode}`)
+		await countPrompts(zing)
 
 		await signIn(page, USERNAME, 'wrong')
 		await expect(page.getByText('Wrong password')).toBeVisible()
 		await page.waitForTimeout(3000)
 
-		// The prompt may have shown while the form was out of the page; it goes when the form returns.
+		// Ruling 38: the form is out of the page for 1.5 s, under the 2 s settle time, so a prompt never shows at all.
+		expect(await promptsOpened(zing)).toBe(0)
 		expect(await savePrompt(zing)).toBeNull()
 		expect(await logins(zing)).toHaveLength(0)
 		await zing.close()

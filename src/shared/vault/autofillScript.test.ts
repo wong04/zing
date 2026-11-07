@@ -476,7 +476,7 @@ describe('sign-in reports', () => {
 		expect(kindsOf('landed')).toEqual([])
 		expect(kindsOf('submit')).toHaveLength(1)
 	})
-	it('a single-page sign-in that swaps the form away reports one landing, once the box is gone for two checks', () => {
+	it('a single-page sign-in that swaps the form away reports one landing, once the box is gone for five checks (about 2 s)', () => {
 		install()
 		const { form, inputs } = filledForm('ada', 'hunter2')
 		doc.frames = inputs
@@ -485,7 +485,7 @@ describe('sign-in reports', () => {
 		expect(messages).toHaveLength(1)
 		inputs.forEach((i) => (i.isConnected = false))
 		doc.frames = []
-		vi.advanceTimersByTime(400)
+		vi.advanceTimersByTime(1600)
 		expect(kindsOf('landed')).toHaveLength(0)
 		vi.advanceTimersByTime(400)
 		expect(kindsOf('landed')).toEqual([{ kind: 'landed', password: false }])
@@ -509,11 +509,10 @@ describe('sign-in reports', () => {
 		submit(form)
 		inputs.forEach((i) => (i.isConnected = false))
 		doc.frames = []
-		vi.advanceTimersByTime(1000)
+		vi.advanceTimersByTime(2000)
 		expect(kindsOf('landed')).toEqual([{ kind: 'landed', password: false }])
 		doc.frames = [new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })]
-		vi.advanceTimersByTime(1000)
-		vi.advanceTimersByTime(5000)
+		vi.advanceTimersByTime(6000)
 		expect(kindsOf('landed')).toEqual([
 			{ kind: 'landed', password: false },
 			{ kind: 'landed', password: true },
@@ -540,7 +539,34 @@ describe('sign-in reports', () => {
 		submit(form)
 		inputs.forEach((i) => (i.isConnected = false))
 		doc.frames = []
-		vi.advanceTimersByTime(2000)
+		vi.advanceTimersByTime(2400)
 		expect(kindsOf('landed')).toHaveLength(1)
+	})
+	it('a spinner that unmounts the form and brings it back inside the settle time reports nothing at all', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'wrong')
+		doc.frames = inputs
+		submit(form)
+		inputs.forEach((i) => (i.isConnected = false))
+		doc.frames = []
+		vi.advanceTimersByTime(1600)
+		const again = filledForm('ada', 'wrong')
+		doc.frames = again.inputs
+		vi.advanceTimersByTime(20_000)
+		expect(kindsOf('landed')).toEqual([])
+	})
+	it('keeps watching for a returning password box for as long as a prompt can stay open, not only the ten-second hold', () => {
+		install()
+		const { form, inputs } = filledForm('ada', 'wrong')
+		doc.frames = inputs
+		submit(form)
+		inputs.forEach((i) => (i.isConnected = false))
+		doc.frames = []
+		vi.advanceTimersByTime(2400)
+		expect(kindsOf('landed')).toEqual([{ kind: 'landed', password: false }])
+		vi.advanceTimersByTime(60_000)
+		doc.frames = [new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })]
+		vi.advanceTimersByTime(1000)
+		expect(kindsOf('landed')).toHaveLength(2)
 	})
 })
