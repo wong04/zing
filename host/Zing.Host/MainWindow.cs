@@ -77,7 +77,20 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	/// Called once the app has listed the window, so nothing it does on starting finds it missing. A window
 	/// closed while it started is gone, not broken (ViewGoneException); any other failure is recorded.
 	/// </summary>
-	public void Start() => TestHooks.Background(StartAsync(), "startup");
+	public void Start() => TestHooks.Background(StartOrTellAsync(), "startup");
+
+	private async Task StartOrTellAsync()
+	{
+		try
+		{
+			await StartAsync();
+		}
+		catch (Exception error) when (error is not ViewGoneException)
+		{
+			StartupFailure.Tell(error);
+			throw;
+		}
+	}
 
 	public IPageHost Pages => this;
 
