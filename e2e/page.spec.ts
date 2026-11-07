@@ -246,9 +246,15 @@ test('a fullscreen element gives the page the whole window, and leaving puts the
 	await expect.poll(async () => (await shown())?.y).toBe(0)
 	expect((await shown())!.x).toBe(0)
 	expect((await shown())!.height).toBeGreaterThan(inChrome!.height)
+	// The page now covers the chrome, so Zing says at the top whose page has the screen and how to leave.
+	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
+	await expect(overlay.getByRole('status')).toHaveText(`${new URL(base).host} is now full screen · Press Esc to exit`)
+	const hint = (await layers(zing.chrome)).find((l) => l.url.endsWith('#overlay') && l.visible)
+	expect(hint!.y).toBeLessThan((await shown())!.height / 4)
 	await page.evaluate(() => (globalThis as unknown as { document: { exitFullscreen(): Promise<void> } }).document.exitFullscreen())
 	await expect.poll(async () => (await shown())?.y).toBe(inChrome!.y)
 	expect((await shown())!.height).toBe(inChrome!.height)
+	await expect(overlay.getByRole('status')).toHaveCount(0)
 	await zing.close()
 })
 

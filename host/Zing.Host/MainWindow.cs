@@ -441,6 +441,9 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			else AppWindow.SetPresenter(_windowed ?? throw new InvalidOperationException("Left fullscreen without having entered it"));
 		}
 		Relayout();
+		if (_notices is null || _scope.IsClosed) return;
+		if (wanted) TestHooks.Background(_notices.ShowFullScreenHintAsync(_shown!.Url), "fullscreen hint");
+		else _notices.HideFullScreenHint();
 	}
 
 	/// <summary>The shown page goes inside the chrome, or over the whole window while it is fullscreen.</summary>

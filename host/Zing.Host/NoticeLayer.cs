@@ -25,6 +25,8 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 	private int _nextId = 1;
 	private double _height = NoticeHeight;
 	private bool _offerShowing;
+	// The fullscreen hint sits at the top of the screen, where a fake address bar would be; other notices at the bottom.
+	private bool _atTop;
 
 	/// <summary>The offer left the screen without being chosen or dismissed: it timed out, or another notice replaced it.</summary>
 	public event Action? OfferEnded;
@@ -32,13 +34,29 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 	public Task ShowAsync(string text)
 	{
 		EndOffer();
+		_atTop = false;
 		return ShowAsync(new { id = _nextId++, text }, NoticeHeight, NoticeMs);
+	}
+
+	/// <summary>A page took the whole screen: which site has it, and that Esc gives it back (FullScreenHint).</summary>
+	public Task ShowFullScreenHintAsync(string url)
+	{
+		EndOffer();
+		_atTop = true;
+		return ShowAsync(new { id = _nextId++, text = FullScreenHint.Text(url) }, NoticeHeight, NoticeMs);
+	}
+
+	/// <summary>The page left fullscreen: its hint goes with it, while any other notice stays.</summary>
+	public void HideFullScreenHint()
+	{
+		if (_atTop) Hide();
 	}
 
 	/// <summary>The offer after a page failed like a block: buttons that open Open a Link or Diagnose. It waits for a click and starts nothing itself.</summary>
 	public Task ShowOfferAsync(string address)
 	{
 		_offerShowing = true;
+		_atTop = false;
 		return ShowAsync(new { id = _nextId++, text = "This page didn't load", offer = new { address } }, OfferHeight, OfferMs);
 	}
 
@@ -87,7 +105,7 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 	{
 		var area = content();
 		var width = Math.Min(NoticeWidth, area.Width - 2 * NoticeMargin);
-		return new Rect(Math.Round((area.Width - width) / 2), area.Height - _height - NoticeMargin, width, _height);
+		return new Rect(Math.Round((area.Width - width) / 2), _atTop ? NoticeMargin : area.Height - _height - NoticeMargin, width, _height);
 	}
 
 	private async Task<RendererView> CreateAsync()
