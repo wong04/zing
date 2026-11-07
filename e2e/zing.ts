@@ -206,6 +206,16 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 	running.add(self)
 	const chrome = await pageWhere(browser, (p) => p.url() === CHROME_URL)
 	await chrome.waitForLoadState('domcontentloaded')
+	// Loaded isn't started: on a cold runner the host's first answer and the chrome's first frame, where it applies host
+	// state (useTabsState), have come more than 15 s later, past a test's first expect. Launching is allowed the cold start.
+	await chrome.waitForFunction(
+		async () => {
+			await (globalThis as unknown as { zing: { getTabs(): Promise<unknown> } }).zing.getTabs()
+			return new Promise<boolean>((resolve) => requestAnimationFrame(() => resolve(true)))
+		},
+		undefined,
+		{ timeout: LAUNCH_TIMEOUT },
+	)
 	return {
 		browser,
 		chrome,
