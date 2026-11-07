@@ -82,7 +82,20 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	/// Called once the app has listed the window, so nothing it does on starting finds it missing. A window
 	/// closed while it started is gone, not broken (ViewGoneException); any other failure is recorded.
 	/// </summary>
-	public void Start() => TestHooks.Background(StartAsync(), "startup");
+	public void Start() => TestHooks.Background(StartOrTellAsync(), "startup");
+
+	private async Task StartOrTellAsync()
+	{
+		try
+		{
+			await StartAsync();
+		}
+		catch (Exception error) when (error is not ViewGoneException)
+		{
+			StartupFailure.Tell(error);
+			throw;
+		}
+	}
 
 	public IPageHost Pages => this;
 
@@ -313,7 +326,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public void NewWindow() => _app.NewWindow();
 
 	// Not inside the bridge call that asked: the window takes its renderer views with it.
-	public void CloseWindow() => _dispatcher.TryEnqueue(_window.Close);
+	public void CloseWindow() => Faults.Enqueue(_dispatcher, _window.Close, "closing the window");
 
 	public void Relayout()
 	{
@@ -437,6 +450,9 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			else AppWindow.SetPresenter(_windowed ?? throw new InvalidOperationException("Left fullscreen without having entered it"));
 		}
 		Relayout();
+		if (_notices is null || _scope.IsClosed) return;
+		if (wanted) TestHooks.Background(_notices.ShowFullScreenHintAsync(_shown!.Url), "fullscreen hint");
+		else _notices.HideFullScreenHint();
 	}
 
 	/// <summary>The shown page goes inside the chrome, or over the whole window while it is fullscreen.</summary>
@@ -505,7 +521,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			return;
 		}
 		// Not inside the bridge call that asked: a menu runs its own message loop until it closes.
-		_dispatcher.TryEnqueue(() => NativeMenus.Show(_window, items, x, y));
+		Faults.Enqueue(_dispatcher, () => NativeMenus.Show(_window, items, x, y), "showing a menu");
 	}
 
 	/// <summary>Zing's shortcuts win over the page's and the engine's own (Ctrl+F is Zing's find, not Edge's).</summary>

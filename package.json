@@ -12,6 +12,7 @@
 		"lint": "eslint .",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"make-icons": "node scripts/make-icons.mjs",
 		"gen:host-defaults": "rolldown scripts/gen-host-defaults.ts --platform node --format esm --file out/gen-host-defaults.mjs && node out/gen-host-defaults.mjs",
 		"gen:reader": "rolldown scripts/reader-entry.ts --format iife --file host/Zing.Host/Assets/reader.js && rolldown scripts/gen-reader.ts --platform node --format esm --file out/gen-reader.mjs && node out/gen-reader.mjs",
 		"build:host": "npm run gen:reader && dotnet build host/Zing.Host -c Release",

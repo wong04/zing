@@ -3,7 +3,7 @@ using Zing.Core.Engines;
 namespace Zing.Core.Viewer;
 
 /// <summary>
-/// The engine commands that make a copy the page can show. Every option is a fixed constant here (see engine-rules.md): the
+/// The engine commands that make a copy the page can show. Every option is a fixed constant here (see EngineFlagPolicy): the
 /// file's name, type or contents never become option text, and the only file arguments are the input the person picked and
 /// the one output.
 /// </summary>

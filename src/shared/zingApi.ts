@@ -81,7 +81,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		clearBrowsingSession: () => invoke('shell:clear-session'),
 		reportError: (report) => invoke('app:report-error', report),
 		hashText: (text, algorithm) => invoke('hash:text', text, algorithm),
-		hashFile: (path, algorithm) => invoke('hash:file', path, algorithm),
+		hashFile: (token, algorithm) => invoke('hash:file', token, algorithm),
 		hmac: (message, key, algorithm) => invoke('hash:hmac', message, key, algorithm),
 		diagnose: (host) => invoke('net:diagnose', host),
 		previewDns: () => invoke('dns:preview'),

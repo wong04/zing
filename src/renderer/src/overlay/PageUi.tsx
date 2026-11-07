@@ -140,16 +140,30 @@ function Downloads({ state }: { state: PageUiState }) {
 	)
 }
 
+/** As in Chromium: a click meant for the page (a double-click's second half) can't land on a prompt that just opened under it. */
+const ALLOW_ARMS_AFTER_MS = 500
+
 function PermissionPrompt({ state }: { state: PageUiState }) {
 	const prompt = state.permission
 	if (!prompt) return null
+	// Keyed by id, so each new prompt starts with Allow unarmed.
+	return <PermissionCard key={prompt.id} prompt={prompt} />
+}
+
+function PermissionCard({ prompt }: { prompt: NonNullable<PageUiState['permission']> }) {
+	const [armed, setArmed] = useState(false)
+	useEffect(() => {
+		const timer = setTimeout(() => setArmed(true), ALLOW_ARMS_AFTER_MS)
+		return () => clearTimeout(timer)
+	}, [])
 	return (
 		<div className="pageui-card" role="alertdialog" aria-label="Permission request">
 			<span>
 				<strong>{prompt.origin}</strong> wants to {PERMISSION_VERB[prompt.kind]}
 			</span>
+			{prompt.tab !== undefined && <span className="pageui-detail">From the tab “{prompt.tab}”</span>}
 			<div className="pageui-row">
-				<button type="button" className="pageui-button primary" onClick={() => void zing.allowPermission(prompt.id)}>
+				<button type="button" className="pageui-button primary" disabled={!armed} onClick={() => void zing.allowPermission(prompt.id)}>
 					Allow
 				</button>
 				<button type="button" className="pageui-button" onClick={() => void zing.denyPermission(prompt.id)}>

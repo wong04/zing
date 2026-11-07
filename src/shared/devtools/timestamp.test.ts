@@ -41,6 +41,9 @@ describe('known answers', () => {
 		expect(rows.get('Unix seconds')).toBe('1753800000')
 		expect(rows.get('Unix milliseconds')).toBe('1753800000500')
 	})
+	it('treats a JS-sized negative number as milliseconds too', () => {
+		expect(new Map(describeTimestamp('-1753800000500', context)).get('Unix seconds')).toBe('-1753800000')
+	})
 	it('the epoch and before it', () => {
 		expect(new Map(describeTimestamp('0', context)).get('ISO 8601 (UTC)')).toBe('1970-01-01T00:00:00Z')
 		expect(new Map(describeTimestamp('-100', context)).get('ISO 8601 (UTC)')).toBe('1969-12-31T23:58:20Z')

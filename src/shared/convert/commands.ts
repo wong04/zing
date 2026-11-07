@@ -146,13 +146,21 @@ export function uniqueOutputName(base: string, ext: string, exists: (name: strin
 const INVISIBLE: readonly (readonly [number, number])[] = [[0x7f, 0x9f], [0x61c, 0x61c], [0x200b, 0x200f], [0x2028, 0x202e], [0x2060, 0x2069], [0xfeff, 0xfeff]]
 const isInvisible = (code: number): boolean => INVISIBLE.some(([from, to]) => code >= from && code <= to)
 
-export function safeFileBase(name: string): string {
+/** An extension cleaned like a base name, so a server's ":stream" or "/folder" can't ride on it; "" when nothing is left. */
+export function safeFileExtension(name: string): string {
 	// Control characters, and the invisible ones that turn text around (a right-to-left override can make "photo-gpj.exe" read as "photo-exe.jpg").
 	const printable = [...name].filter((ch) => ch.charCodeAt(0) >= 0x20 && !isInvisible(ch.charCodeAt(0))).join('')
-	const cleaned = printable.replace(/[<>:"/\\|?*]/g, '').replace(/[. ]+$/, '').trim()
-	const reserved = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i
+	return printable.replace(/[<>:"/\\|?*]/g, '').replace(/[. ]+$/, '').trim()
+}
+
+export function safeFileBase(name: string): string {
+	const cleaned = safeFileExtension(name)
 	if (!cleaned) return 'file'
-	return reserved.test(cleaned) ? `${cleaned}_` : cleaned
+	// Windows takes "CON.tar" for the device CON too: what counts is the text before the first dot.
+	const dot = cleaned.indexOf('.')
+	const stem = dot === -1 ? cleaned : cleaned.slice(0, dot)
+	const reserved = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/i
+	return reserved.test(stem.trimEnd()) ? `${stem}_${cleaned.slice(stem.length)}` : cleaned
 }
 
 export class ConvertRefusedError extends Error {

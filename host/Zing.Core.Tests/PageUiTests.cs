@@ -21,11 +21,11 @@ public sealed class PageUiTests
 			2,
 			[new DownloadEntry(1, "a.pdf", DownloadStatuses.Failed, 5, 0, "oops")],
 			true,
-			new PermissionPrompt(4, "https://a.test", PermissionKinds.CameraAndMicrophone));
+			new PermissionPrompt(4, "https://a.test", PermissionKinds.CameraAndMicrophone, "Mail"));
 		var expected = """
 			{"find":{"query":"a","active":1,"matches":3},"findFocus":2,
 			"downloads":[{"id":1,"filename":"a.pdf","status":"failed","received":5,"total":0,"error":"oops"}],
-			"downloadsOpen":true,"permission":{"id":4,"origin":"https://a.test","kind":"camera and microphone"}}
+			"downloadsOpen":true,"permission":{"id":4,"origin":"https://a.test","kind":"camera and microphone","tab":"Mail"}}
 			""";
 		Assert.True(JsonNode.DeepEquals(JsonNode.Parse(expected), Json(state)));
 	}

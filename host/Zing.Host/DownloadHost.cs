@@ -19,7 +19,13 @@ public sealed class DownloadHost(Func<ChromeApi?> api)
 
 	public void Starting(WebView2Page page, CoreWebView2DownloadStartingEventArgs e)
 	{
-		if (api() is not { } chrome) return;
+		if (api() is not { } chrome)
+		{
+			// No window API yet, so no list to show it in: cancelled, never left to Edge's own download bubble.
+			e.Cancel = true;
+			TestHooks.Record("download", new InvalidOperationException("A download started before the window's API"));
+			return;
+		}
 		var operation = e.DownloadOperation;
 		var name = DownloadNames.Suggested(operation.ContentDisposition, operation.Uri);
 		var started = chrome.Downloads.Start(name, Math.Max(0L, (long)operation.TotalBytesToReceive));

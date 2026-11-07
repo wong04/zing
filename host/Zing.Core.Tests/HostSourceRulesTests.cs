@@ -52,6 +52,17 @@ public sealed partial class HostSourceRulesTests
 		Assert.True(offences.Count == 0, "AppInstance crashes a launch that reuses an old process id; use ProfileOwner:" + string.Join(" ", offences));
 	}
 
+	/// <summary>
+	/// Zing's own views hold the whole bridge (engines, DNS, settings). DevTools there (F12, Ctrl+Shift+I) would make
+	/// "paste this into the console" a way in, so only e2e runs, which drive the views over CDP, have them.
+	/// </summary>
+	[Fact]
+	public void RendererViewsHaveNoDevToolsOutsideEndToEndRuns()
+	{
+		var source = File.ReadAllText(HostSources().Single(f => Path.GetFileName(f) == "RendererView.cs"));
+		Assert.Contains("core.Settings.AreDevToolsEnabled = TestHooks.IsEndToEndRun;", source);
+	}
+
 	[Fact]
 	public void RuleSeesTheHostSources()
 	{

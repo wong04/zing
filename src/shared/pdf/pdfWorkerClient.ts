@@ -6,6 +6,7 @@ import { PdfEditError, type PdfFile, type PdfInfo, type PdfPlan, type PictureFil
 export interface WorkerLike {
 	onmessage: ((event: { data: unknown }) => void) | null
 	onerror: ((event: { message: string }) => void) | null
+	onmessageerror: (() => void) | null
 	postMessage(message: unknown): void
 	terminate(): void
 }
@@ -67,7 +68,8 @@ export function createPdfWorkerClient({ spawn, timeoutMs = DEFAULT_TIMEOUT_MS }:
 		created.onmessage = (event) => {
 			const answer = event.data as Answer
 			const waiting = pending.get(answer.id)
-			if (!waiting) return
+			// A worker out of step with its calls can't be trusted with the rest of them.
+			if (!waiting) return end(new Error(`The PDF worker answered call ${String(answer.id)}, which it was never sent`))
 			pending.delete(answer.id)
 			clearTimeout(waiting.timer)
 			if (answer.ok) waiting.resolve(answer.result)
@@ -76,6 +78,9 @@ export function createPdfWorkerClient({ spawn, timeoutMs = DEFAULT_TIMEOUT_MS }:
 		created.onerror = (event) => {
 			if (worker === created) end(new Error(`The PDF worker stopped: ${event.message}`))
 		}
+		created.onmessageerror = () => {
+			if (worker === created) end(new Error('A reply from the PDF worker could not be read'))
+		}
 		worker = created
 		return created
 	}
@@ -83,9 +88,11 @@ export function createPdfWorkerClient({ spawn, timeoutMs = DEFAULT_TIMEOUT_MS }:
 	function call<T>(op: string, args: readonly unknown[]): Promise<T> {
 		const id = nextId++
 		return new Promise<T>((resolve, reject) => {
+			// Started first: a spawn that throws rejects this call and arms no timer to end a later, healthy worker.
+			const running = start()
 			const timer = setTimeout(() => end(new PdfEditError(`The PDF worker took longer than ${Math.round(timeoutMs / 1000)} seconds, so it was stopped. The file may be too large or damaged.`)), timeoutMs)
 			pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer })
-			start().postMessage({ id, op, args })
+			running.postMessage({ id, op, args })
 		})
 	}
 

@@ -34,6 +34,10 @@ describe('known answers', () => {
 		expect(past?.expiry).toMatch(/^Nov 14, 2023, 10:13:20\sPM {2}\(EXPIRED\)$/)
 		expect(future?.expiry).toMatch(/ {2}\(valid\)$/)
 	})
+	it('reads only the top-level exp, not one nested inside another claim', () => {
+		const nested = decodeJWT(`${segment('{}')}.${segment('{"act":{"exp":1700000000}}')}.x`, context)
+		expect(nested?.expiry).toBeNull()
+	})
 	it('a segment that is not base64 text is marked unreadable; one that is not JSON is shown raw', () => {
 		const parts = decodeJWT(`!!!.${segment('not json')}`, context)
 		expect(parts?.header).toBe('(unreadable)')

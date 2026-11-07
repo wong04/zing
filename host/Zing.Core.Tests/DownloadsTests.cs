@@ -185,6 +185,15 @@ public sealed class DownloadsTests
 	}
 
 	[Fact]
+	public void The_panel_shows_the_name_saved_to_disk_not_the_servers()
+	{
+		var (list, _, ui, _) = NewList();
+		var started = list.Start("invoice‮fdp.exe", 100);
+		Assert.Equal("invoicefdp.exe", ui.State.Downloads.Single().Filename);
+		Assert.Equal("invoicefdp.exe", Path.GetFileName(started.Path));
+	}
+
+	[Fact]
 	public void Progress_waits_for_a_publish()
 	{
 		var (list, _, ui, _) = NewList();

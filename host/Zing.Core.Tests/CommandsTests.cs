@@ -71,6 +71,19 @@ public sealed class CommandsTests : IDisposable
 		Assert.False(pinned.Single(m => m.Label == "Back to Saved Page").Enabled);
 	}
 
+	// The native menu runs its own loop; the page can close its tab (window.close) while the menu is open.
+	[Fact]
+	public void A_tab_menu_item_chosen_after_its_tab_closed_does_nothing()
+	{
+		var other = _api.Tabs.Open("https://b.example/");
+		var menu = Menus.Tab(_api.Tabs, _api.Saved, other.Id, _host.Shell);
+		_api.Tabs.Close(other.Id);
+		var count = _api.Tabs.Records.Count;
+		foreach (var item in menu.Where(m => m.Click is not null)) item.Click!();
+		Assert.Equal(count, _api.Tabs.Records.Count);
+		Assert.Empty(_host.FakeShell.Copied);
+	}
+
 	[Fact]
 	public void Copy_Address_on_a_relayed_tab_or_a_warning_copies_the_web_address_they_stand_for()
 	{

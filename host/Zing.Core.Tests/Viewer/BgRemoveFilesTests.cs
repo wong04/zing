@@ -297,6 +297,19 @@ public sealed class BgRemoveFilesTests : IAsyncLifetime
 		Assert.False(Directory.Exists(Path.Combine(_dir, "downloads")) && Directory.GetFileSystemEntries(Path.Combine(_dir, "downloads")).Length > 0);
 	}
 
+	// -1 and -2 are the quota check's own answers; a length that reads as one must not pass for it.
+	[Theory]
+	[InlineData(-1L)]
+	[InlineData(-2L)]
+	[InlineData(-7L)]
+	public async Task A_negative_declared_length_is_refused_and_holds_no_quota(long declared)
+	{
+		var session = Open();
+		var reply = await _viewer.ServeAsync(Put(session, "neg.png", Png(), declared: declared));
+		Assert.Equal(400, reply.Status);
+		Assert.Equal(201, (await _viewer.ServeAsync(Put(session, "ok.png", Png()))).Status);
+	}
+
 	[Fact]
 	public async Task A_save_is_refused_with_a_reason_for_a_bad_name_bytes_that_are_not_a_PNG_and_a_picture_too_large()
 	{

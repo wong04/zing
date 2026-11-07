@@ -6,13 +6,14 @@ import { zing } from '../api'
 
 /** The tab overview: a grid of page pictures. Choosing one switches to it; Escape closes. */
 export function TabOverviewView() {
-	const [state, setState] = useState<OverviewState | null>(null)
+	// The host leaves nulls out on the bridge, so "closed" arrives as undefined.
+	const [state, setState] = useState<OverviewState | undefined>(undefined)
 	const grid = useRef<HTMLDivElement>(null)
 
 	useEffect(() => {
 		return followHostState(zing.onOverview, zing.getOverview, setState)
 	}, [])
-	const open = state !== null
+	const open = state !== undefined
 	useEffect(() => {
 		if (open) grid.current?.querySelector<HTMLElement>('[aria-current="true"]')?.focus()
 	}, [open])

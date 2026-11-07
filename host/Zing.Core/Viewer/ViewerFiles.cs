@@ -459,6 +459,7 @@ public sealed class ViewerFiles : IDisposable
 		if (method != "PUT") return Refuse(405, "Method Not Allowed");
 		var directory = SaveDirectory ?? throw new InvalidOperationException("This host has nowhere to save to");
 		if (request.Body is null) return Failure(400, "Bad Request", "The file came with no body");
+		if (request.ContentLength is < 0) return Failure(400, "Bad Request", "The file came with a negative length");
 		var allowed = session.Kinds.SelectMany(SaveFormats.For).DistinctBy(f => f.Extension).ToList();
 		long reserve;
 		try

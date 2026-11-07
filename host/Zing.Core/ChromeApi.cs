@@ -180,7 +180,7 @@ public sealed class ChromeApi : IDisposable
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
-		Permissions = new PermissionBroker(PageUi);
+		Permissions = new PermissionBroker(PageUi, HiddenTabOf);
 		_secretCopy = new TimedSecretCopy(host.SecretClipboard, host.Scheduler, error => host.Report("clearing a copied password", error));
 		SignIn = new SignInWatch(() => app.Vaults.Current, id => Tabs.IsShown(id), host.Scheduler, prompt => PageUi.Update(s => s with { SaveLogin = prompt }), host.Background);
 		Autofill = new Autofill(() => app.Vaults.Current, id => Tabs.IsShown(id) ? Tabs.PageOf(id) : null, picker =>
@@ -838,7 +838,8 @@ public sealed class ChromeApi : IDisposable
 
 	private async Task<object?> UpdateYtDlpAsync() => await Engines().UpdateYtDlpAsync(_closing.Token);
 
-	private static async Task<object?> HashFileAsync(string path, string algorithm) => await Hashing.FileAsync(path, algorithm);
+	/// <summary>A file the person picked, by its token: a typed path could name a share, and opening one sends their Windows sign-in hash.</summary>
+	private async Task<object?> HashFileAsync(string token, string algorithm) => await Hashing.FileAsync(Grants.Resolve(token), algorithm);
 
 	private readonly TimedSecretCopy _secretCopy;
 
@@ -1178,9 +1179,17 @@ public sealed class ChromeApi : IDisposable
 		}
 	}
 
+	/// <summary>The title of the tab whose page this is, when that tab isn't on screen.</summary>
+	private string? HiddenTabOf(object page)
+	{
+		var tab = Tabs.Records.FirstOrDefault(r => ReferenceEquals(Tabs.PageOf(r.Id), page));
+		return tab is null || Tabs.IsShown(tab.Id) ? null : tab.Title;
+	}
+
 	private void OnTabsChanged()
 	{
 		Ordering?.ScheduleReorganize();
+		Permissions?.Refresh();
 		Find?.ActiveChanged();
 		Autofill?.PagesChanged();
 		SignIn?.PagesChanged();

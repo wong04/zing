@@ -1,8 +1,9 @@
+import { cpSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, pages, pageWhere, test, type Launched } from './zing'
+import { BUILT_RENDERER, launchZing, pages, pageWhere, scratchDir, test, type Launched } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -52,6 +53,19 @@ test('search finds a tool by keyword and Enter opens it', async () => {
 	await expect(surface.getByTestId('float-panel').filter({ has: surface.getByText('Hashes', { exact: true }) })).toBeVisible()
 	await expect(surface.getByRole('dialog', { name: 'Toolbox' })).toHaveCount(0)
 	await zing.close()
+})
+
+test('a tool whose code fails to load shows that it stopped, and the host records the error', async () => {
+	// The renderer's files never reach the network, so page.route can't fail one: serve a copy without it.
+	const renderer = scratchDir('zing-renderer-')
+	cpSync(BUILT_RENDERER, renderer, { recursive: true, filter: (from) => !/HashTool-[^\\/]*\.js$/.test(from) })
+	const zing = await launchZing({ env: { ZING_RENDERER_DIR: renderer } })
+	const surface = await openToolbox(zing)
+	await surface.getByRole('searchbox', { name: 'Search tools' }).fill('sha')
+	await expect(surface.getByTestId('toolbox-result').first()).toHaveText(/Hashes/)
+	await surface.keyboard.press('Enter')
+	await expect(surface.getByText(/This tool stopped working/)).toBeVisible()
+	await expect(zing.close()).rejects.toThrow(/The host recorded errors during this test:[\s\S]*renderer: [\s\S]*HashTool/)
 })
 
 test('Escape closes the sheet after a click on a blank part of it', async () => {

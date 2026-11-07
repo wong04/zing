@@ -14,8 +14,9 @@ export default defineConfig({
 	expect: { timeout: 15_000 },
 	// More workers fail even on a quiet PC: Zing dies at startup in AppInstance, workers crash, and timing tests go over. The gain stops at 2 or 3.
 	workers: 1,
-	// The WebView2 engine sometimes keeps its profile lock for 30 s and more after Zing quits, on CI only; a rerun of the test passes.
-	retries: process.env.CI ? 1 : 0,
+	// No retries, on CI too: a rerun that passes hides a race (AGENTS.md). The one CI retry (#140) hid unblock.spec.ts's
+	// keyboard-pick flake as well as the WebView2 profile-lock stall it was added for.
+	retries: 0,
 	reporter: 'list',
 	// Only a failed test's folder is kept: its pictures and logs (e2e/zing.ts `test`), which CI uploads.
 	preserveOutput: 'failures-only',

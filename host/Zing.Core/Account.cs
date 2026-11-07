@@ -383,7 +383,7 @@ public sealed class AccountStore
 /// scrypt (RFC 7914), which .NET has no built-in for. Parameters match node's
 /// scryptSync defaults (N=16384, r=8, p=1, 32-byte key) so an Electron-made
 /// salt yields the same check bytes; the shared vectors in
-/// src/main/account.vectors.json hold the two to each other.
+/// host/Zing.Core.Tests/vectors/account.vectors.json hold the two to each other.
 /// </summary>
 public static class Scrypt
 {

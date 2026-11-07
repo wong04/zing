@@ -149,7 +149,7 @@ export const LIBRARY_PANEL_WIDTH = 320
 
 export interface LibraryViewState {
 	readonly library: BrowserLibrary
-	readonly panel: LibraryPanel | null
+	readonly panel: LibraryPanel | undefined
 	readonly favouritesBar: boolean
 	/** Where the panel starts: the width of the pinned sidebar beside it. */
 	readonly offset: number
@@ -229,7 +229,7 @@ export interface InvokeContract {
 	'stack:toggle': { args: [key: string, anchorX: number]; result: void }
 	'stack:open-for-drag': { args: [key: string, anchorX: number]; result: void }
 	'stack:close': { args: []; result: void }
-	'stack:current': { args: []; result: StackDropdownState | null }
+	'stack:current': { args: []; result: StackDropdownState | undefined }
 	'stack:drag-presence': { args: [source: DragPresenceSource, inside: boolean]; result: void }
 	'chrome:stack-menu': { args: [key: string, anchor: MenuAnchor]; result: void }
 	'chrome:strip-menu': { args: [anchor: MenuAnchor]; result: void }
@@ -264,7 +264,7 @@ export interface InvokeContract {
 	'library:panel': { args: [panel: LibraryPanel | null]; result: void }
 	'library:folder-menu': { args: [id: string, anchor: MenuAnchor]; result: void }
 	'library:item-menu': { args: [id: string, anchor: MenuAnchor]; result: void }
-	'overview:get': { args: []; result: OverviewState | null }
+	'overview:get': { args: []; result: OverviewState | undefined }
 	'settings:get': { args: []; result: Settings }
 	'settings:set': { args: [key: SettingKey, value: unknown]; result: void }
 	'shell:get': { args: []; result: ShellState }
@@ -288,7 +288,8 @@ export interface InvokeContract {
 	'toolpanel:end-drag': { args: [id: string, origin: Point]; result: void }
 	/** Lowercase hex digests. `algorithm` is a `HashAlgorithm` ("MD5", "SHA-1", "SHA-256", "SHA-512"); the host also answers MD5, which SubtleCrypto lacks. */
 	'hash:text': { args: [text: string, algorithm: string]; result: string }
-	'hash:file': { args: [path: string, algorithm: string]; result: string }
+	/** A file by its `files:pick` token, never a path. */
+	'hash:file': { args: [token: string, algorithm: string]; result: string }
 	'hash:hmac': { args: [message: string, key: string, algorithm: string]; result: string }
 	/** Every engine with its size and whether it is downloaded. Reads the disk; makes no request. */
 	'engines:list': { args: []; result: EngineInfo[] }
@@ -439,12 +440,12 @@ export interface InvokeContract {
 export interface EventContract {
 	'tabs:state': TabsState
 	'chrome:focus-address': undefined
-	'stack:dropdown': StackDropdownState | null
-	'overlay:notice': Notice | null
+	'stack:dropdown': StackDropdownState | undefined
+	'overlay:notice': Notice | undefined
 	'pageui:state': PageUiState
 	'pageui:account-picker': AccountPickerState | null
 	'library:state': LibraryViewState
-	'overlay:overview': OverviewState | null
+	'overlay:overview': OverviewState | undefined
 	'settings:changed': Settings
 	'shell:state': ShellState
 	'toolpanel:state': ToolPanelsState
@@ -490,7 +491,7 @@ export interface ZingApi {
 	toggleStack(key: string, anchorX: number): Promise<void>
 	openStackForDrag(key: string, anchorX: number): Promise<void>
 	closeStack(): Promise<void>
-	currentStack(): Promise<StackDropdownState | null>
+	currentStack(): Promise<StackDropdownState | undefined>
 	stackDragPresence(source: DragPresenceSource, inside: boolean): Promise<void>
 	openStackMenu(key: string, anchor: MenuAnchor): Promise<void>
 	openStripMenu(anchor: MenuAnchor): Promise<void>
@@ -523,15 +524,15 @@ export interface ZingApi {
 	setLibraryPanel(panel: LibraryPanel | null): Promise<void>
 	openFolderMenu(id: string, anchor: MenuAnchor): Promise<void>
 	openLibraryItemMenu(id: string, anchor: MenuAnchor): Promise<void>
-	getOverview(): Promise<OverviewState | null>
+	getOverview(): Promise<OverviewState | undefined>
 	closeOverview(): Promise<void>
 	onTabsState(listener: (state: TabsState) => void): Unsubscribe
 	onFocusAddress(listener: () => void): Unsubscribe
-	onStackDropdown(listener: (state: StackDropdownState | null) => void): Unsubscribe
-	onNotice(listener: (notice: Notice | null) => void): Unsubscribe
+	onStackDropdown(listener: (state: StackDropdownState | undefined) => void): Unsubscribe
+	onNotice(listener: (notice: Notice | undefined) => void): Unsubscribe
 	onPageUiState(listener: (state: PageUiState) => void): Unsubscribe
 	onLibraryState(listener: (state: LibraryViewState) => void): Unsubscribe
-	onOverview(listener: (state: OverviewState | null) => void): Unsubscribe
+	onOverview(listener: (state: OverviewState | undefined) => void): Unsubscribe
 	getSettings(): Promise<Settings>
 	setSetting(key: SettingKey, value: unknown): Promise<void>
 	onSettingsChanged(listener: (settings: Settings) => void): Unsubscribe
@@ -544,7 +545,7 @@ export interface ZingApi {
 	clearBrowsingSession(): Promise<void>
 	reportError(report: RendererErrorReport): Promise<void>
 	hashText(text: string, algorithm: string): Promise<string>
-	hashFile(path: string, algorithm: string): Promise<string>
+	hashFile(token: string, algorithm: string): Promise<string>
 	hmac(message: string, key: string, algorithm: string): Promise<string>
 	diagnose(host: string): Promise<DiagnosticReport>
 	previewDns(): Promise<DnsPreview>

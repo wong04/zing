@@ -28,11 +28,18 @@
 	<ItemGroup>
 		<!-- Built from TypeScript by `npm run gen:reader` (part of `npm run build:host`). -->
 		<Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
-		<!-- The taskbar tiles (C3 logo), shared with the Electron build until W4. -->
+		<!-- The taskbar tiles (C3 logo), from `npm run make-icons`. -->
 		<Content Include="..\..\build\icons\icon.ico" Link="Assets\icon.ico" CopyToOutputDirectory="PreserveNewest" />
 		<Content Include="..\..\build\icons-dark-tile\icon.ico" Link="Assets\icon-dark-tile.ico" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Zing.Core\Zing.Core.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<!-- Where `npm run build` puts the renderer in this checkout. The app loads it from here and never searches (RendererLocation). -->
+		<AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+			<_Parameter1>RendererFolder</_Parameter1>
+			<_Parameter2>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\out\renderer'))</_Parameter2>
+		</AssemblyAttribute>
 	</ItemGroup>
 </Project>

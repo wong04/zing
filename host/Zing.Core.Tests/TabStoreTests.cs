@@ -24,6 +24,16 @@ public sealed class TabStoreTests
 	}
 
 	[Fact]
+	public void A_restored_saved_tab_joins_the_pinned_run_even_when_not_marked_pinned()
+	{
+		var store = new TabStore(Deterministic.Clock(), Deterministic.Ids());
+		store.Add("https://loose.test");
+		var saved = store.AddRestored("https://saved.test", "Saved", pinned: false, itemId: "item");
+		Assert.Equal([saved.Id, store.Records[1].Id], store.Records.Select(r => r.Id));
+		Assert.True(store.Records[0].Pinned);
+	}
+
+	[Fact]
 	public void Default_ids_are_guids()
 	{
 		var store = new TabStore(() => 1);

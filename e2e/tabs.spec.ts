@@ -125,6 +125,14 @@ test('the tab overview shows a card per tab with pictures, and closes again', as
 	// The start page tab plus the two opened.
 	await expect(overview.locator('.overview-card')).toHaveCount(3)
 	await expect(overview.locator('.overview-thumb img')).not.toHaveCount(0)
+	// The active tab's card takes the keyboard, so arrows and Enter work at once.
+	await expect(overview.locator('.overview-card[aria-current="true"]')).toBeFocused()
+	await zing.chrome.evaluate(() => window.zing.closeOverview())
+	await expect(overview.locator('.overview-card')).toHaveCount(0)
+	// A second time too: closing pushed no state (a null on the bridge), which mustn't read as still open.
+	await zing.chrome.evaluate(() => window.zing.runCommand('tabs.overview'))
+	await expect(overview.locator('.overview-card')).toHaveCount(3)
+	await expect(overview.locator('.overview-card[aria-current="true"]')).toBeFocused()
 	await zing.chrome.evaluate(() => window.zing.closeOverview())
 	await expect(overview.locator('.overview-card')).toHaveCount(0)
 	await zing.close()

@@ -278,6 +278,24 @@ public sealed class ChromeApiEnginesTests : IAsyncLifetime
 	}
 
 	[Fact]
+	public async Task A_picked_file_is_hashed_by_its_token()
+	{
+		_host.PickedPaths = [_engines.Make("abc.txt", "abc")];
+		var token = Value(await Invoke("files:pick", (object)new[] { "any" }))[0].GetProperty("token").GetString()!;
+
+		Assert.Equal("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", Value(await Invoke("hash:file", token, "SHA-256")).GetString());
+	}
+
+	[Theory]
+	[InlineData(@"C:\Windows\win.ini")]
+	// Opening a share sends the person's Windows sign-in hash to whoever runs it.
+	[InlineData(@"\\attacker.test\share\x")]
+	public async Task A_path_the_renderer_made_up_is_not_hashed(string path)
+	{
+		Assert.Equal(nameof(UnknownFileGrantException), ErrorName(await Invoke("hash:file", path, "SHA-256")));
+	}
+
+	[Fact]
 	public async Task A_file_that_has_gone_is_refused_by_name()
 	{
 		var path = _engines.Make("gone.pdf");

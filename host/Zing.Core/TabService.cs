@@ -184,6 +184,8 @@ public sealed class TabService
 		_changed();
 	}
 
+	public bool Has(string id) => _store.Has(id);
+
 	public bool HasPage(string id) => _pages.ContainsKey(id);
 
 	public IPage? PageOf(string id) => _pages.GetValueOrDefault(id);
@@ -349,14 +351,13 @@ public sealed class TabService
 			Open(_blankUrl);
 			return;
 		}
-		if (opener is not null && result.NextActiveId is not null && _store.Has(opener))
-		{
-			Activate(opener);
-			return;
-		}
 		if (result.NextActiveId is not null)
 		{
-			Activate(result.NextActiveId);
+			var next = opener is not null && _store.Has(opener) ? opener : result.NextActiveId;
+			// The store has already made its pick active, so Activate can't tell what was on screen: the closed tab's
+			// split partners are hidden here.
+			HideAllBut(shownBefore, Splits.GroupOf(next));
+			Activate(next);
 			return;
 		}
 		// A pane closed beside the active tab: what is left of the split is laid out again.
@@ -371,6 +372,8 @@ public sealed class TabService
 	public void CloseOthers(string keep)
 	{
 		_store.Get(keep);
+		// Kept tab first, so closing the others doesn't give each neighbour a page in turn.
+		if (_store.ActiveId != keep) Activate(keep);
 		foreach (var record in _store.Records.Where(r => r.Id != keep && !r.Pinned).ToList()) Close(record.Id);
 		if (_store.ActiveId != keep) Activate(keep);
 	}
@@ -396,8 +399,10 @@ public sealed class TabService
 		var current = _store.Records.Select(t => t.Id).ToList();
 		if (ids.Count != current.Count) throw new TabOrderException($"{ids.Count} ids for {current.Count} tabs");
 		if (ids.SequenceEqual(current)) return;
+		if (ids.Distinct().Count() != ids.Count || ids.Any(id => !_store.Has(id))) throw new TabOrderException("it repeats a tab or names one that isn't open");
+		var pinned = _store.Records.Count(t => t.Pinned);
+		if (ids.Take(pinned).Any(id => !_store.Get(id).Pinned)) throw new TabOrderException("it puts a tab across the pinned divider");
 		for (var i = 0; i < ids.Count; i++) _store.Move(ids[i], i);
-		if (!_store.Records.Select(t => t.Id).SequenceEqual(ids)) throw new TabOrderException("it puts a tab across the pinned divider");
 		_changed();
 	}
 

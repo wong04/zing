@@ -128,6 +128,27 @@ test('restoreTabs brings the tabs back after a relaunch', async () => {
 	await second.close()
 })
 
+test('after the first window closes, the session saved is the window that is left', async () => {
+	const first = await launchZing()
+	await first.chrome.evaluate(() => window.zing.setSetting('restoreTabs', true))
+	await visit(first.chrome, await activeId(first.chrome), 'one')
+	const session = join(first.userDataDir, 'session.json')
+	await expect.poll(() => existsSync(session) && readFileSync(session, 'utf8').includes(`${base}/one`)).toBe(true)
+	await run(first.chrome, 'window.new')
+	await expect.poll(() => pages(first.browser).filter((p) => p.url() === first.chrome.url()).length).toBe(2)
+	const other = pages(first.browser).find((p) => p.url() === first.chrome.url() && p !== first.chrome)!
+	await visit(other, await activeId(other), 'two')
+	// Closing the first window hands the session to the second, which is quit without being touched again.
+	const gone = new Promise<void>((resolve) => first.chrome.once('close', () => resolve()))
+	void first.chrome.evaluate(() => window.zing.runCommand('window.close')).catch(() => undefined)
+	await gone
+	await first.close()
+
+	const second = await launchZing({ userDataDir: first.userDataDir })
+	await expect.poll(async () => (await tabsOf(second.chrome)).tabs.map((t) => t.url)).toEqual([`${base}/two`])
+	await second.close()
+})
+
 test('Home goes to the homepage setting, and to the start page while it is empty', async () => {
 	const zing = await launchZing()
 	const id = await activeId(zing.chrome)

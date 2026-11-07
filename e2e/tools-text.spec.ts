@@ -10,8 +10,9 @@ async function openTool(zing: Launched, title: string): Promise<Locator> {
 	return panel
 }
 
-// These tests replace whatever the person last copied, so they stay off on a developer's machine.
-const clipboardAllowed = Boolean(process.env.CI) || process.env.ZING_E2E_CLIPBOARD === '1'
+// These tests replace whatever the person last copied, so they run only when asked for: CI sets the flag (ci.yml), and
+// CI alone is not enough, since a developer's shell may have it set.
+const clipboardAllowed = process.env.ZING_E2E_CLIPBOARD === '1'
 
 interface Pasted {
 	readonly text: string

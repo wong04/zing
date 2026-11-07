@@ -1,7 +1,7 @@
 import type { ZingApi } from '@shared/ipc'
 import { reportingInvoke } from '@shared/bridge/reportingInvoke'
 import { webViewZingApi, type WebViewChannel } from '@shared/bridge/webviewBridge'
-import { createErrorReporter, installErrorReporting, viewName } from './errors'
+import { createErrorReporter, installErrorReporting, viewName, type ErrorReporter } from './errors'
 
 /**
  * The renderer's only way to the host: the WebView2 host's bridge over
@@ -12,7 +12,7 @@ import { createErrorReporter, installErrorReporting, viewName } from './errors'
  * the host imports it, so its reporter is listening before any of them runs.
  * A failed host call is tagged here and reported once if nobody handles it, so call sites can `void` it.
  */
-function hostApi(): ZingApi {
+function hostApi(): { api: ZingApi; reporter: ErrorReporter } {
 	const webview = (window as { chrome?: { webview?: WebViewChannel } }).chrome?.webview
 	if (!webview) throw new Error('No Zing host: this page only runs inside Zing')
 	const reporter = createErrorReporter({
@@ -24,7 +24,10 @@ function hostApi(): ZingApi {
 	installErrorReporting(window, reporter)
 	// On window too, for the e2e tests and devtools.
 	Object.defineProperty(window, 'zing', { value: api })
-	return api
+	return { api, reporter }
 }
 
-export const zing: ZingApi = hostApi()
+const host = hostApi()
+export const zing: ZingApi = host.api
+/** The view's reporter, for errors that never reach window: those an error boundary catches. */
+export const errorReporter: ErrorReporter = host.reporter

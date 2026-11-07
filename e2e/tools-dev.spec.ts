@@ -18,6 +18,11 @@ async function openTool(zing: Launched, title: string): Promise<{ surface: Page;
 	return { surface, panel }
 }
 
+/** The answer the next file picker gives (an e2e run shows no dialog). */
+async function queuePick(zing: Launched, ...files: string[]): Promise<void> {
+	await zing.chrome.evaluate((paths) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'pick-files', files: paths }), files)
+}
+
 const result = (panel: Locator, label: string): Locator => panel.getByRole('group', { name: label, exact: true })
 const base64url = (text: string): string => Buffer.from(text).toString('base64url')
 
@@ -66,11 +71,13 @@ test('SHA-256 of abc, and of a file', async () => {
 	try {
 		const file = join(dir, 'abc.txt')
 		writeFileSync(file, 'abc')
-		await panel.getByRole('textbox', { name: 'File path' }).fill(file)
-		await panel.getByRole('button', { name: 'Hash file' }).click()
+		await queuePick(zing, file)
+		await panel.getByRole('button', { name: 'Hash a File' }).click()
+		await expect(panel.getByText('abc.txt', { exact: true })).toBeVisible()
 		await expect(result(panel, 'File digest')).toContainText('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
-		await panel.getByRole('textbox', { name: 'File path' }).fill(join(dir, 'missing.bin'))
-		await panel.getByRole('button', { name: 'Hash file' }).click()
+		// A file gone between the picker and the hash is an error, shown.
+		await queuePick(zing, join(dir, 'missing.bin'))
+		await panel.getByRole('button', { name: 'Hash a File' }).click()
 		await expect(panel.getByRole('alert')).toContainText(/find|exist|not found/i)
 	} finally {
 		rmSync(dir, { recursive: true, force: true })
@@ -156,6 +163,16 @@ test('a catastrophic regex gives up after 2 seconds and the tool still responds'
 	await panel.getByRole('textbox', { name: 'Test string' }).fill('aaa')
 	await panel.getByRole('textbox', { name: 'Pattern' }).fill('a')
 	await expect(panel.getByText('3 matches')).toBeVisible()
+	await zing.close()
+})
+
+test('a pattern matching every character of a long text shows the first 500 matches and says there are more', async () => {
+	const zing = await launchZing()
+	const { panel } = await openTool(zing, 'Regex Tester')
+	await panel.getByRole('textbox', { name: 'Test string' }).fill('x'.repeat(200_000))
+	await panel.getByRole('textbox', { name: 'Pattern' }).fill('.')
+	await expect(panel.getByText('500 matches', { exact: true })).toBeVisible()
+	await expect(panel.getByText('Showing the first 500 matches. There are more.')).toBeVisible()
 	await zing.close()
 })
 

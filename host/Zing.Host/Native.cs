@@ -136,7 +136,7 @@ internal static class Native
 	[return: MarshalAs(UnmanagedType.Bool)]
 	public static extern bool SetForegroundWindow(nint hwnd);
 
-	[DllImport("user32.dll")]
+	[DllImport("user32.dll", SetLastError = true)]
 	[return: MarshalAs(UnmanagedType.Bool)]
 	public static extern bool SetWindowPos(nint hwnd, nint insertAfter, int x, int y, int width, int height, uint flags);
 
@@ -161,7 +161,7 @@ internal static class Native
 	[DllImport("user32.dll")]
 	public static extern nint MonitorFromWindow(nint hwnd, uint flags);
 
-	[DllImport("user32.dll")]
+	[DllImport("user32.dll", SetLastError = true)]
 	[return: MarshalAs(UnmanagedType.Bool)]
 	public static extern bool GetMonitorInfoW(nint monitor, ref MONITORINFO info);
 
@@ -191,10 +191,10 @@ internal static class Native
 	[DllImport("user32.dll")]
 	public static extern short GetKeyState(int virtualKey);
 
-	[DllImport("user32.dll")]
+	[DllImport("user32.dll", SetLastError = true)]
 	public static extern nint CreatePopupMenu();
 
-	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+	[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
 	[return: MarshalAs(UnmanagedType.Bool)]
 	public static extern bool AppendMenuW(nint menu, uint flags, nint id, string? text);
 

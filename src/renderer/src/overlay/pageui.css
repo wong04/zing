@@ -36,6 +36,13 @@
 	white-space: nowrap;
 }
 
+.pageui-detail {
+	color: var(--muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .pageui-input {
 	flex: 1;
 	min-width: 0;

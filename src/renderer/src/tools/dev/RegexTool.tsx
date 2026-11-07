@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { regexMatchLimit } from '@shared/devtools/regex'
 import { InfoBanner, PillField, Toggle } from '../../components'
 import { ResultRow, TextArea, ToolPage } from '../parts'
 import { describeFailure } from './parts'
@@ -44,6 +45,7 @@ function Outcome({ task }: { readonly task: TaskState<RegexReply> }) {
 	return (
 		<>
 			<span className="tool-label">{reply.matches.length === 1 ? '1 match' : `${reply.matches.length} matches`}</span>
+			{reply.more && <InfoBanner kind="info">Showing the first {regexMatchLimit} matches. There are more.</InfoBanner>}
 			<div className="tool-rows">
 				{reply.matches.map((match, index) => (
 					<div key={`${match.range}-${index}`} className="tool-rows">

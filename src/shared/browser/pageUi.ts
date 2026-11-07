@@ -25,6 +25,8 @@ export interface PermissionPrompt {
 	readonly id: number
 	readonly origin: string
 	readonly kind: PermissionKind
+	/** The asking tab's title when it isn't the tab on screen. */
+	readonly tab?: string
 }
 
 /** The vault's offer to save a sign-in, or to update a saved one. Names the origin and username only; the host holds the password. */
