@@ -4,7 +4,7 @@ A privacy-first browser for Windows, built on Chromium. It keeps nothing by defa
 
 Zing is a remake of [Krackn](https://github.com/yityler/Krackn), a macOS browser + toolbox written in SwiftUI on WebKit. Krackn's features (the private session, tab organisation, Open a Link, Diagnose, Convert, Download, the file viewer and the utilities) are being ported to Windows: a C# WinUI 3 app hosting Edge's WebView2 (Chromium), with the UI in React and TypeScript.
 
-> **Status: in development.** The browser core runs (tabs, start page, find, downloads, reader, sleeping tabs, per-site purge, account gate); the Toolbox sheet and its developer, math, text and links tools are in, and the rest of the toolbox and later phases are still to come. Follow progress on the [milestones](https://github.com/wong04/zing/milestones).
+> **Status: in development.** The browser core runs (tabs, start page, find, downloads, reader, sleeping tabs, per-site purge, account gate); the Toolbox is in, with Open a Link, Diagnose, Network & VPN, Convert, media download, the file viewer, the background remover, PDF tools and the developer, math, text and links utilities; later phases are still to come. Follow progress on the [milestones](https://github.com/wong04/zing/milestones).
 
 ## Build and run
 
