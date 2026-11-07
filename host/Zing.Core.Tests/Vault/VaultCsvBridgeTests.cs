@@ -20,7 +20,7 @@ public sealed class VaultCsvBridgeTests : IDisposable
 		Directory.CreateDirectory(Downloads);
 		_host.DownloadsDirectory = Downloads;
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_vault = new VaultStore(Path.Combine(_dir, "vault"), new FakeCipher(), _sealer, new TickingClock());
+		_vault = new VaultStore(Path.Combine(_dir, "vault"), new FakeCipher(), _sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
 		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), Vault: _vault), _host, "test");
 	}
 

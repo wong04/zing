@@ -535,7 +535,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		return Api.Autofill.Key(key);
 	}
 
-	/// <summary>The e2e seam (picker-key): CDP input never reaches AcceleratorKeyPressed, so a test enters PickerKey as the picker's page would.</summary>
+	/// <summary>
+	/// The e2e seam (picker-key): CDP input never reaches AcceleratorKeyPressed, so a test enters PickerKey as the picker's page
+	/// would. Plain Enter never reaches it either way (it isn't an accelerator key to WebView2): it comes through the page
+	/// channel (Ruling 46), which CDP input does reach.
+	/// </summary>
 	private bool PickerKeyOnPage(int virtualKey) =>
 		Api?.Autofill.Picker is { } picker && Api.Tabs.PageOf(picker.PageId) is WebView2Page { View: { } view } && PickerKey(view, virtualKey);
 

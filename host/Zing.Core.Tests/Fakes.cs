@@ -25,7 +25,13 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public void Reload() => Calls.Add("reload");
 	public void Stop() => Calls.Add("stop");
 	public void Focus() => Calls.Add("focus");
-	public void Run(string script) => Calls.Add("run");
+	/// <summary>Every script <see cref="Run"/> was given, in order.</summary>
+	public List<string> Ran { get; } = [];
+	public void Run(string script)
+	{
+		Calls.Add("run");
+		Ran.Add(script);
+	}
 	public void Find(string query, FindDirection direction, FindMode mode) => Calls.Add($"find {query} {direction} {mode}");
 	public void StopFind() => Calls.Add("stop find");
 	public bool IsAudible { get; set; }

@@ -10,7 +10,7 @@ public sealed class VaultImportExportTests : IDisposable
 
 	public void Dispose() => Directory.Delete(_dir, recursive: true);
 
-	private VaultStore Open() => new(_dir, new FakeCipher(), _sealer, new TickingClock());
+	private VaultStore Open() => new(_dir, new FakeCipher(), _sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
 
 	private static readonly NewLogin Login = new("https://accounts.example.com/sign-in", "ada.lovelace", "correct horse battery staple", "Example", "work account");
 

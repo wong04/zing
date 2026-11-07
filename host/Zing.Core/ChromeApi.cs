@@ -864,7 +864,7 @@ public sealed class ChromeApi : IDisposable
 
 	private void PushVaultState() => _host.Push("vault:state", CurrentVaultState());
 
-	/// <summary>With a password, one store change that asks Hello once; a cancelled prompt changes nothing. Without one, no prompt.</summary>
+	/// <summary>With a password, one store change that asks Hello at most once; a cancelled prompt changes nothing. Without one, no prompt.</summary>
 	private async Task<object?> UpdateLoginAsync(string id, JsonElement edit)
 	{
 		var vault = Vault();

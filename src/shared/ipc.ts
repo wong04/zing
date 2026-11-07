@@ -411,18 +411,18 @@ export interface InvokeContract {
 	'vault:restore': { args: [id: string]; result: void }
 	/** When each old password was replaced, newest first. No passwords and no prompt. */
 	'vault:history': { args: [id: string]; result: PasswordHistoryEntry[] }
-	/** Asks Windows Hello once, then copies the login's password from the host (kept out of clipboard history and cloud sync) and clears it 30 s later if nothing else was copied. The password never comes back. */
+	/** Asks Windows Hello unless it was passed in the last 5 minutes, then copies the login's password from the host (kept out of clipboard history and cloud sync) and clears it 30 s later if nothing else was copied. The password never comes back. */
 	'vault:copy': { args: [id: string]; result: void }
 	/** Imports the CSV a picker token stands for (kind 'csv'), with one Windows Hello prompt for the whole file. Rows it cannot use come back with the reason. */
 	'vault:import-csv': { args: [token: string]; result: VaultImportResult }
-	/** Asks Windows Hello once, then saves every password into Downloads as "Zing Passwords.csv" in Chrome's format, unencrypted. */
+	/** Always asks Windows Hello, even inside the 5 minutes other uses share, then saves every password into Downloads as "Zing Passwords.csv" in Chrome's format, unencrypted. */
 	'vault:export-csv': { args: []; result: PickedFile }
 	/** The sites marked "never for this site". No prompt. */
 	'vault:never-saves': { args: []; result: NeverSave[] }
 	/** Takes a site off that list so Zing offers to save there again. No prompt. */
 	'vault:remove-never-save': { args: [origin: string]; result: void }
 	/**
-	 * The user chose a login in the account picker: asks Windows Hello once, then fills that page's field and its other half.
+	 * The user chose a login in the account picker: asks Windows Hello unless it was passed in the last 5 minutes, then fills that page's field and its other half.
 	 * `cancelled` when Hello was cancelled or unavailable (nothing filled, no error); `refused` when the page is no longer
 	 * on the origin the picker was shown for; `not-filled` when the field had gone. The picker closes either way.
 	 */

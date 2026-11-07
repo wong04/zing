@@ -7,8 +7,9 @@ import './pageui.css'
 
 /**
  * Root of the account-picker view: the vault's saved usernames for the focused sign-in field, drawn by Zing under
- * it, so the page never sees them. Usernames only. The view never takes the keyboard: the host reads the arrows,
- * Enter and Esc from real key presses on the page and sends the selection (`active`) here. A click chooses.
+ * it, so the page never sees them. Usernames only. The view never takes the keyboard: the host reads the arrows
+ * and Esc from real key presses on the page, takes Enter through the page's script once one is highlighted, and
+ * sends the selection (`active`) here. A click chooses.
  */
 export function AccountPicker() {
 	useAccentTheme()

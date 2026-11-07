@@ -19,6 +19,14 @@ export const autofillBridgeName = 'zingCredentialField'
 const target = '__zingAutofillTarget'
 const fill = '__zingAutofillFill'
 const installed = '__zingAutofillInstalled'
+const enterInstalled = '__zingPickerEnterInstalled'
+
+/**
+ * The top document's flag the host sets while the account picker has an entry highlighted (Ruling 46); the host builds
+ * the same assignment (Defaults/autofill.json). The page can read and set it too: it only decides whether the script
+ * takes Enter from the page, never whether anything is filled.
+ */
+export const autofillPickerEnterFlag = '__zingPickerEnter'
 
 /** The page function `fillScript` calls; the host builds the same call (Defaults/autofill.json). */
 export const autofillFillFunction = fill
@@ -42,8 +50,13 @@ export const autofillFillFunction = fill
  * that third-party frames are never filled. A frame whose document is readable
  * but whose origin differs (a `document.domain` relaxation) is skipped too.
  *
- * Keys are never reported: the page could forge them. The host reads the
- * picker's arrows, Enter and Esc from real key presses itself.
+ * Keys are never reported, bar one: the page could forge them. The host reads the
+ * picker's arrows and Esc from real key presses itself. Plain Enter never reaches
+ * the host that way (it maps to a character, so WebView2 doesn't count it as an
+ * accelerator key), so while the host has said an entry is highlighted, the script
+ * takes Enter from the page, before any page listener, and posts `picker-enter`
+ * (Ruling 46). The host acts on it only while the picker really has an entry a
+ * real arrow key highlighted, so a forged one can only finish the user's choice.
  *
  * It also reports sign-ins, for the save and update prompts (SignInWatch in the host):
  *   - `submit`: a form with a visible password box was submitted (or Enter was pressed in
@@ -61,7 +74,20 @@ export const autofillFillFunction = fill
  * `kind` here is `fieldKind` in autofillFields.ts; keep the two in step.
  */
 export const detectionScript = `(() => {
-  // The top frame reaches same-origin frames itself; a frame's own copy does nothing.
+  // Enter for the account picker (Ruling 46), in every frame: a key in a frame never reaches the top document. Installed
+  // at document creation, so this capture listener on window runs before any the page adds. A cross-origin frame can't
+  // read the top document's flag, so it never takes Enter.
+  if (!window.${enterInstalled}) {
+    window.${enterInstalled} = true;
+    const pickerHasEnter = () => { try { return window.top.${autofillPickerEnterFlag} === true; } catch (e) { return false; } };
+    window.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || e.isComposing || e.ctrlKey || e.altKey || e.metaKey || !pickerHasEnter()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      window.top.chrome.webview.postMessage({ ${JSON.stringify(autofillBridgeName)}: { kind: 'picker-enter' } });
+    }, true);
+  }
+  // The top frame reaches same-origin frames itself; a frame's own copy does nothing more.
   if (window.top !== window) return;
   // Installed once per document, however often the host injects it.
   if (window.${installed}) return;

@@ -1,7 +1,7 @@
 // There is no DOM in the test environment, so the script runs against a small fake one.
 // What matters is that its decisions match `fieldKind` and its messages `parseFieldMessage`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { autofillBridgeName, detectionScript, fillScript } from './autofillScript'
+import { autofillBridgeName, autofillPickerEnterFlag, detectionScript, fillScript } from './autofillScript'
 import { fieldKind, fieldMessageKey, parseFieldMessage, type InputDescription } from './autofillFields'
 
 type Listener = () => void
@@ -568,5 +568,91 @@ describe('sign-in reports', () => {
 		doc.frames = [new FakeEl({ type: 'password', ownerDocument: { defaultView: win } })]
 		vi.advanceTimersByTime(1000)
 		expect(kindsOf('landed')).toHaveLength(2)
+	})
+})
+
+// Ruling 46: plain Enter never reaches the host's AcceleratorKeyPressed, so the script takes it for the picker.
+describe('Enter for the account picker', () => {
+	class KeyEvent {
+		prevented = false
+		stopped = false
+		isComposing = false
+		ctrlKey = false
+		altKey = false
+		metaKey = false
+		constructor(
+			public key: string,
+			init: Partial<KeyEvent> = {},
+		) {
+			Object.assign(this, init)
+		}
+		preventDefault(): void {
+			this.prevented = true
+		}
+		stopImmediatePropagation(): void {
+			this.stopped = true
+		}
+	}
+	const press = (key: string, init: Partial<KeyEvent> = {}): KeyEvent => {
+		const event = new KeyEvent(key, init)
+		for (const fn of windowListeners.get('keydown') ?? []) (fn as unknown as (e: KeyEvent) => void)(event)
+		return event
+	}
+	const pickerEnters = (): unknown[] => messages.filter((m) => (m as { kind?: string }).kind === 'picker-enter')
+
+	it('leaves Enter to the page until the host says an entry is highlighted', () => {
+		install()
+		const event = press('Enter')
+		expect(event.prevented).toBe(false)
+		expect(event.stopped).toBe(false)
+		expect(pickerEnters()).toEqual([])
+	})
+	it('takes Enter from the page while the host says so, before any page listener, and posts picker-enter', () => {
+		install()
+		win[autofillPickerEnterFlag] = true
+		const event = press('Enter')
+		expect(event.prevented).toBe(true)
+		expect(event.stopped).toBe(true)
+		expect(pickerEnters()).toEqual([{ kind: 'picker-enter' }])
+		win[autofillPickerEnterFlag] = false
+		expect(press('Enter').prevented).toBe(false)
+	})
+	it('takes only plain Enter: other keys, Ctrl or Alt with it, and an IME composition stay the page\'s', () => {
+		install()
+		win[autofillPickerEnterFlag] = true
+		for (const event of [press('a'), press('ArrowDown'), press('Enter', { ctrlKey: true }), press('Enter', { altKey: true }), press('Enter', { isComposing: true })]) expect(event.prevented).toBe(false)
+		expect(pickerEnters()).toEqual([])
+	})
+	it('in a same-origin frame, follows the top document and posts through it', () => {
+		install()
+		windowListeners = new Map()
+		const framed = makeWindow()
+		framed['top'] = win
+		run(framed)
+		win[autofillPickerEnterFlag] = true
+		expect(press('Enter').prevented).toBe(true)
+		expect(pickerEnters()).toEqual([{ kind: 'picker-enter' }])
+	})
+	it('in a cross-origin frame, which cannot read the top document, never takes Enter', () => {
+		install()
+		windowListeners = new Map()
+		const framed = makeWindow()
+		// Another site's window: it can be compared, but reading anything on it throws.
+		framed['top'] = new Proxy(
+			{},
+			{
+				get: () => {
+					throw new Error('cross-origin')
+				},
+			},
+		)
+		run(framed)
+		expect(press('Enter').prevented).toBe(false)
+		expect(pickerEnters()).toEqual([])
+	})
+	it('installs its listener once however often the script runs', () => {
+		install()
+		run()
+		expect(windowListeners.get('keydown')).toHaveLength(1)
 	})
 })

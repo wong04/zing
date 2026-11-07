@@ -1,15 +1,18 @@
 // The password vault's autofill (Task 4): the picker is Zing's own view, drawn under the field and inside the page,
 // so the page never sees a saved username; it follows the frame's real origin, never what the page says; a page
 // message can only say "a field has focus here" (Ruling 28), so the picker's keys are real key presses the host sees
-// (the controller's AcceleratorKeyPressed; CDP input never takes that path, so these tests use the picker-key seam,
-// which enters the same handler); a password reaches the page only after a choice and Windows Hello (faked in e2e only,
-// through the vault-hello test hook).
+// (the controller's AcceleratorKeyPressed for the arrows and Esc; CDP input never takes that path, so these tests use the
+// picker-key seam, which enters the same handler). Enter, which WebView2 doesn't count as an accelerator key, comes through
+// the page's script instead (Ruling 46), which CDP input does reach. A password reaches the page only after a choice and
+// Windows Hello (faked in e2e only, through the vault-hello test hook), which then isn't asked again for 5 minutes, except
+// by export (Ruling 44).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
+import { autofillPickerEnterFlag } from '../src/shared/vault/autofillScript'
 import { launchZing, layers, pageWhere, scratchDir, test, type Launched } from './zing'
 
 declare const window: { readonly zing: ZingApi }
@@ -72,7 +75,7 @@ const hello = (zing: Launched, result: 'pass' | 'cancel' | 'unavailable' | 'rese
 
 const VK = { ArrowUp: 0x26, ArrowDown: 0x28, Enter: 0x0d, Escape: 0x1b } as const
 
-/** A real key press as the page's controller reports it (AcceleratorKeyPressed), through the same handler. */
+/** A real key press as the page's controller reports it (AcceleratorKeyPressed), through the same handler. Not Enter: see below. */
 const pressKey = (zing: Launched, key: keyof typeof VK): Promise<void> => testHook(zing, { action: 'picker-key', vk: VK[key] })
 
 /** How many page messages the host dropped as malformed, oversized or too deep (Ruling 29). */
@@ -166,12 +169,6 @@ test('the picker follows real keys: arrows move, Enter chooses, Esc closes; page
 	await post(page, { zingCredentialField: { kind: 'key', key: 'down' } })
 	await settle(page)
 	expect(await active()).toBe(-1)
-	// Enter with nothing selected goes to the page as usual: no fill, no Hello, the picker stays.
-	await pressKey(zing, 'Enter')
-	await settle(page)
-	await expect(page.locator('#pass')).toHaveValue('')
-	expect(await active()).toBe(-1)
-
 	await pressKey(zing, 'ArrowDown')
 	await expect.poll(active).toBe(0)
 	await expect(ui.getByRole('option', { selected: true })).toHaveCount(1)
@@ -180,7 +177,7 @@ test('the picker follows real keys: arrows move, Enter chooses, Esc closes; page
 	await pressKey(zing, 'ArrowUp')
 	await expect.poll(active).toBe(0)
 	const first = (await pickerState(zing))!.entries[0]!.username
-	await pressKey(zing, 'Enter')
+	await page.keyboard.press('Enter')
 	await expect(page.locator('#user')).toHaveValue(first)
 	await expect(page.locator('#pass')).toHaveValue(first === USERNAME ? PASSWORD : 'second password')
 	await expect.poll(() => pickerState(zing)).toBeNull()
@@ -191,6 +188,46 @@ test('the picker follows real keys: arrows move, Enter chooses, Esc closes; page
 	await pressKey(zing, 'Escape')
 	await expect.poll(() => pickerState(zing)).toBeNull()
 	await expect(page.locator('#user')).toHaveValue('')
+	await zing.close()
+})
+
+// Rulings 45 and 46: Enter isn't an accelerator key to WebView2, so the hand check found it went to the page, whose form
+// submitted. The page's script takes it now, only while the host says an entry is highlighted, and the host checks again.
+test('Enter chooses the highlighted entry through the page script and the page never gets it; otherwise Enter is the page\'s', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await save(zing, `${base}/login`, USERNAME)
+	const page = await open(zing, `${base}/login`)
+	await page.click('#user')
+	const ui = await picker(zing)
+	await expect(ui.getByRole('option', { name: USERNAME })).toBeVisible()
+	const active = async () => (await pickerState(zing))?.active
+	const told = () => page.evaluate((flag) => (window as unknown as Record<string, unknown>)[flag], autofillPickerEnterFlag)
+	await ui.waitForTimeout(700)
+
+	// A page alone can't choose: a forged picker-enter, or its own Enter with the script's flag set by the page, fills nothing.
+	await post(page, { zingCredentialField: { kind: 'picker-enter' } })
+	await page.evaluate((flag) => ((window as unknown as Record<string, unknown>)[flag] = true), autofillPickerEnterFlag)
+	await page.keyboard.press('Enter')
+	await settle(page)
+	await expect(page.locator('#pass')).toHaveValue('')
+	expect(page.url()).toBe(`${base}/login`)
+	expect(await active()).toBe(-1)
+	await page.evaluate((flag) => ((window as unknown as Record<string, unknown>)[flag] = false), autofillPickerEnterFlag)
+
+	await pressKey(zing, 'ArrowDown')
+	await expect.poll(active).toBe(0)
+	await expect.poll(told).toBe(true)
+	await page.keyboard.press('Enter')
+
+	await expect(page.locator('#user')).toHaveValue(USERNAME)
+	await expect(page.locator('#pass')).toHaveValue(PASSWORD)
+	await expect.poll(() => pickerState(zing)).toBeNull()
+	await expect.poll(told).toBe(false)
+	// The form wasn't submitted.
+	expect(page.url()).toBe(`${base}/login`)
+	// With nothing highlighted, Enter is the page's: it submits the form.
+	await page.keyboard.press('Enter')
+	await page.waitForURL(`${base}/done`)
 	await zing.close()
 })
 
@@ -781,7 +818,7 @@ test('search filters by site and by username', async () => {
 	await zing.close()
 })
 
-test('showing and copying a password each ask Windows Hello, and a cancel shows and copies nothing', async () => {
+test('showing a password asks Windows Hello, a cancel shows and copies nothing, and a passed Hello is not asked again for 5 minutes', async () => {
 	const zing = await launchZing({ userDataDir: vaultProfile(true) })
 	await saveTitled(zing, { origin: 'https://example.com', username: 'ada', password: PASSWORD, title: 'Example', note: '' })
 	const sheet = await openManage(zing)
@@ -800,6 +837,8 @@ test('showing and copying a password each ask Windows Hello, and a cancel shows 
 	await expect(manage(sheet).getByText(PASSWORD)).toBeVisible()
 	await manage(sheet).getByRole('button', { name: 'Hide password for Example' }).click()
 	await expect(manage(sheet).getByText(PASSWORD)).toHaveCount(0)
+	// Ruling 44: the Hello just passed holds for 5 minutes, so Copy asks nothing; a prompt now would be cancelled.
+	await hello(zing, 'cancel')
 	await manage(sheet).getByRole('button', { name: 'Copy password for Example' }).click()
 	await expect(manage(sheet).getByText(/^Copied\./)).toBeVisible()
 	const copied = await copiedPassword(zing)
@@ -867,6 +906,7 @@ test('export warns first, writes Chrome-format CSV to Downloads after Hello, and
 	await manage(sheet).getByRole('button', { name: 'Export CSV' }).click()
 	await expect(manage(sheet).getByRole('alertdialog', { name: 'Export passwords' })).toContainText('not for opening in a spreadsheet')
 	expect(existsSync(file)).toBe(false)
+	// Saving bob unsealed the key, so it is held (Ruling 44); export asks Hello anyway, and the cancel stops it.
 	await hello(zing, 'cancel')
 	await manage(sheet).getByRole('button', { name: 'Save CSV to Downloads' }).click()
 	await expect(manage(sheet).getByRole('alert').last()).toContainText('cancelled the Windows Hello prompt')

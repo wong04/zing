@@ -67,7 +67,7 @@ public sealed class VaultStoreTests : IDisposable
 
 	public void Dispose() => Directory.Delete(_dir, recursive: true);
 
-	private VaultStore Open(FakeSealer? sealer = null) => new(_dir, new FakeCipher(), sealer ?? _sealer, new TickingClock());
+	private VaultStore Open(FakeSealer? sealer = null) => new(_dir, new FakeCipher(), sealer ?? _sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
 
 	private string VaultFile => Path.Combine(_dir, VaultStore.VaultFileName);
 
@@ -147,7 +147,7 @@ public sealed class VaultStoreTests : IDisposable
 	}
 
 	[Fact]
-	public async Task PasswordAsyncAsksHelloOncePerCallWithNoCaching()
+	public async Task PasswordAsyncAsksHelloOnceThenReadsWithTheHeldKey()
 	{
 		var store = Open();
 		var id = await store.SaveAsync(Login);
@@ -155,11 +155,11 @@ public sealed class VaultStoreTests : IDisposable
 
 		for (var i = 0; i < 3; i++) await store.PasswordAsync(id);
 
-		Assert.Equal(before + 3, _sealer.Unseals);
+		Assert.Equal(before + 1, _sealer.Unseals);
 	}
 
 	[Fact]
-	public async Task OnlyTheFirstSaveSealsANewSecretKeyAndEachLaterWriteUnsealsOnce()
+	public async Task OnlyTheFirstSaveSealsANewSecretKeyAndTheLaterWritesUnsealItOnceBetweenThem()
 	{
 		var store = Open();
 		var id = await store.SaveAsync(Login);
@@ -168,7 +168,7 @@ public sealed class VaultStoreTests : IDisposable
 		await store.SaveAsync(Login with { Username = "grace" });
 		await store.UpdatePasswordAsync(id, "a new one");
 
-		Assert.Equal((1, 2), (_sealer.Seals, _sealer.Unseals));
+		Assert.Equal((1, 1), (_sealer.Seals, _sealer.Unseals));
 	}
 
 	[Fact]

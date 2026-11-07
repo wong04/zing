@@ -12,7 +12,12 @@ public enum CredentialFieldKind { Username, Password }
 /// </summary>
 public sealed record CredentialField(CredentialFieldKind Kind, Rect Rect, Rect Viewport);
 
-/// <summary>The picker's keys. They come only from real key presses the host sees, never from the page (Ruling 28).</summary>
+/// <summary>
+/// The picker's keys. The arrows and Esc come only from real key presses the host sees through the controller's
+/// AcceleratorKeyPressed, never from the page (Ruling 28). Plain Enter can't come that way: it maps to a character, so it isn't
+/// an accelerator key to WebView2. It comes through the page channel instead (Ruling 46, <see cref="AutofillMessage.PickerEnter"/>),
+/// and counts only while <see cref="Autofill.TakesEnter"/>.
+/// </summary>
 public enum PickerKey { Up, Down, Enter, Escape }
 
 public static class PickerKeys
@@ -67,6 +72,12 @@ public abstract record AutofillMessage
 	/// <summary>The page now shows (or no longer shows) a visible password box.</summary>
 	public sealed record Landed(bool HasVisiblePasswordBox) : AutofillMessage;
 
+	/// <summary>
+	/// Enter, which the script took from the page because the host told it an entry is highlighted (Ruling 46). Any page can post
+	/// it, so the host acts on it only while <see cref="Autofill.TakesEnter"/> holds for that page and origin.
+	/// </summary>
+	public sealed record PickerEnter() : AutofillMessage;
+
 	/// <summary>Reads a page message. Never throws: any page can post anything (Ruling 29).</summary>
 	public static PageMessageVerdict Read(string json, out AutofillMessage? message)
 	{
@@ -103,6 +114,8 @@ public abstract record AutofillMessage
 				return Text(body, "username", SignInWatch.UsernameMax) is { Length: > 0 } user && Text(body, "password", SignInWatch.PasswordMax) is { Length: > 0 } password ? new Submitted(user, password) : null;
 			case "landed":
 				return body.TryGetProperty("password", out var box) && box.ValueKind is JsonValueKind.True or JsonValueKind.False ? new Landed(box.GetBoolean()) : null;
+			case "picker-enter":
+				return new PickerEnter();
 			case "username":
 				field = CredentialFieldKind.Username;
 				break;
@@ -137,6 +150,12 @@ public static class AutofillScripts
 	public static string Detection => Value("detectionScript");
 
 	public static string MessageKey => Value("messageKey");
+
+	/// <summary>
+	/// Tells the page's script whether Enter is the picker's now (Ruling 46): while true, it takes Enter from the page and posts
+	/// picker-enter. Telling it is no permission: the host still checks <see cref="Autofill.TakesEnter"/> on every message.
+	/// </summary>
+	public static string PickerEnter(bool on) => $"window.{Value("pickerEnterFlag")} = {(on ? "true" : "false")}";
 
 	/// <summary>
 	/// fillScript's call: fills the reported field and its other half, and evaluates to whether it did. It runs only in a
@@ -195,9 +214,18 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 	}
 
 	private Open? _open;
+	/// <summary>The page told Enter is the picker's (Ruling 46), or null.</summary>
+	private IPage? _toldEnter;
 	private readonly Dictionary<string, Window> _windows = new(StringComparer.Ordinal);
 
 	public AccountPicker? Picker => _open?.Picker;
+
+	/// <summary>
+	/// Whether Enter, pressed now, is the picker's and must not reach the page (Ruling 45): the picker is open with an entry
+	/// highlighted, which only a real arrow key does, so a page alone can never make it true. The picker's page is told, so
+	/// its script takes Enter from the page, and the host checks this again on the script's picker-enter.
+	/// </summary>
+	public bool TakesEnter => _open is { Picker.Active: >= 0 };
 
 	/// <summary>A message from a page's script; <paramref name="frameSource"/> is WebView2's Source for it.</summary>
 	public void Message(string pageId, Uri frameSource, AutofillMessage message)
@@ -211,7 +239,22 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 				if (_windows.TryGetValue(pageId, out var window)) window.Pending = null;
 				CloseFor(pageId);
 				return;
+			case AutofillMessage.PickerEnter:
+				PageEnter(pageId, frameSource);
+				return;
 		}
+	}
+
+	/// <summary>
+	/// Enter the page's script took (Ruling 46). It counts only for the page and origin the picker is open on, and only while
+	/// an entry is highlighted, which only a real arrow key does; then it is Enter on the picker, guard and all. Anything else
+	/// (no picker, nothing highlighted, another page or frame) does nothing: a page alone can never choose.
+	/// </summary>
+	private void PageEnter(string pageId, Uri frameSource)
+	{
+		if (_open is not { } open || !TakesEnter || open.Picker.PageId != pageId || !ReferenceEquals(pageOf(pageId), open.Page)) return;
+		if (!IsWeb(frameSource) || VaultModel.OriginOf(frameSource.AbsoluteUri) != open.Origin) return;
+		Key(PickerKey.Enter);
 	}
 
 	/// <summary>Shows the picker for the logins of the frame's actual origin, or closes it when there are none to offer; throttled per page.</summary>
@@ -291,7 +334,7 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 	private void Select(Open open, int active)
 	{
 		_open = open with { Picker = open.Picker with { Active = active } };
-		changed(_open.Picker);
+		Changed();
 	}
 
 	/// <summary>A click on a login in the picker.</summary>
@@ -353,7 +396,7 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 		var active = same && _open!.Picker.Entries.SequenceEqual(entries) ? _open.Picker.Active : -1;
 		var shownAt = unmoved ? _open!.ShownAt : clock.Now();
 		_open = new Open(new AccountPicker(pageId, field.Rect, field.Viewport, entries, active), page, VaultModel.OriginOf(frameSource.AbsoluteUri), shownAt);
-		changed(_open.Picker);
+		Changed();
 	}
 
 	/// <summary>canFill against the origin the entries were chosen for, with the page's source now.</summary>
@@ -374,7 +417,23 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 	{
 		if (_open is null) return;
 		_open = null;
-		changed(null);
+		Changed();
+	}
+
+	private void Changed()
+	{
+		changed(_open?.Picker);
+		TellEnter();
+	}
+
+	/// <summary>Tells the page whether its script should take Enter: only the picker's page, only while an entry is highlighted.</summary>
+	private void TellEnter()
+	{
+		var page = TakesEnter ? _open!.Page : null;
+		if (ReferenceEquals(page, _toldEnter)) return;
+		_toldEnter?.Run(AutofillScripts.PickerEnter(false));
+		page?.Run(AutofillScripts.PickerEnter(true));
+		_toldEnter = page;
 	}
 
 	public void Dispose()

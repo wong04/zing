@@ -229,18 +229,22 @@ public sealed class ZingApp
 		// HTML to PDF needs no engine, so its print folders are swept whether or not the engines folder opened.
 		HtmlPdfPrinter.SweepLeftovers();
 		var vaults = OpenVault(settings, clock);
+		// Zing closing wipes the secret key the vault holds (Ruling 44).
+		_onQuit.Add(vaults.Dispose);
 		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults);
 	}
 
 	/// <summary>
 	/// The password vault, open only while passwordAutofill is on, following the setting as it changes (VaultSwitch). A vault that can't be
-	/// read is left as it is, since it may hold the only copy of the passwords: Zing runs without it and says so.
+	/// read is left as it is, since it may hold the only copy of the passwords: Zing runs without it and says so. Its secret key is
+	/// held 5 minutes on the UI thread's scheduler, and wiped when Windows locks or the session switches (SessionEvents).
 	/// </summary>
 	private VaultSwitch OpenVault(SettingsStore settings, IClock clock)
 	{
+		var scheduler = _scheduler ?? throw new InvalidOperationException("The vault opens after the UI thread's scheduler");
 		IHelloSealer sealer = TestHooks.HelloSealer() is { } fake ? fake : new HelloSealer(() => MostRecent?.Hwnd);
 		var starting = true;
-		var vaults = new VaultSwitch(settings, () => new VaultStore(AppPaths.Vault, new DpapiCipher(), sealer, clock), error =>
+		var vaults = new VaultSwitch(settings, () => new VaultStore(AppPaths.Vault, new DpapiCipher(), sealer, clock, scheduler, SessionEvents.Instance), error =>
 		{
 			Faults.Warning("vault load", error);
 			var text = $"Zing couldn't open your saved passwords ({Path.GetFileName(error.Path)}), so they're off for now. The file was left as it is.";

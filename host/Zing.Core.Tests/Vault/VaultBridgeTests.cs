@@ -19,7 +19,7 @@ public sealed class VaultBridgeTests : IDisposable
 	public VaultBridgeTests()
 	{
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_vault = new VaultStore(_dir, new FakeCipher(), _sealer, new TickingClock());
+		_vault = new VaultStore(_dir, new FakeCipher(), _sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
 		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), Vault: _vault), _host, "test");
 		_off = new ChromeApi(_offBridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent()), new FakeWindowHost(), "test");
 	}

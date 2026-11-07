@@ -24,7 +24,7 @@ public sealed class VaultSwitchTests : IDisposable
 
 	private bool VaultFilesExist() => File.Exists(Path.Combine(_dir, VaultStore.VaultFileName));
 
-	private VaultStore Open() => new(_dir, new FakeCipher(), _sealer, new TickingClock());
+	private VaultStore Open() => new(_dir, new FakeCipher(), _sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
 
 	private void Toggle()
 	{

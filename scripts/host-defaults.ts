@@ -25,7 +25,7 @@ import {
 } from '../src/shared/settings/schema'
 import { MAX_SLEEP_MINUTES, MIN_SLEEP_MINUTES } from '../src/shared/session/sleepSettings'
 import { SIDEBAR_COLUMN_WIDTH } from '../src/shared/shell/shellState'
-import { autofillBridgeName, autofillFillFunction, detectionScript } from '../src/shared/vault/autofillScript'
+import { autofillBridgeName, autofillFillFunction, autofillPickerEnterFlag, detectionScript } from '../src/shared/vault/autofillScript'
 
 export type SettingRule =
 	| { readonly type: 'enum'; readonly values: readonly string[] }
@@ -135,7 +135,7 @@ export function hostDefaults(): Record<string, unknown> {
 		'tab-organizations.json': tabOrganizations.map((id) => ({ id, label: tabOrganizationLabel[id] })),
 		'search-engines.json': SEARCH_URLS,
 		'viewable.json': { native: nativeTypes, ...viewableLists },
-		'autofill.json': { detectionScript, messageKey: autofillBridgeName, fillFunction: autofillFillFunction },
+		'autofill.json': { detectionScript, messageKey: autofillBridgeName, fillFunction: autofillFillFunction, pickerEnterFlag: autofillPickerEnterFlag },
 		'layout.json': { ...CHROME_LAYOUT, sidebarColumnWidth: SIDEBAR_COLUMN_WIDTH, libraryPanelWidth: LIBRARY_PANEL_WIDTH, verticalTabs: VERTICAL_TABS },
 	}
 }

@@ -55,7 +55,7 @@ public sealed class VaultKeys
 	/// <summary>DPAPI only, no prompt. The caller wipes it.</summary>
 	public byte[] IndexKey(ISecretCipher cipher) => cipher.Decrypt(_sealedIndexKey);
 
-	/// <summary>Asks Hello once. The caller wipes it.</summary>
+	/// <summary>Asks Hello once, every call; VaultStore holds what it returns (Ruling 44). The caller wipes it.</summary>
 	/// <exception cref="VaultSetUpAgainException">The Hello key was reset, or this blob wasn't sealed by this sealer.</exception>
 	public async Task<byte[]> SecretKeyAsync(ISecretCipher cipher, IHelloSealer sealer)
 	{

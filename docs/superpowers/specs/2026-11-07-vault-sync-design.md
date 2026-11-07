@@ -10,7 +10,7 @@ The important accounts stay where they are: passkeys go through Windows' own pas
 
 ## Goals
 
-- Save, fill and manage everyday website passwords, with Windows Hello asked **every time** a password is filled.
+- Save, fill and manage everyday website passwords, with Windows Hello asked **at most once every 5 minutes** (decision 3).
 - Sync the vault, end-to-end encrypted, between the user's Windows PCs through a small Zing server on Railway.
 - Recover the vault after a reinstall: sign in with Google, then enter the Zing account password. If the password is forgotten, a recovery key works instead.
 - Two users on one server, each with a separate vault.
@@ -55,7 +55,7 @@ The important accounts stay where they are: passkeys go through Windows' own pas
 
 1. The vault holds everyday website passwords only.
 2. **Picking an account:** clicking a username or password box on a site with saved logins shows a list of the saved usernames under the box. Picking one fills both boxes. One saved login still shows the list, and nothing fills until the user picks.
-3. **Windows Hello is asked every time** a password is filled.
+3. **Windows Hello is asked at most once every 5 minutes** (the owner's decision of 2026-11-07, Ruling 44; it replaces "asked every time a password is filled"). A successful Hello keeps the secret key in memory for a fixed 5 minutes from that Hello; using it doesn't extend the time. Filling, saving, updating, showing, copying and importing inside the 5 minutes ask nothing. The key is wiped when the 5 minutes end, and sooner when the vault is turned off, Windows locks or the session switches, Windows Hello stops being available, Zing closes, or the store is closed or replaced. Export still asks Hello every time, even inside the 5 minutes. A cancelled Hello holds nothing.
 4. **Saving:**
    - after a *successful* sign-in with a login Zing doesn't have, Zing offers to save it
    - after a successful sign-in with a saved username but a different password, it offers to update that login, and names which one
@@ -73,7 +73,7 @@ The owner hasn't confirmed these yet; they are open to change.
 
 - **What counts as a successful sign-in.** A form with a password box was submitted, and the page the browser lands on (after redirects, within 10 seconds) has no visible password box in the same origin's form. If the sign-in page comes back with a password box, it failed.
 - **The save prompt** goes in the page UI bar, with Save, Not now and Never for this site. "Never" is stored per exact origin, inside the vault, so it syncs.
-- **Saving, updating, revealing, copying and exporting** all ask for Windows Hello, the same as filling.
+- **Saving, updating, revealing, copying and importing** need Windows Hello the same way as filling: at most once every 5 minutes (decision 3). **Exporting** asks every time.
 - **Conflicts.** If the same login was edited on two PCs, the later edit wins for each field. The password that loses goes into the login's **password history**, shown on the manage page. A conflict can never lose a password.
 - **Deleted logins** go to **Recently deleted** for 30 days, with Restore, on every PC. They're then purged everywhere (see Sync design).
 - **The Zing account and the vault:**
@@ -122,7 +122,7 @@ on this PC:  index key  ──sealed by──▶ DPAPI
 - **On this PC, the secret key is sealed by a Windows Hello key held in the TPM** (`KeyCredentialManager`). DPAPI is an outer layer.
   - For passwords, this closes the hole where DPAPI alone decrypts silently for any process running as the user, which would make Hello only a prompt.
   - The method has to be proven first (see Checks). Possible methods are a deterministic signature over a fixed challenge, used as key material (the technique KeePass's Windows Hello plugins use), or Hello's key protection API.
-  - Each fill asks Hello. The secret key is held in memory for the shortest time possible, never written unsealed, and cleared after each operation.
+  - Hello asks at most once every 5 minutes (decision 3, the owner's decision of 2026-11-07). After a successful Hello the secret key is held in memory for a fixed 5 minutes, never written unsealed, then wiped with `CryptographicOperations.ZeroMemory`; it is wiped sooner on the triggers in decision 3. Export unseals its own copy every time and wipes it as soon as the passwords are read.
 - **No Windows Hello means no vault.** Zing shows an explicit "set up Windows Hello" error. There's no password-only fallback on the PC.
 
 ### Encryption of each login

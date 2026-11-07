@@ -72,7 +72,11 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 	/// <summary>A prompt nobody answers closes after this long, and its password goes with it.</summary>
 	public static readonly TimeSpan PromptFor = TimeSpan.FromMinutes(2);
 
-	/// <summary>What a fill by Zing is remembered for, so signing in with it doesn't ask Hello again.</summary>
+	/// <summary>
+	/// What a fill by Zing is remembered for, so signing in with it isn't offered as an update. Still needed with the secret key
+	/// held for 5 minutes (Ruling 44): a landing never reads a password (Ruling 36), held key or not, so without it every fill
+	/// followed by a sign-in would prompt an update.
+	/// </summary>
 	public static readonly TimeSpan FillFor = TimeSpan.FromMinutes(2);
 
 	/// <summary>Ruling 33; signInLimits in signInOutcome.ts.</summary>

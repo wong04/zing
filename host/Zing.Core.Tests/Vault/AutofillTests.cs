@@ -40,7 +40,7 @@ public sealed class AutofillTests : IDisposable
 		return NewStore();
 	}
 
-	private VaultStore NewStore() => new(_dir, new FakeCipher(), _sealer, new TickingClock());
+	private VaultStore NewStore() => new(_dir, new FakeCipher(), _sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
 
 	/// <summary>The store open now; turning the vault off and on opens a new one.</summary>
 	private VaultStore Vault => _switch.Current ?? throw new Xunit.Sdk.XunitException("the vault is off");
@@ -337,6 +337,135 @@ public sealed class AutofillTests : IDisposable
 		Assert.True(_api.Autofill.Key(PickerKey.Escape));
 		Assert.Null(Picker);
 		Assert.False(_api.Autofill.Key(PickerKey.Down));
+	}
+
+	private void PageEnter(string frameSource) => Page.Events.Autofill(new Uri(frameSource), new AutofillMessage.PickerEnter());
+
+	[Fact]
+	public void PickerEnterIsAScriptMessage()
+	{
+		Assert.Equal(PageMessageVerdict.Autofill, AutofillMessage.Read("""{"zingCredentialField":{"kind":"picker-enter"}}""", out var message));
+		Assert.IsType<AutofillMessage.PickerEnter>(message);
+	}
+
+	/// <summary>
+	/// Rulings 45 and 46: plain Enter is not an accelerator key to WebView2 (it maps to a character), so it never reaches
+	/// AcceleratorKeyPressed. The page's script takes it instead, but only once the host has told the page an entry is
+	/// highlighted, which only a real arrow key does; until then, and once the picker closes, Enter is the page's.
+	/// </summary>
+	[Fact]
+	public async Task ThePageIsToldToTakeEnterOnlyWhileARealArrowKeyHasHighlightedAnEntry()
+	{
+		await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		Assert.False(_api.Autofill.TakesEnter);
+
+		Focus($"{Site}/login");
+		Assert.NotNull(Picker);
+		Assert.False(_api.Autofill.TakesEnter);
+		// What a page can post moves nothing.
+		Focus($"{Site}/login");
+		Assert.False(_api.Autofill.TakesEnter);
+		Assert.Empty(Page.Ran);
+
+		Assert.True(_api.Autofill.Key(PickerKey.Down));
+		Assert.True(_api.Autofill.TakesEnter);
+		Assert.Equal([AutofillScripts.PickerEnter(true)], Page.Ran);
+		// Moving the highlight tells it nothing new.
+		Assert.True(_api.Autofill.Key(PickerKey.Down));
+		Assert.Single(Page.Ran);
+
+		Assert.True(_api.Autofill.Key(PickerKey.Escape));
+		Assert.False(_api.Autofill.TakesEnter);
+		Assert.Equal([AutofillScripts.PickerEnter(true), AutofillScripts.PickerEnter(false)], Page.Ran);
+	}
+
+	[Fact]
+	public async Task EnterFromThePageChoosesTheEntryARealArrowKeyHighlightedAndFillsIt()
+	{
+		await Save(Site, "ada");
+		await Save(Site, "bob", "bob's password");
+		OnPage($"{Site}/login");
+		Focus($"{Site}/login");
+		Page.ProbeResult = JsonDocument.Parse("true").RootElement;
+		_api.Autofill.Key(PickerKey.Down);
+		_api.Autofill.Key(PickerKey.Down);
+		var picked = Picker!.Entries[1];
+		Wait();
+
+		PageEnter($"{Site}/login");
+		await Task.Yield();
+
+		Assert.Equal(Fill(picked.Username, picked.Username == "bob" ? "bob's password" : "hunter22"), Assert.Single(Page.Evaluated));
+		Assert.Null(Picker);
+		Assert.Equal(AutofillScripts.PickerEnter(false), Page.Ran.Last());
+	}
+
+	[Fact]
+	public async Task AForgedPickerEnterWithNothingHighlightedDoesNothing()
+	{
+		await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		Focus($"{Site}/login");
+		Page.ProbeResult = JsonDocument.Parse("true").RootElement;
+		Wait();
+		var unseals = _sealer.Unseals;
+
+		PageEnter($"{Site}/login");
+
+		Assert.Empty(Page.Evaluated);
+		Assert.Equal(unseals, _sealer.Unseals);
+		Assert.NotNull(Picker);
+		Assert.Equal(-1, Picker!.Active);
+	}
+
+	[Fact]
+	public async Task APickerEnterFromAnotherOriginsFrameDoesNothing()
+	{
+		await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		Focus($"{Site}/login");
+		Page.ProbeResult = JsonDocument.Parse("true").RootElement;
+		_api.Autofill.Key(PickerKey.Down);
+		Wait();
+		var unseals = _sealer.Unseals;
+
+		PageEnter("https://other.test/frame");
+
+		Assert.Empty(Page.Evaluated);
+		Assert.Equal(unseals, _sealer.Unseals);
+		Assert.Equal(0, Picker!.Active);
+	}
+
+	[Fact]
+	public async Task APickerEnterWithNoPickerOpenDoesNothing()
+	{
+		await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		var unseals = _sealer.Unseals;
+
+		PageEnter($"{Site}/login");
+
+		Assert.Null(Picker);
+		Assert.Empty(Page.Evaluated);
+		Assert.Empty(Page.Ran);
+		Assert.Equal(unseals, _sealer.Unseals);
+	}
+
+	[Fact]
+	public async Task APickerEnterBeforeTheGuardIsTakenButIgnored()
+	{
+		await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		Focus($"{Site}/login");
+		Page.ProbeResult = JsonDocument.Parse("true").RootElement;
+		_api.Autofill.Key(PickerKey.Down);
+		_clock.Jump(499);
+
+		PageEnter($"{Site}/login");
+
+		Assert.Empty(Page.Evaluated);
+		Assert.NotNull(Picker);
 	}
 
 	[Fact]

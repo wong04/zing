@@ -27,7 +27,7 @@ public sealed class SignInWatchTests : IDisposable
 		_watch = new SignInWatch(() => _store, _ => _shown, _scheduler, _prompts.Add, (task, _) => _background.Add(task));
 	}
 
-	private VaultStore NewStore() => new(_dir, new FakeCipher(), _sealer, new TickingClock());
+	private VaultStore NewStore() => new(_dir, new FakeCipher(), _sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
 
 	private VaultStore Store => _store ?? throw new Xunit.Sdk.XunitException("the vault is off");
 

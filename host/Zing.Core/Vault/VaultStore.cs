@@ -51,8 +51,12 @@ public sealed class VaultFileException(string path, Exception inner) : Exception
 
 /// <summary>
 /// The local password vault (vault/ in the profile). Summaries are decrypted once, with the DPAPI-sealed index key, and kept in
-/// memory, so listing and searching never ask Windows Hello. Every password read and every write that seals a password asks Hello
-/// exactly once; the secret key is never cached and is wiped as soon as that operation is done. With no Hello, every write is refused.
+/// memory, so listing and searching never ask Windows Hello. A password read or a write that seals a password needs the secret key,
+/// which Hello unseals; Hello asks at most once per <see cref="SecretKeyHeldFor"/> (Ruling 44, the owner's decision of 2026-11-07).
+/// After a successful unseal the key is held for that fixed time, never extended by use, and then wiped; it is wiped sooner by
+/// Windows locking or the session switching, by Hello going away, and by <see cref="Dispose"/> (the vault turned off or replaced,
+/// Zing closing). Without lock detection nothing is held, so Hello asks every time (Ruling 47). Export always asks Hello, held key
+/// or not. With no Hello, every write is refused.
 /// </summary>
 /// <remarks>
 /// A password or old password is sealed under the version its item had when it was sealed, and the summary (sealed under the item's
@@ -69,10 +73,15 @@ public sealed class VaultStore : IDisposable
 
 	private const int Format = 1;
 
+	/// <summary>How long a successful Hello unseal keeps the secret key, counted from that Hello (Ruling 44).</summary>
+	public static readonly TimeSpan SecretKeyHeldFor = TimeSpan.FromMinutes(5);
+
 	private readonly string _dir;
 	private readonly ISecretCipher _cipher;
 	private readonly IHelloSealer _sealer;
 	private readonly IClock _clock;
+	private readonly IScheduler _scheduler;
+	private readonly ISessionEvents _session;
 	private readonly Lock _gate = new();
 	private readonly SemaphoreSlim _creatingKeys = new(1, 1);
 	private readonly List<LoginRecord> _records;
@@ -82,29 +91,45 @@ public sealed class VaultStore : IDisposable
 	private readonly Action _availabilityChanged;
 	/// <summary>Set under <c>_gate</c>; every write checks it under the same lock, so none lands once Dispose has returned.</summary>
 	private bool _disposed;
+	/// <summary>The secret key a Hello unsealed, and its wipe timer; both under <c>_gate</c>.</summary>
+	private byte[]? _heldKey;
+	private IDisposable? _heldTimer;
+	/// <summary>Counts wipes under <c>_gate</c>, so a Hello answered after one (Windows locked while it asked) holds nothing.</summary>
+	private int _wipes;
 
 	/// <summary>Fires after every write, and when Hello becomes available or stops being.</summary>
 	public event Action? Changed;
 
 	/// <exception cref="VaultFileException">A vault file can't be read or doesn't decrypt.</exception>
-	public VaultStore(string dir, ISecretCipher cipher, IHelloSealer sealer, IClock clock)
+	/// <param name="scheduler">Wipes the held secret key when its 5 minutes are up.</param>
+	/// <param name="session">Windows locking or the session switching wipes the held key; while it isn't watched, nothing is held.</param>
+	public VaultStore(string dir, ISecretCipher cipher, IHelloSealer sealer, IClock clock, IScheduler scheduler, ISessionEvents session)
 	{
 		_dir = dir;
 		_cipher = cipher;
 		_sealer = sealer;
 		_clock = clock;
+		_scheduler = scheduler;
+		_session = session;
 		_keys = Guard(KeysFile, VaultKeys.Load);
 		_records = Guard(VaultFile, LoadRecords);
 		_queued = Guard(SyncFile, LoadQueue);
 		_summaries = Guard(VaultFile, _ => DecryptSummaries());
-		_availabilityChanged = () => Changed?.Invoke();
+		_availabilityChanged = () =>
+		{
+			// A key held from before Hello went away mustn't outlive it.
+			if (!_sealer.Available) ForgetSecretKey();
+			Changed?.Invoke();
+		};
 		_sealer.AvailabilityChanged += _availabilityChanged;
+		_session.Switched += ForgetSecretKey;
 	}
 
 	/// <summary>
 	/// Closes the store (passwordAutofill turned off): it stops listening to Hello, and every write from now on, one already
 	/// waiting on Hello included, is refused with <see cref="VaultClosedException"/>. Writes commit under the same lock, so once
-	/// this returns nothing more reaches the files, and a store opened afterwards reads them as they finally are.
+	/// this returns nothing more reaches the files, and a store opened afterwards reads them as they finally are. The held secret
+	/// key is wiped, and a Hello still asking holds nothing.
 	/// </summary>
 	public void Dispose()
 	{
@@ -112,8 +137,10 @@ public sealed class VaultStore : IDisposable
 		{
 			if (_disposed) return;
 			_disposed = true;
+			WipeHeldKey();
 		}
 		_sealer.AvailabilityChanged -= _availabilityChanged;
+		_session.Switched -= ForgetSecretKey;
 	}
 
 	/// <summary>Called under <c>_gate</c> before any file is written.</summary>
@@ -196,14 +223,14 @@ public sealed class VaultStore : IDisposable
 		lock (_gate) return [.. Summary(id).History.Select(h => new PasswordHistoryEntry(h.ReplacedAt))];
 	}
 
-	/// <summary>Asks Hello once.</summary>
+	/// <summary>Asks Hello unless the secret key is held.</summary>
 	public async Task<string> PasswordAsync(string id)
 	{
 		var (record, summary) = Find(id);
 		return await OpenSecretAsync(record.ItemId, record.Password, summary.PasswordVersion);
 	}
 
-	/// <summary>Asks Hello once. Index 0 is the password replaced most recently.</summary>
+	/// <summary>Asks Hello unless the secret key is held. Index 0 is the password replaced most recently.</summary>
 	public async Task<string> HistoryPasswordAsync(string id, int index)
 	{
 		var (record, summary) = Find(id);
@@ -211,7 +238,7 @@ public sealed class VaultStore : IDisposable
 		return await OpenSecretAsync(record.ItemId, record.History[index], summary.History[index].Version);
 	}
 
-	/// <summary>Asks Hello once (the first save also makes the keys, with that one Hello call). Returns the new login's ID.</summary>
+	/// <summary>Asks Hello unless the secret key is held (the first save makes the keys, with one Hello call). Returns the new login's ID.</summary>
 	public async Task<string> SaveAsync(NewLogin login)
 	{
 		var origin = VaultModel.OriginOf(login.Origin);
@@ -237,10 +264,10 @@ public sealed class VaultStore : IDisposable
 		}
 	}
 
-	/// <summary>Asks Hello once. The replaced password goes into the history as it is, without being decrypted.</summary>
+	/// <summary>Asks Hello unless the secret key is held. The replaced password goes into the history as it is, without being decrypted.</summary>
 	public Task UpdatePasswordAsync(string id, string password) => ChangePasswordAsync(id, password, s => s, skipIfSame: false);
 
-	/// <summary>A new password and the summary's fields in one change: one Hello call, one version, one queued change. A cancel changes nothing.</summary>
+	/// <summary>A new password and the summary's fields in one change: at most one Hello call, one version, one queued change. A cancel changes nothing.</summary>
 	public Task UpdateLoginAsync(string id, string title, string note, string username, string password) =>
 		ChangePasswordAsync(id, password, s => s with { Title = title, Note = note, Username = username }, skipIfSame: false);
 
@@ -256,7 +283,7 @@ public sealed class VaultStore : IDisposable
 		Find(id);
 		RequireHello();
 		var keys = Keys();
-		var secretKey = await keys.SecretKeyAsync(_cipher, _sealer);
+		var secretKey = await SecretKeyAsync(keys);
 		try
 		{
 			lock (_gate)
@@ -296,7 +323,7 @@ public sealed class VaultStore : IDisposable
 
 	/// <summary>
 	/// Adds every login, or merges it into the live login with the same origin and username (one held already, or an earlier row of
-	/// this batch): a different password replaces the saved one, which goes into its history. One Hello call unseals the secret key for
+	/// this batch): a different password replaces the saved one, which goes into its history. At most one Hello call unseals the secret key for
 	/// the whole batch (Ruling 3), the files are written once, and a bad address anywhere refuses the whole batch before anything is written.
 	/// </summary>
 	/// <exception cref="NotAWebOriginException">A login's address isn't an http(s) address.</exception>
@@ -355,7 +382,10 @@ public sealed class VaultStore : IDisposable
 		}
 	}
 
-	/// <summary>Every login not in Recently deleted, with its password, for an export. Asks Hello once; the secret key is wiped as soon as the passwords are read.</summary>
+	/// <summary>
+	/// Every login not in Recently deleted, with its password, for an export. Always asks Hello, even while the secret key is held
+	/// (Ruling 44), and holds nothing: this key is wiped as soon as the passwords are read.
+	/// </summary>
 	/// <exception cref="NothingToExportException">No login to export.</exception>
 	public async Task<IReadOnlyList<ExportedLogin>> ExportAsync()
 	{
@@ -491,15 +521,15 @@ public sealed class VaultStore : IDisposable
 		_queued.AddRange(newlyQueued);
 	}
 
-	/// <summary>The secret key for a write: unsealed with one Hello call, or, before the first save, made (and sealed) with one.</summary>
+	/// <summary>The secret key for a write: the held one or one unsealed with one Hello call, or, before the first save, made (and sealed) with one.</summary>
 	private async Task<(VaultKeys Keys, byte[] SecretKey)> SecretKeyForWriteAsync()
 	{
-		if (_keys is { } existing) return (existing, await existing.SecretKeyAsync(_cipher, _sealer));
+		if (_keys is { } existing) return (existing, await SecretKeyAsync(existing));
 		await _creatingKeys.WaitAsync();
 		try
 		{
 			// Another first save may have made them while this one waited.
-			if (_keys is { } made) return (made, await made.SecretKeyAsync(_cipher, _sealer));
+			if (_keys is { } made) return (made, await SecretKeyAsync(made));
 			var created = await VaultKeys.CreateAsync(_cipher, _sealer);
 			try
 			{
@@ -526,7 +556,7 @@ public sealed class VaultStore : IDisposable
 	private async Task<string> OpenSecretAsync(string id, byte[] sealedBytes, long version)
 	{
 		var keys = Keys();
-		var secretKey = await keys.SecretKeyAsync(_cipher, _sealer);
+		var secretKey = await SecretKeyAsync(keys);
 		byte[]? plain = null;
 		try
 		{
@@ -564,6 +594,57 @@ public sealed class VaultStore : IDisposable
 		{
 			CryptographicOperations.ZeroMemory(indexKey);
 		}
+	}
+
+	/// <summary>
+	/// The secret key, a copy the caller wipes: the held one, or one Hello unseals now, which is then held for
+	/// <see cref="SecretKeyHeldFor"/> from this Hello. A cancelled or failed Hello holds nothing, nor does one answered after
+	/// a wipe or once the store is closed, nor any while locks can't be seen (Ruling 47).
+	/// </summary>
+	private async Task<byte[]> SecretKeyAsync(VaultKeys keys)
+	{
+		int wipes;
+		lock (_gate)
+		{
+			if (_heldKey is { } held) return [.. held];
+			wipes = _wipes;
+		}
+		var secretKey = await keys.SecretKeyAsync(_cipher, _sealer);
+		lock (_gate)
+		{
+			if (!_disposed && _session.Watching && _wipes == wipes && _heldKey is null)
+			{
+				var kept = (byte[])secretKey.Clone();
+				_heldKey = kept;
+				_heldTimer = _scheduler.Schedule(SecretKeyHeldFor, () => WipeIfHeld(kept));
+			}
+		}
+		return secretKey;
+	}
+
+	/// <summary>Wipes the held secret key, so the next password read or write asks Hello: Windows locked, or the session switched.</summary>
+	public void ForgetSecretKey()
+	{
+		lock (_gate) WipeHeldKey();
+	}
+
+	private void WipeIfHeld(byte[] key)
+	{
+		lock (_gate)
+		{
+			if (ReferenceEquals(_heldKey, key)) WipeHeldKey();
+		}
+	}
+
+	/// <summary>Called under <c>_gate</c>.</summary>
+	private void WipeHeldKey()
+	{
+		_wipes++;
+		_heldTimer?.Dispose();
+		_heldTimer = null;
+		if (_heldKey is null) return;
+		CryptographicOperations.ZeroMemory(_heldKey);
+		_heldKey = null;
 	}
 
 	private void RequireHello()
