@@ -87,5 +87,6 @@ test('a tool that throws while rendering shows its message, and the rest of the 
 	await panel.getByRole('button', { name: 'Close Timestamps' }).click()
 	await expect(panel).toHaveCount(0)
 	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels.map((p) => p.content)).toEqual(['tool:HMAC'])
-	await zing.close()
+	// The user sees a message, but it is still a bug, so the host records it and an unplanned one fails the run.
+	await expect(zing.close()).rejects.toThrow(/renderer: .*Patched toISOString failure/)
 })
