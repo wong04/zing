@@ -1,4 +1,4 @@
-import { safeFileBase, uniqueOutputName } from '../convert/commands'
+import { safeFileBase, safeFileExtension, uniqueOutputName } from '../convert/commands'
 
 /**
  * The file name a download is saved under: made safe for Windows, and numbered
@@ -8,7 +8,8 @@ export function downloadFileName(filename: string, exists: (name: string) => boo
 	const dot = filename.lastIndexOf('.')
 	const hasExt = dot > 0 && dot < filename.length - 1
 	const base = safeFileBase(hasExt ? filename.slice(0, dot) : filename)
-	if (hasExt) return uniqueOutputName(base, filename.slice(dot + 1), exists, true)
+	const ext = hasExt ? safeFileExtension(filename.slice(dot + 1)) : ''
+	if (ext) return uniqueOutputName(base, ext, exists, true)
 	// uniqueOutputName always joins with a dot; an extensionless file gets it trimmed back off.
 	return uniqueOutputName(base, '', (candidate) => exists(candidate.slice(0, -1)), true).slice(0, -1)
 }

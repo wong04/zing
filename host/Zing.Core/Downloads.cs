@@ -20,13 +20,19 @@ public static class DownloadPolicy
 	}
 }
 
-/// <summary>Port of src/shared/browser/downloadName.ts (and the `safeFileBase` it uses from convert/commands.ts).</summary>
+/// <summary>Port of src/shared/browser/downloadName.ts (and the `safeFileBase` and `safeFileExtension` it uses from convert/commands.ts).</summary>
 public static partial class DownloadNames
 {
-	[GeneratedRegex(@"^(con|prn|aux|nul|com[0-9]|lpt[0-9])$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+	[GeneratedRegex(@"^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
 	private static partial Regex ReservedName();
 
 	private static readonly char[] ForbiddenInWindows = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+
+	/// <summary>
+	/// Delete and C1 controls, the Arabic letter mark, zero-width characters, line and paragraph separators,
+	/// direction marks and embeddings/overrides/isolates, and the byte-order mark.
+	/// </summary>
+	private static readonly (int From, int To)[] Invisible = [(0x7f, 0x9f), (0x61c, 0x61c), (0x200b, 0x200f), (0x2028, 0x202e), (0x2060, 0x2069), (0xfeff, 0xfeff)];
 
 	/// <summary>The file name a download is saved under: safe for Windows, and numbered ("report 2.pdf") rather than overwriting.</summary>
 	public static string FileName(string filename, Func<string, bool> exists)
@@ -34,7 +40,8 @@ public static partial class DownloadNames
 		var dot = filename.LastIndexOf('.');
 		var hasExtension = dot > 0 && dot < filename.Length - 1;
 		var baseName = SafeFileBase(hasExtension ? filename[..dot] : filename);
-		var extension = hasExtension ? "." + filename[(dot + 1)..] : "";
+		var cleanExtension = hasExtension ? SafeFileExtension(filename[(dot + 1)..]) : "";
+		var extension = cleanExtension == "" ? "" : "." + cleanExtension;
 		var candidate = baseName + extension;
 		for (var counter = 2; exists(candidate); counter++) candidate = $"{baseName} {counter}{extension}";
 		return candidate;
@@ -57,13 +64,25 @@ public static partial class DownloadNames
 		return "download";
 	}
 
+	/// <summary>An extension cleaned like a base name, so a server's ":stream" or "/folder" can't ride on it; "" when nothing is left.</summary>
+	public static string SafeFileExtension(string name)
+	{
+		// Control characters, and the invisible ones that turn text around (a right-to-left override can make "photo-gpj.exe" read as "photo-exe.jpg").
+		var printable = new string([.. name.Where(ch => ch >= 0x20 && !IsInvisible(ch) && !ForbiddenInWindows.Contains(ch))]);
+		return printable.TrimEnd('.', ' ').Trim();
+	}
+
 	public static string SafeFileBase(string name)
 	{
-		var printable = new string([.. name.Where(ch => ch >= 0x20 && !ForbiddenInWindows.Contains(ch))]);
-		var cleaned = printable.TrimEnd('.', ' ').Trim();
+		var cleaned = SafeFileExtension(name);
 		if (cleaned == "") return "file";
-		return ReservedName().IsMatch(cleaned) ? cleaned + "_" : cleaned;
+		// Windows takes "CON.tar" for the device CON too: what counts is the text before the first dot.
+		var dot = cleaned.IndexOf('.');
+		var stem = dot == -1 ? cleaned : cleaned[..dot];
+		return ReservedName().IsMatch(stem.TrimEnd()) ? $"{stem}_{cleaned[stem.Length..]}" : cleaned;
 	}
+
+	private static bool IsInvisible(char ch) => Invisible.Any(range => ch >= range.From && ch <= range.To);
 }
 
 public enum MediaMode { Video, Audio }
@@ -230,7 +249,8 @@ public sealed class DownloadList(string directory, IDownloadHost host, PageUiSto
 		var id = _nextId++;
 		_paths[id] = saveAs;
 		_active.Add(id);
-		_entries = [.. _entries, new DownloadEntry(id, filename, DownloadStatuses.Progressing, 0, total)];
+		// The cleaned name on disk, never the server's: a right-to-left override in its name would disguise the extension.
+		_entries = [.. _entries, new DownloadEntry(id, name, DownloadStatuses.Progressing, 0, total)];
 		Publish();
 		return new StartedDownload(id, saveAs);
 	}

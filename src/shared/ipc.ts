@@ -281,7 +281,8 @@ export interface InvokeContract {
 	'toolpanel:end-drag': { args: [id: string, origin: Point]; result: void }
 	/** Lowercase hex digests. `algorithm` is a `HashAlgorithm` ("MD5", "SHA-1", "SHA-256", "SHA-512"); the host also answers MD5, which SubtleCrypto lacks. */
 	'hash:text': { args: [text: string, algorithm: string]; result: string }
-	'hash:file': { args: [path: string, algorithm: string]; result: string }
+	/** A file by its `files:pick` token, never a path. */
+	'hash:file': { args: [token: string, algorithm: string]; result: string }
 	'hash:hmac': { args: [message: string, key: string, algorithm: string]; result: string }
 	/** Every engine with its size and whether it is downloaded. Reads the disk; makes no request. */
 	'engines:list': { args: []; result: EngineInfo[] }
@@ -492,7 +493,7 @@ export interface ZingApi {
 	clearBrowsingSession(): Promise<void>
 	reportError(report: RendererErrorReport): Promise<void>
 	hashText(text: string, algorithm: string): Promise<string>
-	hashFile(path: string, algorithm: string): Promise<string>
+	hashFile(token: string, algorithm: string): Promise<string>
 	hmac(message: string, key: string, algorithm: string): Promise<string>
 	diagnose(host: string): Promise<DiagnosticReport>
 	previewDns(): Promise<DnsPreview>

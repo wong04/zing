@@ -7,6 +7,15 @@
 		{ "name": "keeps a leading-dot name whole", "filename": ".env", "taken": [], "expected": ".env" },
 		{ "name": "a reserved device name is suffixed", "filename": "CON.txt", "taken": [], "expected": "CON_.txt" },
 		{ "name": "a name of only forbidden characters becomes file", "filename": "???.bin", "taken": [], "expected": "file.bin" },
-		{ "name": "trailing dots and spaces are dropped from the base", "filename": "notes .zip", "taken": [], "expected": "notes.zip" }
+		{ "name": "trailing dots and spaces are dropped from the base", "filename": "notes .zip", "taken": [], "expected": "notes.zip" },
+		{ "name": "strips a right-to-left override that would disguise the extension", "filename": "invoice\u202efdp.exe", "taken": [], "expected": "invoicefdp.exe" },
+		{ "name": "strips zero-width characters and direction isolates", "filename": "a\u200bb\u2066c.txt", "taken": [], "expected": "abc.txt" },
+		{ "name": "strips invisible characters from the extension", "filename": "photo.\u202eexe", "taken": [], "expected": "photo.exe" },
+		{ "name": "a colon in the extension can't name an alternate data stream", "filename": "report.pdf:x", "taken": [], "expected": "report.pdfx" },
+		{ "name": "a slash in the extension can't reach a subfolder", "filename": "a./b", "taken": [], "expected": "a.b" },
+		{ "name": "a backslash in the extension can't reach a subfolder", "filename": "x.\\sub\\f", "taken": [], "expected": "x.subf" },
+		{ "name": "an extension of only forbidden characters is dropped", "filename": "report.:", "taken": [], "expected": "report" },
+		{ "name": "a reserved device name before the first dot is suffixed", "filename": "CON.tar.gz", "taken": [], "expected": "CON_.tar.gz" },
+		{ "name": "a superscript COM port is a reserved device name", "filename": "COM\u00b9.txt", "taken": [], "expected": "COM\u00b9_.txt" }
 	]
 }

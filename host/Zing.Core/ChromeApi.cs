@@ -778,7 +778,8 @@ public sealed class ChromeApi : IDisposable
 
 	private async Task<object?> UpdateYtDlpAsync() => await Engines().UpdateYtDlpAsync(_closing.Token);
 
-	private static async Task<object?> HashFileAsync(string path, string algorithm) => await Hashing.FileAsync(path, algorithm);
+	/// <summary>A file the person picked, by its token: a typed path could name a share, and opening one sends their Windows sign-in hash.</summary>
+	private async Task<object?> HashFileAsync(string token, string algorithm) => await Hashing.FileAsync(Grants.Resolve(token), algorithm);
 
 	private DnsService DnsSetup() => _app.Dns ?? throw new InvalidOperationException("This host can't change DNS");
 
