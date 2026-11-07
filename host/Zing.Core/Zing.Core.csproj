@@ -10,6 +10,7 @@
 		<InternalsVisibleTo Include="Zing.Core.Tests" />
 	</ItemGroup>
 	<ItemGroup>
+		<PackageReference Include="NSec.Cryptography" Version="26.4.0" />
 		<PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
 	</ItemGroup>
 	<ItemGroup>
