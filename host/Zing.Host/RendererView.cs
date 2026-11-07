@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
 using Zing.Core.Viewer;
@@ -47,6 +48,8 @@ public sealed class RendererView
 		// CSS app-region:drag moves the window from the chrome, the sign-in screen and the revealed sidebar.
 		core.Settings.IsNonClientRegionSupportEnabled = hash is "chrome" or "surface";
 		core.Settings.AreDefaultContextMenusEnabled = false;
+		// These views hold the whole bridge: a console here (F12) would let anyone talked into pasting a script drive it.
+		core.Settings.AreDevToolsEnabled = TestHooks.IsEndToEndRun;
 		core.SetVirtualHostNameToFolderMapping(AppHost, RendererFolder(), CoreWebView2HostResourceAccessKind.Allow);
 		// The viewer's files are served from this window's own table; a page view answers the same address 404 (WebView2Page).
 		core.AddWebResourceRequestedFilter($"https://{ViewerFiles.Host}/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
@@ -259,25 +262,10 @@ public sealed class RendererView
 		}
 	}
 
-	/// <summary>
-	/// The built React renderer. ZING_RENDERER_DIR wins (tests, packaging);
-	/// otherwise the nearest out/renderer above the app, which is where a
-	/// development checkout builds it.
-	/// </summary>
-	private static string RendererFolder()
-	{
-		var configured = Environment.GetEnvironmentVariable("ZING_RENDERER_DIR");
-		if (!string.IsNullOrEmpty(configured)) return RequireIndex(configured);
-		for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-		{
-			var candidate = Path.Combine(dir.FullName, "out", "renderer");
-			if (File.Exists(Path.Combine(candidate, "index.html"))) return candidate;
-		}
-		throw new DirectoryNotFoundException("No built renderer: run `npm run build`, or set ZING_RENDERER_DIR");
-	}
-
-	private static string RequireIndex(string folder) =>
-		File.Exists(Path.Combine(folder, "index.html")) ? folder : throw new DirectoryNotFoundException($"{folder} has no index.html");
+	/// <summary>The built React renderer: ZING_RENDERER_DIR, else the checkout's out/renderer that Zing.Host.csproj writes into the app.</summary>
+	private static string RendererFolder() => RendererLocation.Resolve(
+		Environment.GetEnvironmentVariable("ZING_RENDERER_DIR"),
+		typeof(RendererView).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(a => a.Key == "RendererFolder")?.Value);
 }
 
 /// <summary>A Zing view's window closed before the view finished starting.</summary>
