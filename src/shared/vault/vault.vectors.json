@@ -1,7 +1,17 @@
 {
 	"origins": [
 		{ "name": "normalises case and default ports", "input": "HTTPS://Accounts.Example.com:443/login?x=1", "origin": "https://accounts.example.com" },
-		{ "name": "keeps non-default ports distinct", "input": "https://a.example:8443/", "origin": "https://a.example:8443" }
+		{ "name": "keeps non-default ports distinct", "input": "https://a.example:8443/", "origin": "https://a.example:8443" },
+		{ "name": "drops userinfo", "input": "https://user:pw@accounts.example.com/", "origin": "https://accounts.example.com" },
+		{ "name": "drops userinfo and keeps the port", "input": "https://user@A.example:444/", "origin": "https://a.example:444" },
+		{ "name": "an IDN host is punycode", "input": "https://bücher.example/", "origin": "https://xn--bcher-kva.example" },
+		{ "name": "an uppercase scheme and host are lower-cased", "input": "HTTPS://EXAMPLE.COM/x", "origin": "https://example.com" },
+		{ "name": "the default https port is dropped", "input": "https://a.example:443/", "origin": "https://a.example" },
+		{ "name": "the default http port is dropped", "input": "http://a.example:80/", "origin": "http://a.example" },
+		{ "name": "443 is not default for http", "input": "http://a.example:443/", "origin": "http://a.example:443" },
+		{ "name": "an IPv6 host keeps its brackets", "input": "http://[::1]:3000/x", "origin": "http://[::1]:3000" },
+		{ "name": "http origin", "input": "http://a.example", "origin": "http://a.example" },
+		{ "name": "https origin", "input": "https://a.example", "origin": "https://a.example" }
 	],
 	"notWebOrigins": [
 		{ "name": "a file page", "input": "file:///C:/x.html" },

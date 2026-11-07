@@ -10,7 +10,10 @@ function summary(partial: Partial<LoginSummary>): LoginSummary {
 describe('origins', () => {
 	it.each(vectors.origins)('$name', ({ input, origin }) => expect(originOf(input)).toBe(origin))
 	it.each(vectors.notWebOrigins)('refuses $name', ({ input }) => expect(() => originOf(input)).toThrow(NotAWebOriginError))
-	it('http and https are different origins', () => expect(originOf('http://a.example')).not.toBe(originOf('https://a.example')))
+	it('http and https are different origins', () => {
+		const byName = (name: string) => vectors.origins.find((o) => o.name === name)?.origin
+		expect(byName('http origin')).not.toBe(byName('https origin'))
+	})
 })
 
 describe('who gets offered a login', () => {

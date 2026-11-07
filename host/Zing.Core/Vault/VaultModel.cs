@@ -31,7 +31,10 @@ public static class VaultModel
 	{
 		if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) throw new NotAWebOriginException($"Not a URL: {url}");
 		if (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp) throw new NotAWebOriginException($"Only http(s) pages have saved passwords: {url}");
-		return uri.GetLeftPart(UriPartial.Authority);
+		// Built part by part, not from GetLeftPart: that keeps userinfo and a Unicode host, where URL.origin drops the one and punycodes the other.
+		var port = uri.IsDefaultPort ? "" : $":{uri.Port}";
+		var host = uri.HostNameType == UriHostNameType.IPv6 ? $"[{uri.IdnHost}]" : uri.IdnHost;
+		return $"{uri.Scheme}://{host}{port}";
 	}
 
 	/// <summary>Fill the main frame and same-origin frames only. A cross-origin frame is never offered anything.</summary>
