@@ -8,6 +8,7 @@ import { test as base, chromium, expect, type Browser, type Page, type TestInfo 
 
 const ROOT = join(import.meta.dirname, '..')
 export const HOST_EXE = join(ROOT, 'host', 'Zing.Host', 'bin', 'Release', 'net9.0-windows10.0.22621.0', 'win-x64', 'Zing.exe')
+export const BUILT_RENDERER = join(ROOT, 'out', 'renderer')
 const CHROME_URL = 'https://app.zing/index.html#chrome'
 
 export class HostProcessError extends Error {
@@ -133,7 +134,7 @@ function hostEnvironment(port: string, errors: string, userData: string): NodeJS
 		ZING_E2E: '1',
 		ZING_CDP_PORT: port,
 		ZING_ERRORS_FILE: errors,
-		ZING_RENDERER_DIR: join(ROOT, 'out', 'renderer'),
+		ZING_RENDERER_DIR: BUILT_RENDERER,
 		ZING_USER_DATA: userData,
 		ZING_DOWNLOADS_DIR: join(userData, 'downloads'),
 		ZING_SKIP_ACCOUNT_GATE: '1',
