@@ -64,15 +64,6 @@ public sealed class Db
 			);
 			CREATE INDEX IF NOT EXISTS refresh_tokens_by_user ON refresh_tokens (user_id);
 			""");
-		AddHorizonColumn(connection);
-	}
-
-	// Databases created by Task 8 predate the column, and CREATE TABLE IF NOT EXISTS leaves them alone.
-	private static void AddHorizonColumn(SqliteConnection connection)
-	{
-		using var info = Command(connection, "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'horizon'");
-		if ((long)info.ExecuteScalar()! != 0) return;
-		Execute(connection, "ALTER TABLE users ADD COLUMN horizon INTEGER NOT NULL DEFAULT 0");
 	}
 
 	public string FindOrCreateUser(string sub)

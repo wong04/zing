@@ -18,7 +18,7 @@ public static class VersionedBlobs
 	public static IResult Get(Db db, string userId, BlobSlot slot)
 	{
 		using var connection = db.Open();
-		using var transaction = connection.BeginTransaction(deferred: false);
+		using var transaction = connection.BeginTransaction(deferred: true);
 		var (blob, version) = Read(connection, transaction, userId, slot);
 		if (version == 0) return Results.NotFound();
 		return Results.Ok(new BlobView(SyncEndpoints.EncodeBlob(blob), version));

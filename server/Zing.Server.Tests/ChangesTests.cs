@@ -163,6 +163,16 @@ public class ChangesTests
 	}
 
 	[Fact]
+	public async Task A_null_item_gets_400()
+	{
+		using var factory = new ServerFactory();
+		var client = await factory.SignedInClient();
+		using var content = new StringContent("{\"items\":[null]}", System.Text.Encoding.UTF8, "application/json");
+
+		Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync("/changes", content)).StatusCode);
+	}
+
+	[Fact]
 	public async Task A_blob_is_limited_to_256_KiB_decoded()
 	{
 		using var factory = new ServerFactory();

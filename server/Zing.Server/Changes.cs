@@ -4,7 +4,7 @@ namespace Zing.Server;
 
 public sealed record ItemPush(string? ItemId, int Version, long BaseRevision, bool Tombstone, string? Summary, string? Password, string? History);
 
-public sealed record ChangesPush(List<ItemPush>? Items);
+public sealed record ChangesPush(List<ItemPush?>? Items);
 
 public sealed record ItemView(string ItemId, int Version, long Revision, bool Tombstone, string Summary, string Password, string History);
 
@@ -116,8 +116,9 @@ public static class ChangesEndpoints
 		return Results.Ok(new { accepted, conflicts });
 	}
 
-	private static NewItem Validate(ItemPush item)
+	private static NewItem Validate(ItemPush? item)
 	{
+		if (item is null) throw new RequestRejectedException(StatusCodes.Status400BadRequest, "items must not contain null.");
 		if (string.IsNullOrEmpty(item.ItemId) || item.ItemId.Length > SyncLimits.MaxItemIdLength)
 			throw new RequestRejectedException(StatusCodes.Status400BadRequest, "itemId is required and at most 128 characters.");
 		if (item.Version < 0) throw new RequestRejectedException(StatusCodes.Status400BadRequest, "version must not be negative.");
