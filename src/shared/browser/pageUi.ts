@@ -27,6 +27,22 @@ export interface PermissionPrompt {
 	readonly kind: PermissionKind
 }
 
+/** The vault's offer to save a sign-in, or to update a saved one. Names the origin and username only; the host holds the password. */
+export interface SaveLoginPrompt {
+	/** The tab it is for. */
+	readonly pageId: string
+	readonly kind: 'save' | 'update'
+	readonly origin: string
+	readonly username: string
+	/** For an update, the saved login's username whose password it replaces. */
+	readonly replaces?: string
+}
+
+export type SaveAnswer = 'save' | 'not-now' | 'never'
+
+/** `cancelled`: Windows Hello was cancelled or unavailable, so nothing was stored. `gone`: the prompt had already closed. */
+export type SaveOutcome = 'saved' | 'updated' | 'dismissed' | 'cancelled' | 'gone'
+
 export interface PageUiState {
 	readonly find: FindState | undefined
 	/** Bumped each time Find is invoked so an open bar re-takes focus. */
@@ -34,6 +50,7 @@ export interface PageUiState {
 	readonly downloads: readonly DownloadEntry[]
 	readonly downloadsOpen: boolean
 	readonly permission: PermissionPrompt | undefined
+	readonly saveLogin?: SaveLoginPrompt | undefined
 }
 
 export const EMPTY_PAGE_UI: PageUiState = {
@@ -42,10 +59,11 @@ export const EMPTY_PAGE_UI: PageUiState = {
 	downloads: [],
 	downloadsOpen: false,
 	permission: undefined,
+	saveLogin: undefined,
 }
 
 export function hasVisiblePageUi(state: PageUiState): boolean {
-	return state.find !== undefined || state.permission !== undefined || (state.downloadsOpen && state.downloads.length > 0)
+	return state.find !== undefined || state.permission !== undefined || state.saveLogin !== undefined || (state.downloadsOpen && state.downloads.length > 0)
 }
 
 export type HistoryDirection = 'back' | 'forward'

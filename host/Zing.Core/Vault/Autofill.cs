@@ -61,6 +61,12 @@ public abstract record AutofillMessage
 	/// <summary>No sign-in field has focus any more, or the page started a new document.</summary>
 	public sealed record Left() : AutofillMessage;
 
+	/// <summary>A sign-in form was submitted. Whatever the page says is only what it says: SignInWatch holds it for its own origin.</summary>
+	public sealed record Submitted(string Username, string Password) : AutofillMessage;
+
+	/// <summary>The page now shows (or no longer shows) a visible password box.</summary>
+	public sealed record Landed(bool HasVisiblePasswordBox) : AutofillMessage;
+
 	/// <summary>Reads a page message. Never throws: any page can post anything (Ruling 29).</summary>
 	public static PageMessageVerdict Read(string json, out AutofillMessage? message)
 	{
@@ -93,6 +99,10 @@ public abstract record AutofillMessage
 		{
 			case "none":
 				return new Left();
+			case "submit":
+				return Text(body, "username", SignInWatch.UsernameMax) is { Length: > 0 } user && Text(body, "password", SignInWatch.PasswordMax) is { Length: > 0 } password ? new Submitted(user, password) : null;
+			case "landed":
+				return body.TryGetProperty("password", out var box) && box.ValueKind is JsonValueKind.True or JsonValueKind.False ? new Landed(box.GetBoolean()) : null;
 			case "username":
 				field = CredentialFieldKind.Username;
 				break;
@@ -107,6 +117,10 @@ public abstract record AutofillMessage
 		if (w <= 0 || h <= 0) return new Left();
 		return new Focused(new CredentialField(field, new Rect(x, y, w, h), default));
 	}
+
+	/// <summary>A string property of at most <paramref name="max"/> UTF-16 code units; null when it is absent, not a string or longer.</summary>
+	private static string? Text(JsonElement body, string name, int max) =>
+		body.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && value.GetString() is { } text && text.Length <= max ? text : null;
 
 	private static double? Number(JsonElement body, string name) =>
 		body.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && double.IsFinite(number) ? number : null;
@@ -163,7 +177,8 @@ public static class FillOutcomes
 /// <param name="pageOf">The page of a tab that is on screen; null for one that isn't, or has gone.</param>
 /// <param name="changed">The picker opened, changed or closed (null).</param>
 /// <param name="background">Runs a fill nobody awaits (a real Enter), reporting its failure.</param>
-public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageOf, Action<AccountPicker?> changed, IClock clock, IScheduler scheduler, Action<Task, string> background) : IDisposable
+/// <param name="filled">A login was filled into a page (page ID, origin, username, password), so signing in with it is not a changed password.</param>
+public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageOf, Action<AccountPicker?> changed, IClock clock, IScheduler scheduler, Action<Task, string> background, Action<string, string, string, string> filled) : IDisposable
 {
 	/// <summary>At most one picker update per page in this long; the latest report wins (Ruling 29).</summary>
 	public static readonly TimeSpan Throttle = TimeSpan.FromMilliseconds(100);
@@ -313,8 +328,10 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 		// The page may have gone elsewhere while Hello was up, or the vault been turned off (or off and on, a new store);
 		// the script checks the origin once more as it runs.
 		if (!StillOn(open) || !ReferenceEquals(vault(), store)) return FillOutcomes.Refused;
-		var filled = await open.Page.EvaluateAsync(AutofillScripts.Fill(open.Origin, login.Username, password));
-		return filled.ValueKind == JsonValueKind.True ? FillOutcomes.Filled : FillOutcomes.NotFilled;
+		var done = await open.Page.EvaluateAsync(AutofillScripts.Fill(open.Origin, login.Username, password));
+		if (done.ValueKind != JsonValueKind.True) return FillOutcomes.NotFilled;
+		filled(open.Picker.PageId, open.Origin, login.Username, password);
+		return FillOutcomes.Filled;
 	}
 
 	private void Show(string pageId, Uri frameSource, CredentialField field)

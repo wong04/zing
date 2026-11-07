@@ -149,6 +149,9 @@ public sealed class ChromeApi : IDisposable
 	/// <summary>The vault's account picker and fill for this window's pages.</summary>
 	public Autofill Autofill { get; }
 
+	/// <summary>The save and update prompts for this window's pages.</summary>
+	public SignInWatch SignIn { get; }
+
 	public TabLifecycle Lifecycle { get; }
 
 	/// <summary>Whether the reader relay and the archive may be asked this session.</summary>
@@ -176,12 +179,18 @@ public sealed class ChromeApi : IDisposable
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
 		Permissions = new PermissionBroker(PageUi);
+		SignIn = new SignInWatch(() => app.Vaults.Current, id => Tabs.IsShown(id), host.Scheduler, prompt => PageUi.Update(s => s with { SaveLogin = prompt }), host.Background);
 		Autofill = new Autofill(() => app.Vaults.Current, id => Tabs.IsShown(id) ? Tabs.PageOf(id) : null, picker =>
 		{
 			host.Push("pageui:account-picker", picker);
 			host.AccountPickerChanged(picker);
-		}, app.Clock, host.Scheduler, host.Background);
-		Tabs.AutofillMessage += Autofill.Message;
+		}, app.Clock, host.Scheduler, host.Background, (pageId, origin, username, password) => SignIn.Filled(pageId, origin, username, password));
+		Tabs.AutofillMessage += (pageId, source, message) =>
+		{
+			Autofill.Message(pageId, source, message);
+			SignIn.Message(pageId, source, message);
+		};
+		Tabs.Closed += SignIn.PageClosed;
 		Drops = new DropInbox(Grants);
 		bridge.UseDropInbox(Drops);
 		if (app.ViewerRoot is { } viewerRoot)
@@ -366,6 +375,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("vault:restore", args => Do(() => Vault().Restore(Text(args, 0))));
 		bridge.Register("vault:history", args => Vault().History(Text(args, 0)));
 		bridge.Register("vault:fill", async args => await Autofill.FillAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("vault:answer-save", async args => await SignIn.AnswerAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
@@ -489,6 +499,7 @@ public sealed class ChromeApi : IDisposable
 		_app.Vaults.Changed -= VaultSwitched;
 		if (_watchedVault is { } vault) vault.Changed -= PushVaultState;
 		Autofill.Dispose();
+		SignIn.Dispose();
 		Shell.Dispose();
 		Ordering.Dispose();
 		Lifecycle.Dispose();
@@ -836,6 +847,7 @@ public sealed class ChromeApi : IDisposable
 		_watchedVault = _app.Vaults.Current;
 		if (_watchedVault is { } now) now.Changed += PushVaultState;
 		Autofill.Close();
+		SignIn.Clear();
 		PushVaultState();
 	}
 
@@ -1136,6 +1148,7 @@ public sealed class ChromeApi : IDisposable
 		Ordering?.ScheduleReorganize();
 		Find?.ActiveChanged();
 		Autofill?.PagesChanged();
+		SignIn?.PagesChanged();
 		Lifecycle?.Reschedule();
 		Stacks?.Refresh();
 		Overview?.Refresh();

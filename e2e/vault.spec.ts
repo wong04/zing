@@ -341,3 +341,311 @@ test('with the vault off, no picker appears, even with a login saved for the pag
 	expect(await pickerLayer(zing)).toBeUndefined()
 	await zing.close()
 })
+
+// -- Save and update prompts (Task 5) --
+//
+// Zing offers to save a sign-in that worked, and to update a saved login whose password changed. The prompt is drawn in the
+// page-UI layer; it names the origin and the username, never the password, which the host holds in memory until it is answered.
+
+const SIGN_IN_FORM = `<form id="form" action="/login" method="post">
+	<label>Email <input id="user" name="username" autocomplete="username"></label>
+	<label>Password <input id="pass" name="password" type="password"></label>
+	<button>Sign in</button>
+</form>`
+
+// A page that never navigates: a script swaps the form for a dashboard, or (for the wrong password) draws the same form again.
+const SPA = `<!doctype html><title>App</title><div id="root">${SIGN_IN_FORM}</div>
+<template id="again"><p>Wrong password</p>${SIGN_IN_FORM}</template>
+<script>
+document.addEventListener('submit', (e) => {
+	e.preventDefault()
+	const wrong = document.querySelector('#pass').value === 'wrong'
+	setTimeout(() => {
+		const root = document.querySelector('#root')
+		root.innerHTML = wrong ? document.querySelector('#again').innerHTML : '<h1>Dashboard</h1>'
+	}, 300)
+})
+</script>`
+
+let signInSite: Server
+let signInBase = ''
+
+test.beforeAll(async () => {
+	signInSite = createServer((req, res) => {
+		const url = req.url ?? '/'
+		res.setHeader('content-type', 'text/html')
+		if (req.method === 'POST' && url === '/login') {
+			let body = ''
+			req.on('data', (chunk) => (body += String(chunk)))
+			req.on('end', () => {
+				if (new URLSearchParams(body).get('password') === 'wrong') {
+					res.end(`<!doctype html><title>Sign in</title><p>Wrong password</p>${SIGN_IN_FORM}`)
+					return
+				}
+				res.statusCode = 302
+				res.setHeader('location', '/dashboard')
+				res.end()
+			})
+			return
+		}
+		if (url === '/dashboard') return void res.end('<!doctype html><title>Dashboard</title><h1>Welcome back</h1>')
+		if (url === '/spa') return void res.end(SPA)
+		res.end(`<!doctype html><title>Sign in</title>${SIGN_IN_FORM}`)
+	})
+	await new Promise<void>((resolve) => signInSite.listen(0, '127.0.0.1', () => resolve()))
+	signInBase = origin(signInSite)
+})
+
+test.afterAll(async () => {
+	await new Promise<void>((resolve) => signInSite.close(() => resolve()))
+})
+
+async function signIn(page: Page, username: string, password: string): Promise<void> {
+	await page.fill('#user', username)
+	await page.fill('#pass', password)
+	await page.click('button')
+}
+
+const pageUiState = (zing: Launched) => zing.chrome.evaluate(() => window.zing.getPageUi())
+const savePrompt = async (zing: Launched) => (await pageUiState(zing)).saveLogin ?? null
+const promptUi = (zing: Launched): Promise<Page> => pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+const logins = (zing: Launched) => zing.chrome.evaluate(() => window.zing.vaultSummaries())
+
+/** Counts how many times a prompt has opened, from now on. */
+async function countPrompts(zing: Launched): Promise<void> {
+	await zing.chrome.evaluate(() => {
+		const counter = window as unknown as { __prompts: number }
+		counter.__prompts = 0
+		let open = false
+		window.zing.onPageUiState((state) => {
+			const now = state.saveLogin !== undefined
+			if (now && !open) counter.__prompts++
+			open = now
+		})
+	})
+}
+const promptsOpened = (zing: Launched): Promise<number> => zing.chrome.evaluate(() => (window as unknown as { __prompts: number }).__prompts)
+
+async function answer(zing: Launched, name: string): Promise<void> {
+	const ui = await promptUi(zing)
+	await ui.getByRole('button', { name }).click()
+}
+
+test('a successful sign-in to a new site prompts Save, and Save stores the login after Hello', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/login`)
+
+	await signIn(page, USERNAME, PASSWORD)
+
+	await expect.poll(() => savePrompt(zing)).toMatchObject({ kind: 'save', origin: signInBase, username: USERNAME })
+	// Only the origin and the username reach the renderer: the password stays in the host.
+	expect(JSON.stringify(await pageUiState(zing))).not.toContain(PASSWORD)
+	const ui = await promptUi(zing)
+	await expect(ui.getByText(USERNAME)).toBeVisible()
+	await expect(ui.getByText(PASSWORD)).toHaveCount(0)
+	expect(await logins(zing)).toHaveLength(0)
+
+	await answer(zing, 'Save')
+
+	await expect.poll(() => savePrompt(zing)).toBeNull()
+	const saved = await logins(zing)
+	expect(saved).toHaveLength(1)
+	expect(saved[0]).toMatchObject({ origin: signInBase, username: USERNAME })
+	expect(await zing.chrome.evaluate((id) => window.zing.revealPassword(id), saved[0]!.id)).toBe(PASSWORD)
+	await zing.close()
+})
+
+test('a wrong password, where the page shows the form again, gives no prompt', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/login`)
+	await countPrompts(zing)
+
+	await signIn(page, USERNAME, 'wrong')
+	await expect(page.getByText('Wrong password')).toBeVisible()
+	await settle(page)
+
+	expect(await savePrompt(zing)).toBeNull()
+	expect(await promptsOpened(zing)).toBe(0)
+	// Getting it right now, on the same page, is a new submit and prompts.
+	await signIn(page, USERNAME, PASSWORD)
+	await expect.poll(() => savePrompt(zing)).toMatchObject({ kind: 'save', username: USERNAME })
+	await zing.close()
+})
+
+test('a changed password prompts an update that names the saved login, and Update replaces it', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await save(zing, signInBase, USERNAME, 'old password')
+	const page = await open(zing, `${signInBase}/login`)
+
+	await signIn(page, USERNAME, PASSWORD)
+
+	await expect.poll(() => savePrompt(zing)).toMatchObject({ kind: 'update', username: USERNAME, replaces: USERNAME })
+	const ui = await promptUi(zing)
+	await expect(ui.getByRole('alertdialog', { name: 'Update saved password' })).toBeVisible()
+	await answer(zing, 'Update')
+
+	await expect.poll(() => savePrompt(zing)).toBeNull()
+	const saved = await logins(zing)
+	expect(saved).toHaveLength(1)
+	expect(await zing.chrome.evaluate((id) => window.zing.revealPassword(id), saved[0]!.id)).toBe(PASSWORD)
+	expect(await zing.chrome.evaluate((id) => window.zing.loginHistory(id), saved[0]!.id)).toHaveLength(1)
+	await zing.close()
+})
+
+test('signing in with the saved password prompts nothing', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await save(zing, signInBase, USERNAME, PASSWORD)
+	const page = await open(zing, `${signInBase}/login`)
+	await countPrompts(zing)
+
+	await signIn(page, USERNAME, PASSWORD)
+	await page.waitForURL(`${signInBase}/dashboard`)
+	await settle(page)
+
+	expect(await promptsOpened(zing)).toBe(0)
+	await zing.close()
+})
+
+test('Never for this site stops every later prompt for it, saving and updating alike, and is kept in the vault', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/login`)
+	await signIn(page, USERNAME, PASSWORD)
+	await expect.poll(() => savePrompt(zing)).not.toBeNull()
+
+	await answer(zing, 'Never for this site')
+
+	await expect.poll(() => savePrompt(zing)).toBeNull()
+	// A mark is not a login: nothing for the picker, the count or the manage page.
+	expect(await logins(zing)).toHaveLength(0)
+	expect((await zing.chrome.evaluate(() => window.zing.getVaultState())).count).toBe(0)
+	await countPrompts(zing)
+
+	const again = await open(zing, `${signInBase}/login`)
+	await signIn(again, 'eve@example.test', 'another password')
+	await again.waitForURL(`${signInBase}/dashboard`)
+	await settle(again)
+	expect(await promptsOpened(zing)).toBe(0)
+
+	// A login saved afterwards, with a changed password, isn't offered an update either.
+	await save(zing, signInBase, 'carol@example.test', 'old password')
+	const third = await open(zing, `${signInBase}/login`)
+	await signIn(third, 'carol@example.test', 'new password')
+	await third.waitForURL(`${signInBase}/dashboard`)
+	await settle(third)
+	expect(await promptsOpened(zing)).toBe(0)
+
+	// The mark is in the vault file, so it survives a restart.
+	await zing.close()
+	const restarted = await launchZing({ userDataDir: zing.userDataDir })
+	const after = await open(restarted, `${signInBase}/login`)
+	await countPrompts(restarted)
+	await signIn(after, 'dave@example.test', 'a password')
+	await after.waitForURL(`${signInBase}/dashboard`)
+	await settle(after)
+	expect(await promptsOpened(restarted)).toBe(0)
+	await restarted.close()
+})
+
+test('Not now closes the prompt and stores nothing; it does not come back for the same sign-in', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/login`)
+	await countPrompts(zing)
+	await signIn(page, USERNAME, PASSWORD)
+	await expect.poll(() => savePrompt(zing)).not.toBeNull()
+
+	await answer(zing, 'Not now')
+
+	await expect.poll(() => savePrompt(zing)).toBeNull()
+	await settle(page)
+	expect(await logins(zing)).toHaveLength(0)
+	expect(await promptsOpened(zing)).toBe(1)
+	await zing.close()
+})
+
+test('a cancelled Windows Hello on Save stores nothing and closes the prompt without an error', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await save(zing, 'https://other.example', 'someone')
+	const page = await open(zing, `${signInBase}/login`)
+	await signIn(page, USERNAME, PASSWORD)
+	await expect.poll(() => savePrompt(zing)).not.toBeNull()
+	await hello(zing, 'cancel')
+
+	await answer(zing, 'Save')
+
+	await expect.poll(() => savePrompt(zing)).toBeNull()
+	await settle(page)
+	expect((await logins(zing)).map((l) => l.username)).toEqual(['someone'])
+	expect((await layers(zing.chrome)).some((l) => l.url.endsWith('#overlay') && l.visible)).toBe(false)
+	await zing.close()
+})
+
+test('a single-page sign-in that swaps the form for a dashboard prompts exactly once', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/spa`)
+	await countPrompts(zing)
+
+	await signIn(page, USERNAME, PASSWORD)
+	await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+
+	await expect.poll(() => savePrompt(zing)).toMatchObject({ kind: 'save', origin: signInBase, username: USERNAME })
+	await settle(page)
+	expect(await promptsOpened(zing)).toBe(1)
+	await answer(zing, 'Not now')
+	await settle(page)
+	expect(await promptsOpened(zing)).toBe(1)
+	await zing.close()
+})
+
+test('a page that re-renders the same form, as after a wrong password, does not prompt', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/spa`)
+	await countPrompts(zing)
+
+	await signIn(page, USERNAME, 'wrong')
+	await expect(page.getByText('Wrong password')).toBeVisible()
+	await page.waitForTimeout(3000)
+
+	expect(await promptsOpened(zing)).toBe(0)
+	expect(await savePrompt(zing)).toBeNull()
+	await zing.close()
+})
+
+test('a page can prompt only for its own origin and with what it reported: a forged submit names the page, not the origin it claims', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/login`)
+
+	await post(page, { zingCredentialField: { kind: 'submit', username: 'forged@example.test', password: 'forged', origin: otherBase } })
+	await post(page, { zingCredentialField: { kind: 'landed', password: false, origin: otherBase } })
+
+	await expect.poll(() => savePrompt(zing)).toMatchObject({ kind: 'save', origin: signInBase, username: 'forged@example.test' })
+	expect((await savePrompt(zing))?.origin).not.toBe(otherBase)
+	await zing.close()
+})
+
+test('submit reports over the limits are dropped and counted, and prompt nothing', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/login`)
+	const before = await droppedMessages(zing)
+
+	await post(page, { zingCredentialField: { kind: 'submit', username: 'u'.repeat(513), password: 'p' } })
+	await post(page, { zingCredentialField: { kind: 'submit', username: 'u', password: 'p'.repeat(1025) } })
+	await post(page, { zingCredentialField: { kind: 'submit', username: 'u' } })
+	await post(page, { zingCredentialField: { kind: 'landed', password: false } })
+
+	await expect.poll(async () => (await droppedMessages(zing)) - before).toBe(3)
+	await settle(page)
+	expect(await savePrompt(zing)).toBeNull()
+	await zing.close()
+})
+
+test('turning the vault off drops a prompt on screen and what was held', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/login`)
+	await signIn(page, USERNAME, PASSWORD)
+	await expect.poll(() => savePrompt(zing)).not.toBeNull()
+
+	await zing.chrome.evaluate(() => window.zing.setSetting('passwordAutofill', false))
+
+	await expect.poll(() => savePrompt(zing)).toBeNull()
+	await zing.close()
+})

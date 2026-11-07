@@ -10,6 +10,7 @@
 // own `Source` for the message, never from the message, and why no saved username or password
 // is ever handed to the page before the user chooses one in Zing's picker.
 import { usernameHint } from './autofillFields'
+import { signInLimits } from './signInOutcome'
 
 /** The key every message from the script is posted under: `{ zingCredentialField: message }`. Anything else isn't the script's. */
 export const autofillBridgeName = 'zingCredentialField'
@@ -43,6 +44,17 @@ export const autofillFillFunction = fill
  *
  * Keys are never reported: the page could forge them. The host reads the
  * picker's arrows, Enter and Esc from real key presses itself.
+ *
+ * It also reports sign-ins, for the save and update prompts (SignInWatch in the host):
+ *   - `submit`: a form with a visible password box was submitted (or Enter was pressed in
+ *     a form-less one, or its sign-in button clicked), with the username and password in
+ *     it. A form with two different passwords (change password) reports nothing.
+ *   - `landed`: whether the page now has a visible password box. Sent once for every new
+ *     document, and, after a submit, for a page that swaps its form for something else
+ *     without navigating (only when the box has gone for good: a form that stays is never
+ *     reported, as a slow sign-in looks the same until it ends).
+ * The host decides what they mean, takes the origin from WebView2's own Source for the
+ * message, and holds the credentials for 10 seconds at most.
  *
  * `kind` here is `fieldKind` in autofillFields.ts; keep the two in step.
  */
@@ -108,8 +120,84 @@ export const detectionScript = `(() => {
     if (key !== lastKey) { lastKey = key; report(m); }
   };
   const soon = () => setTimeout(check, 0);
+  // --- Sign-in reports ---
+  const visible = el => {
+    const view = el.ownerDocument && el.ownerDocument.defaultView;
+    if (!el.isConnected || !view) return false;
+    const style = view.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  const passwordBoxes = scope => Array.prototype.filter.call(scope.querySelectorAll('input'),
+    el => (el.type || '').toLowerCase() === 'password' && !el.disabled && visible(el));
+  const documents = () => {
+    const docs = [document];
+    document.querySelectorAll('iframe, frame').forEach(f => { const d = sameOrigin(f); if (d) docs.push(d); });
+    return docs;
+  };
+  const hasPasswordBox = () => documents().some(d => passwordBoxes(d).length > 0);
+  // The username and password typed into a form (or document), or null when it isn't a plain sign-in.
+  const credentials = scope => {
+    const boxes = passwordBoxes(scope).filter(el => el.value);
+    if (boxes.length === 0) return null;
+    // Sign-up forms repeat the password; a change-password form has two different ones.
+    if (boxes.some(el => el.value !== boxes[0].value)) return null;
+    const password = boxes[0].value;
+    if (password.length > ${signInLimits.passwordMax}) return null;
+    const inputs = Array.prototype.slice.call(scope.querySelectorAll('input'));
+    const before = inputs.slice(0, inputs.indexOf(boxes[0])).filter(el => kind(el) === 'username' && el.value && visible(el));
+    const username = before.length ? before[before.length - 1].value : '';
+    if (!username || username.length > ${signInLimits.usernameMax}) return null;
+    return { username, password };
+  };
+  // After a submit, a page that stays put (a single-page app) may swap the form for something else. A page that
+  // navigates posts its own 'landed' when it loads. Two checks in a row without a password box is a landing.
+  let watching = 0;
+  const watchLanding = () => {
+    const token = ++watching;
+    const started = Date.now();
+    let gone = 0;
+    const tick = () => {
+      if (token !== watching || Date.now() - started > ${signInLimits.holdMs}) return;
+      gone = hasPasswordBox() ? 0 : gone + 1;
+      if (gone >= 2) { report({ kind: 'landed', password: false }); return; }
+      setTimeout(tick, 400);
+    };
+    setTimeout(tick, 400);
+  };
+  let lastSubmit = '', lastSubmitAt = 0, submittedHere = false;
+  const submitted = scope => {
+    const c = credentials(scope);
+    if (!c) return;
+    // A form fires several of these for one submit (the click, Enter, the submit event).
+    const key = JSON.stringify([c.username, c.password]);
+    const now = Date.now();
+    if (key === lastSubmit && now - lastSubmitAt < 1000) return;
+    lastSubmit = key; lastSubmitAt = now; submittedHere = true;
+    report({ kind: 'submit', username: c.username, password: c.password });
+    watchLanding();
+  };
+  const onSubmit = e => { if (e.target && e.target.tagName === 'FORM') submitted(e.target); };
+  const onEnter = e => {
+    const el = e.target;
+    if (e.key === 'Enter' && el && el.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'password') submitted(el.form || el.ownerDocument);
+  };
+  const signInLabel = /sign.?in|log.?in|continue|submit|next/i;
+  const onClick = e => {
+    const button = e.target && e.target.closest ? e.target.closest('button, input[type=submit], input[type=button], [role=button]') : null;
+    if (!button) return;
+    const label = button.textContent || button.value || button.getAttribute('aria-label') || '';
+    if (signInLabel.test(label)) submitted(button.form || button.ownerDocument);
+  };
+
   const events = ['focusin', 'focusout', 'pointerdown', 'keyup'];
-  const listen = doc => events.forEach(t => doc.addEventListener(t, soon, true));
+  const listen = doc => {
+    events.forEach(t => doc.addEventListener(t, soon, true));
+    doc.addEventListener('submit', onSubmit, true);
+    doc.addEventListener('keydown', onEnter, true);
+    doc.addEventListener('click', onClick, true);
+  };
   listen(document);
   // Focus and clicks inside a frame never reach this document, so listen
   // inside each same-origin frame too, as it loads. Cross-origin frames
@@ -128,7 +216,12 @@ export const detectionScript = `(() => {
   window.addEventListener('focus', soon, true);
   window.addEventListener('scroll', check, { passive: true, capture: true });
   window.addEventListener('resize', check, { passive: true });
-  window.addEventListener('load', () => { hookFrames(); soon(); });
+  window.addEventListener('load', () => {
+    hookFrames(); soon();
+    // Whether this new document looks like a sign-in that worked; the host knows if one was waiting. A document
+    // that was itself submitted before it finished loading is the page being left, not the one landed on.
+    setTimeout(() => { if (!submittedHere) report({ kind: 'landed', password: hasPasswordBox() }); }, 300);
+  });
   setInterval(() => { if (document.hasFocus()) check(); }, 700);
 
   // Puts a value into a field as if typed: the native value setter of the

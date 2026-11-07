@@ -1,7 +1,7 @@
 import type { EngineInfo, EngineProgress, EnsureOutcome, YtDlpUpdate } from './engines/engineInfo'
 import type { SessionKindName, ViewerOpened } from './convert/viewable'
 import type { EngineExit, EngineJobSpec, EngineOutput, FileKind, PickedFile } from './engines/engineJob'
-import type { AccountPickerState, FillOutcome, FindDirection, HistoryDirection, PageUiState } from './browser/pageUi'
+import type { AccountPickerState, FillOutcome, FindDirection, HistoryDirection, PageUiState, SaveAnswer, SaveOutcome } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
 import type { BrowserLibrary } from './library/library'
 import type { TabId, TabRecord } from './model/tab'
@@ -417,6 +417,11 @@ export interface InvokeContract {
 	 * on the origin the picker was shown for; `not-filled` when the field had gone. The picker closes either way.
 	 */
 	'vault:fill': { args: [pageId: TabId, id: string]; result: FillOutcome }
+	/**
+	 * The user's answer to the save or update prompt on a tab. `save` (also the update prompt's Update) asks Windows Hello
+	 * once; a cancelled Hello stores nothing and closes the prompt without an error. `never` marks the site, for every prompt.
+	 */
+	'vault:answer-save': { args: [pageId: TabId, answer: SaveAnswer]; result: SaveOutcome }
 	'overview:close': { args: []; result: void }
 }
 
@@ -599,4 +604,5 @@ export interface ZingApi {
 	loginHistory(id: string): Promise<PasswordHistoryEntry[]>
 	onVaultState(listener: (state: VaultState) => void): Unsubscribe
 	fillLogin(pageId: TabId, id: string): Promise<FillOutcome>
+	answerSaveLogin(pageId: TabId, answer: SaveAnswer): Promise<SaveOutcome>
 }

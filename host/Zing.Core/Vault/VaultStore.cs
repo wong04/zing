@@ -132,10 +132,51 @@ public sealed class VaultStore : IDisposable
 		}
 	}
 
-	/// <summary>Every login, those in Recently deleted included. No Hello.</summary>
+	/// <summary>Every login, those in Recently deleted included, and not the "never for this site" marks. No Hello.</summary>
 	public IReadOnlyList<LoginSummary> Summaries()
 	{
-		lock (_gate) return [.. _records.Where(r => !r.Tombstone).Select(r => _summaries[r.ItemId].ToSummary(r.ItemId))];
+		lock (_gate) return [.. _records.Where(r => !r.Tombstone && !_summaries[r.ItemId].NeverSave).Select(r => _summaries[r.ItemId].ToSummary(r.ItemId))];
+	}
+
+	/// <summary>The origins marked "never for this site". No Hello.</summary>
+	public IReadOnlyList<NeverSave> NeverSaves()
+	{
+		lock (_gate) return [.. _summaries.Values.Where(s => s.NeverSave && s.DeletedAt is null).Select(s => s.Origin).Distinct().Select(o => new NeverSave(o))];
+	}
+
+	public bool IsNeverSave(string origin)
+	{
+		var exact = VaultModel.OriginOf(origin);
+		lock (_gate) return _summaries.Values.Any(s => s.NeverSave && s.DeletedAt is null && s.Origin == exact);
+	}
+
+	/// <summary>
+	/// Marks the origin "never for this site": a summary-only item (no password, so no Hello) that syncs like any other.
+	/// Only the very first write of a vault also makes its keys, and that asks Hello once, like the first save. Marking an
+	/// origin that is already marked changes nothing.
+	/// </summary>
+	public async Task NeverSave(string origin)
+	{
+		var exact = VaultModel.OriginOf(origin);
+		if (IsNeverSave(exact)) return;
+		if (_keys is null)
+		{
+			RequireHello();
+			var (_, secretKey) = await SecretKeyForWriteAsync();
+			CryptographicOperations.ZeroMemory(secretKey);
+		}
+		lock (_gate)
+		{
+			RequireOpen();
+			// Another call may have marked it while the keys were being made.
+			if (_summaries.Values.Any(s => s.NeverSave && s.DeletedAt is null && s.Origin == exact)) return;
+			var keys = Keys();
+			var id = Guid.NewGuid().ToString("N");
+			var now = _clock.Now();
+			var summary = new SummaryPayload(exact, "", "", "", now, now, now, null, 0, [], NeverSave: true);
+			Commit(null, new LoginRecord(id, 1, SealSummary(keys, id, 1, summary), [], [], false), summary);
+		}
+		Changed?.Invoke();
 	}
 
 	/// <summary>No Hello.</summary>
@@ -354,7 +395,8 @@ public sealed class VaultStore : IDisposable
 	{
 		lock (_gate)
 		{
-			var record = _records.Find(r => r.ItemId == id && !r.Tombstone) ?? throw new VaultItemNotFoundException(id);
+			// A "never for this site" mark isn't a login: it has no password to read, change or delete.
+			var record = _records.Find(r => r.ItemId == id && !r.Tombstone && !_summaries[r.ItemId].NeverSave) ?? throw new VaultItemNotFoundException(id);
 			return (record, _summaries[id]);
 		}
 	}
@@ -436,6 +478,11 @@ public sealed class VaultStore : IDisposable
 	private static void CheckSummary(LoginRecord record, SummaryPayload summary)
 	{
 		if (summary.Origin is null || summary.Username is null || summary.Title is null || summary.Note is null) throw new InvalidDataException($"Login {record.ItemId}'s summary is missing a field");
+		if (summary.NeverSave)
+		{
+			if (record.Password.Length != 0 || record.History.Length != 0 || summary.PasswordVersion != 0) throw new InvalidDataException($"Item {record.ItemId} is a \"never for this site\" mark but holds a password");
+			return;
+		}
 		if (summary.History is null || summary.History.Any(h => h is null)) throw new InvalidDataException($"Login {record.ItemId}'s summary has no history list");
 		if (summary.History.Count != record.History.Length) throw new InvalidDataException($"Login {record.ItemId}'s summary lists {summary.History.Count} old passwords but it holds {record.History.Length}");
 		if (summary.PasswordVersion < 1 || summary.PasswordVersion > record.Version) throw new InvalidDataException($"Login {record.ItemId}'s password is sealed at version {summary.PasswordVersion}, outside 1 to {record.Version}");
@@ -457,7 +504,9 @@ internal sealed record SummaryPayload(
 	long PasswordUpdatedAt,
 	long? DeletedAt,
 	long PasswordVersion,
-	IReadOnlyList<HistoryPayload> History)
+	IReadOnlyList<HistoryPayload> History,
+	// A "never for this site" mark: a summary-only item, with no password and no history.
+	bool NeverSave = false)
 {
 	public LoginSummary ToSummary(string id) => new(id, Origin, Username, Title, Note, CreatedAt, UpdatedAt, PasswordUpdatedAt, DeletedAt);
 }

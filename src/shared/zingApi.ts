@@ -145,6 +145,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		loginHistory: (id) => invoke('vault:history', id),
 		onVaultState: (listener) => listen('vault:state', listener),
 		fillLogin: (pageId, id) => invoke('vault:fill', pageId, id),
+		answerSaveLogin: (pageId, answer) => invoke('vault:answer-save', pageId, answer),
 		onTabsState: (listener) => listen('tabs:state', listener),
 		onFocusAddress: (listener) => listen('chrome:focus-address', () => listener()),
 		onStackDropdown: (listener) => listen('stack:dropdown', listener),

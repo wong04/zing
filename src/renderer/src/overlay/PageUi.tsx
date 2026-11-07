@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { EMPTY_PAGE_UI, hasVisiblePageUi, type DownloadEntry, type PageUiState, type PermissionKind } from '@shared/browser/pageUi'
+import { EMPTY_PAGE_UI, hasVisiblePageUi, type DownloadEntry, type PageUiState, type PermissionKind, type SaveAnswer } from '@shared/browser/pageUi'
 import { formatBytes } from '@shared/format/formatBytes'
 import { followHostState } from '../hostState'
 import { zing } from '../api'
@@ -160,6 +160,33 @@ function PermissionPrompt({ state }: { state: PageUiState }) {
 	)
 }
 
+/** The vault's offer to save a sign-in or update a saved login: the origin and username only, never the password. */
+function SaveLoginPrompt({ state }: { state: PageUiState }) {
+	const prompt = state.saveLogin
+	if (!prompt) return null
+	const update = prompt.kind === 'update'
+	const answer = (choice: SaveAnswer) => () => void zing.answerSaveLogin(prompt.pageId, choice)
+	return (
+		<div className="pageui-card" role="alertdialog" aria-label={update ? 'Update saved password' : 'Save password'}>
+			<span>
+				{update ? 'Update the password for ' : 'Save the password for '}
+				<strong>{prompt.replaces ?? prompt.username}</strong> on <strong>{prompt.origin}</strong>?
+			</span>
+			<div className="pageui-row">
+				<button type="button" className="pageui-button primary" onClick={answer('save')}>
+					{update ? 'Update' : 'Save'}
+				</button>
+				<button type="button" className="pageui-button" onClick={answer('not-now')}>
+					Not now
+				</button>
+				<button type="button" className="pageui-button" onClick={answer('never')}>
+					Never for this site
+				</button>
+			</div>
+		</div>
+	)
+}
+
 /** Root of the page-UI view: a column of cards main sizes the view to. */
 export function PageUi() {
 	useAccentTheme()
@@ -182,6 +209,7 @@ export function PageUi() {
 	return (
 		<div ref={root} className="pageui">
 			<PermissionPrompt state={state} />
+			<SaveLoginPrompt state={state} />
 			<FindBar state={state} />
 			<Downloads state={state} />
 		</div>

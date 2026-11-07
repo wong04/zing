@@ -450,6 +450,10 @@
 			"args": 1
 		},
 		{
+			"channel": "vault:answer-save",
+			"args": 2
+		},
+		{
 			"channel": "vault:delete",
 			"args": 1
 		},
