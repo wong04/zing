@@ -116,6 +116,19 @@ public sealed class SplitTests
 	}
 
 	[Fact]
+	public void Closing_the_active_pane_when_another_tab_takes_over_hides_the_surviving_pane()
+	{
+		var a = _tabs.Open("https://a.test/");
+		var b = _tabs.Create("https://b.test/");
+		var c = _tabs.Create("https://c.test/");
+		_tabs.SplitWith(a.Id, c.Id);
+		_tabs.Close(c.Id);
+		Assert.Equal(b.Id, _tabs.ActiveId);
+		Assert.True(_host.PageFor(_tabs, b.Id).Shown);
+		Assert.False(_host.PageFor(_tabs, a.Id).Shown);
+	}
+
+	[Fact]
 	public void Taking_a_tab_out_of_a_split_leaves_the_rest_together()
 	{
 		var a = _tabs.Open("https://a.test/");

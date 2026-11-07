@@ -139,10 +139,44 @@ public sealed class TabServiceTests
 	}
 
 	[Fact]
+	public void Close_others_gives_no_page_to_the_tabs_it_closes()
+	{
+		var keep = _tabs.Open("https://a.example");
+		_tabs.Open("https://b.example");
+		_tabs.Create("https://c.example");
+		_tabs.Create("https://d.example");
+		_tabs.CloseOthers(keep.Id);
+		Assert.Equal(2, _host.Created.Count);
+	}
+
+	[Fact]
 	public void Apply_order_refuses_the_wrong_number_of_ids()
 	{
 		_tabs.Open("https://a.example");
 		Assert.Throws<TabOrderException>(() => _tabs.ApplyOrder([]));
+	}
+
+	[Fact]
+	public void Apply_order_that_crosses_the_pinned_divider_changes_nothing()
+	{
+		var pinned = _tabs.Open("https://p.example");
+		_tabs.Pin(pinned.Id);
+		var a = _tabs.Open("https://a.example");
+		var b = _tabs.Open("https://b.example");
+		Assert.Throws<TabOrderException>(() => _tabs.ApplyOrder([b.Id, a.Id, pinned.Id]));
+		Assert.Equal([pinned.Id, a.Id, b.Id], _tabs.Records.Select(r => r.Id));
+	}
+
+	[Fact]
+	public void Apply_order_with_a_repeated_or_unknown_id_changes_nothing()
+	{
+		var a = _tabs.Open("https://a.example");
+		var b = _tabs.Open("https://b.example");
+		var c = _tabs.Open("https://c.example");
+		Assert.Throws<TabOrderException>(() => _tabs.ApplyOrder([c.Id, c.Id, a.Id]));
+		Assert.Equal([a.Id, b.Id, c.Id], _tabs.Records.Select(r => r.Id));
+		Assert.Throws<TabOrderException>(() => _tabs.ApplyOrder([c.Id, "nope", a.Id]));
+		Assert.Equal([a.Id, b.Id, c.Id], _tabs.Records.Select(r => r.Id));
 	}
 
 	[Fact]

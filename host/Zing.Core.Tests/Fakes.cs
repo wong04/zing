@@ -67,24 +67,33 @@ public sealed class FakePageHost : IPageHost
 
 	public SplitLayout? ShownSplit { get; private set; }
 
+	private FakePage? _focused;
+
+	// As MainWindow does: Show hides only the page that had the screen, and ShowSplit hides nothing, so the tab
+	// service must hide every other page itself.
 	public void Show(IPage page)
 	{
-		foreach (var other in Created) other.Shown = false;
-		((FakePage)page).Shown = true;
+		if (_focused is not null && _focused != page) _focused.Shown = false;
+		_focused = (FakePage)page;
+		_focused.Shown = true;
 		ShownSplit = null;
 	}
 
 	public void ShowSplit(IReadOnlyList<IPage> pages, SplitLayout layout, IPage focused)
 	{
-		foreach (var other in Created) other.Shown = false;
 		foreach (var page in pages) ((FakePage)page).Shown = true;
+		_focused = (FakePage)focused;
 		ShownSplit = layout;
 	}
 
 	/// <summary>The page a tab has now (it must have one).</summary>
 	public FakePage PageFor(TabService tabs, string id) => (FakePage)(tabs.PageOf(id) ?? throw new InvalidOperationException($"Tab {id} has no page"));
 
-	public void Hide(IPage page) => ((FakePage)page).Shown = false;
+	public void Hide(IPage page)
+	{
+		((FakePage)page).Shown = false;
+		if (_focused == page) _focused = null;
+	}
 }
 
 public sealed class FakeWindowHost : IWindowHost
