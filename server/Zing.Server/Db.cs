@@ -4,14 +4,18 @@ using Microsoft.Data.Sqlite;
 
 namespace Zing.Server;
 
-public enum RefreshOutcome { Rotated, Unknown, Reused }
+public enum RefreshOutcome { Rotated, Unknown, Reused, Forbidden }
 
 public sealed class Db
 {
-	private readonly string connectionString;
+	public static readonly TimeSpan RefreshLifetime = TimeSpan.FromDays(90);
 
-	public Db(string path)
+	private readonly string connectionString;
+	private readonly TimeProvider clock;
+
+	public Db(string path, TimeProvider clock)
 	{
+		this.clock = clock;
 		Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
 		connectionString = new SqliteConnectionStringBuilder { DataSource = path, DefaultTimeout = 5 }.ToString();
 	}
@@ -54,7 +58,7 @@ public sealed class Db
 			CREATE TABLE IF NOT EXISTS refresh_tokens (
 				hash TEXT PRIMARY KEY,
 				user_id TEXT NOT NULL,
-				family TEXT NOT NULL,
+				created_at INTEGER NOT NULL,
 				used INTEGER NOT NULL DEFAULT 0
 			);
 			CREATE INDEX IF NOT EXISTS refresh_tokens_by_user ON refresh_tokens (user_id);
@@ -74,54 +78,70 @@ public sealed class Db
 		return (string)(select.ExecuteScalar() ?? throw new InvalidOperationException("User row missing right after insert."));
 	}
 
-	public void StoreRefresh(string hash, string userId, string family)
+	public void StoreRefresh(string hash, string userId)
 	{
 		using var connection = Open();
-		InsertRefresh(connection, null, hash, userId, family);
+		InsertRefresh(connection, null, hash, userId);
 	}
 
-	// A used token coming back means it leaked or was replayed, so every token of that user is revoked.
-	public (RefreshOutcome Outcome, string? UserId) RotateRefresh(string oldHash, string newHash)
+	// Each use re-issues the token, so the 90 days slide. A used token coming back means it leaked or
+	// was replayed, so every token of that user is revoked.
+	public (RefreshOutcome Outcome, string? UserId) RotateRefresh(string oldHash, string newHash, IReadOnlySet<string> allowedSubs)
 	{
 		using var connection = Open();
+		Prune(connection);
 		using var transaction = connection.BeginTransaction();
 
-		using var select = Command(connection, "SELECT user_id, family, used FROM refresh_tokens WHERE hash = $hash", transaction);
+		using var select = Command(connection, """
+			SELECT r.user_id, r.used, u.sub FROM refresh_tokens r JOIN users u ON u.user_id = r.user_id WHERE r.hash = $hash
+			""", transaction);
 		select.Parameters.AddWithValue("$hash", oldHash);
 		string userId;
-		string family;
+		string sub;
 		bool used;
 		using (var reader = select.ExecuteReader())
 		{
 			if (!reader.Read()) return (RefreshOutcome.Unknown, null);
 			userId = reader.GetString(0);
-			family = reader.GetString(1);
-			used = reader.GetInt64(2) != 0;
+			used = reader.GetInt64(1) != 0;
+			sub = reader.GetString(2);
 		}
 
-		if (used)
-		{
-			using var revoke = Command(connection, "DELETE FROM refresh_tokens WHERE user_id = $userId", transaction);
-			revoke.Parameters.AddWithValue("$userId", userId);
-			revoke.ExecuteNonQuery();
-			transaction.Commit();
-			return (RefreshOutcome.Reused, userId);
-		}
+		if (used) return Revoke(connection, transaction, userId, RefreshOutcome.Reused);
+		if (!allowedSubs.Contains(sub)) return Revoke(connection, transaction, userId, RefreshOutcome.Forbidden);
 
-		using var markUsed = Command(connection, "UPDATE refresh_tokens SET used = 1 WHERE hash = $hash", transaction);
+		using var markUsed = Command(connection, "UPDATE refresh_tokens SET used = 1 WHERE hash = $hash AND used = 0", transaction);
 		markUsed.Parameters.AddWithValue("$hash", oldHash);
-		markUsed.ExecuteNonQuery();
-		InsertRefresh(connection, transaction, newHash, userId, family);
+		if (markUsed.ExecuteNonQuery() == 0) return Revoke(connection, transaction, userId, RefreshOutcome.Reused);
+
+		InsertRefresh(connection, transaction, newHash, userId);
 		transaction.Commit();
 		return (RefreshOutcome.Rotated, userId);
 	}
 
-	private static void InsertRefresh(SqliteConnection connection, SqliteTransaction? transaction, string hash, string userId, string family)
+	private void Prune(SqliteConnection connection)
 	{
-		using var insert = Command(connection, "INSERT INTO refresh_tokens (hash, user_id, family) VALUES ($hash, $userId, $family)", transaction);
+		using var delete = Command(connection, "DELETE FROM refresh_tokens WHERE created_at < $cutoff");
+		delete.Parameters.AddWithValue("$cutoff", (clock.GetUtcNow() - RefreshLifetime).ToUnixTimeSeconds());
+		delete.ExecuteNonQuery();
+	}
+
+	private static (RefreshOutcome Outcome, string? UserId) Revoke(
+		SqliteConnection connection, SqliteTransaction transaction, string userId, RefreshOutcome outcome)
+	{
+		using var revoke = Command(connection, "DELETE FROM refresh_tokens WHERE user_id = $userId", transaction);
+		revoke.Parameters.AddWithValue("$userId", userId);
+		revoke.ExecuteNonQuery();
+		transaction.Commit();
+		return (outcome, userId);
+	}
+
+	private void InsertRefresh(SqliteConnection connection, SqliteTransaction? transaction, string hash, string userId)
+	{
+		using var insert = Command(connection, "INSERT INTO refresh_tokens (hash, user_id, created_at) VALUES ($hash, $userId, $createdAt)", transaction);
 		insert.Parameters.AddWithValue("$hash", hash);
 		insert.Parameters.AddWithValue("$userId", userId);
-		insert.Parameters.AddWithValue("$family", family);
+		insert.Parameters.AddWithValue("$createdAt", clock.GetUtcNow().ToUnixTimeSeconds());
 		insert.ExecuteNonQuery();
 	}
 

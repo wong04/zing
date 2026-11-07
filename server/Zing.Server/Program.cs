@@ -2,15 +2,17 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Zing.Server;
 
 var builder = WebApplication.CreateBuilder(args);
-var config = ServerConfig.Load(builder.Configuration);
+var config = ServerConfig.Load(builder.Configuration, builder.Environment.IsProduction());
 var limits = RateLimitOptions.From(builder.Configuration);
 
-var db = new Db(config.DbPath);
-db.Initialize();
-
 builder.Services.AddSingleton(config);
-builder.Services.AddSingleton(db);
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton(provider =>
+{
+	var db = new Db(config.DbPath, provider.GetRequiredService<TimeProvider>());
+	db.Initialize();
+	return db;
+});
 builder.Services.AddSingleton(provider => new SessionTokens(config.SessionKey, provider.GetRequiredService<TimeProvider>()));
 if (config.FakeGoogle)
 {
@@ -39,6 +41,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+app.Services.GetRequiredService<Db>();
 app.UseForwardedHeaders();
 app.UseRateLimiter();
 app.MapAuth();

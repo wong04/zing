@@ -22,8 +22,8 @@ public static class RateLimits
 {
 	public static PartitionedRateLimiter<HttpContext> Create(RateLimitOptions options) =>
 		PartitionedRateLimiter.CreateChained(
-			PartitionedRateLimiter.Create<HttpContext, string>(context => PerUser(context, options.PerUserPerMinute)),
-			PartitionedRateLimiter.Create<HttpContext, string>(context => PerIp(context, options.PerIpPerMinute)));
+			PartitionedRateLimiter.Create<HttpContext, string>(context => PerIp(context, options.PerIpPerMinute)),
+			PartitionedRateLimiter.Create<HttpContext, string>(context => PerUser(context, options.PerUserPerMinute)));
 
 	private static RateLimitPartition<string> PerUser(HttpContext context, int limit)
 	{

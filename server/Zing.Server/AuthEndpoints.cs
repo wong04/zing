@@ -41,16 +41,17 @@ public static class AuthEndpoints
 
 		var userId = db.FindOrCreateUser(identity.Sub);
 		var refresh = Tokens.NewRefreshToken();
-		db.StoreRefresh(Tokens.HashRefresh(refresh), userId, Tokens.RandomId());
+		db.StoreRefresh(Tokens.HashRefresh(refresh), userId);
 		return Results.Ok(new LoginResponse(sessions.Issue(userId), refresh, userId));
 	}
 
-	private static IResult Refresh(RefreshRequest? body, Db db, SessionTokens sessions)
+	private static IResult Refresh(RefreshRequest? body, Db db, ServerConfig config, SessionTokens sessions)
 	{
 		if (string.IsNullOrEmpty(body?.Refresh)) return Results.BadRequest(new { error = "refresh is required." });
 
 		var next = Tokens.NewRefreshToken();
-		var (outcome, userId) = db.RotateRefresh(Tokens.HashRefresh(body.Refresh), Tokens.HashRefresh(next));
+		var (outcome, userId) = db.RotateRefresh(Tokens.HashRefresh(body.Refresh), Tokens.HashRefresh(next), config.AllowedSubs);
+		if (outcome == RefreshOutcome.Forbidden) return Results.StatusCode(StatusCodes.Status403Forbidden);
 		if (outcome != RefreshOutcome.Rotated) return Results.Unauthorized();
 		return Results.Ok(new RefreshResponse(sessions.Issue(userId!), next));
 	}

@@ -210,6 +210,124 @@ public class AuthTests
 	}
 
 	[Fact]
+	public async Task Session_expires_after_15_minutes()
+	{
+		var clock = new ManualClock(DateTimeOffset.UtcNow);
+		using var factory = new ServerFactory(clock: clock);
+		var client = factory.CreateClient();
+		var login = await factory.SignIn(client);
+
+		clock.Advance(TimeSpan.FromMinutes(14));
+		Assert.Equal(HttpStatusCode.OK, (await GetMe(client, login.Session)).StatusCode);
+		clock.Advance(TimeSpan.FromMinutes(2));
+		Assert.Equal(HttpStatusCode.Unauthorized, (await GetMe(client, login.Session)).StatusCode);
+	}
+
+	[Fact]
+	public async Task Refresh_token_older_than_90_days_gets_401()
+	{
+		var clock = new ManualClock(DateTimeOffset.UtcNow);
+		using var factory = new ServerFactory(clock: clock);
+		var client = factory.CreateClient();
+		var login = await factory.SignIn(client);
+
+		clock.Advance(TimeSpan.FromDays(91));
+		Assert.Equal(HttpStatusCode.Unauthorized, (await PostRefresh(client, login.Refresh)).StatusCode);
+	}
+
+	[Fact]
+	public async Task Refresh_lifetime_slides_with_each_rotation()
+	{
+		var clock = new ManualClock(DateTimeOffset.UtcNow);
+		using var factory = new ServerFactory(clock: clock);
+		var client = factory.CreateClient();
+		var refresh = (await factory.SignIn(client)).Refresh;
+
+		for (var i = 0; i < 3; i++)
+		{
+			clock.Advance(TimeSpan.FromDays(60));
+			var response = await PostRefresh(client, refresh);
+			Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+			refresh = (await response.Content.ReadFromJsonAsync<Refreshed>(ServerFactory.JsonOpts))!.Refresh;
+		}
+	}
+
+	[Fact]
+	public async Task Refresh_prunes_rows_older_than_90_days()
+	{
+		var clock = new ManualClock(DateTimeOffset.UtcNow);
+		using var factory = new ServerFactory(clock: clock);
+		var client = factory.CreateClient();
+		var old = await factory.SignIn(client);
+		var usedOld = (await (await PostRefresh(client, old.Refresh)).Content.ReadFromJsonAsync<Refreshed>(ServerFactory.JsonOpts))!;
+		clock.Advance(TimeSpan.FromDays(91));
+		var fresh = await factory.SignIn(client, ServerFactory.OtherAllowedSub);
+		Assert.Equal(HttpStatusCode.OK, (await PostRefresh(client, fresh.Refresh)).StatusCode);
+
+		using var connection = new SqliteConnection($"Data Source={factory.DbPath}");
+		connection.Open();
+		using var command = connection.CreateCommand();
+		command.CommandText = "SELECT COUNT(*) FROM refresh_tokens";
+		Assert.Equal(2L, (long)command.ExecuteScalar()!);
+	}
+
+	[Fact]
+	public async Task Concurrent_refreshes_with_one_token_let_exactly_one_through()
+	{
+		using var factory = new ServerFactory();
+		var client = factory.CreateClient();
+		var login = await factory.SignIn(client);
+
+		var responses = await Task.WhenAll(Enumerable.Range(0, 2).Select(_ => Task.Run(() => PostRefresh(client, login.Refresh))));
+
+		Assert.Equal(1, responses.Count(r => r.StatusCode == HttpStatusCode.OK));
+		Assert.Equal(1, responses.Count(r => r.StatusCode == HttpStatusCode.Unauthorized));
+	}
+
+	[Fact]
+	public async Task Refresh_for_a_sub_removed_from_the_allow_list_gets_403_and_revokes()
+	{
+		using var first = new ServerFactory();
+		var login = await first.SignIn(first.CreateClient());
+
+		using var narrowed = new ServerFactory(new()
+		{
+			["ZING_DB_PATH"] = first.DbPath,
+			["ZING_ALLOWED_SUBS"] = ServerFactory.OtherAllowedSub,
+		});
+		var client = narrowed.CreateClient();
+		Assert.Equal(HttpStatusCode.Forbidden, (await PostRefresh(client, login.Refresh)).StatusCode);
+		Assert.Equal(HttpStatusCode.Unauthorized, (await PostRefresh(client, login.Refresh)).StatusCode);
+	}
+
+	[Fact]
+	public async Task Unknown_kid_triggers_one_key_refresh_then_is_accepted()
+	{
+		using var factory = new ServerFactory();
+		var client = factory.CreateClient();
+		Assert.Equal(0, factory.Issuer.RefreshCount);
+
+		var rotated = factory.Issuer.Rotate();
+		var token = factory.MintIdToken(ServerFactory.AllowedSub, key: rotated);
+
+		Assert.Equal(HttpStatusCode.OK, (await PostGoogle(client, token)).StatusCode);
+		Assert.Equal(1, factory.Issuer.RefreshCount);
+
+		Assert.Equal(HttpStatusCode.OK, (await PostGoogle(client, token)).StatusCode);
+		Assert.Equal(1, factory.Issuer.RefreshCount);
+	}
+
+	[Fact]
+	public async Task Unknown_kid_that_a_refresh_does_not_resolve_gets_401()
+	{
+		using var factory = new ServerFactory();
+		using var attacker = RSA.Create(2048);
+		var token = factory.MintIdToken(ServerFactory.AllowedSub, key: new RsaSecurityKey(attacker) { KeyId = "never-published" });
+		Assert.Equal(HttpStatusCode.Unauthorized, (await PostGoogle(factory.CreateClient(), token)).StatusCode);
+		Assert.Equal(1, factory.Issuer.RefreshCount);
+	}
+
+	[Fact]
 	public void Default_limits_are_30_per_user_and_60_per_ip()
 	{
 		var limits = RateLimitOptions.From(new ConfigurationBuilder().Build());
@@ -250,6 +368,10 @@ public class ConfigTests
 		var error = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
 		Assert.Contains(name, error.ToString());
 	}
+
+	[Fact]
+	public void Fake_google_is_refused_in_production() =>
+		AssertStartupFails("ZING_SERVER_FAKE_GOOGLE", new() { ["environment"] = "Production" });
 
 	[Fact]
 	public void Missing_session_key_fails_startup() =>

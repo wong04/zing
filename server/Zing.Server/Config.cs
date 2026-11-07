@@ -12,9 +12,10 @@ public sealed record ServerConfig(
 	public const int MinSessionKeyBytes = 32;
 	private const string FakeClientId = "zing-fake-client";
 
-	public static ServerConfig Load(IConfiguration configuration)
+	public static ServerConfig Load(IConfiguration configuration, bool production)
 	{
 		var fake = configuration["ZING_SERVER_FAKE_GOOGLE"] == "1";
+		if (fake && production) throw new ConfigurationException("ZING_SERVER_FAKE_GOOGLE=1 is refused in the Production environment.");
 		var clientId = fake
 			? configuration["ZING_GOOGLE_CLIENT_ID"] ?? FakeClientId
 			: Required(configuration, "ZING_GOOGLE_CLIENT_ID");

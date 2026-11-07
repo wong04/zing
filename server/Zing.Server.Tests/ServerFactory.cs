@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -14,6 +15,15 @@ public sealed record Login(string Session, string Refresh, string UserId);
 
 public sealed record Refreshed(string Session, string Refresh);
 
+public sealed class ManualClock(DateTimeOffset start) : TimeProvider
+{
+	private DateTimeOffset now = start;
+
+	public override DateTimeOffset GetUtcNow() => now;
+
+	public void Advance(TimeSpan by) => now += by;
+}
+
 public sealed class ServerFactory : WebApplicationFactory<Program>
 {
 	public const string ClientId = "zing-test-client";
@@ -24,8 +34,11 @@ public sealed class ServerFactory : WebApplicationFactory<Program>
 	private readonly Dictionary<string, string?> settings;
 	private readonly string dbDir = Directory.CreateTempSubdirectory("zing-server-tests").FullName;
 
-	public ServerFactory(Dictionary<string, string?>? overrides = null)
+	private readonly TimeProvider? clock;
+
+	public ServerFactory(Dictionary<string, string?>? overrides = null, TimeProvider? clock = null)
 	{
+		this.clock = clock;
 		settings = new Dictionary<string, string?>
 		{
 			["ZING_SERVER_FAKE_GOOGLE"] = "1",
@@ -42,7 +55,9 @@ public sealed class ServerFactory : WebApplicationFactory<Program>
 
 	public string DbPath => settings["ZING_DB_PATH"]!;
 
-	public SecurityKey FakeSigningKey => Services.GetRequiredService<FakeGoogleIssuer>().SigningKey;
+	public FakeGoogleIssuer Issuer => Services.GetRequiredService<FakeGoogleIssuer>();
+
+	public SecurityKey FakeSigningKey => Issuer.SigningKey;
 
 	protected override void ConfigureWebHost(IWebHostBuilder builder)
 	{
@@ -50,6 +65,8 @@ public sealed class ServerFactory : WebApplicationFactory<Program>
 		{
 			if (value is not null) builder.UseSetting(key, value);
 		}
+		if (clock is null) return;
+		builder.ConfigureTestServices(services => services.AddSingleton(clock));
 	}
 
 	protected override void Dispose(bool disposing)
