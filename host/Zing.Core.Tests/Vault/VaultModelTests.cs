@@ -102,7 +102,14 @@ public sealed class VaultModelTests
 	[Fact]
 	public void The_privacy_banner_counts_deleted_logins()
 	{
-		Assert.False(VaultModel.KeepsData([]));
-		Assert.True(VaultModel.KeepsData([new LoginSummary("a", "https://a.example", "u", "", "", 0, 0, 0, 1)]));
+		Assert.False(VaultModel.KeepsData([], []));
+		Assert.True(VaultModel.KeepsData([new LoginSummary("a", "https://a.example", "u", "", "", 0, 0, 0, 1)], []));
+	}
+
+	[Fact]
+	public void The_privacy_banner_counts_a_never_saved_site_too()
+	{
+		Assert.True(VaultModel.KeepsData([], [new NeverSave("https://a.example")]));
+		Assert.False(VaultModel.KeepsData([], []));
 	}
 }

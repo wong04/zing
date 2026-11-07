@@ -68,6 +68,6 @@ public static class VaultModel
 	public static bool DueForTombstone(LoginSummary summary, long now) =>
 		summary.DeletedAt is { } deletedAt && now - deletedAt >= RetentionMs;
 
-	/// <summary>Holding any login, deleted ones included, is a stored record, so Settings' privacy banner warns.</summary>
-	public static bool KeepsData(IReadOnlyCollection<LoginSummary> summaries) => summaries.Count > 0;
+	/// <summary>Holding any login, deleted ones included, or a "never for this site" mark (Ruling 39), is a stored record, so Settings' privacy banner warns.</summary>
+	public static bool KeepsData(IReadOnlyCollection<LoginSummary> summaries, IReadOnlyCollection<NeverSave> neverSave) => summaries.Count > 0 || neverSave.Count > 0;
 }

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings'
-import { DuplicateConditionError, privacyStatus, registerStoresDataCondition } from './privacy'
+import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setVaultKeepsData } from './privacy'
 
 const withSettings = (patch: Partial<Settings>): Settings => ({ ...DEFAULT_SETTINGS, ...patch })
 
@@ -46,5 +46,29 @@ describe('registerStoresDataCondition', () => {
 		const unregister = registerStoresDataCondition({ id: 'test-dup', active: () => false, what: 'x' })
 		expect(() => registerStoresDataCondition({ id: 'test-dup', active: () => false, what: 'y' })).toThrow(DuplicateConditionError)
 		unregister()
+	})
+})
+
+describe('the password vault', () => {
+	afterEach(() => setVaultKeepsData(false))
+
+	it('stays green while the vault is on but holds nothing', () => {
+		expect(privacyStatus(withSettings({ passwordAutofill: true }))).toMatchObject({ traceless: true })
+	})
+
+	it('warns once the vault holds a login or a never-saved site', () => {
+		setVaultKeepsData(true)
+		expect(privacyStatus(withSettings({ passwordAutofill: true }))).toMatchObject({ traceless: false, detail: 'Saved passwords are written to disk.' })
+	})
+
+	it('names it beside the other things Zing keeps', () => {
+		setVaultKeepsData(true)
+		const status = privacyStatus(withSettings({ passwordAutofill: true, restoreTabs: true }))
+		expect(status.detail).toBe('Your open tabs and saved passwords are written to disk.')
+	})
+
+	it('says nothing once the setting is off, since the store is closed', () => {
+		setVaultKeepsData(true)
+		expect(privacyStatus(withSettings({ passwordAutofill: false })).traceless).toBe(true)
 	})
 })

@@ -112,6 +112,7 @@ public sealed class FileGrantsTests
 		Assert.Contains("mov", FileKinds.Extensions(["video", "audio"]));
 		Assert.Contains("mp3", FileKinds.Extensions(["video", "audio"]));
 		Assert.Empty(FileKinds.Extensions(["any"]));
+		Assert.Equal(["csv"], FileKinds.Extensions(["csv"]));
 		Assert.Throws<UnknownFileKindException>(() => FileKinds.Extensions(["exe-or-whatever"]));
 	}
 }

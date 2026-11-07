@@ -706,3 +706,282 @@ test('turning the vault off drops a prompt on screen and what was held', async (
 	await expect.poll(() => savePrompt(zing)).toBeNull()
 	await zing.close()
 })
+
+// -- The manage page (Task 6) --
+//
+// Settings, Browsing: the saved logins with their passwords hidden, search, edit, delete, import and export. A password is
+// fetched one at a time, after Windows Hello (faked in e2e only), and never arrives in a list. The clipboard is faked in the
+// Settings page, so a test never touches the real one.
+
+async function openManage(zing: Launched): Promise<Page> {
+	await zing.chrome.evaluate(() => window.zing.runCommand('app.settings'))
+	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	await sheet.getByRole('button', { name: 'Browsing' }).click()
+	return sheet
+}
+
+const manage = (sheet: Page) => sheet.getByRole('group', { name: 'Saved passwords' })
+const loginList = (sheet: Page) => manage(sheet).getByRole('list', { name: 'Saved logins' }).getByRole('listitem')
+
+/** Replaces the Settings page's clipboard with a recorder; the returned function reads what was written. */
+async function fakeClipboard(sheet: Page): Promise<() => Promise<string[]>> {
+	await sheet.evaluate(() => {
+		const recorded: string[] = []
+		;(globalThis as unknown as { __copied: string[] }).__copied = recorded
+		Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (text: string) => Promise.resolve(void recorded.push(text)) } })
+	})
+	return () => sheet.evaluate(() => (globalThis as unknown as { __copied: string[] }).__copied)
+}
+
+const summaries = (zing: Launched) => zing.chrome.evaluate(() => window.zing.vaultSummaries())
+
+const saveTitled = (zing: Launched, login: { origin: string; username: string; password: string; title: string; note: string }): Promise<string> => zing.chrome.evaluate((l) => window.zing.saveLogin(l), login)
+
+async function pickAndImport(zing: Launched, sheet: Page, path: string): Promise<void> {
+	await testHook(zing, { action: 'pick-files', files: [path] })
+	await manage(sheet).getByRole('button', { name: 'Import CSV' }).click()
+}
+
+test('the Settings switch turns the vault on, and the privacy banner warns once it holds an entry', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(false) })
+	const sheet = await openManage(zing)
+	await expect(manage(sheet)).toHaveCount(0)
+
+	await sheet.getByRole('switch', { name: 'Offer to fill saved passwords' }).click()
+
+	await expect(manage(sheet).getByText('No saved passwords yet')).toBeVisible()
+	await sheet.getByRole('button', { name: 'Privacy' }).click()
+	await expect(sheet.locator('.privacy-banner')).toHaveAttribute('data-traceless', 'true')
+
+	await save(zing, 'https://example.com', 'ada', 'pw one')
+
+	await expect(sheet.locator('.privacy-banner')).toHaveAttribute('data-traceless', 'false')
+	await expect(sheet.locator('.privacy-banner')).toContainText('Saved passwords are written to disk.')
+	await zing.close()
+})
+
+test('search filters by site and by username', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await save(zing, 'https://github.com', 'ada@example.test')
+	await save(zing, 'https://example.org', 'bob@example.test')
+	await save(zing, 'https://news.example.net', 'carol@example.test')
+	const sheet = await openManage(zing)
+	await expect(loginList(sheet)).toHaveCount(3)
+	const search = manage(sheet).getByRole('textbox', { name: 'Search saved passwords' })
+
+	await search.fill('github')
+	await expect(loginList(sheet)).toHaveCount(1)
+	await expect(loginList(sheet).first()).toContainText('github.com')
+
+	await search.fill('BOB@')
+	await expect(loginList(sheet)).toHaveCount(1)
+	await expect(loginList(sheet).first()).toContainText('bob@example.test')
+
+	await search.fill('nothing like this')
+	await expect(loginList(sheet)).toHaveCount(0)
+	await expect(manage(sheet).getByText('No login matches')).toBeVisible()
+	await zing.close()
+})
+
+test('showing and copying a password each ask Windows Hello, and a cancel shows and copies nothing', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await saveTitled(zing, { origin: 'https://example.com', username: 'ada', password: PASSWORD, title: 'Example', note: '' })
+	const sheet = await openManage(zing)
+	const copied = await fakeClipboard(sheet)
+	// The list has no password in it, only on request.
+	await expect(manage(sheet).getByText(PASSWORD)).toHaveCount(0)
+
+	await hello(zing, 'cancel')
+	await manage(sheet).getByRole('button', { name: 'Show password for Example' }).click()
+	await expect(manage(sheet).getByRole('alert')).toContainText('cancelled the Windows Hello prompt')
+	await manage(sheet).getByRole('button', { name: 'Copy password for Example' }).click()
+	await expect(manage(sheet).getByText(PASSWORD)).toHaveCount(0)
+	expect(await copied()).toEqual([])
+
+	await hello(zing, 'pass')
+	await manage(sheet).getByRole('button', { name: 'Show password for Example' }).click()
+	await expect(manage(sheet).getByText(PASSWORD)).toBeVisible()
+	await manage(sheet).getByRole('button', { name: 'Hide password for Example' }).click()
+	await expect(manage(sheet).getByText(PASSWORD)).toHaveCount(0)
+	await manage(sheet).getByRole('button', { name: 'Copy password for Example' }).click()
+	await expect.poll(copied).toEqual([PASSWORD])
+	await zing.close()
+})
+
+test('a login is edited, its old password listed in the history, deleted, and restored from Recently deleted', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await saveTitled(zing, { origin: 'https://example.com', username: 'ada', password: 'old password', title: 'Example', note: '' })
+	const sheet = await openManage(zing)
+
+	await manage(sheet).getByRole('button', { name: 'Edit Example' }).click()
+	const form = manage(sheet).getByRole('form', { name: 'Edit Example' })
+	await expect(form.getByRole('group', { name: 'Earlier passwords' })).toHaveCount(0)
+	await form.getByLabel('Username', { exact: true }).fill('ada2')
+	await form.getByLabel('Password', { exact: true }).fill('new password')
+	await form.getByRole('button', { name: 'Save' }).click()
+	await expect(loginList(sheet).first()).toContainText('ada2')
+
+	await manage(sheet).getByRole('button', { name: 'Edit Example' }).click()
+	const history = manage(sheet).getByRole('group', { name: 'Earlier passwords' })
+	await expect(history).toContainText('Replaced')
+	await expect(history.getByText('old password')).toHaveCount(0)
+	await history.getByRole('button', { name: /^Show earlier password/ }).click()
+	await expect(history.getByText('old password')).toBeVisible()
+	await manage(sheet).getByRole('button', { name: 'Cancel' }).click()
+
+	await manage(sheet).getByRole('button', { name: 'Delete Example' }).click()
+	await expect(manage(sheet).getByText('No saved passwords yet')).toBeVisible()
+	const deleted = manage(sheet).getByRole('list', { name: 'Recently deleted' })
+	await expect(deleted).toContainText('Example')
+
+	await deleted.getByRole('button', { name: 'Restore Example' }).click()
+	await expect(loginList(sheet).first()).toContainText('Example')
+	await expect(manage(sheet).getByRole('list', { name: 'Recently deleted' })).toHaveCount(0)
+	await zing.close()
+})
+
+test('Generate fills the password field with a 20-character password that Save keeps', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await saveTitled(zing, { origin: 'https://example.com', username: 'ada', password: 'old password', title: 'Example', note: '' })
+	const sheet = await openManage(zing)
+	await manage(sheet).getByRole('button', { name: 'Edit Example' }).click()
+	const form = manage(sheet).getByRole('form', { name: 'Edit Example' })
+
+	await form.getByRole('button', { name: 'Generate' }).click()
+	const generated = await form.getByLabel('Password', { exact: true }).inputValue()
+	expect(generated).toHaveLength(20)
+	await form.getByRole('button', { name: 'Save' }).click()
+
+	await manage(sheet).getByRole('button', { name: 'Show password for Example' }).click()
+	await expect(manage(sheet).getByText(generated, { exact: true })).toBeVisible()
+	await zing.close()
+})
+
+test('export warns first, writes Chrome-format CSV to Downloads after Hello, and a fresh vault re-imports the same entries', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await saveTitled(zing, { origin: 'https://example.com/login', username: 'ada', password: 'pw, with "quotes"', title: 'Example', note: 'line one\nline two' })
+	await save(zing, 'https://other.example', 'bob', 'second password')
+	const sheet = await openManage(zing)
+	const file = join(zing.userDataDir, 'downloads', 'Zing Passwords.csv')
+
+	await manage(sheet).getByRole('button', { name: 'Export CSV' }).click()
+	await expect(manage(sheet).getByRole('alertdialog', { name: 'Export passwords' })).toContainText('plain text')
+	expect(existsSync(file)).toBe(false)
+	await hello(zing, 'cancel')
+	await manage(sheet).getByRole('button', { name: 'Save CSV to Downloads' }).click()
+	await expect(manage(sheet).getByRole('alert').last()).toContainText('cancelled the Windows Hello prompt')
+	expect(existsSync(file)).toBe(false)
+
+	await hello(zing, 'pass')
+	await manage(sheet).getByRole('button', { name: 'Export CSV' }).click()
+	await manage(sheet).getByRole('button', { name: 'Save CSV to Downloads' }).click()
+	await expect(manage(sheet).getByText('Saved to Downloads as Zing Passwords.csv.')).toBeVisible()
+	const csv = readFileSync(file, 'utf8')
+	expect(csv.split('\r\n')[0]).toBe('name,url,username,password,note')
+	expect(csv).toContain('"pw, with ""quotes"""')
+	await zing.close()
+
+	const fresh = await launchZing({ userDataDir: vaultProfile(true) })
+	const freshSheet = await openManage(fresh)
+	await pickAndImport(fresh, freshSheet, file)
+	await expect(freshSheet.getByRole('status')).toContainText('Added 2, merged 0 into logins you already had, skipped 0')
+	const imported = await summaries(fresh)
+	expect(imported.map((l) => [l.origin, l.username, l.title, l.note]).sort()).toEqual([
+		['https://example.com', 'ada', 'Example', 'line one\nline two'],
+		['https://other.example', 'bob', 'other.example', ''],
+	])
+	const passwords = await Promise.all(imported.map((l) => fresh.chrome.evaluate((id) => window.zing.revealPassword(id), l.id)))
+	expect(passwords.sort()).toEqual(['pw, with "quotes"', 'second password'])
+
+	// Importing the same file again changes nothing.
+	await pickAndImport(fresh, freshSheet, file)
+	await expect(freshSheet.getByRole('status')).toContainText('Added 0, merged 2 into logins you already had, skipped 0')
+	expect(await summaries(fresh)).toHaveLength(2)
+	await fresh.close()
+})
+
+// Review Focus 5.
+test('a Chrome CSV with duplicates, a blank password, an android:// row and a non-address merges and lists each skipped row with its reason', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const sheet = await openManage(zing)
+	const csv = join(scratchDir('zing-vaultcsv-'), 'chrome.csv')
+	writeFileSync(
+		csv,
+		'name,url,username,password,note\n' +
+			'site,https://site.example/login,ada,first,\n' +
+			'site again,https://site.example/other,ada,first,\n' +
+			'blank,https://blank.example,ada,,\n' +
+			'app,android://hash@com.app/,ada,pw,\n' +
+			'bad,not a url,ada,pw,\n',
+	)
+
+	await pickAndImport(zing, sheet, csv)
+
+	await expect(sheet.getByRole('status')).toContainText('Added 1, merged 1 into logins you already had, skipped 3')
+	const skipped = sheet.getByRole('list', { name: 'Skipped rows' }).getByRole('listitem')
+	await expect(skipped).toHaveText(['Row 4: No password', 'Row 5: Not a web address: android://hash@com.app/', 'Row 6: Not a web address: not a url'])
+	await expect(loginList(sheet)).toHaveCount(1)
+	await zing.close()
+})
+
+test('a CSV over the size limit, and one that is not a password export, each say so', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const sheet = await openManage(zing)
+	const dir = scratchDir('zing-vaultcsv-')
+	const big = join(dir, 'big.csv')
+	writeFileSync(big, Buffer.alloc(10 * 1024 * 1024 + 1))
+	const other = join(dir, 'other.csv')
+	writeFileSync(other, 'a,b\n1,2\n')
+
+	await pickAndImport(zing, sheet, big)
+	await expect(manage(sheet).getByRole('alert')).toContainText('up to 10 MB')
+
+	await pickAndImport(zing, sheet, other)
+	await expect(manage(sheet).getByRole('alert')).toContainText('Unrecognised password export columns')
+	expect(await summaries(zing)).toHaveLength(0)
+	await zing.close()
+})
+
+test('without Windows Hello the page says so and a password cannot be shown', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await saveTitled(zing, { origin: 'https://example.com', username: 'ada', password: PASSWORD, title: 'Example', note: '' })
+	const sheet = await openManage(zing)
+
+	await hello(zing, 'unavailable')
+
+	await expect(manage(sheet).getByText(/Windows Hello isn.t set up on this PC/)).toBeVisible()
+	await manage(sheet).getByRole('button', { name: 'Show password for Example' }).click()
+	await expect(manage(sheet).getByRole('alert').last()).toContainText('no Windows Hello')
+	await expect(manage(sheet).getByText(PASSWORD)).toHaveCount(0)
+	await zing.close()
+})
+
+test('Never saved lists the sites marked so, counts for the privacy banner, and Remove offers saving there again', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/login`)
+	await signIn(page, USERNAME, PASSWORD)
+	await expect.poll(() => savePrompt(zing)).not.toBeNull()
+	await answer(zing, 'Never for this site')
+	await expect.poll(() => savePrompt(zing)).toBeNull()
+	const host = new URL(signInBase).host
+
+	const sheet = await openManage(zing)
+	await expect(manage(sheet).getByRole('list', { name: 'Never saved' })).toContainText(host)
+	await sheet.getByRole('button', { name: 'Privacy' }).click()
+	await expect(sheet.locator('.privacy-banner')).toHaveAttribute('data-traceless', 'false')
+
+	await sheet.getByRole('button', { name: 'Browsing' }).click()
+	await manage(sheet).getByRole('button', { name: `Remove ${host} from never saved` }).click()
+
+	await expect(manage(sheet).getByRole('list', { name: 'Never saved' })).toHaveCount(0)
+	await sheet.getByRole('button', { name: 'Privacy' }).click()
+	await expect(sheet.locator('.privacy-banner')).toHaveAttribute('data-traceless', 'true')
+	await sheet.getByRole('button', { name: 'Close settings (Esc)' }).click()
+	const again = await open(zing, `${signInBase}/login`)
+	await signIn(again, USERNAME, PASSWORD)
+	await expect.poll(() => savePrompt(zing)).not.toBeNull()
+	// Closing the window with a prompt still up raises a COMException in the host's teardown (a Task 5 matter); answer it first.
+	await answer(zing, 'Not now')
+	await expect.poll(() => savePrompt(zing)).toBeNull()
+	await zing.close()
+})

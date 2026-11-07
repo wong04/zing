@@ -16,6 +16,12 @@ public sealed record LoginRecord(string ItemId, long Version, byte[] Summary, by
 /// <summary>A change waiting in vault/sync.json for sync (Task 13) to send: the item and the version the change made.</summary>
 public sealed record QueuedChange(string ItemId, long Version);
 
+/// <summary>What an import did: logins it added, and rows that matched a login already held (or an earlier row) and merged into it.</summary>
+public sealed record ImportOutcome(int Added, int Merged);
+
+/// <summary>One login with its password, for an export.</summary>
+public sealed record ExportedLogin(string Title, string Origin, string Username, string Password, string Note);
+
 /// <summary>What the renderer shows about the vault without asking for any of it: on or off, Hello set up, and how many logins.</summary>
 /// <param name="Count">Logins not in Recently deleted.</param>
 /// <param name="Error">"unreadable" when a vault file couldn't be read at launch, so the vault is off and its files are left as they are.</param>
@@ -26,6 +32,10 @@ public sealed class VaultOffException() : Exception("The password vault is off. 
 
 /// <summary>A write to a store that was closed meanwhile (passwordAutofill turned off): nothing was written, so it can't land after a new store has read the files.</summary>
 public sealed class VaultClosedException() : Exception("The password vault was turned off before this change was saved, so nothing was saved.");
+
+public sealed class NothingToExportException() : Exception("The vault has no logins to export");
+
+public sealed class NeverSaveNotFoundException(string origin) : Exception($"{origin} isn't in the list of sites Zing never offers to save");
 
 public sealed class VaultItemNotFoundException(string id) : Exception($"No login with ID {id} in the vault");
 
@@ -253,17 +263,8 @@ public sealed class VaultStore : IDisposable
 				// Read again: another change may have landed while Hello was asking.
 				var (record, summary) = Find(id);
 				if (skipIfSame && IsSame(secretKey, keys, record, summary, password)) return false;
-				var version = record.Version + 1;
-				var now = _clock.Now();
-				var changed = edit(summary) with
-				{
-					UpdatedAt = now,
-					PasswordUpdatedAt = now,
-					PasswordVersion = version,
-					History = [new HistoryPayload(summary.PasswordVersion, now), .. summary.History],
-				};
-				var sealedPassword = Seal(secretKey, keys, id, version, ItemPart.Password, password);
-				Commit(record, record with { Version = version, Summary = SealSummary(keys, id, version, changed), Password = sealedPassword, History = [record.Password, .. record.History] }, changed);
+				var (changedRecord, changed) = WithNewPassword(secretKey, keys, record, summary, password, edit);
+				Commit(record, changedRecord, changed);
 			}
 			Changed?.Invoke();
 			return true;
@@ -272,6 +273,143 @@ public sealed class VaultStore : IDisposable
 		{
 			CryptographicOperations.ZeroMemory(secretKey);
 		}
+	}
+
+	/// <summary>The item with a new password: the old one goes into the history as it is, without being decrypted. Writes nothing.</summary>
+	private (LoginRecord Record, SummaryPayload Summary) WithNewPassword(byte[] secretKey, VaultKeys keys, LoginRecord record, SummaryPayload summary, string password, Func<SummaryPayload, SummaryPayload> edit)
+	{
+		var version = record.Version + 1;
+		var now = _clock.Now();
+		var changed = edit(summary) with
+		{
+			UpdatedAt = now,
+			PasswordUpdatedAt = now,
+			PasswordVersion = version,
+			History = [new HistoryPayload(summary.PasswordVersion, now), .. summary.History],
+		};
+		var sealedPassword = Seal(secretKey, keys, record.ItemId, version, ItemPart.Password, password);
+		return (record with { Version = version, Summary = SealSummary(keys, record.ItemId, version, changed), Password = sealedPassword, History = [record.Password, .. record.History] }, changed);
+	}
+
+	private static bool IsLive(SummaryPayload summary) => !summary.NeverSave && summary.DeletedAt is null;
+
+	/// <summary>
+	/// Adds every login, or merges it into the live login with the same origin and username (one held already, or an earlier row of
+	/// this batch): a different password replaces the saved one, which goes into its history. One Hello call unseals the secret key for
+	/// the whole batch (Ruling 3), the files are written once, and a bad address anywhere refuses the whole batch before anything is written.
+	/// </summary>
+	/// <exception cref="NotAWebOriginException">A login's address isn't an http(s) address.</exception>
+	public async Task<ImportOutcome> ImportAsync(IReadOnlyList<NewLogin> logins)
+	{
+		if (logins.Count == 0) return new ImportOutcome(0, 0);
+		var origins = logins.Select(l => VaultModel.OriginOf(l.Origin)).ToList();
+		RequireHello();
+		var (keys, secretKey) = await SecretKeyForWriteAsync();
+		try
+		{
+			ImportOutcome outcome;
+			lock (_gate)
+			{
+				RequireOpen();
+				var live = new Dictionary<(string Origin, string Username), string>();
+				foreach (var record in _records)
+				{
+					if (record.Tombstone || !IsLive(_summaries[record.ItemId])) continue;
+					var held = _summaries[record.ItemId];
+					live[(held.Origin, held.Username)] = record.ItemId;
+				}
+				var changed = new Dictionary<string, (LoginRecord Record, SummaryPayload Summary)>(StringComparer.Ordinal);
+				List<string> added = [];
+				var merged = 0;
+				for (var i = 0; i < logins.Count; i++)
+				{
+					var login = logins[i];
+					if (live.TryGetValue((origins[i], login.Username), out var id))
+					{
+						merged++;
+						var (record, summary) = changed.TryGetValue(id, out var latest) ? latest : (_records.First(r => r.ItemId == id), _summaries[id]);
+						if (IsSame(secretKey, keys, record, summary, login.Password)) continue;
+						changed[id] = WithNewPassword(secretKey, keys, record, summary, login.Password, s => s);
+						continue;
+					}
+					var newId = Guid.NewGuid().ToString("N");
+					var now = _clock.Now();
+					var fresh = new SummaryPayload(origins[i], login.Username, login.Title, login.Note, now, now, now, null, 1, []);
+					changed[newId] = (new LoginRecord(newId, 1, SealSummary(keys, newId, 1, fresh), Seal(secretKey, keys, newId, 1, ItemPart.Password, login.Password), [], false), fresh);
+					added.Add(newId);
+					live[(origins[i], login.Username)] = newId;
+				}
+				if (changed.Count > 0) CommitBatch(changed, added);
+				outcome = new ImportOutcome(added.Count, merged);
+			}
+			if (outcome.Added + outcome.Merged > 0) Changed?.Invoke();
+			return outcome;
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(secretKey);
+		}
+	}
+
+	/// <summary>Every login not in Recently deleted, with its password, for an export. Asks Hello once; the secret key is wiped as soon as the passwords are read.</summary>
+	/// <exception cref="NothingToExportException">No login to export.</exception>
+	public async Task<IReadOnlyList<ExportedLogin>> ExportAsync()
+	{
+		if (Summaries().All(s => s.DeletedAt is not null)) throw new NothingToExportException();
+		RequireHello();
+		var keys = Keys();
+		var secretKey = await keys.SecretKeyAsync(_cipher, _sealer);
+		try
+		{
+			lock (_gate)
+			{
+				return [.. _records
+					.Where(r => !r.Tombstone && IsLive(_summaries[r.ItemId]))
+					.Select(r => (Record: r, Summary: _summaries[r.ItemId]))
+					.Select(x => new ExportedLogin(x.Summary.Title, x.Summary.Origin, x.Summary.Username, OpenPassword(secretKey, keys, x.Record, x.Summary), x.Summary.Note))];
+			}
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(secretKey);
+		}
+	}
+
+	private static string OpenPassword(byte[] secretKey, VaultKeys keys, LoginRecord record, SummaryPayload summary)
+	{
+		var plain = VaultCrypto.Open(secretKey, record.Password, new ItemAd(keys.VaultId, record.ItemId, summary.PasswordVersion, ItemPart.Password));
+		try
+		{
+			return Encoding.UTF8.GetString(plain);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(plain);
+		}
+	}
+
+	/// <summary>Takes the origin off the "never for this site" list so Zing offers to save there again. A summary-only change: no Hello.</summary>
+	/// <exception cref="NeverSaveNotFoundException">The origin isn't on the list.</exception>
+	public void RemoveNeverSave(string origin)
+	{
+		var exact = VaultModel.OriginOf(origin);
+		lock (_gate)
+		{
+			RequireOpen();
+			var marks = _records.Where(r => !r.Tombstone && _summaries[r.ItemId] is { NeverSave: true, DeletedAt: null } mark && mark.Origin == exact).ToList();
+			if (marks.Count == 0) throw new NeverSaveNotFoundException(exact);
+			var keys = Keys();
+			var now = _clock.Now();
+			var changed = new Dictionary<string, (LoginRecord Record, SummaryPayload Summary)>(StringComparer.Ordinal);
+			foreach (var record in marks)
+			{
+				var removed = _summaries[record.ItemId] with { DeletedAt = now, UpdatedAt = now };
+				var version = record.Version + 1;
+				changed[record.ItemId] = (record with { Version = version, Summary = SealSummary(keys, record.ItemId, version, removed) }, removed);
+			}
+			CommitBatch(changed, []);
+		}
+		Changed?.Invoke();
 	}
 
 	private static bool IsSame(byte[] secretKey, VaultKeys keys, LoginRecord record, SummaryPayload summary, string password)
@@ -324,13 +462,27 @@ public sealed class VaultStore : IDisposable
 	{
 		RequireOpen();
 		List<LoginRecord> records = replaced is null ? [.. _records, record] : [.. _records.Select(r => ReferenceEquals(r, replaced) ? record : r)];
-		List<QueuedChange> queued = [.. _queued, new QueuedChange(record.ItemId, record.Version)];
+		Persist(records, [new QueuedChange(record.ItemId, record.Version)]);
+		_summaries[record.ItemId] = summary;
+	}
+
+	/// <summary>Several items in one write: <paramref name="added"/> are new, stored in that order; the rest replace the item of their ID. Each is queued once, at the version it now has.</summary>
+	private void CommitBatch(IReadOnlyDictionary<string, (LoginRecord Record, SummaryPayload Summary)> changed, IReadOnlyList<string> added)
+	{
+		RequireOpen();
+		List<LoginRecord> records = [.. _records.Select(r => changed.TryGetValue(r.ItemId, out var next) ? next.Record : r), .. added.Select(id => changed[id].Record)];
+		Persist(records, [.. changed.Values.Select(c => new QueuedChange(c.Record.ItemId, c.Record.Version))]);
+		foreach (var (id, change) in changed) _summaries[id] = change.Summary;
+	}
+
+	private void Persist(List<LoginRecord> records, IReadOnlyList<QueuedChange> newlyQueued)
+	{
+		List<QueuedChange> queued = [.. _queued, .. newlyQueued];
 		JsonFiles.WriteAllBytesAtomic(SyncFile, JsonSerializer.SerializeToUtf8Bytes(new SyncFileContent(Format, queued), VaultJson.Options));
 		JsonFiles.WriteAllBytesAtomic(VaultFile, JsonSerializer.SerializeToUtf8Bytes(new VaultFileContent(Format, records), VaultJson.Options));
 		_records.Clear();
 		_records.AddRange(records);
-		_queued.Add(queued[^1]);
-		_summaries[record.ItemId] = summary;
+		_queued.AddRange(newlyQueued);
 	}
 
 	/// <summary>The secret key for a write: unsealed with one Hello call, or, before the first save, made (and sealed) with one.</summary>

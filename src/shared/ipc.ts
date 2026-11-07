@@ -10,7 +10,7 @@ import type { Settings, SettingKey } from './settings'
 import type { DiagnosticReport } from './unblock/blockDiagnostics'
 import type { DnsOutcome, DnsPreview } from './unblock/dnsSetup'
 import type { RelayAttemptEvent, RelayOpenResult } from './unblock/relayOpen'
-import type { LoginEdit, LoginSummary, NewLogin, PasswordHistoryEntry, VaultState } from './vault/vault'
+import type { LoginEdit, LoginSummary, NeverSave, NewLogin, PasswordHistoryEntry, VaultImportResult, VaultState } from './vault/vault'
 import type {
 	AccountOutcome,
 	AccountState,
@@ -411,6 +411,14 @@ export interface InvokeContract {
 	'vault:restore': { args: [id: string]; result: void }
 	/** When each old password was replaced, newest first. No passwords and no prompt. */
 	'vault:history': { args: [id: string]; result: PasswordHistoryEntry[] }
+	/** Imports the CSV a picker token stands for (kind 'csv'), with one Windows Hello prompt for the whole file. Rows it cannot use come back with the reason. */
+	'vault:import-csv': { args: [token: string]; result: VaultImportResult }
+	/** Asks Windows Hello once, then saves every password into Downloads as "Zing Passwords.csv" in Chrome's format, unencrypted. */
+	'vault:export-csv': { args: []; result: PickedFile }
+	/** The sites marked "never for this site". No prompt. */
+	'vault:never-saves': { args: []; result: NeverSave[] }
+	/** Takes a site off that list so Zing offers to save there again. No prompt. */
+	'vault:remove-never-save': { args: [origin: string]; result: void }
 	/**
 	 * The user chose a login in the account picker: asks Windows Hello once, then fills that page's field and its other half.
 	 * `cancelled` when Hello was cancelled or unavailable (nothing filled, no error); `refused` when the page is no longer
@@ -602,6 +610,10 @@ export interface ZingApi {
 	deleteLogin(id: string): Promise<void>
 	restoreLogin(id: string): Promise<void>
 	loginHistory(id: string): Promise<PasswordHistoryEntry[]>
+	importPasswordsCsv(token: string): Promise<VaultImportResult>
+	exportPasswordsCsv(): Promise<PickedFile>
+	neverSaves(): Promise<NeverSave[]>
+	removeNeverSave(origin: string): Promise<void>
 	onVaultState(listener: (state: VaultState) => void): Unsubscribe
 	fillLogin(pageId: TabId, id: string): Promise<FillOutcome>
 	answerSaveLogin(pageId: TabId, answer: SaveAnswer): Promise<SaveOutcome>

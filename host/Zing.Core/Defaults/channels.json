@@ -458,6 +458,10 @@
 			"args": 1
 		},
 		{
+			"channel": "vault:export-csv",
+			"args": 0
+		},
+		{
 			"channel": "vault:fill",
 			"args": 2
 		},
@@ -467,6 +471,18 @@
 		},
 		{
 			"channel": "vault:history",
+			"args": 1
+		},
+		{
+			"channel": "vault:import-csv",
+			"args": 1
+		},
+		{
+			"channel": "vault:never-saves",
+			"args": 0
+		},
+		{
+			"channel": "vault:remove-never-save",
 			"args": 1
 		},
 		{

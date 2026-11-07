@@ -115,8 +115,18 @@ export function dueForTombstone(summary: LoginSummary, now: number): boolean {
 	return now - summary.deletedAt >= DELETED_RETENTION_MS
 }
 
-// Holding any login, deleted ones included, is a stored record, so Settings'
-// privacy banner warns.
-export function vaultKeepsData(summaries: readonly LoginSummary[]): boolean {
-	return summaries.length > 0
+// Holding any login, deleted ones included, or a "never for this site" mark
+// (Ruling 39: it names a site) is a stored record, so Settings' privacy banner
+// warns.
+export function vaultKeepsData(summaries: readonly LoginSummary[], neverSave: readonly NeverSave[]): boolean {
+	return summaries.length > 0 || neverSave.length > 0
+}
+
+// What vault:import-csv did: logins added, rows that matched a login the vault
+// already held (or an earlier row) and were merged into it, and each row it
+// could not use. `row` counts the file's header as row 1.
+export interface VaultImportResult {
+	added: number
+	merged: number
+	skipped: { row: number; reason: string }[]
 }

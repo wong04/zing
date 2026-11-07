@@ -374,6 +374,10 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("vault:delete", args => Do(() => Vault().Delete(Text(args, 0))));
 		bridge.Register("vault:restore", args => Do(() => Vault().Restore(Text(args, 0))));
 		bridge.Register("vault:history", args => Vault().History(Text(args, 0)));
+		bridge.Register("vault:import-csv", async args => await ImportCsvAsync(Text(args, 0)));
+		bridge.Register("vault:export-csv", async _ => await ExportCsvAsync());
+		bridge.Register("vault:never-saves", _ => Vault().NeverSaves());
+		bridge.Register("vault:remove-never-save", args => Do(() => Vault().RemoveNeverSave(Text(args, 0))));
 		bridge.Register("vault:fill", async args => await Autofill.FillAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("vault:answer-save", async args => await SignIn.AnswerAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
@@ -868,6 +872,22 @@ public sealed class ChromeApi : IDisposable
 		if (password.ValueKind != JsonValueKind.String) throw new ArgumentException("A login's password must be a string");
 		await vault.UpdateLoginAsync(id, title, note, username, password.GetString()!);
 		return null;
+	}
+
+	/// <summary>Reads the picked CSV (a token, never a path) and imports it with one Hello call; rows that can't be used come back with the reason.</summary>
+	private async Task<object?> ImportCsvAsync(string token)
+	{
+		var vault = Vault();
+		var csv = VaultCsv.ParsePasswords(VaultCsv.ReadFile(Grants.Resolve(token)));
+		var outcome = await vault.ImportAsync([.. csv.Logins.Select(l => new NewLogin(l.Url, l.Username, l.Password, l.Title, l.Note))]);
+		return new { outcome.Added, outcome.Merged, csv.Skipped };
+	}
+
+	/// <summary>One Hello call, then every password in Chrome's CSV format, saved into Downloads. The renderer is told the file's name and gets a token for it.</summary>
+	private async Task<object?> ExportCsvAsync()
+	{
+		var logins = await Vault().ExportAsync();
+		return Grants.Issue(VaultCsv.SaveExport(_placement, _host.DownloadsDirectory, logins));
 	}
 
 	private static NewLogin NewLoginArg(JsonElement login) =>

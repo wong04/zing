@@ -20,6 +20,7 @@ import { CustomRow } from './CustomRows'
 import { CATEGORIES, PANES, detailOf, isVisible, type SettingRow } from './rows'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
+import { useVaultData, VaultDataProvider } from './useVaultData'
 import './settings.css'
 
 const ICONS: Readonly<Record<SettingsCategoryId, () => React.JSX.Element>> = {
@@ -115,6 +116,7 @@ export function SettingsSheet({ handle, initialCategory, version }: SettingsShee
 	const [category, setCategory] = useState(initialCategory)
 	const [shown, setShown] = useState(false)
 	const sheet = useRef<HTMLDivElement>(null)
+	const vault = useVaultData()
 	const current = CATEGORIES.find((c) => c.id === category)
 
 	useEffect(() => {
@@ -160,7 +162,9 @@ export function SettingsSheet({ handle, initialCategory, version }: SettingsShee
 				<FadingScroll className="sheet-content" aria-label={`${current?.title ?? ''} settings`}>
 					<div className="sheet-content-inner" key={category}>
 						<h2>{current?.title}</h2>
-						<Pane category={category} handle={handle} version={version} />
+						<VaultDataProvider value={vault}>
+							<Pane category={category} handle={handle} version={version} />
+						</VaultDataProvider>
 					</div>
 				</FadingScroll>
 				<div className="sheet-close">

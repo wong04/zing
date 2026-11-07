@@ -16,9 +16,18 @@ export interface StoresDataCondition {
 	readonly plural?: boolean
 }
 
+// The vault's contents are known only while its store is open (passwordAutofill on), so the Settings sheet reports them as they change.
+let vaultKeepsData = false
+
+/** Whether the vault holds a login (deleted ones too) or a never-saved site; see `vaultKeepsData` in the vault's shared rules. */
+export function setVaultKeepsData(keeps: boolean): void {
+	vaultKeepsData = keeps
+}
+
 const conditions: StoresDataCondition[] = [
 	{ id: 'persistentProfile', active: (s) => s.persistentProfile, what: 'cookies and cache', plural: true },
 	{ id: 'restoreTabs', active: (s) => s.restoreTabs, what: 'your open tabs', plural: true },
+	{ id: 'vault', active: (s) => s.passwordAutofill && vaultKeepsData, what: 'saved passwords', plural: true },
 ]
 
 export class DuplicateConditionError extends Error {

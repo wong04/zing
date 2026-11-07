@@ -48,7 +48,11 @@ describe('recently deleted', () => {
 
 describe('the privacy banner', () => {
 	it('flips once the vault holds any login, deleted ones included', () => {
-		expect(vaultKeepsData([])).toBe(false)
-		expect(vaultKeepsData([summary({ deletedAt: 1 })])).toBe(true)
+		expect(vaultKeepsData([], [])).toBe(false)
+		expect(vaultKeepsData([summary({ deletedAt: 1 })], [])).toBe(true)
+	})
+	it('flips for a site marked never-save too, though it holds no login (Ruling 39)', () => {
+		expect(vaultKeepsData([], [{ origin: 'https://a.example' }])).toBe(true)
+		expect(vaultKeepsData([], [])).toBe(false)
 	})
 })
