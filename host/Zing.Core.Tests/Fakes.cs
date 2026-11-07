@@ -279,8 +279,12 @@ public sealed class FakeSecretClipboard : Zing.Core.Vault.ISecretClipboard
 		SequenceNumber++;
 	}
 
+	/// <summary>Makes Clear fail as it does when another program holds the clipboard.</summary>
+	public Exception? ClearFailure { get; set; }
+
 	public void Clear()
 	{
+		if (ClearFailure is { } failure) throw failure;
 		Text = null;
 		SequenceNumber++;
 	}

@@ -296,4 +296,37 @@ public sealed class VaultCsvBridgeTests : IDisposable
 
 		Assert.False(File.GetAttributes(Path.Combine(Downloads, "Zing Passwords.csv")).HasFlag(FileAttributes.Hidden));
 	}
+
+	// -- A clear that fails (re-review N1): reported, never thrown into the timer or into closing the window --
+
+	[Fact]
+	public async Task AClearThatFailsOnTheTimerIsReportedAndDoesNotThrow()
+	{
+		var id = await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "s3cret pw", "", ""));
+		await Invoke(_bridge, "vault:copy", id);
+		_host.FakeSecret.ClearFailure = new ClipboardBusyException("busy");
+
+		_host.FakeScheduler.Advance(TimedSecretCopy.ClearAfter);
+
+		Assert.Contains(_host.Reported, e => e is ClipboardBusyException);
+	}
+
+	[Fact]
+	public async Task AClearThatFailsAtCloseIsReportedAndTheWindowStillDisposesItsTabs()
+	{
+		var id = await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "s3cret pw", "", ""));
+		var host = new FakeWindowHost();
+		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+		var bridge = new Bridge();
+		var window = new ChromeApi(bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), Vault: _vault), host, "test");
+		var tab = window.Tabs.Open("https://a.example/");
+		var page = host.FakePages.PageFor(window.Tabs, tab.Id);
+		await Invoke(bridge, "vault:copy", id);
+		host.FakeSecret.ClearFailure = new ClipboardBusyException("busy");
+
+		window.Dispose();
+
+		Assert.True(page.Closed);
+		Assert.Contains(host.Reported, e => e is ClipboardBusyException);
+	}
 }

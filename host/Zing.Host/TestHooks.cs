@@ -148,7 +148,7 @@ public static class TestHooks
 		if (action == "read-secret-clipboard")
 		{
 			// What a copied password put on the clipboard (the real clipboard is never opened in an e2e run), and the formats that keep it out of history and cloud sync.
-			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { text = SecretClipboard.Held, formats = SecretClipboard.ExclusionFormats }));
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { text = SecretClipboard.Held, formats = Zing.Core.Vault.SecretClipboardWriter.ExclusionFormats }));
 			return true;
 		}
 		if (action == "layers")
