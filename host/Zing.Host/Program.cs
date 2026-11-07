@@ -172,9 +172,15 @@ public sealed class ZingApp
 
 	public void Closed(MainWindow window)
 	{
+		var wasPrimary = window == Primary;
 		_windows.Remove(window);
 		_taskbar?.Remove(window.AppWindow);
-		if (_windows.Count > 0) return;
+		if (_windows.Count > 0)
+		{
+			// The next window is now the one saved; without this, quitting it untouched restores the closed one.
+			if (wasPrimary) _session?.Changed();
+			return;
+		}
 		// The windows went with a dead engine, not because the person quit: Zing comes back instead.
 		if (_rebuild is { } rebuild)
 		{
