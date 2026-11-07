@@ -119,10 +119,10 @@ public static class TestHooks
 	/// <summary>
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
-	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers;
+	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers, and reset makes it forget the key it sealed with;
 	/// "picker-key" with <c>vk</c> enters the account picker's key handler as a real key press on its page would;
 	/// "page-messages" writes how many page messages were dropped to <c>file</c>;
-	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
+	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
 	public static bool TryHandle(string json, HostWindow window)
@@ -154,6 +154,11 @@ public static class TestHooks
 		if (action == "layers")
 		{
 			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(Layers(window)));
+			return true;
+		}
+		if (action == "autofill-settings")
+		{
+			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(window.Views.Select(v => new { url = v.Core.Source, passwordAutosave = v.Core.Settings.IsPasswordAutosaveEnabled, generalAutofill = v.Core.Settings.IsGeneralAutofillEnabled })));
 			return true;
 		}
 		if (action == "caption")

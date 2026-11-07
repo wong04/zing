@@ -434,6 +434,22 @@ public sealed class AutofillTests : IDisposable
 	}
 
 	[Fact]
+	public async Task AResetHelloKeyFillsNothingAndRaisesTheSetUpAgainErrorInsteadOfHidingIt()
+	{
+		var id = await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		Focus($"{Site}/login");
+		Wait();
+		_sealer.UnsealFailure = new VaultTamperedException("the Hello key was reset");
+
+		var result = await Invoke("vault:fill", TabId, id);
+
+		Assert.Equal(nameof(VaultSetUpAgainException), result.GetProperty("error").GetProperty("name").GetString());
+		Assert.Empty(Page.Evaluated);
+		Assert.Null(Picker);
+	}
+
+	[Fact]
 	public async Task CanFillRefusesAFrameSourceThatDiffersFromTheOriginTheEntriesWereChosenFor()
 	{
 		var id = await Save(Site, "ada");

@@ -335,9 +335,6 @@ public sealed class WebView2Page : IPage
 		// (FollowAutofillAsync). chrome.webview itself stays on the page (the engine injects it) and postMessage still returns
 		// without error, as the relayed-page e2e observes.
 		_core.Settings.AreHostObjectsAllowed = false;
-		// Zing's vault is the only password manager: WebView2's own saving and form autofill stay off in every profile (Ruling 5).
-		_core.Settings.IsPasswordAutosaveEnabled = false;
-		_core.Settings.IsGeneralAutofillEnabled = false;
 		_core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);

@@ -127,6 +127,26 @@ public sealed class VaultBridgeTests : IDisposable
 	}
 
 	[Fact]
+	public async Task AResetHelloKeyAnswersRevealCopyAndSaveWithTheSetUpAgainError()
+	{
+		var id = Value(await Invoke(_bridge, "vault:save", Login)).GetString()!;
+		_sealer.UnsealFailure = new VaultTamperedException("the Hello key was reset");
+
+		foreach (var result in new[]
+		{
+			await Invoke(_bridge, "vault:reveal", id),
+			await Invoke(_bridge, "vault:copy", id),
+			await Invoke(_bridge, "vault:save", new { origin = "https://other.example", username = "bob", password = "pw", title = "", note = "" }),
+			await Invoke(_bridge, "vault:update", id, new { username = "ada", title = "t", note = "n", password = "x" }),
+		})
+		{
+			Assert.Equal(nameof(VaultSetUpAgainException), ErrorName(result));
+			Assert.Equal("Set up the vault again on this PC", result.GetProperty("error").GetProperty("message").GetString());
+		}
+		Assert.Single(Value(await Invoke(_bridge, "vault:summaries")).EnumerateArray());
+	}
+
+	[Fact]
 	public async Task VaultStateIsPushedAfterEveryChange()
 	{
 		Assert.Equal(new VaultState(true, true, 0), Value(await Invoke(_bridge, "vault:get")).Deserialize<VaultState>(ZingJson.Options));

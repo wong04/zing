@@ -56,7 +56,19 @@ public sealed class VaultKeys
 	public byte[] IndexKey(ISecretCipher cipher) => cipher.Decrypt(_sealedIndexKey);
 
 	/// <summary>Asks Hello once. The caller wipes it.</summary>
-	public Task<byte[]> SecretKeyAsync(ISecretCipher cipher, IHelloSealer sealer) => sealer.UnsealAsync(cipher.Decrypt(_sealedSecretKey));
+	/// <exception cref="VaultSetUpAgainException">The Hello key was reset, or this blob wasn't sealed by this sealer.</exception>
+	public async Task<byte[]> SecretKeyAsync(ISecretCipher cipher, IHelloSealer sealer)
+	{
+		var helloSealed = cipher.Decrypt(_sealedSecretKey);
+		try
+		{
+			return await sealer.UnsealAsync(helloSealed);
+		}
+		catch (Exception error) when (error is VaultTamperedException or HelloSealFormatException)
+		{
+			throw new VaultSetUpAgainException(error);
+		}
+	}
 
 	/// <summary>Null when there's no file yet: the keys are made by the first save.</summary>
 	public static VaultKeys? Load(string path)

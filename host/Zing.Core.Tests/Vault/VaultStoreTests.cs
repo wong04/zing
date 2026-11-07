@@ -40,11 +40,15 @@ internal sealed class FakeSealer : IHelloSealer
 	/// <summary>Runs while the fake prompt is "up", e.g. to navigate the page during Hello.</summary>
 	public Action? Unsealing { get; set; }
 
+	/// <summary>What a reset Hello key or a key sealed by another sealer looks like: the unseal itself fails.</summary>
+	public Exception? UnsealFailure { get; set; }
+
 	public Task<byte[]> UnsealAsync(byte[] sealedBytes)
 	{
 		Unseals++;
 		Unsealing?.Invoke();
 		Answer();
+		if (UnsealFailure is { } failure) throw failure;
 		if (!sealedBytes.AsSpan().StartsWith(Mark)) throw new CryptographicException("not sealed by this fake");
 		return Task.FromResult<byte[]>([.. sealedBytes.Skip(Mark.Length).Reverse()]);
 	}
@@ -89,6 +93,43 @@ public sealed class VaultStoreTests : IDisposable
 		Assert.Equal("Example", summary.Title);
 		Assert.Equal("work account", summary.Note);
 		Assert.Null(summary.DeletedAt);
+	}
+
+	public static TheoryData<Exception> UnsealFailures => new()
+	{
+		new VaultTamperedException("the Hello key was reset"),
+		new HelloSealFormatException("sealed by another sealer"),
+	};
+
+	[Theory]
+	[MemberData(nameof(UnsealFailures))]
+	public async Task AKeyHelloCantOpenAsksToSetTheVaultUpAgainOnEveryPathThatNeedsIt(Exception failure)
+	{
+		var id = await Open().SaveAsync(Login);
+		var store = Open();
+		_sealer.UnsealFailure = failure;
+
+		var errors = new[]
+		{
+			await Assert.ThrowsAsync<VaultSetUpAgainException>(() => store.PasswordAsync(id)),
+			await Assert.ThrowsAsync<VaultSetUpAgainException>(() => store.SaveAsync(Login with { Username = "grace" })),
+			await Assert.ThrowsAsync<VaultSetUpAgainException>(() => store.UpdatePasswordAsync(id, "new")),
+			await Assert.ThrowsAsync<VaultSetUpAgainException>(() => store.ExportAsync()),
+			await Assert.ThrowsAsync<VaultSetUpAgainException>(() => store.ImportAsync([new NewLogin("https://b.example", "bob", "pw", "", "")])),
+		};
+
+		Assert.All(errors, e => Assert.Equal("Set up the vault again on this PC", e.Message));
+		Assert.All(errors, e => Assert.Same(failure, e.InnerException));
+		Assert.Single(store.Summaries());
+	}
+
+	[Fact]
+	public async Task OpeningTheVaultAndListingItNeverNeedsTheHelloKey()
+	{
+		await Open().SaveAsync(Login);
+		_sealer.UnsealFailure = new VaultTamperedException("the Hello key was reset");
+
+		Assert.Single(Open().Summaries());
 	}
 
 	[Fact]

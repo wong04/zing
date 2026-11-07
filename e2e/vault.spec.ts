@@ -68,7 +68,7 @@ async function testHook(zing: Launched, message: TestMessage): Promise<void> {
 	await zing.chrome.evaluate((m) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', ...m }), message)
 }
 
-const hello = (zing: Launched, result: 'pass' | 'cancel' | 'unavailable'): Promise<void> => testHook(zing, { action: 'vault-hello', result })
+const hello = (zing: Launched, result: 'pass' | 'cancel' | 'unavailable' | 'reset'): Promise<void> => testHook(zing, { action: 'vault-hello', result })
 
 const VK = { ArrowUp: 0x26, ArrowDown: 0x28, Enter: 0x0d, Escape: 0x1b } as const
 
@@ -953,6 +953,37 @@ test('without Windows Hello the page says so and a password cannot be shown', as
 	await manage(sheet).getByRole('button', { name: 'Show password for Example' }).click()
 	await expect(manage(sheet).getByRole('alert').last()).toContainText('no Windows Hello')
 	await expect(manage(sheet).getByText(PASSWORD)).toHaveCount(0)
+	await zing.close()
+})
+
+test('WebView2 password saving and general autofill are off in every view, in the chrome and in pages', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await open(zing, `${base}/login`)
+	const file = join(scratchDir('zing-autofill-'), 'settings.json')
+
+	await testHook(zing, { action: 'autofill-settings', file })
+
+	await expect.poll(() => existsSync(file)).toBe(true)
+	const views = JSON.parse(readFileSync(file, 'utf8')) as { url: string; passwordAutosave: boolean; generalAutofill: boolean }[]
+	// Zing's chrome and the page.
+	expect(views.some((v) => v.url.startsWith(base))).toBe(true)
+	expect(views.length).toBeGreaterThanOrEqual(2)
+	expect(views.filter((v) => v.passwordAutosave || v.generalAutofill).map((v) => v.url)).toEqual([])
+	await zing.close()
+})
+
+test('after a reset Windows Hello key the page says to set the vault up again on this PC when a password is shown', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await saveTitled(zing, { origin: 'https://example.com', username: 'ada', password: PASSWORD, title: 'Example', note: '' })
+	const sheet = await openManage(zing)
+
+	await hello(zing, 'reset')
+
+	await manage(sheet).getByRole('button', { name: 'Show password for Example' }).click()
+	await expect(manage(sheet).getByRole('alert').last()).toContainText('Set up the vault again on this PC')
+	await expect(manage(sheet).getByText(PASSWORD)).toHaveCount(0)
+	// Listing needs no Hello key, so the login is still there.
+	await expect(manage(sheet).getByText('Example').first()).toBeVisible()
 	await zing.close()
 })
 

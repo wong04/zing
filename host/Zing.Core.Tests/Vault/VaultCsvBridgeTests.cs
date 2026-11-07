@@ -169,6 +169,22 @@ public sealed class VaultCsvBridgeTests : IDisposable
 	}
 
 	[Fact]
+	public async Task AResetHelloKeyAnswersExportAndImportWithTheSetUpAgainError()
+	{
+		await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "pw", "", ""));
+		_sealer.UnsealFailure = new HelloSealFormatException("sealed by another sealer");
+		var token = await Pick("name,url,username,password,note\nb,https://b.example,bob,pw2,\n");
+
+		foreach (var result in new[] { await Invoke(_bridge, "vault:export-csv"), await Invoke(_bridge, "vault:import-csv", token) })
+		{
+			Assert.Equal(nameof(VaultSetUpAgainException), ErrorName(result));
+			Assert.Equal("Set up the vault again on this PC", result.GetProperty("error").GetProperty("message").GetString());
+		}
+		Assert.Empty(Directory.GetFileSystemEntries(Downloads));
+		Assert.Single(_vault.Summaries());
+	}
+
+	[Fact]
 	public async Task ACancelledExportWritesNoFile()
 	{
 		await _vault.SaveAsync(new NewLogin("https://a.example", "ada", "pw", "", ""));

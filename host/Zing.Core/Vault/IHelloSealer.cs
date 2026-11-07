@@ -13,6 +13,12 @@ public sealed class HelloUnavailableException(string message) : Exception(messag
 public sealed class HelloSealFormatException(string message) : Exception(message);
 
 /// <summary>
+/// The vault's keys can't be opened with this PC's Windows Hello key: the key was reset, or keys.bin was sealed by something
+/// else. Nothing but setting the vault up again helps, so this is what the person is told instead of the crypto detail.
+/// </summary>
+public sealed class VaultSetUpAgainException(Exception inner) : Exception("Set up the vault again on this PC", inner);
+
+/// <summary>
 /// Seals the vault's secret key so only a Windows Hello verification opens it again (check C1's method in Zing.Host's HelloSealer).
 /// Every call may show the Hello prompt; the e2e host and the tests swap in a fake that never does.
 /// </summary>
