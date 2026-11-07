@@ -28,7 +28,7 @@ New work on top of parity: rename to **Zing**, a new logo, a **top / left / righ
 
 Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, multi-webview still unstable) and **JCEF + Java** (matches your Java, but Swing/JavaFX theming is painful and the JCEF API surface is small).
 
-**Decided: Electron + TypeScript + React (electron-vite, electron-builder, npm), Windows only.** Being Windows-only means Windows APIs (DPAPI, Windows Hello, Mica, registry) can be used directly with no cross-platform abstraction, and CI runs only on `windows-latest`.
+**Decided at first: Electron + TypeScript + React (electron-vite, electron-builder, npm), Windows only. Replaced on 2026-10-31 by a C# WebView2 host (plain Win32 window since W5) that keeps the React renderer and `src/shared` TS.** Being Windows-only means Windows APIs (DPAPI, Windows Hello, Mica, registry) can be used directly with no cross-platform abstraction, and CI runs only on `windows-latest`.
 
 **Other decisions:** public repo `wong04/zing`, MIT, crediting Krackn in the README. Password autofill becomes a **built-in vault** (Phase 6b).
 
@@ -112,11 +112,13 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 ## Phases
 
+> **Status (2026-11-07):** Phases 0–6 are done, with the Partial rows in [PARITY.md](../PARITY.md) left for the audit. Phase W, the WebView2 migration, ran between 3 and 4. Next: 6b, 6c, 7, 8, then 9.
+
 **0. Repo + tracking**
 - Local checkout at `C:\Users\USER\OneDrive\Desktop\Coding\zing`, next to your other projects. Turn on `git config core.longpaths true` (Krackn's clone already hit Windows' path limit). Exclude `node_modules`/`out` from OneDrive sync, or move the checkout outside OneDrive if sync churn becomes a problem. The session moves there before any files are written.
 - `gh repo create wong04/zing --public`, MIT LICENSE, with Krackn's Swift kept under `reference/krackn/` (read-only) until parity, then deleted.
 - `PARITY.md` (recording the baseline Krackn commit SHA): one row per Krackn feature/setting, generated from README, CLAUDE.md, the 30 `AppSettings` keys and the Toolbox catalog. Each row becomes a GitHub issue (labels `area:*`, `parity` | `new`), with milestones per phase and a GitHub Project board. This is how you sync across devices.
-- CI on `windows-latest`: lint, typecheck, Vitest, Playwright-Electron, installer build.
+- CI on `windows-latest`: lint, typecheck, Vitest, xUnit host tests, Playwright e2e against `Zing.exe` over CDP.
 
 **1. Shell on Windows**: Electron skeleton named Zing from day 1 (app ID `app.zing.browser`, schemes `zing://home`, user-data dir, strings). One window, one tab, in-memory session, frameless chrome, overlay-view architecture, and CSS theme tokens ported from `Theme.swift`/`Accent.swift` (`lightTokens`/`darkTokens` already exist as CSS).
 
@@ -132,9 +134,9 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 **6. Toolbox parity**: Open a Link (4 methods), Diagnose, Network & VPN (Windows), Convert + format matrix, Download (yt-dlp, Save page via relay), Viewer, Utilities, Graphing calculator, Background remover, Engines downloaded on first use.
 
-**6b. Password vault (new, replaces Keychain autofill)**: `vault.zing` in userData, encrypted with `safeStorage` (DPAPI) and unlocked with Windows Hello (WinRT `UserConsentVerifier` through a small napi addon). If Hello isn't set up, the vault shows an explicit "set up Windows Hello" error rather than falling back silently. Includes the key icon in sign-in fields, a save prompt on submit, exact-origin matching (not registrable domain), CSV import from Chrome/Edge/Bitwarden, the existing password generator, and a manage page in Settings. Keeps the privacy model honest: when the vault holds entries, the Settings privacy banner turns from green to a warning, the same way `restoreTabs` does. Tests: origin matching, the cross-origin-frame refusal, encryption round-trip.
+**6b. Password vault (new, replaces Keychain autofill)**: `vault.zing` in userData, encrypted by the host with DPAPI (`ProtectedData`, as `AccountStore` already does) and unlocked with Windows Hello (WinRT `UserConsentVerifier`, called directly from C#). The autofill script is injected with `AddScriptToExecuteOnDocumentCreatedAsync`. If Hello isn't set up, the vault shows an explicit "set up Windows Hello" error rather than falling back silently. Includes the key icon in sign-in fields, a save prompt on submit, exact-origin matching (not registrable domain), CSV import from Chrome/Edge/Bitwarden, the existing password generator, and a manage page in Settings. Keeps the privacy model honest: when the vault holds entries, the Settings privacy banner turns from green to a warning, the same way `restoreTabs` does. Tests: origin matching, the cross-origin-frame refusal, encryption round-trip.
 
-**6c. Import from other browsers (new)**: one import wizard with a parser per source, each a pure function with fixture tests:
+**6c. Import from other browsers (new)**: one import wizard with a parser per source, each a pure function with fixture tests. The host reads the files; the parsers stay in TS:
 - **Chrome / Edge / Brave on this PC**: auto-detect profiles under `%LOCALAPPDATA%`, read `Bookmarks` (JSON) for bookmarks + Favourites bar, and optionally the last session's open/pinned tabs. Passwords come from the browser's own CSV export (Chrome's encrypted store uses app-bound encryption, which other apps aren't meant to read, so we don't try).
 - **Dia (Mac laptop)**: Dia doesn't run on Windows, so import its exported bookmarks HTML + passwords CSV, copied over. Verify Dia's export options early, since this decides how good the experience is.
 - **Arc**: pinned tabs, folders and Spaces from `StorableSidebar.json`. Spaces become bookmark folders until the Spaces roadmap item lands. Cheap, and timely with Arc's shutdown.
@@ -143,11 +145,11 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 **7. Logo + branding** (can run anytime, needed before 8): 3–4 SVG concepts → you pick → generator script outputs `.ico` (16–256), `.icns`, PNGs and installer art (replaces `Tools/make-icon.swift`). Port `Tests/logo`. Quick name-collision check on "Zing" for browsers/software.
 
-**8. Packaging**: electron-builder NSIS per-user installer, auto-update via `electron-updater` + GitHub Releases, code signing (Azure Trusted Signing, about $10/mo, otherwise SmartScreen warns).
+**8. Packaging**: a Velopack per-user installer with auto-update from GitHub Releases, a WebView2 runtime check for Windows 10, default-browser registration, and code signing (Azure Trusted Signing, about $10/mo, otherwise SmartScreen warns).
 
 **9. Parity audit**: walk `PARITY.md`. Every row is closed with a linked test or screenshot, or listed in a "Known differences on Windows" section in the README. Then delete `reference/krackn/`.
 
-**10. Ongoing**: Renovate for Electron security bumps (ship within ~7 days), the weekly upstream-Krackn diff issue, and blocklist updates. After v1, the roadmap in milestone order: E2E sync, Spaces/profiles, Ctrl+K command bar, Chrome extensions (see 11).
+**10. Ongoing**: Windows App SDK, .NET and npm updates (Chromium security fixes arrive with the Evergreen WebView2 runtime, which Windows updates), the weekly upstream-Krackn diff issue, and blocklist updates. After v1, the roadmap in milestone order: E2E sync, Spaces/profiles, Ctrl+K command bar, Chrome extensions (see 11).
 
 **11. Chrome extensions (roadmap, after v1)**: WebView2 can run Chrome extensions, but only partly.
 - **What WebView2 gives:** with `AreBrowserExtensionsEnabled`, `CoreWebView2Profile.AddBrowserExtensionAsync` installs an **unpacked** extension (a folder with `manifest.json`) into the profile. Its background and content scripts run.
@@ -167,8 +169,8 @@ Parallelizable once Phase 2 lands: 3, 6 and 7 are independent; 4 and 5 follow 3'
 
 ## Verification
 
-- `npm run test:perf`: the efficiency budgets above, run in CI on every PR.
-- `npm test` (Vitest: ported pure-logic suites, assertion counts compared to Krackn's), `npm run test:e2e` (Playwright `_electron.launch`: tabs, popups/opener, downloads, privacy purge, render, tab bar positions, theme switching without losing tabs, the Krackn gotcha being guarded against).
+- The efficiency budgets above, run in CI on every PR (S10; not built yet).
+- `npm test` (Vitest: ported pure-logic suites, assertion counts compared to Krackn's), `npm run test:host` (xUnit), `npm run test:e2e` (Playwright over CDP against `Zing.exe`: tabs, popups/opener, downloads, privacy purge, render, tab bar positions, theme switching without losing tabs, the Krackn gotcha being guarded against).
 - CI is green on `windows-latest`. The installer installs, sets Zing as default browser, opens external links in an existing window, and auto-updates from a test release.
 - Every visual change gets a screenshot, as Krackn's conventions require. Theme presets × 3 tab positions × split view are screenshotted in light and dark.
 - Import: run against your real Chrome profile on the PC and a Dia export from the laptop. Counts in Zing must match the source.

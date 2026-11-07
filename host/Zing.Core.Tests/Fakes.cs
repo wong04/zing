@@ -1,5 +1,7 @@
 using Zing.Core;
 
+[assembly: Xunit.AssemblyFixture(typeof(Zing.Core.Tests.AccountsCleanup))]
+
 namespace Zing.Core.Tests;
 
 public sealed class FakePage(IPageEvents events) : IPage
@@ -252,5 +254,15 @@ public sealed class TickingClock : IClock
 /// <summary>A signed-in guest account in a scratch folder, so window tests start past the gate.</summary>
 public static class Accounts
 {
-	public static AccountStore Guest() => new(Directory.CreateTempSubdirectory("zing-account-").FullName, new FakeCipher(), startAsGuest: true);
+	/// <summary>One folder for the whole run, holding every test's account folder; <see cref="AccountsCleanup"/> deletes it when the run ends.</summary>
+	public static readonly string Root = Directory.CreateTempSubdirectory("zing-account-").FullName;
+
+	public static string Folder() => Directory.CreateDirectory(Path.Combine(Root, Guid.NewGuid().ToString("N"))).FullName;
+
+	public static AccountStore Guest() => new(Folder(), new FakeCipher(), startAsGuest: true);
+}
+
+public sealed class AccountsCleanup : IDisposable
+{
+	public void Dispose() => Directory.Delete(Accounts.Root, recursive: true);
 }
