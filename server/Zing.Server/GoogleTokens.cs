@@ -20,29 +20,66 @@ public interface ISigningKeySource
 {
 	Task<IReadOnlyCollection<SecurityKey>> GetKeysAsync(CancellationToken cancellation);
 
-	// Asks the source to re-read its keys; the source decides how often it actually does.
-	void RequestRefresh();
+	// Re-reads the keys now (an unknown kid means they may have rotated) and returns them.
+	// The source throttles this; inside the throttle window it returns the keys it already has.
+	Task<IReadOnlyCollection<SecurityKey>> RefreshKeysAsync(CancellationToken cancellation);
 }
 
 public sealed class GoogleKeySource : ISigningKeySource
 {
+	public static readonly TimeSpan MinRefreshInterval = TimeSpan.FromMinutes(5);
+	private static readonly TimeSpan ForcedKeysLifetime = TimeSpan.FromHours(1);
 	private const string Discovery = "https://accounts.google.com/.well-known/openid-configuration";
 
-	private readonly ConfigurationManager<OpenIdConnectConfiguration> configuration = new(
-		Discovery,
-		new OpenIdConnectConfigurationRetriever(),
-		new HttpDocumentRetriever())
+	private readonly TimeProvider clock;
+	private readonly Func<CancellationToken, Task<OpenIdConnectConfiguration>> fetch;
+	private readonly ConfigurationManager<OpenIdConnectConfiguration> configuration;
+	private readonly SemaphoreSlim refreshLock = new(1, 1);
+	private IReadOnlyCollection<SecurityKey>? forcedKeys;
+	private DateTimeOffset forcedAt = DateTimeOffset.MinValue;
+	private DateTimeOffset lastFetch = DateTimeOffset.MinValue;
+
+	public GoogleKeySource(TimeProvider clock, Func<CancellationToken, Task<OpenIdConnectConfiguration>>? fetch = null)
 	{
-		AutomaticRefreshInterval = TimeSpan.FromHours(1),
-	};
+		this.clock = clock;
+		this.fetch = fetch ?? (cancellation => OpenIdConnectConfigurationRetriever.GetAsync(Discovery, new HttpDocumentRetriever(), cancellation));
+		configuration = new ConfigurationManager<OpenIdConnectConfiguration>(
+			Discovery,
+			new OpenIdConnectConfigurationRetriever(),
+			new HttpDocumentRetriever())
+		{
+			AutomaticRefreshInterval = TimeSpan.FromHours(1),
+		};
+	}
 
 	public async Task<IReadOnlyCollection<SecurityKey>> GetKeysAsync(CancellationToken cancellation)
 	{
+		var forced = forcedKeys;
+		if (forced is not null && clock.GetUtcNow() - forcedAt < ForcedKeysLifetime) return forced;
+
 		var document = await configuration.GetConfigurationAsync(cancellation);
 		return document.SigningKeys.ToList();
 	}
 
-	public void RequestRefresh() => configuration.RequestRefresh();
+	public async Task<IReadOnlyCollection<SecurityKey>> RefreshKeysAsync(CancellationToken cancellation)
+	{
+		await refreshLock.WaitAsync(cancellation);
+		try
+		{
+			var now = clock.GetUtcNow();
+			if (now - lastFetch < MinRefreshInterval) return await GetKeysAsync(cancellation);
+
+			var document = await fetch(cancellation);
+			lastFetch = now;
+			forcedKeys = document.SigningKeys.ToList();
+			forcedAt = now;
+			return forcedKeys;
+		}
+		finally
+		{
+			refreshLock.Release();
+		}
+	}
 }
 
 public sealed class FakeGoogleIssuer : ISigningKeySource, IDisposable
@@ -79,13 +116,14 @@ public sealed class FakeGoogleIssuer : ISigningKeySource, IDisposable
 		lock (gate) return Task.FromResult<IReadOnlyCollection<SecurityKey>>(published.ToList());
 	}
 
-	public void RequestRefresh()
+	public Task<IReadOnlyCollection<SecurityKey>> RefreshKeysAsync(CancellationToken cancellation)
 	{
 		Interlocked.Increment(ref refreshCount);
 		lock (gate)
 		{
 			published.AddRange(pending);
 			pending.Clear();
+			return Task.FromResult<IReadOnlyCollection<SecurityKey>>(published.ToList());
 		}
 	}
 
@@ -113,8 +151,7 @@ public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId
 		var signingKeys = await keys.GetKeysAsync(cancellation);
 		if (keyId is not null && !signingKeys.Any(key => key.KeyId == keyId))
 		{
-			keys.RequestRefresh();
-			signingKeys = await keys.GetKeysAsync(cancellation);
+			signingKeys = await keys.RefreshKeysAsync(cancellation);
 		}
 
 		var parameters = new TokenValidationParameters

@@ -397,3 +397,40 @@ public class ConfigTests
 			["ZING_GOOGLE_CLIENT_ID"] = null,
 		});
 }
+
+public class GoogleKeySourceTests
+{
+	private static (GoogleKeySource Source, Func<int> Fetches, ManualClock Clock) Build()
+	{
+		var clock = new ManualClock(DateTimeOffset.UtcNow);
+		var fetches = 0;
+		var source = new GoogleKeySource(clock, _ =>
+		{
+			fetches++;
+			var document = new Microsoft.IdentityModel.Protocols.OpenIdConnect.OpenIdConnectConfiguration();
+			document.SigningKeys.Add(new SymmetricSecurityKey(new byte[32]) { KeyId = $"key-{fetches}" });
+			return Task.FromResult(document);
+		});
+		return (source, () => fetches, clock);
+	}
+
+	[Fact]
+	public async Task Forced_refresh_fetches_once_inside_five_minutes_and_again_after()
+	{
+		var (source, fetches, clock) = Build();
+
+		var first = await source.RefreshKeysAsync(CancellationToken.None);
+		Assert.Equal("key-1", first.Single().KeyId);
+		Assert.Equal(1, fetches());
+
+		clock.Advance(TimeSpan.FromMinutes(4));
+		var throttled = await source.RefreshKeysAsync(CancellationToken.None);
+		Assert.Equal(1, fetches());
+		Assert.Equal("key-1", throttled.Single().KeyId);
+
+		clock.Advance(TimeSpan.FromMinutes(2));
+		var second = await source.RefreshKeysAsync(CancellationToken.None);
+		Assert.Equal(2, fetches());
+		Assert.Equal("key-2", second.Single().KeyId);
+	}
+}

@@ -21,7 +21,7 @@ if (config.FakeGoogle)
 }
 else
 {
-	builder.Services.AddSingleton<ISigningKeySource, GoogleKeySource>();
+	builder.Services.AddSingleton<ISigningKeySource>(provider => new GoogleKeySource(provider.GetRequiredService<TimeProvider>()));
 }
 builder.Services.AddSingleton<IGoogleTokenValidator>(provider =>
 	new GoogleTokenValidator(provider.GetRequiredService<ISigningKeySource>(), config.GoogleClientId));
