@@ -281,4 +281,91 @@ public sealed class SyncBridgeTests : IDisposable
 		Assert.Equal("ok", Value(await Invoke(bridge, "account:change-password", "correct horse", Strong)).GetProperty("status").GetString());
 		account.CheckPassword(Strong);
 	}
+
+	[Fact]
+	public async Task SignedOutTheRecoveryKeyIsStillAskedForUntilItIsConfirmedSaved()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+
+		var signedOut = Value(await Invoke(bridge, "sync:sign-out"));
+
+		Assert.False(signedOut.GetProperty("on").GetBoolean());
+		Assert.True(RecoveryPending(signedOut));
+		Assert.True(RecoveryPending(Value(await Invoke(bridge, "sync:get"))));
+	}
+
+	/// <summary>A vault that follows passwordAutofill, in its own folder, as Zing builds it (Program.OpenVault).</summary>
+	private sealed class Switched : IDisposable
+	{
+		public string Dir { get; } = Directory.CreateTempSubdirectory("zing-syncbridge-switched-").FullName;
+		public SettingsStore Settings { get; } = new();
+		public VaultSwitch Vaults { get; }
+
+		public Switched(FakeSealer sealer)
+		{
+			Settings.Set("passwordAutofill", true);
+			Vaults = new VaultSwitch(Settings, () => new VaultStore(Dir, new FakeCipher(), sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents()),
+				e => throw new Xunit.Sdk.XunitException($"the vault couldn't be read: {e}"), () => File.Exists(Path.Combine(Dir, VaultStore.VaultFileName)),
+				() => VaultKeys.SyncOnDisk(Path.Combine(Dir, VaultStore.KeysFileName)));
+		}
+
+		public void Dispose()
+		{
+			Vaults.Dispose();
+			Directory.Delete(Dir, recursive: true);
+		}
+	}
+
+	private Bridge Api(SyncSetup sync, Switched switched, AccountStore account)
+	{
+		var bridge = new Bridge();
+		_apis.Add(new ChromeApi(bridge, new AppServices(switched.Settings, _library, Address.FromDefaults(), new TickingClock(), account, new RelayConsent(), Switch: switched.Vaults, Sync: sync), _host, "test"));
+		return bridge;
+	}
+
+	[Fact]
+	public async Task WithTheVaultOffAndSyncOnThePasswordChangeAsksForTheVaultFirst()
+	{
+		using var switched = new Switched(_sealer);
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), switched, account);
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		switched.Settings.Set("passwordAutofill", false);
+
+		var refused = await Invoke(bridge, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction");
+
+		Assert.Equal(nameof(SyncNeedsTheVaultException), refused.GetProperty("error").GetProperty("name").GetString());
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task WithTheVaultOffAndSyncNeverOnThePasswordChangesHere()
+	{
+		using var switched = new Switched(_sealer);
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), switched, account);
+		await switched.Vaults.Current!.SaveAsync(new NewLogin("https://bank.example.test", "ada", "pw", "", ""));
+		switched.Settings.Set("passwordAutofill", false);
+
+		Assert.Equal("ok", Value(await Invoke(bridge, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction")).GetProperty("status").GetString());
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+	}
+
+	[Fact]
+	public async Task TurningTheVaultOffDisposesItsSyncClient()
+	{
+		using var switched = new Switched(_sealer);
+		var app = new AppServices(switched.Settings, _library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), Switch: switched.Vaults, Sync: Setup(new FakeIssuerSignIn(_server)));
+		var first = app.SyncClients!.For(switched.Vaults.Current!);
+
+		switched.Settings.Set("passwordAutofill", false);
+
+		await Assert.ThrowsAsync<ObjectDisposedException>(() => first.SignOutAsync(TestContext.Current.CancellationToken));
+		switched.Settings.Set("passwordAutofill", true);
+		Assert.NotSame(first, app.SyncClients.For(switched.Vaults.Current!));
+		app.SyncClients.Dispose();
+	}
 }

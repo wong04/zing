@@ -62,10 +62,11 @@ export interface VaultState {
 export type SyncNotice = 'signed-out' | 'unreadable' | 'kept-on-server'
 
 // Sync as Settings shows it (sync:get, sync:state). The bridge leaves out null fields. `on`: this PC turned sync on for the
-// signed-in account; `recoveryPending`: on, and the recovery key isn't yet confirmed saved, so Settings shows nothing else.
+// signed-in account; `recoveryPending`: this PC turned sync on and the recovery key isn't yet confirmed saved, whoever is signed
+// in now, so Settings shows nothing else.
 export type SyncState =
 	| { signedIn: true; email: string; on: boolean; recoveryPending: boolean }
-	| { signedIn: false; notice?: SyncNotice; on: false; recoveryPending: false }
+	| { signedIn: false; notice?: SyncNotice; on: false; recoveryPending: boolean }
 
 // The recovery key, as sync:turn-on and sync:show-recovery give it: 26 base32 characters in groups of four.
 export interface RecoveryKeyShown {

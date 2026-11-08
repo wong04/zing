@@ -93,7 +93,7 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 	public VaultSwitch Vaults { get; } = Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable);
 
 	/// <summary>The open vault's one sync client, for every window; null without <see cref="Sync"/>.</summary>
-	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync);
+	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync, Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable));
 }
 
 /// <summary>
@@ -939,7 +939,10 @@ public sealed class ChromeApi : IDisposable
 		return Grants.Issue(VaultCsv.SaveExport(_placement, _host.DownloadsDirectory, logins));
 	}
 
-	/// <summary>Signed out while the vault is off. A saved sign-in that doesn't unseal is reported, so Settings can offer Sign in again (Ruling 50).</summary>
+	/// <summary>
+	/// Signed out while the vault is off. A saved sign-in that doesn't unseal is reported, so Settings can offer Sign in again
+	/// (Ruling 50). A recovery key still to confirm is reported whoever is signed in, or no one.
+	/// </summary>
 	private SyncState CurrentSyncState()
 	{
 		if (_app.Vaults.Current is not { } vault) return SyncState.SignedOut();
@@ -949,14 +952,13 @@ public sealed class ChromeApi : IDisposable
 		}
 		catch (SyncAccountUnreadableException)
 		{
-			return SyncState.SignedOut("unreadable");
+			return SyncState.SignedOut("unreadable", vault.SyncKeys);
 		}
-		return SyncState.SignedOut(vault.SyncSignedOutByServer ? "signed-out" : null);
+		return SyncState.SignedOut(vault.SyncSignedOutByServer ? "signed-out" : null, vault.SyncKeys);
 	}
 
 	/// <summary>Sync is on only for the account this PC turned it on for: keys.bin names that server user.</summary>
-	private static SyncState SignedInState(VaultStore vault, SyncAccount account) =>
-		SyncState.SignedInAs(account.Email, vault.SyncKeys is { } keys && keys.UserId == account.UserId ? keys : null);
+	private static SyncState SignedInState(VaultStore vault, SyncAccount account) => SyncState.SignedInAs(account, vault.SyncKeys);
 
 	/// <summary>The sign-in waiting on the browser, for Cancel; null when none is.</summary>
 	private CancellationTokenSource? _syncSigningIn;
@@ -1010,15 +1012,15 @@ public sealed class ChromeApi : IDisposable
 		catch (SyncAccountUnreadableException)
 		{
 			vault.ForgetSyncAccount();
-			return SyncState.SignedOut();
+			return SyncState.SignedOut(null, vault.SyncKeys);
 		}
 		if (setup is null)
 		{
 			vault.ForgetSyncAccount();
-			return SyncState.SignedOut("kept-on-server");
+			return SyncState.SignedOut("kept-on-server", vault.SyncKeys);
 		}
 		var revoked = await SyncClient(vault).SignOutAsync(_closing.Token);
-		return SyncState.SignedOut(revoked ? null : "kept-on-server");
+		return SyncState.SignedOut(revoked ? null : "kept-on-server", vault.SyncKeys);
 	}
 
 	private SyncClient SyncClient(VaultStore vault) => (_app.SyncClients ?? throw new SyncNotSetUpException()).For(vault);
@@ -1032,15 +1034,16 @@ public sealed class ChromeApi : IDisposable
 
 	/// <summary>
 	/// A broken account rule is a 'rejected' outcome, as the other account channels give. With sync on (keys.bin says so), the keys
-	/// are re-wrapped and uploaded first, and a weak password or keys changed on another PC raise. While the vault is off its
-	/// keys.bin isn't read, so a vault on disk refuses the change rather than leave the server's keys wrapped by the old password.
+	/// are re-wrapped and uploaded first, and a weak password or keys changed on another PC raise. While the vault is off, a keys.bin
+	/// that says sync is on refuses the change rather than leave the server's keys wrapped by the old password.
 	/// </summary>
 	private async Task<object?> ChangeAccountPasswordAsync(string current, string next)
 	{
-		if (_app.Vaults.Current is null && _app.Vaults.FilesExist) throw new VaultOffException();
+		if (_app.Vaults.Current is null && _app.Vaults.SyncOnDisk) throw new SyncNeedsTheVaultException();
 		try
 		{
-			if (_app.Vaults.Current is { SyncKeys: not null } synced) await new SyncKeys(_app.Account, synced, SyncClient(synced)).ChangePasswordAsync(current, next, _closing.Token);
+			if (_app.Vaults.Current is { } vault && (vault.SyncKeys is not null || vault.PendingSyncKeys is not null))
+				await new SyncKeys(_app.Account, vault, SyncClient(vault)).ChangePasswordAsync(current, next, _closing.Token);
 			else _app.Account.ChangePassword(current, next);
 		}
 		catch (AccountException error)

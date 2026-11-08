@@ -214,7 +214,7 @@ test('a Zing password too weak for sync is changed to a suggested passphrase in 
 	await expect(syncGroup(sheet)).toContainText(`Signed in as ${TURN_ON_SUBS[1]}@example.test.`)
 
 	await syncGroup(sheet).getByLabel('Zing password').fill('correct horse')
-	await expect(syncGroup(sheet).getByRole('status').filter({ hasText: 'Sync needs a stronger password.' })).toBeVisible()
+	await expect(syncGroup(sheet).getByRole('status').filter({ hasText: 'Sync needs about 60 bits, such as five random words.' })).toBeVisible()
 	await syncGroup(sheet).getByRole('form', { name: 'Turn on sync' }).getByRole('button', { name: 'Turn on sync' }).click()
 
 	const stronger = syncGroup(sheet).getByRole('form', { name: 'Choose a stronger password' })

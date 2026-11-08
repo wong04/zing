@@ -75,8 +75,12 @@ public sealed class SyncSetupTests : IDisposable
 		Assert.Equal(accepted, SyncPasswordStrength.IsStrongEnough(password));
 
 	[Fact]
-	public void TheFloorIsTheScoreTheVectorsGiveTheRenderer() =>
-		Assert.Equal(SyncPasswordStrength.MinimumScore, Vectors.Load("src/shared/vault/passwordStrength.vectors.json").GetProperty("minimumScore").GetInt32());
+	public void TheFloorIsTheOneTheVectorsGiveTheRenderer()
+	{
+		var vectors = Vectors.Load("src/shared/vault/passwordStrength.vectors.json");
+		Assert.Equal(SyncPasswordStrength.MinimumScore, vectors.GetProperty("minimumScore").GetInt32());
+		Assert.Equal(SyncPasswordStrength.MinimumGuessesLog10, vectors.GetProperty("minimumGuessesLog10").GetDouble());
+	}
 
 	[Fact]
 	public async Task AGuestGetsNoAccountAndNothingIsUploaded()
@@ -174,15 +178,19 @@ public sealed class SyncSetupTests : IDisposable
 		await _vault.SaveAsync(new NewLogin(Origin, Username, LoginPassword, "Bank", ""));
 		await SignInToSync();
 
-		await TurnOn(account);
+		var recovery = await TurnOn(account);
+		await new SyncKeys(account, _vault, _client).ChangePasswordAsync(Strong, NextStrong, Ct);
 
 		var blob = await ServerKeys();
 		var salt = Convert.FromHexString(JsonNode.Parse(File.ReadAllText(Path.Combine(_accountDir, "account.json")))!["salt"]!.GetValue<string>());
 		byte[][] needles =
 		[
-			.. new[] { "bank.example.test", Username, LoginPassword, Strong, DisplayName, ProfileEmail }.Select(Encoding.UTF8.GetBytes),
+			.. new[] { "bank.example.test", Username, LoginPassword, Strong, NextStrong, DisplayName, ProfileEmail, recovery, recovery.Replace("-", "") }.Select(Encoding.UTF8.GetBytes),
 			Scrypt.Derive(Strong, salt),
+			Scrypt.Derive(NextStrong, salt),
 			PasswordKey.Derive(Strong, blob.Kdf),
+			PasswordKey.Derive(NextStrong, blob.Kdf),
+			RecoveryKey.ToKey(recovery),
 		];
 		var stored = _server.StoredBytes();
 		Assert.NotEmpty(stored);
@@ -346,4 +354,194 @@ public sealed class SyncSetupTests : IDisposable
 	[Fact]
 	public void ATruncatedKeysBlobIsRefusedWithItsOwnError() =>
 		Assert.Throws<SyncKeysFormatException>(() => SyncKeysBlob.Parse(JsonSerializer.SerializeToUtf8Bytes(new { format = 1 })));
+
+	/// <summary>What a turn-on stores before its PUT /keys: this vault's keys wrapped under <see cref="Strong"/> and a new recovery key.</summary>
+	private async Task<(VaultPendingKeys Pending, string Recovery)> PendingTurnOn(AccountStore account)
+	{
+		var recovery = RecoveryKey.Generate();
+		using var keys = await _vault.KeyMaterialAsync();
+		var blob = SyncKeysBlob.Create(keys, Strong, recovery, account.State().Profile!).ToBytes();
+		return (new VaultPendingKeys(_vault.SyncAccount()!.UserId, blob, 0, RecoverySeal.Seal(keys.SecretKey, keys.VaultId, recovery)), recovery);
+	}
+
+	[Fact]
+	public async Task WithSyncSignedOutAPasswordChangeIsRefusedBeforeHelloOrTheServer()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		await TurnOn(account);
+		await _client.SignOutAsync(Ct);
+		_vault.ForgetSecretKey();
+		var hellos = _sealer.Calls;
+		var puts = _server.Wire.Count("PUT /keys");
+
+		await Assert.ThrowsAsync<SyncSignInNeededException>(() => new SyncKeys(account, _vault, _client).ChangePasswordAsync(Strong, NextStrong, Ct));
+
+		Assert.Equal(hellos, _sealer.Calls);
+		Assert.Equal(puts, _server.Wire.Count("PUT /keys"));
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task SignedInAsAnotherGoogleAccountAPasswordChangeNeverWritesThatAccountsKeys()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		await TurnOn(account);
+		// The other account already syncs a vault from its own PC, at version 1 like this one.
+		using var otherPc = new SyncClient(_server.Address, new MemoryAccountStore(), _server.Handler());
+		await otherPc.SignInAsync(await _server.MintIdTokenAsync(LocalSyncServer.OtherSub, "other@example.test"), Ct);
+		await otherPc.PutKeysAsync("the other account's keys"u8.ToArray(), 0, Ct);
+		await _client.SignOutAsync(Ct);
+		await _client.SignInAsync(await _server.MintIdTokenAsync(LocalSyncServer.OtherSub, "other@example.test"), Ct);
+
+		await Assert.ThrowsAsync<SyncSignInNeededException>(() => new SyncKeys(account, _vault, _client).ChangePasswordAsync(Strong, NextStrong, Ct));
+
+		Assert.Equal("the other account's keys"u8.ToArray(), (await otherPc.GetKeysAsync(Ct))!.Blob);
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task ATurnOnWhoseKeysAnswerIsLostFindsTheServerTookThemAndCarriesOn()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		_server.Wire.LoseNextAnswerTo = "PUT /keys";
+
+		var recovery = await TurnOn(account);
+
+		Assert.Equal(1, _server.Wire.Count("PUT /keys"));
+		Assert.Equal(1, _vault.SyncKeys!.Version);
+		Assert.Null(_vault.PendingSyncKeys);
+		Assert.Contains("PUT /manifest", _server.Wire.Log);
+		using var byRecovery = (await ServerKeys()).UnwrapWithRecoveryKey(recovery);
+	}
+
+	[Fact]
+	public async Task APasswordChangeWhoseKeysAnswerIsLostFindsTheServerTookThemAndChangesTheLocalPasswordToo()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		await TurnOn(account);
+		_server.Wire.LoseNextAnswerTo = "PUT /keys";
+
+		await new SyncKeys(account, _vault, _client).ChangePasswordAsync(Strong, NextStrong, Ct);
+
+		Assert.Equal(2, _vault.SyncKeys!.Version);
+		Assert.Null(_vault.PendingSyncKeys);
+		account.CheckPassword(NextStrong);
+		using var opened = (await ServerKeys()).UnwrapWithPassword(NextStrong);
+	}
+
+	[Fact]
+	public async Task AKeysPutThatNeverLeftThisPcIsDroppedAndTurningOnAgainWorks()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		_server.Wire.FailWhen = line => line == "PUT /keys";
+
+		await Assert.ThrowsAsync<HttpRequestException>(() => TurnOn(account));
+		Assert.Null(_vault.PendingSyncKeys);
+		Assert.Null(_vault.SyncKeys);
+
+		_server.Wire.FailWhen = null;
+		var recovery = await TurnOn(account);
+		using var byRecovery = (await ServerKeys()).UnwrapWithRecoveryKey(recovery);
+	}
+
+	[Fact]
+	public async Task ACrashBetweenStoringThePendingKeysAndThePutLeavesNothingBehind()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		var (pending, stale) = await PendingTurnOn(account);
+		_vault.SavePendingSyncKeys(pending);
+
+		var recovery = await TurnOn(account);
+
+		Assert.NotEqual(stale, recovery);
+		Assert.Null(_vault.PendingSyncKeys);
+		using var byRecovery = (await ServerKeys()).UnwrapWithRecoveryKey(recovery);
+	}
+
+	[Fact]
+	public async Task ACrashAfterTheServerTookTheKeysIsFinishedByTheNextTurnOnWithTheSameRecoveryKey()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		var (pending, recovery) = await PendingTurnOn(account);
+		_vault.SavePendingSyncKeys(pending);
+		await _client.PutKeysAsync(pending.Blob, 0, Ct);
+
+		var resumed = await TurnOn(account);
+
+		Assert.Equal(recovery, resumed);
+		Assert.Null(_vault.PendingSyncKeys);
+		Assert.Equal(1, _vault.SyncKeys!.Version);
+		Assert.False(_vault.SyncKeys.RecoveryConfirmed);
+		Assert.Equal(1, _server.Wire.Count("PUT /keys"));
+		Assert.Contains("PUT /manifest", _server.Wire.Log);
+	}
+
+	[Fact]
+	public async Task ACrashAfterTheServerTookAPasswordChangeLeavesThisPcBehindSoTheNewestPasswordIsAskedFor()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		await TurnOn(account);
+		var stored = _vault.SyncKeys!;
+		using (var keys = await _vault.KeyMaterialAsync())
+		{
+			var changed = SyncKeysBlob.Parse(stored.Blob).WithPassword(keys, NextStrong).ToBytes();
+			_vault.SavePendingSyncKeys(new VaultPendingKeys(stored.UserId, changed, stored.Version, stored.SealedRecoveryKey));
+			await _client.PutKeysAsync(changed, stored.Version, Ct);
+		}
+
+		await Assert.ThrowsAsync<SyncKeysChangedElsewhereException>(() => new SyncKeys(account, _vault, _client).ChangePasswordAsync(Strong, "velvet-orbit-candle-meadow-thistle", Ct));
+
+		Assert.Null(_vault.PendingSyncKeys);
+		Assert.Equal(stored.Version, _vault.SyncKeys!.Version);
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task AGenuineConflictOnAChangeDropsThePendingKeys()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		await TurnOn(account);
+		var stored = _vault.SyncKeys!;
+		await _client.PutKeysAsync(stored.Blob, stored.Version, Ct);
+
+		await Assert.ThrowsAsync<SyncKeysChangedElsewhereException>(() => new SyncKeys(account, _vault, _client).ChangePasswordAsync(Strong, NextStrong, Ct));
+
+		Assert.Null(_vault.PendingSyncKeys);
+	}
+
+	[Fact]
+	public async Task TooManyItemsForTheManifestAreRefusedBeforeTheKeysAreUploaded()
+	{
+		var account = Account(Strong);
+		await _vault.ImportAsync([.. Enumerable.Range(0, 6000).Select(i => new NewLogin($"https://site{i}.example.test", $"user{i}", $"pw{i}", "", ""))]);
+		await SignInToSync();
+
+		await Assert.ThrowsAsync<SyncManifestTooLargeException>(() => TurnOn(account));
+
+		Assert.Empty(SyncCalls());
+		Assert.Null(_vault.SyncKeys);
+	}
+
+	[Fact]
+	public async Task EachUploadedBatchLeavesTheQueueAtOnce()
+	{
+		var account = Account(Strong);
+		await _vault.ImportAsync([.. Enumerable.Range(0, 150).Select(i => new NewLogin($"https://site{i}.example.test", $"user{i}", $"pw{i}", "", ""))]);
+		await SignInToSync();
+		var pushes = 0;
+		_server.Wire.FailWhen = line => line == "POST /changes" && ++pushes == 2;
+
+		await Assert.ThrowsAsync<HttpRequestException>(() => TurnOn(account));
+
+		Assert.Equal(50, _vault.Queued.Count);
+	}
 }

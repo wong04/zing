@@ -607,6 +607,58 @@ public sealed class VaultStore : IDisposable, ISyncAccountStore
 		SyncChanged?.Invoke();
 	}
 
+	/// <summary>The keys a PUT /keys is sending or sent, until its outcome is settled; null otherwise. No Hello.</summary>
+	public VaultPendingKeys? PendingSyncKeys
+	{
+		get
+		{
+			lock (_gate) return _keys?.PendingSync;
+		}
+	}
+
+	/// <summary>Stores keys about to be sent with PUT /keys in keys.bin, replacing any pending before. On disk when it returns.</summary>
+	public void SavePendingSyncKeys(VaultPendingKeys pending)
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			var next = Keys().WithPending(pending);
+			next.Save(KeysFile);
+			_keys = next;
+		}
+	}
+
+	/// <summary>
+	/// The server took the pending keys at <paramref name="version"/>: they become the sync keys. A turn-on's recovery key is still to
+	/// be confirmed; a password change keeps the confirmation it had.
+	/// </summary>
+	public void CommitPendingSyncKeys(long version)
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			var keys = Keys();
+			var pending = keys.PendingSync ?? throw new InvalidOperationException("There are no pending sync keys to commit");
+			var confirmed = pending.BaseVersion > 0 && keys.Sync is { RecoveryConfirmed: true } stored && stored.UserId == pending.UserId;
+			var next = keys.WithSync(new VaultSyncKeys(pending.UserId, pending.Blob, version, pending.SealedRecoveryKey, confirmed)).WithPending(null);
+			next.Save(KeysFile);
+			_keys = next;
+		}
+		SyncChanged?.Invoke();
+	}
+
+	/// <summary>The server didn't take the pending keys (or took others): forgets them.</summary>
+	public void DropPendingSyncKeys()
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			var next = Keys().WithPending(null);
+			next.Save(KeysFile);
+			_keys = next;
+		}
+	}
+
 	/// <summary>The person confirmed they saved the recovery key, so Settings stops asking.</summary>
 	public void ConfirmRecoverySaved()
 	{

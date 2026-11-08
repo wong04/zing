@@ -16,6 +16,8 @@ namespace Zing.Core.Tests.Sync;
 internal sealed class LocalSyncServer : WebApplicationFactory<ZingServer::Program>
 {
 	public const string AllowedSub = "sub-sync-test";
+	/// <summary>A second Google account the server allows, for a PC signed in as someone else.</summary>
+	public const string OtherSub = "sub-sync-other";
 	public const string Email = "ada@example.test";
 
 	private readonly string _dbDir = Directory.CreateTempSubdirectory("zing-sync-server-").FullName;
@@ -36,7 +38,7 @@ internal sealed class LocalSyncServer : WebApplicationFactory<ZingServer::Progra
 		builder.UseEnvironment("Staging");
 		builder.UseSetting("ZING_SERVER_FAKE_GOOGLE", "1");
 		builder.UseSetting("ZING_SESSION_KEY", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
-		builder.UseSetting("ZING_ALLOWED_SUBS", AllowedSub);
+		builder.UseSetting("ZING_ALLOWED_SUBS", $"{AllowedSub},{OtherSub}");
 		builder.UseSetting("ZING_DB_PATH", Path.Combine(_dbDir, "zing.db"));
 		builder.UseSetting("ZING_RATE_IP_PER_MINUTE", "100000");
 		builder.UseSetting("ZING_RATE_USER_PER_MINUTE", "100000");
@@ -100,6 +102,12 @@ internal sealed class Wire : DelegatingHandler
 	/// <summary>The next refresh reaches the server and is answered, but the answer is lost on the way back.</summary>
 	public bool LoseNextRefreshAnswer { get; set; }
 
+	/// <summary>The next request with this line ("PUT /keys") reaches the server and is answered, but the answer is lost on the way back.</summary>
+	public string? LoseNextAnswerTo { get; set; }
+
+	/// <summary>Requests this says yes to fail before they are sent, as a dropped connection would.</summary>
+	public Func<string, bool>? FailWhen { get; set; }
+
 	/// <summary>Runs once the server has answered a refresh, before the client sees the answer.</summary>
 	public Action? AfterRefreshAnswered { get; set; }
 
@@ -120,8 +128,15 @@ internal sealed class Wire : DelegatingHandler
 		var line = $"{request.Method} {request.RequestUri!.AbsolutePath}";
 		Note(line);
 		if (Down) throw new HttpRequestException("The test's sync server is down");
+		if (FailWhen?.Invoke(line) == true) throw new HttpRequestException($"The test dropped {line}");
 		if (request.Headers.Authorization is not null && Spoil()) request.Headers.Authorization = new("Bearer", "user.1.junk");
 		var response = await base.SendAsync(request, cancellationToken);
+		if (line == LoseNextAnswerTo)
+		{
+			LoseNextAnswerTo = null;
+			response.Dispose();
+			throw new HttpRequestException($"The test lost the answer to {line}");
+		}
 		if (line != "POST /auth/refresh") return response;
 		AfterRefreshAnswered?.Invoke();
 		if (!LoseNextRefreshAnswer) return response;

@@ -205,6 +205,9 @@ public sealed record SyncManifestEntry(string ItemId, long Version);
 /// </summary>
 public static class SyncManifest
 {
+	/// <summary>The most the server stores in one blob (server SyncLimits.MaxBlobBytes).</summary>
+	public const int MaxBytes = 256 * 1024;
+
 	private static readonly byte[] Tag = "zing-manifest-v1"u8.ToArray();
 
 	public static byte[] Seal(byte[] indexKey, string vaultId, long version, IEnumerable<SyncManifestEntry> items)

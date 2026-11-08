@@ -54,13 +54,12 @@ const SCORE_WORDS = ['Very weak', 'Weak', 'Fair', 'Good', 'Strong'] as const
 /** The renderer's zxcvbn verdict, for the meter only: the host checks the password again with its own. */
 function StrengthMeter({ strength, password }: { strength: Strength | undefined; password: string }) {
 	if (!strength || password === '') return null
-	const score = strength.passwordScore(password)
-	const enough = score >= strength.SYNC_PASSWORD_SCORE
+	const { score, enough } = strength.syncStrength(password)
 	return (
 		<div className="sync-strength" role="status" aria-live="polite">
 			<meter min={0} max={4} value={score} aria-label="Password strength" />
 			<span>
-				{SCORE_WORDS[score]}. {enough ? 'Strong enough for sync.' : 'Sync needs a stronger password.'}
+				{SCORE_WORDS[score]}. {enough ? 'Strong enough for sync.' : 'Sync needs about 60 bits, such as five random words.'}
 			</span>
 		</div>
 	)
@@ -68,7 +67,7 @@ function StrengthMeter({ strength, password }: { strength: Strength | undefined;
 
 /**
  * Turning on sync once signed in with Google: the Zing password, which becomes the sync password on every PC. One weaker than
- * the sync floor (zxcvbn 4) is changed first, in the same flow, with a generated five-word passphrase on offer.
+ * the sync floor (zxcvbn 4 and about 60 bits) is changed first, in the same flow, with a generated five-word passphrase on offer.
  */
 export function SyncSetup({ turnOn }: { turnOn: (password: string) => Promise<void> }) {
 	const strength = useStrength()
@@ -111,6 +110,8 @@ export function SyncSetup({ turnOn }: { turnOn: (password: string) => Promise<vo
 			if (next !== again) throw new Error('The two new passwords aren’t the same.')
 			const outcome = await zing.changePassword(current, next)
 			if (outcome.status === 'rejected') throw new Error(outcome.message)
+			// The new password is the account's now, so a turn-on that fails is retried with it.
+			setCurrent(next)
 			await turnOn(next)
 		})
 
@@ -226,9 +227,17 @@ export function RecoveryKeyScreen({ recoveryKey, onConfirmed }: { recoveryKey: s
 }
 
 /** With sync on: the recovery key again, after Windows Hello, hidden again on request. */
+/** As long as a revealed password stays shown (VaultSection's REVEAL_MS). */
+const RECOVERY_REVEAL_MS = 30_000
+
 export function ShowRecoveryKey() {
 	const [shown, setShown] = useState<string>()
 	const [error, setError] = useState<string>()
+	useEffect(() => {
+		if (!shown) return
+		const timer = setTimeout(() => setShown(undefined), RECOVERY_REVEAL_MS)
+		return () => clearTimeout(timer)
+	}, [shown])
 	if (shown) {
 		return (
 			<div className="sync-suggestion">
