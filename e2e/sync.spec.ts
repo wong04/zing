@@ -3,7 +3,7 @@
 // Zing's Google sign-in is a stand-in that asks that issuer for an ID token (ZING_E2E_SYNC_SERVER), so no browser opens.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page } from '@playwright/test'
@@ -19,6 +19,8 @@ const SUB = 'sub-e2e-sync'
 const EMAIL = `${SUB}@example.test`
 // Each test that turns sync on is its own Google account: the server keeps one vault's keys per account, for the whole run.
 const TURN_ON_SUBS = ['sub-e2e-turn-on', 'sub-e2e-weak'] as const
+// The two-PC sync test's Google account (Task 13).
+const TWO_PCS_SUB = 'sub-e2e-two-pcs'
 
 let server: ChildProcess | undefined
 let serverUrl = ''
@@ -37,7 +39,7 @@ function serverEnvironment(): NodeJS.ProcessEnv {
 		ASPNETCORE_ENVIRONMENT: 'Staging',
 		ZING_SERVER_FAKE_GOOGLE: '1',
 		ZING_SESSION_KEY: randomBytes(32).toString('base64'),
-		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS].join(','),
+		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB].join(','),
 		ZING_DB_PATH: join(serverDir, 'zing.db'),
 	}
 }
@@ -231,4 +233,45 @@ test('a Zing password too weak for sync is changed to a suggested passphrase in 
 	expect((await zing.chrome.evaluate(() => window.zing.signIn('correct horse'))).status).toBe('rejected')
 	expect((await zing.chrome.evaluate((p) => window.zing.signIn(p), suggested)).status).toBe('ok')
 	await zing.close()
+})
+
+// The sync engine (Task 13): two Zing profiles, each its own PC, share a login through the local server. Sync itself needs no
+// Windows Hello; turning it on and saving a password use the vault-hello stand-in. Until the recovery-key restore (Task 14), the
+// second PC gets the vault's keys by a copy of the first one's keys.bin, as SyncEngineTests do.
+
+const titleOf = (zing: Launched, id: string): Promise<string | undefined> =>
+	zing.chrome.evaluate(async (loginId) => (await window.zing.vaultSummaries()).find((s) => s.id === loginId)?.title, id)
+
+test('a login saved on one PC reaches the other, and an edit made there comes back', async () => {
+	test.setTimeout(240_000)
+	const a = await launchZing({ userDataDir: vaultProfile(), env: syncEnv(TWO_PCS_SUB) })
+	await signUp(a, STRONG)
+	await hello(a, 'pass')
+	const id = await a.chrome.evaluate(() => window.zing.saveLogin({ origin: 'https://bank.example.test', username: 'ada', password: 'first-password', title: 'Bank', note: '' }))
+	expect((await a.chrome.evaluate(() => window.zing.signInToSync())).signedIn).toBe(true)
+	await a.chrome.evaluate((p) => window.zing.turnOnSync(p), STRONG)
+	const on = await a.chrome.evaluate(() => window.zing.confirmRecoverySaved())
+	expect(on).toMatchObject({ on: true, unsent: 0 })
+	expect(on).not.toHaveProperty('error')
+	await a.close()
+
+	const bDir = vaultProfile()
+	mkdirSync(join(bDir, 'vault'), { recursive: true })
+	copyFileSync(keysFile(a), join(bDir, 'vault', 'keys.bin'))
+	const b = await launchZing({ userDataDir: bDir, env: syncEnv(TWO_PCS_SUB) })
+	expect(await b.chrome.evaluate(() => window.zing.signInToSync())).toMatchObject({ signedIn: true, on: true })
+	await expect.poll(() => titleOf(b, id), { timeout: 30_000, message: "B's sync didn't bring A's login" }).toBe('Bank')
+
+	await b.chrome.evaluate((loginId) => window.zing.updateLogin(loginId, { title: 'Edited on B', username: 'ada', note: '' }), id)
+	await expect
+		.poll(() => b.chrome.evaluate(() => window.zing.getSyncState()), { timeout: 30_000, message: "B's edit didn't upload" })
+		.toMatchObject({ on: true, unsent: 0 })
+	expect(await b.chrome.evaluate(() => window.zing.getSyncState())).not.toHaveProperty('error')
+	await b.close()
+
+	const again = await launchZing({ userDataDir: a.userDataDir, env: syncEnv(TWO_PCS_SUB) })
+	await expect.poll(() => titleOf(again, id), { timeout: 30_000, message: "A's sync at start didn't bring B's edit" }).toBe('Edited on B')
+	const sheet = await openSync(again)
+	await expect(syncGroup(sheet)).toContainText(`Sync is on. Signed in as ${TWO_PCS_SUB}@example.test.`)
+	await again.close()
 })

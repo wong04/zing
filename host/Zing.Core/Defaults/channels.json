@@ -382,6 +382,10 @@
 			"args": 1
 		},
 		{
+			"channel": "sync:upload-local",
+			"args": 0
+		},
+		{
 			"channel": "tabs:activate",
 			"args": 1
 		},

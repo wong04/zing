@@ -464,6 +464,11 @@ export interface InvokeContract {
 	'sync:confirm-recovery-saved': { args: []; result: SyncState }
 	/** The recovery key again, after Windows Hello (unless it was passed in the last 5 minutes). A cancelled Hello rejects and reveals nothing. */
 	'sync:show-recovery': { args: []; result: RecoveryKeyShown }
+	/**
+	 * Upload this PC's copy, after a sync stopped with `server-rolled-back` or `server-withheld-item`: this PC's copy of every login
+	 * replaces the server's, and the sync list is written from it. Needs no Windows Hello.
+	 */
+	'sync:upload-local': { args: []; result: SyncState }
 	'overview:close': { args: []; result: void }
 }
 
@@ -662,5 +667,6 @@ export interface ZingApi {
 	turnOnSync(password: string): Promise<RecoveryKeyShown>
 	confirmRecoverySaved(): Promise<SyncState>
 	showRecoveryKey(): Promise<RecoveryKeyShown>
+	uploadLocalCopy(): Promise<SyncState>
 	onSyncState(listener: (state: SyncState) => void): Unsubscribe
 }

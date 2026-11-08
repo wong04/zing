@@ -159,6 +159,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		turnOnSync: (password) => invoke('sync:turn-on', password),
 		confirmRecoverySaved: () => invoke('sync:confirm-recovery-saved'),
 		showRecoveryKey: () => invoke('sync:show-recovery'),
+		uploadLocalCopy: () => invoke('sync:upload-local'),
 		onSyncState: (listener) => listen('sync:state', listener),
 		onTabsState: (listener) => listen('tabs:state', listener),
 		onFocusAddress: (listener) => listen('chrome:focus-address', () => listener()),

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -272,6 +273,31 @@ public static class SyncWire
 	public static SyncPush NewItem(LoginRecord record) =>
 		new(record.ItemId, checked((int)record.Version), 0, record.Tombstone, record.Summary, record.Password, JoinHistory(record.History));
 
+	/// <summary>An item changed here, over the server copy it was based on.</summary>
+	public static SyncPush Push(SyncUnsent unsent) =>
+		new(unsent.Record.ItemId, checked((int)unsent.Record.Version), unsent.BaseRevision, unsent.Record.Tombstone, unsent.Record.Summary, unsent.Record.Password, JoinHistory(unsent.Record.History));
+
 	/// <summary>Each old password's ciphertext as a big-endian uint32 length then its bytes, newest first.</summary>
 	public static byte[] JoinHistory(IReadOnlyList<byte[]> history) => AdEncoding.Strings([.. history]);
+
+	/// <summary>A server item as the vault stores it. Its ciphertexts are checked when opened, not here.</summary>
+	/// <exception cref="SyncProtocolException">The history isn't a list of length-prefixed ciphertexts.</exception>
+	public static LoginRecord ToRecord(SyncItem item) =>
+		new(item.ItemId, item.Version, item.Summary, item.Password, SplitHistory(item.ItemId, item.History), item.Tombstone);
+
+	private static byte[][] SplitHistory(string itemId, byte[] joined)
+	{
+		var entries = new List<byte[]>();
+		var at = 0;
+		while (at < joined.Length)
+		{
+			if (joined.Length - at < 4) throw new SyncProtocolException($"Item {itemId}'s history ends part way through a length");
+			var length = BinaryPrimitives.ReadUInt32BigEndian(joined.AsSpan(at));
+			at += 4;
+			if (length > (uint)(joined.Length - at)) throw new SyncProtocolException($"Item {itemId}'s history has an entry longer than what is left of it");
+			entries.Add(joined[at..(at + (int)length)]);
+			at += (int)length;
+		}
+		return [.. entries];
+	}
 }

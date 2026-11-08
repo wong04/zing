@@ -61,11 +61,29 @@ export interface VaultState {
 // only) the server couldn't be reached, so its copy of the sign-in expires within 90 days.
 export type SyncNotice = 'signed-out' | 'unreadable' | 'kept-on-server'
 
+// Why the last sync stopped. `server-rolled-back` (the server went back to an older copy) and `server-withheld-item` (it held a
+// login back) are answered with sync:upload-local; the rest clear on a sync that works.
+export type SyncError =
+	| 'server-rolled-back'
+	| 'server-withheld-item'
+	| 'server-tampered'
+	| 'server-invalid'
+	| 'unreachable'
+	| 'server-error'
+	| 'account-changed'
+	| 'failed'
+
+// The errors Upload this PC's copy answers.
+export function offersUploadLocal(error: SyncError | undefined): boolean {
+	return error === 'server-rolled-back' || error === 'server-withheld-item'
+}
+
 // Sync as Settings shows it (sync:get, sync:state). The bridge leaves out null fields. `on`: this PC turned sync on for the
 // signed-in account; `recoveryPending`: this PC turned sync on and the recovery key isn't yet confirmed saved, whoever is signed
-// in now, so Settings shows nothing else.
+// in now, so Settings shows nothing else. While on: `unsent`, the logins that haven't uploaded yet, and `error`/`message`, the last
+// sync's error (unset after one that worked).
 export type SyncState =
-	| { signedIn: true; email: string; on: boolean; recoveryPending: boolean }
+	| { signedIn: true; email: string; on: boolean; recoveryPending: boolean; unsent: number; error?: SyncError; message?: string }
 	| { signedIn: false; notice?: SyncNotice; on: false; recoveryPending: boolean }
 
 // The recovery key, as sync:turn-on and sync:show-recovery give it: 26 base32 characters in groups of four.

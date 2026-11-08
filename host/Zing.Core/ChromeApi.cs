@@ -85,7 +85,8 @@ public interface IWindowHost
 /// <param name="VaultUnreadable">With <paramref name="Vault"/>: the vault is off because its files couldn't be read.</param>
 /// <param name="Switch">The password vault, shared by every window, open only while <c>passwordAutofill</c> is on.</param>
 /// <param name="Sync">The sync server and Google sign-in this build has; null when it was built without a Google client ID (Ruling 48).</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null)
+/// <param name="SyncScheduler">Runs the open vault's sync engine (Task 13); null runs none.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null)
 {
 	public long Now() => Clock.Now();
 
@@ -93,7 +94,7 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 	public VaultSwitch Vaults { get; } = Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable);
 
 	/// <summary>The open vault's one sync client, for every window; null without <see cref="Sync"/>.</summary>
-	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync, Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable));
+	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync, Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable), SyncScheduler, Clock);
 }
 
 /// <summary>
@@ -401,12 +402,14 @@ public sealed class ChromeApi : IDisposable
 			return CurrentSyncState();
 		});
 		bridge.Register("sync:show-recovery", async _ => new { recoveryKey = await Vault().RecoveryKeyAsync() });
+		bridge.Register("sync:upload-local", async _ => await UploadLocalCopyAsync());
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
 		_watchedVault = app.Vaults.Current;
 		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;
+		if (app.SyncClients is { } syncClients) syncClients.EngineStatusChanged += PushSyncState;
 
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
 		_unsubscribeLibrary = app.Library.Subscribe(_ => host.Push("library:state", LibraryState()));
@@ -522,6 +525,7 @@ public sealed class ChromeApi : IDisposable
 		_host.OfferEnded -= EndOffer;
 		foreach (var subscription in _subscriptions) subscription.Dispose();
 		_app.Vaults.Changed -= VaultSwitched;
+		if (_app.SyncClients is { } syncClients) syncClients.EngineStatusChanged -= PushSyncState;
 		if (_watchedVault is { } vault) Unwatch(vault);
 		CancelSyncSignIn();
 		Autofill.Dispose();
@@ -958,7 +962,21 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	/// <summary>Sync is on only for the account this PC turned it on for: keys.bin names that server user.</summary>
-	private static SyncState SignedInState(VaultStore vault, SyncAccount account) => SyncState.SignedInAs(account, vault.SyncKeys);
+	private SyncState SignedInState(VaultStore vault, SyncAccount account)
+	{
+		var state = SyncState.SignedInAs(account, vault.SyncKeys);
+		if (!state.On || _app.SyncClients?.Engine is not { } engine) return state;
+		var status = engine.Status;
+		return state with { Error = status.Error, Message = status.Message, Unsent = status.Unsent };
+	}
+
+	/// <summary>Upload this PC's copy (spec, Rollback protection): what Settings offers after the server went back or held a login back.</summary>
+	private async Task<SyncState> UploadLocalCopyAsync()
+	{
+		var engine = _app.SyncClients?.Engine ?? throw new SyncNotSetUpException();
+		await engine.UploadLocalCopyAsync(_closing.Token);
+		return CurrentSyncState();
+	}
 
 	/// <summary>The sign-in waiting on the browser, for Cancel; null when none is.</summary>
 	private CancellationTokenSource? _syncSigningIn;

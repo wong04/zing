@@ -1,0 +1,136 @@
+{
+	"description": "The field-by-field merge sync runs on a conflict (spec, Sync design; host/Zing.Core/Sync/Merge.cs). Each side is `login` with its overrides applied; `common` null means the two copies share no earlier copy. Passwords are labels standing for ciphertexts: a merge never opens one, it keeps the winner as it is and moves the loser into the history as it is, with the version it was sealed under. `expected` is `login` with its overrides.",
+	"login": {
+		"origin": "https://bank.example.test",
+		"username": "ada",
+		"title": "Bank",
+		"note": "",
+		"createdAt": 1000,
+		"updatedAt": 1000,
+		"passwordUpdatedAt": 1000,
+		"deletedAt": null,
+		"neverSave": false,
+		"generation": 0,
+		"password": "P1",
+		"passwordVersion": 1,
+		"history": []
+	},
+	"cases": [
+		{
+			"name": "only this PC changed the title",
+			"common": {},
+			"mine": { "title": "My bank", "updatedAt": 2000 },
+			"theirs": {},
+			"expected": { "title": "My bank", "updatedAt": 2000 }
+		},
+		{
+			"name": "only the server's copy changed the note",
+			"common": {},
+			"mine": {},
+			"theirs": { "note": "joint account", "updatedAt": 2000 },
+			"expected": { "note": "joint account", "updatedAt": 2000 }
+		},
+		{
+			"name": "both changed different fields: each keeps its change",
+			"common": {},
+			"mine": { "title": "My bank", "updatedAt": 2000 },
+			"theirs": { "username": "ada.lovelace", "updatedAt": 3000 },
+			"expected": { "title": "My bank", "username": "ada.lovelace", "updatedAt": 3000 }
+		},
+		{
+			"name": "both changed the same field: the server's later edit wins",
+			"common": {},
+			"mine": { "title": "Mine", "updatedAt": 2000 },
+			"theirs": { "title": "Theirs", "updatedAt": 3000 },
+			"expected": { "title": "Theirs", "updatedAt": 3000 }
+		},
+		{
+			"name": "both changed the same field: this PC's later edit wins",
+			"common": {},
+			"mine": { "title": "Mine", "updatedAt": 3000 },
+			"theirs": { "title": "Theirs", "updatedAt": 2000 },
+			"expected": { "title": "Mine", "updatedAt": 3000 }
+		},
+		{
+			"name": "both changed the same field at the same time: the server's copy wins the tie",
+			"common": {},
+			"mine": { "title": "Mine", "updatedAt": 2000 },
+			"theirs": { "title": "Theirs", "updatedAt": 2000 },
+			"expected": { "title": "Theirs", "updatedAt": 2000 }
+		},
+		{
+			"name": "Review Focus 2: both changed the password, so the newer one wins and the older is in the history",
+			"common": {},
+			"mine": { "password": "P2", "passwordVersion": 2, "passwordUpdatedAt": 2000, "updatedAt": 2000, "history": [{ "password": "P1", "version": 1, "replacedAt": 2000 }] },
+			"theirs": { "password": "P3", "passwordVersion": 2, "passwordUpdatedAt": 3000, "updatedAt": 3000, "history": [{ "password": "P1", "version": 1, "replacedAt": 3000 }] },
+			"expected": {
+				"password": "P3",
+				"passwordVersion": 2,
+				"passwordUpdatedAt": 3000,
+				"updatedAt": 3000,
+				"history": [
+					{ "password": "P2", "version": 2, "replacedAt": 3000 },
+					{ "password": "P1", "version": 1, "replacedAt": 2000 }
+				]
+			}
+		},
+		{
+			"name": "both changed the password and this PC's is newer: the server's goes into the history",
+			"common": {},
+			"mine": { "password": "P2", "passwordVersion": 2, "passwordUpdatedAt": 3000, "updatedAt": 3000, "history": [{ "password": "P1", "version": 1, "replacedAt": 3000 }] },
+			"theirs": { "password": "P3", "passwordVersion": 2, "passwordUpdatedAt": 2000, "updatedAt": 2000, "history": [{ "password": "P1", "version": 1, "replacedAt": 2000 }] },
+			"expected": {
+				"password": "P2",
+				"passwordVersion": 2,
+				"passwordUpdatedAt": 3000,
+				"updatedAt": 3000,
+				"history": [
+					{ "password": "P3", "version": 2, "replacedAt": 3000 },
+					{ "password": "P1", "version": 1, "replacedAt": 2000 }
+				]
+			}
+		},
+		{
+			"name": "only the server's copy changed the password, this PC changed the title",
+			"common": {},
+			"mine": { "title": "Mine", "updatedAt": 1500 },
+			"theirs": { "password": "P2", "passwordVersion": 2, "passwordUpdatedAt": 2000, "updatedAt": 2000, "history": [{ "password": "P1", "version": 1, "replacedAt": 2000 }] },
+			"expected": { "title": "Mine", "password": "P2", "passwordVersion": 2, "passwordUpdatedAt": 2000, "updatedAt": 2000, "history": [{ "password": "P1", "version": 1, "replacedAt": 2000 }] }
+		},
+		{
+			"name": "a delete here and an edit there: deleted, with the edit",
+			"common": {},
+			"mine": { "deletedAt": 2000, "updatedAt": 2000 },
+			"theirs": { "note": "edited", "updatedAt": 3000 },
+			"expected": { "deletedAt": 2000, "note": "edited", "updatedAt": 3000 }
+		},
+		{
+			"name": "a restore here and an edit there of a deleted login: restored, with the edit",
+			"common": { "deletedAt": 1500, "updatedAt": 1500 },
+			"mine": { "deletedAt": null, "updatedAt": 2000 },
+			"theirs": { "deletedAt": 1500, "title": "Edited while deleted", "updatedAt": 2500 },
+			"expected": { "deletedAt": null, "title": "Edited while deleted", "updatedAt": 2500 }
+		},
+		{
+			"name": "no common copy: fields that differ go to the later edit, and the other password into the history",
+			"common": null,
+			"mine": { "title": "Mine", "updatedAt": 2000, "password": "P2", "passwordUpdatedAt": 2000 },
+			"theirs": { "title": "Theirs", "updatedAt": 3000, "password": "P3", "passwordUpdatedAt": 3000 },
+			"expected": { "title": "Theirs", "updatedAt": 3000, "password": "P3", "passwordUpdatedAt": 3000, "history": [{ "password": "P2", "version": 1, "replacedAt": 3000 }] }
+		},
+		{
+			"name": "a login made again after its purge keeps the higher generation",
+			"common": {},
+			"mine": { "generation": 1, "note": "made again", "updatedAt": 2000 },
+			"theirs": {},
+			"expected": { "generation": 1, "note": "made again", "updatedAt": 2000 }
+		},
+		{
+			"name": "the earlier creation time is kept",
+			"common": {},
+			"mine": { "createdAt": 900, "title": "Mine", "updatedAt": 2000 },
+			"theirs": {},
+			"expected": { "createdAt": 900, "title": "Mine", "updatedAt": 2000 }
+		}
+	]
+}

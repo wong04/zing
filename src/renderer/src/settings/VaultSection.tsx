@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { generatePassword } from '@shared/devtools/password'
-import { recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type SyncNotice, type SyncState, type VaultImportResult } from '@shared/vault/vault'
+import { offersUploadLocal, recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type SyncNotice, type SyncState, type VaultImportResult } from '@shared/vault/vault'
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { SettingRowShell } from './SettingRowShell'
@@ -198,8 +198,12 @@ const SYNC_NOTICES: Record<SyncNotice, string> = {
 	'kept-on-server': 'Signed out on this PC. Zing couldn\u2019t reach the sync server, so its copy of the sign-in expires within 90 days.',
 }
 
+function unsentText(count: number): string {
+	return count === 1 ? '1 login hasn’t uploaded yet.' : `${count} logins haven’t uploaded yet.`
+}
+
 function syncDetail(sync: SyncState, busy: boolean): string {
-	if (sync.signedIn && sync.on) return `Sync is on. Signed in as ${sync.email}.`
+	if (sync.signedIn && sync.on) return `Sync is on. Signed in as ${sync.email}.${sync.unsent > 0 ? ` ${unsentText(sync.unsent)}` : ''}`
 	if (sync.signedIn) return `Signed in as ${sync.email}.`
 	if (busy) return 'Finish signing in with Google in your browser.'
 	return 'Keep saved passwords in step across your PCs. The server only ever sees them encrypted.'
@@ -208,7 +212,8 @@ function syncDetail(sync: SyncState, busy: boolean): string {
 /**
  * Sync: Turn on sync signs in with Google in the browser, with Cancel while it waits, then asks for the Zing password to turn it
  * on (SyncSetup); on, it shows the account, Show recovery key and Sign out. A sign-in the server ended, or one this PC can't read,
- * says so and offers Sign in again.
+ * says so and offers Sign in again. A sync that stopped says why, and after the server went back or held a login back, offers
+ * Upload this PC's copy.
  */
 function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: SyncState) => void; turnOn: (password: string) => Promise<void> }) {
 	const [error, setError] = useState<string>()
@@ -236,6 +241,8 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 	const signOut = (): void => act(() => zing.signOutOfSync(), (state) => setSignOutNotice(state.signedIn ? undefined : state.notice))
 	const notice = signOutNotice ?? (sync.signedIn ? undefined : sync.notice)
 	const signInLabel = notice === 'signed-out' || notice === 'unreadable' ? 'Sign in again' : 'Turn on sync'
+	const syncError = sync.signedIn && sync.on ? sync.error : undefined
+	const syncMessage = sync.signedIn && sync.on ? sync.message : undefined
 
 	return (
 		<div className="vault-sync" role="group" aria-label="Sync">
@@ -262,6 +269,16 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 			</div>
 			{sync.signedIn && !sync.on ? <SyncSetup turnOn={turnOn} /> : null}
 			{notice ? <InfoBanner kind={notice === 'kept-on-server' ? 'info' : 'warning'}>{SYNC_NOTICES[notice]}</InfoBanner> : null}
+			{syncError ? (
+				<InfoBanner kind="warning">
+					{syncMessage}
+					{offersUploadLocal(syncError) ? (
+						<PillButton variant="outlined" size="small" disabled={busy} onClick={() => act(() => zing.uploadLocalCopy())}>
+							Upload this PC&rsquo;s copy
+						</PillButton>
+					) : null}
+				</InfoBanner>
+			) : null}
 			{error ? <InfoBanner kind="warning">{error}</InfoBanner> : null}
 		</div>
 	)

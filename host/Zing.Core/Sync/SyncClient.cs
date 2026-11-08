@@ -80,6 +80,13 @@ public sealed class SyncClient : IDisposable
 	private readonly SemaphoreSlim _refreshing = new(1, 1);
 	private Session? _session;
 
+	/// <summary>
+	/// The last refresh was sent but no answer came back (or it never left this PC; the two can't be told apart). The server treats
+	/// the same token again within 2 minutes as a retry, so the sync engine tries again well inside that (N4). Cleared by a refresh that
+	/// gets an answer.
+	/// </summary>
+	public bool RefreshUnanswered { get; private set; }
+
 	/// <summary>A server session and the user it was issued for, read together so a request is never sent as someone it wasn't meant for.</summary>
 	private sealed record Session(string Token, string UserId);
 
@@ -164,15 +171,15 @@ public sealed class SyncClient : IDisposable
 	public Task<long> PutKeysAsync(byte[] blob, long baseVersion, CancellationToken cancellation = default, string? asUser = null) => PutBlobAsync("keys", blob, baseVersion, asUser, cancellation);
 
 	/// <summary>The account manifest, or null before one was stored.</summary>
-	public Task<VersionedBlob?> GetManifestAsync(CancellationToken cancellation = default) => GetBlobAsync("manifest", null, cancellation);
+	public Task<VersionedBlob?> GetManifestAsync(CancellationToken cancellation = default, string? asUser = null) => GetBlobAsync("manifest", asUser, cancellation);
 
 	public Task<long> PutManifestAsync(byte[] blob, long baseVersion, CancellationToken cancellation = default, string? asUser = null) => PutBlobAsync("manifest", blob, baseVersion, asUser, cancellation);
 
 	/// <summary>Changes after <paramref name="since"/>. A 410 (a cursor older than the tombstone horizon) raises; the caller resyncs from 0.</summary>
-	public async Task<SyncChanges> GetChangesAsync(long since, int? limit = null, CancellationToken cancellation = default)
+	public async Task<SyncChanges> GetChangesAsync(long since, int? limit = null, CancellationToken cancellation = default, string? asUser = null)
 	{
 		var path = limit is null ? $"changes?since={since}" : $"changes?since={since}&limit={limit}";
-		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, path), null, cancellation);
+		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, path), asUser, cancellation);
 		await EnsureSuccess(response, path, cancellation);
 		var page = await Read<ChangesResponse>(response, cancellation);
 		return new SyncChanges([.. page.Items.Select(ToItem)], page.Revision, page.Horizon, page.More);
@@ -249,7 +256,18 @@ public sealed class SyncClient : IDisposable
 
 			// Once sent, the server may rotate the token whether or not the answer gets back, so nothing the caller does stops it.
 			using var limit = new CancellationTokenSource(RefreshTimeout);
-			using var response = await _http.PostAsJsonAsync("auth/refresh", new { refresh = account.Refresh }, SyncJson.Options, limit.Token);
+			HttpResponseMessage answered;
+			try
+			{
+				answered = await _http.PostAsJsonAsync("auth/refresh", new { refresh = account.Refresh }, SyncJson.Options, limit.Token);
+			}
+			catch (Exception unanswered) when (unanswered is HttpRequestException or OperationCanceledException)
+			{
+				RefreshUnanswered = true;
+				throw;
+			}
+			RefreshUnanswered = false;
+			using var response = answered;
 			if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
 			{
 				_session = null;

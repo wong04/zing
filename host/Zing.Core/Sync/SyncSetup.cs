@@ -50,9 +50,10 @@ public sealed class SyncBuildException(string message) : Exception(message);
 /// server ended the sign-in), "unreadable" (the saved sign-in doesn't unseal), or, from a sign-out only, "kept-on-server" (the server
 /// couldn't be reached, so its copy expires within 90 days). <see cref="On"/>: signed in, and this PC turned sync on for that
 /// account (its keys are on the server). <see cref="RecoveryPending"/>: this PC turned sync on and the person hasn't yet confirmed they
-/// saved the recovery key, whoever is signed in now.
+/// saved the recovery key, whoever is signed in now. While on: <see cref="Error"/> and <see cref="Message"/>, the last sync's error
+/// (a code such as "server-rolled-back", and what to show), and <see cref="Unsent"/>, the logins that haven't uploaded yet.
 /// </summary>
-public sealed record SyncState(bool SignedIn, string? Email, string? Notice = null, bool On = false, bool RecoveryPending = false)
+public sealed record SyncState(bool SignedIn, string? Email, string? Notice = null, bool On = false, bool RecoveryPending = false, string? Error = null, string? Message = null, int Unsent = 0)
 {
 	/// <param name="keys">What keys.bin holds, for whichever account.</param>
 	public static SyncState SignedInAs(SyncAccount account, VaultSyncKeys? keys = null) =>
@@ -184,7 +185,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 			vault.DropPendingSyncKeys();
 			throw new SyncTurnOnUnfinishedForAnotherAccountException();
 		}
-		var resumed = await SettlePendingAsync(signedIn, cancellation);
+		var resumed = await SettlePendingAsync(vault, client, signedIn, cancellation);
 		if (vault.SyncKeys is { } stored && stored.UserId == signedIn.UserId)
 		{
 			if (!resumed) throw new SyncAlreadyOnException();
@@ -274,7 +275,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	/// </summary>
 	private async Task ChangeSyncedPasswordAsync(string current, string next, SyncAccount signedIn, CancellationToken cancellation)
 	{
-		await SettlePendingAsync(signedIn, cancellation);
+		await SettlePendingAsync(vault, client, signedIn, cancellation);
 		if (vault.SyncKeys is not { } stored || stored.UserId != signedIn.UserId)
 		{
 			account.ChangePassword(current, next);
@@ -296,11 +297,12 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 
 	/// <summary>
 	/// Settles keys a PUT /keys left pending (its answer was lost, or Zing stopped) against the server's, byte for byte (Ruling 54).
-	/// Keys the server holds are committed, a password change's too; a turn-on answers true so the caller finishes it. Keys the
-	/// server doesn't hold are dropped. A failed fetch raises and leaves them pending for the next settle. Pending keys for another
-	/// account are left. Under <see cref="KeyGate"/>.
+	/// Keys the server holds are committed, a password change's too; a turn-on answers true so the caller finishes it (or, for a settle
+	/// that isn't a turn-on's, the sync engine uploads what it holds, N3). Keys the server doesn't hold are dropped. A failed fetch raises
+	/// and leaves them pending for the next settle. Pending keys for another account are left. Under <see cref="KeyGate"/>; the sync engine
+	/// runs it before every sync.
 	/// </summary>
-	private async Task<bool> SettlePendingAsync(SyncAccount signedIn, CancellationToken cancellation)
+	internal static async Task<bool> SettlePendingAsync(VaultStore vault, SyncClient client, SyncAccount signedIn, CancellationToken cancellation)
 	{
 		if (vault.PendingSyncKeys is not { } pending || pending.UserId != signedIn.UserId) return false;
 		var server = await client.GetKeysAsync(cancellation, asUser: signedIn.UserId);
@@ -318,6 +320,27 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 
 	/// <summary>Completes the first time a key operation on <paramref name="vault"/> has to wait for another: tests' proof that it queued.</summary>
 	internal static Task QueuedBehind(VaultStore vault) => Gates.GetValue(vault, _ => new KeyGate()).Queued;
+
+	/// <summary>
+	/// Waits for <paramref name="vault"/>'s key lock, the one turn-on and password changes hold: the sync engine holds it for a whole
+	/// sync, so a sync never runs alongside a turn-on's upload or a settle. Dispose releases it.
+	/// </summary>
+	internal static async Task<IDisposable> EnterGateAsync(VaultStore vault, CancellationToken cancellation)
+	{
+		var gate = Gates.GetValue(vault, _ => new KeyGate());
+		await gate.EnterAsync(cancellation);
+		return new Held(gate);
+	}
+
+	private sealed class Held(KeyGate gate) : IDisposable
+	{
+		private int _released;
+
+		public void Dispose()
+		{
+			if (Interlocked.Exchange(ref _released, 1) == 0) gate.Release();
+		}
+	}
 
 	/// <summary>The vault's key lock, which also says when a caller first had to wait for it.</summary>
 	private sealed class KeyGate
@@ -392,16 +415,36 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		return (records, manifest);
 	}
 
-	/// <summary>Every item in batches, each leaving the queue as soon as the server takes it, then the manifest.</summary>
+	/// <summary>
+	/// Every item in batches, then the manifest. Each batch the server takes is stored at once as its items' sync bases, with the
+	/// revisions it gave, and leaves the queue; so does an item the server already holds byte for byte (a batch whose answer was lost,
+	/// or a PC that stopped part way), which is "already uploaded", not a conflict. The revision and manifest floors start here.
+	/// </summary>
 	private async Task UploadAsync((IReadOnlyList<LoginRecord> Records, byte[] Manifest) upload, SyncAccount signedIn, CancellationToken cancellation)
 	{
+		vault.StartSyncAs(signedIn.UserId);
 		foreach (var batch in upload.Records.Chunk(PushBatch))
 		{
 			var pushed = await client.PostChangesAsync([.. batch.Select(SyncWire.NewItem)], cancellation, asUser: signedIn.UserId);
-			if (pushed.Conflicts.Count > 0) throw new SyncUploadRefusedException(pushed.Conflicts[0].ItemId);
-			vault.Dequeue([.. batch.Select(r => new QueuedChange(r.ItemId, r.Version))]);
+			var byId = batch.ToDictionary(r => r.ItemId, StringComparer.Ordinal);
+			List<SyncAccepted> accepted = [.. pushed.Accepted];
+			foreach (var conflict in pushed.Conflicts)
+			{
+				if (!AlreadyUploaded(byId[conflict.ItemId], conflict)) throw new SyncUploadRefusedException(conflict.ItemId);
+				accepted.Add(new SyncAccepted(conflict.ItemId, conflict.Revision));
+			}
+			vault.MarkPushed(signedIn.UserId, batch, accepted);
 		}
-		await client.PutManifestAsync(upload.Manifest, 0, cancellation, asUser: signedIn.UserId);
+		var manifest = await client.PutManifestAsync(upload.Manifest, 0, cancellation, asUser: signedIn.UserId);
+		vault.RaiseManifestFloor(signedIn.UserId, manifest);
+	}
+
+	private static bool AlreadyUploaded(LoginRecord sent, SyncItem held)
+	{
+		var stored = SyncWire.ToRecord(held);
+		return held.Revision > 0 && stored.Version == sent.Version && stored.Tombstone == sent.Tombstone
+			&& stored.Summary.AsSpan().SequenceEqual(sent.Summary) && stored.Password.AsSpan().SequenceEqual(sent.Password)
+			&& stored.History.Length == sent.History.Length && stored.History.Zip(sent.History).All(h => h.First.AsSpan().SequenceEqual(h.Second));
 	}
 }
 
@@ -422,54 +465,106 @@ public sealed class SyncSignInTimeoutException(Exception inner)
 /// <summary>
 /// The open vault's one <see cref="SyncClient"/>, shared by every window (Rulings 49-51): its refresh lock only works if sign-in,
 /// sign-out, turning on and syncing all go through the same instance. A different store gets a new client, and turning the vault
-/// off disposes the old one at once.
+/// off disposes the old one at once. Given a scheduler, it also runs the open vault's one <see cref="SyncEngine"/> on that client (N6),
+/// started as soon as the vault opens and stopped with it.
 /// </summary>
 public sealed class SyncClients : IDisposable
 {
 	private readonly Lock _gate = new();
 	private readonly SyncSetup _setup;
 	private readonly VaultSwitch _vaults;
+	private readonly IScheduler? _scheduler;
+	private readonly IClock? _clock;
 	private VaultStore? _vault;
 	private SyncClient? _client;
+	private SyncEngine? _engine;
 
-	public SyncClients(SyncSetup setup, VaultSwitch vaults)
+	/// <param name="scheduler">Runs the engine's syncs; null runs no engine (tests that drive the client themselves).</param>
+	public SyncClients(SyncSetup setup, VaultSwitch vaults, IScheduler? scheduler = null, IClock? clock = null)
 	{
 		_setup = setup;
 		_vaults = vaults;
-		vaults.Changed += DropStale;
+		_scheduler = scheduler;
+		_clock = clock;
+		vaults.Changed += Follow;
+		Follow();
 	}
 
-	private void DropStale()
+	/// <summary>The open vault's engine; null while the vault is off, or without a scheduler.</summary>
+	public SyncEngine? Engine
 	{
-		lock (_gate)
+		get
 		{
-			if (ReferenceEquals(_vault, _vaults.Current)) return;
-			_client?.Dispose();
-			_client = null;
-			_vault = null;
+			lock (_gate) return _engine;
 		}
 	}
+
+	/// <summary>The engine's status changed: a sync ended, or a change here is waiting to upload.</summary>
+	public event Action? EngineStatusChanged;
+
+	/// <summary>The vault was turned on or off, or replaced: the old store's client and engine go, and the new store's engine starts.</summary>
+	private void Follow()
+	{
+		SyncEngine? stopped;
+		SyncEngine? started = null;
+		lock (_gate)
+		{
+			if (ReferenceEquals(_vault, _vaults.Current) && (_engine is not null || _scheduler is null || _vault is null)) return;
+			stopped = _engine;
+			_engine = null;
+			if (!ReferenceEquals(_vault, _vaults.Current))
+			{
+				_client?.Dispose();
+				_client = null;
+				_vault = null;
+			}
+			if (_scheduler is not null && _vaults.Current is { } vault)
+			{
+				_engine = new SyncEngine(vault, ClientFor(vault), _scheduler, _clock ?? new SystemClock());
+				started = _engine;
+			}
+		}
+		if (stopped is not null)
+		{
+			stopped.StatusChanged -= OnEngineStatus;
+			stopped.Dispose();
+		}
+		if (started is null) return;
+		started.StatusChanged += OnEngineStatus;
+		started.Start();
+	}
+
+	private void OnEngineStatus() => EngineStatusChanged?.Invoke();
 
 	public SyncClient For(VaultStore vault)
 	{
-		lock (_gate)
-		{
-			if (_client is not null && ReferenceEquals(_vault, vault)) return _client;
-			_client?.Dispose();
-			_vault = vault;
-			_client = new SyncClient(_setup.Server, vault, _setup.Handler);
-			return _client;
-		}
+		lock (_gate) return ClientFor(vault);
+	}
+
+	/// <summary>Under <c>_gate</c>.</summary>
+	private SyncClient ClientFor(VaultStore vault)
+	{
+		if (_client is not null && ReferenceEquals(_vault, vault)) return _client;
+		_client?.Dispose();
+		_vault = vault;
+		_client = new SyncClient(_setup.Server, vault, _setup.Handler);
+		return _client;
 	}
 
 	public void Dispose()
 	{
-		_vaults.Changed -= DropStale;
+		_vaults.Changed -= Follow;
+		SyncEngine? engine;
 		lock (_gate)
 		{
+			engine = _engine;
+			_engine = null;
 			_client?.Dispose();
 			_client = null;
 			_vault = null;
 		}
+		if (engine is null) return;
+		engine.StatusChanged -= OnEngineStatus;
+		engine.Dispose();
 	}
 }

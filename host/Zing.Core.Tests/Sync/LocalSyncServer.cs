@@ -4,7 +4,9 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using Zing.Core.Sync;
 
 namespace Zing.Core.Tests.Sync;
@@ -13,7 +15,8 @@ namespace Zing.Core.Tests.Sync;
 /// The real sync server (server/Zing.Server) in process, with its fake Google issuer and throwaway values, as the server's own
 /// tests and CI run it. Nothing reaches Google or Railway. <see cref="Handler"/> carries every request through <see cref="Wire"/>.
 /// </summary>
-internal sealed class LocalSyncServer : WebApplicationFactory<ZingServer::Program>
+/// <param name="clock">The server's clock, for a test that moves it on; null is the real one.</param>
+internal sealed class LocalSyncServer(TimeProvider? clock = null) : WebApplicationFactory<ZingServer::Program>
 {
 	public const string AllowedSub = "sub-sync-test";
 	/// <summary>A second Google account the server allows, for a PC signed in as someone else.</summary>
@@ -43,6 +46,35 @@ internal sealed class LocalSyncServer : WebApplicationFactory<ZingServer::Progra
 		builder.UseSetting("ZING_RATE_IP_PER_MINUTE", "100000");
 		builder.UseSetting("ZING_RATE_USER_PER_MINUTE", "100000");
 		builder.UseContentRoot(_dbDir);
+		if (clock is null) return;
+		builder.ConfigureTestServices(services => services.AddSingleton(clock));
+	}
+
+	private string DbPath => Path.Combine(_dbDir, "zing.db");
+
+	/// <summary>A copy of the server's whole database as it is now, as a backup would take it. Returns where it is.</summary>
+	public string Backup()
+	{
+		var path = Path.Combine(_dbDir, $"backup-{Guid.NewGuid():N}.db");
+		using var live = OpenDb(DbPath);
+		using var copy = OpenDb(path);
+		live.BackupDatabase(copy);
+		return path;
+	}
+
+	/// <summary>The server restored from <paramref name="backup"/>: everything since that backup is gone from it.</summary>
+	public void Restore(string backup)
+	{
+		using var copy = OpenDb(backup);
+		using var live = OpenDb(DbPath);
+		copy.BackupDatabase(live);
+	}
+
+	private static SqliteConnection OpenDb(string path)
+	{
+		var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
+		connection.Open();
+		return connection;
 	}
 
 	/// <summary>Every byte of the server's database as it is on disk, its write-ahead log included: what someone who stole it would have.</summary>
@@ -111,6 +143,9 @@ internal sealed class Wire : DelegatingHandler
 	/// <summary>Awaited before each request is sent, with its line: a test holds a request here to start something else meanwhile.</summary>
 	public Func<string, Task>? BeforeSend { get; set; }
 
+	/// <summary>Rewrites the body of each answer, given its request line: a server that tampers with what it sends.</summary>
+	public Func<string, string, string>? Rewrite { get; set; }
+
 	/// <summary>Runs once the server has answered a refresh, before the client sees the answer.</summary>
 	public Action? AfterRefreshAnswered { get; set; }
 
@@ -140,6 +175,11 @@ internal sealed class Wire : DelegatingHandler
 			LoseNextAnswerTo = null;
 			response.Dispose();
 			throw new HttpRequestException($"The test lost the answer to {line}");
+		}
+		if (Rewrite is { } rewrite && response.Content is { } content)
+		{
+			var body = await content.ReadAsStringAsync(cancellationToken);
+			response.Content = new StringContent(rewrite(line, body), System.Text.Encoding.UTF8, "application/json");
 		}
 		if (line != "POST /auth/refresh") return response;
 		AfterRefreshAnswered?.Invoke();
