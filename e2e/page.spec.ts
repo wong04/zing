@@ -258,6 +258,15 @@ test('a fullscreen element gives the page the whole window, and leaving puts the
 	await zing.close()
 })
 
+test('closing a window while its page is fullscreen closes cleanly', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)
+	await page.waitForLoadState('load')
+	await page.evaluate(() => (globalThis as unknown as { document: { documentElement: { requestFullscreen(): Promise<void> } } }).document.documentElement.requestFullscreen())
+	await expect.poll(async () => (await layers(zing.chrome)).find((l) => l.url === `${base}/find` && l.visible)?.y).toBe(0)
+	await zing.close()
+})
+
 test('zoom steps the whole page in this tab, survives its next page, and actual size resets it', async () => {
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
 	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)
