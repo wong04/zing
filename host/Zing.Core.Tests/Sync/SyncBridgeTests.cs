@@ -382,4 +382,39 @@ public sealed class SyncBridgeTests : IDisposable
 		Assert.Equal(nameof(SyncNeedsRecoveryKeyException), refused.GetProperty("error").GetProperty("name").GetString());
 		account.CheckPassword(Strong);
 	}
+
+	[Fact]
+	public async Task APasswordChangeInOneWindowWaitsForATurnOnInAnotherAndIsSynced()
+	{
+		var account = AccountWith(Strong);
+		var app = new AppServices(new SettingsStore(), _library, Address.FromDefaults(), new TickingClock(), account, new RelayConsent(), Vault: _vault, Sync: Setup(new FakeIssuerSignIn(_server)));
+		var first = new Bridge();
+		var second = new Bridge();
+		_apis.Add(new ChromeApi(first, app, _host, "first"));
+		_apis.Add(new ChromeApi(second, app, _host, "second"));
+		Value(await Invoke(first, "sync:sign-in"));
+		var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var held = 0;
+		_sealer.Prompting = async () =>
+		{
+			if (Interlocked.Exchange(ref held, 1) == 1) return;
+			reached.SetResult();
+			await release.Task;
+		};
+		var turnOn = Task.Run(() => Invoke(first, "sync:turn-on", Strong), TestContext.Current.CancellationToken);
+		await reached.Task;
+
+		var change = Task.Run(() => Invoke(second, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction"), TestContext.Current.CancellationToken);
+		await Task.Delay(200, TestContext.Current.CancellationToken);
+		Assert.False(change.IsCompleted);
+		release.SetResult();
+		Value(await turnOn);
+
+		Assert.Equal("ok", Value(await change).GetProperty("status").GetString());
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+		var client = app.SyncClients!.For(_vault);
+		using var opened = SyncKeysBlob.Parse((await client.GetKeysAsync(TestContext.Current.CancellationToken))!.Blob).UnwrapWithPassword("labour-muzzle-medici-rushes-fiction");
+		app.SyncClients.Dispose();
+	}
 }

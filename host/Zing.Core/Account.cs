@@ -227,11 +227,17 @@ public sealed class AccountStore
 	{
 		var account = _account ?? throw new AccountException(AccountErrorCode.NoAccount);
 		CheckPassword(current);
+		CheckNewPassword(next);
+		StoreVerifier(next, Convert.FromHexString(account.Salt));
+		Emit();
+	}
+
+	/// <summary>What <see cref="ChangePassword"/> needs of the new password and this PC, checked alone so sync can refuse before its PUT.</summary>
+	public void CheckNewPassword(string next)
+	{
 		if (next == "") Fail(AccountErrorCode.EmptyField);
 		if (next.Length < MinPasswordLength) Fail(AccountErrorCode.WeakPassword);
 		if (!_cipher.IsAvailable) Fail(AccountErrorCode.EncryptionUnavailable);
-		StoreVerifier(next, Convert.FromHexString(account.Salt));
-		Emit();
 	}
 
 	/// <summary>For when the stored check can't be read; sets a new password on the same profile.</summary>

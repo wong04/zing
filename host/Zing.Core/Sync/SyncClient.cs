@@ -78,7 +78,10 @@ public sealed class SyncClient : IDisposable
 	private readonly HttpClient _http;
 	private readonly ISyncAccountStore _store;
 	private readonly SemaphoreSlim _refreshing = new(1, 1);
-	private string? _session;
+	private Session? _session;
+
+	/// <summary>A server session and the user it was issued for, read together so a request is never sent as someone it wasn't meant for.</summary>
+	private sealed record Session(string Token, string UserId);
 
 	/// <param name="handler">How requests are sent; null sends them over the network. Not disposed with the client.</param>
 	public SyncClient(Uri server, ISyncAccountStore store, HttpMessageHandler? handler = null)
@@ -106,7 +109,7 @@ public sealed class SyncClient : IDisposable
 		var login = await Read<LoginResponse>(response, cancellation);
 		var account = new SyncAccount(login.UserId, email, login.Refresh);
 		_store.SaveSyncAccount(account);
-		_session = login.Session;
+		_session = new Session(login.Session, login.UserId);
 		return account;
 	}
 
@@ -151,46 +154,49 @@ public sealed class SyncClient : IDisposable
 		}
 	}
 
+	// asUser, on the calls that take it: sent only as that server user, else SyncAccountChangedException before anything is sent
+	// (Ruling 55). Null sends as whoever is signed in.
+
 	/// <summary>The wrapped keys, or null before any were stored.</summary>
-	public Task<VersionedBlob?> GetKeysAsync(CancellationToken cancellation = default) => GetBlobAsync("keys", cancellation);
+	public Task<VersionedBlob?> GetKeysAsync(CancellationToken cancellation = default, string? asUser = null) => GetBlobAsync("keys", asUser, cancellation);
 
 	/// <summary>Stores the wrapped keys over <paramref name="baseVersion"/> and answers the new version.</summary>
-	public Task<long> PutKeysAsync(byte[] blob, long baseVersion, CancellationToken cancellation = default) => PutBlobAsync("keys", blob, baseVersion, cancellation);
+	public Task<long> PutKeysAsync(byte[] blob, long baseVersion, CancellationToken cancellation = default, string? asUser = null) => PutBlobAsync("keys", blob, baseVersion, asUser, cancellation);
 
 	/// <summary>The account manifest, or null before one was stored.</summary>
-	public Task<VersionedBlob?> GetManifestAsync(CancellationToken cancellation = default) => GetBlobAsync("manifest", cancellation);
+	public Task<VersionedBlob?> GetManifestAsync(CancellationToken cancellation = default) => GetBlobAsync("manifest", null, cancellation);
 
-	public Task<long> PutManifestAsync(byte[] blob, long baseVersion, CancellationToken cancellation = default) => PutBlobAsync("manifest", blob, baseVersion, cancellation);
+	public Task<long> PutManifestAsync(byte[] blob, long baseVersion, CancellationToken cancellation = default, string? asUser = null) => PutBlobAsync("manifest", blob, baseVersion, asUser, cancellation);
 
 	/// <summary>Changes after <paramref name="since"/>. A 410 (a cursor older than the tombstone horizon) raises; the caller resyncs from 0.</summary>
 	public async Task<SyncChanges> GetChangesAsync(long since, int? limit = null, CancellationToken cancellation = default)
 	{
 		var path = limit is null ? $"changes?since={since}" : $"changes?since={since}&limit={limit}";
-		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, path), cancellation);
+		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, path), null, cancellation);
 		await EnsureSuccess(response, path, cancellation);
 		var page = await Read<ChangesResponse>(response, cancellation);
 		return new SyncChanges([.. page.Items.Select(ToItem)], page.Revision, page.Horizon, page.More);
 	}
 
-	public async Task<SyncPushResult> PostChangesAsync(IReadOnlyList<SyncPush> items, CancellationToken cancellation = default)
+	public async Task<SyncPushResult> PostChangesAsync(IReadOnlyList<SyncPush> items, CancellationToken cancellation = default, string? asUser = null)
 	{
-		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Post, "changes") { Content = JsonContent.Create(new { items }, options: SyncJson.Options) }, cancellation);
+		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Post, "changes") { Content = JsonContent.Create(new { items }, options: SyncJson.Options) }, asUser, cancellation);
 		await EnsureSuccess(response, "changes", cancellation);
 		var pushed = await Read<PushResponse>(response, cancellation);
 		return new SyncPushResult([.. pushed.Accepted.Select(a => new SyncAccepted(a.ItemId, a.Revision))], [.. pushed.Conflicts.Select(ToItem)]);
 	}
 
-	private async Task<VersionedBlob?> GetBlobAsync(string path, CancellationToken cancellation)
+	private async Task<VersionedBlob?> GetBlobAsync(string path, string? asUser, CancellationToken cancellation)
 	{
-		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, path), cancellation);
+		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, path), asUser, cancellation);
 		if (response.StatusCode == HttpStatusCode.NotFound) return null;
 		await EnsureSuccess(response, path, cancellation);
 		return ToBlob(await Read<BlobResponse>(response, cancellation));
 	}
 
-	private async Task<long> PutBlobAsync(string path, byte[] blob, long baseVersion, CancellationToken cancellation)
+	private async Task<long> PutBlobAsync(string path, byte[] blob, long baseVersion, string? asUser, CancellationToken cancellation)
 	{
-		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(new { blob, baseVersion }, options: SyncJson.Options) }, cancellation);
+		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(new { blob, baseVersion }, options: SyncJson.Options) }, asUser, cancellation);
 		if (response.StatusCode == HttpStatusCode.Conflict)
 		{
 			var current = await Read<BlobResponse>(response, cancellation);
@@ -204,23 +210,24 @@ public sealed class SyncClient : IDisposable
 	/// Sends with the session, refreshing it first if there is none; a 401 refreshes once and sends again. A session this call has
 	/// just got that is refused raises at once: a second refresh would not help. A request can't be sent twice, so it is made anew.
 	/// </summary>
-	private async Task<HttpResponseMessage> SendAsync(Func<HttpRequestMessage> request, CancellationToken cancellation)
+	private async Task<HttpResponseMessage> SendAsync(Func<HttpRequestMessage> request, string? asUser, CancellationToken cancellation)
 	{
 		var fresh = _session is null;
 		var session = _session ?? await RefreshAsync(stale: null, cancellation);
-		var response = await SendWith(request(), session, cancellation);
+		var response = await SendWith(request(), session, asUser, cancellation);
 		if (response.StatusCode != HttpStatusCode.Unauthorized || fresh) return response;
 
 		response.Dispose();
 		var renewed = await RefreshAsync(session, cancellation);
-		return await SendWith(request(), renewed, cancellation);
+		return await SendWith(request(), renewed, asUser, cancellation);
 	}
 
-	private async Task<HttpResponseMessage> SendWith(HttpRequestMessage request, string session, CancellationToken cancellation)
+	private async Task<HttpResponseMessage> SendWith(HttpRequestMessage request, Session session, string? asUser, CancellationToken cancellation)
 	{
 		using (request)
 		{
-			request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session);
+			if (asUser is not null && session.UserId != asUser) throw new SyncAccountChangedException();
+			request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Token);
 			using var timeout = Limit(cancellation, RequestTimeout);
 			return await _http.SendAsync(request, timeout.Token);
 		}
@@ -230,7 +237,7 @@ public sealed class SyncClient : IDisposable
 	/// A new session for one that failed (<paramref name="stale"/>; null when there was none). Callers queue here, and one that
 	/// finds the session already replaced uses the new one, so two calls failing at once spend one refresh token, not the same one twice.
 	/// </summary>
-	private async Task<string> RefreshAsync(string? stale, CancellationToken cancellation)
+	private async Task<Session> RefreshAsync(Session? stale, CancellationToken cancellation)
 	{
 		await _refreshing.WaitAsync(cancellation);
 		try
@@ -253,9 +260,10 @@ public sealed class SyncClient : IDisposable
 			var refreshed = await Read<RefreshResponse>(response, limit.Token);
 			// Saved before anything else: the old token is spent, and only this one gets the account back after a restart.
 			_store.SaveSyncAccount(account with { Refresh = refreshed.Refresh });
-			_session = refreshed.Session;
+			var session = new Session(refreshed.Session, account.UserId);
+			_session = session;
 			cancellation.ThrowIfCancellationRequested();
-			return refreshed.Session;
+			return session;
 		}
 		finally
 		{

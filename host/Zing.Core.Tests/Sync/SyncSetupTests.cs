@@ -626,4 +626,113 @@ public sealed class SyncSetupTests : IDisposable
 		var recovery = await TurnOn(account);
 		using var byRecovery = (await ServerKeys()).UnwrapWithRecoveryKey(recovery);
 	}
+
+	/// <summary>Holds the first request with this line until the returned release is set; <c>Reached</c> completes once it is held.</summary>
+	private (Task Reached, TaskCompletionSource Release) Hold(string line)
+	{
+		var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var held = 0;
+		_server.Wire.BeforeSend = async sent =>
+		{
+			if (sent != line || Interlocked.Exchange(ref held, 1) == 1) return;
+			reached.SetResult();
+			await release.Task;
+		};
+		return (reached.Task, release);
+	}
+
+	/// <summary>Holds the next Hello prompt until the returned release is set; <c>Reached</c> completes once it is up.</summary>
+	private (Task Reached, TaskCompletionSource Release) HoldHello()
+	{
+		var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var held = 0;
+		_sealer.Prompting = async () =>
+		{
+			if (Interlocked.Exchange(ref held, 1) == 1) return;
+			reached.SetResult();
+			await release.Task;
+		};
+		return (reached.Task, release);
+	}
+
+	[Fact]
+	public async Task APasswordChangeStartedDuringATurnOnsHelloWaitsAndIsSyncedSoTheServerHasTheNewPassword()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		var (reached, release) = HoldHello();
+		var turnOn = Task.Run(() => TurnOn(account), Ct);
+		await reached;
+
+		var change = Task.Run(() => new SyncKeys(account, _vault, _client).ChangePasswordAsync(Strong, NextStrong, Ct), Ct);
+		await Task.Delay(200, Ct);
+		Assert.False(change.IsCompleted);
+		account.CheckPassword(Strong);
+		release.SetResult();
+		var recovery = await turnOn;
+		await change;
+
+		account.CheckPassword(NextStrong);
+		using var byPassword = (await ServerKeys()).UnwrapWithPassword(NextStrong);
+		using var byRecovery = (await ServerKeys()).UnwrapWithRecoveryKey(recovery);
+		Assert.Equal(_vault.SyncKeys!.Blob, (await _client.GetKeysAsync(Ct))!.Blob);
+	}
+
+	[Fact]
+	public async Task OfTwoOverlappingChangesTheSecondIsToldThePasswordJustChangedAndSendsNothing()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		await TurnOn(account);
+		var (reached, release) = Hold("PUT /keys");
+		var first = Task.Run(() => new SyncKeys(account, _vault, _client).ChangePasswordAsync(Strong, NextStrong, Ct), Ct);
+		await reached;
+
+		var second = Task.Run(() => new SyncKeys(account, _vault, _client).ChangePasswordAsync(Strong, ThirdStrong, Ct), Ct);
+		await Task.Delay(200, Ct);
+		release.SetResult();
+		await first;
+
+		await Assert.ThrowsAsync<AccountPasswordChangedMeanwhileException>(() => second);
+		Assert.Equal(2, _server.Wire.Count("PUT /keys"));
+		account.CheckPassword(NextStrong);
+		using var opened = (await ServerKeys()).UnwrapWithPassword(NextStrong);
+		Assert.Equal(2, _vault.SyncKeys!.Version);
+	}
+
+	[Fact]
+	public async Task AnAccountSwitchWhileATurnOnIsUnderWaySendsNothingMoreAsTheOtherAccount()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		var (reached, release) = Hold("PUT /keys");
+		var turnOn = Task.Run(() => TurnOn(account), Ct);
+		await reached;
+
+		await _client.SignOutAsync(Ct);
+		await _client.SignInAsync(await _server.MintIdTokenAsync(LocalSyncServer.OtherSub, "other@example.test"), Ct);
+		release.SetResult();
+
+		await Assert.ThrowsAsync<SyncAccountChangedException>(() => turnOn);
+		Assert.Equal(0, _server.Wire.Count("POST /changes"));
+		Assert.Equal(0, _server.Wire.Count("PUT /manifest"));
+		Assert.Null(await _client.GetKeysAsync(Ct));
+	}
+
+	[Fact]
+	public async Task AnotherAccountsUnfinishedPasswordChangeIsKeptAndBlocksATurnOn()
+	{
+		var account = Account(Strong);
+		await SignInToSync();
+		var (pending, _) = await PendingTurnOn(account);
+		var change = pending with { UserId = "user-someone-else", BaseVersion = 3 };
+		_vault.SavePendingSyncKeys(change);
+
+		await Assert.ThrowsAsync<SyncChangeUnfinishedForAnotherAccountException>(() => TurnOn(account));
+
+		Assert.Equal(change.Blob, _vault.PendingSyncKeys!.Blob);
+		Assert.Empty(SyncCalls());
+	}
 }

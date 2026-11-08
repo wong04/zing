@@ -87,6 +87,18 @@ public sealed class SyncPendingKeysReplacedException()
 public sealed class SyncTurnOnUnfinishedForAnotherAccountException()
 	: Exception("This PC hadn't finished turning on sync for another Google account. That was cancelled, so turn on sync again.");
 
+/// <summary>A password change that waited behind another window's change: the current password it was given is no longer the account's.</summary>
+public sealed class AccountPasswordChangedMeanwhileException()
+	: Exception("Your Zing password was just changed in another window. Enter the new one as the current password.");
+
+/// <summary>The sync sign-in changed to another Google account while a key operation was under way, so it stopped before sending anything as that account.</summary>
+public sealed class SyncAccountChangedException()
+	: Exception("The sync sign-in changed to another Google account while this was under way, so Zing stopped. Try again.");
+
+/// <summary>Turning on sync while another Google account's password change is still waiting to be settled (Ruling 55): it is kept.</summary>
+public sealed class SyncChangeUnfinishedForAnotherAccountException()
+	: Exception("This PC hasn't finished a Zing password change for the Google account it synced with before. Sign in to sync with that account first.");
+
 /// <summary>So many items that the manifest listing them would be over the server's limit.</summary>
 public sealed class SyncManifestTooLargeException(int items)
 	: Exception($"Your {items} saved passwords are more than sync can list, so sync wasn't turned on.");
@@ -142,18 +154,18 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	/// in batches, then the manifest. The keys go first and over version 0, so a Google account that already has keys is refused
 	/// before anything else is sent. Returns the recovery key, which keys.bin keeps sealed under the secret key. A turn-on whose keys
 	/// the server took but whose answer never arrived (or whose PC stopped) is finished by the next one, with the same recovery key.
+	/// All of it runs under <see cref="Gate"/>, the password check and the signed-in read included, and every request is sent only
+	/// as the user read there (Ruling 55).
 	/// </summary>
 	/// <exception cref="AccountException">NoAccount for a guest, WrongPassword for a password that isn't the account's.</exception>
 	public async Task<string> TurnOnAsync(string password, CancellationToken cancellation = default)
 	{
 		var profile = account.State().Profile ?? throw new AccountException(AccountErrorCode.NoAccount);
-		account.CheckPassword(password);
-		if (!SyncPasswordStrength.IsStrongEnough(password)) throw new SyncPasswordTooWeakException();
-		var signedIn = vault.SyncAccount() ?? throw new NotSignedInToSyncException();
-		var gate = Gate();
-		await gate.WaitAsync(cancellation);
+		var gate = await EnterAsync(password, cancellation);
 		try
 		{
+			if (!SyncPasswordStrength.IsStrongEnough(password)) throw new SyncPasswordTooWeakException();
+			var signedIn = vault.SyncAccount() ?? throw new NotSignedInToSyncException();
 			return await TurnOnAsync(password, profile, signedIn, cancellation);
 		}
 		finally
@@ -167,6 +179,8 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	{
 		if (vault.PendingSyncKeys is { } unfinished && unfinished.UserId != signedIn.UserId)
 		{
+			// Another account's change keeps Ruling 54's heal for that account; only an unfinished turn-on is cleared (Ruling 55).
+			if (unfinished.BaseVersion > 0) throw new SyncChangeUnfinishedForAnotherAccountException();
 			vault.DropPendingSyncKeys();
 			throw new SyncTurnOnUnfinishedForAnotherAccountException();
 		}
@@ -175,7 +189,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		{
 			if (!resumed) throw new SyncAlreadyOnException();
 			using var held = await vault.KeyMaterialAsync();
-			await UploadAsync(Snapshot(held), cancellation);
+			await UploadAsync(Snapshot(held), signedIn, cancellation);
 			return RecoverySeal.Open(held.SecretKey, held.VaultId, stored.SealedRecoveryKey);
 		}
 
@@ -191,36 +205,65 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		{
 			throw new SyncAlreadySetUpElsewhereException();
 		}
-		await UploadAsync(upload, cancellation);
+		await UploadAsync(upload, signedIn, cancellation);
 		return recovery;
 	}
 
 	/// <summary>
-	/// With sync off, the local change alone (the 8-character minimum). With it on: only while signed in to sync as the account it
-	/// was turned on for, and the new password must pass the floor, both checked before Hello. The keys are re-wrapped with the new
-	/// password key and uploaded over the version this PC stored, and only then does this PC's own password check change. A server
-	/// that moved past that version raises <see cref="SyncKeysChangedElsewhereException"/>, and nothing changes here.
+	/// Every change of the Zing password while the vault is open, synced or not, all under <see cref="Gate"/> (Ruling 55): the
+	/// current-password check, the new password's rules, the choice of a local or a synced change, and the signed-in read. With sync
+	/// off, the local change alone. With it on: only while signed in to sync as the account it was turned on for, and the new password
+	/// must pass the floor, both checked before Hello. The keys are re-wrapped with the new password key and uploaded over the version
+	/// this PC stored, and only then does this PC's own password check change. A server that moved past that version raises
+	/// <see cref="SyncKeysChangedElsewhereException"/>, and nothing changes here.
 	/// </summary>
+	/// <exception cref="AccountPasswordChangedMeanwhileException">Another window changed the password while this one waited.</exception>
 	public async Task ChangePasswordAsync(string current, string next, CancellationToken cancellation = default)
 	{
-		account.CheckPassword(current);
-		var syncedAs = vault.SyncKeys?.UserId ?? vault.PendingSyncKeys?.UserId;
-		if (syncedAs is null)
-		{
-			account.ChangePassword(current, next);
-			return;
-		}
-		if (vault.SyncAccount() is not { } signedIn || signedIn.UserId != syncedAs) throw new SyncSignInNeededException();
-		if (!SyncPasswordStrength.IsStrongEnough(next)) throw new SyncPasswordTooWeakException();
-		var gate = Gate();
-		await gate.WaitAsync(cancellation);
+		var gate = await EnterAsync(current, cancellation);
 		try
 		{
+			account.CheckNewPassword(next);
+			var syncedAs = vault.SyncKeys?.UserId ?? vault.PendingSyncKeys?.UserId;
+			if (syncedAs is null)
+			{
+				account.ChangePassword(current, next);
+				return;
+			}
+			if (vault.SyncAccount() is not { } signedIn || signedIn.UserId != syncedAs) throw new SyncSignInNeededException();
+			if (!SyncPasswordStrength.IsStrongEnough(next)) throw new SyncPasswordTooWeakException();
 			await ChangeSyncedPasswordAsync(current, next, signedIn, cancellation);
 		}
 		finally
 		{
 			gate.Release();
+		}
+	}
+
+	/// <summary>
+	/// Checks <paramref name="password"/>, waits for <see cref="Gate"/>, and checks it again inside: a password that was right before
+	/// the wait and isn't after it was changed by another window meanwhile, which says so rather than "wrong password". The caller
+	/// releases the gate it returns.
+	/// </summary>
+	private async Task<SemaphoreSlim> EnterAsync(string password, CancellationToken cancellation)
+	{
+		account.CheckPassword(password);
+		var gate = Gate();
+		await gate.WaitAsync(cancellation);
+		try
+		{
+			account.CheckPassword(password);
+			return gate;
+		}
+		catch (AccountException error) when (error.Code == AccountErrorCode.WrongPassword)
+		{
+			gate.Release();
+			throw new AccountPasswordChangedMeanwhileException();
+		}
+		catch
+		{
+			gate.Release();
+			throw;
 		}
 	}
 
@@ -242,7 +285,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		var blob = await Task.Run(() => SyncKeysBlob.Parse(stored.Blob).WithPassword(keys, next).ToBytes(), cancellation);
 		try
 		{
-			await PutKeysWriteAheadAsync(new VaultPendingKeys(stored.UserId, blob, stored.Version, stored.SealedRecoveryKey), cancellation);
+			await PutKeysWriteAheadAsync(new VaultPendingKeys(signedIn.UserId, blob, stored.Version, stored.SealedRecoveryKey), cancellation);
 		}
 		catch (SyncConflictException)
 		{
@@ -260,7 +303,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	private async Task<bool> SettlePendingAsync(SyncAccount signedIn, CancellationToken cancellation)
 	{
 		if (vault.PendingSyncKeys is not { } pending || pending.UserId != signedIn.UserId) return false;
-		var server = await client.GetKeysAsync(cancellation);
+		var server = await client.GetKeysAsync(cancellation, asUser: signedIn.UserId);
 		if (server is null || !server.Blob.AsSpan().SequenceEqual(pending.Blob))
 		{
 			vault.DropPendingSyncKeys();
@@ -287,7 +330,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		long version;
 		try
 		{
-			version = await client.PutKeysAsync(pending.Blob, pending.BaseVersion, cancellation);
+			version = await client.PutKeysAsync(pending.Blob, pending.BaseVersion, cancellation, asUser: pending.UserId);
 		}
 		catch (SyncConflictException conflict)
 		{
@@ -301,7 +344,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		}
 		catch (Exception lost) when (AnswerLost(lost, cancellation))
 		{
-			var server = await client.GetKeysAsync(cancellation);
+			var server = await client.GetKeysAsync(cancellation, asUser: pending.UserId);
 			if (server is null || !server.Blob.AsSpan().SequenceEqual(pending.Blob))
 			{
 				vault.DropPendingSyncKeys();
@@ -331,15 +374,15 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	}
 
 	/// <summary>Every item in batches, each leaving the queue as soon as the server takes it, then the manifest.</summary>
-	private async Task UploadAsync((IReadOnlyList<LoginRecord> Records, byte[] Manifest) upload, CancellationToken cancellation)
+	private async Task UploadAsync((IReadOnlyList<LoginRecord> Records, byte[] Manifest) upload, SyncAccount signedIn, CancellationToken cancellation)
 	{
 		foreach (var batch in upload.Records.Chunk(PushBatch))
 		{
-			var pushed = await client.PostChangesAsync([.. batch.Select(SyncWire.NewItem)], cancellation);
+			var pushed = await client.PostChangesAsync([.. batch.Select(SyncWire.NewItem)], cancellation, asUser: signedIn.UserId);
 			if (pushed.Conflicts.Count > 0) throw new SyncUploadRefusedException(pushed.Conflicts[0].ItemId);
 			vault.Dequeue([.. batch.Select(r => new QueuedChange(r.ItemId, r.Version))]);
 		}
-		await client.PutManifestAsync(upload.Manifest, 0, cancellation);
+		await client.PutManifestAsync(upload.Manifest, 0, cancellation, asUser: signedIn.UserId);
 	}
 }
 

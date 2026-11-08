@@ -30,11 +30,15 @@ internal sealed class FakeSealer : IHelloSealer
 	/// <summary>How many stores listen for availability: one per store not yet disposed.</summary>
 	public int Listeners => AvailabilityChanged?.GetInvocationList().Length ?? 0;
 
-	public Task<byte[]> SealAsync(byte[] key)
+	/// <summary>Awaited while the fake prompt is "up", seal or unseal: a test holds Hello here to start something else meanwhile.</summary>
+	public Func<Task>? Prompting { get; set; }
+
+	public async Task<byte[]> SealAsync(byte[] key)
 	{
 		Seals++;
+		if (Prompting is { } prompting) await prompting();
 		Answer();
-		return Task.FromResult<byte[]>([.. Mark, .. key.Reverse()]);
+		return [.. Mark, .. key.Reverse()];
 	}
 
 	/// <summary>Runs while the fake prompt is "up", e.g. to navigate the page during Hello.</summary>
@@ -43,14 +47,15 @@ internal sealed class FakeSealer : IHelloSealer
 	/// <summary>What a reset Hello key or a key sealed by another sealer looks like: the unseal itself fails.</summary>
 	public Exception? UnsealFailure { get; set; }
 
-	public Task<byte[]> UnsealAsync(byte[] sealedBytes)
+	public async Task<byte[]> UnsealAsync(byte[] sealedBytes)
 	{
 		Unseals++;
 		Unsealing?.Invoke();
+		if (Prompting is { } prompting) await prompting();
 		Answer();
 		if (UnsealFailure is { } failure) throw failure;
 		if (!sealedBytes.AsSpan().StartsWith(Mark)) throw new CryptographicException("not sealed by this fake");
-		return Task.FromResult<byte[]>([.. sealedBytes.Skip(Mark.Length).Reverse()]);
+		return [.. sealedBytes.Skip(Mark.Length).Reverse()];
 	}
 
 	private void Answer()

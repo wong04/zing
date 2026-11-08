@@ -1034,16 +1034,19 @@ public sealed class ChromeApi : IDisposable
 
 	/// <summary>
 	/// A broken account rule is a 'rejected' outcome, as the other account channels give. With sync on (keys.bin says so), the keys
-	/// are re-wrapped and uploaded first, and a weak password or keys changed on another PC raise. While the vault is off, a keys.bin
-	/// that says sync is on refuses the change rather than leave the server's keys wrapped by the old password.
+	/// are re-wrapped and uploaded first, and a weak password or keys changed on another PC raise. With the vault open, every change
+	/// goes through SyncKeys, synced or not, so it runs under the vault's key lock and can't slip past a turn-on in another window
+	/// (Ruling 55). While the vault is off, a keys.bin that says sync is on refuses the change rather than leave the server's keys
+	/// wrapped by the old password.
 	/// </summary>
 	private async Task<object?> ChangeAccountPasswordAsync(string current, string next)
 	{
 		if (_app.Vaults.Current is null && _app.Vaults.SyncOnDisk) throw new SyncNeedsTheVaultException();
 		try
 		{
-			if (_app.Vaults.Current is { } vault && (vault.SyncKeys is not null || vault.PendingSyncKeys is not null))
-				await new SyncKeys(_app.Account, vault, SyncClient(vault)).ChangePasswordAsync(current, next, _closing.Token);
+			if (_app.Vaults.Current is { } vault && _app.SyncClients is { } clients)
+				await new SyncKeys(_app.Account, vault, clients.For(vault)).ChangePasswordAsync(current, next, _closing.Token);
+			else if (_app.Vaults.SyncOnDisk) throw new SyncNotSetUpException();
 			else _app.Account.ChangePassword(current, next);
 		}
 		catch (AccountException error)

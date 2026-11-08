@@ -108,6 +108,9 @@ internal sealed class Wire : DelegatingHandler
 	/// <summary>Requests this says yes to fail before they are sent, as a dropped connection would.</summary>
 	public Func<string, bool>? FailWhen { get; set; }
 
+	/// <summary>Awaited before each request is sent, with its line: a test holds a request here to start something else meanwhile.</summary>
+	public Func<string, Task>? BeforeSend { get; set; }
+
 	/// <summary>Runs once the server has answered a refresh, before the client sees the answer.</summary>
 	public Action? AfterRefreshAnswered { get; set; }
 
@@ -127,6 +130,7 @@ internal sealed class Wire : DelegatingHandler
 	{
 		var line = $"{request.Method} {request.RequestUri!.AbsolutePath}";
 		Note(line);
+		if (BeforeSend is { } before) await before(line);
 		if (Down) throw new HttpRequestException("The test's sync server is down");
 		if (FailWhen?.Invoke(line) == true) throw new HttpRequestException($"The test dropped {line}");
 		if (request.Headers.Authorization is not null && Spoil()) request.Headers.Authorization = new("Bearer", "user.1.junk");
