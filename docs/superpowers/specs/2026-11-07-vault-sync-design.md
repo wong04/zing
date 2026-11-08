@@ -197,7 +197,7 @@ on this PC:  index key  ──sealed by──▶ DPAPI
   - It signs out as Sign out does, then forgets the queue, the account and the sync progress in sync.json (cursor, floors, manifest hash), the sync bases in vault.zing, and the sync keys and any pending ones in keys.bin, in that order, so a crash part way still reads as sync on and it can be run again.
   - Every login stays here, usable and unsynced. The server copy stays for the other PCs.
   - It asks first, in one sentence: "This PC stops syncing and keeps its logins. Your other PCs and the server copy aren't changed."
-  - Afterwards keys.bin holds no sync keys, so the Zing account can be deleted or made again. While it holds them, both are refused with "Sync is on for this PC. Turn off sync on this PC first", because the account password is the sync password (final review I2).
+  - Afterwards keys.bin holds no sync keys, so the Zing account can be deleted or made again. While it holds them, both are refused with "Sync is on for this PC. Turn off sync on this PC first", because the account password is the sync password (final review I2). With the password vault off, Turn off sync on this PC doesn't show, so the refusal says "Sync is on for this PC. Turn the password vault on, then Turn off sync on this PC." instead (Ruling 69).
   - Turning sync on again later is the normal turn-on. If the server already holds keys for that Google account, turn-on says so (SyncAlreadySetUpElsewhere) and the person restores from sync instead.
 
 ## The server

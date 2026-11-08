@@ -1121,7 +1121,9 @@ public sealed class ChromeApi : IDisposable
 	/// </summary>
 	private void RequireSyncOff()
 	{
-		if (_app.Vaults.SyncOnDisk) throw new SyncIsOnException();
+		if (!_app.Vaults.SyncOnDisk) return;
+		if (_app.Vaults.Current is null) throw new SyncIsOnWithTheVaultOffException();
+		throw new SyncIsOnException();
 	}
 
 	/// <summary>

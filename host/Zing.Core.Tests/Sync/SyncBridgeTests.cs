@@ -627,7 +627,7 @@ public sealed class SyncBridgeTests : IDisposable
 	}
 
 	[Fact]
-	public async Task WithTheVaultOffAndSyncOnTheAccountIsNotDeleted()
+	public async Task WithTheVaultOffAndSyncOnTheAccountIsNotDeletedOrMadeAndTheRefusalSaysToTurnTheVaultOnFirst()
 	{
 		using var switched = new Switched(_sealer);
 		var account = AccountWith(Strong);
@@ -636,9 +636,15 @@ public sealed class SyncBridgeTests : IDisposable
 		Value(await Invoke(bridge, "sync:turn-on", Strong));
 		switched.Settings.Set("passwordAutofill", false);
 
-		var deleted = await Invoke(bridge, "account:delete");
+		var deleted = (await Invoke(bridge, "account:delete")).GetProperty("error");
+		var signedUp = (await Invoke(bridge, "account:sign-up", "bob", "Bob", "bob@example.test", "a-new-local-password")).GetProperty("error");
 
-		Assert.Equal(nameof(SyncIsOnException), deleted.GetProperty("error").GetProperty("name").GetString());
+		// Turn off sync on this PC shows only with the vault on (Ruling 69).
+		foreach (var refused in new[] { deleted, signedUp })
+		{
+			Assert.Equal(nameof(SyncIsOnWithTheVaultOffException), refused.GetProperty("name").GetString());
+			Assert.EndsWith("Sync is on for this PC. Turn the password vault on, then Turn off sync on this PC.", refused.GetProperty("message").GetString());
+		}
 		Assert.Equal("ada", account.State().Profile!.Username);
 	}
 

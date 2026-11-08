@@ -5,7 +5,7 @@ import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { SettingRowShell } from './SettingRowShell'
 import { RecoveryKeyScreen, ShowRecoveryKey, SyncSetup, useAction, useSyncState } from './SyncSetup'
-import { syncBanner, TURN_OFF_SYNC_CONFIRM, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
+import { syncBanner, syncControls, syncDetail, TURN_OFF_SYNC_CONFIRM, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
 import { useVault } from './useVaultData'
 
 /** A password stays shown for this long, then hides itself. */
@@ -199,17 +199,6 @@ const SYNC_NOTICES: Record<SyncNotice, string> = {
 	'kept-on-server': 'Signed out on this PC. Zing couldn\u2019t reach the sync server, so its copy of the sign-in expires within 90 days.',
 }
 
-function unsentText(count: number): string {
-	return count === 1 ? '1 login hasn’t uploaded yet.' : `${count} logins haven’t uploaded yet.`
-}
-
-function syncDetail(sync: SyncState, busy: boolean): string {
-	if (sync.signedIn && sync.on) return `Sync is on. Signed in as ${sync.email}.${sync.unsent > 0 ? ` ${unsentText(sync.unsent)}` : ''}`
-	if (sync.signedIn) return `Signed in as ${sync.email}.`
-	if (busy) return 'Finish signing in with Google in your browser.'
-	return 'Keep saved passwords in step across your PCs. The server only ever sees them encrypted.'
-}
-
 /**
  * Sync: Turn on sync signs in with Google in the browser, with Cancel while it waits, then asks for the Zing password to turn it
  * on (SyncSetup); on, it shows the account, Show recovery key and Sign out. A sign-in the server ended, or one this PC can't read,
@@ -218,7 +207,11 @@ function syncDetail(sync: SyncState, busy: boolean): string {
  * sits beside Sign out or Turn on sync, and says what it does before it runs.
  */
 function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: SyncState) => void; turnOn: (password: string) => Promise<void> }) {
-	const { busy, error, setError, run } = useAction()
+	const { busy: acting, error: actionError, setError, run } = useAction()
+	// Its own busy state, so Cancel and Finish signing in show only for a sign-in (Ruling 69).
+	const turningOff = useAction()
+	const busy = acting || turningOff.busy
+	const error = actionError ?? turningOff.error
 	// What the last sign-out said (kept-on-server); a pushed state doesn't carry it.
 	const [signOutNotice, setSignOutNotice] = useState<SyncNotice>()
 	const [confirmingUpload, setConfirmingUpload] = useState(false)
@@ -228,15 +221,19 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 	if (failedAgainst !== sync) {
 		setFailedAgainst(sync)
 		setError(undefined)
+		turningOff.setError(undefined)
 	}
 
-	const act = (work: () => Promise<SyncState>, after: (state: SyncState) => void = () => undefined): void =>
-		run(async () => {
-			setSignOutNotice(undefined)
-			const state = await work()
-			setSync(state)
-			after(state)
-		})
+	const settle = (work: () => Promise<SyncState>, after: (state: SyncState) => void) => async (): Promise<void> => {
+		setSignOutNotice(undefined)
+		const state = await work()
+		setSync(state)
+		after(state)
+	}
+	const act = (work: () => Promise<SyncState>, after: (state: SyncState) => void = () => undefined): void => {
+		turningOff.setError(undefined)
+		run(settle(work, after))
+	}
 
 	const signIn = (): void => act(() => zing.signInToSync())
 	const signOut = (): void => act(() => zing.signOutOfSync(), (state) => setSignOutNotice(state.signedIn ? undefined : state.notice))
@@ -249,8 +246,10 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 	}
 	const turnOff = (): void => {
 		setConfirmingTurnOff(false)
-		act(() => zing.turnOffSync(), (state) => setSignOutNotice(state.signedIn ? undefined : state.notice))
+		setError(undefined)
+		turningOff.run(settle(() => zing.turnOffSync(), (state) => setSignOutNotice(state.signedIn ? undefined : state.notice)))
 	}
+	const controls = syncControls(sync, acting)
 	const turnOffButton = sync.keysHere ? (
 		<PillButton variant="ghost" size="small" disabled={busy} onClick={() => setConfirmingTurnOff(true)}>
 			Turn off sync on this PC
@@ -260,7 +259,7 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 	return (
 		<div className="vault-sync" role="group" aria-label="Sync">
 			<SettingRowShell title="Sync">
-				{sync.signedIn ? (
+				{controls === 'account' ? (
 					<div className="vault-actions">
 						{sync.on ? <ShowRecoveryKey /> : null}
 						<PillButton variant="outlined" size="small" disabled={busy} onClick={signOut}>
@@ -268,13 +267,13 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 						</PillButton>
 						{turnOffButton}
 					</div>
-				) : busy ? (
+				) : controls === 'cancel-sign-in' ? (
 					<PillButton variant="outlined" size="small" onClick={() => void zing.cancelSyncSignIn()}>
 						Cancel
 					</PillButton>
 				) : (
 					<div className="vault-actions">
-						<PillButton variant="outlined" size="small" onClick={signIn}>
+						<PillButton variant="outlined" size="small" disabled={busy} onClick={signIn}>
 							{signInLabel}
 						</PillButton>
 						{turnOffButton}
@@ -282,7 +281,7 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 				)}
 			</SettingRowShell>
 			<div className="setting-row-detail" role="status" aria-live="polite">
-				{syncDetail(sync, busy)}
+				{syncDetail(sync, acting)}
 			</div>
 			{sync.signedIn && !sync.on ? <SyncSetup turnOn={turnOn} /> : null}
 			{sync.signedIn && sync.passwordChangedElsewhere ? (

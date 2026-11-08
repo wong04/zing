@@ -23,3 +23,24 @@ export function syncBanner(sync: SyncState, failure: string | undefined): SyncBa
 	if (sync.signedIn && sync.error) return { message: sync.message ?? 'Sync stopped.', offerUpload }
 	return undefined
 }
+
+/** What sits in the Sync row: the account's buttons, Cancel while a sign-in waits for the browser, or the sign-in buttons. */
+export type SyncControls = 'account' | 'cancel-sign-in' | 'sign-in'
+
+/** Only a running sign-in shows Cancel; Turn off sync on this PC has its own busy state (Ruling 69). */
+export function syncControls(sync: SyncState, signingIn: boolean): SyncControls {
+	if (sync.signedIn) return 'account'
+	if (signingIn) return 'cancel-sign-in'
+	return 'sign-in'
+}
+
+function unsentText(count: number): string {
+	return count === 1 ? '1 login hasn’t uploaded yet.' : `${count} logins haven’t uploaded yet.`
+}
+
+export function syncDetail(sync: SyncState, signingIn: boolean): string {
+	if (sync.signedIn && sync.on) return `Sync is on. Signed in as ${sync.email}.${sync.unsent > 0 ? ` ${unsentText(sync.unsent)}` : ''}`
+	if (sync.signedIn) return `Signed in as ${sync.email}.`
+	if (signingIn) return 'Finish signing in with Google in your browser.'
+	return 'Keep saved passwords in step across your PCs. The server only ever sees them encrypted.'
+}

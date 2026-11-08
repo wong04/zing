@@ -101,6 +101,11 @@ public sealed class SyncNeedsRecoveryKeyException()
 /// </summary>
 public sealed class SyncIsOnException() : Exception("Sync is on for this PC. Turn off sync on this PC first.");
 
+/// <summary>
+/// <see cref="SyncIsOnException"/> while the password vault is off (Ruling 69): Turn off sync on this PC shows only with it on.
+/// </summary>
+public sealed class SyncIsOnWithTheVaultOffException() : Exception("Sync is on for this PC. Turn the password vault on, then Turn off sync on this PC.");
+
 /// <summary>A commit of keys that aren't the ones pending: another call replaced them, so the server may not hold these.</summary>
 public sealed class SyncPendingKeysReplacedException()
 	: Exception("The keys waiting for the sync server were replaced while they were sent, so Zing kept neither.");

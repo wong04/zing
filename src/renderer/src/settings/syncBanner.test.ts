@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SyncState } from '@shared/vault/vault'
-import { syncBanner, TURN_OFF_SYNC_CONFIRM, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
+import { syncBanner, syncControls, syncDetail, TURN_OFF_SYNC_CONFIRM, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
 
 const on = (patch: Partial<Extract<SyncState, { signedIn: true }>> = {}): SyncState => ({ signedIn: true, email: 'ada@example.test', on: true, recoveryPending: false, unsent: 0, keysHere: true, ...patch })
 
@@ -48,5 +48,25 @@ describe('syncBanner', () => {
 
 	it('shows nothing when all is well', () => {
 		expect(syncBanner(on(), undefined)).toBeUndefined()
+	})
+})
+
+describe('syncControls and syncDetail', () => {
+	const signedOutWithKeys: SyncState = { signedIn: false, on: false, recoveryPending: false, keysHere: true }
+
+	it('shows Cancel and Finish signing in only while a sign-in runs', () => {
+		expect(syncControls(signedOutWithKeys, true)).toBe('cancel-sign-in')
+		expect(syncDetail(signedOutWithKeys, true)).toBe('Finish signing in with Google in your browser.')
+	})
+
+	// Turn-off has its own busy state, so the row passes signingIn false while it runs (Ruling 69).
+	it('keeps the sign-in buttons and the plain detail while Turn off sync on this PC runs', () => {
+		expect(syncControls(signedOutWithKeys, false)).toBe('sign-in')
+		expect(syncDetail(signedOutWithKeys, false)).not.toContain('Finish signing in')
+	})
+
+	it('shows the account controls when signed in, whatever runs', () => {
+		expect(syncControls(on(), true)).toBe('account')
+		expect(syncDetail(on({ unsent: 1 }), false)).toBe('Sync is on. Signed in as ada@example.test. 1 login hasn’t uploaded yet.')
 	})
 })
