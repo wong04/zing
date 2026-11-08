@@ -17,15 +17,22 @@ public sealed class VaultKeys
 	/// </summary>
 	public string VaultId { get; }
 
+	/// <summary>What turning on sync stored here; null until then.</summary>
+	public VaultSyncKeys? Sync { get; }
+
 	private readonly byte[] _sealedIndexKey;
 	private readonly byte[] _sealedSecretKey;
 
-	private VaultKeys(string vaultId, byte[] sealedIndexKey, byte[] sealedSecretKey)
+	private VaultKeys(string vaultId, byte[] sealedIndexKey, byte[] sealedSecretKey, VaultSyncKeys? sync = null)
 	{
 		VaultId = vaultId;
 		_sealedIndexKey = sealedIndexKey;
 		_sealedSecretKey = sealedSecretKey;
+		Sync = sync;
 	}
+
+	/// <summary>The same keys with <paramref name="sync"/> stored beside them. Nothing is written until <see cref="Save"/>.</summary>
+	public VaultKeys WithSync(VaultSyncKeys sync) => new(VaultId, _sealedIndexKey, _sealedSecretKey, sync);
 
 	/// <summary>
 	/// New keys and a new vault ID, sealed; one Hello call. Also returns the unsealed secret key for the write that needed the
@@ -77,16 +84,40 @@ public sealed class VaultKeys
 		var file = JsonSerializer.Deserialize<KeysFile>(File.ReadAllBytes(path), VaultJson.Options) ?? throw new InvalidDataException($"{path} is empty");
 		if (file.Format != Format) throw new InvalidDataException($"{path} is format {file.Format}; this Zing reads {Format}");
 		if (string.IsNullOrEmpty(file.VaultId) || file.IndexKey is not { Length: > 0 } || file.SecretKey is not { Length: > 0 }) throw new InvalidDataException($"{path} is missing a key or the vault ID");
-		return new VaultKeys(file.VaultId, file.IndexKey, file.SecretKey);
+		if (file.Sync is { } sync && (string.IsNullOrEmpty(sync.UserId) || sync.Blob is not { Length: > 0 } || sync.Version < 1 || sync.SealedRecoveryKey is not { Length: > 0 }))
+			throw new InvalidDataException($"{path} has sync keys without their user, blob, version or recovery key");
+		return new VaultKeys(file.VaultId, file.IndexKey, file.SecretKey, file.Sync);
 	}
 
 	public void Save(string path) =>
-		JsonFiles.WriteAllBytesAtomic(path, JsonSerializer.SerializeToUtf8Bytes(new KeysFile(Format, VaultId, _sealedIndexKey, _sealedSecretKey), VaultJson.Options));
+		JsonFiles.WriteAllBytesAtomic(path, JsonSerializer.SerializeToUtf8Bytes(new KeysFile(Format, VaultId, _sealedIndexKey, _sealedSecretKey, Sync), VaultJson.Options));
 
-	private sealed record KeysFile(int Format, string VaultId, byte[] IndexKey, byte[] SecretKey);
+	// Sync is absent from a keys.bin written before sync was turned on, which reads as null.
+	private sealed record KeysFile(int Format, string VaultId, byte[] IndexKey, byte[] SecretKey, VaultSyncKeys? Sync = null);
 }
 
 internal static class VaultJson
 {
 	public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+}
+
+/// <summary>
+/// What turning on sync keeps in keys.bin: the server user it was turned on for, the wrapped keys as uploaded and the version the
+/// server gave them (a password change re-wraps from these, over that version), and the recovery key sealed under the secret key,
+/// so it can only be shown again after Windows Hello. <see cref="RecoveryConfirmed"/> is false until the person says they saved it.
+/// </summary>
+public sealed record VaultSyncKeys(string UserId, byte[] Blob, long Version, byte[] SealedRecoveryKey, bool RecoveryConfirmed);
+
+/// <summary>The vault's ID and both keys unsealed, for sync to wrap. Dispose wipes the keys.</summary>
+public sealed class VaultKeyMaterial(string vaultId, byte[] indexKey, byte[] secretKey) : IDisposable
+{
+	public string VaultId { get; } = vaultId;
+	public byte[] IndexKey { get; } = indexKey;
+	public byte[] SecretKey { get; } = secretKey;
+
+	public void Dispose()
+	{
+		CryptographicOperations.ZeroMemory(IndexKey);
+		CryptographicOperations.ZeroMemory(SecretKey);
+	}
 }

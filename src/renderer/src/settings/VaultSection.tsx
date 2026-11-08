@@ -4,6 +4,7 @@ import { recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type Syn
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { SettingRowShell } from './SettingRowShell'
+import { RecoveryKeyScreen, ShowRecoveryKey, SyncSetup, useSyncState } from './SyncSetup'
 import { useVault } from './useVaultData'
 
 /** A password stays shown for this long, then hides itself. */
@@ -198,40 +199,22 @@ const SYNC_NOTICES: Record<SyncNotice, string> = {
 }
 
 function syncDetail(sync: SyncState, busy: boolean): string {
+	if (sync.signedIn && sync.on) return `Sync is on. Signed in as ${sync.email}.`
 	if (sync.signedIn) return `Signed in as ${sync.email}.`
 	if (busy) return 'Finish signing in with Google in your browser.'
 	return 'Keep saved passwords in step across your PCs. The server only ever sees them encrypted.'
 }
 
 /**
- * Sync's sign-in: Turn on sync signs in with Google in the browser, with Cancel while it waits; signed in, it shows the account and a
- * Sign out. A sign-in the server ended, or one this PC can't read, says so and offers Sign in again. Logins sync in later tasks.
+ * Sync: Turn on sync signs in with Google in the browser, with Cancel while it waits, then asks for the Zing password to turn it
+ * on (SyncSetup); on, it shows the account, Show recovery key and Sign out. A sign-in the server ended, or one this PC can't read,
+ * says so and offers Sign in again.
  */
-function SyncRow() {
-	const [sync, setSync] = useState<SyncState>()
+function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: SyncState) => void; turnOn: (password: string) => Promise<void> }) {
 	const [error, setError] = useState<string>()
 	// What the last sign-out said (kept-on-server); a pushed state doesn't carry it.
 	const [signOutNotice, setSignOutNotice] = useState<SyncNotice>()
 	const [busy, setBusy] = useState(false)
-
-	useEffect(() => {
-		let current = true
-		const unsubscribe = zing.onSyncState((state) => setSync(state))
-		zing.getSyncState().then(
-			(state) => {
-				if (current) setSync(state)
-			},
-			(failure: unknown) => {
-				if (current) setError(messageOf(failure))
-			},
-		)
-		return () => {
-			current = false
-			unsubscribe()
-		}
-	}, [])
-
-	if (!sync) return error ? <InfoBanner kind="warning">{error}</InfoBanner> : null
 
 	const act = (work: () => Promise<SyncState>, after: (state: SyncState) => void = () => undefined): void =>
 		void (async () => {
@@ -258,9 +241,12 @@ function SyncRow() {
 		<div className="vault-sync" role="group" aria-label="Sync">
 			<SettingRowShell title="Sync">
 				{sync.signedIn ? (
-					<PillButton variant="outlined" size="small" disabled={busy} onClick={signOut}>
-						Sign out
-					</PillButton>
+					<div className="vault-actions">
+						{sync.on ? <ShowRecoveryKey /> : null}
+						<PillButton variant="outlined" size="small" disabled={busy} onClick={signOut}>
+							Sign out
+						</PillButton>
+					</div>
 				) : busy ? (
 					<PillButton variant="outlined" size="small" onClick={() => void zing.cancelSyncSignIn()}>
 						Cancel
@@ -274,6 +260,7 @@ function SyncRow() {
 			<div className="setting-row-detail" role="status" aria-live="polite">
 				{syncDetail(sync, busy)}
 			</div>
+			{sync.signedIn && !sync.on ? <SyncSetup turnOn={turnOn} /> : null}
 			{notice ? <InfoBanner kind={notice === 'kept-on-server' ? 'info' : 'warning'}>{SYNC_NOTICES[notice]}</InfoBanner> : null}
 			{error ? <InfoBanner kind="warning">{error}</InfoBanner> : null}
 		</div>
@@ -283,6 +270,13 @@ function SyncRow() {
 /** The manage page for the password vault (Settings, Browsing): search, show, copy, edit, delete, import and export. */
 export function VaultSection() {
 	const vault = useVault()
+	const { sync, error: syncError, setSync } = useSyncState()
+	// The recovery key turning on sync answered; shown until it's confirmed saved, then dropped.
+	const [newRecoveryKey, setNewRecoveryKey] = useState<string>()
+	// The host says sync is on as soon as the keys are uploaded, before the logins are: the recovery key waits for the whole upload.
+	const [turningOn, setTurningOn] = useState(false)
+	// A turn-on that failed after its keys were uploaded: sync is on, so the setup form that would have shown it is gone.
+	const [turnOnError, setTurnOnError] = useState<string>()
 	const [query, setQuery] = useState('')
 	const [revealed, setRevealed] = useState<Revealed>()
 	const [editing, setEditing] = useState<string>()
@@ -306,6 +300,36 @@ export function VaultSection() {
 		return <InfoBanner kind="warning">Zing couldn&rsquo;t read the saved-passwords file, so the vault is off. The file has not been changed or removed.</InfoBanner>
 	}
 	if (!state.enabled) return null
+
+	const turnOnSync = async (password: string): Promise<void> => {
+		setTurnOnError(undefined)
+		setTurningOn(true)
+		try {
+			setNewRecoveryKey((await zing.turnOnSync(password)).recoveryKey)
+		} catch (failure) {
+			setTurnOnError(messageOf(failure))
+			throw failure
+		} finally {
+			setTurningOn(false)
+		}
+	}
+
+	if (sync?.recoveryPending && !turningOn) {
+		return (
+			<div className="vault" role="group" aria-label="Saved passwords">
+				<div className="vault-sync" role="group" aria-label="Sync">
+					{turnOnError ? <InfoBanner kind="warning">{turnOnError}</InfoBanner> : null}
+					<RecoveryKeyScreen
+						recoveryKey={newRecoveryKey}
+						onConfirmed={(confirmed) => {
+							setNewRecoveryKey(undefined)
+							setSync(confirmed)
+						}}
+					/>
+				</div>
+			</div>
+		)
+	}
 
 	const run: Run = async (work) => {
 		setError(undefined)
@@ -357,7 +381,7 @@ export function VaultSection() {
 				</div>
 			</SettingRowShell>
 
-			<SyncRow />
+			{sync ? <SyncRow sync={sync} setSync={setSync} turnOn={turnOnSync} /> : syncError ? <InfoBanner kind="warning">{syncError}</InfoBanner> : null}
 
 			{!state.helloAvailable ? (
 				<InfoBanner kind="warning">Windows Hello isn&rsquo;t set up on this PC. You can look through your logins, but passwords can&rsquo;t be shown, saved or changed until it is.</InfoBanner>

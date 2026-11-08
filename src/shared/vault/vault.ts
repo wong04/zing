@@ -61,8 +61,16 @@ export interface VaultState {
 // only) the server couldn't be reached, so its copy of the sign-in expires within 90 days.
 export type SyncNotice = 'signed-out' | 'unreadable' | 'kept-on-server'
 
-// Sync's sign-in, as Settings shows it (sync:get, sync:state). The bridge leaves out null fields.
-export type SyncState = { signedIn: true; email: string } | { signedIn: false; notice?: SyncNotice }
+// Sync as Settings shows it (sync:get, sync:state). The bridge leaves out null fields. `on`: this PC turned sync on for the
+// signed-in account; `recoveryPending`: on, and the recovery key isn't yet confirmed saved, so Settings shows nothing else.
+export type SyncState =
+	| { signedIn: true; email: string; on: boolean; recoveryPending: boolean }
+	| { signedIn: false; notice?: SyncNotice; on: false; recoveryPending: false }
+
+// The recovery key, as sync:turn-on and sync:show-recovery give it: 26 base32 characters in groups of four.
+export interface RecoveryKeyShown {
+	recoveryKey: string
+}
 
 // "Never for this site", kept per exact origin apart from the logins.
 export interface NeverSave {

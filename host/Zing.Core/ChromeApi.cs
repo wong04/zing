@@ -91,6 +91,9 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 
 	/// <summary>The vault as it is now: <see cref="VaultSwitch.Current"/> is null while it's off.</summary>
 	public VaultSwitch Vaults { get; } = Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable);
+
+	/// <summary>The open vault's one sync client, for every window; null without <see cref="Sync"/>.</summary>
+	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync);
 }
 
 /// <summary>
@@ -352,6 +355,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("account:update-profile", args => app.Account.Run(() => app.Account.UpdateProfile(Text(args, 0), Text(args, 1))));
 		bridge.Register("account:require-password", args => app.Account.Run(() => app.Account.SetRequirePasswordOnLaunch(Bool(args, 0))));
 		bridge.Register("account:delete", _ => app.Account.Run(app.Account.DeleteAccount));
+		bridge.Register("account:change-password", async args => await ChangeAccountPasswordAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("chrome:app-menu", args => Do(() => Menu(Menus.App(id => Run(id)), args, 0)));
 		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Saved, Text(args, 0), host.Shell), args, 1)));
 		bridge.Register("library:folder-menu", args => Do(() => Menu(Menus.LibraryFolder(app.Library, Text(args, 0), id => OpenLibraryItem(id, "current"), OpenAll), args, 1)));
@@ -390,6 +394,13 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("sync:sign-in", async _ => await SignInToSyncAsync());
 		bridge.Register("sync:sign-out", async _ => await SignOutOfSyncAsync());
 		bridge.Register("sync:cancel-sign-in", _ => Do(CancelSyncSignIn));
+		bridge.Register("sync:turn-on", async args => new { recoveryKey = await TurnOnSyncAsync(Text(args, 0)) });
+		bridge.Register("sync:confirm-recovery-saved", _ =>
+		{
+			Vault().ConfirmRecoverySaved();
+			return CurrentSyncState();
+		});
+		bridge.Register("sync:show-recovery", async _ => new { recoveryKey = await Vault().RecoveryKeyAsync() });
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
@@ -934,7 +945,7 @@ public sealed class ChromeApi : IDisposable
 		if (_app.Vaults.Current is not { } vault) return SyncState.SignedOut();
 		try
 		{
-			if (vault.SyncAccount() is { } account) return SyncState.SignedInAs(account.Email);
+			if (vault.SyncAccount() is { } account) return SignedInState(vault, account);
 		}
 		catch (SyncAccountUnreadableException)
 		{
@@ -942,6 +953,10 @@ public sealed class ChromeApi : IDisposable
 		}
 		return SyncState.SignedOut(vault.SyncSignedOutByServer ? "signed-out" : null);
 	}
+
+	/// <summary>Sync is on only for the account this PC turned it on for: keys.bin names that server user.</summary>
+	private static SyncState SignedInState(VaultStore vault, SyncAccount account) =>
+		SyncState.SignedInAs(account.Email, vault.SyncKeys is { } keys && keys.UserId == account.UserId ? keys : null);
 
 	/// <summary>The sign-in waiting on the browser, for Cancel; null when none is.</summary>
 	private CancellationTokenSource? _syncSigningIn;
@@ -961,9 +976,8 @@ public sealed class ChromeApi : IDisposable
 		try
 		{
 			var idToken = await setup.SignIn.SignInAsync(signingIn.Token);
-			using var client = new SyncClient(setup.Server, vault, setup.Handler);
-			var account = await client.SignInAsync(idToken, signingIn.Token);
-			return SyncState.SignedInAs(account.Email);
+			var account = await SyncClient(vault).SignInAsync(idToken, signingIn.Token);
+			return SignedInState(vault, account);
 		}
 		catch (OperationCanceledException) when (cancel.IsCancellationRequested)
 		{
@@ -1003,9 +1017,37 @@ public sealed class ChromeApi : IDisposable
 			vault.ForgetSyncAccount();
 			return SyncState.SignedOut("kept-on-server");
 		}
-		using var client = new SyncClient(setup.Server, vault, setup.Handler);
-		var revoked = await client.SignOutAsync(_closing.Token);
+		var revoked = await SyncClient(vault).SignOutAsync(_closing.Token);
 		return SyncState.SignedOut(revoked ? null : "kept-on-server");
+	}
+
+	private SyncClient SyncClient(VaultStore vault) => (_app.SyncClients ?? throw new SyncNotSetUpException()).For(vault);
+
+	/// <summary>Turns sync on for the signed-in Google account (SyncKeys.TurnOnAsync) and answers the recovery key, the one time it is given without Hello.</summary>
+	private async Task<string> TurnOnSyncAsync(string password)
+	{
+		var vault = Vault();
+		return await new SyncKeys(_app.Account, vault, SyncClient(vault)).TurnOnAsync(password, _closing.Token);
+	}
+
+	/// <summary>
+	/// A broken account rule is a 'rejected' outcome, as the other account channels give. With sync on (keys.bin says so), the keys
+	/// are re-wrapped and uploaded first, and a weak password or keys changed on another PC raise. While the vault is off its
+	/// keys.bin isn't read, so a vault on disk refuses the change rather than leave the server's keys wrapped by the old password.
+	/// </summary>
+	private async Task<object?> ChangeAccountPasswordAsync(string current, string next)
+	{
+		if (_app.Vaults.Current is null && _app.Vaults.FilesExist) throw new VaultOffException();
+		try
+		{
+			if (_app.Vaults.Current is { SyncKeys: not null } synced) await new SyncKeys(_app.Account, synced, SyncClient(synced)).ChangePasswordAsync(current, next, _closing.Token);
+			else _app.Account.ChangePassword(current, next);
+		}
+		catch (AccountException error)
+		{
+			return AccountOutcome.Rejected(error.Code);
+		}
+		return AccountOutcome.Ok(_app.Account.State());
 	}
 
 	/// <summary>Long enough to pick an account and pass Google's prompts in the browser.</summary>

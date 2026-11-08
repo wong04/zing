@@ -1,6 +1,10 @@
 {
 	"invoke": [
 		{
+			"channel": "account:change-password",
+			"args": 2
+		},
+		{
 			"channel": "account:continue-as-guest",
 			"args": 0
 		},
@@ -354,7 +358,15 @@
 			"args": 0
 		},
 		{
+			"channel": "sync:confirm-recovery-saved",
+			"args": 0
+		},
+		{
 			"channel": "sync:get",
+			"args": 0
+		},
+		{
+			"channel": "sync:show-recovery",
 			"args": 0
 		},
 		{
@@ -364,6 +376,10 @@
 		{
 			"channel": "sync:sign-out",
 			"args": 0
+		},
+		{
+			"channel": "sync:turn-on",
+			"args": 1
 		},
 		{
 			"channel": "tabs:activate",

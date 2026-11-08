@@ -204,11 +204,33 @@ public sealed class AccountStore
 
 	public void SignIn(string password)
 	{
+		CheckPassword(password);
+		_signedIn = true;
+		Emit();
+	}
+
+	/// <summary>Raises <see cref="AccountErrorCode.WrongPassword"/> unless this is the account's password; signs nobody in or out.</summary>
+	public void CheckPassword(string password)
+	{
 		var account = _account ?? throw new AccountException(AccountErrorCode.NoAccount);
 		var stored = ReadVerifier() ?? throw new AccountException(AccountErrorCode.NoAccount);
 		var candidate = Scrypt.Derive(password, Convert.FromHexString(account.Salt));
 		if (!CryptographicOperations.FixedTimeEquals(candidate, stored)) Fail(AccountErrorCode.WrongPassword);
-		_signedIn = true;
+	}
+
+	/// <summary>
+	/// Replaces the password check on this PC, keeping the profile and its salt, as <see cref="ResetPassword"/> does, so the two
+	/// files never disagree. With sync on, the vault's keys are re-wrapped and uploaded first (SyncKeys.ChangePasswordAsync), so a
+	/// change that the server refuses leaves this PC's password as it was.
+	/// </summary>
+	public void ChangePassword(string current, string next)
+	{
+		var account = _account ?? throw new AccountException(AccountErrorCode.NoAccount);
+		CheckPassword(current);
+		if (next == "") Fail(AccountErrorCode.EmptyField);
+		if (next.Length < MinPasswordLength) Fail(AccountErrorCode.WeakPassword);
+		if (!_cipher.IsAvailable) Fail(AccountErrorCode.EncryptionUnavailable);
+		StoreVerifier(next, Convert.FromHexString(account.Salt));
 		Emit();
 	}
 

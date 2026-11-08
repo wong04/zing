@@ -566,6 +566,92 @@ public sealed class VaultStore : IDisposable, ISyncAccountStore
 		SyncChanged?.Invoke();
 	}
 
+	/// <summary>What turning on sync stored in keys.bin; null before. No Hello.</summary>
+	public VaultSyncKeys? SyncKeys
+	{
+		get
+		{
+			lock (_gate) return _keys?.Sync;
+		}
+	}
+
+	/// <summary>
+	/// The vault's ID and both keys unsealed, for sync to wrap them: asks Hello unless the secret key is held, and on a vault with no
+	/// keys yet makes them, with that one Hello call. The caller disposes it.
+	/// </summary>
+	public async Task<VaultKeyMaterial> KeyMaterialAsync()
+	{
+		RequireHello();
+		var (keys, secretKey) = await SecretKeyForWriteAsync();
+		try
+		{
+			return new VaultKeyMaterial(keys.VaultId, keys.IndexKey(_cipher), secretKey);
+		}
+		catch
+		{
+			CryptographicOperations.ZeroMemory(secretKey);
+			throw;
+		}
+	}
+
+	/// <summary>Stores what turning on sync made, or a password change re-wrapped, in keys.bin beside the keys. On disk when it returns.</summary>
+	public void SaveSyncKeys(VaultSyncKeys sync)
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			var next = Keys().WithSync(sync);
+			next.Save(KeysFile);
+			_keys = next;
+		}
+		SyncChanged?.Invoke();
+	}
+
+	/// <summary>The person confirmed they saved the recovery key, so Settings stops asking.</summary>
+	public void ConfirmRecoverySaved()
+	{
+		lock (_gate)
+		{
+			var sync = _keys?.Sync ?? throw new SyncNotOnException();
+			RequireOpen();
+			var next = _keys.WithSync(sync with { RecoveryConfirmed = true });
+			next.Save(KeysFile);
+			_keys = next;
+		}
+		SyncChanged?.Invoke();
+	}
+
+	/// <summary>The recovery key, unsealed with the secret key: asks Hello unless it is held (Ruling 44). A cancelled Hello reveals nothing.</summary>
+	public async Task<string> RecoveryKeyAsync()
+	{
+		var sync = SyncKeys ?? throw new SyncNotOnException();
+		RequireHello();
+		var keys = Keys();
+		var secretKey = await SecretKeyAsync(keys);
+		try
+		{
+			return RecoverySeal.Open(secretKey, keys.VaultId, sync.SealedRecoveryKey);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(secretKey);
+		}
+	}
+
+	/// <summary>Sync sent these: each queued change for one of their items, at or below the version sent, leaves the queue.</summary>
+	public void Dequeue(IReadOnlyList<QueuedChange> sent)
+	{
+		var versions = sent.ToDictionary(c => c.ItemId, c => c.Version, StringComparer.Ordinal);
+		lock (_gate)
+		{
+			RequireOpen();
+			List<QueuedChange> left = [.. _queued.Where(c => !versions.TryGetValue(c.ItemId, out var version) || c.Version > version)];
+			WriteSyncFile(left, _syncAccount, _syncSignedOut);
+			_queued.Clear();
+			_queued.AddRange(left);
+		}
+	}
+
 	/// <summary>Under <c>_gate</c>.</summary>
 	private void WriteSyncFile(IReadOnlyList<QueuedChange> queued, SyncAccountFile? account, bool signedOut) =>
 		JsonFiles.WriteAllBytesAtomic(SyncFile, JsonSerializer.SerializeToUtf8Bytes(new SyncFileContent(Format, queued, account, signedOut), VaultJson.Options));

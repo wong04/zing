@@ -43,6 +43,22 @@ internal sealed class LocalSyncServer : WebApplicationFactory<ZingServer::Progra
 		builder.UseContentRoot(_dbDir);
 	}
 
+	/// <summary>Every byte of the server's database as it is on disk, its write-ahead log included: what someone who stole it would have.</summary>
+	public byte[] StoredBytes()
+	{
+		var db = Path.Combine(_dbDir, "zing.db");
+		return [.. Read(db), .. Read(db + "-wal")];
+
+		static byte[] Read(string path)
+		{
+			if (!File.Exists(path)) return [];
+			using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+			using var copy = new MemoryStream();
+			file.CopyTo(copy);
+			return copy.ToArray();
+		}
+	}
+
 	/// <summary>An ID token from the fake issuer, as e2e's stand-in for Google gets one.</summary>
 	public async Task<string> MintIdTokenAsync(string sub = AllowedSub, string email = Email)
 	{
