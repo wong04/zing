@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { SyncState } from '@shared/vault/vault'
-import { syncBanner } from './syncBanner'
+import { syncBanner, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
 
 const on = (patch: Partial<Extract<SyncState, { signedIn: true }>> = {}): SyncState => ({ signedIn: true, email: 'ada@example.test', on: true, recoveryPending: false, unsent: 0, ...patch })
+
+describe('UPLOAD_LOCAL_CONFIRM', () => {
+	it('warns that the upload can bring back logins deleted on another PC (Ruling 60)', () => {
+		expect(UPLOAD_LOCAL_CONFIRM).toContain('It can bring back logins deleted on another PC.')
+	})
+})
 
 describe('syncBanner', () => {
 	it('offers Upload this PC’s copy after a rollback and after a held-back login', () => {

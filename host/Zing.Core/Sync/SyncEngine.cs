@@ -388,7 +388,7 @@ public sealed class SyncEngine : IDisposable
 			foreach (var batch in unsent.Chunk(SyncKeys.PushBatch))
 			{
 				var pushed = await _client.PostChangesAsync([.. batch.Select(SyncWire.Push)], cancellation, asUser: user);
-				SyncWire.CheckPushAnswer(pushed);
+				SyncWire.CheckPushAnswer([.. batch.Select(u => u.Record.ItemId)], pushed);
 				RollbackGuard.CheckAccepted(_vault.SyncProgressFor(user).RevisionFloor, pushed.Accepted);
 				_vault.MarkPushed(user, [.. batch.Select(u => u.Record)], pushed.Accepted);
 				_vault.ApplyConflicts(user, batch, pushed.Conflicts);

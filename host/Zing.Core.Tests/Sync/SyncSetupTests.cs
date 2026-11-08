@@ -556,6 +556,38 @@ public sealed class SyncSetupTests : IDisposable
 		Assert.Null(_vault.SyncKeys);
 	}
 
+	/// <summary>The turn-on upload's answers are checked as a sync's are (O5, Ruling 60): a conflict for an item not sent, or one sent twice.</summary>
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task ATurnOnUploadAnswerWithAConflictItCannotHaveIsAProtocolError(bool twiceForASentItem)
+	{
+		var account = Account(Strong);
+		await _vault.SaveAsync(new NewLogin("https://bank.example.test", "ada", "pw", "Bank", ""));
+		var record = _vault.Records.Single();
+		await SignInToSync();
+		_server.Wire.Rewrite = (line, body) =>
+		{
+			if (line != "POST /changes") return body;
+			var answer = JsonNode.Parse(body)!;
+			var conflicts = answer["conflicts"]!.AsArray();
+			if (!twiceForASentItem)
+			{
+				conflicts.Add(JsonSerializer.SerializeToNode(new SyncItem("never-sent", 1, 5, false, [], [], []), SyncJson.Options));
+				return answer.ToJsonString();
+			}
+			// The sent item, as uploaded, moved from accepted to conflicts and listed twice.
+			var accepted = answer["accepted"]!.AsArray();
+			var revision = accepted.Single()!["revision"]!.GetValue<long>();
+			accepted.Clear();
+			var held = new SyncItem(record.ItemId, (int)record.Version, revision, record.Tombstone, record.Summary, record.Password, SyncWire.JoinHistory(record.History));
+			for (var i = 0; i < 2; i++) conflicts.Add(JsonSerializer.SerializeToNode(held, SyncJson.Options));
+			return answer.ToJsonString();
+		};
+
+		await Assert.ThrowsAsync<SyncProtocolException>(() => TurnOn(account));
+	}
+
 	[Fact]
 	public async Task EachUploadedBatchLeavesTheQueueAtOnce()
 	{

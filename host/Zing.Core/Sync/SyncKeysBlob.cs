@@ -294,19 +294,27 @@ public static class SyncWire
 	}
 
 	/// <summary>
-	/// A push answer as a push can use it (N1, Ruling 58): each item accepted once, and none both accepted and a conflict, since a
-	/// conflict for an item already marked as taken would be applied over its new base. Checked before anything is marked.
+	/// A push answer as a push can use it (N1, Ruling 58; O5, Ruling 60): each item in it was sent, is accepted or a conflict once, and
+	/// is never both, since a conflict for an item already marked as taken would be applied over its new base. Checked before anything
+	/// is marked, by a sync's push and by the turn-on upload alike.
 	/// </summary>
 	/// <exception cref="SyncProtocolException">The answer breaks one of those.</exception>
-	public static void CheckPushAnswer(SyncPushResult pushed)
+	public static void CheckPushAnswer(IReadOnlyCollection<string> sent, SyncPushResult pushed)
 	{
+		var batch = sent.ToHashSet(StringComparer.Ordinal);
 		var accepted = new HashSet<string>(StringComparer.Ordinal);
 		foreach (var item in pushed.Accepted)
 		{
+			if (!batch.Contains(item.ItemId)) throw new SyncProtocolException($"The sync server took item {item.ItemId}, which wasn't sent");
 			if (!accepted.Add(item.ItemId)) throw new SyncProtocolException($"The sync server took item {item.ItemId} twice in one answer");
 		}
-		var both = pushed.Conflicts.FirstOrDefault(c => accepted.Contains(c.ItemId));
-		if (both is not null) throw new SyncProtocolException($"The sync server both took item {both.ItemId} and sent a conflict for it");
+		var conflicts = new HashSet<string>(StringComparer.Ordinal);
+		foreach (var conflict in pushed.Conflicts)
+		{
+			if (!batch.Contains(conflict.ItemId)) throw new SyncProtocolException($"The sync server sent a conflict for item {conflict.ItemId}, which wasn't sent");
+			if (accepted.Contains(conflict.ItemId)) throw new SyncProtocolException($"The sync server both took item {conflict.ItemId} and sent a conflict for it");
+			if (!conflicts.Add(conflict.ItemId)) throw new SyncProtocolException($"The sync server sent two conflicts for item {conflict.ItemId}");
+		}
 	}
 
 	/// <summary>Each old password's ciphertext as a big-endian uint32 length then its bytes, newest first.</summary>

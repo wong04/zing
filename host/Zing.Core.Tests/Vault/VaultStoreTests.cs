@@ -547,6 +547,8 @@ public sealed class VaultStoreTests : IDisposable
 		"""{"format":1,"queued":null}""",
 		"""{"format":1,"queued":[null]}""",
 		"""{"format":1,"queued":[{"version":1}]}""",
+		// A manifest hash that isn't a SHA-256 (O4, Ruling 60): unreadable, not a rollback at the next sync.
+		"""{"format":1,"queued":[],"progress":{"userId":"u","cursor":0,"revisionFloor":0,"manifestFloor":1,"manifestHash":"AAAA"}}""",
 	];
 
 	[Theory]

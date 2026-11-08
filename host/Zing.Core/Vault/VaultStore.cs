@@ -955,6 +955,9 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 			throw new InvalidDataException($"{path} has a sync account without its user, email or refresh token");
 		if (file.Progress is { } progress && (string.IsNullOrEmpty(progress.UserId) || progress.Cursor < 0 || progress.RevisionFloor < 0 || progress.ManifestFloor < 0))
 			throw new InvalidDataException($"{path} has sync progress without its user, or with a negative revision");
+		// A wrong-length hash would read as a rollback at the next sync, so it's an unreadable file instead (O4, Ruling 60).
+		if (file.Progress?.ManifestHash is { } hash && hash.Length != SHA256.HashSizeInBytes)
+			throw new InvalidDataException($"{path} has a manifest hash of {hash.Length} bytes, not a SHA-256");
 		return ([.. file.Queued], file.Account, file.SignedOut, file.Progress);
 	}
 
