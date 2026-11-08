@@ -18,6 +18,11 @@ public sealed class HostedView
 	private static readonly Native.WndProc ChildProc = Native.DefWindowProcW;
 	private static readonly Native.WndProc PopupProc = OnPopupMessage;
 	private static bool _registered;
+	/// <summary>
+	/// Overlay hosts inside their own destruction. Closing a window destroys its owned popups first, and the engine can end a
+	/// view's start (E_ABORT) from inside that, while the popup is still a window and the window doesn't count as closed yet.
+	/// </summary>
+	private static readonly HashSet<nint> Destroying = [];
 
 	private readonly HostWindow _window;
 	private readonly nint _hwnd;
@@ -89,7 +94,7 @@ public sealed class HostedView
 		}
 		// Closing a window destroys its owned popups before the window's own WM_DESTROY, so an overlay still
 		// starting is aborted (E_ABORT) while the window doesn't count as closed yet: its own window is gone, though.
-		catch (COMException) when (window.IsClosed || scope.IsClosed || !Native.IsWindow(hwnd))
+		catch (COMException) when (window.IsClosed || scope.IsClosed || !Native.IsWindow(hwnd) || Destroying.Contains(hwnd))
 		{
 			tracked.Dispose();
 			throw new ViewGoneException(name);
@@ -248,7 +253,9 @@ public sealed class HostedView
 	/// </summary>
 	private static nint OnPopupMessage(nint hwnd, uint msg, nint wParam, nint lParam)
 	{
-		const uint WM_SYSCOMMAND = 0x0112, GW_OWNER = 4;
+		const uint WM_DESTROY = 0x0002, WM_NCDESTROY = 0x0082, WM_SYSCOMMAND = 0x0112, GW_OWNER = 4;
+		if (msg == WM_DESTROY) Destroying.Add(hwnd);
+		if (msg == WM_NCDESTROY) Destroying.Remove(hwnd);
 		if (msg != WM_SYSCOMMAND) return Native.DefWindowProcW(hwnd, msg, wParam, lParam);
 		return Native.SendMessageW(Native.GetWindow(hwnd, GW_OWNER), msg, wParam, lParam);
 	}
