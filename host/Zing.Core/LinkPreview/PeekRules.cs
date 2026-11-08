@@ -38,7 +38,8 @@ public static class PeekRules
 	{
 		if (!settings.Enabled || request.FromPreview) return PeekVerdict.Normal;
 		if (!TryHttp(request.From, out var from)) return PeekVerdict.Normal;
-		if (request.Trigger == LinkTrigger.NewWindow && request.To == "about:blank") return PeekVerdict.Undecided;
+		// A blank window is held until it shows where it goes, but only when it could become a preview at all.
+		if (request.Trigger == LinkTrigger.NewWindow && request.To == "about:blank") return NewWindowMayPreview(request, settings) ? PeekVerdict.Undecided : PeekVerdict.Normal;
 
 		var to = Unwrap(request.To);
 		if (!TryHttp(to, out var target)) return PeekVerdict.Normal;
@@ -47,10 +48,9 @@ public static class PeekRules
 
 		if (request.Trigger == LinkTrigger.NewWindow)
 		{
-			var m = request.Modifiers;
-			if (m.Ctrl || m.Middle || request.HasPopupFeatures) return PeekVerdict.Normal;
-			if (m.Shift) return settings.ShiftClick ? PeekVerdict.Preview : PeekVerdict.Normal;
-			if (!settings.FromNewWindows) return PeekVerdict.Normal;
+			if (!NewWindowMayPreview(request, settings)) return PeekVerdict.Normal;
+			// Decision 3: Shift previews whatever the host.
+			if (request.Modifiers.Shift) return PeekVerdict.Preview;
 		}
 		else if (request.Cause != NavigationCause.AnchorClick)
 		{
@@ -59,6 +59,14 @@ public static class PeekRules
 
 		if (IsSearchResults(from)) return PeekVerdict.Normal;
 		return SameHost(from, target) ? PeekVerdict.Normal : PeekVerdict.Preview;
+	}
+
+	/// <summary>Ctrl, middle click and popup features keep a new window a tab; otherwise Shift needs its setting, and the rest need FromNewWindows.</summary>
+	private static bool NewWindowMayPreview(LinkRequest request, PeekSettings settings)
+	{
+		var m = request.Modifiers;
+		if (m.Ctrl || m.Middle || request.HasPopupFeatures) return false;
+		return m.Shift ? settings.ShiftClick : settings.FromNewWindows;
 	}
 
 	/// <summary>google.com/url?q=… and ?url=… give their target; anything else is returned unchanged.</summary>

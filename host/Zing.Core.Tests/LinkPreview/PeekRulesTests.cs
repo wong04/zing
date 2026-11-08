@@ -34,6 +34,12 @@ public class PeekRulesTests
 		Add("new window middle", Window(Gmail, Docs, new(false, false, true)), PeekVerdict.Normal);
 		Add("new window popup features", Window(Gmail, Docs, popup: true), PeekVerdict.Normal);
 		Add("new window about:blank", Window(Gmail, "about:blank"), PeekVerdict.Undecided);
+		Add("about:blank ctrl", Window(Gmail, "about:blank", new(false, true, false)), PeekVerdict.Normal);
+		Add("about:blank middle", Window(Gmail, "about:blank", new(false, false, true)), PeekVerdict.Normal);
+		Add("about:blank popup features", Window(Gmail, "about:blank", popup: true), PeekVerdict.Normal);
+		Add("about:blank new windows off", Window(Gmail, "about:blank"), PeekVerdict.Normal, new(true, true, false));
+		Add("about:blank shift, new windows off", Window(Gmail, "about:blank", new(true, false, false)), PeekVerdict.Undecided, new(true, true, false));
+		Add("about:blank shift off", Window(Gmail, "about:blank", new(true, false, false)), PeekVerdict.Normal, new(true, false, true));
 		Add("new windows off", Window(Gmail, Docs), PeekVerdict.Normal, new(true, true, false));
 		Add("disabled", Click(Gmail, Docs), PeekVerdict.Normal, new(false, true, true));
 		Add("disabled shift", Click(Gmail, Docs, new(true, false, false)), PeekVerdict.Normal, new(false, true, true));

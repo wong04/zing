@@ -614,7 +614,7 @@ public sealed class TabPreviewServiceTests
 	}
 
 	[Fact]
-	public void PendingPopupThatNeverNavigatesIsDropped()
+	public void PendingPopupIsClosedWithItsOpenersTab()
 	{
 		var (tab, page) = OpenSource();
 		var held = (FakePage)page.Events.Popup(Window("about:blank"));
@@ -625,13 +625,75 @@ public sealed class TabPreviewServiceTests
 		Assert.Equal(NavigationDecision.Allow, held.Events.Navigating("", "about:blank", NavigationCause.Other));
 		_tabs.Close(tab.Id);
 		Assert.True(held.Closed);
+		Assert.Equal(0, _scheduler.PendingCount);
+	}
 
-		var opener = _host.PageFor(_tabs, _tabs.Open("https://a.example/").Id);
-		var timed = (FakePage)opener.Events.Popup(Window("about:blank"));
-		_scheduler.Advance(TimeSpan.FromSeconds(9));
-		Assert.False(timed.Closed);
-		_scheduler.Advance(TimeSpan.FromSeconds(1));
-		Assert.True(timed.Closed);
+	[Fact]
+	public void PendingPopupThatNeverNavigatesBecomesATabAfterASecond()
+	{
+		var (tab, page) = OpenSource();
+		var held = (FakePage)page.Events.Popup(Window("about:blank"));
+		_scheduler.Advance(TimeSpan.FromMilliseconds(999));
+		Assert.Single(_tabs.Records);
+		_scheduler.Advance(TimeSpan.FromMilliseconds(1));
+		Assert.Equal(2, _tabs.Records.Count);
+		var adopted = _tabs.Records[1];
+		Assert.Same(held, _tabs.PageOf(adopted.Id));
+		Assert.Equal(adopted.Id, _tabs.ActiveId);
+		Assert.False(held.Closed);
+		Assert.Empty(held.Calls);
+		// Now a tab's page: closing it goes back to the opener.
+		held.Events.Closed();
+		Assert.Equal(tab.Id, _tabs.ActiveId);
+	}
+
+	[Fact]
+	public void CtrlBlankWindowOpensABackgroundTabAtOnce()
+	{
+		var (tab, page) = OpenSource();
+		var popup = page.Events.Popup(Window("about:blank", new Modifiers(Shift: false, Ctrl: true, Middle: false)));
+		Assert.Equal(2, _tabs.Records.Count);
+		Assert.Same(popup, _tabs.PageOf(_tabs.Records[1].Id));
+		Assert.Equal(tab.Id, _tabs.ActiveId);
+		Assert.Equal(0, _scheduler.PendingCount);
+	}
+
+	[Fact]
+	public void BlankWindowWithPopupFeaturesOpensATabAtOnce()
+	{
+		var (_, page) = OpenSource();
+		var popup = page.Events.Popup(Window("about:blank", features: true));
+		Assert.Equal(2, _tabs.Records.Count);
+		Assert.Same(popup, _tabs.PageOf(_tabs.ActiveId!));
+		Assert.Equal(0, _scheduler.PendingCount);
+	}
+
+	[Fact]
+	public void NoticesAndLoadFailuresInAPreviewAreReportedThroughTheSourceTab()
+	{
+		var notices = new List<string>();
+		var failures = new List<string>();
+		var tabs = new TabService(new TabStore(Deterministic.Clock(), Deterministic.Ids()), _host, "about:blank", () => { }, (tab, d) => failures.Add($"{tab.Id}: {d}"), pageNotice: (tab, text) => notices.Add($"{tab.Id}: {text}"), peekSettings: () => _settings);
+		var source = tabs.Open("https://a.example/");
+		_host.PageFor(tabs, source.Id).Events.Navigating("https://a.example/", "https://b.example/", NavigationCause.AnchorClick);
+		var preview = (FakePage)tabs.Preview!.Top.Page;
+		preview.Events.Notice("refused");
+		preview.Events.LoadFailed("ERR_NAME_NOT_RESOLVED");
+		Assert.Equal([$"{source.Id}: refused"], notices);
+		Assert.Equal([$"{source.Id}: ERR_NAME_NOT_RESOLVED"], failures);
+	}
+
+	[Fact]
+	public void CrashedPopupLayerClosesAndCanBeReopened()
+	{
+		var (_, page) = OpenSource();
+		var preview = Peek(page);
+		var popup = (FakePage)preview.Events.Popup(Window("https://c.example/login"));
+		popup.Navigate("https://c.example/login");
+		popup.Events.Crashed(PageFault.Crashed);
+		Assert.True(popup.Closed);
+		Assert.Single(_tabs.Preview!.Layers);
+		Assert.Equal("https://c.example/login", _tabs.ReopenClosed()!.Url);
 	}
 
 	[Fact]

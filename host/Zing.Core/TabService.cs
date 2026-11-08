@@ -126,11 +126,11 @@ public sealed class TabService
 	private readonly Action<TabRecord, string> _pageNotice;
 	private readonly Func<PeekSettings>? _peekSettings;
 	private readonly IScheduler? _scheduler;
-	/// <summary>New windows held, hidden, until their first real document says whether they are a preview or a tab; each with its drop timer.</summary>
+	/// <summary>New windows held, hidden, until their first real document says whether they are a preview or a tab; each with its timer.</summary>
 	private readonly Dictionary<PendingPopup, IDisposable?> _pending = [];
 
-	/// <summary>How long a held new window may go without a real document before it is dropped.</summary>
-	private static readonly TimeSpan PendingPopupTimeout = TimeSpan.FromSeconds(10);
+	/// <summary>How long a held new window may go without a real document before it opens as a tab, as it did before previews.</summary>
+	private static readonly TimeSpan PendingPopupWait = TimeSpan.FromSeconds(1);
 
 	/// <summary>A page reported find results; the window's find bar decides whether they are for it.</summary>
 	public event Action<IPage, int, int>? FindResult;
@@ -613,8 +613,7 @@ public sealed class TabService
 		if (Preview is not { } session) return;
 		var layers = session.CloseAll();
 		Preview = null;
-		var bottom = layers[^1].Page;
-		_store.PushClosed(bottom.Url, string.IsNullOrEmpty(bottom.Title) ? TabStore.NewTabTitle : bottom.Title);
+		RememberClosed(layers[^1].Page);
 		_host.ShowPreview([]);
 		foreach (var layer in layers) layer.Page.Close();
 		PreviewChanged?.Invoke();
@@ -651,11 +650,17 @@ public sealed class TabService
 		return _store.Get(record.Id);
 	}
 
+	/// <summary>A preview page that goes away is offered on the reopen-closed stack as an ordinary tab (decision 7).</summary>
+	private void RememberClosed(IPage page) =>
+		_store.PushClosed(page.Url, string.IsNullOrEmpty(page.Title) ? TabStore.NewTabTitle : page.Title);
+
+	private int LayerIndexOf(IPage page) => Preview?.Layers.ToList().FindIndex(l => l.Page == page) ?? -1;
+
 	/// <summary>A preview layer's page closed itself: its layer goes, with any popups above it, or the whole preview if it was the page.</summary>
 	private void PreviewPageClosed(IPage page)
 	{
 		if (Preview is not { } session) return;
-		var index = session.Layers.ToList().FindIndex(l => l.Page == page);
+		var index = LayerIndexOf(page);
 		if (index < 0) return;
 		if (index == 0)
 		{
@@ -664,6 +669,16 @@ public sealed class TabService
 		}
 		while (session.Layers.Count > index) session.Pop().Page.Close();
 		ShowPreview();
+	}
+
+	/// <summary>
+	/// A preview has no Reload, so a layer whose renderer crashed closes like one that closed itself, and its address goes
+	/// onto the reopen-closed stack so Ctrl+Shift+T brings it back as a tab. (The bottom layer gets there through ClosePreview.)
+	/// </summary>
+	private void PreviewPageCrashed(IPage page)
+	{
+		if (LayerIndexOf(page) > 0) RememberClosed(page);
+		PreviewPageClosed(page);
 	}
 
 	/// <summary>A popup from a preview page stacks over the preview, so window.opener works (OAuth, payments).</summary>
@@ -678,38 +693,51 @@ public sealed class TabService
 
 	private IPage HoldPopup(string openerId, LinkRequest link)
 	{
-		var events = new PendingPageEvents(this, link.Modifiers);
+		var background = link.Modifiers.Ctrl || link.Modifiers.Middle;
+		var events = new PendingPageEvents(this, background);
 		var page = _host.Create(events);
 		var held = new PendingPopup(page, openerId, to => Verdict(openerId, link with { To = to }));
 		events.Held = held;
-		_pending[held] = _scheduler?.Schedule(PendingPopupTimeout, () => DropPending(held));
+		// A window that shows no real document soon (one a script writes into) is a tab, as before. With no scheduler it
+		// becomes a tab only on its first http(s) navigation.
+		_pending[held] = _scheduler?.Schedule(PendingPopupWait, () => SettleAsTab(held, link.To, background));
 		return page;
+	}
+
+	/// <summary>Stops holding the window; false when it was no longer held.</summary>
+	private bool Release(PendingPopup held)
+	{
+		if (!_pending.Remove(held, out var timer)) return false;
+		timer?.Dispose();
+		return true;
 	}
 
 	private void DropPending(PendingPopup held)
 	{
-		if (!_pending.Remove(held, out var timer)) return;
-		timer?.Dispose();
-		held.Page.Close();
+		if (Release(held)) held.Page.Close();
 	}
 
 	/// <summary>A held window's first real document decided it: it becomes a preview or a tab, and only then shows. Returns the page's new events.</summary>
-	private IPageEvents Settle(PendingPopup held, PeekVerdict verdict, string to, Modifiers modifiers)
+	private IPageEvents Settle(PendingPopup held, PeekVerdict verdict, string to, bool background) =>
+		verdict == PeekVerdict.Preview ? SettleAsPreview(held) : SettleAsTab(held, to, background);
+
+	private IPageEvents SettleAsPreview(PendingPopup held)
 	{
-		_pending.Remove(held, out var timer);
-		timer?.Dispose();
-		if (verdict == PeekVerdict.Preview)
-		{
-			var events = new PeekPageEvents(this, held.OpenerTabId) { Page = held.Page };
-			held.Page.Rebind(events);
-			StartPreview(held.OpenerTabId, held.Page);
-			return events;
-		}
-		var record = _store.AddAfter(held.OpenerTabId, to);
-		var tabEvents = new TabPageEvents(this, record.Id);
-		held.Page.Rebind(tabEvents);
-		Attach(record, held.Page, held.OpenerTabId, background: modifiers.Ctrl || modifiers.Middle);
-		return tabEvents;
+		Release(held);
+		var events = new PeekPageEvents(this, held.OpenerTabId) { Page = held.Page };
+		held.Page.Rebind(events);
+		StartPreview(held.OpenerTabId, held.Page);
+		return events;
+	}
+
+	private IPageEvents SettleAsTab(PendingPopup held, string url, bool background)
+	{
+		Release(held);
+		var record = _store.AddAfter(held.OpenerTabId, url);
+		var events = new TabPageEvents(this, record.Id);
+		held.Page.Rebind(events);
+		Attach(record, held.Page, held.OpenerTabId, background);
+		return events;
 	}
 
 	private sealed class TabPageEvents(TabService service, string id) : IPageEvents
@@ -822,7 +850,9 @@ public sealed class TabService
 		/// <summary>Links stay in the preview (no nested previews), inspected and cleaned as a tab's are.</summary>
 		public NavigationDecision Navigating(string from, string to, NavigationCause cause)
 		{
-			if (service._store.Has(sourceId) && service._intercept(sourceId, from, to) is { } decision) return decision;
+			// Inspection is keyed by the source tab, so without it the link can't be inspected: refuse rather than fail open.
+			if (!service._store.Has(sourceId)) return NavigationDecision.Cancel;
+			if (service._intercept(sourceId, from, to) is { } decision) return decision;
 			var clean = LinkCleaner.StripTrackers(to);
 			return clean == to ? NavigationDecision.Allow : new NavigationDecision.Redirect(clean);
 		}
@@ -831,19 +861,34 @@ public sealed class TabService
 		public void TitleChanged(string title) => service.PreviewChanged?.Invoke();
 		public void IconChanged(string? dataUrl) { }
 		public void StateChanged() { }
-		public void LoadFailed(string description) { }
+		/// <summary>Told about through the source tab, which is what the person is looking at under the preview.</summary>
+		public void LoadFailed(string description)
+		{
+			if (service._store.Has(sourceId)) service._loadFailed(service._store.Get(sourceId), description);
+		}
+
 		public void FindResult(int matches, int activeOrdinal) { }
 		public void Closed() => service.PreviewPageClosed(Own);
 		public void Focused() { }
 		public IPage Popup(PopupRequest request) => service.PushPopupLayer(Own);
-		public void Crashed(PageFault fault) { }
-		public void Notice(string text) { }
+
+		/// <summary>A crash closes the layer; a hang is left alone, since it may recover and a preview has no Reload to offer.</summary>
+		public void Crashed(PageFault fault)
+		{
+			if (fault == PageFault.Crashed) service.PreviewPageCrashed(Own);
+		}
+
+		public void Notice(string text)
+		{
+			if (service._store.Has(sourceId)) service._pageNotice(service._store.Get(sourceId), text);
+		}
+
 		public void Autofill(Uri frameSource, Vault.AutofillMessage message) { }
 	}
 
 	/// <summary>What a held new window reports until its first real document decides where it goes.</summary>
-	/// <param name="modifiers">The keys the window was opened with: a Ctrl- or middle-click tab stays in the background.</param>
-	private sealed class PendingPageEvents(TabService service, Modifiers modifiers) : IPageEvents
+	/// <param name="background">Whether the window, if it becomes a tab, stays behind the opener (Ctrl or middle click).</param>
+	private sealed class PendingPageEvents(TabService service, bool background) : IPageEvents
 	{
 		public PendingPopup? Held { get; set; }
 
@@ -853,7 +898,7 @@ public sealed class TabService
 		{
 			if (!service._pending.ContainsKey(Own)) return NavigationDecision.Cancel;
 			if (Own.Navigating(to) is not { } verdict) return NavigationDecision.Allow;
-			return service.Settle(Own, verdict, to, modifiers).Navigating(from, to, cause);
+			return service.Settle(Own, verdict, to, background).Navigating(from, to, cause);
 		}
 
 		public void Navigated(string url) { }
