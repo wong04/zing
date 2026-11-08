@@ -299,4 +299,96 @@ public sealed class ChromeApiTests : IDisposable
 		_settings.Set("sidebarPinned", false);
 		Assert.Equal(0, _api.Shell.PinnedWidth);
 	}
+
+	/// <summary>A cross-host link click on the active tab: it opens as a preview, whose page is returned.</summary>
+	private FakePage Peek()
+	{
+		ActivePage.Url = "https://a.example/";
+		Assert.Equal(NavigationDecision.Cancel, ActivePage.Events.Navigating("https://a.example/", "https://b.example/", Zing.Core.LinkPreview.NavigationCause.AnchorClick));
+		return (FakePage)_api.Tabs.Preview!.Top.Page;
+	}
+
+	private async Task<string> Status(string command) => Value(await Invoke("command:run", command)).GetProperty("status").GetString()!;
+
+	[Fact]
+	public async Task Peek_state_is_null_with_no_preview()
+	{
+		Assert.Equal(JsonValueKind.Undefined, Value(await Invoke("peek:get")).ValueKind);
+	}
+
+	[Fact]
+	public async Task Peek_state_names_the_top_layer_host_and_follows_its_navigations()
+	{
+		var preview = Peek();
+		var state = Value(await Invoke("peek:get"));
+		Assert.Equal("b.example", state.GetProperty("host").GetString());
+		Assert.True(state.GetProperty("canExpand").GetBoolean());
+		Assert.False(state.GetProperty("highContrast").GetBoolean());
+		preview.Url = "https://c.example/next";
+		preview.Events.Navigated(preview.Url);
+		var pushed = (ChromeApi.PeekState)_host.Pushed.Last(p => p.Channel == "peek:state").Payload!;
+		Assert.Equal("c.example", pushed.Host);
+	}
+
+	[Fact]
+	public async Task Peek_state_follows_high_contrast_and_a_popup_layer()
+	{
+		_host.HighContrast = true;
+		var preview = Peek();
+		preview.Events.Popup(new PopupRequest("https://login.example/", default, HasPopupFeatures: true));
+		var state = Value(await Invoke("peek:get"));
+		Assert.False(state.GetProperty("canExpand").GetBoolean());
+		Assert.True(state.GetProperty("highContrast").GetBoolean());
+	}
+
+	[Fact]
+	public void Closing_the_preview_pushes_null()
+	{
+		Peek();
+		_api.Tabs.ClosePreview();
+		Assert.Null(_host.Pushed.Last(p => p.Channel == "peek:state").Payload);
+	}
+
+	[Fact]
+	public async Task Preview_close_closes_the_top_layer()
+	{
+		var preview = Peek();
+		var popup = (FakePage)preview.Events.Popup(new PopupRequest("https://login.example/", default, HasPopupFeatures: true));
+		Assert.Equal("done", await Status("preview.close"));
+		Assert.True(popup.Closed);
+		Assert.Same(preview, _api.Tabs.Preview!.Top.Page);
+		Assert.Equal("done", await Status("preview.close"));
+		Assert.Null(_api.Tabs.Preview);
+	}
+
+	[Fact]
+	public async Task Preview_close_with_no_preview_is_not_applicable()
+	{
+		Assert.Equal("not-applicable", await Status("preview.close"));
+	}
+
+	[Fact]
+	public async Task Preview_expand_makes_the_preview_a_tab()
+	{
+		var preview = Peek();
+		Assert.Equal("done", await Status("preview.expand"));
+		Assert.Null(_api.Tabs.Preview);
+		Assert.Equal(2, _api.Tabs.Records.Count);
+		Assert.Same(preview, _api.Tabs.ActivePage);
+	}
+
+	[Fact]
+	public async Task Preview_expand_with_no_preview_is_not_applicable()
+	{
+		Assert.Equal("not-applicable", await Status("preview.expand"));
+	}
+
+	[Fact]
+	public async Task Preview_expand_under_a_popup_is_not_applicable()
+	{
+		var preview = Peek();
+		preview.Events.Popup(new PopupRequest("https://login.example/", default, HasPopupFeatures: true));
+		Assert.Equal("not-applicable", await Status("preview.expand"));
+		Assert.NotNull(_api.Tabs.Preview);
+	}
 }

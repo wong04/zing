@@ -47,6 +47,8 @@ export const COMMAND_IDS = [
 	'view.favouritesBar',
 	'view.sidebar',
 	'app.settings',
+	'preview.close',
+	'preview.expand',
 ] as const
 
 export type CommandId = (typeof COMMAND_IDS)[number]
@@ -113,6 +115,9 @@ export const COMMANDS: readonly CommandDefinition[] = [
 	{ id: 'view.favouritesBar', label: 'Toggle Favourites Bar', shortcuts: [ctrlShift('KeyB')] },
 	{ id: 'view.sidebar', label: 'Toggle Sidebar', shortcuts: [ctrl('KeyS'), ctrlShift('KeyS')] },
 	{ id: 'app.settings', label: 'Settings…', shortcuts: [ctrl('Comma')] },
+	// A link preview's buttons: close takes its top layer (Esc does too, routed by the host while a preview has the keyboard).
+	{ id: 'preview.close', label: 'Close Preview', shortcuts: [] },
+	{ id: 'preview.expand', label: 'Open Preview as Tab', shortcuts: [] },
 ]
 
 const BY_ID = new Map(COMMANDS.map((c) => [c.id, c]))

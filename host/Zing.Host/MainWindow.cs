@@ -31,6 +31,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private RendererView? _surface;
 	private NoticeLayer? _notices;
 	private PageUiLayer? _pageUi;
+	private PeekControlsLayer? _peekControls;
 	private CoveringLayer? _stacks;
 	private CoveringLayer? _overview;
 	private CoreWebView2Environment? _environment;
@@ -126,6 +127,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_stacks = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-stack", _layout.ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add, _overlays, OverlayLevel.StackDropdown);
 		_overview = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-overview", _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays, OverlayLevel.Overview);
 		_pageUi = new PageUiLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays);
+		_peekControls = new PeekControlsLayer(_window, _scope, _environment, _bridge, PreviewButtons, _renderers.Add, _overlays);
 		_bridge.Register("default-browser:open-settings", _ =>
 		{
 			Shell.OpenExternal("ms-settings:defaultapps");
@@ -286,6 +288,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		if (pages.Count == 0)
 		{
 			RemoveScrim();
+			_peekControls?.Changed(false);
 			// The source tab's page (or, after Expand, the new tab's) takes the keyboard back.
 			_window.DefaultFocus()?.Focus();
 			return;
@@ -297,6 +300,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		RaisePreview();
 		PlaceScrim();
 		if (_scrim is not null) _overlays.Show(OverlayLevel.PeekScrim);
+		_peekControls?.Changed(true);
 	}
 
 	public void FocusPreview()
@@ -309,7 +313,12 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	{
 		PlacePreviewPages();
 		PlaceScrim();
+		_peekControls?.Layout();
 	}
+
+	/// <summary>Where the preview's buttons go: beside its top layer. Null while there is no preview.</summary>
+	private Rect? PreviewButtons() =>
+		_preview.Count > 0 && _layout.PageRect() is { } area ? PeekLayout.Place(area, _preview.Count - 1).Buttons : null;
 
 	private void PlacePreviewPages()
 	{
@@ -461,6 +470,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	/// <summary>Nothing reveals itself over a fullscreen page: the cursor counts as away.</summary>
 	public Point? Cursor => _fullScreen ? null : _layout.Cursor;
+
+	public bool HighContrast => Native.HighContrastOn();
 
 	public void SurfaceRegionChanged(Rect? region)
 	{

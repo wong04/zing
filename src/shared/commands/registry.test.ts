@@ -62,8 +62,10 @@ describe('command registry', () => {
 		expect(COMMANDS.map((c) => c.id).sort()).toEqual([...COMMAND_IDS].sort())
 	})
 
-	it('gives every command at least one shortcut', () => {
-		for (const c of COMMANDS) expect(c.shortcuts.length, c.id).toBeGreaterThan(0)
+	it('gives every command at least one shortcut, but the preview buttons', () => {
+		// Closing a preview's top layer is Esc, which the host routes while a preview has the keyboard: page.stop owns Esc in the registry.
+		const buttonsOnly = new Set<string>(['preview.close', 'preview.expand'])
+		for (const c of COMMANDS) if (!buttonsOnly.has(c.id)) expect(c.shortcuts.length, c.id).toBeGreaterThan(0)
 	})
 
 	it('never binds one shortcut to two commands', () => {

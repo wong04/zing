@@ -179,6 +179,7 @@ public sealed class FakeWindowHost : IWindowHost
 	public ContentSize ContentSize { get; set; } = new(1280, 820);
 	public Point ContentOrigin => new(0, 0);
 	public Point? Cursor { get; set; }
+	public bool HighContrast { get; set; }
 	public List<Rect?> SurfaceRegions { get; } = [];
 	public void SurfaceRegionChanged(Rect? region) => SurfaceRegions.Add(region);
 

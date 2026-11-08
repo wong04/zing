@@ -32,6 +32,8 @@ public interface IWindowHost
 	Point ContentOrigin { get; }
 	/// <summary>The cursor over the content, or null when it is outside or Zing is not the focused app.</summary>
 	Point? Cursor { get; }
+	/// <summary>Whether Windows' high-contrast mode is on.</summary>
+	bool HighContrast { get; }
 	/// <summary>Where the surface view (settings sheet, account gate, sidebar, panels) goes; null hides it.</summary>
 	void SurfaceRegionChanged(Rect? region);
 	/// <summary>Shows a native menu at a point of the window content, in DIPs.</summary>
@@ -257,6 +259,8 @@ public sealed class ChromeApi : IDisposable
 			host.Push("pageui:state", state);
 			host.PageUiChanged(state);
 		};
+		// The host places and hides the buttons' view with the preview's pages; this is only what they show.
+		Tabs.PreviewChanged += () => host.Push("peek:state", Peek());
 
 		bridge.Register("tabs:get", _ => State());
 		bridge.Register("tabs:activate", args => Do(() => Tabs.Activate(Text(args, 0))));
@@ -388,6 +392,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
+		bridge.Register("peek:get", _ => Peek());
 		_watchedVault = app.Vaults.Current;
 		if (_watchedVault is { } vault) vault.Changed += PushVaultState;
 		app.Vaults.Changed += VaultSwitched;
@@ -518,6 +523,20 @@ public sealed class ChromeApi : IDisposable
 		Tabs.Destroy();
 	}
 
+	/// <summary>What a link preview's buttons show (src/shared/browser/peek.ts).</summary>
+	public sealed record PeekState(string Host, bool CanExpand, bool HighContrast);
+
+	/// <summary>The open preview's buttons, or null when there is none.</summary>
+	private PeekState? Peek() =>
+		Tabs.Preview is { } preview ? new PeekState(HostOf(preview.Top.Page.Url), preview.CanExpand, _host.HighContrast) : null;
+
+	/// <summary>The site a preview shows (a relayed page by the site it stands for); an address with no host, such as about:blank, as it is.</summary>
+	private static string HostOf(string url)
+	{
+		var web = Net.RelayedContent.ToWebAddress(url);
+		return Uri.TryCreate(web, UriKind.Absolute, out var uri) && uri.Host != "" ? uri.Host : web;
+	}
+
 	private sealed record Outcome(string Status);
 	private sealed record NotImplemented(string Label) { public string Status => "not-implemented"; }
 
@@ -562,6 +581,8 @@ public sealed class ChromeApi : IDisposable
 			"page.findNext" => Act(page is not null, () => Find.Step(FindDirection.Next)),
 			"page.findPrevious" => Act(page is not null, () => Find.Step(FindDirection.Previous)),
 			"page.stop" => Act(page is { IsLoading: true }, () => page!.Stop()),
+			"preview.close" => Act(Tabs.Preview is not null, Tabs.CloseTopLayer),
+			"preview.expand" => Act(Tabs.Preview is { CanExpand: true }, () => Tabs.ExpandPreview()),
 			_ => new NotImplemented(Commands.Get(command).Label),
 		};
 	}

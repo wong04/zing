@@ -3,6 +3,7 @@ import type { SessionKindName, ViewerOpened } from './convert/viewable'
 import type { EngineExit, EngineJobSpec, EngineOutput, FileKind, PickedFile } from './engines/engineJob'
 import type { AccountPickerState, FillOutcome, FindDirection, HistoryDirection, PageUiState, SaveAnswer, SaveOutcome } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
+import type { PeekState } from './browser/peek'
 import type { BrowserLibrary } from './library/library'
 import type { TabId, TabRecord } from './model/tab'
 import type { TabOrganization } from './browser/tabOrganizer'
@@ -247,6 +248,8 @@ export interface InvokeContract {
 	'pageui:picker-height': { args: [height: number]; result: void }
 	/** Esc in the picker: closes it and gives the keyboard back to the page. */
 	'pageui:picker-close': { args: []; result: void }
+	/** The link preview's buttons, or null when no preview is open. */
+	'peek:get': { args: []; result: PeekState | null }
 	'find:update': { args: [text: string]; result: void }
 	'find:step': { args: [direction: FindDirection]; result: void }
 	'find:close': { args: []; result: void }
@@ -444,6 +447,7 @@ export interface EventContract {
 	'overlay:notice': Notice | undefined
 	'pageui:state': PageUiState
 	'pageui:account-picker': AccountPickerState | null
+	'peek:state': PeekState | null
 	'library:state': LibraryViewState
 	'overlay:overview': OverviewState | undefined
 	'settings:changed': Settings
@@ -507,6 +511,8 @@ export interface ZingApi {
 	setAccountPickerHeight(height: number): Promise<void>
 	closeAccountPicker(): Promise<void>
 	onAccountPicker(listener: (state: AccountPickerState | null) => void): Unsubscribe
+	getPeek(): Promise<PeekState | null>
+	onPeek(listener: (state: PeekState | null) => void): Unsubscribe
 	updateFind(text: string): Promise<void>
 	stepFind(direction: FindDirection): Promise<void>
 	closeFind(): Promise<void>
