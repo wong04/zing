@@ -561,6 +561,12 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public bool InPreview(WebView2Page page) => _preview.Contains(page);
 
+	/// <summary>A preview layer is shown as soon as it is made, before its view exists, so it goes above the tab pages once that does.</summary>
+	public void ViewStarted(WebView2Page page)
+	{
+		if (_preview.Contains(page)) RaisePreview();
+	}
+
 	/// <summary>The page that may have the screen: the preview's top page while a preview is open, otherwise the shown one.</summary>
 	private WebView2Page? ScreenOwner => _preview.Count > 0 ? _preview[^1] : _shown;
 

@@ -341,6 +341,7 @@ public sealed class WebView2Page : IPage
 		}
 		_view.Visible = _visible;
 		_view.Place(_bounds);
+		_features.ViewStarted(this);
 		_core = _view.Core;
 		// A page is not Zing's UI. No host object is added, and the only page messages anything listens for are the autofill
 		// script's (OnPageMessage), and only while the vault is on: with it off, web messages stay off as belt and braces

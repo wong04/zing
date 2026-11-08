@@ -19,6 +19,8 @@ public interface IPageFeatureHost
 	bool AutofillOn { get; }
 	/// <summary>The page is a layer of the window's link preview.</summary>
 	bool InPreview(WebView2Page page);
+	/// <summary>The page's view now exists, placed and shown as asked: a raise asked for before then did nothing.</summary>
+	void ViewStarted(WebView2Page page);
 }
 
 /// <summary>
