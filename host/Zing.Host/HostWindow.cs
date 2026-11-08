@@ -15,6 +15,8 @@ public sealed class HostWindow
 	private static readonly Native.WndProc Proc = Dispatch;
 	private static readonly Dictionary<nint, HostWindow> Open = [];
 	private static nint _instance;
+	/// <summary>The window the mouse's raw input goes to (one per process), or 0; it reads the middle button for every window.</summary>
+	private static nint _rawMouseTarget;
 
 	private readonly List<HostedView> _views = [];
 	private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
@@ -34,6 +36,8 @@ public sealed class HostWindow
 		// can't be told still opens; the failure is reported, and the vault stops holding the key, so Hello asks every time.
 		_watchingSession = Native.WTSRegisterSessionNotification(Hwnd, Native.NOTIFY_FOR_THIS_SESSION);
 		if (!_watchingSession) SessionEvents.Instance.Unwatched(new NativeCallException("WTSRegisterSessionNotification"));
+		// An e2e run kept out of the way never reads the real mouse (AGENTS.md). Optional: a window that can't read it still opens.
+		if (_rawMouseTarget == 0 && !TestHooks.KeepsOutOfTheWay) TestHooks.Guard(() => ReadRawMouse(Hwnd), "middle button");
 		AppWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(Hwnd));
 		AppWindow.Resize(FitToScreen(width, height));
 		AppWindow.TitleBar.ExtendsContentIntoTitleBar = true;
@@ -42,6 +46,9 @@ public sealed class HostWindow
 	}
 
 	public nint Hwnd { get; }
+
+	/// <summary>The last middle press in this window, which the next new-window request reads (WebView2Page.HeldModifiers).</summary>
+	public Zing.Core.LinkPreview.MiddlePress MiddlePress { get; } = new();
 
 	/// <summary>Windows tells this window when it locks or the session switches.</summary>
 	private readonly bool _watchingSession;
@@ -189,14 +196,58 @@ public sealed class HostWindow
 			case Native.WM_WTSSESSION_CHANGE:
 				SessionEvents.Instance.Raise();
 				break;
+			case Native.WM_INPUT:
+				// Then DefWindowProc, which WM_INPUT needs to free the input.
+				TestHooks.Guard(() => RawMouse(lParam), "middle button");
+				break;
 			case Native.WM_DESTROY:
 				if (window._watchingSession && !Native.WTSUnRegisterSessionNotification(hwnd)) Faults.Warning("session notification", new NativeCallException("WTSUnRegisterSessionNotification"));
 				window.IsClosed = true;
 				Open.Remove(hwnd);
+				if (_rawMouseTarget == hwnd) TestHooks.Guard(MoveRawMouse, "middle button");
 				TestHooks.Guard(() => window.Destroyed?.Invoke(), "window destroyed");
 				return 0;
 		}
 		return Native.DefWindowProcW(hwnd, msg, wParam, lParam);
+	}
+
+	private static void ReadRawMouse(nint hwnd)
+	{
+		Native.ReadRawMouse(hwnd);
+		_rawMouseTarget = hwnd;
+	}
+
+	/// <summary>The window that read the raw mouse closed: another open one takes it over, else it stops.</summary>
+	private static void MoveRawMouse()
+	{
+		var next = Open.Keys.FirstOrDefault();
+		if (next != 0)
+		{
+			ReadRawMouse(next);
+			return;
+		}
+		_rawMouseTarget = 0;
+		Native.StopRawMouse();
+	}
+
+	/// <summary>
+	/// A middle press counts for the Zing window in front when it is over that window's client area: Chromium tells a page's
+	/// new-window request nothing of the button, and by the time it asks (on the release) the button is up.
+	/// </summary>
+	private static void RawMouse(nint rawInput)
+	{
+		if (!Native.IsRawMiddleDown(rawInput)) return;
+		if (!Open.TryGetValue(Native.GetAncestor(Native.GetForegroundWindow(), Native.GA_ROOTOWNER), out var window)) return;
+		if (!window.CursorInClient()) return;
+		window.MiddlePress.Pressed(Environment.TickCount64);
+	}
+
+	private bool CursorInClient()
+	{
+		if (!Native.GetCursorPos(out var cursor)) throw new NativeCallException("GetCursorPos");
+		if (!Native.ScreenToClient(Hwnd, ref cursor)) throw new NativeCallException("ScreenToClient");
+		Native.GetClientRect(Hwnd, out var client);
+		return cursor.X >= 0 && cursor.Y >= 0 && cursor.X < client.Right && cursor.Y < client.Bottom;
 	}
 
 	/// <summary>

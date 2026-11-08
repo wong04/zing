@@ -70,6 +70,7 @@ internal static class Native
 	public const uint WM_NCACTIVATE = 0x0086;
 	public const uint WM_DPICHANGED = 0x02E0;
 	public const uint WM_WTSSESSION_CHANGE = 0x02B1;
+	public const uint WM_INPUT = 0x00FF;
 
 	public const int NOTIFY_FOR_THIS_SESSION = 0;
 
@@ -218,6 +219,81 @@ internal static class Native
 
 	[DllImport("dwmapi.dll")]
 	public static extern int DwmSetWindowAttribute(nint hwnd, uint attribute, ref int value, int size);
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct RAWINPUTDEVICE
+	{
+		public ushort UsagePage;
+		public ushort Usage;
+		public uint Flags;
+		public nint Target;
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct RAWINPUTHEADER
+	{
+		public uint Type;
+		public uint Size;
+		public nint Device;
+		public nint WParam;
+	}
+
+	[DllImport("user32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	private static extern bool RegisterRawInputDevices(RAWINPUTDEVICE[] devices, uint count, uint size);
+
+	[DllImport("user32.dll", SetLastError = true)]
+	private static extern uint GetRawInputData(nint rawInput, uint command, byte[]? data, ref uint size, uint headerSize);
+
+	[DllImport("user32.dll")]
+	public static extern nint GetAncestor(nint hwnd, uint flags);
+
+	public const uint GA_ROOTOWNER = 3;
+
+	[DllImport("user32.dll")]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool ScreenToClient(nint hwnd, ref POINT point);
+
+	private const ushort HID_USAGE_PAGE_GENERIC = 0x01, HID_USAGE_GENERIC_MOUSE = 0x02;
+
+	/// <summary>Sends the mouse's raw input to <paramref name="hwnd"/> as WM_INPUT, also while another app is in front (RIDEV_INPUTSINK). One window per process gets it: a later call moves it.</summary>
+	public static void ReadRawMouse(nint hwnd)
+	{
+		const uint RIDEV_INPUTSINK = 0x00000100;
+		RegisterRawMouse(RIDEV_INPUTSINK, hwnd);
+	}
+
+	/// <summary>Stops the mouse's raw input to this process.</summary>
+	public static void StopRawMouse()
+	{
+		const uint RIDEV_REMOVE = 0x00000001;
+		RegisterRawMouse(RIDEV_REMOVE, 0);
+	}
+
+	private static void RegisterRawMouse(uint flags, nint hwnd)
+	{
+		var device = new RAWINPUTDEVICE { UsagePage = HID_USAGE_PAGE_GENERIC, Usage = HID_USAGE_GENERIC_MOUSE, Flags = flags, Target = hwnd };
+		if (!RegisterRawInputDevices([device], 1, (uint)Marshal.SizeOf<RAWINPUTDEVICE>())) throw new NativeCallException("RegisterRawInputDevices");
+	}
+
+	/// <summary>Whether a WM_INPUT's raw input (its lParam) is the mouse's middle button going down.</summary>
+	public static bool IsRawMiddleDown(nint rawInput)
+	{
+		const uint RID_INPUT = 0x10000003, RIM_TYPEMOUSE = 0, ReadFailed = uint.MaxValue;
+		const ushort RI_MOUSE_MIDDLE_BUTTON_DOWN = 0x0010;
+		var headerSize = (uint)Marshal.SizeOf<RAWINPUTHEADER>();
+		uint size = 0;
+		if (GetRawInputData(rawInput, RID_INPUT, null, ref size, headerSize) == ReadFailed) throw new NativeCallException("GetRawInputData");
+		// Every mouse move comes through here, so the buffer is kept rather than made each time.
+		if (RawInput.Length < size) RawInput = new byte[size];
+		if (GetRawInputData(rawInput, RID_INPUT, RawInput, ref size, headerSize) == ReadFailed) throw new NativeCallException("GetRawInputData");
+		if (BitConverter.ToUInt32(RawInput, 0) != RIM_TYPEMOUSE) return false;
+		// RAWMOUSE: usFlags (2 bytes), padding (2), then usButtonFlags.
+		const int ButtonFlagsOffset = 4;
+		return (BitConverter.ToUInt16(RawInput, (int)headerSize + ButtonFlagsOffset) & RI_MOUSE_MIDDLE_BUTTON_DOWN) != 0;
+	}
+
+	private static byte[] RawInput = [];
 
 	public static bool IsDown(int virtualKey) => (GetKeyState(virtualKey) & 0x8000) != 0;
 

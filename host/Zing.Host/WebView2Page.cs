@@ -49,10 +49,6 @@ public sealed class WebView2Page : IPage
 	private string? _mainFrameId;
 	/// <summary>The latest main-frame Page.frameRequestedNavigation: it arrives before NavigationStarting for the same address (spikes/link-preview, check C).</summary>
 	private (string Url, string Reason)? _lastReason;
-	/// <summary>When the link-report script last saw a trusted middle press on a link (Environment.TickCount64), until a new-window request uses it.</summary>
-	private long? _middlePressedAt;
-	/// <summary>Setting up the link reports (Wire); the page's first queued navigation waits for it, so its document gets the script.</summary>
-	private Task? _linkReports;
 
 	private static readonly Lazy<(string Script, string Css)> Reader = new(() =>
 	{
@@ -370,10 +366,7 @@ public sealed class WebView2Page : IPage
 		};
 
 		_core.WebMessageReceived += OnPageMessage;
-		// Before any queued navigation, so every document gets the scripts; they install themselves in the top frame only.
-		// The link reports are optional: waited for, but their failure is Background's to record, never the page's.
-		await Task.WhenAny(_linkReports!);
-		if (!IsOpen) return;
+		// Before any queued navigation, so every document gets the script; it installs itself in the top frame only.
 		await FollowAutofillAsync();
 		if (!IsOpen) return;
 
@@ -474,9 +467,6 @@ public sealed class WebView2Page : IPage
 	{
 		core.GetDevToolsProtocolEventReceiver("Page.frameRequestedNavigation").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => NavigationRequested(e.ParameterObjectAsJson), "navigation reason");
 		Background(ReadNavigationReasonsAsync(core), "navigation reasons");
-		core.GetDevToolsProtocolEventReceiver("Runtime.bindingCalled").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => BindingCalled(e.ParameterObjectAsJson), "link report");
-		_linkReports = ReportLinksAsync(core);
-		Background(_linkReports, "link reports");
 		core.NavigationStarting += (_, e) =>
 		{
 			// Decided here and now: NavigationStarting has no deferral, and the reason has already arrived.
@@ -585,32 +575,6 @@ public sealed class WebView2Page : IPage
 		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.enable", "{}").AsTask());
 		using var tree = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}").AsTask()));
 		_mainFrameId = tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("id").GetString();
-	}
-
-	/// <summary>
-	/// The link-report channel (LinkReports): a script in an isolated world, which page scripts can't reach, calls one binding
-	/// that only that world has. Runtime.enable stays on: in this engine no Runtime.bindingCalled arrives without it, nor after
-	/// a Runtime.disable that follows the binding. It is a known automation fingerprint, kept as the price of telling a middle
-	/// click apart.
-	/// </summary>
-	private async Task ReportLinksAsync(CoreWebView2 core)
-	{
-		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Runtime.enable", "{}").AsTask());
-		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Runtime.addBinding", System.Text.Json.JsonSerializer.Serialize(new { name = LinkReports.BindingName, executionContextName = LinkReports.WorldName })).AsTask());
-		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.addScriptToEvaluateOnNewDocument", System.Text.Json.JsonSerializer.Serialize(new { source = LinkReports.Script, worldName = LinkReports.WorldName })).AsTask());
-	}
-
-	private void BindingCalled(string json)
-	{
-		using var call = System.Text.Json.JsonDocument.Parse(json);
-		var root = call.RootElement;
-		if (root.GetProperty("name").GetString() != LinkReports.BindingName) return;
-		switch (LinkReports.Read(root.GetProperty("payload").GetString() ?? ""))
-		{
-			case LinkReportKind.Middle:
-				_middlePressedAt = Environment.TickCount64;
-				break;
-		}
 	}
 
 	private void NavigationRequested(string json)
@@ -871,15 +835,14 @@ public sealed class WebView2Page : IPage
 	/// <summary>
 	/// The keys and button that asked for a window: WebView2 says nothing of them. Shift and Ctrl are read as the event fires,
 	/// from the system (the input went to the engine's window, so this thread's key state can be stale); the middle button
-	/// from the link-report script's press (LinkReports), used once. An e2e run never reads the real keyboard (AGENTS.md): its tests
-	/// set the modifiers first (set-modifiers), which win over everything.
+	/// from the window's last middle press (HostWindow.MiddlePress, from Raw Input), used once. An e2e run never reads the real
+	/// input (AGENTS.md): its tests set the modifiers first (set-modifiers), which win over everything.
 	/// </summary>
 	private Modifiers HeldModifiers()
 	{
-		var middle = LinkReports.MiddleMade(_middlePressedAt, Environment.TickCount64);
-		_middlePressedAt = null;
+		var middle = _window.MiddlePress.Take(Environment.TickCount64);
 		if (TestHooks.TakeModifiers() is { } set) return set;
-		if (TestHooks.KeepsOutOfTheWay) return new Modifiers(false, false, middle);
+		if (TestHooks.KeepsOutOfTheWay) return default;
 		const int VK_SHIFT = 0x10, VK_CONTROL = 0x11;
 		return new Modifiers(Native.IsHeldNow(VK_SHIFT), Native.IsHeldNow(VK_CONTROL), middle);
 	}
