@@ -460,6 +460,73 @@ public sealed class ChromeApiTests : IDisposable
 		Assert.Equal(2, _api.Tabs.Records.Count);
 	}
 
+	[Theory]
+	[InlineData("history.back", "back")]
+	[InlineData("history.forward", "forward")]
+	[InlineData("page.reload", "reload")]
+	[InlineData("page.stop", "stop")]
+	[InlineData("page.print", "print")]
+	public async Task Page_commands_act_on_the_preview_not_the_tab_under_it(string command, string call)
+	{
+		var source = ActivePage;
+		source.CanGoBack = source.CanGoForward = source.IsLoading = true;
+		var preview = Peek();
+		preview.CanGoBack = preview.CanGoForward = preview.IsLoading = true;
+		Assert.Equal("done", await Status(command));
+		Assert.Contains(call, preview.Calls);
+		Assert.DoesNotContain(call, source.Calls);
+		Assert.Same(preview, _api.Tabs.Preview!.Top.Page);
+	}
+
+	[Fact]
+	public async Task Zoom_text_size_and_reader_act_on_the_preview()
+	{
+		var source = ActivePage;
+		var preview = Peek();
+		Assert.Equal("done", await Status("page.zoomIn"));
+		Assert.Equal("done", await Status("page.textBigger"));
+		Assert.Equal("done", await Status("page.reader"));
+		Assert.True(preview.Zoom > Zoom.Default);
+		Assert.True(preview.TextSize > TextSize.Default);
+		Assert.True(preview.InReader);
+		Assert.Equal((Zoom.Default, TextSize.Default, false), (source.Zoom, source.TextSize, source.InReader));
+		Assert.Equal("done", await Status("page.actualSize"));
+		Assert.Equal(Zoom.Default, preview.Zoom);
+	}
+
+	[Theory]
+	[InlineData("page.find")]
+	[InlineData("page.findNext")]
+	[InlineData("page.findPrevious")]
+	public async Task Find_is_not_applicable_while_a_preview_is_open(string command)
+	{
+		var source = ActivePage;
+		Peek();
+		Assert.Equal("not-applicable", await Status(command));
+		Assert.DoesNotContain(source.Calls, c => c.StartsWith("find", StringComparison.Ordinal));
+	}
+
+	[Fact]
+	public async Task A_preview_that_fails_to_load_is_named_by_its_own_address_and_offers_nothing()
+	{
+		// The tab under it is on an address that would get the offer: an offer here would be about a page that is fine.
+		Value(await Invoke("tabs:navigate", ActiveId, "https://source.test/"));
+		var preview = Peek();
+		preview.Events.LoadFailed("HostNameNotResolved");
+		Assert.Empty(_host.Offers);
+		Assert.Equal("Couldn't load https://b.example/ (HostNameNotResolved)", _host.Notices[^1]);
+	}
+
+	[Fact]
+	public async Task The_first_peek_state_names_the_links_host_before_its_page_has_an_address()
+	{
+		Value(await Invoke("tabs:navigate", ActiveId, "https://a.example/"));
+		ActivePage.Events.Popup(new PopupRequest("https://b.example/x", default, HasPopupFeatures: false));
+		Assert.NotNull(_api.Tabs.Preview);
+		var pushed = (ChromeApi.PeekState)_host.Pushed.Last(p => p.Channel == "peek:state").Payload!;
+		Assert.Equal("b.example", pushed.Host);
+	}
+
 	[Fact]
 	public void A_held_Esc_closes_one_layer_not_one_per_repeat()
 	{

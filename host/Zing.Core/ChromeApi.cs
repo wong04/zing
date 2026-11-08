@@ -261,6 +261,8 @@ public sealed class ChromeApi : IDisposable
 		};
 		// The host places and hides the buttons' view with the preview's pages; this is only what they show.
 		Tabs.PreviewChanged += () => host.Push("peek:state", Peek());
+		// Never an offer: that would act on the tab under the preview, whose page is fine.
+		Tabs.PreviewLoadFailed += (url, description) => host.Notify(CouldNotLoad(url, description));
 
 		bridge.Register("tabs:get", _ => State());
 		bridge.Register("tabs:activate", args => Do(() => Tabs.Activate(Text(args, 0))));
@@ -541,7 +543,7 @@ public sealed class ChromeApi : IDisposable
 
 	/// <summary>The open preview's buttons, or null when there is none.</summary>
 	private PeekState? Peek() =>
-		Tabs.Preview is { } preview ? new PeekState(HostOf(preview.Top.Page.Url), preview.CanExpand, _host.HighContrast) : null;
+		Tabs.Preview is { } preview ? new PeekState(HostOf(preview.Top.Address), preview.CanExpand, _host.HighContrast) : null;
 
 	/// <summary>The site a preview shows (a relayed page by the site it stands for); an address with no host, such as about:blank, as it is.</summary>
 	private static string HostOf(string url)
@@ -558,7 +560,10 @@ public sealed class ChromeApi : IDisposable
 
 	private object RunCommand(string command)
 	{
-		var page = Tabs.ActivePage;
+		// The page in front: an open preview's top page, never the tab hidden under it.
+		var page = Tabs.Preview?.Top.Page ?? Tabs.ActivePage;
+		// Find works on the active tab only (FindController), so it has nothing to search while a preview covers it.
+		var findable = Tabs.Preview is null && page is not null;
 		if (command.StartsWith("tab.select", StringComparison.Ordinal) && int.TryParse(command["tab.select".Length..], out var n)) return ActivateIfAny(Tabs.IdForShortcut(n));
 		return command switch
 		{
@@ -582,7 +587,7 @@ public sealed class ChromeApi : IDisposable
 			"history.forward" => Act(page is { CanGoForward: true }, () => page!.GoForward()),
 			"history.home" => Act(Tabs.ActiveId is not null, () => Tabs.Navigate(Tabs.ActiveId!, HomepageUrl())),
 			"page.reload" => Act(page is not null, () => page!.Reload()),
-			"page.find" => Act(page is not null, Find.Open),
+			"page.find" => Act(findable, Find.Open),
 			"page.print" => Act(page is not null, () => page!.Print()),
 			"page.reader" => Act(page is not null, () => ToggleReader(page!)),
 			"tabs.overview" => Act(true, () => _host.Background(Overview.ToggleAsync(), "tab overview")),
@@ -591,8 +596,8 @@ public sealed class ChromeApi : IDisposable
 			"page.zoomIn" => Act(page is not null, () => page!.Zoom = Zoom.In(page.Zoom)),
 			"page.zoomOut" => Act(page is not null, () => page!.Zoom = Zoom.Out(page.Zoom)),
 			"page.actualSize" => Act(page is not null, () => page!.Zoom = Zoom.Default),
-			"page.findNext" => Act(page is not null, () => Find.Step(FindDirection.Next)),
-			"page.findPrevious" => Act(page is not null, () => Find.Step(FindDirection.Previous)),
+			"page.findNext" => Act(findable, () => Find.Step(FindDirection.Next)),
+			"page.findPrevious" => Act(findable, () => Find.Step(FindDirection.Previous)),
 			"page.stop" => Act(page is { IsLoading: true }, () => page!.Stop()),
 			"preview.close" => Act(Tabs.Preview is not null, Tabs.CloseTopLayer),
 			"preview.expand" => Act(Tabs.Preview is { CanExpand: true }, () => Tabs.ExpandPreview()),
@@ -990,7 +995,7 @@ public sealed class ChromeApi : IDisposable
 		// An offer for a page you aren't looking at would be about something else than what is on screen.
 		if (tab.Id != Tabs.ActiveId || LoadFailureOffer.For(tab.Url, description) is not { } address)
 		{
-			_host.Notify($"Couldn't load {tab.Url} ({description})");
+			_host.Notify(CouldNotLoad(tab.Url, description));
 			return;
 		}
 		_offered = address;
@@ -998,6 +1003,8 @@ public sealed class ChromeApi : IDisposable
 		Shell.OfferedAddress = address;
 		_host.OfferUnblock(address);
 	}
+
+	private static string CouldNotLoad(string url, string description) => $"Couldn't load {url} ({description})";
 
 	/// <summary>A click on one of the offer's buttons: the tool opens with the address filled in, and nothing starts until a click there.</summary>
 	private OpenPanelOutcome ChooseOffer(string tool)
