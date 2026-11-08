@@ -9,7 +9,7 @@ public class PeekSessionTests
 	private static PeekSession WithLayers(int count)
 	{
 		var session = new PeekSession("tab");
-		for (var i = 0; i < count; i++) session.Push(NewPage(), false);
+		for (var i = 0; i < count; i++) session.Push(NewPage(), false, "https://a.test/");
 		return session;
 	}
 
@@ -17,7 +17,7 @@ public class PeekSessionTests
 	public void PushingPopupsAboveTheCapIsAllowed()
 	{
 		var session = WithLayers(PeekSession.LayerCap);
-		session.Push(NewPage(), true);
+		session.Push(NewPage(), true, "https://a.test/");
 		Assert.Equal(PeekSession.LayerCap + 1, session.Layers.Count);
 	}
 
@@ -25,7 +25,7 @@ public class PeekSessionTests
 	public void PushingAPageAboveTheCapThrows()
 	{
 		var session = WithLayers(PeekSession.LayerCap);
-		Assert.Throws<PeekLayerCapException>(() => session.Push(NewPage(), false));
+		Assert.Throws<PeekLayerCapException>(() => session.Push(NewPage(), false, "https://a.test/"));
 	}
 
 	[Fact]
@@ -33,7 +33,7 @@ public class PeekSessionTests
 	{
 		var session = WithLayers(1);
 		Assert.True(session.CanExpand);
-		session.Push(NewPage(), true);
+		session.Push(NewPage(), true, "https://a.test/");
 		Assert.False(session.CanExpand);
 	}
 

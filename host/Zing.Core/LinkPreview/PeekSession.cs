@@ -1,6 +1,11 @@
 namespace Zing.Core.LinkPreview;
 
-public sealed record PeekLayer(IPage Page, bool IsPopup);
+/// <param name="Url">The address the layer was opened for, which its page may not have committed yet.</param>
+public sealed record PeekLayer(IPage Page, bool IsPopup, string Url)
+{
+	/// <summary>Where the layer is: its page's address once it has a document, the one it was opened for until then.</summary>
+	public string Address => Page.Url is "" or "about:blank" ? Url : Page.Url;
+}
 
 public sealed class PeekLayerCapException() : Exception($"A preview holds at most {PeekSession.LayerCap} layers");
 
@@ -21,10 +26,10 @@ public sealed class PeekSession(string sourceTabId)
 	public bool CanExpand => !Top.IsPopup;
 
 	/// <summary>Popups are exempt from the cap: they are the page's own window, not a link the user chose to follow.</summary>
-	public void Push(IPage page, bool isPopup)
+	public void Push(IPage page, bool isPopup, string url)
 	{
 		if (!isPopup && _layers.Count >= LayerCap) throw new PeekLayerCapException();
-		_layers.Add(new PeekLayer(page, isPopup));
+		_layers.Add(new PeekLayer(page, isPopup, url));
 	}
 
 	public PeekLayer Pop()
