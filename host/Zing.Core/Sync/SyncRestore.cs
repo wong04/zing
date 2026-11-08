@@ -14,6 +14,13 @@ public sealed class WrongRecoveryKeyException()
 public sealed class SyncRestoreWouldReplaceLoginsException(int logins)
 	: Exception($"This PC already has {logins} saved passwords that aren't the synced ones, so Zing didn't restore over them. Export them first, then turn the password vault off and on to start empty.");
 
+/// <summary>
+/// Restoring on a PC whose Zing account doesn't sync with the signed-in Google account (I1): only the forgotten-password case, keys.bin
+/// holding this Google account's keys for the same vault, may give an existing account a password from sync.
+/// </summary>
+public sealed class SyncRestoreOverAnotherAccountException()
+	: Exception("This PC's Zing account doesn't sync with that Google account, so Zing didn't restore over it. Sign in with this PC's Zing password instead.");
+
 /// <summary>A new password after recovery asked for when no recovery key restore is waiting for one.</summary>
 public sealed class SyncNoNewPasswordNeededException()
 	: Exception("Zing isn't waiting for a new password: restore from sync with your recovery key first.");
@@ -29,104 +36,136 @@ public sealed class SyncNoPasswordChangedElsewhereException()
 /// <summary>
 /// A new PC, or a forgotten password, restored from sync (spec, New PC or recovery): the wrapped keys are downloaded and unwrapped with
 /// the Zing password or the recovery key, sealed on this PC (DPAPI, and Windows Hello for the secret key), and the local account is
-/// made from the synced profile, or, when this PC has one already, given the password. The logins then come with the next sync. A
-/// recovery key restore is finished by <see cref="ChangePasswordAfterRecoveryAsync"/>, which wraps the keys under the new password and
-/// fresh Argon2id parameters; until then there's no account password to set. Every step runs under the vault's key lock.
+/// made from the synced profile, or, when this PC has one already, given the password. The logins then come with the next sync.
+/// Nothing on this PC changes until the keys have opened (Task 14 review, M3 and M4): the vault is asked for only then, and a recovery
+/// key restore keeps what it opened in memory until <see cref="ChangePasswordAfterRecoveryAsync"/>, which wraps the keys under the new
+/// password and fresh Argon2id parameters and only then writes keys.bin. A PC that has an account takes a restore only for the Google
+/// account and vault its keys.bin already syncs (I1). Every write runs under the vault's key lock.
 /// </summary>
-/// <param name="client">The vault's one client (Rulings 49-51).</param>
-public sealed class SyncRestore(AccountStore account, VaultStore vault, SyncClient client)
+/// <param name="vault">The vault, opened when the restore is about to write it: the caller turns it on then if it's off.</param>
+/// <param name="client">A client signed in as <paramref name="signIn"/> holds.</param>
+/// <param name="signIn">The Google sign-in to restore for. The caller keeps it in the vault's sync.json once the restore succeeds.</param>
+public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, SyncClient client, ISyncAccountStore signIn)
 {
-	/// <summary>The recovery key and the profile a recovery key restore opened, kept for the new password; null otherwise.</summary>
-	private (string RecoveryKey, AccountProfile Profile)? _recovered;
+	/// <summary>What a recovery key opened: the server's keys as they were, the key and the profile; null otherwise.</summary>
+	private sealed record Recovered(string UserId, VersionedBlob Server, string RecoveryKey, AccountProfile Profile);
+
+	private Recovered? _recovered;
 
 	/// <summary>A recovery key restore is waiting for <see cref="ChangePasswordAfterRecoveryAsync"/>.</summary>
 	public bool MustSetNewPassword => _recovered is not null;
 
 	/// <exception cref="AccountException">WrongPassword for a password that doesn't open the synced keys, or a password this PC's account can't take.</exception>
-	/// <exception cref="NotSignedInToSyncException">This PC isn't signed in to sync.</exception>
+	/// <exception cref="NotSignedInToSyncException">There's no Google sign-in to restore for.</exception>
 	/// <exception cref="SyncNothingToRestoreException">The Google account syncs no vault.</exception>
+	/// <exception cref="SyncKeysFormatException">The server's keys aren't Zing's, or were written for another version than they're served at.</exception>
+	/// <exception cref="SyncRestoreOverAnotherAccountException">This PC's account syncs with another Google account or vault, or not at all.</exception>
 	/// <exception cref="SyncRestoreWouldReplaceLoginsException">This PC holds other logins.</exception>
 	public async Task RestoreWithPasswordAsync(string password, CancellationToken cancellation = default)
 	{
-		using var gate = await SyncKeys.EnterGateAsync(vault, cancellation);
-		var (user, server, blob) = await ServerKeysAsync(cancellation);
-		account.CheckNewPassword(password);
-		AccountProfile profile;
-		using (var keys = await UnwrapAsync(blob, password, cancellation))
-		{
-			profile = blob.OpenProfile(keys.IndexKey);
-			await vault.RestoreKeysAsync(keys, new VaultSyncKeys(user, server.Blob, server.Version, SealedRecoveryKey: null, RecoveryConfirmed: true));
-		}
-		MakeAccount(profile, password);
 		_recovered = null;
+		var signedIn = signIn.SyncAccount() ?? throw new NotSignedInToSyncException();
+		account.CheckNewPassword(password);
+		var server = await ServerKeysAsync(signedIn, cancellation);
+		var blob = SyncKeysBlob.Parse(server.Blob, server.Version);
+		using var keys = await UnwrapAsync(blob, password, cancellation);
+		var profile = blob.OpenProfile(keys.IndexKey);
+
+		var store = vault();
+		using var gate = await SyncKeys.EnterGateAsync(store, cancellation);
+		RequireRestorableHere(store, signedIn.UserId, keys.VaultId);
+		await SyncKeys.SettlePendingAsync(store, client, signedIn, cancellation);
+		await store.RestoreKeysAsync(keys, KeptWith(store, signedIn.UserId, keys.VaultId, server));
+		MakeAccount(profile, password);
 	}
 
-	/// <summary>The keys are sealed on this PC and the recovery key with them; the account waits for <see cref="ChangePasswordAfterRecoveryAsync"/>.</summary>
+	/// <summary>Checks the key and keeps what it opened for <see cref="ChangePasswordAfterRecoveryAsync"/>; nothing on this PC changes.</summary>
 	/// <exception cref="RecoveryKeyFormatException">The code isn't a recovery key (a mistyped character).</exception>
 	/// <exception cref="WrongRecoveryKeyException">A recovery key, but not this vault's.</exception>
-	/// <exception cref="NotSignedInToSyncException">This PC isn't signed in to sync.</exception>
+	/// <exception cref="NotSignedInToSyncException">There's no Google sign-in to restore for.</exception>
 	/// <exception cref="SyncNothingToRestoreException">The Google account syncs no vault.</exception>
-	/// <exception cref="SyncRestoreWouldReplaceLoginsException">This PC holds other logins.</exception>
 	public async Task RestoreWithRecoveryKeyAsync(string key, CancellationToken cancellation = default)
 	{
 		_recovered = null;
 		var code = RecoveryKey.Canonical(key);
-		using var gate = await SyncKeys.EnterGateAsync(vault, cancellation);
-		var (user, server, blob) = await ServerKeysAsync(cancellation);
-		AccountProfile profile;
-		using (var keys = UnwrapWithRecoveryKey(blob, code))
-		{
-			profile = blob.OpenProfile(keys.IndexKey);
-			await vault.RestoreKeysAsync(keys, new VaultSyncKeys(user, server.Blob, server.Version, RecoverySeal.Seal(keys.SecretKey, keys.VaultId, code), RecoveryConfirmed: true));
-		}
-		_recovered = (code, profile);
+		var signedIn = signIn.SyncAccount() ?? throw new NotSignedInToSyncException();
+		var server = await ServerKeysAsync(signedIn, cancellation);
+		var blob = SyncKeysBlob.Parse(server.Blob, server.Version);
+		using var keys = UnwrapWithRecoveryKey(blob, code);
+		_recovered = new Recovered(signedIn.UserId, server, code, blob.OpenProfile(keys.IndexKey));
 	}
 
 	/// <summary>
-	/// After a recovery key restore: the keys are wrapped under <paramref name="next"/> with fresh Argon2id parameters (a new salt; the
-	/// recovery wraps are made again under them, with the same recovery key), uploaded over the version restored with a write-ahead
-	/// (Ruling 53), and only then is the account made or given the password. The old password no longer opens the synced keys.
+	/// After a recovery key restore: the keys are sealed on this PC, wrapped under <paramref name="next"/> with fresh Argon2id
+	/// parameters (a new salt; the recovery wraps are made again under them, with the same recovery key), uploaded over the version
+	/// restored with a write-ahead (Ruling 53), and only then is the account made or given the password. The old password no longer
+	/// opens the synced keys. Keys an earlier try left pending are settled first (M2): when the server took them, this try goes on over
+	/// them, and when they already open with <paramref name="next"/> there's nothing more to upload.
 	/// </summary>
 	/// <exception cref="SyncNoNewPasswordNeededException">No recovery key restore is waiting.</exception>
 	/// <exception cref="SyncPasswordTooWeakException">Below the sync floor (Ruling 52); still waiting.</exception>
+	/// <exception cref="SyncAccountChangedException">The Google sign-in changed since the recovery key was checked.</exception>
+	/// <exception cref="SyncRestoreOverAnotherAccountException">This PC's account syncs with another Google account or vault, or not at all.</exception>
 	/// <exception cref="SyncKeysChangedElsewhereException">The password was changed on another PC meanwhile; restore again.</exception>
 	public async Task ChangePasswordAfterRecoveryAsync(string next, CancellationToken cancellation = default)
 	{
-		var (code, profile) = _recovered ?? throw new SyncNoNewPasswordNeededException();
+		var recovered = _recovered ?? throw new SyncNoNewPasswordNeededException();
 		account.CheckNewPassword(next);
 		if (!SyncPasswordStrength.IsStrongEnough(next)) throw new SyncPasswordTooWeakException();
-		using var gate = await SyncKeys.EnterGateAsync(vault, cancellation);
-		var signedIn = vault.SyncAccount() ?? throw new NotSignedInToSyncException();
-		if (vault.SyncKeys is not { } stored || stored.UserId != signedIn.UserId) throw new SyncAccountChangedException();
-		byte[] blob;
-		using (var keys = UnwrapWithRecoveryKey(SyncKeysBlob.Parse(stored.Blob), code))
+		var signedIn = signIn.SyncAccount() ?? throw new NotSignedInToSyncException();
+		if (signedIn.UserId != recovered.UserId) throw new SyncAccountChangedException();
+		using var keys = UnwrapWithRecoveryKey(SyncKeysBlob.Parse(recovered.Server.Blob, recovered.Server.Version), recovered.RecoveryKey);
+
+		var store = vault();
+		using var gate = await SyncKeys.EnterGateAsync(store, cancellation);
+		RequireRestorableHere(store, signedIn.UserId, keys.VaultId);
+		await SyncKeys.SettlePendingAsync(store, client, signedIn, cancellation);
+		var baseVersion = recovered.Server.Version;
+		if (store.SyncKeys is { } taken && taken.UserId == signedIn.UserId && store.VaultId == keys.VaultId && taken.Version > baseVersion)
 		{
-			blob = await Task.Run(() => SyncKeysBlob.Create(keys, next, code, profile).ToBytes(), cancellation);
+			if (await OpensWithAsync(taken, next, cancellation))
+			{
+				Finish(recovered, next);
+				return;
+			}
+			baseVersion = taken.Version;
 		}
+		else
+		{
+			await store.RestoreKeysAsync(keys, new VaultSyncKeys(signedIn.UserId, recovered.Server.Blob, recovered.Server.Version, RecoverySeal.Seal(keys.SecretKey, keys.VaultId, recovered.RecoveryKey), RecoveryConfirmed: true));
+		}
+
+		var blob = await Task.Run(() => SyncKeysBlob.Create(keys, next, recovered.RecoveryKey, recovered.Profile, baseVersion + 1).ToBytes(), cancellation);
 		try
 		{
-			await SyncKeys.PutKeysWriteAheadAsync(vault, client, new VaultPendingKeys(signedIn.UserId, blob, stored.Version, stored.SealedRecoveryKey), cancellation);
+			await SyncKeys.PutKeysWriteAheadAsync(store, client, new VaultPendingKeys(signedIn.UserId, blob, baseVersion, RecoverySeal.Seal(keys.SecretKey, keys.VaultId, recovered.RecoveryKey)), cancellation);
 		}
 		catch (SyncConflictException)
 		{
 			_recovered = null;
 			throw new SyncKeysChangedElsewhereException();
 		}
-		MakeAccount(profile, next);
+		Finish(recovered, next);
+	}
+
+	private void Finish(Recovered recovered, string next)
+	{
+		MakeAccount(recovered.Profile, next);
 		_recovered = null;
 	}
 
 	/// <summary>
 	/// At the gate after sync found the password changed on another PC (<see cref="AskIfPasswordChangedElsewhere"/>): the password
 	/// typed is checked by unwrapping the newer keys sync kept, which then become this PC's, and this PC's own check changes to it.
-	/// No network and no Hello.
+	/// No network and no Hello. Keys written for another version than the one sync found them at are refused (M1).
 	/// </summary>
 	/// <exception cref="AccountException">WrongPassword for a password that doesn't open the newer keys.</exception>
+	/// <exception cref="SyncKeysFormatException">The newer keys are another vault's, or were written for another version.</exception>
 	public static async Task SignInWithPasswordChangedElsewhereAsync(AccountStore account, VaultStore vault, string password, CancellationToken cancellation = default)
 	{
 		using var gate = await SyncKeys.EnterGateAsync(vault, cancellation);
-		if (vault.SyncKeys is not { NewerBlob: { } newer }) throw new SyncNoPasswordChangedElsewhereException();
-		var blob = SyncKeysBlob.Parse(newer);
+		if (vault.SyncKeys is not { NewerBlob: { } newer } sync) throw new SyncNoPasswordChangedElsewhereException();
+		var blob = SyncKeysBlob.Parse(newer, sync.NewerVersion);
 		if (blob.VaultId != vault.VaultId) throw new SyncKeysFormatException($"The newer keys are vault {blob.VaultId}'s, not this vault's ({vault.VaultId})");
 		account.CheckNewPassword(password);
 		using (await UnwrapAsync(blob, password, cancellation)) { }
@@ -143,13 +182,44 @@ public sealed class SyncRestore(AccountStore account, VaultStore vault, SyncClie
 		account.AskForPasswordChangedElsewhere();
 	}
 
-	/// <summary>Under the key lock: pending keys settled first (a forgotten password on a PC whose change never finished), then the server's.</summary>
-	private async Task<(string User, VersionedBlob Server, SyncKeysBlob Blob)> ServerKeysAsync(CancellationToken cancellation)
+	private async Task<VersionedBlob> ServerKeysAsync(SyncAccount signedIn, CancellationToken cancellation) =>
+		await client.GetKeysAsync(cancellation, asUser: signedIn.UserId) ?? throw new SyncNothingToRestoreException();
+
+	/// <summary>
+	/// Under the key lock, before Hello (I1). With no account here, anything may be restored. With one, only the forgotten-password case:
+	/// keys.bin already holds this Google account's keys, stored or pending, for the same vault. Otherwise another person's Google account
+	/// could give this PC's account its password.
+	/// </summary>
+	private void RequireRestorableHere(VaultStore store, string userId, string vaultId)
 	{
-		var signedIn = vault.SyncAccount() ?? throw new NotSignedInToSyncException();
-		await SyncKeys.SettlePendingAsync(vault, client, signedIn, cancellation);
-		var server = await client.GetKeysAsync(cancellation, asUser: signedIn.UserId) ?? throw new SyncNothingToRestoreException();
-		return (signedIn.UserId, server, SyncKeysBlob.Parse(server.Blob));
+		if (!account.State().HasAccount) return;
+		var syncsThis = store.SyncKeys?.UserId == userId || store.PendingSyncKeys?.UserId == userId;
+		if (!syncsThis || store.VaultId != vaultId) throw new SyncRestoreOverAnotherAccountException();
+	}
+
+	/// <summary>
+	/// The sync keys a password restore keeps (I2). Over this PC's own keys for the same account and vault, its sealed recovery key and
+	/// whether it was saved stay, and so do its keys when they're at a later version than the server's. Otherwise the server's, with no
+	/// recovery key: a password restore never sees it.
+	/// </summary>
+	private static VaultSyncKeys KeptWith(VaultStore store, string userId, string vaultId, VersionedBlob server)
+	{
+		if (store.SyncKeys is not { } held || held.UserId != userId || store.VaultId != vaultId) return new VaultSyncKeys(userId, server.Blob, server.Version, SealedRecoveryKey: null, RecoveryConfirmed: true);
+		if (held.Version > server.Version) return held;
+		return held with { Blob = server.Blob, Version = server.Version, NewerBlob = held.NewerVersion > server.Version ? held.NewerBlob : null, NewerVersion = held.NewerVersion > server.Version ? held.NewerVersion : 0 };
+	}
+
+	private static async Task<bool> OpensWithAsync(VaultSyncKeys taken, string password, CancellationToken cancellation)
+	{
+		try
+		{
+			using (await Task.Run(() => SyncKeysBlob.Parse(taken.Blob, taken.Version).UnwrapWithPassword(password), cancellation)) { }
+			return true;
+		}
+		catch (VaultTamperedException)
+		{
+			return false;
+		}
 	}
 
 	private static async Task<VaultKeyMaterial> UnwrapAsync(SyncKeysBlob blob, string password, CancellationToken cancellation)

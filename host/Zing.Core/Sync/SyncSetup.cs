@@ -117,7 +117,7 @@ public sealed class SyncKeysChangedElsewhereException()
 
 /// <summary>The Google account already has a vault's keys on the server, so turning on sync here would replace another PC's.</summary>
 public sealed class SyncAlreadySetUpElsewhereException()
-	: Exception("This Google account already syncs a vault. Restore from sync on this PC instead of turning it on again.");
+	: Exception("This Google account already syncs a vault. To use it here, sign out of Zing, then choose Restore from sync on the sign-in screen.");
 
 /// <summary>This PC already turned sync on for the account it's signed in as.</summary>
 public sealed class SyncAlreadyOnException() : Exception("Sync is already on for this PC.");
@@ -204,7 +204,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		var recovery = RecoveryKey.Generate();
 		using var keys = await vault.KeyMaterialAsync();
 		var upload = Snapshot(keys);
-		var blob = await Task.Run(() => SyncKeysBlob.Create(keys, password, recovery, profile).ToBytes(), cancellation);
+		var blob = await Task.Run(() => SyncKeysBlob.Create(keys, password, recovery, profile, version: 1).ToBytes(), cancellation);
 		try
 		{
 			await PutKeysWriteAheadAsync(vault, client, new VaultPendingKeys(signedIn.UserId, blob, 0, RecoverySeal.Seal(keys.SecretKey, keys.VaultId, recovery)), cancellation);
@@ -290,7 +290,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		}
 
 		using var keys = await vault.KeyMaterialAsync();
-		var blob = await Task.Run(() => SyncKeysBlob.Parse(stored.Blob).WithPassword(keys, next).ToBytes(), cancellation);
+		var blob = await Task.Run(() => SyncKeysBlob.Parse(stored.Blob, stored.Version).WithPassword(keys, next, stored.Version + 1).ToBytes(), cancellation);
 		try
 		{
 			await PutKeysWriteAheadAsync(vault, client, new VaultPendingKeys(signedIn.UserId, blob, stored.Version, stored.SealedRecoveryKey), cancellation);
@@ -318,6 +318,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 			vault.DropPendingSyncKeys();
 			return false;
 		}
+		RequireTakenAsWritten(pending, server.Version);
 		vault.CommitPendingSyncKeys(server.Blob, server.Version);
 		return pending.BaseVersion == 0;
 	}
@@ -385,6 +386,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		{
 			if (conflict.Current is { } current && current.Blob.AsSpan().SequenceEqual(pending.Blob))
 			{
+				RequireTakenAsWritten(pending, current.Version);
 				vault.CommitPendingSyncKeys(current.Blob, current.Version);
 				return;
 			}
@@ -401,7 +403,18 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 			}
 			version = server.Version;
 		}
+		RequireTakenAsWritten(pending, version);
 		vault.CommitPendingSyncKeys(pending.Blob, version);
+	}
+
+	/// <summary>
+	/// The blob names the version it was written for, base+1 (M1 of the Task 14 review); keys the server holds at any other version
+	/// wouldn't parse again, so they stay pending and the call raises.
+	/// </summary>
+	/// <exception cref="SyncProtocolException">The server took the keys at another version.</exception>
+	private static void RequireTakenAsWritten(VaultPendingKeys pending, long version)
+	{
+		if (version != pending.BaseVersion + 1) throw new SyncProtocolException($"The sync server stored the keys as version {version}, not {pending.BaseVersion + 1}");
 	}
 
 	/// <summary>A request that may or may not have reached the server: a dropped connection, a timeout that wasn't the caller's cancel, or a server failure.</summary>

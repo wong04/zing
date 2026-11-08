@@ -470,24 +470,27 @@ export interface InvokeContract {
 	 */
 	'sync:upload-local': { args: []; result: SyncState }
 	/**
-	 * Restore from sync, at the account gate: turns the password vault on (sync lives in it), then signs in with Google as
-	 * sync:sign-in does. Rejects with SyncNotSetUpException in a build made without a Google client ID.
+	 * Restore from sync, at the account gate: signs in with Google as sync:sign-in does, but keeps the sign-in in memory. Nothing on
+	 * this PC changes until a restore succeeds: only then is the password vault turned on (sync lives in it) and the sign-in kept.
+	 * Rejects with SyncNotSetUpException in a build made without a Google client ID.
 	 */
 	'sync:restore-sign-in': { args: []; result: SyncState }
 	/**
 	 * Restores this PC from sync with the Zing password: the synced keys are unwrapped and sealed here (one Windows Hello), and the
 	 * account is made from the synced profile, or given the password when this PC has one. `wrong-password` when it doesn't open
-	 * them, and then nothing is made. Rejects with SyncNothingToRestoreException or SyncRestoreWouldReplaceLoginsException.
+	 * them, and then nothing is made. Rejects with SyncNothingToRestoreException, SyncRestoreWouldReplaceLoginsException,
+	 * SyncRestoreOverAnotherAccountException (this PC's account doesn't sync with that Google account), or SyncKeysFormatException.
 	 */
 	'sync:restore-password': { args: [password: string]; result: AccountOutcome }
 	/**
-	 * Restores this PC from sync with the recovery key (one Windows Hello); the account waits for sync:restore-new-password. Rejects
-	 * with RecoveryKeyFormatException (a mistyped character), WrongRecoveryKeyException, or as sync:restore-password does.
+	 * Checks the recovery key against the synced keys; nothing on this PC changes until sync:restore-new-password. Rejects with
+	 * RecoveryKeyFormatException (a mistyped character), WrongRecoveryKeyException, or as sync:restore-password does.
 	 */
 	'sync:restore-recovery-key': { args: [key: string]; result: void }
 	/**
-	 * The new Zing password after a recovery key restore: the synced keys are wrapped under it with fresh parameters, and the account
-	 * is made or given it. Rejects with SyncPasswordTooWeakException (still waiting) or SyncNoNewPasswordNeededException.
+	 * The new Zing password after a recovery key restore: the synced keys are sealed here (one Windows Hello) and wrapped under it with
+	 * fresh parameters, and the account is made or given it. Rejects with SyncPasswordTooWeakException (still waiting),
+	 * SyncNoNewPasswordNeededException, SyncRestoreOverAnotherAccountException or SyncKeysChangedElsewhereException.
 	 */
 	'sync:restore-new-password': { args: [password: string]; result: AccountOutcome }
 	'overview:close': { args: []; result: void }
@@ -696,5 +699,4 @@ export interface ZingApi {
 	restoreWithPassword(password: string): Promise<AccountOutcome>
 	restoreWithRecoveryKey(key: string): Promise<void>
 	setPasswordAfterRecovery(password: string): Promise<AccountOutcome>
-	onPasswordChangedElsewhere(listener: () => void): Unsubscribe
 }

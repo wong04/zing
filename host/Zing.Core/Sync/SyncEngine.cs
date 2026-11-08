@@ -316,14 +316,15 @@ public sealed class SyncEngine : IDisposable
 	/// <summary>
 	/// The server's keys at a later version than this PC's mean the password was changed on another PC (Task 14): they're kept for the
 	/// next start, which asks for the new password and checks it by unwrapping them, and the vault says so once. The keys themselves are
-	/// the same, so the sync goes on. Keys for another vault, or that aren't Zing's, stop it.
+	/// the same, so the sync goes on. Keys for another vault, keys written for another version than they're served at (old keys served
+	/// again, M1), or keys that aren't Zing's, stop it.
 	/// </summary>
 	private async Task CheckKeysVersionAsync(string user, CancellationToken cancellation)
 	{
 		var stored = _vault.SyncKeys!;
 		var server = await _client.GetKeysAsync(cancellation, asUser: user);
 		if (server is null || server.Version <= Math.Max(stored.Version, stored.NewerVersion)) return;
-		var blob = SyncKeysBlob.Parse(server.Blob);
+		var blob = SyncKeysBlob.Parse(server.Blob, server.Version);
 		if (blob.VaultId != _vault.VaultId) throw new SyncProtocolException($"The sync server's keys are for vault {blob.VaultId}, not this vault ({_vault.VaultId})");
 		_vault.MarkPasswordChangedElsewhere(server.Blob, server.Version);
 	}

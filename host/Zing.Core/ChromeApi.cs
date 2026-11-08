@@ -536,6 +536,7 @@ public sealed class ChromeApi : IDisposable
 		if (_app.SyncClients is { } syncClients) syncClients.EngineStatusChanged -= PushSyncState;
 		if (_watchedVault is { } vault) Unwatch(vault);
 		CancelSyncSignIn();
+		Interlocked.Exchange(ref _restore, null)?.Dispose();
 		Autofill.Dispose();
 		SignIn.Dispose();
 		_secretCopy.Dispose();
@@ -1011,19 +1012,26 @@ public sealed class ChromeApi : IDisposable
 	{
 		var setup = _app.Sync ?? throw new SyncNotSetUpException();
 		var vault = Vault();
+		return await WithGoogleSignInAsync(setup, async (idToken, cancellation) => SignedInState(vault, await SyncClient(vault).SignInAsync(idToken, cancellation)), CurrentSyncState);
+	}
+
+	/// <summary>
+	/// Google in the system browser, then <paramref name="signIn"/> with its ID token, within 5 minutes. Cancel (or the window
+	/// closing) answers <paramref name="cancelled"/> without an error.
+	/// </summary>
+	private async Task<object?> WithGoogleSignInAsync(SyncSetup setup, Func<string, CancellationToken, Task<object?>> signIn, Func<object?> cancelled)
+	{
 		using var cancel = CancellationTokenSource.CreateLinkedTokenSource(_closing.Token);
 		using var signingIn = CancellationTokenSource.CreateLinkedTokenSource(cancel.Token);
 		signingIn.CancelAfter(SyncSignInTimeout);
 		Interlocked.Exchange(ref _syncSigningIn, cancel)?.Cancel();
 		try
 		{
-			var idToken = await setup.SignIn.SignInAsync(signingIn.Token);
-			var account = await SyncClient(vault).SignInAsync(idToken, signingIn.Token);
-			return SignedInState(vault, account);
+			return await signIn(await setup.SignIn.SignInAsync(signingIn.Token), signingIn.Token);
 		}
 		catch (OperationCanceledException) when (cancel.IsCancellationRequested)
 		{
-			return CurrentSyncState();
+			return cancelled();
 		}
 		catch (OperationCanceledException error) when (signingIn.IsCancellationRequested)
 		{
@@ -1124,62 +1132,97 @@ public sealed class ChromeApi : IDisposable
 		return AccountOutcome.Ok(_app.Account.State());
 	}
 
-	/// <summary>A recovery key restore waiting for its new password, in this window's gate.</summary>
-	private SyncRestore? _restoring;
+	/// <summary>A restore at this window's gate: its Google sign-in, held in memory until the restore succeeds (M4), its own client, and the restore.</summary>
+	private sealed class Restoring(HeldSyncSignIn signIn, SyncClient client, SyncRestore restore) : IDisposable
+	{
+		public HeldSyncSignIn SignIn { get; } = signIn;
+		public SyncRestore Restore { get; } = restore;
+
+		public void Dispose() => client.Dispose();
+	}
+
+	private Restoring? _restore;
+
+	/// <summary>Whether this restore step turned the vault on, so a step that fails turns it off again.</summary>
+	private bool _restoreTurnedVaultOn;
 
 	/// <summary>
-	/// Restore from sync's first step at the gate: the vault is turned on (a restore is the person asking for it, and sync lives in
-	/// it), then the Google sign-in as Turn on sync does it.
+	/// Restore from sync's first step at the gate: the Google sign-in as Turn on sync does it, kept in memory by the restore's own client.
+	/// Nothing on this PC changes yet: the vault is turned on, and the sign-in kept in its sync.json, only once a restore succeeds (M4).
 	/// </summary>
 	private async Task<object?> SignInToRestoreAsync()
 	{
-		if (_app.Sync is null) throw new SyncNotSetUpException();
-		if (_app.Vaults.Current is null) _app.Settings.Set("passwordAutofill", true);
-		return await SignInToSyncAsync();
+		var setup = _app.Sync ?? throw new SyncNotSetUpException();
+		return await WithGoogleSignInAsync(setup, async (idToken, cancellation) =>
+		{
+			var held = new HeldSyncSignIn();
+			var client = new SyncClient(setup.Server, held, setup.Handler);
+			SyncAccount account;
+			try
+			{
+				account = await client.SignInAsync(idToken, cancellation);
+			}
+			catch
+			{
+				client.Dispose();
+				throw;
+			}
+			Interlocked.Exchange(ref _restore, new Restoring(held, client, new SyncRestore(_app.Account, VaultForRestore, client, held)))?.Dispose();
+			return new SyncState(SignedIn: true, account.Email);
+		}, () => SyncState.SignedOut());
 	}
 
-	private SyncRestore Restorer()
+	/// <summary>The vault a restore writes, turned on now if it's off.</summary>
+	private VaultStore VaultForRestore()
 	{
-		var vault = Vault();
-		return new SyncRestore(_app.Account, vault, SyncClient(vault));
+		if (_app.Vaults.Current is null)
+		{
+			_app.Settings.Set("passwordAutofill", true);
+			_restoreTurnedVaultOn = true;
+		}
+		return Vault();
 	}
 
-	private async Task<AccountOutcome> RestoreWithPasswordAsync(string password)
+	/// <summary>One restore step, at most one at a time per window's restore. A step that fails leaves the vault as it found it.</summary>
+	private async Task<AccountOutcome> RestoreStepAsync(Func<Restoring, Task> step)
 	{
-		_restoring = null;
+		var restoring = _restore ?? throw new NotSignedInToSyncException();
+		_restoreTurnedVaultOn = false;
 		try
 		{
-			await Restorer().RestoreWithPasswordAsync(password, _closing.Token);
+			await step(restoring);
 		}
-		catch (AccountException error)
+		catch (Exception error)
 		{
-			return AccountOutcome.Rejected(error.Code);
+			if (_restoreTurnedVaultOn) _app.Settings.Set("passwordAutofill", false);
+			if (error is AccountException account) return AccountOutcome.Rejected(account.Code);
+			throw;
 		}
 		return AccountOutcome.Ok(_app.Account.State());
 	}
 
-	private async Task RestoreWithRecoveryKeyAsync(string key)
+	/// <summary>The restore made the account: its sign-in goes into the vault's sync.json through the vault's own client, and the restore ends.</summary>
+	private async Task KeepRestoreSignInAsync(Restoring restoring)
 	{
-		var restore = Restorer();
-		_restoring = null;
-		await restore.RestoreWithRecoveryKeyAsync(key, _closing.Token);
-		_restoring = restore;
+		var signedIn = restoring.SignIn.SyncAccount() ?? throw new NotSignedInToSyncException();
+		await SyncClient(Vault()).AdoptAsync(signedIn, _closing.Token);
+		if (Interlocked.CompareExchange(ref _restore, null, restoring) == restoring) restoring.Dispose();
 	}
 
-	private async Task<AccountOutcome> SetPasswordAfterRecoveryAsync(string password)
+	private Task<AccountOutcome> RestoreWithPasswordAsync(string password) => RestoreStepAsync(async restoring =>
 	{
-		var restore = _restoring ?? throw new SyncNoNewPasswordNeededException();
-		try
-		{
-			await restore.ChangePasswordAfterRecoveryAsync(password, _closing.Token);
-		}
-		catch (AccountException error)
-		{
-			return AccountOutcome.Rejected(error.Code);
-		}
-		if (!restore.MustSetNewPassword) _restoring = null;
-		return AccountOutcome.Ok(_app.Account.State());
-	}
+		await restoring.Restore.RestoreWithPasswordAsync(password, _closing.Token);
+		await KeepRestoreSignInAsync(restoring);
+	});
+
+	private Task<AccountOutcome> RestoreWithRecoveryKeyAsync(string key) =>
+		RestoreStepAsync(restoring => restoring.Restore.RestoreWithRecoveryKeyAsync(key, _closing.Token));
+
+	private Task<AccountOutcome> SetPasswordAfterRecoveryAsync(string password) => RestoreStepAsync(async restoring =>
+	{
+		await restoring.Restore.ChangePasswordAfterRecoveryAsync(password, _closing.Token);
+		await KeepRestoreSignInAsync(restoring);
+	});
 
 	/// <summary>Long enough to pick an account and pass Google's prompts in the browser.</summary>
 	private static readonly TimeSpan SyncSignInTimeout = TimeSpan.FromMinutes(5);

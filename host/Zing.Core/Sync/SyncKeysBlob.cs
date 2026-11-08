@@ -28,28 +28,32 @@ public sealed partial class SyncKeysBlob
 	public string VaultId { get; }
 	public KdfParams Kdf { get; }
 
+	/// <summary>The keys version this blob was written for.</summary>
+	public long Version { get; }
+
 	private readonly WrappedKeys _byPassword;
 	private readonly WrappedKeys _byRecovery;
 	private readonly byte[] _profile;
 
-	private SyncKeysBlob(string vaultId, KdfParams kdf, WrappedKeys byPassword, WrappedKeys byRecovery, byte[] profile)
+	private SyncKeysBlob(string vaultId, KdfParams kdf, long version, WrappedKeys byPassword, WrappedKeys byRecovery, byte[] profile)
 	{
 		VaultId = vaultId;
 		Kdf = kdf;
+		Version = version;
 		_byPassword = byPassword;
 		_byRecovery = byRecovery;
 		_profile = profile;
 	}
 
-	/// <summary>New KDF parameters (the floor, a new salt), both keys wrapped twice, and the profile sealed.</summary>
-	public static SyncKeysBlob Create(VaultKeyMaterial keys, string password, string recoveryCode, AccountProfile profile)
+	/// <summary>New KDF parameters (the floor, a new salt), both keys wrapped twice, and the profile sealed, for keys version <paramref name="version"/>.</summary>
+	public static SyncKeysBlob Create(VaultKeyMaterial keys, string password, string recoveryCode, AccountProfile profile, long version)
 	{
 		var kdf = KdfParams.Generate();
-		var byPassword = WrapWithPassword(keys, kdf, password);
+		var byPassword = WrapWithPassword(keys, kdf, version, password);
 		var recoveryKey = RecoveryKey.ToKey(recoveryCode);
 		try
 		{
-			return new SyncKeysBlob(keys.VaultId, kdf, byPassword, Wrap(recoveryKey, keys, ByRecoveryKey, kdf), SealProfile(keys, profile));
+			return new SyncKeysBlob(keys.VaultId, kdf, version, byPassword, Wrap(recoveryKey, keys, RecoveryLabel(keys.VaultId, kdf)), SealProfile(keys, profile));
 		}
 		finally
 		{
@@ -58,23 +62,24 @@ public sealed partial class SyncKeysBlob
 	}
 
 	/// <summary>
-	/// The same keys wrapped by a new password. The KDF parameters stay, salt included: the recovery wraps are bound to them, and
-	/// re-wrapping those would need the recovery key, which a PC restored with the password doesn't have.
+	/// The same keys wrapped by a new password, for keys version <paramref name="version"/>. The KDF parameters stay, salt included:
+	/// the recovery wraps are bound to them, and re-wrapping those would need the recovery key, which a PC restored with the password
+	/// doesn't have.
 	/// </summary>
-	public SyncKeysBlob WithPassword(VaultKeyMaterial keys, string password)
+	public SyncKeysBlob WithPassword(VaultKeyMaterial keys, string password, long version)
 	{
 		if (keys.VaultId != VaultId) throw new SyncKeysFormatException($"These wrapped keys are vault {VaultId}'s, not this vault's ({keys.VaultId})");
-		return new SyncKeysBlob(VaultId, Kdf, WrapWithPassword(keys, Kdf, password), _byRecovery, _profile);
+		return new SyncKeysBlob(VaultId, Kdf, version, WrapWithPassword(keys, Kdf, version, password), _byRecovery, _profile);
 	}
 
 	/// <summary>Argon2id on the password, then both keys. The caller disposes what comes back.</summary>
-	/// <exception cref="VaultTamperedException">A wrong password, or wraps or parameters that were changed.</exception>
+	/// <exception cref="VaultTamperedException">A wrong password, or wraps, parameters or the version that were changed.</exception>
 	public VaultKeyMaterial UnwrapWithPassword(string password)
 	{
 		var passwordKey = PasswordKey.Derive(password, Kdf);
 		try
 		{
-			return Unwrap(passwordKey, _byPassword, ByPasswordKey);
+			return Unwrap(passwordKey, _byPassword, PasswordLabel(VaultId, Kdf, Version));
 		}
 		finally
 		{
@@ -89,7 +94,7 @@ public sealed partial class SyncKeysBlob
 		var recoveryKey = RecoveryKey.ToKey(code);
 		try
 		{
-			return Unwrap(recoveryKey, _byRecovery, ByRecoveryKey);
+			return Unwrap(recoveryKey, _byRecovery, RecoveryLabel(VaultId, Kdf));
 		}
 		finally
 		{
@@ -114,11 +119,12 @@ public sealed partial class SyncKeysBlob
 		}
 	}
 
-	public byte[] ToBytes() => JsonSerializer.SerializeToUtf8Bytes(new Stored(CurrentFormat, VaultId, Kdf, _byPassword, _byRecovery, _profile), SyncJson.Options);
+	public byte[] ToBytes() => JsonSerializer.SerializeToUtf8Bytes(new Stored(CurrentFormat, VaultId, Kdf, Version, _byPassword, _byRecovery, _profile), SyncJson.Options);
 
-	/// <exception cref="SyncKeysFormatException">Not wrapped keys this Zing reads.</exception>
+	/// <param name="version">The keys version the blob is served or kept at.</param>
+	/// <exception cref="SyncKeysFormatException">Not wrapped keys this Zing reads, or keys written for another version.</exception>
 	/// <exception cref="KdfParamsRejectedException">Parameters below the floor or above the caps, checked before anything is derived.</exception>
-	public static SyncKeysBlob Parse(byte[] blob)
+	public static SyncKeysBlob Parse(byte[] blob, long version)
 	{
 		Stored? stored;
 		try
@@ -135,17 +141,18 @@ public sealed partial class SyncKeysBlob
 		var kdf = stored.Kdf ?? throw new SyncKeysFormatException("The wrapped keys have no KDF parameters");
 		kdf.EnforceFloor();
 		if (!Complete(stored.ByPassword) || !Complete(stored.ByRecoveryKey) || stored.Profile is not { Length: > 0 }) throw new SyncKeysFormatException("The wrapped keys are missing a wrap or the profile");
-		return new SyncKeysBlob(stored.VaultId, kdf, stored.ByPassword!, stored.ByRecoveryKey!, stored.Profile);
+		if (stored.Version != version) throw new SyncKeysFormatException($"The wrapped keys were written as version {stored.Version} but are served as version {version}");
+		return new SyncKeysBlob(stored.VaultId, kdf, stored.Version, stored.ByPassword!, stored.ByRecoveryKey!, stored.Profile);
 	}
 
 	private static bool Complete(WrappedKeys? wrapped) => wrapped is { IndexKey.Length: > 0, SecretKey.Length: > 0 };
 
-	private static WrappedKeys WrapWithPassword(VaultKeyMaterial keys, KdfParams kdf, string password)
+	private static WrappedKeys WrapWithPassword(VaultKeyMaterial keys, KdfParams kdf, long version, string password)
 	{
 		var passwordKey = PasswordKey.Derive(password, kdf);
 		try
 		{
-			return Wrap(passwordKey, keys, ByPasswordKey, kdf);
+			return Wrap(passwordKey, keys, PasswordLabel(keys.VaultId, kdf, version));
 		}
 		finally
 		{
@@ -153,16 +160,17 @@ public sealed partial class SyncKeysBlob
 		}
 	}
 
-	private static WrappedKeys Wrap(byte[] wrappingKey, VaultKeyMaterial keys, string by, KdfParams kdf) => new(
-		KeyWrap.Wrap(wrappingKey, keys.IndexKey, Label(by, "index", keys.VaultId, kdf)),
-		KeyWrap.Wrap(wrappingKey, keys.SecretKey, Label(by, "secret", keys.VaultId, kdf)));
+	/// <param name="label">The wrap's label, given which key is wrapped.</param>
+	private static WrappedKeys Wrap(byte[] wrappingKey, VaultKeyMaterial keys, Func<string, string> label) => new(
+		KeyWrap.Wrap(wrappingKey, keys.IndexKey, label("index")),
+		KeyWrap.Wrap(wrappingKey, keys.SecretKey, label("secret")));
 
-	private VaultKeyMaterial Unwrap(byte[] wrappingKey, WrappedKeys wrapped, string by)
+	private VaultKeyMaterial Unwrap(byte[] wrappingKey, WrappedKeys wrapped, Func<string, string> label)
 	{
-		var indexKey = KeyWrap.Unwrap(wrappingKey, wrapped.IndexKey, Label(by, "index", VaultId, Kdf));
+		var indexKey = KeyWrap.Unwrap(wrappingKey, wrapped.IndexKey, label("index"));
 		try
 		{
-			return new VaultKeyMaterial(VaultId, indexKey, KeyWrap.Unwrap(wrappingKey, wrapped.SecretKey, Label(by, "secret", VaultId, Kdf)));
+			return new VaultKeyMaterial(VaultId, indexKey, KeyWrap.Unwrap(wrappingKey, wrapped.SecretKey, label("secret")));
 		}
 		catch
 		{
@@ -171,9 +179,16 @@ public sealed partial class SyncKeysBlob
 		}
 	}
 
-	/// <summary>The wrap's label: which key wraps, which is wrapped, the vault, and the KDF parameters exactly as they're stored.</summary>
-	private static string Label(string by, string wrapped, string vaultId, KdfParams kdf) =>
-		string.Create(CultureInfo.InvariantCulture, $"zing-sync-keys-v1/{by}/{wrapped}/{vaultId}/argon2id m={kdf.MemoryKiB} t={kdf.Iterations} p={kdf.Parallelism} salt={Convert.ToBase64String(kdf.Salt)}");
+	/// <summary>A password wrap's label: the key wrapped, the vault, the keys version, and the KDF parameters exactly as they're stored.</summary>
+	private static Func<string, string> PasswordLabel(string vaultId, KdfParams kdf, long version) => wrapped =>
+		string.Create(CultureInfo.InvariantCulture, $"zing-sync-keys-v1/{ByPasswordKey}/{wrapped}/{vaultId}/keys-version={version}/{KdfLabel(kdf)}");
+
+	/// <summary>A recovery wrap's label: the key wrapped, the vault, and the KDF parameters exactly as they're stored.</summary>
+	private static Func<string, string> RecoveryLabel(string vaultId, KdfParams kdf) => wrapped =>
+		$"zing-sync-keys-v1/{ByRecoveryKey}/{wrapped}/{vaultId}/{KdfLabel(kdf)}";
+
+	private static string KdfLabel(KdfParams kdf) =>
+		string.Create(CultureInfo.InvariantCulture, $"argon2id m={kdf.MemoryKiB} t={kdf.Iterations} p={kdf.Parallelism} salt={Convert.ToBase64String(kdf.Salt)}");
 
 	private static byte[] SealProfile(VaultKeyMaterial keys, AccountProfile profile)
 	{
@@ -195,7 +210,7 @@ public sealed partial class SyncKeysBlob
 
 	private sealed record WrappedKeys(byte[] IndexKey, byte[] SecretKey);
 
-	private sealed record Stored(int Format, string? VaultId, KdfParams? Kdf, WrappedKeys? ByPassword, WrappedKeys? ByRecoveryKey, byte[]? Profile);
+	private sealed record Stored(int Format, string? VaultId, KdfParams? Kdf, long Version, WrappedKeys? ByPassword, WrappedKeys? ByRecoveryKey, byte[]? Profile);
 }
 
 public sealed record SyncManifestEntry(string ItemId, long Version);

@@ -30,7 +30,7 @@ public sealed class SyncRestoreTests : IDisposable
 
 	private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-	private SyncRestore Restore(SyncPc pc, AccountStore account) => new(account, pc.Vault, pc.Client);
+	private static SyncRestore Restore(SyncPc pc, AccountStore account) => new(account, () => pc.Vault, pc.Client, pc.Vault);
 
 	private async Task<string> TurnOnAWithALoginAsync()
 	{
@@ -39,7 +39,11 @@ public sealed class SyncRestoreTests : IDisposable
 		return await new SyncKeys(_pcs.Account, _pcs.A.Vault, _pcs.A.Client).TurnOnAsync(Strong, Ct);
 	}
 
-	private async Task<SyncKeysBlob> ServerKeysAsync() => SyncKeysBlob.Parse((await _pcs.A.Client.GetKeysAsync(Ct))!.Blob);
+	private async Task<SyncKeysBlob> ServerKeysAsync()
+	{
+		var served = (await _pcs.A.Client.GetKeysAsync(Ct))!;
+		return SyncKeysBlob.Parse(served.Blob, served.Version);
+	}
 
 	[Fact]
 	public async Task RestoringWithThePasswordOnANewPcMakesTheAccountFromTheProfileAndBringsBackEveryLogin()
@@ -102,6 +106,8 @@ public sealed class SyncRestoreTests : IDisposable
 
 		Assert.True(restore.MustSetNewPassword);
 		Assert.False(_bAccount.State().HasAccount);
+		Assert.False(File.Exists(Path.Combine(_b.Dir, VaultStore.KeysFileName)));
+		Assert.Equal(0, _b.Sealer.Calls);
 		await Assert.ThrowsAsync<SyncPasswordTooWeakException>(() => restore.ChangePasswordAfterRecoveryAsync("correct horse", Ct));
 		Assert.True(restore.MustSetNewPassword);
 
@@ -117,6 +123,39 @@ public sealed class SyncRestoreTests : IDisposable
 		using (after.UnwrapWithRecoveryKey(recovery)) { }
 		Assert.Equal(recovery, await _b.Vault.RecoveryKeyAsync());
 		Assert.Equal((await _pcs.A.Client.GetKeysAsync(Ct))!.Version, _b.Vault.SyncKeys!.Version);
+	}
+
+	[Fact]
+	public async Task ANewPasswordWhoseUploadAnswerWasLostIsFinishedByTheNextTry()
+	{
+		var recovery = await TurnOnAWithALoginAsync();
+		var before = (await _pcs.A.Client.GetKeysAsync(Ct))!.Version;
+		await _b.SignInAsync();
+		var restore = Restore(_b, _bAccount);
+		await restore.RestoreWithRecoveryKeyAsync(recovery, Ct);
+		var wire = _pcs.Server.Wire;
+		var dropped = false;
+		wire.LoseNextAnswerTo = "PUT /keys";
+		wire.FailWhen = line =>
+		{
+			if (dropped || line != "GET /keys" || wire.Count("PUT /keys") == 0) return false;
+			dropped = true;
+			return true;
+		};
+
+		await Assert.ThrowsAsync<HttpRequestException>(() => restore.ChangePasswordAfterRecoveryAsync(NextStrong, Ct));
+		Assert.NotNull(_b.Vault.PendingSyncKeys);
+		Assert.True(restore.MustSetNewPassword);
+
+		await restore.ChangePasswordAfterRecoveryAsync(NextStrong, Ct);
+
+		Assert.False(restore.MustSetNewPassword);
+		_bAccount.CheckPassword(NextStrong);
+		Assert.Null(_b.Vault.PendingSyncKeys);
+		Assert.Equal(before + 1, (await _pcs.A.Client.GetKeysAsync(Ct))!.Version);
+		Assert.Equal(before + 1, _b.Vault.SyncKeys!.Version);
+		// A's turn-on and the first try: the second only settled it.
+		Assert.Equal(2, wire.Count("PUT /keys"));
 	}
 
 	[Fact]
@@ -177,7 +216,7 @@ public sealed class SyncRestoreTests : IDisposable
 		Assert.Equal("ada", _pcs.Account.State().Profile!.Username);
 		_pcs.Account.CheckPassword(NextStrong);
 		Assert.Equal("bank-secret", await _pcs.A.Vault.PasswordAsync(id));
-		using (SyncKeysBlob.Parse(_pcs.A.Vault.SyncKeys!.Blob).UnwrapWithPassword(NextStrong)) { }
+		using (SyncKeysBlob.Parse(_pcs.A.Vault.SyncKeys!.Blob, _pcs.A.Vault.SyncKeys.Version).UnwrapWithPassword(NextStrong)) { }
 		await _pcs.A.SyncAsync();
 		Assert.Null(_pcs.A.Engine.Status.Error);
 	}
@@ -195,6 +234,152 @@ public sealed class SyncRestoreTests : IDisposable
 		Assert.Equal(vaultId, _b.Vault.VaultId);
 		Assert.Single(_b.Vault.Summaries());
 		Assert.False(_bAccount.State().HasAccount);
+	}
+
+	[Fact]
+	public async Task ARestoreByAnotherGoogleAccountOverThisPcsAccountIsRefusedAndChangesNothing()
+	{
+		const string bobPassword = "violet-anchor-pebble-harbour";
+		_bAccount.SignUp("bob", "Bob", "bob@example.test", bobPassword);
+		using (await _b.Vault.KeyMaterialAsync()) { }
+		var keysFile = Path.Combine(_b.Dir, VaultStore.KeysFileName);
+		var keysBefore = File.ReadAllBytes(keysFile);
+		await _pcs.SaveOnAAsync(password: "bank-secret");
+		await _pcs.A.SignInAsync(LocalSyncServer.OtherSub);
+		var recovery = await new SyncKeys(_pcs.Account, _pcs.A.Vault, _pcs.A.Client).TurnOnAsync(Strong, Ct);
+		await _b.SignInAsync(LocalSyncServer.OtherSub);
+		var hello = _b.Sealer.Calls;
+
+		await Assert.ThrowsAsync<SyncRestoreOverAnotherAccountException>(() => Restore(_b, _bAccount).RestoreWithPasswordAsync(Strong, Ct));
+		var restore = Restore(_b, _bAccount);
+		await restore.RestoreWithRecoveryKeyAsync(recovery, Ct);
+		await Assert.ThrowsAsync<SyncRestoreOverAnotherAccountException>(() => restore.ChangePasswordAfterRecoveryAsync(NextStrong, Ct));
+
+		_bAccount.CheckPassword(bobPassword);
+		Assert.Throws<AccountException>(() => _bAccount.CheckPassword(Strong));
+		Assert.Equal(keysBefore, File.ReadAllBytes(keysFile));
+		Assert.Equal(hello, _b.Sealer.Calls);
+		Assert.Null(_b.Vault.SyncKeys);
+	}
+
+	[Fact]
+	public async Task APasswordRestoreOnThePcThatTurnedSyncOnKeepsItsRecoveryKeyAndWhetherItWasSaved()
+	{
+		var recovery = await TurnOnAWithALoginAsync();
+		var version = _pcs.A.Vault.SyncKeys!.Version;
+		_pcs.Account.SignOut();
+
+		await Restore(_pcs.A, _pcs.Account).RestoreWithPasswordAsync(Strong, Ct);
+
+		Assert.Equal(recovery, await _pcs.A.Vault.RecoveryKeyAsync());
+		Assert.False(_pcs.A.Vault.SyncKeys!.RecoveryConfirmed);
+		Assert.Equal(version, _pcs.A.Vault.SyncKeys.Version);
+		Assert.True(_pcs.Account.State().SignedIn);
+	}
+
+	/// <summary>A turns sync on (v1, Strong) and changes the password (v2, NextStrong); the server then serves v1's bytes as v3.</summary>
+	private async Task<VersionedBlob> ReplayOldKeysAsync()
+	{
+		await TurnOnAWithALoginAsync();
+		var old = (await _pcs.A.Client.GetKeysAsync(Ct))!;
+		await new SyncKeys(_pcs.Account, _pcs.A.Vault, _pcs.A.Client).ChangePasswordAsync(Strong, NextStrong, Ct);
+		Assert.Equal(3, await _pcs.A.Client.PutKeysAsync(old.Blob, 2, Ct));
+		return old;
+	}
+
+	[Fact]
+	public async Task SyncDoesntTakeOldKeysServedAtALaterVersionForAPasswordChange()
+	{
+		await ReplayOldKeysAsync();
+
+		await Assert.ThrowsAsync<SyncKeysFormatException>(_pcs.A.SyncAsync);
+
+		Assert.Null(_pcs.A.Vault.SyncKeys!.NewerBlob);
+		Assert.Equal("failed", _pcs.A.Engine.Status.Error);
+	}
+
+	[Fact]
+	public async Task TheGateDoesntTakeTheOldPasswordForOldKeysKeptAtALaterVersion()
+	{
+		var old = await ReplayOldKeysAsync();
+		_pcs.A.Vault.MarkPasswordChangedElsewhere(old.Blob, 3);
+		_pcs.Account.AskForPasswordChangedElsewhere();
+
+		await Assert.ThrowsAsync<SyncKeysFormatException>(() => SyncRestore.SignInWithPasswordChangedElsewhereAsync(_pcs.Account, _pcs.A.Vault, Strong, Ct));
+
+		Assert.False(_pcs.Account.State().SignedIn);
+		_pcs.Account.CheckPassword(NextStrong);
+		Assert.Equal(2, _pcs.A.Vault.SyncKeys!.Version);
+	}
+
+	[Fact]
+	public async Task ANewPcDoesntRestoreOldKeysServedAtALaterVersion()
+	{
+		await ReplayOldKeysAsync();
+		await _b.SignInAsync();
+
+		await Assert.ThrowsAsync<SyncKeysFormatException>(() => Restore(_b, _bAccount).RestoreWithPasswordAsync(Strong, Ct));
+
+		Assert.False(_bAccount.State().HasAccount);
+		Assert.Null(_b.Vault.SyncKeys);
+	}
+
+	/// <summary>Wrapped keys for a vault other than A's, under <see cref="Strong"/>.</summary>
+	private async Task<byte[]> AnotherVaultsKeysAsync()
+	{
+		using var keys = await _b.Vault.KeyMaterialAsync();
+		return SyncKeysBlob.Create(keys, Strong, RecoveryKey.Generate(), _pcs.Account.State().Profile!, version: 2).ToBytes();
+	}
+
+	[Fact]
+	public async Task SyncStopsAtNewerKeysForAnotherVault()
+	{
+		await TurnOnAWithALoginAsync();
+		await _pcs.A.Client.PutKeysAsync(await AnotherVaultsKeysAsync(), 1, Ct);
+
+		var stopped = await Assert.ThrowsAsync<SyncProtocolException>(_pcs.A.SyncAsync);
+
+		Assert.Contains("not this vault", stopped.Message);
+		Assert.Null(_pcs.A.Vault.SyncKeys!.NewerBlob);
+	}
+
+	[Fact]
+	public async Task TheGateRefusesNewerKeysKeptForAnotherVault()
+	{
+		await TurnOnAWithALoginAsync();
+		_pcs.A.Vault.MarkPasswordChangedElsewhere(await AnotherVaultsKeysAsync(), 2);
+		_pcs.Account.AskForPasswordChangedElsewhere();
+
+		await Assert.ThrowsAsync<SyncKeysFormatException>(() => SyncRestore.SignInWithPasswordChangedElsewhereAsync(_pcs.Account, _pcs.A.Vault, Strong, Ct));
+
+		Assert.False(_pcs.Account.State().SignedIn);
+		Assert.Equal(1, _pcs.A.Vault.SyncKeys!.Version);
+	}
+
+	[Fact]
+	public async Task TwoChangesElsewhereKeepTheLatestAndTheGateOpensWithItsPassword()
+	{
+		const string third = "orchid-tumble-saddle-proverb-ink";
+		await TurnOnAWithALoginAsync();
+		byte[] second, latest;
+		using (var keys = await _pcs.A.Vault.KeyMaterialAsync())
+		{
+			var stored = SyncKeysBlob.Parse(_pcs.A.Vault.SyncKeys!.Blob, 1);
+			second = stored.WithPassword(keys, NextStrong, 2).ToBytes();
+			latest = stored.WithPassword(keys, third, 3).ToBytes();
+		}
+
+		_pcs.A.Vault.MarkPasswordChangedElsewhere(second, 2);
+		_pcs.A.Vault.MarkPasswordChangedElsewhere(latest, 3);
+		_pcs.Account.AskForPasswordChangedElsewhere();
+
+		Assert.Equal(3, _pcs.A.Vault.SyncKeys!.NewerVersion);
+		var refused = await Assert.ThrowsAsync<AccountException>(() => SyncRestore.SignInWithPasswordChangedElsewhereAsync(_pcs.Account, _pcs.A.Vault, NextStrong, Ct));
+		Assert.Equal(AccountErrorCode.WrongPassword, refused.Code);
+		await SyncRestore.SignInWithPasswordChangedElsewhereAsync(_pcs.Account, _pcs.A.Vault, third, Ct);
+		Assert.True(_pcs.Account.State().SignedIn);
+		_pcs.Account.CheckPassword(third);
+		Assert.Equal(3, _pcs.A.Vault.SyncKeys!.Version);
 	}
 
 	[Fact]

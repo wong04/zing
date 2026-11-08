@@ -57,7 +57,11 @@ public sealed class SyncSetupTests : IDisposable
 
 	private async Task<string> TurnOn(AccountStore account, string password = Strong) => await new SyncKeys(account, _vault, _client).TurnOnAsync(password, Ct);
 
-	private async Task<SyncKeysBlob> ServerKeys() => SyncKeysBlob.Parse((await _client.GetKeysAsync(Ct))!.Blob);
+	private async Task<SyncKeysBlob> ServerKeys()
+	{
+		var served = (await _client.GetKeysAsync(Ct))!;
+		return SyncKeysBlob.Parse(served.Blob, served.Version);
+	}
 
 	private List<string> SyncCalls() => [.. _server.Wire.Log.Where(l => l is "PUT /keys" or "POST /changes" or "PUT /manifest")];
 
@@ -210,9 +214,9 @@ public sealed class SyncSetupTests : IDisposable
 		var otherVault = JsonNode.Parse(raw)!;
 		otherVault["vaultId"] = new string('a', 32);
 
-		Assert.Throws<VaultTamperedException>(() => SyncKeysBlob.Parse(Encoding.UTF8.GetBytes(moreIterations.ToJsonString())).UnwrapWithRecoveryKey(recovery));
-		Assert.Throws<VaultTamperedException>(() => SyncKeysBlob.Parse(Encoding.UTF8.GetBytes(otherVault.ToJsonString())).UnwrapWithRecoveryKey(recovery));
-		Assert.Throws<VaultTamperedException>(() => SyncKeysBlob.Parse(Encoding.UTF8.GetBytes(otherVault.ToJsonString())).UnwrapWithPassword(Strong));
+		Assert.Throws<VaultTamperedException>(() => SyncKeysBlob.Parse(Encoding.UTF8.GetBytes(moreIterations.ToJsonString()), 1).UnwrapWithRecoveryKey(recovery));
+		Assert.Throws<VaultTamperedException>(() => SyncKeysBlob.Parse(Encoding.UTF8.GetBytes(otherVault.ToJsonString()), 1).UnwrapWithRecoveryKey(recovery));
+		Assert.Throws<VaultTamperedException>(() => SyncKeysBlob.Parse(Encoding.UTF8.GetBytes(otherVault.ToJsonString()), 1).UnwrapWithPassword(Strong));
 	}
 
 	[Fact]
@@ -224,7 +228,7 @@ public sealed class SyncSetupTests : IDisposable
 		var weak = JsonNode.Parse((await _client.GetKeysAsync(Ct))!.Blob)!;
 		weak["kdf"]!["memoryKiB"] = 64 * 1024;
 
-		Assert.Throws<KdfParamsRejectedException>(() => SyncKeysBlob.Parse(Encoding.UTF8.GetBytes(weak.ToJsonString())));
+		Assert.Throws<KdfParamsRejectedException>(() => SyncKeysBlob.Parse(Encoding.UTF8.GetBytes(weak.ToJsonString()), 1));
 	}
 
 	[Fact]
@@ -285,7 +289,7 @@ public sealed class SyncSetupTests : IDisposable
 		var after = await _client.GetKeysAsync(Ct);
 		Assert.Equal(before!.Version + 1, after!.Version);
 		Assert.Equal(after.Version, _vault.SyncKeys!.Version);
-		var blob = SyncKeysBlob.Parse(after.Blob);
+		var blob = SyncKeysBlob.Parse(after.Blob, after.Version);
 		Assert.Throws<VaultTamperedException>(() => blob.UnwrapWithPassword(Strong));
 		using var local = await _vault.KeyMaterialAsync();
 		using (var opened = blob.UnwrapWithPassword(NextStrong))
@@ -353,14 +357,14 @@ public sealed class SyncSetupTests : IDisposable
 
 	[Fact]
 	public void ATruncatedKeysBlobIsRefusedWithItsOwnError() =>
-		Assert.Throws<SyncKeysFormatException>(() => SyncKeysBlob.Parse(JsonSerializer.SerializeToUtf8Bytes(new { format = 1 })));
+		Assert.Throws<SyncKeysFormatException>(() => SyncKeysBlob.Parse(JsonSerializer.SerializeToUtf8Bytes(new { format = 1 }), 1));
 
 	/// <summary>What a turn-on stores before its PUT /keys: this vault's keys wrapped under <see cref="Strong"/> and a new recovery key.</summary>
 	private async Task<(VaultPendingKeys Pending, string Recovery)> PendingTurnOn(AccountStore account)
 	{
 		var recovery = RecoveryKey.Generate();
 		using var keys = await _vault.KeyMaterialAsync();
-		var blob = SyncKeysBlob.Create(keys, Strong, recovery, account.State().Profile!).ToBytes();
+		var blob = SyncKeysBlob.Create(keys, Strong, recovery, account.State().Profile!, version: 1).ToBytes();
 		return (new VaultPendingKeys(_vault.SyncAccount()!.UserId, blob, 0, RecoverySeal.Seal(keys.SecretKey, keys.VaultId, recovery)), recovery);
 	}
 
@@ -492,7 +496,7 @@ public sealed class SyncSetupTests : IDisposable
 		await TurnOn(account);
 		var stored = _vault.SyncKeys!;
 		using var keys = await _vault.KeyMaterialAsync();
-		var changed = SyncKeysBlob.Parse(stored.Blob).WithPassword(keys, NextStrong).ToBytes();
+		var changed = SyncKeysBlob.Parse(stored.Blob, stored.Version).WithPassword(keys, NextStrong, stored.Version + 1).ToBytes();
 		_vault.SavePendingSyncKeys(new VaultPendingKeys(stored.UserId, changed, stored.Version, stored.SealedRecoveryKey));
 		await _client.PutKeysAsync(changed, stored.Version, Ct);
 		return stored;

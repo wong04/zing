@@ -370,7 +370,7 @@ public sealed class SyncBridgeTests : IDisposable
 	}
 
 	[Fact]
-	public async Task OnAFreshProfileRestoreFromSyncTurnsTheVaultOnAndMakesTheAccountWithThePassword()
+	public async Task OnAFreshProfileRestoreFromSyncTurnsTheVaultOnAndKeepsTheSignInOnlyOnceTheAccountIsMade()
 	{
 		var a = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
 		await _vault.SaveAsync(new NewLogin("https://bank.example.test", "ada", "bank-secret", "Bank", ""));
@@ -383,6 +383,8 @@ public sealed class SyncBridgeTests : IDisposable
 		var signedIn = Value(await Invoke(b, "sync:restore-sign-in"));
 		var wrong = Value(await Invoke(b, "sync:restore-password", "labour-muzzle-medici-rushes-fiction"));
 		Assert.False(account.State().HasAccount);
+		Assert.False(fresh.Settings.Get("passwordAutofill")!.GetValue<bool>());
+		Assert.Null(fresh.Vaults.Current);
 		var restored = Value(await Invoke(b, "sync:restore-password", Strong));
 
 		Assert.True(signedIn.GetProperty("signedIn").GetBoolean());
@@ -392,6 +394,7 @@ public sealed class SyncBridgeTests : IDisposable
 		Assert.True(restored.GetProperty("state").GetProperty("signedIn").GetBoolean());
 		account.CheckPassword(Strong);
 		Assert.Equal(_vault.VaultId, fresh.Vaults.Current!.VaultId);
+		Assert.Equal(_vault.SyncAccount()!.UserId, fresh.Vaults.Current.SyncAccount()!.UserId);
 	}
 
 	[Fact]
@@ -408,6 +411,8 @@ public sealed class SyncBridgeTests : IDisposable
 		var mistyped = await Invoke(b, "sync:restore-recovery-key", recovery[..^1]);
 		Assert.True((await Invoke(b, "sync:restore-recovery-key", recovery)).GetProperty("ok").GetBoolean());
 		Assert.False(account.State().HasAccount);
+		Assert.False(fresh.Settings.Get("passwordAutofill")!.GetValue<bool>());
+		Assert.Null(fresh.Vaults.Current);
 		var set = Value(await Invoke(b, "sync:restore-new-password", "labour-muzzle-medici-rushes-fiction"));
 
 		Assert.Equal(nameof(RecoveryKeyFormatException), mistyped.GetProperty("error").GetProperty("name").GetString());
@@ -425,7 +430,7 @@ public sealed class SyncBridgeTests : IDisposable
 		var stored = _vault.SyncKeys!;
 		using (var keys = await _vault.KeyMaterialAsync())
 		{
-			var newer = SyncKeysBlob.Parse(stored.Blob).WithPassword(keys, "labour-muzzle-medici-rushes-fiction").ToBytes();
+			var newer = SyncKeysBlob.Parse(stored.Blob, stored.Version).WithPassword(keys, "labour-muzzle-medici-rushes-fiction", stored.Version + 1).ToBytes();
 			_vault.MarkPasswordChangedElsewhere(newer, stored.Version + 1);
 		}
 		SyncRestore.AskIfPasswordChangedElsewhere(account, _vault);
@@ -485,7 +490,8 @@ public sealed class SyncBridgeTests : IDisposable
 		Assert.Equal("ok", Value(await change).GetProperty("status").GetString());
 		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
 		var client = app.SyncClients!.For(_vault);
-		using var opened = SyncKeysBlob.Parse((await client.GetKeysAsync(TestContext.Current.CancellationToken))!.Blob).UnwrapWithPassword("labour-muzzle-medici-rushes-fiction");
+		var served = (await client.GetKeysAsync(TestContext.Current.CancellationToken))!;
+		using var opened = SyncKeysBlob.Parse(served.Blob, served.Version).UnwrapWithPassword("labour-muzzle-medici-rushes-fiction");
 		app.SyncClients.Dispose();
 	}
 }

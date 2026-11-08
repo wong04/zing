@@ -165,7 +165,6 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		restoreWithPassword: (password) => invoke('sync:restore-password', password),
 		restoreWithRecoveryKey: (key) => invoke('sync:restore-recovery-key', key),
 		setPasswordAfterRecovery: (password) => invoke('sync:restore-new-password', password),
-		onPasswordChangedElsewhere: (listener) => listen('sync:password-changed-elsewhere', () => listener()),
 		onTabsState: (listener) => listen('tabs:state', listener),
 		onFocusAddress: (listener) => listen('chrome:focus-address', () => listener()),
 		onStackDropdown: (listener) => listen('stack:dropdown', listener),

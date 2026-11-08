@@ -165,7 +165,7 @@ internal sealed class TwoPcs : IDisposable
 	{
 		_b = new SyncPc(Server);
 		await B.SignInAsync();
-		await new SyncRestore(new AccountStore(_bAccountDir, new FakeCipher()), B.Vault, B.Client).RestoreWithPasswordAsync(Strong, Ct);
+		await new SyncRestore(new AccountStore(_bAccountDir, new FakeCipher()), () => B.Vault, B.Client, B.Vault).RestoreWithPasswordAsync(Strong, Ct);
 		await B.SyncAsync();
 	}
 

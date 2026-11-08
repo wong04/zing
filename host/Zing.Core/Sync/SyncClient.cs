@@ -40,6 +40,30 @@ public interface ISyncAccountStore
 	void MarkSyncSignedOut();
 }
 
+/// <summary>A sign-in kept in memory only: a restore's, until the restore succeeds and the vault keeps it (M4 of the Task 14 review).</summary>
+public sealed class HeldSyncSignIn : ISyncAccountStore
+{
+	private readonly Lock _gate = new();
+	private SyncAccount? _account;
+
+	public SyncAccount? SyncAccount()
+	{
+		lock (_gate) return _account;
+	}
+
+	public void SaveSyncAccount(SyncAccount account)
+	{
+		lock (_gate) _account = account;
+	}
+
+	public void ForgetSyncAccount()
+	{
+		lock (_gate) _account = null;
+	}
+
+	public void MarkSyncSignedOut() => ForgetSyncAccount();
+}
+
 /// <summary>The wrapped keys or the account manifest, with the version the server gave it.</summary>
 public sealed record VersionedBlob(byte[] Blob, long Version);
 
@@ -122,6 +146,24 @@ public sealed class SyncClient : IDisposable
 		_store.SaveSyncAccount(account);
 		_session = new Session(login.Session, login.UserId);
 		return account;
+	}
+
+	/// <summary>
+	/// Takes over a sign-in another client made (a restore's, held in memory until the restore succeeded, M4 of the Task 14 review): it's
+	/// stored, and a session this client held for an earlier sign-in is dropped. The other client is disposed after, unused.
+	/// </summary>
+	public async Task AdoptAsync(SyncAccount account, CancellationToken cancellation = default)
+	{
+		await _refreshing.WaitAsync(cancellation);
+		try
+		{
+			_store.SaveSyncAccount(account);
+			_session = null;
+		}
+		finally
+		{
+			_refreshing.Release();
+		}
 	}
 
 	/// <summary>

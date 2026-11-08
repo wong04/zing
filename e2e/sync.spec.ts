@@ -44,8 +44,8 @@ function serverEnvironment(): NodeJS.ProcessEnv {
 		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS].join(','),
 		ZING_DB_PATH: join(serverDir, 'zing.db'),
 		// Every PC of the run is 127.0.0.1, so one per-IP budget: the default 60 a minute is a production limit (its own tests cover it).
-		ZING_RATE_IP_PER_MINUTE: '100000',
-		ZING_RATE_USER_PER_MINUTE: '100000',
+		ZING_RATE_IP_PER_MINUTE: '1000',
+		ZING_RATE_USER_PER_MINUTE: '1000',
 	}
 }
 

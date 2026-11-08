@@ -84,6 +84,7 @@ The owner hasn't confirmed these yet; they are open to change.
   - `AccountStore` gains a change-password operation, which today it doesn't have.
   - If the password is weaker than the sync floor, turning on sync asks for a new one as part of the same flow.
 - **The recovery key** is shown once, when sync is turned on, and the user must confirm they've saved or printed it before carrying on. It can be shown again later from Settings, after Windows Hello.
+  - **Deviation, accepted (Ruling 61): a PC restored with the Zing password can't show the recovery key.** The server copy holds the recovery key only as a key, not as the printable code, and the password restore never sees the code. Only a PC that turned sync on, or that was restored with the recovery key, holds a sealed copy and can show it again. On a password-restored PC, Settings says to use the saved copy or show it on the PC that turned sync on. A password restore on a PC that already holds the sealed copy keeps it.
 - **Password strength.** Turning on sync requires a Zing password of about 60 bits or more (zxcvbn score 4), and offers a generated five-word passphrase. Today's 8-character minimum still applies when sync is off.
 - **The manage page lives in Settings:**
   - a searchable list by site, with username, password (hidden) and note
@@ -159,6 +160,9 @@ on this PC:  index key  ──sealed by──▶ DPAPI
   - **A same-version write with other bytes.** After a restore, another PC's write in the restored gap can land at the version this PC holds, with different bytes. If this PC's cursor is past it, the pull never serves it, so the equal-version check can't see it, and the two PCs hold different copies of one version. Closing it needs a per-entry digest in the sealed manifest, compared while this PC's copy is unchanged.
   - **Another PC's refused copy served at a higher version (O1).** The server keeps a copy it refused from one PC and serves it to a third PC over that PC's lower floor. Its ciphertexts are authentic for the item, and the merge rules keep every password, so nothing is lost, but the third PC can see the refused edit until the next merge brings the PCs back together.
   - **A forked manifest history (O2).** A server can give PCs different manifest histories, for example an older manifest to a PC that was offline, which then writes over it. The same-version check catches a fork at this PC's own floor; a fork that this PC only ever sees past its floor goes unseen, and with a forced full resync it can have a listed login taken as purged on this PC.
+- **Residual risks, accepted (Ruling 61): the keys version.** Each wrapped-keys blob names, inside its password wraps, the keys version it was written for, and a PC refuses a blob served at another version. So the server can't serve old keys again at a later version to bring an old password back. What remains:
+  - **A forced "password changed on another PC" gate.** Sync can't check a newer blob without the new password. A server that serves garbage at a later version, with this vault's ID and that version written in, makes the next start ask for a new password that nothing opens. The account sign-in stays refused until the person restores with the recovery key, which goes through the same server. Confidentiality holds, and "Skip for now" still opens the browser; it's availability only.
+  - **A keys rollback isn't reported.** A server that serves an older keys version than this PC holds isn't flagged: this PC keeps its own, and a password restore over this PC's own keys keeps the later version. Nothing is unwrapped with the older keys, so no old password comes back, but the person isn't told the server went back.
 - **Residual risk, accepted (Ruling 56): a withheld delete.** The manifest lists only live logins, not tombstones. A malicious server can hold a tombstone back from a PC's delta pull, if that PC never saw the soft delete (it was offline for the 30 days before the purge). Since Ruling 58 the PC notices: the manifest no longer lists the login, so its sync stops with a held-back error rather than keeping it live silently. Upload this PC's copy then keeps this PC's live copy against the server's tombstone, which brings back a delete the person never saw on this PC. The server can't bring the login back on any other PC, because their floors are the tombstone, and it can't read or change a password. A PC past the horizon resyncs fully and drops the login. Listing tombstones would need per-entry revisions and a rule to skip them once purged, which adds failure modes to protect a deleted login.
 
 ## Sync design
@@ -185,6 +189,8 @@ on this PC:  index key  ──sealed by──▶ DPAPI
   4. Seal the index key with DPAPI and the secret key with this PC's Windows Hello.
   5. Create the local Zing account.
   6. If the recovery key was used, set a new Zing password straight away.
+
+  Nothing on the PC changes until the keys have opened and, with the recovery key, the new password is set: the Google sign-in is kept in memory, and the vault turned on, only then. A PC that already has a Zing account restores only for the Google account and vault its keys already sync, which is the forgotten-password case (Ruling 61).
 
 ## The server
 

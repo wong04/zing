@@ -249,7 +249,7 @@ public sealed class SyncEngineTests : IDisposable
 		await A.SignInAsync();
 		var recovery = RecoveryKey.Generate();
 		using var keys = await A.Vault.KeyMaterialAsync();
-		var blob = SyncKeysBlob.Create(keys, TwoPcs.Strong, recovery, _pcs.Account.State().Profile!).ToBytes();
+		var blob = SyncKeysBlob.Create(keys, TwoPcs.Strong, recovery, _pcs.Account.State().Profile!, version: 1).ToBytes();
 		A.Vault.SavePendingSyncKeys(new VaultPendingKeys(A.Vault.SyncAccount()!.UserId, blob, 0, RecoverySeal.Seal(keys.SecretKey, keys.VaultId, recovery)));
 		await A.Client.PutKeysAsync(blob, 0, Ct);
 	}
