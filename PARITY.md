@@ -12,7 +12,7 @@ These are macOS-only and have a Windows replacement tracked above:
 
 | Krackn | Zing |
 |---|---|
-| Keychain AutoFill bridge | Built-in vault (V1–V3) |
+| Keychain AutoFill bridge | Built-in vault with encrypted sync (V1–V5) |
 | `.mobileconfig` DNS profile | PowerShell DoH script (X5) |
 | `sips`, `textutil`, PDFKit | sharp, mammoth/pandoc, printToPDF (X6, X7) |
 | AVKit, QuickLook | `<video>`, metadata fallback (X15; SceneKit and 3D models dropped) |
@@ -193,6 +193,8 @@ Also dropped:
 | V1 | Vault storage + Windows Hello unlock | new | Features/Browser/KeychainAutofill.swift (replaced) | [#95](https://github.com/wong04/zing/issues/95) | Done |
 | V2 | Sign-in field detection and fill | parity | Features/Browser/KeychainAutofill.swift | [#96](https://github.com/wong04/zing/issues/96) | Done |
 | V3 | Save prompt, manage page, privacy banner | new | App/AppSettings.swift (passwordAutofill) | [#97](https://github.com/wong04/zing/issues/97) | Done |
+| V4 | Encrypted password sync between PCs (Railway server, Google sign-in, merge with password history) | new | - | - | Partial: awaiting the owner's check against the deployed server |
+| V5 | Restore on a new PC with the Zing password or a recovery key | new | - | - | Partial: awaiting the owner's check against the deployed server |
 
 Evidence (e2e/vault.spec.ts unless noted; screenshots in [docs/screenshots/phase-6b](docs/screenshots/phase-6b)):
 
