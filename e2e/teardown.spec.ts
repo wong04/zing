@@ -44,6 +44,8 @@ test('a window that closes at any checkpoint of its startup leaves nothing behin
 	expect(checkpoints).toBeGreaterThanOrEqual(3)
 	await expect.poll(() => pages(zing.browser).filter(isChrome).length).toBe(2)
 	const second = pages(zing.browser).filter(isChrome).find((p) => p !== first)!
+	// Listed once its document commits, before its bundle has put zing on window; that has run by DOMContentLoaded.
+	await second.waitForLoadState('domcontentloaded')
 	// Its renderer goes with the window, so the call may never answer.
 	void second.evaluate(() => window.zing.runCommand('window.close')).catch(() => undefined)
 	await countsMatching(first, { windows: 1, pending: 0, views: rest.views, newest: { serial: 2, closed: true } }, 'the second window closes')
