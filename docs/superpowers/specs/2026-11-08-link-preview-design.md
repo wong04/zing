@@ -73,7 +73,7 @@ The owner used this in Arc and loved it. They click a link, for example a Google
 
 Two engine events carry link clicks:
 
-- **A plain click** that stays in the window raises `NavigationStarting`. It previews when *all* of these hold: the navigation is user-initiated and not a redirect, it is a link click (not a form post, reload, script navigation, address-bar entry or bookmark), and the target host differs from the current host (decision 2). The navigation in the tab is cancelled and the URL opens in a preview instead.
+- **A plain click** that stays in the window raises `NavigationStarting`. It previews when *all* of these hold: the latest `Page.frameRequestedNavigation` reason for that exact URL is `anchorClick` (so not a redirect, form post, reload, script navigation, address-bar entry or bookmark; see Spike results), and the target host differs from the current host (decision 2). The navigation in the tab is cancelled and the URL opens in a preview instead.
 - **A new-window request** raises `NewWindowRequested`. That covers `target=_blank`, `window.open` without popup features, and Shift-, Ctrl- and middle-click.
   - **Shift held:** preview, whatever the host (decision 3), unless the Shift setting is off.
   - **Ctrl held or middle button:** unchanged. A tab, as today.
@@ -157,23 +157,25 @@ Fallback if the scrim hole fails (design B): the preview page lives in an opaque
 
 Rejected: CSS dim injected into the page behind (fragile, visible to the site), a second top-level window (taskbar, Alt+Tab, focus), and visual hosting (see Anti-goals).
 
+## Spike results
+
+The spike, done 2026-11-08, is in `spikes/link-preview/` (throwaway, not part of the product). Its README has the details.
+
+- **The scrim hole works.** A layered owned popup with a `SetWindowRgn` hole dims the live page, the preview takes clicks through the hole, and the region follows a resize. Design A is a go.
+- **Expand keeps the page.** Moving the preview's child window into the tab slot keeps the marker, the input, the scroll position and `timeOrigin`, with no navigation. Re-parenting the controller works too, so design B stays a usable fallback.
+- **Link clicks can be told apart.** `Page.frameRequestedNavigation` (after `Page.enable`) arrives **before** `NavigationStarting` every time, with reason `anchorClick`, `scriptInitiated` or `formSubmissionPost`. Plain-click previews are in v1.
+  - `IsUserInitiated` was true even for script navigations, so the rule keys on the reason: preview only when the latest reason for that exact URL is `anchorClick`.
+  - `NavigationStarting` has no deferral in this SDK, so the decision is synchronous.
+  - Redirected hops carry no reason, so they never preview.
+- **Held new windows work.** A new-window request can load in a hidden child window until its first real `http(s)` document, then be shown as a preview or a tab, and `window.open` keeps `window.opener`. Plain `target=_blank` links have no opener (Chromium's implicit `noopener`), as in any browser.
+
 ## Risks, most serious first
 
-1. **`SetWindowRgn` on a layered owned popup.** A window with a hole, correct hit-testing, no flicker on resize or DPI change, and still above the child page. Unproven. Spike first.
-2. **Telling a link click from other navigations.** `NavigationStarting` fires for form posts, script navigations and redirects too. The likely signal is the DevTools event `Page.frameRequestedNavigation`, whose `reason` field is `anchorClick` for link clicks. It is not yet proven that it arrives in time to cancel the navigation. Spike. If it cannot, v1 previews new-window requests and Shift-clicks only, and plain-click previews follow.
-3. **Previews on every tab change everyday browsing.** Search pages are excluded (decision 10), but any other site that links out now previews. The owner should try it for a day.
-4. **The owned-popup focus model** (the "activation dance", `WM_NCACTIVATE`). Two more owned popups bring bugs of that kind. Hand checks are needed.
-5. **Expand into `TabService`.** Today "page exists" means "tab is awake". Injecting a page must not confuse sleep, restore or ordering.
-6. **Keys change meaning** while a preview is open (Ctrl+W, Esc). They are routed in one place and tested.
-
-## Spike (before the plan is final)
-
-Throwaway, in `spikes/link-preview/`, never merged into the product. It must show:
-
-1. A layered owned popup with a `SetWindowRgn` hole over a live child-window WebView2. The page shows and takes clicks through the hole, the dim does not, the whole thing stays in place across resize and a DPI change, and nothing flickers.
-2. Expand: the same `CoreWebView2` moves from the preview slot to the tab slot with no reload. `performance.timeOrigin` stays the same and a `window.__marker` survives.
-3. Whether `Page.frameRequestedNavigation` (reason `anchorClick`) arrives before `NavigationStarting`, or in time to cancel it.
-4. That a new-window request can be held unshown until its first real document, then shown as either a preview or a tab, with `window.opener` intact.
+1. **Previews on every tab change everyday browsing.** Search pages are excluded (decision 10), but any other site that links out now previews. The owner should try it for a day.
+2. **The owned-popup focus model** (the "activation dance", `WM_NCACTIVATE`). Two more owned popups bring bugs of that kind. The spike did not cover focus, a DPI change between monitors, or flicker during a live drag-resize. These are hand checks.
+3. **Expand into `TabService`.** Today "page exists" means "tab is awake". Injecting a page must not confuse sleep, restore or ordering.
+4. **Keys change meaning** while a preview is open (Ctrl+W, Esc). They are routed in one place and tested.
+5. **`Page.enable` on every page.** It opens a DevTools event stream per page. Check that it adds no visible cost and does not clash with any other DevTools use in the host.
 
 ## Tests (what "done" means)
 
