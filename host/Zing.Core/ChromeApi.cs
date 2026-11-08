@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Zing.Core.Engines;
+using Zing.Core.LinkPreview;
 using Zing.Core.Viewer;
 using Zing.Core.Net;
 using Zing.Core.Vault;
@@ -175,7 +176,7 @@ public sealed class ChromeApi : IDisposable
 		_host = host;
 		_appVersion = appVersion;
 		_placement = OutputPlacement.ForSettings(app.Settings);
-		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text));
+		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text), PeekSettings, host.Scheduler);
 		Saved = new SavedTabs(Tabs, app.Library);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
@@ -1201,6 +1202,8 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	private string Setting(string key) => _app.Settings.Get(key)?.GetValue<string>() ?? throw new InvalidDataException($"Setting {key} is missing");
+
+	private PeekSettings PeekSettings() => new(Flag("linkPreviews"), Flag("linkPreviewsShiftClick"), Flag("linkPreviewsFromNewWindows"));
 
 	private bool Flag(string key) => _app.Settings.Get(key)?.GetValue<bool>() ?? throw new InvalidDataException($"Setting {key} is missing");
 

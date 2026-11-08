@@ -1,5 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
+using Zing.Core.LinkPreview;
 using Zing.Core.Net;
 
 namespace Zing.Host;
@@ -11,7 +12,7 @@ namespace Zing.Host;
 public sealed class WebView2Page : IPage
 {
 
-	private readonly IPageEvents _events;
+	private IPageEvents _events;
 	private readonly Func<string, StartPageResponse> _serveStartPage;
 	private readonly IPageFeatureHost _features;
 	private readonly bool _persistent;
@@ -93,6 +94,8 @@ public sealed class WebView2Page : IPage
 	public CoreWebView2 Core => _core ?? throw new InvalidOperationException("The page has not started");
 
 	public bool IsOpen { get; private set; } = true;
+
+	public void Rebind(IPageEvents events) => _events = events;
 
 	public bool IsStarted => _core is not null;
 
@@ -476,7 +479,8 @@ public sealed class WebView2Page : IPage
 				return;
 			}
 			// Links a page offers are cleaned at navigation time, server redirects included.
-			switch (_events.Navigating(core.Source, e.Uri))
+			// Task 6 tells link clicks apart (Page.frameRequestedNavigation); until then none previews.
+			switch (_events.Navigating(core.Source, e.Uri, NavigationCause.Other))
 			{
 				case NavigationDecision.Cancelled:
 					e.Cancel = true;
@@ -780,15 +784,18 @@ public sealed class WebView2Page : IPage
 			if (RelayedNavigation.PlainHttpNotice(TopOf(sender), e.Uri) is { } refused) _events.Notice(refused);
 			return;
 		}
-		Background(OpenPopupAsync(e, target), "popup");
+		// Task 6 reads the keys and button that asked.
+		var request = new PopupRequest(target, default, e.WindowFeatures.HasSize || e.WindowFeatures.HasPosition);
+		Background(OpenPopupAsync(e, request), "popup");
 	}
 
-	private async Task OpenPopupAsync(CoreWebView2NewWindowRequestedEventArgs e, string target)
+	private async Task OpenPopupAsync(CoreWebView2NewWindowRequestedEventArgs e, PopupRequest request)
 	{
+		var target = request.Url;
 		var deferral = e.GetDeferral();
 		try
 		{
-			var popup = (WebView2Page)_events.Popup(target, background: false);
+			var popup = (WebView2Page)_events.Popup(request);
 			// The engine starts the window on the address the page gave; for a mapped one that navigation is sent onto the relay by the rule for a relayed page's own.
 			if (RelayedContent.IsRelayUrl(target)) popup.AllowFirstNavigation(target);
 			await popup.Ready;

@@ -4,7 +4,8 @@ namespace Zing.Core.Tests;
 
 public sealed class FakePage(IPageEvents events) : IPage
 {
-	public IPageEvents Events { get; } = events;
+	public IPageEvents Events { get; private set; } = events;
+	public void Rebind(IPageEvents events) => Events = events;
 	public List<string> Calls { get; } = [];
 	public string Url { get; set; } = "";
 	public string Title { get; set; } = "";
@@ -106,6 +107,13 @@ public sealed class FakePageHost : IPageHost
 		((FakePage)page).Shown = false;
 		if (_focused == page) _focused = null;
 	}
+
+	/// <summary>Every ShowPreview call's layers, bottom first; an empty one removed the preview.</summary>
+	public List<IReadOnlyList<IPage>> Previews { get; } = [];
+	public int PreviewFocuses { get; private set; }
+
+	public void ShowPreview(IReadOnlyList<IPage> layers) => Previews.Add([.. layers]);
+	public void FocusPreview() => PreviewFocuses++;
 }
 
 public sealed class FakeWindowHost : IWindowHost

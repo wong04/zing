@@ -1,4 +1,5 @@
 using Zing.Core;
+using Zing.Core.LinkPreview;
 
 namespace Zing.Core.Tests;
 
@@ -70,8 +71,8 @@ public sealed class TabServiceTests
 	{
 		var tab = _tabs.Open("about:blank");
 		var events = ((FakePage)_tabs.PageOf(tab.Id)!).Events;
-		Assert.Equal(new NavigationDecision.Redirect("https://example.com/"), events.Navigating("about:blank", "https://example.com/?fbclid=abc"));
-		Assert.Equal(NavigationDecision.Allow, events.Navigating("about:blank", "https://example.com/"));
+		Assert.Equal(new NavigationDecision.Redirect("https://example.com/"), events.Navigating("about:blank", "https://example.com/?fbclid=abc", NavigationCause.Other));
+		Assert.Equal(NavigationDecision.Allow, events.Navigating("about:blank", "https://example.com/", NavigationCause.Other));
 	}
 
 	[Fact]
@@ -92,7 +93,7 @@ public sealed class TabServiceTests
 		var opener = _tabs.Open("https://a.example");
 		_tabs.Open("https://b.example");
 		_tabs.Activate(opener.Id);
-		var popup = ((FakePage)_tabs.PageOf(opener.Id)!).Events.Popup("https://login.example", background: false);
+		var popup = ((FakePage)_tabs.PageOf(opener.Id)!).Events.Popup(new PopupRequest("https://login.example", default, false));
 		var records = _tabs.Records.Select(r => r.Url).ToList();
 		Assert.Equal(["https://a.example", "https://login.example", "https://b.example"], records);
 		Assert.Same(popup, _host.Shown);
@@ -108,7 +109,7 @@ public sealed class TabServiceTests
 	public void A_background_popup_does_not_take_the_front()
 	{
 		var opener = _tabs.Open("https://a.example");
-		((FakePage)_tabs.PageOf(opener.Id)!).Events.Popup("https://b.example", background: true);
+		((FakePage)_tabs.PageOf(opener.Id)!).Events.Popup(new PopupRequest("https://b.example", new Modifiers(Shift: false, Ctrl: true, Middle: false), false));
 		Assert.Equal(opener.Id, _tabs.ActiveId);
 		Assert.Equal(2, _tabs.Records.Count);
 	}
@@ -291,7 +292,7 @@ public sealed class TabCrashServiceTests
 		var tab = _tabs.Open("https://a.example/");
 		var events = PageOf(tab.Id).Events;
 		events.Crashed(PageFault.Crashed);
-		Assert.Equal(NavigationDecision.Allow, events.Navigating("https://a.example/", "https://a.example/"));
+		Assert.Equal(NavigationDecision.Allow, events.Navigating("https://a.example/", "https://a.example/", NavigationCause.Other));
 		Assert.Null(_tabs.FaultOf(tab.Id));
 	}
 
@@ -301,9 +302,9 @@ public sealed class TabCrashServiceTests
 		var tab = _tabs.Open("https://a.example/");
 		var events = PageOf(tab.Id).Events;
 		events.Crashed(PageFault.Crashed);
-		events.Navigating("https://a.example/", "https://b.example/?utm_source=x");
+		events.Navigating("https://a.example/", "https://b.example/?utm_source=x", NavigationCause.Other);
 		Assert.Equal(PageFault.Crashed, _tabs.FaultOf(tab.Id));
-		events.Navigating("https://a.example/", "https://b.example/");
+		events.Navigating("https://a.example/", "https://b.example/", NavigationCause.Other);
 		Assert.Null(_tabs.FaultOf(tab.Id));
 	}
 
@@ -359,3 +360,305 @@ public sealed class TabCrashServiceTests
 		Assert.Null(_tabs.FaultOf(first.Id));
 	}
 }
+
+#region link previews
+
+public sealed class TabPreviewServiceTests
+{
+	private readonly FakePageHost _host = new();
+	private readonly ManualScheduler _scheduler = new();
+	private readonly TabService _tabs;
+	private PeekSettings _settings = new(Enabled: true, ShiftClick: true, FromNewWindows: true);
+
+	public TabPreviewServiceTests()
+	{
+		_tabs = new TabService(new TabStore(Deterministic.Clock(), Deterministic.Ids()), _host, "about:blank", () => { }, (_, _) => { }, peekSettings: () => _settings, scheduler: _scheduler);
+	}
+
+	private (TabRecord Tab, FakePage Page) OpenSource()
+	{
+		var tab = _tabs.Open("https://a.example/");
+		return (tab, _host.PageFor(_tabs, tab.Id));
+	}
+
+	private FakePage Peek(FakePage source)
+	{
+		Assert.Equal(NavigationDecision.Cancel, source.Events.Navigating("https://a.example/", "https://b.example/", NavigationCause.AnchorClick));
+		return (FakePage)_tabs.Preview!.Top.Page;
+	}
+
+	private static PopupRequest Window(string url, Modifiers modifiers = default, bool features = false) => new(url, modifiers, features);
+
+	[Fact]
+	public void CrossHostAnchorClickOpensAPreviewNotATab()
+	{
+		var (tab, page) = OpenSource();
+		var decision = page.Events.Navigating("https://a.example/", "https://b.example/?utm_source=x&id=1", NavigationCause.AnchorClick);
+		Assert.Equal(NavigationDecision.Cancel, decision);
+		Assert.Equal(tab.Id, _tabs.Preview!.SourceTabId);
+		Assert.Single(_tabs.Records);
+		var shown = (FakePage)Assert.Single(_host.Previews[^1]);
+		Assert.Equal(["navigate https://b.example/?id=1"], shown.Calls);
+		Assert.Equal(1, _host.PreviewFocuses);
+	}
+
+	[Fact]
+	public void SameHostClickNavigatesInPlace()
+	{
+		var (_, page) = OpenSource();
+		Assert.Equal(NavigationDecision.Allow, page.Events.Navigating("https://a.example/", "https://a.example/next", NavigationCause.AnchorClick));
+		Assert.Null(_tabs.Preview);
+		Assert.Empty(_host.Previews);
+	}
+
+	[Fact]
+	public void WithPreviewsOffACrossHostClickNavigatesInPlace()
+	{
+		_settings = _settings with { Enabled = false };
+		var (_, page) = OpenSource();
+		Assert.Equal(NavigationDecision.Allow, page.Events.Navigating("https://a.example/", "https://b.example/", NavigationCause.AnchorClick));
+		Assert.Null(_tabs.Preview);
+	}
+
+	[Fact]
+	public void NewWindowToAnotherHostReturnsThePreviewPage()
+	{
+		var (_, page) = OpenSource();
+		var popup = page.Events.Popup(Window("https://b.example/"));
+		Assert.Same(_tabs.Preview!.Top.Page, popup);
+		// The engine loads the window itself; navigating it again would lose window.opener.
+		Assert.Empty(((FakePage)popup).Calls);
+		Assert.Single(_tabs.Records);
+	}
+
+	[Fact]
+	public void CtrlNewWindowStillOpensABackgroundTab()
+	{
+		var (tab, page) = OpenSource();
+		page.Events.Popup(Window("https://b.example/", new Modifiers(Shift: false, Ctrl: true, Middle: false)));
+		Assert.Null(_tabs.Preview);
+		Assert.Equal(2, _tabs.Records.Count);
+		Assert.Equal(tab.Id, _tabs.ActiveId);
+	}
+
+	[Fact]
+	public void LinksInsideAPreviewNavigateIt()
+	{
+		var (_, page) = OpenSource();
+		var preview = Peek(page);
+		Assert.Equal(NavigationDecision.Allow, preview.Events.Navigating("https://b.example/", "https://c.example/", NavigationCause.AnchorClick));
+		Assert.Single(_tabs.Preview!.Layers);
+	}
+
+	[Fact]
+	public void LinksInsideAPreviewAreStillInspected()
+	{
+		var warning = new NavigationDecision.Redirect("zing://warning?to=x");
+		var asked = new List<string>();
+		var tabs = new TabService(new TabStore(Deterministic.Clock(), Deterministic.Ids()), _host, "about:blank", () => { }, (_, _) => { }, (id, _, to) =>
+		{
+			asked.Add($"{id} {to}");
+			return to == "https://bad.example/" ? warning : null;
+		}, peekSettings: () => _settings);
+		var tab = tabs.Open("https://a.example/");
+		_host.PageFor(tabs, tab.Id).Events.Navigating("https://a.example/", "https://b.example/", NavigationCause.AnchorClick);
+		var preview = (FakePage)tabs.Preview!.Top.Page;
+		Assert.Equal(warning, preview.Events.Navigating("https://b.example/", "https://bad.example/", NavigationCause.AnchorClick));
+		Assert.Equal($"{tab.Id} https://bad.example/", asked[^1]);
+	}
+
+	[Fact]
+	public void PopupFromAPreviewStacksALayer()
+	{
+		var (_, page) = OpenSource();
+		var preview = Peek(page);
+		var popup = preview.Events.Popup(Window("https://c.example/login", features: true));
+		var session = _tabs.Preview!;
+		Assert.Equal(2, session.Layers.Count);
+		Assert.True(session.Layers[1].IsPopup);
+		Assert.Same(popup, session.Top.Page);
+		Assert.False(session.CanExpand);
+		Assert.Equal([preview, popup], _host.Previews[^1]);
+	}
+
+	[Fact]
+	public void PopupLayerClosingItselfShowsTheLayerBelow()
+	{
+		var (_, page) = OpenSource();
+		var preview = Peek(page);
+		var popup = (FakePage)preview.Events.Popup(Window("https://c.example/login"));
+		popup.Events.Closed();
+		Assert.True(popup.Closed);
+		Assert.Same(preview, Assert.Single(_tabs.Preview!.Layers).Page);
+		Assert.Equal([preview], _host.Previews[^1]);
+	}
+
+	[Fact]
+	public void PreviewPageClosingItselfClosesPreview()
+	{
+		var (_, page) = OpenSource();
+		var preview = Peek(page);
+		preview.Events.Closed();
+		Assert.Null(_tabs.Preview);
+		Assert.Empty(_host.Previews[^1]);
+		Assert.Equal("https://b.example/", _tabs.ReopenClosed()!.Url);
+	}
+
+	[Fact]
+	public void ClosePreviewPushesReopenableTab()
+	{
+		var (_, page) = OpenSource();
+		var preview = Peek(page);
+		preview.Title = "B";
+		_tabs.ClosePreview();
+		Assert.True(preview.Closed);
+		Assert.Null(_tabs.Preview);
+		var reopened = _tabs.ReopenClosed()!;
+		Assert.Equal(("https://b.example/", "B", false), (reopened.Url, reopened.Title, reopened.Pinned));
+	}
+
+	[Fact]
+	public void CloseTopLayerClosesOnlyThePopup()
+	{
+		var (_, page) = OpenSource();
+		var preview = Peek(page);
+		var popup = (FakePage)preview.Events.Popup(Window("https://c.example/login"));
+		_tabs.CloseTopLayer();
+		Assert.True(popup.Closed);
+		Assert.False(preview.Closed);
+		_tabs.CloseTopLayer();
+		Assert.Null(_tabs.Preview);
+	}
+
+	[Fact]
+	public void ActivatingAnotherTabClosesThePreview()
+	{
+		var (_, page) = OpenSource();
+		var other = _tabs.Create("https://c.example/");
+		var preview = Peek(page);
+		_tabs.Activate(other.Id);
+		Assert.Null(_tabs.Preview);
+		Assert.True(preview.Closed);
+	}
+
+	[Fact]
+	public void OpeningATabClosesThePreview()
+	{
+		var (_, page) = OpenSource();
+		var preview = Peek(page);
+		_tabs.Open("https://c.example/");
+		Assert.Null(_tabs.Preview);
+		Assert.True(preview.Closed);
+	}
+
+	[Fact]
+	public void NavigatingTheSourceTabClosesThePreview()
+	{
+		var (tab, page) = OpenSource();
+		var preview = Peek(page);
+		_tabs.Navigate(tab.Id, "https://c.example/");
+		Assert.Null(_tabs.Preview);
+		Assert.True(preview.Closed);
+	}
+
+	[Fact]
+	public void ClosingTheSourceTabClosesItsPreview()
+	{
+		var (tab, page) = OpenSource();
+		_tabs.Create("https://c.example/");
+		var preview = Peek(page);
+		_tabs.Close(tab.Id);
+		Assert.Null(_tabs.Preview);
+		Assert.True(preview.Closed);
+	}
+
+	[Fact]
+	public void SourceTabCannotSleepWhilePreviewing()
+	{
+		var (tab, page) = OpenSource();
+		Peek(page);
+		Assert.Throws<ActiveTabSleepException>(() => _tabs.Sleep(tab.Id));
+	}
+
+	[Fact]
+	public void ExpandAdoptsTheSamePage()
+	{
+		var (tab, page) = OpenSource();
+		var other = _tabs.Create("https://z.example/");
+		var preview = Peek(page);
+		preview.Title = "B";
+		var expanded = _tabs.ExpandPreview();
+		Assert.Equal([tab.Id, expanded.Id, other.Id], _tabs.Records.Select(r => r.Id));
+		Assert.Same(preview, _tabs.PageOf(expanded.Id));
+		Assert.Equal(["navigate https://b.example/"], preview.Calls);
+		Assert.False(preview.Closed);
+		Assert.Null(_tabs.Preview);
+		Assert.Equal(expanded.Id, _tabs.ActiveId);
+		Assert.Same(preview, _host.Shown);
+		Assert.Equal(("https://b.example/", "B"), (_tabs.Get(expanded.Id).Url, _tabs.Get(expanded.Id).Title));
+		// The page now reports to its tab.
+		preview.Events.Navigated("https://b.example/next");
+		Assert.Equal("https://b.example/next", _tabs.Get(expanded.Id).Url);
+		_tabs.Close(expanded.Id);
+		Assert.Equal(tab.Id, _tabs.ActiveId);
+	}
+
+	[Fact]
+	public void ExpandUnderAPopupThrows()
+	{
+		var (_, page) = OpenSource();
+		var preview = Peek(page);
+		preview.Events.Popup(Window("https://c.example/login"));
+		Assert.Throws<InvalidOperationException>(() => _tabs.ExpandPreview());
+		Assert.Equal(2, _tabs.Preview!.Layers.Count);
+	}
+
+	[Fact]
+	public void PendingPopupThatNeverNavigatesIsDropped()
+	{
+		var (tab, page) = OpenSource();
+		var held = (FakePage)page.Events.Popup(Window("about:blank"));
+		Assert.Null(_tabs.Preview);
+		Assert.Single(_tabs.Records);
+		Assert.Empty(_host.Previews);
+		// Not yet a real document, so it is still held.
+		Assert.Equal(NavigationDecision.Allow, held.Events.Navigating("", "about:blank", NavigationCause.Other));
+		_tabs.Close(tab.Id);
+		Assert.True(held.Closed);
+
+		var opener = _host.PageFor(_tabs, _tabs.Open("https://a.example/").Id);
+		var timed = (FakePage)opener.Events.Popup(Window("about:blank"));
+		_scheduler.Advance(TimeSpan.FromSeconds(9));
+		Assert.False(timed.Closed);
+		_scheduler.Advance(TimeSpan.FromSeconds(1));
+		Assert.True(timed.Closed);
+	}
+
+	[Fact]
+	public void HeldWindowThatBecomesSameHostOpensAsTab()
+	{
+		var (_, page) = OpenSource();
+		var held = (FakePage)page.Events.Popup(Window("about:blank"));
+		Assert.Equal(NavigationDecision.Allow, held.Events.Navigating("about:blank", "https://a.example/next", NavigationCause.Other));
+		Assert.Equal(2, _tabs.Records.Count);
+		var adopted = _tabs.Records[1];
+		Assert.Same(held, _tabs.PageOf(adopted.Id));
+		Assert.Equal(adopted.Id, _tabs.ActiveId);
+		Assert.Null(_tabs.Preview);
+		Assert.Empty(held.Calls);
+		Assert.Equal(0, _scheduler.PendingCount);
+	}
+
+	[Fact]
+	public void HeldWindowThatGoesToAnotherHostOpensAsPreview()
+	{
+		var (_, page) = OpenSource();
+		var held = (FakePage)page.Events.Popup(Window("about:blank"));
+		Assert.Equal(NavigationDecision.Allow, held.Events.Navigating("about:blank", "https://b.example/", NavigationCause.Other));
+		Assert.Same(held, _tabs.Preview!.Top.Page);
+		Assert.Single(_tabs.Records);
+		Assert.Equal([held], _host.Previews[^1]);
+	}
+}
+
+#endregion

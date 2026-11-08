@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
+using Zing.Core.LinkPreview;
 using Zing.Core.Net;
 
 namespace Zing.Host;
@@ -37,6 +38,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	// A split on screen: its layout and its pages in pane order (_shown is the focused one). Empty otherwise.
 	private SplitLayout? _split;
 	private List<WebView2Page> _panes = [];
+	// A link preview's pages over the tab pages, bottom first. Empty when there is none.
+	private List<WebView2Page> _preview = [];
 	private DispatcherScheduler? _scheduler;
 	private Rect? _surfaceRegion;
 	private Task? _surfaceReady;
@@ -217,6 +220,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		shown.Visible = true;
 		// Over any page that is still drawn while its picture is taken (Hide).
 		shown.BringToFront();
+		RaisePreview();
 		FollowFullScreen();
 	}
 
@@ -243,6 +247,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			pane.Visible = true;
 			pane.BringToFront();
 		}
+		RaisePreview();
 		FollowFullScreen();
 	}
 
@@ -265,6 +270,36 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			return;
 		}
 		hidden.Visible = false;
+	}
+
+	public void ShowPreview(IReadOnlyList<IPage> layers)
+	{
+		var pages = layers.Cast<WebView2Page>().ToList();
+		// A page leaving the preview may be staying on screen as a tab (Expand), which shows it itself.
+		foreach (var gone in _preview.Where(p => !pages.Contains(p) && p != _shown && !_panes.Contains(p))) gone.Visible = false;
+		_preview = pages;
+		PlacePreview();
+		foreach (var page in pages) page.Visible = true;
+		RaisePreview();
+		if (pages.Count == 0) _shown?.Focus();
+	}
+
+	public void FocusPreview()
+	{
+		if (_preview.Count > 0) _preview[^1].Focus();
+	}
+
+	/// <summary>Each layer of the preview inside the page area (the whole split area with split view), inset a little more than the one below.</summary>
+	private void PlacePreview()
+	{
+		if (_preview.Count == 0 || _layout.PageRect() is not { } area) return;
+		for (var i = 0; i < _preview.Count; i++) _preview[i].Place(PeekLayout.Place(area, i).Page);
+	}
+
+	/// <summary>The preview stays above the tab pages, bottom layer first.</summary>
+	private void RaisePreview()
+	{
+		foreach (var page in _preview) page.BringToFront();
 	}
 
 	private async Task HideAfterPictureAsync(WebView2Page page, Task capture)
@@ -334,6 +369,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		ReserveCaptionButtons();
 		_chrome?.Place(_layout.ContentRect());
 		PlaceShown();
+		PlacePreview();
 		_notices?.Layout();
 		_pageUi?.Layout();
 		_stacks?.Layout();
