@@ -463,7 +463,8 @@ export interface InvokeContract {
 	 * Turns sync on for the signed-in Google account with the Zing password: wraps the vault's keys, then uploads them, every login
 	 * and the manifest. Asks Windows Hello unless it was passed in the last 5 minutes. Answers the recovery key, the only time it is
 	 * given without Hello; Settings shows it until sync:confirm-recovery-saved. Rejects with AccountException (no account, wrong
-	 * password), SyncPasswordTooWeakException, or SyncAlreadySetUpElsewhereException when the Google account already syncs a vault.
+	 * password), SyncPasswordTooWeakException, SyncAlreadySetUpForThisVaultException when the Google account already syncs this vault
+	 * (sync was turned off here; restoring from sync turns it on again), or SyncAlreadySetUpElsewhereException when it syncs another.
 	 */
 	'sync:turn-on': { args: [password: string]; result: RecoveryKeyShown }
 	/** The person confirmed they saved or printed the recovery key, so Settings stops showing it. */

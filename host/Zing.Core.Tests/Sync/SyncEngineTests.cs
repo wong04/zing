@@ -178,6 +178,29 @@ public sealed class SyncEngineTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ASignInFromAnotherWindowDuringTurningSyncOffIsKeptNotForgottenUnrevoked()
+	{
+		await _pcs.TurnOnAAsync();
+		var old = A.Vault.SyncAccount()!;
+		Task? signIn = null;
+		_pcs.Server.Wire.BeforeSend = line =>
+		{
+			// Another window signs in while this one signs out for Turn off (N3 of the final re-review).
+			if (line == "POST /auth/signout" && signIn is null) signIn = A.SignInAsync();
+			return Task.CompletedTask;
+		};
+
+		Assert.True(await SyncKeys.TurnOffAsync(A.Vault, A.Client, Ct));
+		await signIn!;
+
+		Assert.Null(A.Vault.SyncKeys);
+		var kept = A.Vault.SyncAccount();
+		Assert.NotNull(kept);
+		Assert.NotEqual(old.Refresh, kept.Refresh);
+		Assert.Equal(1, _pcs.Server.Wire.Count("POST /auth/signout"));
+	}
+
+	[Fact]
 	public async Task APcPastTheHorizonResyncsFullyAndADeletedLoginDoesNotComeBack()
 	{
 		using var pcs = await PurgedWhileBWasAway(editOnB: false);

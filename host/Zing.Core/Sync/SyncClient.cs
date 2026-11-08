@@ -246,15 +246,21 @@ public sealed class SyncClient : IDisposable
 	/// Signs this PC out (Ruling 49): asks the server to revoke this sign-in's refresh tokens, then forgets the account whatever the
 	/// server said. Answers whether the server revoked them; when it couldn't be reached, its copy expires unused within 90 days.
 	/// </summary>
-	public async Task<bool> SignOutAsync(CancellationToken cancellation = default)
+	public Task<bool> SignOutAsync(CancellationToken cancellation = default) => SignOutThenAsync(_store.ForgetSyncAccount, cancellation);
+
+	/// <summary>
+	/// Signs out as <see cref="SignOutAsync"/> does, then <paramref name="forget"/> forgets the account, still under the refresh lock: a
+	/// sign-in or refresh waiting on it saves only after, so nothing <paramref name="forget"/> wipes was left unrevoked (N3 of the final
+	/// re-review). A saved sign-in whose token can't be read has nothing to revoke: it answers false, and is forgotten.
+	/// </summary>
+	public async Task<bool> SignOutThenAsync(Action forget, CancellationToken cancellation)
 	{
 		// Under the refresh lock, so a refresh finishing meanwhile can't save the account back.
 		await _refreshing.WaitAsync(cancellation);
 		try
 		{
-			var account = _store.SyncAccount();
-			var revoked = account is null || await RevokeAsync(account.Refresh, cancellation);
-			_store.ForgetSyncAccount();
+			var revoked = await RevokeStoredAsync(cancellation);
+			forget();
 			_session = null;
 			return revoked;
 		}
@@ -262,6 +268,20 @@ public sealed class SyncClient : IDisposable
 		{
 			_refreshing.Release();
 		}
+	}
+
+	private async Task<bool> RevokeStoredAsync(CancellationToken cancellation)
+	{
+		SyncAccount? account;
+		try
+		{
+			account = _store.SyncAccount();
+		}
+		catch (SyncAccountUnreadableException)
+		{
+			return false;
+		}
+		return account is null || await RevokeAsync(account.Refresh, cancellation);
 	}
 
 	/// <summary>Only an unreachable or failing server answers false; the caller's own cancel still raises.</summary>

@@ -683,6 +683,78 @@ public sealed class SyncBridgeTests : IDisposable
 	}
 
 	[Fact]
+	public async Task AfterTurningSyncOffTurningItOnAgainSaysToRestoreAndTheRestoreKeepsThisPcsAccountAndLogins()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+		var id = await _vault.SaveAsync(new NewLogin("https://bank.example.test", "ada", "bank-secret", "Bank", ""));
+		var vaultId = _vault.VaultId;
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		Value(await Invoke(bridge, "sync:turn-off"));
+		Value(await Invoke(bridge, "sync:sign-in"));
+
+		var again = (await Invoke(bridge, "sync:turn-on", Strong)).GetProperty("error");
+
+		Assert.Equal(nameof(SyncAlreadySetUpForThisVaultException), again.GetProperty("name").GetString());
+		Assert.EndsWith("This Google account already syncs this vault from before sync was turned off here. To turn it on again, sign out of Zing, then choose Restore from sync on the sign-in screen.", again.GetProperty("message").GetString());
+
+		// The server's keys carry this vault's ID, bound in their wraps' associated data, so they can only have come from here (Ruling 70).
+		Value(await Invoke(bridge, "sync:restore-sign-in"));
+		var restored = Value(await Invoke(bridge, "sync:restore-password", Strong));
+
+		Assert.Equal("ok", restored.GetProperty("status").GetString());
+		account.CheckPassword(Strong);
+		Assert.Equal("ada", account.State().Profile!.Username);
+		Assert.Equal(vaultId, _vault.VaultId);
+		Assert.NotNull(_vault.SyncKeys);
+		Assert.Equal("bank-secret", await _vault.PasswordAsync(id));
+	}
+
+	[Fact]
+	public async Task ARestoreOverThisPcsAccountFromAnotherVaultsKeysIsStillRefused()
+	{
+		await TurnOnElsewhereAsync();
+		const string bobPassword = "violet-anchor-pebble-harbour";
+		using var other = new Switched(_sealer);
+		await other.Vaults.Current!.SaveAsync(new NewLogin("https://shop.example.test", "bob", "shop-secret", "Shop", ""));
+		Assert.NotEqual(_vault.VaultId, other.Vaults.Current.VaultId);
+		var account = AccountWith(bobPassword);
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), other, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+
+		var refused = (await Invoke(b, "sync:restore-password", Strong)).GetProperty("error");
+
+		Assert.Equal(nameof(SyncRestoreOverAnotherAccountException), refused.GetProperty("name").GetString());
+		account.CheckPassword(bobPassword);
+		Assert.Null(other.Vaults.Current.SyncKeys);
+	}
+
+	[Fact]
+	public async Task WithTheVaultUnreadableAndSyncOnTheRefusalSaysTheVaultCantBeRead()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		using var broken = new Switched(_sealer, on: true, unreadable: _ => { }, beforeOpen: dir =>
+		{
+			File.Copy(Path.Combine(_dir, VaultStore.KeysFileName), Path.Combine(dir, VaultStore.KeysFileName));
+			File.WriteAllText(Path.Combine(dir, VaultStore.VaultFileName), "not a vault");
+		});
+		Assert.True(broken.Vaults.Unreadable);
+		Assert.True(broken.Vaults.SyncOnDisk);
+		var account = AccountWith(Strong);
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), broken, account);
+
+		var deleted = (await Invoke(b, "account:delete")).GetProperty("error");
+
+		// The vault is on, so "turn the vault on" would name a switch that already is (N2 of the final re-review).
+		Assert.Equal(nameof(SyncIsOnWithTheVaultUnreadableException), deleted.GetProperty("name").GetString());
+		Assert.EndsWith("Sync is on for this PC, but its password vault can't be read, so sync can't be turned off here.", deleted.GetProperty("message").GetString());
+		Assert.Equal("ada", account.State().Profile!.Username);
+	}
+
+	[Fact]
 	public async Task WithSyncNeverOnTheAccountIsDeleted()
 	{
 		var account = AccountWith(Strong);

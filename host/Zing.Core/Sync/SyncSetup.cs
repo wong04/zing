@@ -106,6 +106,9 @@ public sealed class SyncIsOnException() : Exception("Sync is on for this PC. Tur
 /// </summary>
 public sealed class SyncIsOnWithTheVaultOffException() : Exception("Sync is on for this PC. Turn the password vault on, then Turn off sync on this PC.");
 
+/// <summary><see cref="SyncIsOnException"/> while the password vault is on but can't be read, so Turn off can't run (N2 of the final re-review).</summary>
+public sealed class SyncIsOnWithTheVaultUnreadableException() : Exception("Sync is on for this PC, but its password vault can't be read, so sync can't be turned off here.");
+
 /// <summary>A commit of keys that aren't the ones pending: another call replaced them, so the server may not hold these.</summary>
 public sealed class SyncPendingKeysReplacedException()
 	: Exception("The keys waiting for the sync server were replaced while they were sent, so Zing kept neither.");
@@ -137,6 +140,13 @@ public sealed class SyncKeysChangedElsewhereException()
 /// <summary>The Google account already has a vault's keys on the server, so turning on sync here would replace another PC's.</summary>
 public sealed class SyncAlreadySetUpElsewhereException()
 	: Exception("This Google account already syncs a vault. To use it here, sign out of Zing, then choose Restore from sync on the sign-in screen.");
+
+/// <summary>
+/// The server's keys are this vault's, kept from before Turn off sync on this PC: restoring from sync turns it on again over this PC's
+/// account (Ruling 70).
+/// </summary>
+public sealed class SyncAlreadySetUpForThisVaultException()
+	: Exception("This Google account already syncs this vault from before sync was turned off here. To turn it on again, sign out of Zing, then choose Restore from sync on the sign-in screen.");
 
 /// <summary>This PC already turned sync on for the account it's signed in as.</summary>
 public sealed class SyncAlreadyOnException() : Exception("Sync is already on for this PC.");
@@ -227,6 +237,10 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		try
 		{
 			await PutKeysWriteAheadAsync(vault, client, new VaultPendingKeys(signedIn.UserId, blob, 0, RecoverySeal.Seal(keys.SecretKey, keys.VaultId, recovery)), cancellation);
+		}
+		catch (SyncConflictException conflict) when (conflict.Current is { } current && SyncKeysBlob.Parse(current.Blob, current.Version).VaultId == keys.VaultId)
+		{
+			throw new SyncAlreadySetUpForThisVaultException();
 		}
 		catch (SyncConflictException)
 		{
@@ -355,24 +369,24 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	public static async Task<bool> TurnOffAsync(VaultStore vault, SyncClient? client, CancellationToken cancellation = default)
 	{
 		using var gate = await EnterGateAsync(vault, cancellation);
-		var revoked = await SignOutForTurnOffAsync(vault, client, cancellation);
+		// The client signs out and forgets under its refresh lock, so a sign-in from another window can't be forgotten unrevoked (N3).
+		if (client is not null) return await client.SignOutThenAsync(vault.TurnOffSync, cancellation);
+		var revoked = !HasSignIn(vault);
 		vault.TurnOffSync();
 		return revoked;
 	}
 
-	private static async Task<bool> SignOutForTurnOffAsync(VaultStore vault, SyncClient? client, CancellationToken cancellation)
+	/// <summary>A saved sign-in whose token can't be read counts: it can't be revoked.</summary>
+	private static bool HasSignIn(VaultStore vault)
 	{
 		try
 		{
-			if (vault.SyncAccount() is null) return true;
+			return vault.SyncAccount() is not null;
 		}
 		catch (SyncAccountUnreadableException)
 		{
-			// Its token can't be read, so it can't be revoked: TurnOffSync forgets it.
-			return false;
+			return true;
 		}
-		if (client is null) return false;
-		return await client.SignOutAsync(cancellation);
 	}
 
 	internal static Task QueuedBehind(VaultStore vault) => Gates.GetValue(vault, _ => new KeyGate()).Queued;
