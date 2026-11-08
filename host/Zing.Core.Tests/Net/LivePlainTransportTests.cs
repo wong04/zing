@@ -4,7 +4,7 @@ namespace Zing.Core.Tests.Net;
 
 /// <summary>The ordinary (system DNS) request of <see cref="LiveRelayTransport"/>, against a server on this machine.</summary>
 // The plain request uses the process-wide default proxy, which PinnedHttpTests changes for one test.
-[Collection("HttpDefaultProxy")]
+[Collection("ProcessWide")]
 public sealed class LivePlainTransportTests
 {
 	private sealed class NoDoh : IDohClient

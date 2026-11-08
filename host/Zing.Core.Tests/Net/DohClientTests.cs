@@ -4,7 +4,7 @@ using Zing.Core.Net;
 
 namespace Zing.Core.Tests.Net;
 
-[Collection("HttpDefaultProxy")]
+[Collection("ProcessWide")]
 public sealed class DohClientTests
 {
 	private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> reply) : HttpMessageHandler
@@ -129,10 +129,9 @@ public sealed class DohClientTests
 	public async Task Keeps_no_cookies_between_lookups()
 	{
 		var cookies = new List<string?>();
-		using var listener = new HttpListener();
-		var prefix = $"http://127.0.0.1:{FreePort()}/";
-		listener.Prefixes.Add(prefix);
-		listener.Start();
+		var (started, port) = LoopbackHttp.Start();
+		using var listener = started;
+		var prefix = $"http://127.0.0.1:{port}/";
 		var serving = Task.Run(async () =>
 		{
 			for (var i = 0; i < 2; i++)
@@ -149,14 +148,5 @@ public sealed class DohClientTests
 		await client.ResolveAsync("example.com", "cloudflare", TestContext.Current.CancellationToken);
 		await serving;
 		Assert.Equal([null, null], cookies);
-	}
-
-	private static int FreePort()
-	{
-		var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-		listener.Start();
-		var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-		listener.Stop();
-		return port;
 	}
 }

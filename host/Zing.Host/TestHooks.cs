@@ -31,6 +31,9 @@ public static class TestHooks
 		args.Add("--use-fake-device-for-media-stream");
 		// With the updater on, a new profile blocks the engine's main thread for 5 s on most launches, and every e2e launch has a new profile.
 		args.Add("--disable-component-update");
+		// The engine refuses fullscreen to a page whose view hasn't the keyboard (SuppressFullscreenFromUnfocusedView), and a window kept
+		// out of the way never gets it, so a test's requestFullscreen failed whenever another app was in front. A person's click focuses the view.
+		if (KeepsOutOfTheWay) args.Add("--disable-features=SuppressFullscreenFromUnfocusedView");
 		if (Environment.GetEnvironmentVariable("ZING_E2E_OFFLINE") == "1") args.Add("--proxy-server=127.0.0.1:9 --proxy-bypass-list=<-loopback>");
 		// Every name fails to resolve (HostNameNotResolved, as a DNS block gives), without asking any DNS server; this machine's own addresses still work.
 		if (Environment.GetEnvironmentVariable("ZING_E2E_NO_DNS") == "1") args.Add("--host-resolver-rules=\"MAP * ~NOTFOUND , EXCLUDE 127.0.0.1\"");

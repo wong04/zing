@@ -5,6 +5,7 @@ using Zing.Core.Engines;
 namespace Zing.Core.Tests.Engines;
 
 /// <summary>What the runner puts around an engine: safety flags, a scrubbed environment, staging, and the order of start and cancel.</summary>
+[Collection("ProcessWide")]
 public sealed class EngineRunnerSafetyTests
 {
 	private static JobArg Literal(string text) => new JobArg.Literal(text);
