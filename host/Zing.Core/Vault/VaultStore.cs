@@ -174,6 +174,23 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	/// <summary>Null until the first save makes the keys.</summary>
 	public string? VaultId => _keys?.VaultId;
 
+	/// <summary>Whether <paramref name="indexKey"/> is this vault's own, read from its DPAPI seal: no Hello (Ruling 71). False before there are keys.</summary>
+	public bool HoldsIndexKey(byte[] indexKey)
+	{
+		VaultKeys? keys;
+		lock (_gate) keys = _keys;
+		if (keys is null) return false;
+		var own = keys.IndexKey(_cipher);
+		try
+		{
+			return CryptographicOperations.FixedTimeEquals(own, indexKey);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(own);
+		}
+	}
+
 	public IReadOnlyList<LoginRecord> Records
 	{
 		get

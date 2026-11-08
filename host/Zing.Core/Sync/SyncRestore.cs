@@ -21,6 +21,13 @@ public sealed class SyncRestoreWouldReplaceLoginsException(int logins)
 /// Restoring over this PC's Zing account keys for another vault (I1, Ruling 70): only this vault's own keys may give an existing account
 /// a password from sync.
 /// </summary>
+/// <summary>
+/// Restoring over this PC's Zing account keys that carry this vault's ID but aren't its keys (Ruling 71): the ID is in plaintext on the
+/// server, so only this vault's own index key shows the keys were made from it.
+/// </summary>
+public sealed class SyncRestoreKeysNotThisVaultsException()
+	: Exception("The passwords this Google account syncs aren't this vault's, so Zing didn't restore over this PC's Zing account. Sign in with this PC's Zing password instead.");
+
 public sealed class SyncRestoreOverAnotherAccountException()
 	: Exception("This PC's Zing account doesn't sync with that Google account, so Zing didn't restore over it. Sign in with this PC's Zing password instead.");
 
@@ -88,7 +95,7 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 
 		var store = vault();
 		using var gate = await SyncKeys.EnterGateAsync(store, cancellation);
-		RequireRestorableHere(store, keys.VaultId);
+		RequireRestorableHere(store, keys);
 		// After the settle (N1 of re-review 2): it may commit later keys, and the check must see the keys that are kept.
 		await SyncKeys.SettlePendingAsync(store, client, signedIn, cancellation);
 		await RequireServerNotBehindAsync(store, signedIn.UserId, keys.VaultId, server, password, cancellation);
@@ -135,7 +142,7 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 
 		var store = vault();
 		using var gate = await SyncKeys.EnterGateAsync(store, cancellation);
-		RequireRestorableHere(store, keys.VaultId);
+		RequireRestorableHere(store, keys);
 		await SyncKeys.SettlePendingAsync(store, client, signedIn, cancellation);
 		var baseVersion = recovered.Server.Version;
 		if (store.SyncKeys is { } taken && taken.UserId == signedIn.UserId && store.VaultId == keys.VaultId && taken.Version > baseVersion)
@@ -204,14 +211,15 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 
 	/// <summary>
 	/// Under the key lock, before Hello (I1). With no account here, anything may be restored. With one, only keys for this PC's own vault:
-	/// the vault ID is bound in every wrap's associated data, so keys carrying it were made from this vault, as when the password was
-	/// forgotten, or sync was turned off here and is turned on again (Ruling 70). Keys for another vault would let another person's Google
-	/// account give this PC's account its password.
+	/// this vault's ID and its own index key, read from the DPAPI seal with no Hello (Ruling 71), as when the password was forgotten, or
+	/// sync was turned off here and is turned on again (Ruling 70). The ID alone is in plaintext on the server. Other keys would let
+	/// another person's Google account give this PC's account its password.
 	/// </summary>
-	private void RequireRestorableHere(VaultStore store, string vaultId)
+	private void RequireRestorableHere(VaultStore store, VaultKeyMaterial keys)
 	{
 		if (!account.State().HasAccount) return;
-		if (store.VaultId != vaultId) throw new SyncRestoreOverAnotherAccountException();
+		if (store.VaultId != keys.VaultId) throw new SyncRestoreOverAnotherAccountException();
+		if (!store.HoldsIndexKey(keys.IndexKey)) throw new SyncRestoreKeysNotThisVaultsException();
 	}
 
 	/// <summary>

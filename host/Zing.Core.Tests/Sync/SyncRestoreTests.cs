@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Zing.Core.Sync;
 using Zing.Core.Tests.Vault;
 using Zing.Core.Vault;
@@ -234,6 +235,36 @@ public sealed class SyncRestoreTests : IDisposable
 		Assert.Equal(vaultId, _b.Vault.VaultId);
 		Assert.Single(_b.Vault.Summaries());
 		Assert.False(_bAccount.State().HasAccount);
+	}
+
+	[Fact]
+	public async Task KeysCarryingThisVaultsIdButAnotherIndexKeyDontRestoreOverThisPcsAccountAndChangeNothing()
+	{
+		await _pcs.SaveOnAAsync(password: "bank-secret");
+		await _pcs.A.SignInAsync();
+		var vaultId = _pcs.A.Vault.VaultId!;
+		// The vault ID is in plaintext on the server, so anyone who read it can wrap other keys under it (Ruling 71).
+		var recovery = RecoveryKey.Generate();
+		using (var forged = new VaultKeyMaterial(vaultId, RandomNumberGenerator.GetBytes(32), RandomNumberGenerator.GetBytes(32)))
+		{
+			var blob = SyncKeysBlob.Create(forged, NextStrong, recovery, new AccountProfile("mallory", "Mallory", "mallory@example.test"), version: 1).ToBytes();
+			await _pcs.A.Client.PutKeysAsync(blob, 0, Ct);
+		}
+		var keysFile = Path.Combine(_pcs.A.Dir, VaultStore.KeysFileName);
+		var keysBefore = File.ReadAllBytes(keysFile);
+		var hello = _pcs.A.Sealer.Calls;
+
+		await Assert.ThrowsAsync<SyncRestoreKeysNotThisVaultsException>(() => Restore(_pcs.A, _pcs.Account).RestoreWithPasswordAsync(NextStrong, Ct));
+		var restore = Restore(_pcs.A, _pcs.Account);
+		await restore.RestoreWithRecoveryKeyAsync(recovery, Ct);
+		await Assert.ThrowsAsync<SyncRestoreKeysNotThisVaultsException>(() => restore.ChangePasswordAfterRecoveryAsync("violet-anchor-pebble-harbour", Ct));
+
+		_pcs.Account.CheckPassword(Strong);
+		Assert.Equal("ada", _pcs.Account.State().Profile!.Username);
+		Assert.Equal(keysBefore, File.ReadAllBytes(keysFile));
+		Assert.Equal(hello, _pcs.A.Sealer.Calls);
+		Assert.Null(_pcs.A.Vault.SyncKeys);
+		Assert.Null(_pcs.A.Vault.PendingSyncKeys);
 	}
 
 	[Fact]
