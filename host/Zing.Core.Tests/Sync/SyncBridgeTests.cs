@@ -406,7 +406,7 @@ public sealed class SyncBridgeTests : IDisposable
 		await reached.Task;
 
 		var change = Task.Run(() => Invoke(second, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction"), TestContext.Current.CancellationToken);
-		await Task.Delay(200, TestContext.Current.CancellationToken);
+		await SyncKeys.QueuedBehind(_vault).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 		Assert.False(change.IsCompleted);
 		release.SetResult();
 		Value(await turnOn);

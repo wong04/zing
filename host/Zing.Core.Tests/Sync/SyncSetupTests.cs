@@ -667,7 +667,7 @@ public sealed class SyncSetupTests : IDisposable
 		await reached;
 
 		var change = Task.Run(() => new SyncKeys(account, _vault, _client).ChangePasswordAsync(Strong, NextStrong, Ct), Ct);
-		await Task.Delay(200, Ct);
+		await SyncKeys.QueuedBehind(_vault).WaitAsync(TimeSpan.FromSeconds(10), Ct);
 		Assert.False(change.IsCompleted);
 		account.CheckPassword(Strong);
 		release.SetResult();
@@ -691,7 +691,7 @@ public sealed class SyncSetupTests : IDisposable
 		await reached;
 
 		var second = Task.Run(() => new SyncKeys(account, _vault, _client).ChangePasswordAsync(Strong, ThirdStrong, Ct), Ct);
-		await Task.Delay(200, Ct);
+		await SyncKeys.QueuedBehind(_vault).WaitAsync(TimeSpan.FromSeconds(10), Ct);
 		release.SetResult();
 		await first;
 

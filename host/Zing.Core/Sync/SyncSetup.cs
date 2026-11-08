@@ -89,7 +89,7 @@ public sealed class SyncTurnOnUnfinishedForAnotherAccountException()
 
 /// <summary>A password change that waited behind another window's change: the current password it was given is no longer the account's.</summary>
 public sealed class AccountPasswordChangedMeanwhileException()
-	: Exception("Your Zing password was just changed in another window. Enter the new one as the current password.");
+	: Exception("Your Zing password was just changed in another window. Try again with the new password.");
 
 /// <summary>The sync sign-in changed to another Google account while a key operation was under way, so it stopped before sending anything as that account.</summary>
 public sealed class SyncAccountChangedException()
@@ -154,7 +154,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	/// in batches, then the manifest. The keys go first and over version 0, so a Google account that already has keys is refused
 	/// before anything else is sent. Returns the recovery key, which keys.bin keeps sealed under the secret key. A turn-on whose keys
 	/// the server took but whose answer never arrived (or whose PC stopped) is finished by the next one, with the same recovery key.
-	/// All of it runs under <see cref="Gate"/>, the password check and the signed-in read included, and every request is sent only
+	/// All of it runs under <see cref="KeyGate"/>, the password check and the signed-in read included, and every request is sent only
 	/// as the user read there (Ruling 55).
 	/// </summary>
 	/// <exception cref="AccountException">NoAccount for a guest, WrongPassword for a password that isn't the account's.</exception>
@@ -174,7 +174,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		}
 	}
 
-	/// <summary>Under <see cref="Gate"/>.</summary>
+	/// <summary>Under <see cref="KeyGate"/>.</summary>
 	private async Task<string> TurnOnAsync(string password, AccountProfile profile, SyncAccount signedIn, CancellationToken cancellation)
 	{
 		if (vault.PendingSyncKeys is { } unfinished && unfinished.UserId != signedIn.UserId)
@@ -210,7 +210,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	}
 
 	/// <summary>
-	/// Every change of the Zing password while the vault is open, synced or not, all under <see cref="Gate"/> (Ruling 55): the
+	/// Every change of the Zing password while the vault is open, synced or not, all under <see cref="KeyGate"/> (Ruling 55): the
 	/// current-password check, the new password's rules, the choice of a local or a synced change, and the signed-in read. With sync
 	/// off, the local change alone. With it on: only while signed in to sync as the account it was turned on for, and the new password
 	/// must pass the floor, both checked before Hello. The keys are re-wrapped with the new password key and uploaded over the version
@@ -241,15 +241,15 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	}
 
 	/// <summary>
-	/// Checks <paramref name="password"/>, waits for <see cref="Gate"/>, and checks it again inside: a password that was right before
+	/// Checks <paramref name="password"/>, waits for <see cref="KeyGate"/>, and checks it again inside: a password that was right before
 	/// the wait and isn't after it was changed by another window meanwhile, which says so rather than "wrong password". The caller
 	/// releases the gate it returns.
 	/// </summary>
-	private async Task<SemaphoreSlim> EnterAsync(string password, CancellationToken cancellation)
+	private async Task<KeyGate> EnterAsync(string password, CancellationToken cancellation)
 	{
 		account.CheckPassword(password);
-		var gate = Gate();
-		await gate.WaitAsync(cancellation);
+		var gate = Gates.GetValue(vault, _ => new KeyGate());
+		await gate.EnterAsync(cancellation);
 		try
 		{
 			account.CheckPassword(password);
@@ -268,7 +268,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	}
 
 	/// <summary>
-	/// Under <see cref="Gate"/>. Settling first may commit a change whose PC stopped before its own password changed, wrapped under a
+	/// Under <see cref="KeyGate"/>. Settling first may commit a change whose PC stopped before its own password changed, wrapped under a
 	/// password nobody is typing now. The keys are wrapped afresh under <paramref name="next"/> over that version either way, so the
 	/// server, keys.bin and this PC's password check all end on the password just entered.
 	/// </summary>
@@ -298,7 +298,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	/// Settles keys a PUT /keys left pending (its answer was lost, or Zing stopped) against the server's, byte for byte (Ruling 54).
 	/// Keys the server holds are committed, a password change's too; a turn-on answers true so the caller finishes it. Keys the
 	/// server doesn't hold are dropped. A failed fetch raises and leaves them pending for the next settle. Pending keys for another
-	/// account are left. Under <see cref="Gate"/>.
+	/// account are left. Under <see cref="KeyGate"/>.
 	/// </summary>
 	private async Task<bool> SettlePendingAsync(SyncAccount signedIn, CancellationToken cancellation)
 	{
@@ -314,9 +314,28 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	}
 
 	/// <summary>One key operation at a time on a vault, whichever window starts it: the pending keys are one slot (Ruling 54).</summary>
-	private static readonly ConditionalWeakTable<VaultStore, SemaphoreSlim> Gates = new();
+	private static readonly ConditionalWeakTable<VaultStore, KeyGate> Gates = new();
 
-	private SemaphoreSlim Gate() => Gates.GetValue(vault, _ => new SemaphoreSlim(1, 1));
+	/// <summary>Completes the first time a key operation on <paramref name="vault"/> has to wait for another: tests' proof that it queued.</summary>
+	internal static Task QueuedBehind(VaultStore vault) => Gates.GetValue(vault, _ => new KeyGate()).Queued;
+
+	/// <summary>The vault's key lock, which also says when a caller first had to wait for it.</summary>
+	private sealed class KeyGate
+	{
+		private readonly SemaphoreSlim _lock = new(1, 1);
+		private readonly TaskCompletionSource _queued = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public Task Queued => _queued.Task;
+
+		public async Task EnterAsync(CancellationToken cancellation)
+		{
+			if (_lock.Wait(0)) return;
+			_queued.TrySetResult();
+			await _lock.WaitAsync(cancellation);
+		}
+
+		public void Release() => _lock.Release();
+	}
 
 	/// <summary>
 	/// PUT /keys with a write-ahead (Ruling 53): the keys are stored as pending first. When the answer is lost, or is a conflict, the
