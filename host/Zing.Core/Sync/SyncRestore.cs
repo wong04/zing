@@ -18,18 +18,25 @@ public sealed class SyncRestoreWouldReplaceLoginsException(int logins)
 	: Exception($"This PC already has {logins} saved passwords that aren't the synced ones, so Zing didn't restore over them. Export them first, then close Zing and delete the vault folder in %APPDATA%\\Zing to start empty.");
 
 /// <summary>
-/// Restoring over this PC's Zing account keys for another vault (I1, Ruling 70): only this vault's own keys may give an existing account
-/// a password from sync.
-/// </summary>
-/// <summary>
 /// Restoring over this PC's Zing account keys that carry this vault's ID but aren't its keys (Ruling 71): the ID is in plaintext on the
 /// server, so only this vault's own index key shows the keys were made from it.
 /// </summary>
 public sealed class SyncRestoreKeysNotThisVaultsException()
 	: Exception("The passwords this Google account syncs aren't this vault's, so Zing didn't restore over this PC's Zing account. Sign in with this PC's Zing password instead.");
 
+/// <summary>
+/// Restoring over this PC's Zing account while this PC syncs as another Google account (Ruling 72): the restore would move its sync to
+/// the signed-in one.
+/// </summary>
+public sealed class SyncRestoreWhileSyncingAnotherAccountException()
+	: Exception("This PC syncs with another Google account, so Zing didn't restore over it. Turn off sync on this PC first, or restore with the Google account it syncs with.");
+
+/// <summary>
+/// Restoring over this PC's Zing account keys for another vault (I1, Ruling 70): only this vault's own keys may give an existing account
+/// a password from sync.
+/// </summary>
 public sealed class SyncRestoreOverAnotherAccountException()
-	: Exception("This PC's Zing account doesn't sync with that Google account, so Zing didn't restore over it. Sign in with this PC's Zing password instead.");
+	: Exception("The passwords this Google account syncs are another vault's, so Zing didn't restore over this PC's Zing account. Sign in with this PC's Zing password instead.");
 
 /// <summary>
 /// A password restore over this PC's own keys when the sync server holds an older version of them (N1 of the Task 14 re-review): the
@@ -60,8 +67,9 @@ public sealed class SyncNoPasswordChangedElsewhereException()
 /// made from the synced profile, or, when this PC has one already, given the password. The logins then come with the next sync.
 /// Nothing on this PC changes until the keys have opened (Task 14 review, M3 and M4): the vault is asked for only then, and a recovery
 /// key restore keeps what it opened in memory until <see cref="ChangePasswordAfterRecoveryAsync"/>, which wraps the keys under the new
-/// password and fresh Argon2id parameters and only then writes keys.bin. A PC that has an account takes a restore only for the Google
-/// account and vault its keys.bin already syncs (I1). Every write runs under the vault's key lock.
+/// password and fresh Argon2id parameters and only then writes keys.bin. A PC that has an account takes a restore only of this vault's own
+/// keys (I1, Rulings 70 and 71), and only while sync is off here or on as the same Google account (Ruling 72). Every write runs under
+/// the vault's key lock.
 /// </summary>
 /// <param name="vault">The vault, opened when the restore is about to write it: the caller turns it on then if it's off.</param>
 /// <param name="client">A client signed in as <paramref name="signIn"/> holds.</param>
@@ -80,7 +88,9 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 	/// <exception cref="NotSignedInToSyncException">There's no Google sign-in to restore for.</exception>
 	/// <exception cref="SyncNothingToRestoreException">The Google account syncs no vault.</exception>
 	/// <exception cref="SyncKeysFormatException">The server's keys aren't Zing's, or were written for another version than they're served at.</exception>
-	/// <exception cref="SyncRestoreOverAnotherAccountException">This PC's account syncs with another Google account or vault, or not at all.</exception>
+	/// <exception cref="SyncRestoreOverAnotherAccountException">This PC has an account, and the keys are another vault's.</exception>
+	/// <exception cref="SyncRestoreKeysNotThisVaultsException">This PC has an account, and the keys carry its vault ID but not its index key.</exception>
+	/// <exception cref="SyncRestoreWhileSyncingAnotherAccountException">This PC has an account and syncs as another Google account.</exception>
 	/// <exception cref="SyncRestoreWouldReplaceLoginsException">This PC holds other logins.</exception>
 	/// <exception cref="SyncServerBehindException">This PC holds later keys than the server's, which the password doesn't open.</exception>
 	public async Task RestoreWithPasswordAsync(string password, CancellationToken cancellation = default)
@@ -95,7 +105,7 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 
 		var store = vault();
 		using var gate = await SyncKeys.EnterGateAsync(store, cancellation);
-		RequireRestorableHere(store, keys);
+		RequireRestorableHere(store, signedIn.UserId, keys);
 		// After the settle (N1 of re-review 2): it may commit later keys, and the check must see the keys that are kept.
 		await SyncKeys.SettlePendingAsync(store, client, signedIn, cancellation);
 		await RequireServerNotBehindAsync(store, signedIn.UserId, keys.VaultId, server, password, cancellation);
@@ -129,7 +139,9 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 	/// <exception cref="SyncNoNewPasswordNeededException">No recovery key restore is waiting.</exception>
 	/// <exception cref="SyncPasswordTooWeakException">Below the sync floor (Ruling 52); still waiting.</exception>
 	/// <exception cref="SyncAccountChangedException">The Google sign-in changed since the recovery key was checked.</exception>
-	/// <exception cref="SyncRestoreOverAnotherAccountException">This PC's account syncs with another Google account or vault, or not at all.</exception>
+	/// <exception cref="SyncRestoreOverAnotherAccountException">This PC has an account, and the keys are another vault's.</exception>
+	/// <exception cref="SyncRestoreKeysNotThisVaultsException">This PC has an account, and the keys carry its vault ID but not its index key.</exception>
+	/// <exception cref="SyncRestoreWhileSyncingAnotherAccountException">This PC has an account and syncs as another Google account.</exception>
 	/// <exception cref="SyncKeysChangedElsewhereException">The password was changed on another PC meanwhile; restore again.</exception>
 	public async Task ChangePasswordAfterRecoveryAsync(string next, CancellationToken cancellation = default)
 	{
@@ -142,7 +154,7 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 
 		var store = vault();
 		using var gate = await SyncKeys.EnterGateAsync(store, cancellation);
-		RequireRestorableHere(store, keys);
+		RequireRestorableHere(store, signedIn.UserId, keys);
 		await SyncKeys.SettlePendingAsync(store, client, signedIn, cancellation);
 		var baseVersion = recovered.Server.Version;
 		if (store.SyncKeys is { } taken && taken.UserId == signedIn.UserId && store.VaultId == keys.VaultId && taken.Version > baseVersion)
@@ -213,14 +225,18 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 	/// Under the key lock, before Hello (I1). With no account here, anything may be restored. With one, only keys for this PC's own vault:
 	/// this vault's ID and its own index key, read from the DPAPI seal with no Hello (Ruling 71), as when the password was forgotten, or
 	/// sync was turned off here and is turned on again (Ruling 70). The ID alone is in plaintext on the server. Other keys would let
-	/// another person's Google account give this PC's account its password.
+	/// another person's Google account give this PC's account its password. And only while sync is off here, or on as
+	/// <paramref name="userId"/> (Ruling 72): a restore for another Google account would move this PC's sync to it.
 	/// </summary>
-	private void RequireRestorableHere(VaultStore store, VaultKeyMaterial keys)
+	private void RequireRestorableHere(VaultStore store, string userId, VaultKeyMaterial keys)
 	{
 		if (!account.State().HasAccount) return;
 		if (store.VaultId != keys.VaultId) throw new SyncRestoreOverAnotherAccountException();
 		if (!store.HoldsIndexKey(keys.IndexKey)) throw new SyncRestoreKeysNotThisVaultsException();
+		if (SyncsAsAnother(store.SyncKeys?.UserId, userId) || SyncsAsAnother(store.PendingSyncKeys?.UserId, userId)) throw new SyncRestoreWhileSyncingAnotherAccountException();
 	}
+
+	private static bool SyncsAsAnother(string? syncedAs, string userId) => syncedAs is not null && syncedAs != userId;
 
 	/// <summary>
 	/// Under the key lock, after the settle and before Hello (N1 of the Task 14 re-reviews). Over this PC's own keys for the same account and vault at a later

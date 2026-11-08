@@ -486,7 +486,9 @@ export interface InvokeContract {
 	 * Restores this PC from sync with the Zing password: the synced keys are unwrapped and sealed here (one Windows Hello), and the
 	 * account is made from the synced profile, or given the password when this PC has one. `wrong-password` when it doesn't open
 	 * them, and then nothing is made. Rejects with SyncNothingToRestoreException, SyncRestoreWouldReplaceLoginsException,
-	 * SyncRestoreOverAnotherAccountException (this PC's account doesn't sync with that Google account), or SyncKeysFormatException.
+	 * SyncRestoreOverAnotherAccountException (this PC has an account, and the keys are another vault's), SyncRestoreKeysNotThisVaultsException
+	 * (they carry its vault ID but not its keys), SyncRestoreWhileSyncingAnotherAccountException (this PC syncs as another Google
+	 * account), or SyncKeysFormatException.
 	 */
 	'sync:restore-password': { args: [password: string]; result: AccountOutcome }
 	/**
@@ -497,7 +499,8 @@ export interface InvokeContract {
 	/**
 	 * The new Zing password after a recovery key restore: the synced keys are sealed here (one Windows Hello) and wrapped under it with
 	 * fresh parameters, and the account is made or given it. Rejects with SyncPasswordTooWeakException (still waiting),
-	 * SyncNoNewPasswordNeededException, SyncRestoreOverAnotherAccountException or SyncKeysChangedElsewhereException.
+	 * SyncNoNewPasswordNeededException, SyncRestoreOverAnotherAccountException, SyncRestoreKeysNotThisVaultsException,
+	 * SyncRestoreWhileSyncingAnotherAccountException or SyncKeysChangedElsewhereException.
 	 */
 	'sync:restore-new-password': { args: [password: string]; result: AccountOutcome }
 	'overview:close': { args: []; result: void }

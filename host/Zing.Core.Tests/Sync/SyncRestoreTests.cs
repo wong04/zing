@@ -268,6 +268,30 @@ public sealed class SyncRestoreTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ARestoreOverThisPcsAccountWhileItSyncsAsAnotherGoogleAccountIsRefusedAndChangesNothing()
+	{
+		await TurnOnAWithALoginAsync();
+		// This vault's own keys, under another Google account: they pass the vault ID and index key checks (Ruling 72).
+		using (var held = await _pcs.A.Vault.KeyMaterialAsync())
+		{
+			var blob = SyncKeysBlob.Create(held, NextStrong, RecoveryKey.Generate(), new AccountProfile("ada", "Ada Lovelace", "ada.profile@example.test"), version: 1).ToBytes();
+			await _b.SignInAsync(LocalSyncServer.OtherSub);
+			await _b.Client.PutKeysAsync(blob, 0, Ct);
+		}
+		await _pcs.A.SignInAsync(LocalSyncServer.OtherSub);
+		var keysFile = Path.Combine(_pcs.A.Dir, VaultStore.KeysFileName);
+		var keysBefore = File.ReadAllBytes(keysFile);
+		var hello = _pcs.A.Sealer.Calls;
+
+		await Assert.ThrowsAsync<SyncRestoreWhileSyncingAnotherAccountException>(() => Restore(_pcs.A, _pcs.Account).RestoreWithPasswordAsync(NextStrong, Ct));
+
+		_pcs.Account.CheckPassword(Strong);
+		Assert.Equal(keysBefore, File.ReadAllBytes(keysFile));
+		Assert.Equal(hello, _pcs.A.Sealer.Calls);
+		Assert.Equal(1, _pcs.A.Vault.SyncKeys!.Version);
+	}
+
+	[Fact]
 	public async Task ARestoreByAnotherGoogleAccountOverThisPcsAccountIsRefusedAndChangesNothing()
 	{
 		const string bobPassword = "violet-anchor-pebble-harbour";
