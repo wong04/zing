@@ -48,6 +48,7 @@ public class PeekRulesTests
 		{
 			"https://accounts.google.com/signin", "https://login.microsoftonline.com/x", "https://login.live.com/x",
 			"https://appleid.apple.com/x", "https://github.com/login", "https://github.com/login/oauth/authorize?x",
+			"https://www.github.com/login", "https://github.com/login/", "https://www.github.com/login/oauth/authorize?x",
 		})
 			Add($"sign-in {to}", Click("https://example.com/", to), PeekVerdict.Normal);
 		Add("github profile", Click("https://example.com/", "https://github.com/wong04"), PeekVerdict.Preview);
@@ -70,6 +71,9 @@ public class PeekRulesTests
 		Add("search source new window shift", Window("https://www.google.com/search?q=x", "https://example.com", new(true, false, false)), PeekVerdict.Preview);
 		Add("duckduckgo home is not results", Click("https://duckduckgo.com/", "https://example.com"), PeekVerdict.Preview);
 		Add("google maps", Click("https://www.google.com/maps", "https://example.com"), PeekVerdict.Preview);
+		Add("google subdomain results", Click("https://news.google.com/search?q=x", "https://example.com"), PeekVerdict.Normal);
+		foreach (var from in new[] { "https://google.attacker.com/search?q=x", "https://www.google.attacker.co.uk/search?q=x", "https://google.com.attacker.test/search?q=x", "https://notgoogle.com/search?q=x" })
+			Add($"not google {from}", Click(from, "https://example.com"), PeekVerdict.Preview);
 
 		foreach (var to in new[] { "mailto:a@b.c", "javascript:void 0", "blob:https://x.test/1", "data:text/html,hi", "zing://settings", "https://app.zing/settings" })
 			Add($"non-http to {to}", Click("https://example.com/", to), PeekVerdict.Normal);
@@ -97,6 +101,8 @@ public class PeekRulesTests
 	[InlineData("https://www.google.com/url?q=javascript:alert(1)", "https://www.google.com/url?q=javascript:alert(1)")]
 	[InlineData("https://www.google.com/url?sa=D", "https://www.google.com/url?sa=D")]
 	[InlineData("https://example.com/url?q=https%3A%2F%2Fa.test", "https://example.com/url?q=https%3A%2F%2Fa.test")]
+	[InlineData("https://google.attacker.com/url?q=https%3A%2F%2Fa.test", "https://google.attacker.com/url?q=https%3A%2F%2Fa.test")]
+	[InlineData("https://www.google.de/url?q=https%3A%2F%2Fa.test%2F", "https://a.test/")]
 	[InlineData("not a url", "not a url")]
 	public void Unwraps(string url, string expected) => Assert.Equal(expected, PeekRules.Unwrap(url));
 

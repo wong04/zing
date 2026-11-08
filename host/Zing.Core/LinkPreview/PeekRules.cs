@@ -100,19 +100,19 @@ public static class PeekRules
 		return host.StartsWith("www.", StringComparison.Ordinal) ? host[4..] : host;
 	}
 
-	// google.<tld> or google.co.uk style, after www is dropped.
-	private static bool IsGoogleHost(string host) => host.StartsWith("google.", StringComparison.Ordinal) && host.Length > "google.".Length;
+	// google.<tld> (google.co.uk too) or a host under one: the registrable domain is Google's, so google.attacker.com is not.
+	private static bool IsGoogleHost(string host) => RegistrableDomain.LabelsOf(RegistrableDomain.Of(host)) is ["google", _, ..];
 
 	private static bool IsExcludedTarget(Uri uri)
 	{
-		var host = uri.Host.ToLowerInvariant();
+		var host = HostWithoutWww(uri);
 		if (SignInHosts.Contains(host)) return true;
 		if (host == "github.com" && IsGitHubSignInPath(uri.AbsolutePath)) return true;
 		return MeetingHosts.Contains(host) || host.EndsWith(".zoom.us", StringComparison.Ordinal);
 	}
 
-	// Decision 4: GitHub's sign-in shares a host with ordinary link targets, so it is matched by path (/login and /login/oauth*).
-	private static bool IsGitHubSignInPath(string path) => path == "/login" || path.StartsWith("/login/oauth", StringComparison.Ordinal);
+	// Decision 4: GitHub's sign-in shares a host with ordinary link targets, so it is matched by path (/login, /login/ and /login/oauth*).
+	private static bool IsGitHubSignInPath(string path) => path is "/login" or "/login/" || path.StartsWith("/login/oauth", StringComparison.Ordinal);
 
 	private static bool SameDocument(Uri a, Uri b) =>
 		string.Equals(a.GetLeftPart(UriPartial.Query), b.GetLeftPart(UriPartial.Query), StringComparison.OrdinalIgnoreCase);
