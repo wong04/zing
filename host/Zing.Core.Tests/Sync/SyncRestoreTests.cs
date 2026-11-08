@@ -277,6 +277,25 @@ public sealed class SyncRestoreTests : IDisposable
 		Assert.True(_pcs.Account.State().SignedIn);
 	}
 
+	[Fact]
+	public async Task APasswordRestoreOverThisPcsLaterKeysIsRefusedWhenTheServerIsBehind()
+	{
+		await TurnOnAWithALoginAsync();
+		var backup = _pcs.Server.Backup();
+		await new SyncKeys(_pcs.Account, _pcs.A.Vault, _pcs.A.Client).ChangePasswordAsync(Strong, NextStrong, Ct);
+		_pcs.Server.Restore(backup);
+		_pcs.Account.SignOut();
+		var hello = _pcs.A.Sealer.Calls;
+
+		await Assert.ThrowsAsync<SyncServerBehindException>(() => Restore(_pcs.A, _pcs.Account).RestoreWithPasswordAsync(Strong, Ct));
+
+		Assert.False(_pcs.Account.State().SignedIn);
+		_pcs.Account.CheckPassword(NextStrong);
+		Assert.Throws<AccountException>(() => _pcs.Account.CheckPassword(Strong));
+		Assert.Equal(2, _pcs.A.Vault.SyncKeys!.Version);
+		Assert.Equal(hello, _pcs.A.Sealer.Calls);
+	}
+
 	/// <summary>A turns sync on (v1, Strong) and changes the password (v2, NextStrong); the server then serves v1's bytes as v3.</summary>
 	private async Task<VersionedBlob> ReplayOldKeysAsync()
 	{

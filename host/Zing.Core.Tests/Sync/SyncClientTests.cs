@@ -195,6 +195,44 @@ public sealed class SyncClientTests : IDisposable
 		Assert.Equal(HttpStatusCode.Unauthorized, reused.StatusCode);
 	}
 
+	private async Task<HttpStatusCode> RefreshStatusAsync(string refresh)
+	{
+		using var raw = new HttpClient(_server.Handler(), disposeHandler: false) { BaseAddress = _server.Address };
+		using var answer = await raw.PostAsync("auth/refresh", System.Net.Http.Json.JsonContent.Create(new { refresh }), Ct);
+		return answer.StatusCode;
+	}
+
+	[Fact]
+	public async Task SigningInAgainRevokesTheSignInItReplaces()
+	{
+		var (client, store) = await SignedIn();
+		using var _ = client;
+		var replaced = store.SyncAccount()!.Refresh;
+
+		await client.SignInAsync(await _server.MintIdTokenAsync(), Ct);
+
+		Assert.NotEqual(replaced, store.SyncAccount()!.Refresh);
+		Assert.Equal(HttpStatusCode.Unauthorized, await RefreshStatusAsync(replaced));
+	}
+
+	[Fact]
+	public async Task AdoptingASignInRevokesTheOneItReplacesAndSendsAsTheAdoptedOne()
+	{
+		var (client, store) = await SignedIn();
+		using var _ = client;
+		var replaced = store.SyncAccount()!.Refresh;
+		var (other, otherStore) = await SignedIn();
+		using var __ = other;
+		var adopted = otherStore.SyncAccount()!;
+
+		await client.AdoptAsync(adopted, Ct);
+
+		Assert.Equal(adopted, store.SyncAccount());
+		Assert.Equal(HttpStatusCode.Unauthorized, await RefreshStatusAsync(replaced));
+		Assert.Null(await client.GetKeysAsync(Ct));
+		Assert.Equal(1, _server.Wire.Count("POST /auth/signout"));
+	}
+
 	[Fact]
 	public async Task SigningOutWithTheServerDownStillForgetsTheAccount()
 	{

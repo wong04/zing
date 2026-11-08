@@ -1138,6 +1138,22 @@ public sealed class ChromeApi : IDisposable
 		public HeldSyncSignIn SignIn { get; } = signIn;
 		public SyncRestore Restore { get; } = restore;
 
+		/// <summary>Held by the step running (N5): a second one is refused, not queued.</summary>
+		public SemaphoreSlim Step { get; } = new(1, 1);
+
+		/// <summary>A newer restore sign-in replaced this one: its refresh token is revoked, best effort (Ruling 49), then the client goes.</summary>
+		public async Task RetireAsync()
+		{
+			try
+			{
+				await client.SignOutAsync(CancellationToken.None);
+			}
+			finally
+			{
+				client.Dispose();
+			}
+		}
+
 		public void Dispose() => client.Dispose();
 	}
 
@@ -1167,15 +1183,15 @@ public sealed class ChromeApi : IDisposable
 				client.Dispose();
 				throw;
 			}
-			Interlocked.Exchange(ref _restore, new Restoring(held, client, new SyncRestore(_app.Account, VaultForRestore, client, held)))?.Dispose();
+			if (Interlocked.Exchange(ref _restore, new Restoring(held, client, new SyncRestore(_app.Account, VaultForRestore, client, held))) is { } replaced) await replaced.RetireAsync();
 			return new SyncState(SignedIn: true, account.Email);
 		}, () => SyncState.SignedOut());
 	}
 
-	/// <summary>The vault a restore writes, turned on now if it's off.</summary>
+	/// <summary>The vault a restore writes, turned on now if the setting is off. A vault that's on but unreadable stays as it is (N2).</summary>
 	private VaultStore VaultForRestore()
 	{
-		if (_app.Vaults.Current is null)
+		if (_app.Vaults.Current is null && _app.Settings.Get("passwordAutofill")?.GetValue<bool>() != true)
 		{
 			_app.Settings.Set("passwordAutofill", true);
 			_restoreTurnedVaultOn = true;
@@ -1183,13 +1199,17 @@ public sealed class ChromeApi : IDisposable
 		return Vault();
 	}
 
-	/// <summary>One restore step, at most one at a time per window's restore. A step that fails leaves the vault as it found it.</summary>
+	/// <summary>
+	/// One restore step, one at a time per window's restore (N5): a step while another runs raises <see cref="SyncRestoreBusyException"/>.
+	/// A step that fails leaves passwordAutofill as it found it.
+	/// </summary>
 	private async Task<AccountOutcome> RestoreStepAsync(Func<Restoring, Task> step)
 	{
 		var restoring = _restore ?? throw new NotSignedInToSyncException();
-		_restoreTurnedVaultOn = false;
+		if (!restoring.Step.Wait(0)) throw new SyncRestoreBusyException();
 		try
 		{
+			_restoreTurnedVaultOn = false;
 			await step(restoring);
 		}
 		catch (Exception error)
@@ -1197,6 +1217,10 @@ public sealed class ChromeApi : IDisposable
 			if (_restoreTurnedVaultOn) _app.Settings.Set("passwordAutofill", false);
 			if (error is AccountException account) return AccountOutcome.Rejected(account.Code);
 			throw;
+		}
+		finally
+		{
+			restoring.Step.Release();
 		}
 		return AccountOutcome.Ok(_app.Account.State());
 	}

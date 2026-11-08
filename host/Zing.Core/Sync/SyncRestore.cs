@@ -21,6 +21,17 @@ public sealed class SyncRestoreWouldReplaceLoginsException(int logins)
 public sealed class SyncRestoreOverAnotherAccountException()
 	: Exception("This PC's Zing account doesn't sync with that Google account, so Zing didn't restore over it. Sign in with this PC's Zing password instead.");
 
+/// <summary>
+/// A password restore over this PC's own keys when the sync server holds an older version of them (N1 of the Task 14 re-review): the
+/// password typed opens the server's older keys but not this PC's, so taking it would bring an old password back.
+/// </summary>
+public sealed class SyncServerBehindException()
+	: Exception("The sync server holds older keys than this PC, so Zing didn't restore from it. Sign in with your current Zing password, or restore with your recovery key.");
+
+/// <summary>A restore step started while another one in the same window is still running.</summary>
+public sealed class SyncRestoreBusyException()
+	: Exception("Zing is still working on the last restore step. Wait for it to finish, then try again.");
+
 /// <summary>A new password after recovery asked for when no recovery key restore is waiting for one.</summary>
 public sealed class SyncNoNewPasswordNeededException()
 	: Exception("Zing isn't waiting for a new password: restore from sync with your recovery key first.");
@@ -61,6 +72,7 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 	/// <exception cref="SyncKeysFormatException">The server's keys aren't Zing's, or were written for another version than they're served at.</exception>
 	/// <exception cref="SyncRestoreOverAnotherAccountException">This PC's account syncs with another Google account or vault, or not at all.</exception>
 	/// <exception cref="SyncRestoreWouldReplaceLoginsException">This PC holds other logins.</exception>
+	/// <exception cref="SyncServerBehindException">This PC holds later keys than the server's, which the password doesn't open.</exception>
 	public async Task RestoreWithPasswordAsync(string password, CancellationToken cancellation = default)
 	{
 		_recovered = null;
@@ -74,6 +86,7 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 		var store = vault();
 		using var gate = await SyncKeys.EnterGateAsync(store, cancellation);
 		RequireRestorableHere(store, signedIn.UserId, keys.VaultId);
+		await RequireServerNotBehindAsync(store, signedIn.UserId, keys.VaultId, server, password, cancellation);
 		await SyncKeys.SettlePendingAsync(store, client, signedIn, cancellation);
 		await store.RestoreKeysAsync(keys, KeptWith(store, signedIn.UserId, keys.VaultId, server));
 		MakeAccount(profile, password);
@@ -198,8 +211,20 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 	}
 
 	/// <summary>
+	/// Under the key lock, before Hello (N1 of the Task 14 re-review). Over this PC's own keys for the same account and vault at a later
+	/// version than the server's, the password must open those too: one that opens only the server's older keys is an old password, and
+	/// making it the account password would split it from the sync password.
+	/// </summary>
+	private static async Task RequireServerNotBehindAsync(VaultStore store, string userId, string vaultId, VersionedBlob server, string password, CancellationToken cancellation)
+	{
+		if (store.SyncKeys is not { } held || held.UserId != userId || store.VaultId != vaultId || held.Version <= server.Version) return;
+		if (!await OpensWithAsync(held, password, cancellation)) throw new SyncServerBehindException();
+	}
+
+	/// <summary>
 	/// The sync keys a password restore keeps (I2). Over this PC's own keys for the same account and vault, its sealed recovery key and
-	/// whether it was saved stay, and so do its keys when they're at a later version than the server's. Otherwise the server's, with no
+	/// whether it was saved stay, and so do its keys when they're at a later version than the server's (which the password was checked
+	/// against first). Otherwise the server's, with no
 	/// recovery key: a password restore never sees it.
 	/// </summary>
 	private static VaultSyncKeys KeptWith(VaultStore store, string userId, string vaultId, VersionedBlob server)

@@ -303,11 +303,13 @@ public sealed class SyncBridgeTests : IDisposable
 		public SettingsStore Settings { get; } = new();
 		public VaultSwitch Vaults { get; }
 
-		public Switched(FakeSealer sealer, bool on = true)
+		/// <param name="unreadable">Told when the vault's files can't be read; null fails the test.</param>
+		public Switched(FakeSealer sealer, bool on = true, Action<VaultFileException>? unreadable = null, Action<string>? beforeOpen = null)
 		{
+			beforeOpen?.Invoke(Dir);
 			Settings.Set("passwordAutofill", on);
 			Vaults = new VaultSwitch(Settings, () => new VaultStore(Dir, new FakeCipher(), sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents()),
-				e => throw new Xunit.Sdk.XunitException($"the vault couldn't be read: {e}"), () => File.Exists(Path.Combine(Dir, VaultStore.VaultFileName)),
+				unreadable ?? (e => throw new Xunit.Sdk.XunitException($"the vault couldn't be read: {e}")), () => File.Exists(Path.Combine(Dir, VaultStore.VaultFileName)),
 				() => VaultKeys.SyncOnDisk(Path.Combine(Dir, VaultStore.KeysFileName)));
 		}
 
@@ -395,6 +397,74 @@ public sealed class SyncBridgeTests : IDisposable
 		account.CheckPassword(Strong);
 		Assert.Equal(_vault.VaultId, fresh.Vaults.Current!.VaultId);
 		Assert.Equal(_vault.SyncAccount()!.UserId, fresh.Vaults.Current.SyncAccount()!.UserId);
+	}
+
+	/// <summary>A turns sync on under <see cref="Strong"/>; answers its recovery key.</summary>
+	private async Task<string> TurnOnElsewhereAsync()
+	{
+		var a = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		Value(await Invoke(a, "sync:sign-in"));
+		return Value(await Invoke(a, "sync:turn-on", Strong)).GetProperty("recoveryKey").GetString()!;
+	}
+
+	[Fact]
+	public async Task AFailedRestoreOverAnUnreadableVaultLeavesTheSettingOn()
+	{
+		await TurnOnElsewhereAsync();
+		using var broken = new Switched(_sealer, on: true, unreadable: _ => { }, beforeOpen: dir => File.WriteAllText(Path.Combine(dir, VaultStore.VaultFileName), "not a vault"));
+		Assert.True(broken.Vaults.Unreadable);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), broken, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+
+		var refused = await Invoke(b, "sync:restore-password", Strong);
+
+		Assert.False(refused.GetProperty("ok").GetBoolean());
+		Assert.True(broken.Settings.Get("passwordAutofill")!.GetValue<bool>());
+		Assert.False(account.State().HasAccount);
+	}
+
+	[Fact]
+	public async Task ASecondRestoreSignInRevokesTheOneItReplaces()
+	{
+		await TurnOnElsewhereAsync();
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+		var signOuts = _server.Wire.Count("POST /auth/signout");
+
+		Value(await Invoke(b, "sync:restore-sign-in"));
+
+		Assert.Equal(signOuts + 1, _server.Wire.Count("POST /auth/signout"));
+		Assert.Equal("ok", Value(await Invoke(b, "sync:restore-password", Strong)).GetProperty("status").GetString());
+	}
+
+	[Fact]
+	public async Task ASecondRestoreStepWhileOneRunsIsRefused()
+	{
+		await TurnOnElsewhereAsync();
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+		var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		_server.Wire.BeforeSend = async line =>
+		{
+			if (line != "GET /keys" || reached.Task.IsCompleted) return;
+			reached.SetResult();
+			await release.Task;
+		};
+
+		var first = Invoke(b, "sync:restore-password", Strong);
+		await reached.Task;
+		var second = await Invoke(b, "sync:restore-password", Strong);
+		release.SetResult();
+
+		Assert.Equal(nameof(SyncRestoreBusyException), second.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal("ok", Value(await first).GetProperty("status").GetString());
+		account.CheckPassword(Strong);
 	}
 
 	[Fact]

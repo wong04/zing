@@ -134,7 +134,10 @@ public sealed class SyncClient : IDisposable
 		_refreshing.Dispose();
 	}
 
-	/// <summary>Trades a Google ID token for a session and stores the account (email from the token, which the server has just checked).</summary>
+	/// <summary>
+	/// Trades a Google ID token for a session and stores the account (email from the token, which the server has just checked). A
+	/// sign-in it replaces is revoked on the server, best effort (Ruling 63).
+	/// </summary>
 	public async Task<SyncAccount> SignInAsync(string idToken, CancellationToken cancellation = default)
 	{
 		var email = IdTokenEmail(idToken);
@@ -143,20 +146,25 @@ public sealed class SyncClient : IDisposable
 		await EnsureSuccess(response, "auth/google", cancellation);
 		var login = await Read<LoginResponse>(response, cancellation);
 		var account = new SyncAccount(login.UserId, email, login.Refresh);
+		var replaced = StoredToReplace();
 		_store.SaveSyncAccount(account);
 		_session = new Session(login.Session, login.UserId);
+		await RevokeReplacedAsync(replaced, account);
 		return account;
 	}
 
 	/// <summary>
 	/// Takes over a sign-in another client made (a restore's, held in memory until the restore succeeded, M4 of the Task 14 review): it's
-	/// stored, and a session this client held for an earlier sign-in is dropped. The other client is disposed after, unused.
+	/// stored, a session this client held for an earlier sign-in is dropped, and the sign-in it replaces is revoked, best effort
+	/// (Ruling 63). The other client is disposed after, unused.
 	/// </summary>
 	public async Task AdoptAsync(SyncAccount account, CancellationToken cancellation = default)
 	{
+		SyncAccount? replaced;
 		await _refreshing.WaitAsync(cancellation);
 		try
 		{
+			replaced = StoredToReplace();
 			_store.SaveSyncAccount(account);
 			_session = null;
 		}
@@ -164,6 +172,30 @@ public sealed class SyncClient : IDisposable
 		{
 			_refreshing.Release();
 		}
+		await RevokeReplacedAsync(replaced, account);
+	}
+
+	/// <summary>The sign-in a save is about to replace; null when there's none, or when it doesn't unseal and so can't be revoked.</summary>
+	private SyncAccount? StoredToReplace()
+	{
+		try
+		{
+			return _store.SyncAccount();
+		}
+		catch (SyncAccountUnreadableException)
+		{
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// A replaced sign-in's refresh token is revoked best effort, as signing out does (Ruling 49): an unreachable server leaves it to
+	/// expire unused within 90 days. Not the caller's cancel: the new sign-in is already stored.
+	/// </summary>
+	private async Task RevokeReplacedAsync(SyncAccount? replaced, SyncAccount account)
+	{
+		if (replaced is null || replaced.Refresh == account.Refresh) return;
+		await RevokeAsync(replaced.Refresh, CancellationToken.None);
 	}
 
 	/// <summary>
