@@ -192,6 +192,13 @@ on this PC:  index key  ──sealed by──▶ DPAPI
   6. If the recovery key was used, set a new Zing password straight away.
 
   Nothing on the PC changes until the keys have opened and, with the recovery key, the new password is set: the Google sign-in is kept in memory, and the vault turned on, only then. A PC that already has a Zing account restores only for the Google account and vault its keys already sync, which is the forgotten-password case (Ruling 61).
+- **Sign out and turn off (Ruling 68).** **Sign out** ends this PC's sync sign-in: it revokes the refresh tokens on the server, best effort (Ruling 49), and forgets the sign-in, but keeps the sync keys, so the PC is still set up for sync and signing in again resumes it. **Turn off sync on this PC**, in Settings next to Sign out, ends sync on this PC:
+  - It runs under the vault's key lock, so it waits for a sync, turn-on or password change running.
+  - It signs out as Sign out does, then forgets the queue, the account and the sync progress in sync.json (cursor, floors, manifest hash), the sync bases in vault.zing, and the sync keys and any pending ones in keys.bin, in that order, so a crash part way still reads as sync on and it can be run again.
+  - Every login stays here, usable and unsynced. The server copy stays for the other PCs.
+  - It asks first, in one sentence: "This PC stops syncing and keeps its logins. Your other PCs and the server copy aren't changed."
+  - Afterwards keys.bin holds no sync keys, so the Zing account can be deleted or made again. While it holds them, both are refused with "Sync is on for this PC. Turn off sync on this PC first", because the account password is the sync password (final review I2).
+  - Turning sync on again later is the normal turn-on. If the server already holds keys for that Google account, turn-on says so (SyncAlreadySetUpElsewhere) and the person restores from sync instead.
 
 ## The server
 

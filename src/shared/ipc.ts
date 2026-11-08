@@ -451,6 +451,12 @@ export interface InvokeContract {
 	 * still forgotten here, and the answer's notice is `kept-on-server`.
 	 */
 	'sync:sign-out': { args: []; result: SyncState }
+	/**
+	 * Turn off sync on this PC (Ruling 68): signs out as sync:sign-out does, then forgets this PC's sync keys, its sync progress and
+	 * the sync records of every login. The logins stay, unsynced; the server copy stays for the other PCs. Runs under the vault's key
+	 * lock, so it waits for a sync running. After it, the account can be deleted or made again.
+	 */
+	'sync:turn-off': { args: []; result: SyncState }
 	/** Stops waiting for a Google sign-in in progress; that sync:sign-in then resolves with the state as it is, without an error. */
 	'sync:cancel-sign-in': { args: []; result: void }
 	/**
@@ -687,6 +693,7 @@ export interface ZingApi {
 	getSyncState(): Promise<SyncState>
 	signInToSync(): Promise<SyncState>
 	signOutOfSync(): Promise<SyncState>
+	turnOffSync(): Promise<SyncState>
 	cancelSyncSignIn(): Promise<void>
 	turnOnSync(password: string): Promise<RecoveryKeyShown>
 	confirmRecoverySaved(): Promise<SyncState>

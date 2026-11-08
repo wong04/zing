@@ -394,6 +394,10 @@
 			"args": 0
 		},
 		{
+			"channel": "sync:turn-off",
+			"args": 0
+		},
+		{
 			"channel": "sync:turn-on",
 			"args": 1
 		},

@@ -5,7 +5,7 @@ import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { SettingRowShell } from './SettingRowShell'
 import { RecoveryKeyScreen, ShowRecoveryKey, SyncSetup, useAction, useSyncState } from './SyncSetup'
-import { syncBanner, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
+import { syncBanner, TURN_OFF_SYNC_CONFIRM, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
 import { useVault } from './useVaultData'
 
 /** A password stays shown for this long, then hides itself. */
@@ -214,13 +214,15 @@ function syncDetail(sync: SyncState, busy: boolean): string {
  * Sync: Turn on sync signs in with Google in the browser, with Cancel while it waits, then asks for the Zing password to turn it
  * on (SyncSetup); on, it shows the account, Show recovery key and Sign out. A sign-in the server ended, or one this PC can't read,
  * says so and offers Sign in again. A sync that stopped says why, and after the server went back or held a login back, offers
- * Upload this PC's copy, which says what it does before it runs.
+ * Upload this PC's copy, which says what it does before it runs. While keys.bin holds sync keys, Turn off sync on this PC (Ruling 68)
+ * sits beside Sign out or Turn on sync, and says what it does before it runs.
  */
 function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: SyncState) => void; turnOn: (password: string) => Promise<void> }) {
 	const { busy, error, setError, run } = useAction()
 	// What the last sign-out said (kept-on-server); a pushed state doesn't carry it.
 	const [signOutNotice, setSignOutNotice] = useState<SyncNotice>()
 	const [confirmingUpload, setConfirmingUpload] = useState(false)
+	const [confirmingTurnOff, setConfirmingTurnOff] = useState(false)
 	// A state pushed after an action failed is newer than that failure, so the failure goes (M3).
 	const [failedAgainst, setFailedAgainst] = useState(sync)
 	if (failedAgainst !== sync) {
@@ -245,6 +247,15 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 		setConfirmingUpload(false)
 		act(() => zing.uploadLocalCopy())
 	}
+	const turnOff = (): void => {
+		setConfirmingTurnOff(false)
+		act(() => zing.turnOffSync(), (state) => setSignOutNotice(state.signedIn ? undefined : state.notice))
+	}
+	const turnOffButton = sync.keysHere ? (
+		<PillButton variant="ghost" size="small" disabled={busy} onClick={() => setConfirmingTurnOff(true)}>
+			Turn off sync on this PC
+		</PillButton>
+	) : null
 
 	return (
 		<div className="vault-sync" role="group" aria-label="Sync">
@@ -255,15 +266,19 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 						<PillButton variant="outlined" size="small" disabled={busy} onClick={signOut}>
 							Sign out
 						</PillButton>
+						{turnOffButton}
 					</div>
 				) : busy ? (
 					<PillButton variant="outlined" size="small" onClick={() => void zing.cancelSyncSignIn()}>
 						Cancel
 					</PillButton>
 				) : (
-					<PillButton variant="outlined" size="small" onClick={signIn}>
-						{signInLabel}
-					</PillButton>
+					<div className="vault-actions">
+						<PillButton variant="outlined" size="small" onClick={signIn}>
+							{signInLabel}
+						</PillButton>
+						{turnOffButton}
+					</div>
 				)}
 			</SettingRowShell>
 			<div className="setting-row-detail" role="status" aria-live="polite">
@@ -295,6 +310,21 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 						</PillButton>
 						<PillButton size="small" disabled={busy} onClick={upload}>
 							Upload
+						</PillButton>
+					</div>
+				</div>
+			) : null}
+			{sync.keysHere && confirmingTurnOff ? (
+				<div className="vault-confirm" role="alertdialog" aria-label="Turn off sync on this PC" aria-describedby="vault-turn-off-sync">
+					<InfoBanner kind="info">
+						<span id="vault-turn-off-sync">{TURN_OFF_SYNC_CONFIRM}</span>
+					</InfoBanner>
+					<div className="vault-edit-actions">
+						<PillButton variant="ghost" size="small" autoFocus onClick={() => setConfirmingTurnOff(false)}>
+							Cancel
+						</PillButton>
+						<PillButton size="small" disabled={busy} onClick={turnOff}>
+							Turn off
 						</PillButton>
 					</div>
 				</div>

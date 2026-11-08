@@ -403,6 +403,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("sync:sign-in", async _ => await SignInToSyncAsync());
 		bridge.Register("sync:sign-out", async _ => await SignOutOfSyncAsync());
 		bridge.Register("sync:cancel-sign-in", _ => Do(CancelSyncSignIn));
+		bridge.Register("sync:turn-off", async _ => await TurnOffSyncAsync());
 		bridge.Register("sync:turn-on", async args => new { recoveryKey = await TurnOnSyncAsync(Text(args, 0)) });
 		bridge.Register("sync:confirm-recovery-saved", _ =>
 		{
@@ -975,9 +976,9 @@ public sealed class ChromeApi : IDisposable
 		}
 		catch (SyncAccountUnreadableException)
 		{
-			return SyncState.SignedOut("unreadable", vault.SyncKeys);
+			return SyncState.SignedOut("unreadable", vault);
 		}
-		return SyncState.SignedOut(vault.SyncSignedOutByServer ? "signed-out" : null, vault.SyncKeys);
+		return SyncState.SignedOut(vault.SyncSignedOutByServer ? "signed-out" : null, vault);
 	}
 
 	/// <summary>
@@ -986,7 +987,7 @@ public sealed class ChromeApi : IDisposable
 	/// </summary>
 	private SyncState SignedInState(VaultStore vault, SyncAccount account)
 	{
-		var state = SyncState.SignedInAs(account, vault.SyncKeys);
+		var state = SyncState.SignedInAs(account, vault);
 		if (_app.SyncClients?.Engine is not { } engine) return state;
 		var status = engine.Status;
 		return state with { Error = status.Error, Message = status.Message, Unsent = state.On ? status.Unsent : 0 };
@@ -1062,15 +1063,23 @@ public sealed class ChromeApi : IDisposable
 		catch (SyncAccountUnreadableException)
 		{
 			vault.ForgetSyncAccount();
-			return SyncState.SignedOut(null, vault.SyncKeys);
+			return SyncState.SignedOut(null, vault);
 		}
 		if (setup is null)
 		{
 			vault.ForgetSyncAccount();
-			return SyncState.SignedOut("kept-on-server", vault.SyncKeys);
+			return SyncState.SignedOut("kept-on-server", vault);
 		}
 		var revoked = await SyncClient(vault).SignOutAsync(_closing.Token);
-		return SyncState.SignedOut(revoked ? null : "kept-on-server", vault.SyncKeys);
+		return SyncState.SignedOut(revoked ? null : "kept-on-server", vault);
+	}
+
+	/// <summary>Turn off sync on this PC (Ruling 68): signs out, best effort, and forgets every sync record here; the logins stay.</summary>
+	private async Task<SyncState> TurnOffSyncAsync()
+	{
+		var vault = Vault();
+		var revoked = await SyncKeys.TurnOffAsync(vault, _app.SyncClients?.For(vault), _closing.Token);
+		return SyncState.SignedOut(revoked ? null : "kept-on-server", vault);
 	}
 
 	private SyncClient SyncClient(VaultStore vault) => (_app.SyncClients ?? throw new SyncNotSetUpException()).For(vault);

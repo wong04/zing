@@ -583,6 +583,32 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 		SyncChanged?.Invoke();
 	}
 
+	/// <summary>
+	/// Turns sync off on this PC (Ruling 68), once its sign-in is gone: sync.json's queue, account and progress (cursor, floors,
+	/// manifest hash), then the sync bases in vault.zing, then the sync keys and any pending ones in keys.bin, last, so a crash part way
+	/// still reads as sync on and the person can turn it off again. Every login stays, unsynced. No Hello.
+	/// </summary>
+	public void TurnOffSync()
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			WriteSyncFile([], null, false, null);
+			_queued.Clear();
+			_syncAccount = null;
+			_syncSignedOut = false;
+			_progress = null;
+			WriteVaultFile([.. _records], new Dictionary<string, SyncBase>(StringComparer.Ordinal), null);
+			if (_keys is { } keys && (keys.Sync is not null || keys.PendingSync is not null))
+			{
+				var next = keys.WithoutSync();
+				next.Save(KeysFile);
+				_keys = next;
+			}
+		}
+		SyncChanged?.Invoke();
+	}
+
 	/// <summary>What turning on sync stored in keys.bin; null before. No Hello.</summary>
 	public VaultSyncKeys? SyncKeys
 	{

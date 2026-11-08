@@ -56,16 +56,22 @@ public sealed class SyncBuildException(string message) : Exception(message);
 /// (a code such as "server-rolled-back", and what to show), and <see cref="Unsent"/>, the logins that haven't uploaded yet.
 /// <see cref="PasswordChangedElsewhere"/>, while on: sync found the password changed on another PC, and the next start asks for it.
 /// </summary>
-public sealed record SyncState(bool SignedIn, string? Email, string? Notice = null, bool On = false, bool RecoveryPending = false, string? Error = null, string? Message = null, int Unsent = 0, bool PasswordChangedElsewhere = false)
+public sealed record SyncState(bool SignedIn, string? Email, string? Notice = null, bool On = false, bool RecoveryPending = false, string? Error = null, string? Message = null, int Unsent = 0, bool PasswordChangedElsewhere = false, bool KeysHere = false)
 {
-	/// <param name="keys">What keys.bin holds, for whichever account.</param>
-	public static SyncState SignedInAs(SyncAccount account, VaultSyncKeys? keys = null)
+	/// <param name="vault">The open vault, for what its keys.bin holds, for whichever account.</param>
+	public static SyncState SignedInAs(SyncAccount account, VaultStore vault)
 	{
+		var keys = vault.SyncKeys;
 		var on = keys is not null && keys.UserId == account.UserId;
-		return new(true, account.Email, On: on, RecoveryPending: Unconfirmed(keys), PasswordChangedElsewhere: on && keys!.NewerBlob is not null);
+		return new(true, account.Email, On: on, RecoveryPending: Unconfirmed(keys), PasswordChangedElsewhere: on && keys!.NewerBlob is not null, KeysHere: HoldsKeys(vault));
 	}
 
-	public static SyncState SignedOut(string? notice = null, VaultSyncKeys? keys = null) => new(false, null, notice, RecoveryPending: Unconfirmed(keys));
+	/// <param name="vault">The open vault; null while it's off, when Settings shows no sync.</param>
+	public static SyncState SignedOut(string? notice = null, VaultStore? vault = null) =>
+		new(false, null, notice, RecoveryPending: Unconfirmed(vault?.SyncKeys), KeysHere: vault is not null && HoldsKeys(vault));
+
+	/// <summary>keys.bin holds sync keys, pending ones included, for any account: Settings offers Turn off sync on this PC (Ruling 68).</summary>
+	private static bool HoldsKeys(VaultStore vault) => vault.SyncKeys is not null || vault.PendingSyncKeys is not null;
 
 	private static bool Unconfirmed(VaultSyncKeys? keys) => keys is { RecoveryConfirmed: false };
 }
@@ -93,7 +99,7 @@ public sealed class SyncNeedsRecoveryKeyException()
 /// Deleting the Zing account, or making a new one, while keys.bin holds sync keys (final review I2): the account password is the
 /// sync password, so a new local one would leave the server's keys wrapped by a password this PC no longer asks for.
 /// </summary>
-public sealed class SyncIsOnException() : Exception("Sync is on for this PC. Turn off sync first.");
+public sealed class SyncIsOnException() : Exception("Sync is on for this PC. Turn off sync on this PC first.");
 
 /// <summary>A commit of keys that aren't the ones pending: another call replaced them, so the server may not hold these.</summary>
 public sealed class SyncPendingKeysReplacedException()
@@ -335,6 +341,35 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	private static readonly ConditionalWeakTable<VaultStore, KeyGate> Gates = new();
 
 	/// <summary>Completes the first time a key operation on <paramref name="vault"/> has to wait for another: tests' proof that it queued.</summary>
+	/// <summary>
+	/// Turn off sync on this PC (Ruling 68), under the vault's key lock so no sync, turn-on or password change runs alongside: signs out
+	/// with a best-effort revoke (Ruling 49), then forgets every sync record here (<see cref="VaultStore.TurnOffSync"/>). The logins
+	/// stay, unsynced; the server copy stays for the other PCs. Answers whether the server revoked the sign-in; false when it couldn't
+	/// be reached, when this build has no sync client, or when the sign-in couldn't be read, and its copy then expires unused.
+	/// </summary>
+	public static async Task<bool> TurnOffAsync(VaultStore vault, SyncClient? client, CancellationToken cancellation = default)
+	{
+		using var gate = await EnterGateAsync(vault, cancellation);
+		var revoked = await SignOutForTurnOffAsync(vault, client, cancellation);
+		vault.TurnOffSync();
+		return revoked;
+	}
+
+	private static async Task<bool> SignOutForTurnOffAsync(VaultStore vault, SyncClient? client, CancellationToken cancellation)
+	{
+		try
+		{
+			if (vault.SyncAccount() is null) return true;
+		}
+		catch (SyncAccountUnreadableException)
+		{
+			// Its token can't be read, so it can't be revoked: TurnOffSync forgets it.
+			return false;
+		}
+		if (client is null) return false;
+		return await client.SignOutAsync(cancellation);
+	}
+
 	internal static Task QueuedBehind(VaultStore vault) => Gates.GetValue(vault, _ => new KeyGate()).Queued;
 
 	/// <summary>

@@ -38,6 +38,9 @@ public sealed class VaultKeys
 	/// <summary>The same keys with <paramref name="sync"/> stored beside them, and the pending keys kept. Nothing is written until <see cref="Save"/>.</summary>
 	public VaultKeys WithSync(VaultSyncKeys sync) => new(VaultId, _sealedIndexKey, _sealedSecretKey, sync, PendingSync);
 
+	/// <summary>The same keys with no sync keys and no pending ones: sync turned off on this PC (Ruling 68).</summary>
+	public VaultKeys WithoutSync() => new(VaultId, _sealedIndexKey, _sealedSecretKey, null, null);
+
 	/// <summary>The same keys with <paramref name="pending"/> as the pending sync keys (null drops them), and the sync keys kept.</summary>
 	public VaultKeys WithPending(VaultPendingKeys? pending) => new(VaultId, _sealedIndexKey, _sealedSecretKey, Sync, pending);
 

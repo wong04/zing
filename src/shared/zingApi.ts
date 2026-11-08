@@ -155,6 +155,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		getSyncState: () => invoke('sync:get'),
 		signInToSync: () => invoke('sync:sign-in'),
 		signOutOfSync: () => invoke('sync:sign-out'),
+		turnOffSync: () => invoke('sync:turn-off'),
 		cancelSyncSignIn: () => invoke('sync:cancel-sign-in'),
 		turnOnSync: (password) => invoke('sync:turn-on', password),
 		confirmRecoverySaved: () => invoke('sync:confirm-recovery-saved'),

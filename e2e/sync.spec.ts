@@ -23,6 +23,8 @@ const TURN_ON_SUBS = ['sub-e2e-turn-on', 'sub-e2e-weak'] as const
 const TWO_PCS_SUB = 'sub-e2e-two-pcs'
 // Restore from sync, the recovery key, a password changed on another PC, and a conflict and a delete (Task 14).
 const RESTORE_SUBS = ['sub-e2e-restore', 'sub-e2e-recovery', 'sub-e2e-changed', 'sub-e2e-conflict'] as const
+// Turn off sync on this PC (Ruling 68).
+const TURN_OFF_SUB = 'sub-e2e-turn-off'
 
 let server: ChildProcess | undefined
 let serverUrl = ''
@@ -41,7 +43,7 @@ function serverEnvironment(): NodeJS.ProcessEnv {
 		ASPNETCORE_ENVIRONMENT: 'Staging',
 		ZING_SERVER_FAKE_GOOGLE: '1',
 		ZING_SESSION_KEY: randomBytes(32).toString('base64'),
-		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS].join(','),
+		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB].join(','),
 		ZING_DB_PATH: join(serverDir, 'zing.db'),
 		// Every PC of the run is 127.0.0.1, so one per-IP budget: the default 60 a minute is a production limit (its own tests cover it).
 		ZING_RATE_IP_PER_MINUTE: '1000',
@@ -215,7 +217,7 @@ test('turning on sync shows the recovery key, and nothing else of the vault, unt
 	await reopened.getByRole('button', { name: 'Account' }).click()
 	await reopened.getByRole('button', { name: 'Delete…' }).click()
 	await reopened.getByRole('button', { name: 'Delete', exact: true }).click()
-	await expect(reopened.getByText('Sync is on for this PC. Turn off sync first.')).toBeVisible()
+	await expect(reopened.getByText('Sync is on for this PC. Turn off sync on this PC first.')).toBeVisible()
 	await expect(reopened.getByRole('button', { name: 'Sign Out' })).toBeVisible()
 	await again.close()
 })
@@ -309,6 +311,33 @@ async function turnOnWithLogins(sub: string): Promise<{ zing: Launched; recovery
 	expect(await zing.chrome.evaluate(() => window.zing.confirmRecoverySaved())).toMatchObject({ on: true, unsent: 0 })
 	return { zing, recovery: recoveryKey, bank }
 }
+
+test('Turn off sync on this PC keeps the logins, forgets the sync sign-in and keys, and then the account can be deleted', async () => {
+	const { zing, bank } = await turnOnWithLogins(TURN_OFF_SUB)
+	const sheet = await openSync(zing)
+	await expect(syncGroup(sheet)).toContainText(`Sync is on. Signed in as ${TURN_OFF_SUB}@example.test.`)
+
+	await syncGroup(sheet).getByRole('button', { name: 'Turn off sync on this PC' }).click()
+	const confirm = syncGroup(sheet).getByRole('alertdialog', { name: 'Turn off sync on this PC' })
+	await expect(confirm).toContainText('This PC stops syncing and keeps its logins. Your other PCs and the server copy aren’t changed.')
+	await confirm.getByRole('button', { name: 'Turn off', exact: true }).click()
+
+	await expect(syncGroup(sheet).getByRole('button', { name: 'Turn on sync' })).toBeVisible()
+	await expect(syncGroup(sheet).getByRole('button', { name: 'Turn off sync on this PC' })).toHaveCount(0)
+	expect(await zing.chrome.evaluate(() => window.zing.getSyncState())).toMatchObject({ signedIn: false, on: false, keysHere: false })
+	expect((JSON.parse(readFileSync(keysFile(zing), 'utf8')) as StoredSync).sync).toBeNull()
+	expect(await titles(zing)).toEqual(['Bank', 'Mail'])
+	await hello(zing, 'pass')
+	expect(await zing.chrome.evaluate((id) => window.zing.revealPassword(id), bank)).toBe('bank-password')
+
+	await sheet.getByRole('button', { name: 'Account' }).click()
+	await sheet.getByRole('button', { name: 'Delete…' }).click()
+	await sheet.getByRole('button', { name: 'Delete', exact: true }).click()
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getAccount())).hasAccount, { message: 'the account was not deleted' }).toBe(false)
+	// Behind the account gate no command runs, the harness's window.close among them.
+	expect((await zing.chrome.evaluate(() => window.zing.continueAsGuest())).status).toBe('ok')
+	await zing.close()
+})
 
 /** The account gate shows, as on a real start: the harness skips it otherwise. */
 const gated = { ZING_SKIP_ACCOUNT_GATE: '' }

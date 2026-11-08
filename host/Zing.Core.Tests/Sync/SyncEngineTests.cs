@@ -149,6 +149,35 @@ public sealed class SyncEngineTests : IDisposable
 	}
 
 	[Fact]
+	public async Task TurningSyncOffWaitsForASyncRunningAndLeavesNoSyncStateBehindIt()
+	{
+		await _pcs.TurnOnAAsync();
+		var id = await _pcs.SaveOnAAsync();
+		var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		_pcs.Server.Wire.BeforeSend = async line =>
+		{
+			if (line != "POST /changes" || reached.Task.IsCompleted) return;
+			reached.SetResult();
+			await release.Task;
+		};
+		var sync = A.SyncAsync();
+		await reached.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+		var off = SyncKeys.TurnOffAsync(A.Vault, A.Client, Ct);
+		await SyncKeys.QueuedBehind(A.Vault).WaitAsync(TimeSpan.FromSeconds(10), Ct);
+		Assert.False(off.IsCompleted);
+		release.SetResult();
+		await sync;
+		await off;
+
+		Assert.Null(A.Vault.SyncKeys);
+		Assert.Null(A.Vault.SyncAccount());
+		Assert.Equal(id, Assert.Single(A.Vault.Unsent()).Record.ItemId);
+		Assert.Equal("first-password", await A.Vault.PasswordAsync(id));
+	}
+
+	[Fact]
 	public async Task APcPastTheHorizonResyncsFullyAndADeletedLoginDoesNotComeBack()
 	{
 		using var pcs = await PurgedWhileBWasAway(editOnB: false);

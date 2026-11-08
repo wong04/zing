@@ -3,6 +3,9 @@ import { offersUploadLocal, type SyncState } from '@shared/vault/vault'
 /** What Upload this PC's copy does, said before it runs (Ruling 56). */
 export const UPLOAD_LOCAL_CONFIRM = 'Zing merges this PC’s logins into the server’s copy. It can bring back logins deleted on another PC. Other PCs that synced since the backup may ask the same.'
 
+/** What Turn off sync on this PC does, said before it runs (Ruling 68). */
+export const TURN_OFF_SYNC_CONFIRM = 'This PC stops syncing and keeps its logins. Your other PCs and the server copy aren’t changed.'
+
 export interface SyncBanner {
 	message: string
 	// Upload this PC's copy answers it: the server went back to an older copy, or held a login back.

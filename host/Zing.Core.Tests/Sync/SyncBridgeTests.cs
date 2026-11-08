@@ -643,6 +643,40 @@ public sealed class SyncBridgeTests : IDisposable
 	}
 
 	[Fact]
+	public async Task TurningSyncOffOnThisPcKeepsTheLoginsForgetsTheSyncStateAndLetsTheAccountBeDeleted()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+		var id = await _vault.SaveAsync(new NewLogin("https://bank.example.test", "ada", "bank-secret", "Bank", ""));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		var user = _vault.SyncAccount()!.UserId;
+		Assert.True(_vault.SyncProgressFor(user).RevisionFloor > 0);
+
+		var off = Value(await Invoke(bridge, "sync:turn-off"));
+
+		Assert.False(off.GetProperty("signedIn").GetBoolean());
+		Assert.False(off.GetProperty("keysHere").GetBoolean());
+		Assert.Equal(1, _server.Wire.Count("POST /auth/signout"));
+		Assert.Null(_vault.SyncKeys);
+		Assert.Null(_vault.PendingSyncKeys);
+		Assert.Null(_vault.SyncAccount());
+		Assert.False(VaultKeys.SyncOnDisk(Path.Combine(_dir, VaultStore.KeysFileName)));
+		var sync = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(_dir, "sync.json")))!;
+		Assert.Null(sync["progress"]);
+		Assert.Null(sync["account"]);
+		Assert.Null(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(_dir, VaultStore.VaultFileName)))!["sync"]);
+		Assert.Equal(0, _vault.SyncProgressFor(user).RevisionFloor);
+		Assert.Equal("bank-secret", await _vault.PasswordAsync(id));
+		Assert.Equal(id, Assert.Single(_vault.Unsent()).Record.ItemId);
+		// The server copy stays for the other PCs.
+		Assert.Equal(1, _server.Wire.Count("POST /changes"));
+
+		Assert.Equal("ok", Value(await Invoke(bridge, "account:delete")).GetProperty("status").GetString());
+		Assert.Null(account.State().Profile);
+	}
+
+	[Fact]
 	public async Task WithSyncNeverOnTheAccountIsDeleted()
 	{
 		var account = AccountWith(Strong);

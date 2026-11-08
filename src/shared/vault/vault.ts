@@ -93,8 +93,10 @@ export type SyncState =
 			message?: string
 			/** Sync found the Zing password changed on another PC: the next start asks for the new one. */
 			passwordChangedElsewhere?: boolean
+			/** keys.bin holds sync keys (pending ones included), for any account: Settings offers Turn off sync on this PC. */
+			keysHere: boolean
 	  }
-	| { signedIn: false; notice?: SyncNotice; on: false; recoveryPending: boolean }
+	| { signedIn: false; notice?: SyncNotice; on: false; recoveryPending: boolean; keysHere: boolean }
 
 // The recovery key, as sync:turn-on and sync:show-recovery give it: 26 base32 characters in groups of four.
 export interface RecoveryKeyShown {
