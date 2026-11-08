@@ -49,8 +49,10 @@ public sealed class WebView2Page : IPage
 	private string? _mainFrameId;
 	/// <summary>The latest main-frame Page.frameRequestedNavigation: it arrives before NavigationStarting for the same address (spikes/link-preview, check C).</summary>
 	private (string Url, string Reason)? _lastReason;
-	/// <summary>When the page's script last saw a trusted middle press on a link (Environment.TickCount64), until a new-window request uses it.</summary>
+	/// <summary>When the link-report script last saw a trusted middle press on a link (Environment.TickCount64), until a new-window request uses it.</summary>
 	private long? _middlePressedAt;
+	/// <summary>Setting up the link reports (Wire); the page's first queued navigation waits for it, so its document gets the script.</summary>
+	private Task? _linkReports;
 
 	private static readonly Lazy<(string Script, string Css)> Reader = new(() =>
 	{
@@ -343,11 +345,11 @@ public sealed class WebView2Page : IPage
 		_view.Visible = _visible;
 		_view.Place(_bounds);
 		_core = _view.Core;
-		// A page is not Zing's UI. No host object is added, and the only page messages anything listens for are the middle-click
-		// script's (MiddleClick) and the autofill script's (OnPageMessage), the latter only while the vault is on. So web messages
-		// are on for every page: the link-preview rules need the middle press, which Chromium reports to nothing else.
+		// A page is not Zing's UI. No host object is added, and the only page messages anything listens for are the autofill
+		// script's (OnPageMessage), and only while the vault is on: with it off, web messages stay off as belt and braces
+		// (FollowAutofillAsync). chrome.webview itself stays on the page (the engine injects it) and postMessage still returns
+		// without error, as the relayed-page e2e observes.
 		_core.Settings.AreHostObjectsAllowed = false;
-		_core.Settings.IsWebMessageEnabled = true;
 		_core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
@@ -369,7 +371,9 @@ public sealed class WebView2Page : IPage
 
 		_core.WebMessageReceived += OnPageMessage;
 		// Before any queued navigation, so every document gets the scripts; they install themselves in the top frame only.
-		await WhileOpenAsync(_core.AddScriptToExecuteOnDocumentCreatedAsync(MiddleClick.Script).AsTask());
+		// The link reports are optional: waited for, but their failure is Background's to record, never the page's.
+		await Task.WhenAny(_linkReports!);
+		if (!IsOpen) return;
 		await FollowAutofillAsync();
 		if (!IsOpen) return;
 
@@ -385,15 +389,16 @@ public sealed class WebView2Page : IPage
 	private bool _addingAutofillScript;
 
 	/// <summary>
-	/// Follows passwordAutofill (Ruling 30): with it on, every new document gets the detection script; with it off, the script
-	/// goes, and OnPageMessage drops whatever autofill message still arrives. A document already loaded keeps the script it
-	/// started with until it reloads, but nothing it posts is read. Web messages stay on for the middle-click script.
+	/// Follows passwordAutofill (Ruling 30): with it on, web messages are enabled and every new document gets the detection
+	/// script; with it off, both go, and OnPageMessage drops whatever still arrives. A document already loaded keeps the
+	/// script it started with until it reloads, but nothing it posts is read.
 	/// </summary>
 	public async Task FollowAutofillAsync()
 	{
 		if (!IsOpen || _core is not { } core) return;
 		var on = _features.AutofillOn;
 		_autofill = on;
+		core.Settings.IsWebMessageEnabled = on;
 		if (!on)
 		{
 			if (_autofillScript is not { } added) return;
@@ -430,14 +435,8 @@ public sealed class WebView2Page : IPage
 	/// </summary>
 	private void OnPageMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e)
 	{
-		var json = e.WebMessageAsJson;
-		if (MiddleClick.IsMessage(json))
-		{
-			_middlePressedAt = Environment.TickCount64;
-			return;
-		}
 		if (!_autofill) return;
-		switch (Zing.Core.Vault.AutofillMessage.Read(json, out var message))
+		switch (Zing.Core.Vault.AutofillMessage.Read(e.WebMessageAsJson, out var message))
 		{
 			case Zing.Core.Vault.PageMessageVerdict.NotAutofill:
 				return;
@@ -474,6 +473,9 @@ public sealed class WebView2Page : IPage
 	{
 		core.GetDevToolsProtocolEventReceiver("Page.frameRequestedNavigation").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => NavigationRequested(e.ParameterObjectAsJson), "navigation reason");
 		Background(ReadNavigationReasonsAsync(core), "navigation reasons");
+		core.GetDevToolsProtocolEventReceiver("Runtime.bindingCalled").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => BindingCalled(e.ParameterObjectAsJson), "link report");
+		_linkReports = ReportLinksAsync(core);
+		Background(_linkReports, "link reports");
 		core.NavigationStarting += (_, e) =>
 		{
 			// Decided here and now: NavigationStarting has no deferral, and the reason has already arrived.
@@ -582,6 +584,30 @@ public sealed class WebView2Page : IPage
 		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.enable", "{}").AsTask());
 		using var tree = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}").AsTask()));
 		_mainFrameId = tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("id").GetString();
+	}
+
+	/// <summary>
+	/// The link-report channel (LinkReports): a script in an isolated world, which page scripts can't reach, calls one binding
+	/// that only that world has. Runtime.enable is what makes the engine send Runtime.bindingCalled.
+	/// </summary>
+	private async Task ReportLinksAsync(CoreWebView2 core)
+	{
+		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Runtime.enable", "{}").AsTask());
+		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Runtime.addBinding", System.Text.Json.JsonSerializer.Serialize(new { name = LinkReports.BindingName, executionContextName = LinkReports.WorldName })).AsTask());
+		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.addScriptToEvaluateOnNewDocument", System.Text.Json.JsonSerializer.Serialize(new { source = LinkReports.Script, worldName = LinkReports.WorldName })).AsTask());
+	}
+
+	private void BindingCalled(string json)
+	{
+		using var call = System.Text.Json.JsonDocument.Parse(json);
+		var root = call.RootElement;
+		if (root.GetProperty("name").GetString() != LinkReports.BindingName) return;
+		switch (LinkReports.Read(root.GetProperty("payload").GetString() ?? ""))
+		{
+			case LinkReportKind.Middle:
+				_middlePressedAt = Environment.TickCount64;
+				break;
+		}
 	}
 
 	private void NavigationRequested(string json)
@@ -842,12 +868,12 @@ public sealed class WebView2Page : IPage
 	/// <summary>
 	/// The keys and button that asked for a window: WebView2 says nothing of them. Shift and Ctrl are read as the event fires,
 	/// from the system (the input went to the engine's window, so this thread's key state can be stale); the middle button
-	/// from the page script's press (MiddleClick), used once. An e2e run never reads the real keyboard (AGENTS.md): its tests
+	/// from the link-report script's press (LinkReports), used once. An e2e run never reads the real keyboard (AGENTS.md): its tests
 	/// set the modifiers first (set-modifiers), which win over everything.
 	/// </summary>
 	private Modifiers HeldModifiers()
 	{
-		var middle = MiddleClick.Made(_middlePressedAt, Environment.TickCount64);
+		var middle = LinkReports.MiddleMade(_middlePressedAt, Environment.TickCount64);
 		_middlePressedAt = null;
 		if (TestHooks.TakeModifiers() is { } set) return set;
 		if (TestHooks.KeepsOutOfTheWay) return new Modifiers(false, false, middle);
