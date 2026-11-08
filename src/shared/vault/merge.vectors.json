@@ -1,5 +1,5 @@
 {
-	"description": "The field-by-field merge sync runs on a conflict (spec, Sync design; host/Zing.Core/Sync/Merge.cs). Each side is `login` with its overrides applied; `common` null means the two copies share no earlier copy. Passwords are labels standing for ciphertexts: a merge never opens one, it keeps the winner as it is and moves the loser into the history as it is, with the version it was sealed under. `expected` is `login` with its overrides.",
+	"description": "The field-by-field merge sync runs on a conflict (spec, Sync design; host/Zing.Core/Sync/Merge.cs). The merge is host-only (Ruling 56): these vectors are read by xUnit, and nothing in TS merges. Each side is `login` with its overrides applied; `common` null means the two copies share no earlier copy. Passwords are labels standing for ciphertexts: a merge never opens one, it keeps the winner as it is and moves the loser into the history as it is, with the version it was sealed under. `expected` is `login` with its overrides.",
 	"login": {
 		"origin": "https://bank.example.test",
 		"username": "ada",

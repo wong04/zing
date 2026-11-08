@@ -961,16 +961,22 @@ public sealed class ChromeApi : IDisposable
 		return SyncState.SignedOut(vault.SyncSignedOutByServer ? "signed-out" : null, vault.SyncKeys);
 	}
 
-	/// <summary>Sync is on only for the account this PC turned it on for: keys.bin names that server user.</summary>
+	/// <summary>
+	/// Sync is on only for the account this PC turned it on for: keys.bin names that server user. The engine's last error shows
+	/// whenever signed in, so one met settling a turn-on still pending shows too (M7); how many logins wait to upload, only while on.
+	/// </summary>
 	private SyncState SignedInState(VaultStore vault, SyncAccount account)
 	{
 		var state = SyncState.SignedInAs(account, vault.SyncKeys);
-		if (!state.On || _app.SyncClients?.Engine is not { } engine) return state;
+		if (_app.SyncClients?.Engine is not { } engine) return state;
 		var status = engine.Status;
-		return state with { Error = status.Error, Message = status.Message, Unsent = status.Unsent };
+		return state with { Error = status.Error, Message = status.Message, Unsent = state.On ? status.Unsent : 0 };
 	}
 
-	/// <summary>Upload this PC's copy (spec, Rollback protection): what Settings offers after the server went back or held a login back.</summary>
+	/// <summary>
+	/// Upload this PC's copy (spec, Rollback protection): what Settings offers after the server went back or held a login back, and
+	/// only then (the engine refuses it otherwise, Ruling 56).
+	/// </summary>
 	private async Task<SyncState> UploadLocalCopyAsync()
 	{
 		var engine = _app.SyncClients?.Engine ?? throw new SyncNotSetUpException();

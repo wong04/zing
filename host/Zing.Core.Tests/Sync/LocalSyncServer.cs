@@ -146,6 +146,9 @@ internal sealed class Wire : DelegatingHandler
 	/// <summary>Rewrites the body of each answer, given its request line: a server that tampers with what it sends.</summary>
 	public Func<string, string, string>? Rewrite { get; set; }
 
+	/// <summary>Answers a request with this status itself, without sending it: a server that refuses what it would take.</summary>
+	public Func<HttpRequestMessage, System.Net.HttpStatusCode?>? AnswerWith { get; set; }
+
 	/// <summary>Runs once the server has answered a refresh, before the client sees the answer.</summary>
 	public Action? AfterRefreshAnswered { get; set; }
 
@@ -169,6 +172,7 @@ internal sealed class Wire : DelegatingHandler
 		if (Down) throw new HttpRequestException("The test's sync server is down");
 		if (FailWhen?.Invoke(line) == true) throw new HttpRequestException($"The test dropped {line}");
 		if (request.Headers.Authorization is not null && Spoil()) request.Headers.Authorization = new("Bearer", "user.1.junk");
+		if (AnswerWith?.Invoke(request) is { } status) return new HttpResponseMessage(status) { RequestMessage = request, Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json") };
 		var response = await base.SendAsync(request, cancellationToken);
 		if (line == LoseNextAnswerTo)
 		{

@@ -437,6 +437,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		}
 		var manifest = await client.PutManifestAsync(upload.Manifest, 0, cancellation, asUser: signedIn.UserId);
 		vault.RaiseManifestFloor(signedIn.UserId, manifest);
+		vault.MarkListed(signedIn.UserId, [.. upload.Records.Select(r => new SyncManifestEntry(r.ItemId, r.Version))]);
 	}
 
 	private static bool AlreadyUploaded(LoginRecord sent, SyncItem held)
@@ -502,10 +503,14 @@ public sealed class SyncClients : IDisposable
 	/// <summary>The engine's status changed: a sync ended, or a change here is waiting to upload.</summary>
 	public event Action? EngineStatusChanged;
 
-	/// <summary>The vault was turned on or off, or replaced: the old store's client and engine go, and the new store's engine starts.</summary>
+	/// <summary>
+	/// The vault was turned on or off, or replaced: the old store's engine goes, then its client (in that order, so a sync still
+	/// running stops before its client does, M6), and the new store's engine starts.
+	/// </summary>
 	private void Follow()
 	{
 		SyncEngine? stopped;
+		SyncClient? retired = null;
 		SyncEngine? started = null;
 		lock (_gate)
 		{
@@ -514,7 +519,7 @@ public sealed class SyncClients : IDisposable
 			_engine = null;
 			if (!ReferenceEquals(_vault, _vaults.Current))
 			{
-				_client?.Dispose();
+				retired = _client;
 				_client = null;
 				_vault = null;
 			}
@@ -529,6 +534,7 @@ public sealed class SyncClients : IDisposable
 			stopped.StatusChanged -= OnEngineStatus;
 			stopped.Dispose();
 		}
+		retired?.Dispose();
 		if (started is null) return;
 		started.StatusChanged += OnEngineStatus;
 		started.Start();
@@ -555,16 +561,20 @@ public sealed class SyncClients : IDisposable
 	{
 		_vaults.Changed -= Follow;
 		SyncEngine? engine;
+		SyncClient? client;
 		lock (_gate)
 		{
 			engine = _engine;
 			_engine = null;
-			_client?.Dispose();
+			client = _client;
 			_client = null;
 			_vault = null;
 		}
-		if (engine is null) return;
-		engine.StatusChanged -= OnEngineStatus;
-		engine.Dispose();
+		if (engine is not null)
+		{
+			engine.StatusChanged -= OnEngineStatus;
+			engine.Dispose();
+		}
+		client?.Dispose();
 	}
 }

@@ -23,6 +23,29 @@ public class FakeGoogleTests
 	}
 
 	[Fact]
+	public async Task An_id_tokens_lifetime_is_checked_on_the_servers_clock()
+	{
+		var clock = new ManualClock(DateTimeOffset.UtcNow);
+		using var factory = new ServerFactory(clock: clock);
+		var client = factory.CreateClient();
+		clock.Advance(TimeSpan.FromDays(60));
+
+		var fresh = await MintAsync(client);
+		Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/auth/google", new { idToken = fresh })).StatusCode);
+
+		var stale = await MintAsync(client);
+		clock.Advance(TimeSpan.FromHours(2));
+		Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/auth/google", new { idToken = stale })).StatusCode);
+	}
+
+	private static async Task<string> MintAsync(HttpClient client)
+	{
+		var minted = await client.PostAsJsonAsync("/fake-google/token", new { sub = ServerFactory.AllowedSub });
+		minted.EnsureSuccessStatusCode();
+		return (await minted.Content.ReadFromJsonAsync<Minted>(ServerFactory.JsonOpts))!.IdToken;
+	}
+
+	[Fact]
 	public async Task A_minted_token_carries_the_email_it_was_asked_for()
 	{
 		using var factory = new ServerFactory();

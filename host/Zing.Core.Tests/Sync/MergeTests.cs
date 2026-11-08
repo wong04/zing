@@ -30,6 +30,14 @@ public sealed class MergeTests
 
 		var expected = Side(login, c["expected"])!;
 		Assert.Equal(Describe(expected), Describe(merged));
+		AssertNamesItsCiphertexts(merged);
+	}
+
+	/// <summary>Ruling 56: the merged summary names the password and each old one by its ciphertext's hash, so none can be swapped.</summary>
+	private static void AssertNamesItsCiphertexts(MergeInput merged)
+	{
+		Assert.Equal(CipherHash.Of(merged.Password), merged.Summary.PasswordHash);
+		Assert.Equal(merged.History.Select(CipherHash.Of), merged.Summary.History.Select(h => h.Hash));
 	}
 
 	[Fact]
@@ -58,9 +66,10 @@ public sealed class MergeTests
 			Number(side, "createdAt"), Number(side, "updatedAt"), Number(side, "passwordUpdatedAt"),
 			side["deletedAt"]?.GetValue<long>(),
 			Number(side, "passwordVersion"),
-			[.. history.Select(h => new HistoryPayload(Number(h!, "version"), Number(h!, "replacedAt")))],
+			[.. history.Select(h => new HistoryPayload(Number(h!, "version"), Number(h!, "replacedAt"), CipherHash.Of(Sealed(Text(h!, "password")))))],
 			side["neverSave"]!.GetValue<bool>(),
-			Generation: Number(side, "generation"));
+			Generation: Number(side, "generation"),
+			PasswordHash: CipherHash.Of(Sealed(Text(side, "password"))));
 		return new MergeInput(summary, Sealed(Text(side, "password")), [.. history.Select(h => Sealed(Text(h!, "password")))]);
 	}
 

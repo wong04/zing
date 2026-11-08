@@ -271,8 +271,8 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 			{
 				id = Guid.NewGuid().ToString("N");
 				var now = _clock.Now();
-				var summary = new SummaryPayload(origin, login.Username, login.Title, login.Note, now, now, now, null, 1, []);
 				var password = Seal(secretKey, keys, id, 1, ItemPart.Password, login.Password);
+				var summary = new SummaryPayload(origin, login.Username, login.Title, login.Note, now, now, now, null, 1, [], PasswordHash: CipherHash.Of(password));
 				Commit(null, new LoginRecord(id, 1, SealSummary(keys, id, 1, summary), password, [], false), summary);
 			}
 			OnEdited();
@@ -328,14 +328,15 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	{
 		var version = record.Version + 1;
 		var now = _clock.Now();
+		var sealedPassword = Seal(secretKey, keys, record.ItemId, version, ItemPart.Password, password);
 		var changed = edit(summary) with
 		{
 			UpdatedAt = now,
 			PasswordUpdatedAt = now,
 			PasswordVersion = version,
-			History = [new HistoryPayload(summary.PasswordVersion, now), .. summary.History],
+			PasswordHash = CipherHash.Of(sealedPassword),
+			History = [new HistoryPayload(summary.PasswordVersion, now, CipherHash.Of(record.Password)), .. summary.History],
 		};
-		var sealedPassword = Seal(secretKey, keys, record.ItemId, version, ItemPart.Password, password);
 		return (record with { Version = version, Summary = SealSummary(keys, record.ItemId, version, changed), Password = sealedPassword, History = [record.Password, .. record.History] }, changed);
 	}
 
@@ -384,8 +385,9 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 					}
 					var newId = Guid.NewGuid().ToString("N");
 					var now = _clock.Now();
-					var fresh = new SummaryPayload(origins[i], login.Username, login.Title, login.Note, now, now, now, null, 1, []);
-					changed[newId] = (new LoginRecord(newId, 1, SealSummary(keys, newId, 1, fresh), Seal(secretKey, keys, newId, 1, ItemPart.Password, login.Password), [], false), fresh);
+					var password = Seal(secretKey, keys, newId, 1, ItemPart.Password, login.Password);
+					var fresh = new SummaryPayload(origins[i], login.Username, login.Title, login.Note, now, now, now, null, 1, [], PasswordHash: CipherHash.Of(password));
+					changed[newId] = (new LoginRecord(newId, 1, SealSummary(keys, newId, 1, fresh), password, [], false), fresh);
 					added.Add(newId);
 					live[(origins[i], login.Username)] = newId;
 				}
@@ -706,20 +708,6 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 		}
 	}
 
-	/// <summary>Sync sent these: each queued change for one of their items, at or below the version sent, leaves the queue.</summary>
-	public void Dequeue(IReadOnlyList<QueuedChange> sent)
-	{
-		var versions = sent.ToDictionary(c => c.ItemId, c => c.Version, StringComparer.Ordinal);
-		lock (_gate)
-		{
-			RequireOpen();
-			List<QueuedChange> left = [.. _queued.Where(c => !versions.TryGetValue(c.ItemId, out var version) || c.Version > version)];
-			WriteSyncFile(left, _syncAccount, _syncSignedOut);
-			_queued.Clear();
-			_queued.AddRange(left);
-		}
-	}
-
 	/// <summary>Under <c>_gate</c>.</summary>
 	private void WriteSyncFile(IReadOnlyList<QueuedChange> queued, SyncAccountFile? account, bool signedOut) => WriteSyncFile(queued, account, signedOut, _progress);
 
@@ -997,23 +985,31 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	private static void CheckSummary(LoginRecord record, SummaryPayload summary)
 	{
 		if (summary.Origin is null || summary.Username is null || summary.Title is null || summary.Note is null) throw new InvalidDataException($"Login {record.ItemId}'s summary is missing a field");
-		// Ruling 25: the tombstone flag is outside every ciphertext's associated data, so it counts only if the sealed summary is deleted
-		// too; and a sealed tombstone can't pass as a login by having its flag cleared.
-		if (record.Tombstone && summary.DeletedAt is null) throw new VaultTamperedException($"Item {record.ItemId} is flagged as a tombstone but its sealed summary isn't deleted");
-		if (summary.Tombstone && !record.Tombstone) throw new VaultTamperedException($"Item {record.ItemId}'s sealed summary is a tombstone but it isn't flagged as one");
+		// Ruling 25, both ways (Ruling 56): the tombstone flag is outside every ciphertext's associated data, so it counts only if the
+		// sealed summary is a tombstone too. A flag on a login in Recently deleted would hide it, and a sealed tombstone with its flag
+		// cleared would pass as a login.
+		if (record.Tombstone != summary.Tombstone) throw new VaultTamperedException($"Item {record.ItemId}'s tombstone flag doesn't match its sealed summary");
 		if (summary.Tombstone)
 		{
-			if (record.Password.Length != 0 || record.History.Length != 0 || summary.History is not { Count: 0 }) throw new InvalidDataException($"Tombstone {record.ItemId} still holds a password");
+			if (summary.DeletedAt is null) throw new VaultTamperedException($"Tombstone {record.ItemId}'s sealed summary isn't deleted");
+			if (record.Password.Length != 0 || record.History.Length != 0 || summary.History is not { Count: 0 } || summary.PasswordHash is not null) throw new InvalidDataException($"Tombstone {record.ItemId} still holds a password");
 			return;
 		}
 		if (summary.NeverSave)
 		{
-			if (record.Password.Length != 0 || record.History.Length != 0 || summary.PasswordVersion != 0) throw new InvalidDataException($"Item {record.ItemId} is a \"never for this site\" mark but holds a password");
+			if (record.Password.Length != 0 || record.History.Length != 0 || summary.PasswordVersion != 0 || summary.PasswordHash is not null) throw new InvalidDataException($"Item {record.ItemId} is a \"never for this site\" mark but holds a password");
 			return;
 		}
 		if (summary.History is null || summary.History.Any(h => h is null)) throw new InvalidDataException($"Login {record.ItemId}'s summary has no history list");
 		if (summary.History.Count != record.History.Length) throw new InvalidDataException($"Login {record.ItemId}'s summary lists {summary.History.Count} old passwords but it holds {record.History.Length}");
 		if (summary.PasswordVersion < 1 || summary.PasswordVersion > record.Version) throw new InvalidDataException($"Login {record.ItemId}'s password is sealed at version {summary.PasswordVersion}, outside 1 to {record.Version}");
+		// Ruling 56 (amends Ruling 24): two ciphertexts can share a version (a merge keeps both new passwords of version v+1), so their
+		// associated data alone can't tell the password from an old one. The sealed summary names each ciphertext by its hash.
+		if (!CipherHash.Matches(summary.PasswordHash, record.Password)) throw new VaultTamperedException($"Login {record.ItemId}'s password isn't the one its sealed summary names");
+		for (var i = 0; i < record.History.Length; i++)
+		{
+			if (!CipherHash.Matches(summary.History[i].Hash, record.History[i])) throw new VaultTamperedException($"Login {record.ItemId}'s old password {i} isn't the one its sealed summary names");
+		}
 	}
 
 	// Sync is absent from a vault.zing written before sync, which reads as no bases.
@@ -1043,10 +1039,20 @@ internal sealed record SummaryPayload(
 	// A login purged 30 days after its delete: only DeletedAt is kept, and the record is flagged too (Ruling 25 checks both ways).
 	bool Tombstone = false,
 	// Goes up by one when a login purged meanwhile is made again from this PC's edit (Ruling 18), so it orders after its own tombstone.
-	long Generation = 0)
+	long Generation = 0,
+	// The SHA-256 of the password's ciphertext (Ruling 56); null for an item with no password ("never" marks and tombstones).
+	byte[]? PasswordHash = null)
 {
 	public LoginSummary ToSummary(string id) => new(id, Origin, Username, Title, Note, CreatedAt, UpdatedAt, PasswordUpdatedAt, DeletedAt);
 }
 
-/// <summary>One old password: the version it was sealed under (as the password), and when it was replaced.</summary>
-internal sealed record HistoryPayload(long Version, long ReplacedAt);
+/// <summary>One old password: the version it was sealed under (as the password), when it was replaced, and its ciphertext's SHA-256 (Ruling 56).</summary>
+internal sealed record HistoryPayload(long Version, long ReplacedAt, byte[] Hash);
+
+/// <summary>How a sealed summary names a password ciphertext (Ruling 56): its SHA-256, so the server can't swap two that share a version.</summary>
+internal static class CipherHash
+{
+	public static byte[] Of(byte[] ciphertext) => SHA256.HashData(ciphertext);
+
+	public static bool Matches(byte[]? hash, byte[] ciphertext) => hash is { Length: SHA256.HashSizeInBytes } && CryptographicOperations.FixedTimeEquals(hash, SHA256.HashData(ciphertext));
+}

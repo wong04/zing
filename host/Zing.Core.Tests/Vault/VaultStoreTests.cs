@@ -374,14 +374,16 @@ public sealed class VaultStoreTests : IDisposable
 	public async Task APasswordMovedToAnotherItemFailsItsTag()
 	{
 		var store = Open();
-		var first = await store.SaveAsync(Login);
+		await store.SaveAsync(Login);
 		await store.SaveAsync(Login with { Username = "grace", Password = "grace's" });
 		var file = JsonNode.Parse(File.ReadAllText(VaultFile))!;
 		var items = file["items"]!.AsArray();
 		(items[0]!["password"], items[1]!["password"]) = (items[1]!["password"]!.DeepClone(), items[0]!["password"]!.DeepClone());
 		File.WriteAllText(VaultFile, file.ToJsonString());
 
-		await Assert.ThrowsAsync<VaultTamperedException>(() => Open().PasswordAsync(first));
+		// Caught at load now: each sealed summary names its password's ciphertext (Ruling 56), before any tag is tried.
+		var error = Assert.Throws<VaultFileException>(() => Open());
+		Assert.IsType<VaultTamperedException>(error.InnerException);
 	}
 
 	[Fact]
@@ -591,7 +593,7 @@ public sealed class VaultStoreTests : IDisposable
 	}
 
 	[Fact]
-	public async Task ATombstoneWhoseSealedSummaryIsDeletedOpens()
+	public async Task ATombstoneFlagOnALoginInRecentlyDeletedIsTampering()
 	{
 		var store = Open();
 		var id = await store.SaveAsync(Login);
@@ -600,9 +602,9 @@ public sealed class VaultStoreTests : IDisposable
 		file["items"]![0]!["tombstone"] = true;
 		File.WriteAllText(VaultFile, file.ToJsonString());
 
-		var reopened = Open();
-		Assert.Empty(reopened.Summaries());
-		Assert.Single(reopened.Records);
+		// Ruling 25 both ways (Ruling 56): a deleted summary isn't a sealed tombstone, so the flag would hide it from Recently deleted.
+		var error = Assert.Throws<VaultFileException>(() => Open());
+		Assert.IsType<VaultTamperedException>(error.InnerException);
 	}
 
 	[Fact]
@@ -615,10 +617,9 @@ public sealed class VaultStoreTests : IDisposable
 		item["history"]![0] = password;
 		File.WriteAllText(VaultFile, file.ToJsonString());
 
-		var store = Open();
-		var id = store.Summaries().Single().Id;
-		await Assert.ThrowsAsync<VaultTamperedException>(() => store.PasswordAsync(id));
-		await Assert.ThrowsAsync<VaultTamperedException>(() => store.HistoryPasswordAsync(id, 0));
+		// Caught at load: the sealed summary names the password and each old one by its ciphertext's hash (Ruling 56).
+		var error = Assert.Throws<VaultFileException>(() => Open());
+		Assert.IsType<VaultTamperedException>(error.InnerException);
 	}
 
 	[Fact]

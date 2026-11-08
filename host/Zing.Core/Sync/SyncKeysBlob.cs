@@ -277,6 +277,22 @@ public static class SyncWire
 	public static SyncPush Push(SyncUnsent unsent) =>
 		new(unsent.Record.ItemId, checked((int)unsent.Record.Version), unsent.BaseRevision, unsent.Record.Tombstone, unsent.Record.Summary, unsent.Record.Password, JoinHistory(unsent.Record.History));
 
+	/// <summary>
+	/// A pulled page as a pull can use it (Ruling 56): its items strictly after <paramref name="since"/>, in rising revision order, none
+	/// past the page's own revision; and a page that says there is more holds at least one, so the cursor always moves on.
+	/// </summary>
+	/// <exception cref="SyncProtocolException">The page breaks one of those.</exception>
+	public static void CheckPage(long since, SyncChanges page)
+	{
+		var last = since;
+		foreach (var item in page.Items)
+		{
+			if (item.Revision <= last || item.Revision > page.Revision) throw new SyncProtocolException($"The sync server sent item {item.ItemId} at revision {item.Revision} in a page after {last} that ends at {page.Revision}");
+			last = item.Revision;
+		}
+		if (page.More && page.Items.Count == 0) throw new SyncProtocolException("The sync server said there was more to pull but sent nothing");
+	}
+
 	/// <summary>Each old password's ciphertext as a big-endian uint32 length then its bytes, newest first.</summary>
 	public static byte[] JoinHistory(IReadOnlyList<byte[]> history) => AdEncoding.Strings([.. history]);
 

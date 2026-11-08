@@ -124,6 +124,213 @@ public sealed class RollbackGuardTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ARevisionZeroItemInAPullIsRefusedAndTheLoginStays()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+		var held = (await _pcs.ServerItemsAsync()).Items.Single(i => i.ItemId == id);
+		// Ruling 18's purged placeholder, slipped into a pull, where it is never valid.
+		_pcs.Server.Wire.Rewrite = (line, body) => line == "GET /changes" ? AddItem(body, "items", held with { Revision = 0, Tombstone = true, Summary = [], Password = [], History = [] }) : body;
+
+		await Assert.ThrowsAsync<SyncProtocolException>(B.SyncAsync);
+
+		Assert.Equal("server-invalid", B.Engine.Status.Error);
+		Assert.Equal("Bank", B.Login(id).Title);
+		Assert.Equal("first-password", await B.Vault.PasswordAsync(id));
+	}
+
+	[Fact]
+	public async Task AnItemPulledAtARevisionThePageDoesNotReachIsRefused()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+		var held = (await _pcs.ServerItemsAsync()).Items.Single(i => i.ItemId == id);
+		_pcs.Server.Wire.Rewrite = (line, body) => line == "GET /changes" ? AddItem(body, "items", held with { Revision = 1_000 }) : body;
+
+		await Assert.ThrowsAsync<SyncProtocolException>(B.SyncAsync);
+
+		Assert.Equal("server-invalid", B.Engine.Status.Error);
+	}
+
+	[Fact]
+	public async Task APageThatSaysMoreButHoldsNothingIsRefused()
+	{
+		await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+		_pcs.Server.Wire.Rewrite = (line, body) => line == "GET /changes" ? SetMore(body) : body;
+
+		await Assert.ThrowsAsync<SyncProtocolException>(B.SyncAsync);
+
+		Assert.Equal("server-invalid", B.Engine.Status.Error);
+	}
+
+	[Fact]
+	public async Task ARevisionZeroConflictForALoginThatWasNotPushedIsRefusedAndTheLoginStays()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		var other = await _pcs.SaveOnAAsync("https://shop.example.test");
+		await _pcs.TurnOnAAsync();
+		var held = (await _pcs.ServerItemsAsync()).Items.Single(i => i.ItemId == other);
+		A.Vault.UpdateSummary(id, "Edited", "", "ada");
+		_pcs.Server.Wire.Rewrite = (line, body) => line == "POST /changes" ? AddItem(body, "conflicts", held with { Revision = 0, Tombstone = true, Summary = [], Password = [], History = [] }) : body;
+
+		await Assert.ThrowsAsync<SyncProtocolException>(A.SyncAsync);
+
+		Assert.Equal("server-invalid", A.Engine.Status.Error);
+		Assert.Equal("Bank", A.Login(other).Title);
+		Assert.Equal("first-password", await A.Vault.PasswordAsync(other));
+	}
+
+	[Fact]
+	public async Task AForcedResyncThatLeavesOutALoginNoManifestListedYetRaisesWithheldAndKeepsIt()
+	{
+		await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		// A new login reaches the server, but the server refuses the manifest that would list it.
+		var fresh = await _pcs.SaveOnAAsync("https://shop.example.test");
+		_pcs.Server.Wire.AnswerWith = request => request.Method == HttpMethod.Put && request.RequestUri!.AbsolutePath == "/manifest" ? System.Net.HttpStatusCode.InternalServerError : null;
+		await Assert.ThrowsAsync<SyncHttpException>(A.SyncAsync);
+		Assert.Empty(A.Vault.Unsent());
+		// Then it claims A's cursor is past its horizon, and serves the full resync without that login.
+		_pcs.Server.Wire.AnswerWith = request => request.RequestUri!.AbsolutePath == "/changes" && request.Method == HttpMethod.Get && !request.RequestUri.Query.Contains("since=0") ? System.Net.HttpStatusCode.Gone : null;
+		_pcs.Server.Wire.Rewrite = (line, body) => line == "GET /changes" ? RemoveItem(body, fresh) : body;
+
+		var withheld = await Assert.ThrowsAsync<ServerWithheldItemException>(A.SyncAsync);
+
+		Assert.Equal(fresh, withheld.ItemId);
+		Assert.Equal("first-password", await A.Vault.PasswordAsync(fresh));
+		Assert.Contains(A.Vault.Summaries(), s => s.Id == fresh && s.DeletedAt is null);
+	}
+
+	[Fact]
+	public async Task AServerFlaggingADeletedLoginAsATombstoneIsCaughtAndTheLoginStaysInRecentlyDeleted()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+		A.Vault.Delete(id);
+		await A.SyncAsync();
+		// Ruling 25: the flag is outside every ciphertext's associated data, and the sealed summary isn't a tombstone.
+		_pcs.Server.Wire.Rewrite = (line, body) => line == "GET /changes" ? FlagTombstone(body, id) : body;
+
+		await Assert.ThrowsAsync<VaultTamperedException>(B.SyncAsync);
+
+		Assert.Equal("server-tampered", B.Engine.Status.Error);
+		Assert.Contains(B.Vault.Summaries(), s => s.Id == id);
+	}
+
+	[Fact]
+	public async Task AServerSwappingAMergedPasswordWithAnOldOneOfTheSameVersionIsCaught()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+		await A.Vault.UpdatePasswordAsync(id, "changed-on-a");
+		B.Clock.Advance(TimeSpan.FromMinutes(1));
+		await B.Vault.UpdatePasswordAsync(id, "changed-on-b-later");
+		await A.SyncAsync();
+		await B.SyncAsync();
+		// B's merge keeps both version-2 passwords: B's as the password, A's as the newest old one. Their associated data is the same.
+		_pcs.Server.Wire.Rewrite = (line, body) => line == "GET /changes" ? SwapPasswordWithNewestOldOne(body, id) : body;
+
+		await Assert.ThrowsAsync<VaultTamperedException>(A.SyncAsync);
+
+		Assert.Equal("server-tampered", A.Engine.Status.Error);
+		Assert.Equal("changed-on-a", await A.Vault.PasswordAsync(id));
+	}
+
+	[Fact]
+	public async Task AnUploadThatCouldNotRunForASignedOutPcKeepsTheRollbackError()
+	{
+		await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		var backup = _pcs.Server.Backup();
+		await _pcs.SaveOnAAsync("https://shop.example.test");
+		await A.SyncAsync();
+		_pcs.Server.Restore(backup);
+		await Assert.ThrowsAsync<ServerRolledBackException>(A.SyncAsync);
+		A.Vault.ForgetSyncAccount();
+
+		await Assert.ThrowsAsync<NotSignedInToSyncException>(() => A.Engine.UploadLocalCopyAsync(Ct));
+
+		// Nothing was uploaded, so Settings still says why sync stopped (M7).
+		Assert.Equal("server-rolled-back", A.Engine.Status.Error);
+	}
+
+	[Fact]
+	public async Task UploadThisPcsCopyIsRefusedUnlessTheLastSyncStoppedOnARollbackOrAHeldBackLogin()
+	{
+		await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await A.SyncAsync();
+
+		await Assert.ThrowsAsync<SyncUploadNotOfferedException>(() => A.Engine.UploadLocalCopyAsync(Ct));
+
+		Assert.Null(A.Engine.Status.Error);
+	}
+
+	/// <summary>
+	/// The server is restored from a backup after B changed a login's password, so it loses B's change; A, which never saw it, then
+	/// saves another login and changes the same password later, as <paramref name="changesOnA"/> changes.
+	/// </summary>
+	private async Task<string> PasswordLostInARestoreAsync(int changesOnA)
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+		var backup = _pcs.Server.Backup();
+		await B.Vault.UpdatePasswordAsync(id, "changed-on-b");
+		await B.SyncAsync();
+		_pcs.Server.Restore(backup);
+		// A second login first, so A's change of this one lands past B's floor and B's next pull brings it.
+		await _pcs.SaveOnAAsync("https://shop.example.test");
+		await A.SyncAsync();
+		A.Clock.Advance(TimeSpan.FromMinutes(1));
+		for (var i = 1; i <= changesOnA; i++) await A.Vault.UpdatePasswordAsync(id, $"changed-on-a-{i}");
+		await A.SyncAsync();
+		return id;
+	}
+
+	private static async Task AssertPasswordsAsync(SyncPc pc, string id, string password, params string[] old)
+	{
+		Assert.Equal(password, await pc.Vault.PasswordAsync(id));
+		var held = new List<string>();
+		for (var i = 0; i < pc.Vault.History(id).Count; i++) held.Add(await pc.Vault.HistoryPasswordAsync(id, i));
+		foreach (var each in old) Assert.Contains(each, held);
+	}
+
+	[Fact]
+	public async Task UploadThisPcsCopyMergesSoNeitherPcsPasswordIsLost()
+	{
+		var id = await PasswordLostInARestoreAsync(changesOnA: 1);
+		// A's copy has the version B's has, with other bytes (M3): the server lost the copy it took from B.
+		await Assert.ThrowsAsync<ServerRolledBackException>(B.SyncAsync);
+
+		await B.Engine.UploadLocalCopyAsync(Ct);
+		await A.SyncAsync();
+
+		// A changed it later, so A's password wins; B's moves into the history rather than being written over (Ruling 56).
+		await AssertPasswordsAsync(A, id, "changed-on-a-1", "changed-on-b", "first-password");
+		await AssertPasswordsAsync(B, id, "changed-on-a-1", "changed-on-b", "first-password");
+	}
+
+	[Fact]
+	public async Task ANewerCopyWrittenWithoutThisPcsPasswordIsMergedNotTaken()
+	{
+		var id = await PasswordLostInARestoreAsync(changesOnA: 2);
+
+		// A's copy is past B's version but doesn't hold B's password anywhere: it was written over a copy the server lost.
+		await B.SyncAsync();
+		await A.SyncAsync();
+
+		await AssertPasswordsAsync(A, id, "changed-on-a-2", "changed-on-b", "changed-on-a-1", "first-password");
+		await AssertPasswordsAsync(B, id, "changed-on-a-2", "changed-on-b", "changed-on-a-1", "first-password");
+	}
+
+	[Fact]
 	public async Task ARollbackReachesSettingsAsAnErrorThatOffersUploadThisPcsCopy()
 	{
 		var vaultDir = Directory.CreateTempSubdirectory("zing-rollback-ui-").FullName;
@@ -194,6 +401,56 @@ public sealed class RollbackGuardTests : IDisposable
 			foreach (var (key, value) in replayed.AsObject()) item[key] = value?.DeepClone();
 		}
 		return page.ToJsonString();
+	}
+
+	/// <summary>The page or push answer with <paramref name="item"/> added to its <paramref name="list"/> ("items" or "conflicts").</summary>
+	private static string AddItem(string body, string list, SyncItem item)
+	{
+		var page = JsonNode.Parse(body)!;
+		page[list]!.AsArray().Add(JsonSerializer.SerializeToNode(item, SyncJson.Options));
+		return page.ToJsonString();
+	}
+
+	private static string SetMore(string body)
+	{
+		var page = JsonNode.Parse(body)!;
+		page["items"] = new JsonArray();
+		page["more"] = true;
+		return page.ToJsonString();
+	}
+
+	private static string FlagTombstone(string body, string id)
+	{
+		var page = JsonNode.Parse(body)!;
+		foreach (var item in page["items"]!.AsArray().Where(i => i!["itemId"]!.GetValue<string>() == id)) item!["tombstone"] = true;
+		return page.ToJsonString();
+	}
+
+	/// <summary>The page with <paramref name="id"/>'s password and its newest old password swapped, each ciphertext kept as it is.</summary>
+	private static string SwapPasswordWithNewestOldOne(string body, string id)
+	{
+		var page = JsonNode.Parse(body)!;
+		foreach (var item in page["items"]!.AsArray().Where(i => i!["itemId"]!.GetValue<string>() == id))
+		{
+			var password = Convert.FromBase64String(item!["password"]!.GetValue<string>());
+			var history = Split(Convert.FromBase64String(item["history"]!.GetValue<string>()));
+			(password, history[0]) = (history[0], password);
+			item["password"] = Convert.ToBase64String(password);
+			item["history"] = Convert.ToBase64String(SyncWire.JoinHistory(history));
+		}
+		return page.ToJsonString();
+
+		static List<byte[]> Split(byte[] joined)
+		{
+			var parts = new List<byte[]>();
+			for (var at = 0; at < joined.Length;)
+			{
+				var length = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(joined.AsSpan(at));
+				parts.Add(joined[(at + 4)..(at + 4 + length)]);
+				at += 4 + length;
+			}
+			return parts;
+		}
 	}
 
 	private static string RemoveItem(string body, string id)

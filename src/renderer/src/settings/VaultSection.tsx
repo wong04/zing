@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { generatePassword } from '@shared/devtools/password'
-import { offersUploadLocal, recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type SyncNotice, type SyncState, type VaultImportResult } from '@shared/vault/vault'
+import { recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type SyncNotice, type SyncState, type VaultImportResult } from '@shared/vault/vault'
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { SettingRowShell } from './SettingRowShell'
 import { RecoveryKeyScreen, ShowRecoveryKey, SyncSetup, useSyncState } from './SyncSetup'
+import { syncBanner, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
 import { useVault } from './useVaultData'
 
 /** A password stays shown for this long, then hides itself. */
@@ -213,13 +214,14 @@ function syncDetail(sync: SyncState, busy: boolean): string {
  * Sync: Turn on sync signs in with Google in the browser, with Cancel while it waits, then asks for the Zing password to turn it
  * on (SyncSetup); on, it shows the account, Show recovery key and Sign out. A sign-in the server ended, or one this PC can't read,
  * says so and offers Sign in again. A sync that stopped says why, and after the server went back or held a login back, offers
- * Upload this PC's copy.
+ * Upload this PC's copy, which says what it does before it runs.
  */
 function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: SyncState) => void; turnOn: (password: string) => Promise<void> }) {
 	const [error, setError] = useState<string>()
 	// What the last sign-out said (kept-on-server); a pushed state doesn't carry it.
 	const [signOutNotice, setSignOutNotice] = useState<SyncNotice>()
 	const [busy, setBusy] = useState(false)
+	const [confirmingUpload, setConfirmingUpload] = useState(false)
 
 	const act = (work: () => Promise<SyncState>, after: (state: SyncState) => void = () => undefined): void =>
 		void (async () => {
@@ -241,8 +243,11 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 	const signOut = (): void => act(() => zing.signOutOfSync(), (state) => setSignOutNotice(state.signedIn ? undefined : state.notice))
 	const notice = signOutNotice ?? (sync.signedIn ? undefined : sync.notice)
 	const signInLabel = notice === 'signed-out' || notice === 'unreadable' ? 'Sign in again' : 'Turn on sync'
-	const syncError = sync.signedIn && sync.on ? sync.error : undefined
-	const syncMessage = sync.signedIn && sync.on ? sync.message : undefined
+	const banner = syncBanner(sync, error)
+	const upload = (): void => {
+		setConfirmingUpload(false)
+		act(() => zing.uploadLocalCopy())
+	}
 
 	return (
 		<div className="vault-sync" role="group" aria-label="Sync">
@@ -269,17 +274,31 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 			</div>
 			{sync.signedIn && !sync.on ? <SyncSetup turnOn={turnOn} /> : null}
 			{notice ? <InfoBanner kind={notice === 'kept-on-server' ? 'info' : 'warning'}>{SYNC_NOTICES[notice]}</InfoBanner> : null}
-			{syncError ? (
+			{banner ? (
 				<InfoBanner kind="warning">
-					{syncMessage}
-					{offersUploadLocal(syncError) ? (
-						<PillButton variant="outlined" size="small" disabled={busy} onClick={() => act(() => zing.uploadLocalCopy())}>
+					{banner.message}
+					{banner.offerUpload && !confirmingUpload ? (
+						<PillButton variant="outlined" size="small" disabled={busy} onClick={() => setConfirmingUpload(true)}>
 							Upload this PC&rsquo;s copy
 						</PillButton>
 					) : null}
 				</InfoBanner>
 			) : null}
-			{error ? <InfoBanner kind="warning">{error}</InfoBanner> : null}
+			{banner?.offerUpload && confirmingUpload ? (
+				<div className="vault-confirm" role="alertdialog" aria-label="Upload this PC's copy" aria-describedby="vault-upload-local">
+					<InfoBanner kind="info">
+						<span id="vault-upload-local">{UPLOAD_LOCAL_CONFIRM}</span>
+					</InfoBanner>
+					<div className="vault-edit-actions">
+						<PillButton variant="ghost" size="small" autoFocus onClick={() => setConfirmingUpload(false)}>
+							Cancel
+						</PillButton>
+						<PillButton size="small" disabled={busy} onClick={upload}>
+							Upload
+						</PillButton>
+					</div>
+				</div>
+			) : null}
 		</div>
 	)
 }

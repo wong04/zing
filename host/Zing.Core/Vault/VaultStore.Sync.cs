@@ -9,7 +9,10 @@ namespace Zing.Core.Vault;
 /// change made here keeps the copy it replaced, so the item is unsent and a conflict merges against it.
 /// </summary>
 /// <param name="Revision">The server revision of that copy; 0 for a login the server purged, which this PC keeps as a tombstone.</param>
-public sealed record SyncBase(long Revision, LoginRecord? Original);
+/// <param name="Listed">
+/// A manifest this PC read or wrote listed the item (Ruling 56): only then may a full resync that doesn't serve it take it as purged.
+/// </param>
+public sealed record SyncBase(long Revision, LoginRecord? Original, bool Listed = false);
 
 /// <summary>Where this PC's next pull starts, and the rollback floors: the highest server revision and manifest version it has seen.</summary>
 public sealed record SyncProgress(string UserId, long Cursor, long RevisionFloor, long ManifestFloor)
@@ -70,12 +73,15 @@ public sealed partial class VaultStore
 		lock (_gate) return [.. _records.Where(IsUnsent).Select(r => new SyncUnsent(r, _bases.TryGetValue(r.ItemId, out var b) ? b.Revision : 0))];
 	}
 
-	/// <summary>Logins (deleted ones included) not yet on the server as they are here: Settings' "not uploaded yet". "Never" marks don't count.</summary>
+	/// <summary>
+	/// Logins (ones in Recently deleted included) not yet on the server as they are here: Settings' "not uploaded yet". "Never" marks
+	/// and tombstones don't count: neither is a login the person sees.
+	/// </summary>
 	public int UnsentLogins
 	{
 		get
 		{
-			lock (_gate) return _records.Count(r => IsUnsent(r) && !(_summaries.TryGetValue(r.ItemId, out var s) && s.NeverSave));
+			lock (_gate) return _records.Count(r => !r.Tombstone && IsUnsent(r) && !(_summaries.TryGetValue(r.ItemId, out var s) && s.NeverSave));
 		}
 	}
 
@@ -98,31 +104,79 @@ public sealed partial class VaultStore
 			{
 				if (!byId.TryGetValue(item.ItemId, out var record)) throw new SyncProtocolException($"The sync server took item {item.ItemId}, which wasn't sent");
 				var current = _records.Find(r => r.ItemId == item.ItemId);
-				bases[item.ItemId] = new SyncBase(item.Revision, current is not null && SameRecord(current, record) ? null : record);
+				var listed = _bases.TryGetValue(item.ItemId, out var held) && held.Listed;
+				bases[item.ItemId] = new SyncBase(item.Revision, current is not null && SameRecord(current, record) ? null : record, listed);
 				versions[item.ItemId] = record.Version;
 			}
-			WriteVaultFile([.. _records], bases, userId);
 			var progress = ProgressFor(userId);
 			progress = progress with { RevisionFloor = Math.Max(progress.RevisionFloor, accepted.Max(a => a.Revision)) };
 			List<QueuedChange> left = [.. _queued.Where(c => !versions.TryGetValue(c.ItemId, out var version) || c.Version > version)];
+			// The floor first (M4): a crash between the two writes leaves the floor above the bases, which is safe, since the next push
+			// finds the items already uploaded. Bases above the floor would let a server restored into the gap pass unseen.
 			WriteSyncFile(left, _syncAccount, _syncSignedOut, progress);
 			_progress = progress;
 			_queued.Clear();
 			_queued.AddRange(left);
+			WriteVaultFile([.. _records], bases, userId);
 		}
 	}
 
 	/// <summary>
-	/// Stores server copies: a pulled page, or the copies a push conflicted with. Each is checked first (its tag, Ruling 25, and
-	/// this PC's floor for it), and nothing of the page is stored if one fails. A copy of an item unchanged here replaces it; one
-	/// changed here too is merged (<see cref="Merge.Items"/>) and stays unsent. A conflict at revision 0 means the server purged the
-	/// item (Ruling 18). The items and their bases are written in one replace, then the cursor and floor.
+	/// Stores a pulled page of server copies. Each is checked first (its tag, Ruling 25, and this PC's floor for it), and nothing of
+	/// the page is stored if one fails. A copy of an item unchanged here replaces it; one changed here too is merged
+	/// (<see cref="Merge.Items"/>) and stays unsent. The items and their bases are written in one replace, after the cursor and floor.
 	/// </summary>
 	/// <param name="cursor">Where the next pull starts once these are stored; null leaves it.</param>
-	/// <param name="serverRevision">The revision the server reported with them, for the floor; null leaves it.</param>
+	/// <param name="serverRevision">The revision the server reported with them, for the floor.</param>
+	/// <exception cref="SyncProtocolException">A purged placeholder (revision 0), which a pull never sends (Ruling 56).</exception>
 	/// <exception cref="ServerRolledBackException">A copy older than one this PC has seen.</exception>
 	/// <exception cref="VaultTamperedException">A copy that fails its tag, or whose tombstone flag its sealed summary doesn't back.</exception>
-	public void ApplyFromServer(string userId, IReadOnlyList<SyncItem> items, long? cursor = null, long? serverRevision = null)
+	public void ApplyFromServer(string userId, IReadOnlyList<SyncItem> items, long? cursor, long serverRevision)
+	{
+		RequireNoPlaceholder(items);
+		ApplyStaged(userId, stage =>
+		{
+			foreach (var item in items) stage.Apply(item);
+		}, cursor, serverRevision);
+	}
+
+	/// <summary>
+	/// Stores the server copies a push conflicted with. Each must be for an item of <paramref name="sent"/>, at a revision past the one
+	/// it was sent over; a purged placeholder (revision 0) only for one sent over a revision above 0, Ruling 18's only case (Ruling 56).
+	/// Each is then applied as a pulled copy is, and a placeholder makes a login edited here again, or a tombstone.
+	/// </summary>
+	/// <exception cref="SyncProtocolException">A conflict for an item that wasn't sent, or at a revision that can't be one.</exception>
+	public void ApplyConflicts(string userId, IReadOnlyList<SyncUnsent> sent, IReadOnlyList<SyncItem> conflicts)
+	{
+		if (conflicts.Count == 0) return;
+		var sentOver = new Dictionary<string, long>(StringComparer.Ordinal);
+		foreach (var unsent in sent) sentOver[unsent.Record.ItemId] = unsent.BaseRevision;
+		var seen = new HashSet<string>(StringComparer.Ordinal);
+		foreach (var conflict in conflicts)
+		{
+			if (!sentOver.TryGetValue(conflict.ItemId, out var baseRevision)) throw new SyncProtocolException($"The sync server sent a conflict for item {conflict.ItemId}, which wasn't sent");
+			if (!seen.Add(conflict.ItemId)) throw new SyncProtocolException($"The sync server sent two conflicts for item {conflict.ItemId}");
+			if (conflict.Revision == 0 && baseRevision == 0) throw new SyncProtocolException($"The sync server said item {conflict.ItemId} was purged, but it was sent as new");
+			if (conflict.Revision != 0 && conflict.Revision <= baseRevision) throw new SyncProtocolException($"The sync server sent a conflict for item {conflict.ItemId} at revision {conflict.Revision}, not past {baseRevision}");
+		}
+		ApplyStaged(userId, stage =>
+		{
+			foreach (var conflict in conflicts)
+			{
+				if (conflict.Revision == 0) stage.Purged(conflict.ItemId);
+				else stage.Apply(conflict);
+			}
+		}, null, null);
+	}
+
+	private static void RequireNoPlaceholder(IReadOnlyList<SyncItem> pulled)
+	{
+		var placeholder = pulled.FirstOrDefault(i => i.Revision <= 0);
+		if (placeholder is not null) throw new SyncProtocolException($"The sync server sent item {placeholder.ItemId} at revision {placeholder.Revision} in a pull");
+	}
+
+	/// <summary>Runs <paramref name="apply"/> on a stage, then writes the cursor and floor, then the items and bases if any changed.</summary>
+	private void ApplyStaged(string userId, Action<Stage> apply, long? cursor, long? serverRevision)
 	{
 		bool changed;
 		lock (_gate)
@@ -130,9 +184,8 @@ public sealed partial class VaultStore
 			RequireOpen();
 			RequireSyncUser(userId);
 			using var stage = new Stage(this);
-			foreach (var item in items) stage.Apply(item);
+			apply(stage);
 			changed = stage.Changed;
-			if (changed) stage.Write(userId);
 			var progress = ProgressFor(userId);
 			var next = progress with
 			{
@@ -144,6 +197,7 @@ public sealed partial class VaultStore
 				WriteSyncFile(_queued, _syncAccount, _syncSignedOut, next);
 				_progress = next;
 			}
+			if (changed) stage.Write(userId);
 		}
 		if (changed) Changed?.Invoke();
 	}
@@ -151,8 +205,10 @@ public sealed partial class VaultStore
 	/// <summary>
 	/// After a full resync: an item this PC synced that the server no longer holds was purged as a tombstone (spec: a PC past the
 	/// horizon). One unchanged here becomes a tombstone here too, so it can't come back; one changed here is left unsent, and its
-	/// push meets the purge (Ruling 18).
+	/// push meets the purge (Ruling 18). A live login counts as purged only if a manifest once listed it and the one read now (checked
+	/// first) doesn't, since a login leaves the manifest only once its tombstone is on the server (Ruling 56).
 	/// </summary>
+	/// <exception cref="ServerWithheldItemException">A live login this PC synced that the resync didn't serve, and no manifest listed yet.</exception>
 	public void MarkPurged(string userId, IReadOnlyCollection<string> served)
 	{
 		var held = served as IReadOnlySet<string> ?? served.ToHashSet(StringComparer.Ordinal);
@@ -161,16 +217,34 @@ public sealed partial class VaultStore
 		{
 			RequireOpen();
 			RequireSyncUser(userId);
+			var gone = _records.Where(r => _bases.TryGetValue(r.ItemId, out var b) && b.Revision > 0 && b.Original is null && !held.Contains(r.ItemId)).ToList();
+			var unlisted = gone.FirstOrDefault(r => !r.Tombstone && !_bases[r.ItemId].Listed);
+			if (unlisted is not null) throw new ServerWithheldItemException(unlisted.ItemId);
 			using var stage = new Stage(this);
-			foreach (var record in _records)
-			{
-				if (!_bases.TryGetValue(record.ItemId, out var b) || b.Revision == 0 || b.Original is not null || held.Contains(record.ItemId)) continue;
-				stage.MakePurged(record.ItemId);
-			}
+			foreach (var record in gone) stage.MakePurged(record.ItemId);
 			changed = stage.Changed;
 			if (changed) stage.Write(userId);
 		}
 		if (changed) Changed?.Invoke();
+	}
+
+	/// <summary>A manifest listed these (read and checked, or written): from now on, a full resync that doesn't serve one may take it as purged.</summary>
+	public void MarkListed(string userId, IReadOnlyList<SyncManifestEntry> entries)
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			RequireSyncUser(userId);
+			Dictionary<string, SyncBase>? bases = null;
+			foreach (var entry in entries)
+			{
+				if (!_bases.TryGetValue(entry.ItemId, out var b) || b.Revision == 0 || b.Listed) continue;
+				bases ??= new Dictionary<string, SyncBase>(_bases, StringComparer.Ordinal);
+				bases[entry.ItemId] = b with { Listed = true };
+			}
+			if (bases is null) return;
+			WriteVaultFile([.. _records], bases, userId);
+		}
 	}
 
 	/// <summary>
@@ -204,7 +278,11 @@ public sealed partial class VaultStore
 		return count;
 	}
 
-	/// <summary>Queued hints for items the server now holds as they are here.</summary>
+	/// <summary>
+	/// Queued hints for items the server now holds as they are here. Nothing is decided from the queue any more (the bases are the
+	/// truth). sync.json keeps it because its format 1 has it and it records each edit as the edit is written, which the edit paths'
+	/// tests observe; it is pruned here so it doesn't grow.
+	/// </summary>
 	public void DequeueSent()
 	{
 		lock (_gate)
@@ -298,29 +376,37 @@ public sealed partial class VaultStore
 	}
 
 	/// <summary>
-	/// Upload this PC's copy (spec, Rollback protection), after the server went back: <paramref name="server"/> is everything it holds
-	/// now. Every item this PC holds becomes unsent over the server's copy, its version raised past that copy's where needed (the summary
-	/// is sealed again, nothing else, so no Hello), and an item only the server holds is taken as it is. The floors restart from what
-	/// the server reports now, since this PC's copy is what the server is about to hold.
+	/// Upload this PC's copy (spec, Rollback protection; Ruling 56), after the server went back: <paramref name="server"/> is everything
+	/// it holds now, read without the floors. Each item both hold is merged as a conflict is, against this PC's base copy when it has
+	/// one, so no password is lost and an older backup copy loses on <c>updatedAt</c>; a live server copy beats a tombstone here only
+	/// if it changed after the delete. An item only the server holds is taken as it is, and a login only this PC holds goes as new; a
+	/// tombstone only this PC holds doesn't go (the server has nothing of it). Only summaries are sealed again, so no Hello. The floors
+	/// restart from what the server reports now.
 	/// </summary>
+	/// <exception cref="SyncProtocolException">A purged placeholder (revision 0), which a pull never sends.</exception>
 	public void TakeOverServer(string userId, IReadOnlyList<SyncItem> server, long serverRevision)
 	{
+		RequireNoPlaceholder(server);
 		lock (_gate)
 		{
 			RequireOpen();
 			RequireSyncUser(userId);
 			using var stage = new Stage(this);
 			var onServer = new HashSet<string>(StringComparer.Ordinal);
-			foreach (var item in server.Where(i => i.Revision > 0))
+			foreach (var item in server)
 			{
 				onServer.Add(item.ItemId);
 				stage.TakeOver(item);
 			}
-			foreach (var record in _records.Where(r => !onServer.Contains(r.ItemId))) stage.Bases.Remove(record.ItemId);
-			stage.Write(userId);
+			foreach (var record in _records.Where(r => !onServer.Contains(r.ItemId)))
+			{
+				if (record.Tombstone) stage.Bases[record.ItemId] = new SyncBase(0, null);
+				else stage.Bases.Remove(record.ItemId);
+			}
 			var progress = new SyncProgress(userId, serverRevision, serverRevision, 0);
 			WriteSyncFile(_queued, _syncAccount, _syncSignedOut, progress);
 			_progress = progress;
+			stage.Write(userId);
 		}
 		Changed?.Invoke();
 	}
@@ -401,9 +487,12 @@ public sealed partial class VaultStore
 
 		private byte[] Seal(string id, long version, SummaryPayload summary) => SealSummaryWith(_indexKey, _keys, id, version, summary);
 
+		/// <summary>The item's new base; one still on the server keeps whether a manifest listed it.</summary>
 		private void SetBase(string id, SyncBase value)
 		{
-			if (Bases.TryGetValue(id, out var held) && held.Revision == value.Revision && ReferenceEquals(held.Original, value.Original)) return;
+			var held = Bases.GetValueOrDefault(id);
+			if (value.Revision > 0 && held is { Listed: true }) value = value with { Listed = true };
+			if (held is not null && held.Revision == value.Revision && ReferenceEquals(held.Original, value.Original) && held.Listed == value.Listed) return;
 			Bases[id] = value;
 			Changed = true;
 		}
@@ -418,20 +507,23 @@ public sealed partial class VaultStore
 
 		private static ItemOrder Order(LoginRecord record, SummaryPayload summary) => new(summary.Generation, record.Version);
 
+		/// <summary>One server copy at a revision above 0: pulled, or a push's conflict.</summary>
 		public void Apply(SyncItem item)
 		{
-			if (item.Revision == 0)
-			{
-				Purged(item.ItemId);
-				return;
-			}
+			if (item.Revision <= 0) throw new SyncProtocolException($"The sync server sent item {item.ItemId} at revision {item.Revision}");
 			var server = SyncWire.ToRecord(item);
 			var theirs = Open(server);
 			var at = IndexOf(item.ItemId);
 			var local = at < 0 ? null : _records[at];
 			Bases.TryGetValue(item.ItemId, out var b);
 			var floor = b is not null ? b.Original ?? local : local is { Tombstone: true } ? local : null;
-			if (floor is not null) RollbackGuard.CheckItem(item.ItemId, Order(server, theirs), Order(floor, Open(floor)));
+			if (floor is not null)
+			{
+				var seen = Order(floor, Open(floor));
+				RollbackGuard.CheckItem(item.ItemId, Order(server, theirs), seen);
+				// M3: the same version with other bytes is a copy the server refused (another PC's), served in place of the one it took.
+				if (Order(server, theirs) == seen && !SameRecord(floor, server)) throw new ServerRolledBackException($"The sync server sent another copy of login {item.ItemId} at the version this PC has.");
+			}
 
 			if (local is null)
 			{
@@ -439,13 +531,30 @@ public sealed partial class VaultStore
 				SetBase(item.ItemId, new SyncBase(item.Revision, null));
 				return;
 			}
-			if (SameRecord(local, server) || b is { Original: null })
+			if (SameRecord(local, server))
 			{
-				if (!SameRecord(local, server)) Put(at, server, theirs);
 				SetBase(item.ItemId, new SyncBase(item.Revision, null));
 				return;
 			}
+			if (b is { Original: null } && Descends(local, server, theirs))
+			{
+				Put(at, server, theirs);
+				SetBase(item.ItemId, new SyncBase(item.Revision, null));
+				return;
+			}
+			// Changed here too, or a newer copy that dropped this PC's password: one written over a copy the server lost (a backup
+			// restore, then another PC's Upload this PC's copy). Merged with nothing in common, so no password is lost.
 			Conflict(at, local, b?.Original, server, theirs, item.Revision);
+		}
+
+		/// <summary>
+		/// The server copy follows from this PC's: every change keeps the password it replaces (as it is, in the history), so a live
+		/// copy that holds neither this PC's password nor that in its history was written without it. A tombstone drops passwords by design.
+		/// </summary>
+		private static bool Descends(LoginRecord local, LoginRecord server, SummaryPayload theirs)
+		{
+			if (theirs.Tombstone || local.Tombstone || local.Password.Length == 0) return true;
+			return local.Password.AsSpan().SequenceEqual(server.Password) || server.History.Any(h => h.AsSpan().SequenceEqual(local.Password));
 		}
 
 		/// <summary>Both sides changed the item since <paramref name="original"/> (null: no copy in common).</summary>
@@ -499,7 +608,7 @@ public sealed partial class VaultStore
 		/// The server purged the item (a revision-0 conflict, Ruling 18). A login edited here and not deleted is made again: the next
 		/// push sends it as new, a generation on, so PCs holding its tombstone take it. Anything else becomes a tombstone here.
 		/// </summary>
-		private void Purged(string id)
+		public void Purged(string id)
 		{
 			var at = IndexOf(id);
 			if (at < 0) return;
@@ -533,7 +642,7 @@ public sealed partial class VaultStore
 			SetBase(id, new SyncBase(0, null));
 		}
 
-		/// <summary>Upload this PC's copy: <see cref="TakeOverServer"/> for one server item.</summary>
+		/// <summary>Upload this PC's copy: <see cref="TakeOverServer"/> for one server item, with no floor (the server went back).</summary>
 		public void TakeOver(SyncItem item)
 		{
 			var server = SyncWire.ToRecord(item);
@@ -541,8 +650,7 @@ public sealed partial class VaultStore
 			var at = IndexOf(item.ItemId);
 			if (at < 0)
 			{
-				Put(-1, server, theirs);
-				SetBase(item.ItemId, new SyncBase(item.Revision, null));
+				Adopt(-1, server, theirs, item.Revision);
 				return;
 			}
 			var local = _records[at];
@@ -552,15 +660,14 @@ public sealed partial class VaultStore
 				return;
 			}
 			var mine = Open(local);
-			var generation = Math.Max(mine.Generation, theirs.Generation);
-			var version = local.Version > server.Version ? local.Version : server.Version + 1;
-			if (version != local.Version || generation != mine.Generation)
+			if (mine.Tombstone && !theirs.Tombstone)
 			{
-				var raised = mine with { Generation = generation };
-				Put(at, local with { Version = version, Summary = Seal(local.ItemId, version, raised) }, raised);
+				// After a rollback the server's copy can be older than this PC's delete: it wins only if it changed after.
+				if (theirs.UpdatedAt > mine.DeletedAt) Adopt(at, server, theirs, item.Revision);
+				else KeepMine(at, local, mine, server, theirs, item.Revision);
+				return;
 			}
-			Bases[item.ItemId] = new SyncBase(item.Revision, server);
-			Changed = true;
+			Conflict(at, local, Bases.GetValueOrDefault(item.ItemId)?.Original, server, theirs, item.Revision);
 		}
 
 		private static bool SameContent(MergeInput a, MergeInput b) =>

@@ -13,6 +13,10 @@ public sealed record SyncStatus(string? Error, string? Message, int Unsent);
 public sealed class SyncKeepsConflictingException(int left)
 	: Exception($"Another PC kept changing the same logins while this one synced, so {left} changes are left for the next sync.");
 
+/// <summary>Upload this PC's copy asked for when the last sync didn't stop on a rollback or a held-back login (Ruling 56).</summary>
+public sealed class SyncUploadNotOfferedException()
+	: Exception("Upload this PC's copy is only for when the sync server went back to an older copy or held a login back.");
+
 /// <summary>Another PC kept replacing the account manifest while this one wrote it.</summary>
 public sealed class SyncManifestBusyException()
 	: Exception("Another PC kept updating the sync list while this one synced. Zing tries again in 5 minutes.");
@@ -107,6 +111,7 @@ public sealed class SyncEngine : IDisposable
 		}
 		_vault.Edited += OnEdited;
 		_vault.SyncChanged += OnSyncChanged;
+		_client.RefreshLost += OnRefreshLost;
 		Soon(TimeSpan.Zero);
 	}
 
@@ -121,8 +126,26 @@ public sealed class SyncEngine : IDisposable
 		}
 		_vault.Edited -= OnEdited;
 		_vault.SyncChanged -= OnSyncChanged;
+		_client.RefreshLost -= OnRefreshLost;
 		// Not disposed: a sync still running reads its token until it notices.
 		_stopping.Cancel();
+	}
+
+	/// <summary>
+	/// A refresh got no answer, in a sync or in anything else the shared client did, such as a turn-on or a sign-out (M12): the next
+	/// sync comes in <see cref="RefreshRetry"/>, while the server would still take that token as a retry. A sync running now schedules
+	/// it itself when it ends.
+	/// </summary>
+	private void OnRefreshLost()
+	{
+		lock (_lock)
+		{
+			if (_disposed) return;
+			_refreshUnansweredSince ??= _clock.Now();
+			if (_running) return;
+			_next?.Dispose();
+			_next = _scheduler.Schedule(RefreshRetry, Run);
+		}
 	}
 
 	private void OnEdited()
@@ -188,23 +211,21 @@ public sealed class SyncEngine : IDisposable
 	{
 		while (true)
 		{
-			var failed = false;
 			try
 			{
 				await SyncAsync(_stopping.Token);
 			}
-			catch (Exception) when (!_stopping.IsCancellationRequested)
+			catch (Exception) when (_stopping.IsCancellationRequested)
+			{
+				// Disposed while syncing (the vault was turned off or replaced): whatever the run met on its way out ends with it.
+			}
+			catch (Exception)
 			{
 				// SyncAsync has put the error in Status, which Settings shows (sync:state); the next sync is scheduled below.
-				failed = true;
-			}
-			catch (OperationCanceledException)
-			{
-				// Disposed while syncing: the vault was turned off or replaced.
 			}
 			lock (_lock)
 			{
-				_refreshUnansweredSince = failed && _client.RefreshUnanswered ? _refreshUnansweredSince ?? _clock.Now() : null;
+				_refreshUnansweredSince = _client.RefreshUnanswered ? _refreshUnansweredSince ?? _clock.Now() : null;
 				if (_disposed || !_again)
 				{
 					_running = false;
@@ -213,14 +234,25 @@ public sealed class SyncEngine : IDisposable
 				_again = false;
 			}
 		}
-		ScheduleNext();
-		TaskCompletionSource ran;
-		lock (_lock)
+		try
 		{
-			ran = _ran;
-			_ran = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+			ScheduleNext();
 		}
-		ran.SetResult();
+		catch (Exception error)
+		{
+			// Nothing would sync again until Zing restarts, so Settings says so (M6).
+			Report(error);
+		}
+		finally
+		{
+			TaskCompletionSource ran;
+			lock (_lock)
+			{
+				ran = _ran;
+				_ran = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+			}
+			ran.SetResult();
+		}
 	}
 
 	/// <summary>The next sync: in 5 minutes, or soon after a refresh that got no answer, while the server would still take it as a retry.</summary>
@@ -283,12 +315,11 @@ public sealed class SyncEngine : IDisposable
 
 		var served = await PullAsync(user, cancellation);
 		if (served is null) RollbackGuard.CheckListed(listed, _vault.KnownVersion);
-		else
-		{
-			// Checked before anything is taken as purged, so a server holding back a listed login can't have it deleted here.
-			RollbackGuard.CheckListed(listed, id => served.TryGetValue(id, out var version) ? version : null);
-			_vault.MarkPurged(user, served.Keys);
-		}
+		else RollbackGuard.CheckListed(listed, id => served.TryGetValue(id, out var version) ? version : null);
+		_vault.MarkListed(user, listed);
+		// Checked before anything is taken as purged, so a server holding back a login can't have it deleted here: a listed one fails
+		// the check above, and one no manifest listed yet fails MarkPurged's own (Ruling 56).
+		if (served is not null) _vault.MarkPurged(user, served.Keys);
 
 		await PushAsync(user, cancellation);
 		return await WriteManifestAsync(user, manifest, listed, cancellation);
@@ -316,6 +347,7 @@ public sealed class SyncEngine : IDisposable
 				served = new Dictionary<string, long>(StringComparer.Ordinal);
 				continue;
 			}
+			SyncWire.CheckPage(since, page);
 			RollbackGuard.CheckRevision(_vault.SyncProgressFor(user).RevisionFloor, page.Revision);
 			var next = page.More ? page.Items[^1].Revision : page.Revision;
 			var cursor = served is null || !page.More ? next : (long?)null;
@@ -344,7 +376,7 @@ public sealed class SyncEngine : IDisposable
 				var pushed = await _client.PostChangesAsync([.. batch.Select(SyncWire.Push)], cancellation, asUser: user);
 				RollbackGuard.CheckAccepted(_vault.SyncProgressFor(user).RevisionFloor, pushed.Accepted);
 				_vault.MarkPushed(user, [.. batch.Select(u => u.Record)], pushed.Accepted);
-				if (pushed.Conflicts.Count > 0) _vault.ApplyFromServer(user, pushed.Conflicts);
+				_vault.ApplyConflicts(user, batch, pushed.Conflicts);
 			}
 		}
 		var left = _vault.Unsent().Count;
@@ -373,6 +405,7 @@ public sealed class SyncEngine : IDisposable
 		}
 		if (version != baseVersion + 1) throw new SyncProtocolException($"The sync server stored the manifest as version {version}, not {baseVersion + 1}");
 		_vault.RaiseManifestFloor(user, version);
+		_vault.MarkListed(user, entries);
 		return true;
 	}
 
@@ -381,9 +414,11 @@ public sealed class SyncEngine : IDisposable
 	/// <see cref="ServerWithheldItemException"/>: everything the server holds now is read without the floors, this PC's copy of every
 	/// item is sent over it, and the manifest is written from this PC's view. The floors then start again from what the server holds.
 	/// </summary>
+	/// <exception cref="SyncUploadNotOfferedException">The last sync didn't stop on a rollback or a held-back login.</exception>
 	/// <exception cref="NotSignedInToSyncException">Not signed in, or sync isn't on for the account signed in.</exception>
 	public async Task UploadLocalCopyAsync(CancellationToken cancellation = default)
 	{
+		if (!OffersUpload(Status.Error)) throw new SyncUploadNotOfferedException();
 		try
 		{
 			await UploadAsync(cancellation);
@@ -391,10 +426,13 @@ public sealed class SyncEngine : IDisposable
 		}
 		catch (Exception error)
 		{
-			Report(error);
+			ReportUploadFailure(error);
 			throw;
 		}
 	}
+
+	/// <summary>The errors Settings answers with Upload this PC's copy.</summary>
+	public static bool OffersUpload(string? error) => error is "server-rolled-back" or "server-withheld-item";
 
 	private async Task UploadAsync(CancellationToken cancellation)
 	{
@@ -411,6 +449,7 @@ public sealed class SyncEngine : IDisposable
 		do
 		{
 			page = await _client.GetChangesAsync(since, cancellation: cancellation, asUser: user);
+			SyncWire.CheckPage(since, page);
 			held.AddRange(page.Items);
 			if (page.More) since = page.Items[^1].Revision;
 		}
@@ -431,6 +470,17 @@ public sealed class SyncEngine : IDisposable
 	private void Report(Exception? error)
 	{
 		var described = error is null ? null : Describe(error);
+		lock (_lock) _error = described;
+		StatusChanged?.Invoke();
+	}
+
+	/// <summary>
+	/// An upload that failed for a reason Settings shows another way (signed out, the vault turned off) uploaded nothing, so the error
+	/// that offered it stays (M7).
+	/// </summary>
+	private void ReportUploadFailure(Exception error)
+	{
+		if (Describe(error) is not { } described) return;
 		lock (_lock) _error = described;
 		StatusChanged?.Invoke();
 	}

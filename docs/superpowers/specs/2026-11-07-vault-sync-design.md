@@ -131,6 +131,7 @@ on this PC:  index key  ──sealed by──▶ DPAPI
 - **Each login is two ciphertexts:** a summary under the index key and a password under the secret key. Each history entry is its own secret-key ciphertext.
 - **Each login has a version** that goes up by one whenever any PC changes it. The version is sent in the clear next to the ciphertext.
 - **The associated data** for every ciphertext is the user ID, the item ID, the item version, and which part it is (summary, password or history). So the server can't move an item to another user, swap items or their parts, or relabel an old copy as new.
+- **The sealed summary names each password ciphertext by its SHA-256** (Ruling 56): the password, and each old password. After a merge two ciphertexts can share a version, so the associated data alone can't tell them apart. With the hashes, the server can't swap the password with an old one, or reorder old ones. A merge reseals only the summary, so it still needs no Windows Hello.
 - **Everything about a login is inside the ciphertexts:** origin, username, password, title, note, password history, created, updated and deleted times, and the "never save" marks. Payloads are padded to the next multiple of 256 bytes, so their sizes don't reveal anything. The server sees only the item ID, its version, the server revision, a tombstone flag and the ciphertexts.
 
 ### The server and authentication
@@ -145,11 +146,14 @@ on this PC:  index key  ──sealed by──▶ DPAPI
   - **For the whole account**, for example if the server is restored from a backup:
     - each PC remembers the highest server revision it has seen
     - a server reporting a lower one, or an older account manifest, means the server has gone back
-    - sync stops with an explicit error and offers **Upload this PC's copy**, which re-uploads everything this PC has
+    - sync stops with an explicit error and offers **Upload this PC's copy**. After a one-sentence confirmation it merges this PC's logins into what the server holds now, as a conflict is merged, so no password is lost and an older backup copy loses on its edit time (Ruling 56). It is offered only after that error.
   - **Dropped items:** an encrypted **account manifest**, under the index key, lists every item ID and its version.
     - Every write updates it, with optimistic concurrency: the manifest has its own version, and a stale write gets a `409`.
     - A PC compares the manifest with what the server sends, so it notices an item the server held back.
+    - A full resync takes a login as purged only if a manifest once listed it and the current one doesn't. One no manifest listed yet, and that the server doesn't send, is reported as held back, never deleted (Ruling 56).
+    - Every pulled item must lie between the pull's starting revision and the page's own, and every conflict must be for an item this PC sent. A purged placeholder (revision 0) is accepted only as the conflict for an item sent over a revision above 0.
 - **The main risk that remains** is a stolen server copy plus a weak password, attacked offline. That's why the 60-bit password floor and heavy Argon2id settings exist.
+- **Residual risk, accepted (Ruling 56): a withheld delete.** The manifest lists only live logins, not tombstones. A malicious server can hold a tombstone back from a PC's delta pull, if that PC never saw the soft delete (it was offline for the 30 days before the purge). That PC then keeps the deleted login live. The server can't bring the login back on any other PC, because their floors are the tombstone, and it can't read or change a password. A PC past the horizon resyncs fully and drops the login. Listing tombstones would need per-entry revisions and a rule to skip them once purged, which adds failure modes to protect a deleted login.
 
 ## Sync design
 

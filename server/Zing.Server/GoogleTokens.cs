@@ -140,7 +140,8 @@ public sealed class FakeGoogleIssuer : ISigningKeySource, IDisposable
 	}
 }
 
-public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId) : IGoogleTokenValidator
+/// <param name="clock">The clock every other server check reads, so a token's lifetime is checked on the same time (M13).</param>
+public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId, TimeProvider clock) : IGoogleTokenValidator
 {
 	private static readonly string[] Issuers = ["https://accounts.google.com", "accounts.google.com"];
 	private readonly JsonWebTokenHandler handler = new();
@@ -163,6 +164,7 @@ public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId
 			ValidateLifetime = true,
 			RequireExpirationTime = true,
 			ClockSkew = TimeSpan.FromMinutes(1),
+			LifetimeValidator = WithinLifetime,
 			ValidateIssuerSigningKey = true,
 			RequireSignedTokens = true,
 			ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
@@ -179,6 +181,14 @@ public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId
 			throw new InvalidIdTokenException("ID token email is not verified.");
 		}
 		return new GoogleIdentity(token.Subject);
+	}
+
+	private bool WithinLifetime(DateTime? notBefore, DateTime? expires, SecurityToken token, TokenValidationParameters parameters)
+	{
+		if (expires is null) return false;
+		var now = clock.GetUtcNow().UtcDateTime;
+		if (notBefore is { } from && now + parameters.ClockSkew < from) return false;
+		return now - parameters.ClockSkew < expires.Value;
 	}
 
 	private static string? ReadKeyId(string idToken)

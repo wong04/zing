@@ -10,7 +10,8 @@ internal sealed record MergeInput(SummaryPayload Summary, byte[] Password, IRead
 
 /// <summary>
 /// The field-by-field merge of two copies of a login against the last copy they had in common (spec, Sync design). Pure: nothing is
-/// decrypted but the summaries, so it never needs Windows Hello. Source of truth for src/shared/vault/merge.vectors.json.
+/// decrypted but the summaries, so it never needs Windows Hello. Host-only (Ruling 56): src/shared/vault/merge.vectors.json holds its
+/// cases, and nothing in TS merges.
 /// </summary>
 internal static class Merge
 {
@@ -42,7 +43,7 @@ internal static class Merge
 		var other = ReferenceEquals(winner, mine) ? theirs : mine;
 		var history = History(mine, theirs);
 		if (!Same(other.Password, winner.Password) && !history.Any(h => Same(h.Sealed, other.Password)))
-			history.Add((new HistoryPayload(other.Summary.PasswordVersion, winner.Summary.PasswordUpdatedAt), other.Password));
+			history.Add((new HistoryPayload(other.Summary.PasswordVersion, winner.Summary.PasswordUpdatedAt, CipherHash.Of(other.Password)), other.Password));
 		var ordered = history
 			.OrderByDescending(h => h.Entry.ReplacedAt)
 			.ThenByDescending(h => h.Entry.Version)
@@ -62,7 +63,9 @@ internal static class Merge
 			[.. ordered.Select(h => h.Entry)],
 			Field(s => s.NeverSave),
 			Tombstone: false,
-			Generation: Math.Max(mine.Summary.Generation, theirs.Summary.Generation));
+			Generation: Math.Max(mine.Summary.Generation, theirs.Summary.Generation),
+			// A "never" mark has no password to name.
+			PasswordHash: winner.Password.Length == 0 ? null : CipherHash.Of(winner.Password));
 		return new MergeInput(summary, winner.Password, [.. ordered.Select(h => h.Sealed)]);
 	}
 

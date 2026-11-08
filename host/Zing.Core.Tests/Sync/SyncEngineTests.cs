@@ -345,4 +345,38 @@ public sealed class SyncEngineTests : IDisposable
 		Assert.False(A.Vault.SyncSignedOutByServer);
 		Assert.Equal(2, _pcs.Server.Wire.Refreshes);
 	}
+
+	[Fact]
+	public async Task ARefreshLostOutsideASyncAlsoBringsTheNextSyncWithinTheRetryWindow()
+	{
+		await _pcs.TurnOnAAsync();
+		A.Restart();
+		A.Engine.Start();
+		_pcs.Server.Wire.LoseNextRefreshAnswer = true;
+
+		// Anything the shared client does, such as a sign-out or a password change, can be what loses it (M12).
+		await Assert.ThrowsAsync<HttpRequestException>(() => A.Client.GetManifestAsync(Ct, asUser: A.Vault.SyncKeys!.UserId));
+
+		Assert.Contains(SyncEngine.RefreshRetry, A.Scheduler.Pending);
+		var retried = A.Engine.NextRun;
+		A.Scheduler.Fire(SyncEngine.RefreshRetry);
+		await retried.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+		Assert.Null(A.Engine.Status.Error);
+		Assert.False(A.Vault.SyncSignedOutByServer);
+	}
+
+	[Fact]
+	public async Task ATombstoneWaitingToUploadIsNotCountedAsALoginThatHasNotUploaded()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		A.Vault.Delete(id);
+		await A.SyncAsync();
+		A.Clock.Advance(TimeSpan.FromDays(31));
+
+		Assert.Equal(1, A.Vault.TombstoneDue(A.Clock.Now()));
+
+		Assert.Single(A.Vault.Unsent());
+		Assert.Equal(0, A.Engine.Status.Unsent);
+	}
 }

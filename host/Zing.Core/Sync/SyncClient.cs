@@ -87,6 +87,9 @@ public sealed class SyncClient : IDisposable
 	/// </summary>
 	public bool RefreshUnanswered { get; private set; }
 
+	/// <summary>A refresh got no answer, whatever sent it (M12): the sync engine retries within the server's 2-minute window.</summary>
+	public event Action? RefreshLost;
+
 	/// <summary>A server session and the user it was issued for, read together so a request is never sent as someone it wasn't meant for.</summary>
 	private sealed record Session(string Token, string UserId);
 
@@ -264,6 +267,7 @@ public sealed class SyncClient : IDisposable
 			catch (Exception unanswered) when (unanswered is HttpRequestException or OperationCanceledException)
 			{
 				RefreshUnanswered = true;
+				RefreshLost?.Invoke();
 				throw;
 			}
 			RefreshUnanswered = false;

@@ -171,10 +171,7 @@ internal sealed class TwoPcs : IDisposable
 	public async Task<string> SaveOnAAsync(string origin = "https://bank.example.test", string username = "ada", string password = "first-password") =>
 		await A.Vault.SaveAsync(new NewLogin(origin, username, password, "Bank", ""));
 
-	/// <summary>
-	/// Everything the server holds now, read from revision 0 with A's sign-in, which stores nothing in A's vault. Not a fresh sign-in:
-	/// the server's ID-token check runs on the real clock, so a token minted on a server clock moved on would be expired.
-	/// </summary>
+	/// <summary>Everything the server holds now, read from revision 0 with A's sign-in, which stores nothing in A's vault.</summary>
 	public async Task<SyncChanges> ServerItemsAsync()
 	{
 		var user = A.Vault.SyncAccount()!.UserId;

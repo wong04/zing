@@ -85,7 +85,8 @@ public sealed class ServerFactory : WebApplicationFactory<Program>
 		bool emailVerified = true,
 		SecurityKey? key = null)
 	{
-		var expires = DateTime.UtcNow + (expiresIn ?? TimeSpan.FromMinutes(30));
+		// On the server's clock, which also checks the token's lifetime.
+		var expires = (clock ?? TimeProvider.System).GetUtcNow().UtcDateTime + (expiresIn ?? TimeSpan.FromMinutes(30));
 		var descriptor = new SecurityTokenDescriptor
 		{
 			Issuer = issuer,
