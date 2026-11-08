@@ -350,6 +350,18 @@
 			"args": 2
 		},
 		{
+			"channel": "sync:get",
+			"args": 0
+		},
+		{
+			"channel": "sync:sign-in",
+			"args": 0
+		},
+		{
+			"channel": "sync:sign-out",
+			"args": 0
+		},
+		{
 			"channel": "tabs:activate",
 			"args": 1
 		},

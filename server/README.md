@@ -18,7 +18,7 @@ Generate the session key:
 openssl rand -base64 32
 ```
 
-Never set `ZING_SERVER_FAKE_GOOGLE` in production. It swaps Google token checks for a test issuer, and the server refuses to start with it in the Production environment. It exists for tests and CI only.
+Never set `ZING_SERVER_FAKE_GOOGLE` in production. It swaps Google token checks for a test issuer, and the server refuses to start with it in the Production environment. It exists for tests and CI only. With it on, `POST /fake-google/token` with `{"sub": "...", "email": "..."}` answers `{"idToken": "..."}` signed by the test issuer, which is how Zing's e2e runs sign in without Google; without it the endpoint doesn't exist.
 
 Keep every value in Railway's Variables tab. Never put them in a file in the repo.
 

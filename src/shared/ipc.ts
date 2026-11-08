@@ -10,7 +10,7 @@ import type { Settings, SettingKey } from './settings'
 import type { DiagnosticReport } from './unblock/blockDiagnostics'
 import type { DnsOutcome, DnsPreview } from './unblock/dnsSetup'
 import type { RelayAttemptEvent, RelayOpenResult } from './unblock/relayOpen'
-import type { LoginEdit, LoginSummary, NeverSave, NewLogin, PasswordHistoryEntry, VaultImportResult, VaultState } from './vault/vault'
+import type { LoginEdit, LoginSummary, NeverSave, NewLogin, PasswordHistoryEntry, SyncState, VaultImportResult, VaultState } from './vault/vault'
 import type {
 	AccountOutcome,
 	AccountState,
@@ -433,6 +433,15 @@ export interface InvokeContract {
 	 * once; a cancelled Hello stores nothing and closes the prompt without an error. `never` marks the site, for every prompt.
 	 */
 	'vault:answer-save': { args: [pageId: TabId, answer: SaveAnswer]; result: SaveOutcome }
+	/** Whether this PC is signed in to sync, and as whom. Signed out while the vault is off. */
+	'sync:get': { args: []; result: SyncState }
+	/**
+	 * Turn on sync: Google sign-in in the system browser, then the sync server's session, kept in the vault. Rejects with
+	 * SyncNotSetUpException in a build made without a Google client ID, and VaultOffException while the vault is off.
+	 */
+	'sync:sign-in': { args: []; result: SyncState }
+	/** Forgets the sync sign-in on this PC. The vault's logins stay. */
+	'sync:sign-out': { args: []; result: SyncState }
 	'overview:close': { args: []; result: void }
 }
 
@@ -621,4 +630,7 @@ export interface ZingApi {
 	onVaultState(listener: (state: VaultState) => void): Unsubscribe
 	fillLogin(pageId: TabId, id: string): Promise<FillOutcome>
 	answerSaveLogin(pageId: TabId, answer: SaveAnswer): Promise<SaveOutcome>
+	getSyncState(): Promise<SyncState>
+	signInToSync(): Promise<SyncState>
+	signOutOfSync(): Promise<SyncState>
 }

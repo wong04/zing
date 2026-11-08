@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Zing.Core.Sync;
 
 namespace Zing.Core.Vault;
 
@@ -64,7 +65,7 @@ public sealed class VaultFileException(string path, Exception inner) : Exception
 /// password's ciphertext and moves the losing one into the history as it is, bump the version without needing the secret key; and a
 /// password can't be swapped for another item's, or for an older one, because its sealed version is pinned by the summary.
 /// </remarks>
-public sealed class VaultStore : IDisposable
+public sealed class VaultStore : IDisposable, ISyncAccountStore
 {
 
 	public const string VaultFileName = "vault.zing";
@@ -86,6 +87,8 @@ public sealed class VaultStore : IDisposable
 	private readonly SemaphoreSlim _creatingKeys = new(1, 1);
 	private readonly List<LoginRecord> _records;
 	private readonly List<QueuedChange> _queued;
+	/// <summary>Who this PC syncs as, its refresh token sealed; under <c>_gate</c>, and written with the queue into sync.json.</summary>
+	private SyncAccountFile? _syncAccount;
 	private readonly Dictionary<string, SummaryPayload> _summaries;
 	private VaultKeys? _keys;
 	private readonly Action _availabilityChanged;
@@ -113,7 +116,7 @@ public sealed class VaultStore : IDisposable
 		_session = session;
 		_keys = Guard(KeysFile, VaultKeys.Load);
 		_records = Guard(VaultFile, LoadRecords);
-		_queued = Guard(SyncFile, LoadQueue);
+		(_queued, _syncAccount) = Guard(SyncFile, LoadSyncFile);
 		_summaries = Guard(VaultFile, _ => DecryptSummaries());
 		_availabilityChanged = () =>
 		{
@@ -511,10 +514,54 @@ public sealed class VaultStore : IDisposable
 		foreach (var (id, change) in changed) _summaries[id] = change.Summary;
 	}
 
+	/// <summary>The sync account, its refresh token unsealed; null when this PC isn't signed in to sync.</summary>
+	/// <exception cref="SyncAccountUnreadableException">The refresh token doesn't unseal.</exception>
+	public SyncAccount? SyncAccount()
+	{
+		SyncAccountFile? stored;
+		lock (_gate) stored = _syncAccount;
+		if (stored is null) return null;
+		try
+		{
+			return new(stored.UserId, stored.Email, Encoding.UTF8.GetString(_cipher.Decrypt(stored.SealedRefresh)));
+		}
+		catch (CryptographicException error)
+		{
+			throw new SyncAccountUnreadableException(SyncFile, error);
+		}
+	}
+
+	/// <summary>Writes the account into sync.json beside the queue, the refresh token sealed (DPAPI). On disk when it returns.</summary>
+	public void SaveSyncAccount(SyncAccount account)
+	{
+		var stored = new SyncAccountFile(account.UserId, account.Email, _cipher.Encrypt(Encoding.UTF8.GetBytes(account.Refresh)));
+		lock (_gate)
+		{
+			RequireOpen();
+			WriteSyncFile(_queued, stored);
+			_syncAccount = stored;
+		}
+	}
+
+	/// <summary>Signs this PC out of sync: the account leaves sync.json; queued changes stay.</summary>
+	public void ForgetSyncAccount()
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			WriteSyncFile(_queued, null);
+			_syncAccount = null;
+		}
+	}
+
+	/// <summary>Under <c>_gate</c>.</summary>
+	private void WriteSyncFile(IReadOnlyList<QueuedChange> queued, SyncAccountFile? account) =>
+		JsonFiles.WriteAllBytesAtomic(SyncFile, JsonSerializer.SerializeToUtf8Bytes(new SyncFileContent(Format, queued, account), VaultJson.Options));
+
 	private void Persist(List<LoginRecord> records, IReadOnlyList<QueuedChange> newlyQueued)
 	{
 		List<QueuedChange> queued = [.. _queued, .. newlyQueued];
-		JsonFiles.WriteAllBytesAtomic(SyncFile, JsonSerializer.SerializeToUtf8Bytes(new SyncFileContent(Format, queued), VaultJson.Options));
+		WriteSyncFile(queued, _syncAccount);
 		JsonFiles.WriteAllBytesAtomic(VaultFile, JsonSerializer.SerializeToUtf8Bytes(new VaultFileContent(Format, records), VaultJson.Options));
 		_records.Clear();
 		_records.AddRange(records);
@@ -703,14 +750,16 @@ public sealed class VaultStore : IDisposable
 		return [.. file.Items];
 	}
 
-	private static List<QueuedChange> LoadQueue(string path)
+	private static (List<QueuedChange> Queued, SyncAccountFile? Account) LoadSyncFile(string path)
 	{
-		if (!File.Exists(path)) return [];
+		if (!File.Exists(path)) return ([], null);
 		var file = JsonSerializer.Deserialize<SyncFileContent>(File.ReadAllBytes(path), VaultJson.Options) ?? throw new InvalidDataException($"{path} is empty");
 		if (file.Format != Format) throw new InvalidDataException($"{path} is format {file.Format}; this Zing reads {Format}");
 		if (file.Queued is null) throw new InvalidDataException($"{path} has no queued list");
 		if (file.Queued.Any(c => c is null || string.IsNullOrEmpty(c.ItemId))) throw new InvalidDataException($"{path} has a queued change without an item ID");
-		return [.. file.Queued];
+		if (file.Account is { } account && (string.IsNullOrEmpty(account.UserId) || account.Email is null || account.SealedRefresh is not { Length: > 0 }))
+			throw new InvalidDataException($"{path} has a sync account without its user, email or refresh token");
+		return ([.. file.Queued], file.Account);
 	}
 
 	private Dictionary<string, SummaryPayload> DecryptSummaries()
@@ -753,7 +802,9 @@ public sealed class VaultStore : IDisposable
 
 	private sealed record VaultFileContent(int Format, IReadOnlyList<LoginRecord> Items);
 
-	private sealed record SyncFileContent(int Format, IReadOnlyList<QueuedChange> Queued);
+	private sealed record SyncFileContent(int Format, IReadOnlyList<QueuedChange> Queued, SyncAccountFile? Account = null);
+
+	private sealed record SyncAccountFile(string UserId, string Email, byte[] SealedRefresh);
 }
 
 /// <summary>What the summary ciphertext holds: the login's fields, and the version each password ciphertext was sealed under.</summary>

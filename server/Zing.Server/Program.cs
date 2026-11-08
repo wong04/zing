@@ -46,6 +46,7 @@ app.UseForwardedHeaders();
 app.UseRateLimiter();
 app.MapAuth();
 app.MapSync();
+if (config.FakeGoogle) app.MapFakeGoogle();
 app.Run();
 
 public partial class Program;

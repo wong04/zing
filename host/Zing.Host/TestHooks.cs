@@ -111,6 +111,19 @@ public static class TestHooks
 	/// <summary>What the vault asks for Windows Hello in an e2e run: a fake that never prompts, answering as "vault-hello" set it (FakeHelloSealer). Null outside one, so a real launch gets the real HelloSealer.</summary>
 	public static FakeHelloSealer? HelloSealer() => IsEndToEndRun ? Hello : null;
 
+	/// <summary>
+	/// Sync in an e2e run, which never reaches Google or Railway: ZING_E2E_SYNC_SERVER is a local Zing.Server started with its fake
+	/// issuer, and ZING_E2E_SYNC_SUB the Google sub to sign in as. Without them an e2e run has no sync, whatever the build has.
+	/// </summary>
+	public static Zing.Core.Sync.SyncSetup? Sync()
+	{
+		if (!IsEndToEndRun) throw new InvalidOperationException("TestHooks.Sync is for e2e runs only");
+		if (Environment.GetEnvironmentVariable("ZING_E2E_SYNC_SERVER") is not { Length: > 0 } url) return null;
+		var sub = Environment.GetEnvironmentVariable("ZING_E2E_SYNC_SUB") ?? throw new InvalidOperationException("ZING_E2E_SYNC_SERVER needs ZING_E2E_SYNC_SUB, the sub to sign in as");
+		var server = new Uri(url);
+		return new Zing.Core.Sync.SyncSetup(server, new FakeIssuerSignIn(server, sub));
+	}
+
 	private static int? _closeNextAt;
 
 	/// <summary>"exit-code-on-quit": the code Zing ends with once its last window is gone, as a crash during quit would; e2e/harness.spec.ts.</summary>

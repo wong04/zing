@@ -193,3 +193,35 @@ public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId
 		}
 	}
 }
+
+public sealed record FakeTokenRequest(string? Sub, string? Email);
+
+// Only mapped with ZING_SERVER_FAKE_GOOGLE=1, which the Production environment refuses (ServerConfig): Zing's e2e runs and
+// host tests ask it for an ID token in place of Google, so no test signs in with a real account.
+public static class FakeGoogleEndpoints
+{
+	public static void MapFakeGoogle(this IEndpointRouteBuilder app) => app.MapPost("/fake-google/token", Mint);
+
+	private static IResult Mint(FakeTokenRequest? body, FakeGoogleIssuer issuer, ServerConfig config, TimeProvider clock)
+	{
+		if (string.IsNullOrEmpty(body?.Sub)) return Results.BadRequest(new { error = "sub is required." });
+
+		var now = clock.GetUtcNow().UtcDateTime;
+		var descriptor = new SecurityTokenDescriptor
+		{
+			Issuer = "https://accounts.google.com",
+			Audience = config.GoogleClientId,
+			IssuedAt = now,
+			NotBefore = now,
+			Expires = now + TimeSpan.FromHours(1),
+			Claims = new Dictionary<string, object>
+			{
+				["sub"] = body.Sub,
+				["email"] = body.Email ?? $"{body.Sub}@example.test",
+				["email_verified"] = true,
+			},
+			SigningCredentials = new SigningCredentials(issuer.SigningKey, SecurityAlgorithms.RsaSha256),
+		};
+		return Results.Ok(new { idToken = new JsonWebTokenHandler().CreateToken(descriptor) });
+	}
+}

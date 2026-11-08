@@ -56,6 +56,12 @@ export interface VaultState {
 	filesExist: boolean
 }
 
+// Sync's sign-in, as Settings shows it (sync:get). The bridge leaves out a null email.
+export interface SyncState {
+	signedIn: boolean
+	email?: string
+}
+
 // "Never for this site", kept per exact origin apart from the logins.
 export interface NeverSave {
 	origin: string

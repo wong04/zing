@@ -10,11 +10,15 @@
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
 		<PackageReference Include="xunit.v3" Version="4.0.1" />
 		<PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
+		<!-- Runs the real sync server in process, with its fake Google issuer, for the sync client's tests. -->
+		<PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.22" />
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Zing.Core\Zing.Core.csproj" />
 		<!-- Built beside the tests, so a test can install it as an engine and run it. -->
 		<ProjectReference Include="..\Zing.FakeEngine\Zing.FakeEngine.csproj" />
+		<!-- Aliased: its Program would clash with Zing.FakeEngine's, both top-level programs in the global namespace. -->
+		<ProjectReference Include="..\..\server\Zing.Server\Zing.Server.csproj" Aliases="ZingServer" />
 		<Using Include="Xunit" />
 	</ItemGroup>
 </Project>

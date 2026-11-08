@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Zing.Core.Engines;
 using Zing.Core.Viewer;
 using Zing.Core.Net;
+using Zing.Core.Sync;
 using Zing.Core.Vault;
 
 namespace Zing.Core;
@@ -83,7 +84,8 @@ public interface IWindowHost
 /// <param name="Vault">A vault already open that never follows the setting (tests); <paramref name="Switch"/> is the real one.</param>
 /// <param name="VaultUnreadable">With <paramref name="Vault"/>: the vault is off because its files couldn't be read.</param>
 /// <param name="Switch">The password vault, shared by every window, open only while <c>passwordAutofill</c> is on.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null)
+/// <param name="Sync">The sync server and Google sign-in this build has; null when it was built without a Google client ID (Ruling 48).</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null)
 {
 	public long Now() => Clock.Now();
 
@@ -384,6 +386,9 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("vault:remove-never-save", args => Do(() => Vault().RemoveNeverSave(Text(args, 0))));
 		bridge.Register("vault:fill", async args => await Autofill.FillAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("vault:answer-save", async args => await SignIn.AnswerAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("sync:get", _ => CurrentSyncState());
+		bridge.Register("sync:sign-in", async _ => await SignInToSyncAsync());
+		bridge.Register("sync:sign-out", _ => SignOutOfSync());
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
@@ -905,6 +910,30 @@ public sealed class ChromeApi : IDisposable
 		var logins = await Vault().ExportAsync();
 		return Grants.Issue(VaultCsv.SaveExport(_placement, _host.DownloadsDirectory, logins));
 	}
+
+	private SyncState CurrentSyncState() => _app.Vaults.Current?.SyncAccount() is { } account ? new(true, account.Email) : new(false, null);
+
+	/// <summary>Google in the system browser, then the server's own session; the account is kept in the vault's sync.json. Keys and items sync later (Tasks 12 and 13).</summary>
+	private async Task<object?> SignInToSyncAsync()
+	{
+		var setup = _app.Sync ?? throw new SyncNotSetUpException();
+		var vault = Vault();
+		using var timeout = new CancellationTokenSource(SyncSignInTimeout);
+		var idToken = await setup.SignIn.SignInAsync(timeout.Token);
+		using var client = new SyncClient(setup.Server, vault, setup.Handler);
+		var account = await client.SignInAsync(idToken, timeout.Token);
+		return new SyncState(true, account.Email);
+	}
+
+	/// <summary>The server has no endpoint that revokes a refresh token, so signing out forgets it here; unused, it expires on the server after 90 days.</summary>
+	private SyncState SignOutOfSync()
+	{
+		Vault().ForgetSyncAccount();
+		return new(false, null);
+	}
+
+	/// <summary>Long enough to pick an account and pass Google's prompts in the browser.</summary>
+	private static readonly TimeSpan SyncSignInTimeout = TimeSpan.FromMinutes(5);
 
 	private static NewLogin NewLoginArg(JsonElement login) =>
 		new(RequiredText(login, "origin"), RequiredText(login, "username"), RequiredText(login, "password"), RequiredText(login, "title"), RequiredText(login, "note"));

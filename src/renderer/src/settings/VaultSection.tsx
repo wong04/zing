@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { generatePassword } from '@shared/devtools/password'
-import { recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type VaultImportResult } from '@shared/vault/vault'
+import { recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type SyncState, type VaultImportResult } from '@shared/vault/vault'
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { SettingRowShell } from './SettingRowShell'
@@ -191,6 +191,58 @@ function LoginRow({ login, revealed, editing, run, notify, setRevealed, setEditi
 	)
 }
 
+/** Sync's sign-in: Turn on sync signs in with Google in the browser; signed in, it shows the account and a Sign out. Logins sync in later tasks. */
+function SyncRow() {
+	const [sync, setSync] = useState<SyncState>()
+	const [error, setError] = useState<string>()
+	const [busy, setBusy] = useState(false)
+
+	useEffect(() => {
+		let current = true
+		void zing.getSyncState().then((state) => {
+			if (current) setSync(state)
+		})
+		return () => {
+			current = false
+		}
+	}, [])
+
+	if (!sync) return null
+
+	const act = (work: () => Promise<SyncState>): void =>
+		void (async () => {
+			setError(undefined)
+			setBusy(true)
+			try {
+				setSync(await work())
+			} catch (failure) {
+				setError(messageOf(failure))
+			} finally {
+				setBusy(false)
+			}
+		})()
+
+	return (
+		<div className="vault-sync" role="group" aria-label="Sync">
+			<SettingRowShell
+				title="Sync"
+				detail={sync.signedIn ? `Signed in as ${sync.email ?? ''}.` : busy ? 'Finish signing in with Google in your browser.' : 'Keep saved passwords in step across your PCs. The server only ever sees them encrypted.'}
+			>
+				{sync.signedIn ? (
+					<PillButton variant="outlined" size="small" disabled={busy} onClick={() => act(() => zing.signOutOfSync())}>
+						Sign out
+					</PillButton>
+				) : (
+					<PillButton variant="outlined" size="small" disabled={busy} onClick={() => act(() => zing.signInToSync())}>
+						Turn on sync
+					</PillButton>
+				)}
+			</SettingRowShell>
+			{error ? <InfoBanner kind="warning">{error}</InfoBanner> : null}
+		</div>
+	)
+}
+
 /** The manage page for the password vault (Settings, Browsing): search, show, copy, edit, delete, import and export. */
 export function VaultSection() {
 	const vault = useVault()
@@ -267,6 +319,8 @@ export function VaultSection() {
 					</PillButton>
 				</div>
 			</SettingRowShell>
+
+			<SyncRow />
 
 			{!state.helloAvailable ? (
 				<InfoBanner kind="warning">Windows Hello isn&rsquo;t set up on this PC. You can look through your logins, but passwords can&rsquo;t be shown, saved or changed until it is.</InfoBanner>

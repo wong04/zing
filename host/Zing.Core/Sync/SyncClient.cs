@@ -1,0 +1,265 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
+
+namespace Zing.Core.Sync;
+
+/// <summary>The sync server answered with a status the call can't go on from.</summary>
+public class SyncHttpException(HttpStatusCode status, string message) : Exception(message)
+{
+	public HttpStatusCode Status { get; } = status;
+}
+
+/// <summary>A versioned write (keys or manifest) was based on an old version; <see cref="Current"/> is what the server holds now (null when it holds none).</summary>
+public sealed class SyncConflictException(VersionedBlob? current)
+	: SyncHttpException(HttpStatusCode.Conflict, "The sync server has a newer copy than the one this write was based on")
+{
+	public VersionedBlob? Current { get; } = current;
+}
+
+/// <summary>A sync call with no account to call as: sign in first.</summary>
+public sealed class NotSignedInToSyncException() : Exception("Sync isn't on. Turn on sync in Settings first.");
+
+/// <summary>The server's answer had no body, or not the one its endpoint documents.</summary>
+public sealed class SyncProtocolException(string message) : Exception(message);
+
+/// <summary>Who this PC syncs as. <see cref="Refresh"/> is the server's refresh token, in plain text here and sealed on disk.</summary>
+public sealed record SyncAccount(string UserId, string Email, string Refresh);
+
+/// <summary>Where the account is kept. A save must be on disk when it returns: the server has already retired the token it replaces.</summary>
+public interface ISyncAccountStore
+{
+	SyncAccount? SyncAccount();
+	void SaveSyncAccount(SyncAccount account);
+	void ForgetSyncAccount();
+}
+
+/// <summary>The wrapped keys or the account manifest, with the version the server gave it.</summary>
+public sealed record VersionedBlob(byte[] Blob, long Version);
+
+/// <summary>One item as the server holds it. Ciphertexts are opaque here.</summary>
+public sealed record SyncItem(string ItemId, int Version, long Revision, bool Tombstone, byte[] Summary, byte[] Password, byte[] History);
+
+/// <summary>One item to write, based on the revision of the copy this PC last saw (0 for a new item).</summary>
+public sealed record SyncPush(string ItemId, int Version, long BaseRevision, bool Tombstone, byte[] Summary, byte[] Password, byte[] History);
+
+public sealed record SyncAccepted(string ItemId, long Revision);
+
+/// <summary>What a push did: the items written, with their new revisions, and the server's copy of each one refused.</summary>
+public sealed record SyncPushResult(IReadOnlyList<SyncAccepted> Accepted, IReadOnlyList<SyncItem> Conflicts);
+
+/// <summary>A page of changes after a revision. <see cref="More"/> means ask again from the last item's revision.</summary>
+public sealed record SyncChanges(IReadOnlyList<SyncItem> Items, long Revision, long Horizon, bool More);
+
+public static class SyncJson
+{
+	/// <summary>The server's: camelCase, and byte arrays as base64.</summary>
+	public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+}
+
+/// <summary>
+/// The sync server's HTTP calls (server/Zing.Server), and nothing else. Every call but sign-in carries the 15-minute session; a
+/// 401 refreshes it once and retries, and a second 401 raises. Refresh tokens rotate and reusing one revokes them all, so a
+/// refresh runs one at a time and the rotated token is saved before the new session is used.
+/// </summary>
+public sealed class SyncClient : IDisposable
+{
+	private readonly HttpClient _http;
+	private readonly ISyncAccountStore _store;
+	private readonly SemaphoreSlim _refreshing = new(1, 1);
+	private string? _session;
+
+	/// <param name="handler">How requests are sent; null sends them over the network. Not disposed with the client.</param>
+	public SyncClient(Uri server, ISyncAccountStore store, HttpMessageHandler? handler = null)
+	{
+		_http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
+		_http.BaseAddress = server;
+		_http.Timeout = TimeSpan.FromSeconds(30);
+		_store = store;
+	}
+
+	public void Dispose()
+	{
+		_http.Dispose();
+		_refreshing.Dispose();
+	}
+
+	/// <summary>Trades a Google ID token for a session and stores the account (email from the token, which the server has just checked).</summary>
+	public async Task<SyncAccount> SignInAsync(string idToken, CancellationToken cancellation = default)
+	{
+		var email = IdTokenEmail(idToken);
+		using var response = await _http.PostAsJsonAsync("auth/google", new { idToken }, SyncJson.Options, cancellation);
+		await EnsureSuccess(response, "auth/google", cancellation);
+		var login = await Read<LoginResponse>(response, cancellation);
+		var account = new SyncAccount(login.UserId, email, login.Refresh);
+		_store.SaveSyncAccount(account);
+		_session = login.Session;
+		return account;
+	}
+
+	/// <summary>The wrapped keys, or null before any were stored.</summary>
+	public Task<VersionedBlob?> GetKeysAsync(CancellationToken cancellation = default) => GetBlobAsync("keys", cancellation);
+
+	/// <summary>Stores the wrapped keys over <paramref name="baseVersion"/> and answers the new version.</summary>
+	public Task<long> PutKeysAsync(byte[] blob, long baseVersion, CancellationToken cancellation = default) => PutBlobAsync("keys", blob, baseVersion, cancellation);
+
+	/// <summary>The account manifest, or null before one was stored.</summary>
+	public Task<VersionedBlob?> GetManifestAsync(CancellationToken cancellation = default) => GetBlobAsync("manifest", cancellation);
+
+	public Task<long> PutManifestAsync(byte[] blob, long baseVersion, CancellationToken cancellation = default) => PutBlobAsync("manifest", blob, baseVersion, cancellation);
+
+	/// <summary>Changes after <paramref name="since"/>. A 410 (a cursor older than the tombstone horizon) raises; the caller resyncs from 0.</summary>
+	public async Task<SyncChanges> GetChangesAsync(long since, int? limit = null, CancellationToken cancellation = default)
+	{
+		var path = limit is null ? $"changes?since={since}" : $"changes?since={since}&limit={limit}";
+		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, path), cancellation);
+		await EnsureSuccess(response, path, cancellation);
+		var page = await Read<ChangesResponse>(response, cancellation);
+		return new SyncChanges([.. page.Items.Select(ToItem)], page.Revision, page.Horizon, page.More);
+	}
+
+	public async Task<SyncPushResult> PostChangesAsync(IReadOnlyList<SyncPush> items, CancellationToken cancellation = default)
+	{
+		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Post, "changes") { Content = JsonContent.Create(new { items }, options: SyncJson.Options) }, cancellation);
+		await EnsureSuccess(response, "changes", cancellation);
+		var pushed = await Read<PushResponse>(response, cancellation);
+		return new SyncPushResult([.. pushed.Accepted.Select(a => new SyncAccepted(a.ItemId, a.Revision))], [.. pushed.Conflicts.Select(ToItem)]);
+	}
+
+	private async Task<VersionedBlob?> GetBlobAsync(string path, CancellationToken cancellation)
+	{
+		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, path), cancellation);
+		if (response.StatusCode == HttpStatusCode.NotFound) return null;
+		await EnsureSuccess(response, path, cancellation);
+		return ToBlob(await Read<BlobResponse>(response, cancellation));
+	}
+
+	private async Task<long> PutBlobAsync(string path, byte[] blob, long baseVersion, CancellationToken cancellation)
+	{
+		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(new { blob, baseVersion }, options: SyncJson.Options) }, cancellation);
+		if (response.StatusCode == HttpStatusCode.Conflict)
+		{
+			var current = await Read<BlobResponse>(response, cancellation);
+			throw new SyncConflictException(current.Version == 0 ? null : ToBlob(current));
+		}
+		await EnsureSuccess(response, path, cancellation);
+		return (await Read<PutResponse>(response, cancellation)).Version;
+	}
+
+	/// <summary>Sends with the session, refreshing it first if there is none; a 401 refreshes once and sends again. A request can't be sent twice, so it is made anew.</summary>
+	private async Task<HttpResponseMessage> SendAsync(Func<HttpRequestMessage> request, CancellationToken cancellation)
+	{
+		var session = _session ?? await RefreshAsync(stale: null, cancellation);
+		var response = await SendWith(request(), session, cancellation);
+		if (response.StatusCode != HttpStatusCode.Unauthorized) return response;
+
+		response.Dispose();
+		var renewed = await RefreshAsync(session, cancellation);
+		return await SendWith(request(), renewed, cancellation);
+	}
+
+	private async Task<HttpResponseMessage> SendWith(HttpRequestMessage request, string session, CancellationToken cancellation)
+	{
+		using (request)
+		{
+			request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session);
+			return await _http.SendAsync(request, cancellation);
+		}
+	}
+
+	/// <summary>
+	/// A new session for one that failed (<paramref name="stale"/>; null when there was none). Callers queue here, and one that
+	/// finds the session already replaced uses the new one, so two calls failing at once spend one refresh token, not the same one twice.
+	/// </summary>
+	private async Task<string> RefreshAsync(string? stale, CancellationToken cancellation)
+	{
+		await _refreshing.WaitAsync(cancellation);
+		try
+		{
+			if (_session is { } current && current != stale) return current;
+
+			var account = _store.SyncAccount() ?? throw new NotSignedInToSyncException();
+			using var response = await _http.PostAsJsonAsync("auth/refresh", new { refresh = account.Refresh }, SyncJson.Options, cancellation);
+			await EnsureSuccess(response, "auth/refresh", cancellation);
+			var refreshed = await Read<RefreshResponse>(response, cancellation);
+			// Saved before the session is used: the old token is already spent, and only this one gets the account back after a restart.
+			_store.SaveSyncAccount(account with { Refresh = refreshed.Refresh });
+			_session = refreshed.Session;
+			return refreshed.Session;
+		}
+		finally
+		{
+			_refreshing.Release();
+		}
+	}
+
+	private static async Task EnsureSuccess(HttpResponseMessage response, string path, CancellationToken cancellation)
+	{
+		if (response.IsSuccessStatusCode) return;
+		var body = await response.Content.ReadAsStringAsync(cancellation);
+		var detail = body.Length == 0 ? "" : $": {(body.Length > 200 ? body[..200] : body)}";
+		throw new SyncHttpException(response.StatusCode, $"The sync server answered {(int)response.StatusCode} to {path}{detail}");
+	}
+
+	private static async Task<T> Read<T>(HttpResponseMessage response, CancellationToken cancellation) where T : class
+	{
+		try
+		{
+			return await response.Content.ReadFromJsonAsync<T>(SyncJson.Options, cancellation)
+				?? throw new SyncProtocolException($"The sync server's answer to {response.RequestMessage?.RequestUri} was empty");
+		}
+		catch (JsonException error)
+		{
+			throw new SyncProtocolException($"The sync server's answer to {response.RequestMessage?.RequestUri} wasn't what it documents: {error.Message}");
+		}
+	}
+
+	/// <summary>
+	/// The email the ID token names, read without checking its signature: it is only shown, and the server checks the token
+	/// itself. Google includes it with the <c>email</c> scope (Ruling 23).
+	/// </summary>
+	private static string IdTokenEmail(string idToken)
+	{
+		var parts = idToken.Split('.');
+		if (parts.Length != 3) throw new SyncProtocolException("The Google ID token isn't a JWT");
+		try
+		{
+			using var claims = JsonDocument.Parse(Base64UrlDecode(parts[1]));
+			if (claims.RootElement.TryGetProperty("email", out var email) && email.ValueKind == JsonValueKind.String && email.GetString() is { Length: > 0 } text) return text;
+			throw new SyncProtocolException("The Google ID token has no email; sign-in must ask for the email scope");
+		}
+		catch (Exception error) when (error is JsonException or FormatException)
+		{
+			throw new SyncProtocolException($"The Google ID token's claims can't be read: {error.Message}");
+		}
+	}
+
+	private static byte[] Base64UrlDecode(string text)
+	{
+		var padded = text.Replace('-', '+').Replace('_', '/');
+		return Convert.FromBase64String(padded.PadRight(padded.Length + (4 - padded.Length % 4) % 4, '='));
+	}
+
+	private static VersionedBlob ToBlob(BlobResponse blob) =>
+		new(blob.Blob ?? throw new SyncProtocolException("The sync server sent a version without its blob"), blob.Version);
+
+	private static SyncItem ToItem(ItemResponse item) => new(item.ItemId, item.Version, item.Revision, item.Tombstone, item.Summary, item.Password, item.History);
+
+	private sealed record LoginResponse(string Session, string Refresh, string UserId);
+
+	private sealed record RefreshResponse(string Session, string Refresh);
+
+	private sealed record BlobResponse(byte[]? Blob, long Version);
+
+	private sealed record PutResponse(long Version);
+
+	private sealed record ItemResponse(string ItemId, int Version, long Revision, bool Tombstone, byte[] Summary, byte[] Password, byte[] History);
+
+	private sealed record ChangesResponse(List<ItemResponse> Items, long Revision, long Horizon, bool More);
+
+	private sealed record AcceptedResponse(string ItemId, long Revision);
+
+	private sealed record PushResponse(List<AcceptedResponse> Accepted, List<ItemResponse> Conflicts);
+}
