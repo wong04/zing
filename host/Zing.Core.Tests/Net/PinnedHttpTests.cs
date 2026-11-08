@@ -6,7 +6,7 @@ using Zing.Core.Net;
 namespace Zing.Core.Tests.Net;
 
 // Changes the process-wide default proxy for one test, so no other class may use HttpClient's default at the same time.
-[Collection("HttpDefaultProxy")]
+[Collection("ProcessWide")]
 public sealed class PinnedHttpTests
 {
 	[Fact]
