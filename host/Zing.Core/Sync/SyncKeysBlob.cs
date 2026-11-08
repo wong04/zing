@@ -293,6 +293,22 @@ public static class SyncWire
 		if (page.More && page.Items.Count == 0) throw new SyncProtocolException("The sync server said there was more to pull but sent nothing");
 	}
 
+	/// <summary>
+	/// A push answer as a push can use it (N1, Ruling 58): each item accepted once, and none both accepted and a conflict, since a
+	/// conflict for an item already marked as taken would be applied over its new base. Checked before anything is marked.
+	/// </summary>
+	/// <exception cref="SyncProtocolException">The answer breaks one of those.</exception>
+	public static void CheckPushAnswer(SyncPushResult pushed)
+	{
+		var accepted = new HashSet<string>(StringComparer.Ordinal);
+		foreach (var item in pushed.Accepted)
+		{
+			if (!accepted.Add(item.ItemId)) throw new SyncProtocolException($"The sync server took item {item.ItemId} twice in one answer");
+		}
+		var both = pushed.Conflicts.FirstOrDefault(c => accepted.Contains(c.ItemId));
+		if (both is not null) throw new SyncProtocolException($"The sync server both took item {both.ItemId} and sent a conflict for it");
+	}
+
 	/// <summary>Each old password's ciphertext as a big-endian uint32 length then its bytes, newest first.</summary>
 	public static byte[] JoinHistory(IReadOnlyList<byte[]> history) => AdEncoding.Strings([.. history]);
 

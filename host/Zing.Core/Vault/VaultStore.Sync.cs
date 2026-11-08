@@ -14,8 +14,11 @@ namespace Zing.Core.Vault;
 /// </param>
 public sealed record SyncBase(long Revision, LoginRecord? Original, bool Listed = false);
 
-/// <summary>Where this PC's next pull starts, and the rollback floors: the highest server revision and manifest version it has seen.</summary>
-public sealed record SyncProgress(string UserId, long Cursor, long RevisionFloor, long ManifestFloor)
+/// <summary>
+/// Where this PC's next pull starts, and the rollback floors: the highest server revision and manifest version it has seen, and the
+/// SHA-256 of that manifest's blob (Ruling 58), so another manifest at the same version is caught; null until one is seen.
+/// </summary>
+public sealed record SyncProgress(string UserId, long Cursor, long RevisionFloor, long ManifestFloor, byte[]? ManifestHash = null)
 {
 	public static SyncProgress Fresh(string userId) => new(userId, 0, 0, 0);
 }
@@ -361,17 +364,39 @@ public sealed partial class VaultStore
 		}
 	}
 
-	/// <summary>Raises the manifest floor to <paramref name="manifest"/>; floors never go down.</summary>
-	public void RaiseManifestFloor(string userId, long manifest)
+	/// <summary>
+	/// Raises the manifest floor to <paramref name="manifest"/>, remembering the hash of its <paramref name="blob"/> (read or written);
+	/// floors never go down. At the floor already, only a hash not yet known is filled in.
+	/// </summary>
+	public void RaiseManifestFloor(string userId, long manifest, byte[] blob)
 	{
 		lock (_gate)
 		{
 			RequireOpen();
 			var progress = ProgressFor(userId);
-			if (progress.ManifestFloor >= manifest && _progress is not null) return;
-			var next = progress with { ManifestFloor = Math.Max(progress.ManifestFloor, manifest) };
+			if (progress.ManifestFloor > manifest && _progress is not null) return;
+			if (progress.ManifestFloor == manifest && progress.ManifestHash is not null && _progress is not null) return;
+			var next = progress with { ManifestFloor = manifest, ManifestHash = SHA256.HashData(blob) };
 			WriteSyncFile(_queued, _syncAccount, _syncSignedOut, next);
 			_progress = next;
+		}
+	}
+
+	/// <summary>
+	/// After a delta pull (Ruling 58): a live login this PC synced, hasn't changed since, and saw listed, that the manifest just read
+	/// no longer lists. A login leaves the manifest only once its tombstone is on the server, and the manifest is read before the
+	/// pull, so an honest pull has brought that tombstone. Not one means writes the server lost (a restore) or a delete held back.
+	/// </summary>
+	/// <exception cref="ServerWithheldItemException">The first such login.</exception>
+	public void RequireStillListed(string userId, IReadOnlyList<SyncManifestEntry> listed)
+	{
+		var ids = listed.Select(e => e.ItemId).ToHashSet(StringComparer.Ordinal);
+		lock (_gate)
+		{
+			RequireOpen();
+			RequireSyncUser(userId);
+			var dropped = _records.FirstOrDefault(r => !r.Tombstone && _bases.TryGetValue(r.ItemId, out var b) && b.Revision > 0 && b.Original is null && b.Listed && !ids.Contains(r.ItemId));
+			if (dropped is not null) throw new ServerWithheldItemException(dropped.ItemId);
 		}
 	}
 

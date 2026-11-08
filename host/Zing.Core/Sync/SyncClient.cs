@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 
@@ -259,19 +260,25 @@ public sealed class SyncClient : IDisposable
 
 			// Once sent, the server may rotate the token whether or not the answer gets back, so nothing the caller does stops it.
 			using var limit = new CancellationTokenSource(RefreshTimeout);
-			HttpResponseMessage answered;
+			HttpResponseMessage? answered = null;
+			ExceptionDispatchInfo? unanswered = null;
 			try
 			{
 				answered = await _http.PostAsJsonAsync("auth/refresh", new { refresh = account.Refresh }, SyncJson.Options, limit.Token);
 			}
-			catch (Exception unanswered) when (unanswered is HttpRequestException or OperationCanceledException)
+			catch (Exception lost) when (lost is HttpRequestException or OperationCanceledException)
 			{
 				RefreshUnanswered = true;
+				unanswered = ExceptionDispatchInfo.Capture(lost);
+			}
+			if (unanswered is not null)
+			{
+				// Outside the catch (N2): the engine schedules its retry here, and the caller still gets the request's own error.
 				RefreshLost?.Invoke();
-				throw;
+				unanswered.Throw();
 			}
 			RefreshUnanswered = false;
-			using var response = answered;
+			using var response = answered!;
 			if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
 			{
 				_session = null;

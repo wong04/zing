@@ -426,6 +426,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		foreach (var batch in upload.Records.Chunk(PushBatch))
 		{
 			var pushed = await client.PostChangesAsync([.. batch.Select(SyncWire.NewItem)], cancellation, asUser: signedIn.UserId);
+			SyncWire.CheckPushAnswer(pushed);
 			var byId = batch.ToDictionary(r => r.ItemId, StringComparer.Ordinal);
 			List<SyncAccepted> accepted = [.. pushed.Accepted];
 			foreach (var conflict in pushed.Conflicts)
@@ -436,7 +437,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 			vault.MarkPushed(signedIn.UserId, batch, accepted);
 		}
 		var manifest = await client.PutManifestAsync(upload.Manifest, 0, cancellation, asUser: signedIn.UserId);
-		vault.RaiseManifestFloor(signedIn.UserId, manifest);
+		vault.RaiseManifestFloor(signedIn.UserId, manifest, upload.Manifest);
 		vault.MarkListed(signedIn.UserId, [.. upload.Records.Select(r => new SyncManifestEntry(r.ItemId, r.Version))]);
 	}
 

@@ -138,13 +138,21 @@ public sealed class SyncEngine : IDisposable
 	/// </summary>
 	private void OnRefreshLost()
 	{
-		lock (_lock)
+		try
 		{
-			if (_disposed) return;
-			_refreshUnansweredSince ??= _clock.Now();
-			if (_running) return;
-			_next?.Dispose();
-			_next = _scheduler.Schedule(RefreshRetry, Run);
+			lock (_lock)
+			{
+				if (_disposed) return;
+				_refreshUnansweredSince ??= _clock.Now();
+				if (_running) return;
+				_next?.Dispose();
+				_next = _scheduler.Schedule(RefreshRetry, Run);
+			}
+		}
+		catch (Exception error)
+		{
+			// The caller is mid-request and must see its own error (N2); this one goes to Settings, since no retry is scheduled.
+			Report(error);
 		}
 	}
 
@@ -309,12 +317,18 @@ public sealed class SyncEngine : IDisposable
 	{
 		// Read before the pull: every PC writes its items before its manifest, so whatever this lists, the pull brings.
 		var manifest = await _client.GetManifestAsync(cancellation, asUser: user);
-		RollbackGuard.CheckManifest(_vault.SyncProgressFor(user).ManifestFloor, manifest?.Version);
+		var progress = _vault.SyncProgressFor(user);
+		RollbackGuard.CheckManifest(progress.ManifestFloor, manifest?.Version);
+		if (manifest is not null) RollbackGuard.CheckManifestAtFloor(progress.ManifestFloor, progress.ManifestHash, manifest);
 		IReadOnlyList<SyncManifestEntry> listed = manifest is null ? [] : _vault.OpenManifest(manifest);
-		if (manifest is not null) _vault.RaiseManifestFloor(user, manifest.Version);
+		if (manifest is not null) _vault.RaiseManifestFloor(user, manifest.Version, manifest.Blob);
 
 		var served = await PullAsync(user, cancellation);
-		if (served is null) RollbackGuard.CheckListed(listed, _vault.KnownVersion);
+		if (served is null)
+		{
+			RollbackGuard.CheckListed(listed, _vault.KnownVersion);
+			_vault.RequireStillListed(user, listed);
+		}
 		else RollbackGuard.CheckListed(listed, id => served.TryGetValue(id, out var version) ? version : null);
 		_vault.MarkListed(user, listed);
 		// Checked before anything is taken as purged, so a server holding back a login can't have it deleted here: a listed one fails
@@ -374,6 +388,7 @@ public sealed class SyncEngine : IDisposable
 			foreach (var batch in unsent.Chunk(SyncKeys.PushBatch))
 			{
 				var pushed = await _client.PostChangesAsync([.. batch.Select(SyncWire.Push)], cancellation, asUser: user);
+				SyncWire.CheckPushAnswer(pushed);
 				RollbackGuard.CheckAccepted(_vault.SyncProgressFor(user).RevisionFloor, pushed.Accepted);
 				_vault.MarkPushed(user, [.. batch.Select(u => u.Record)], pushed.Accepted);
 				_vault.ApplyConflicts(user, batch, pushed.Conflicts);
@@ -404,7 +419,7 @@ public sealed class SyncEngine : IDisposable
 			return false;
 		}
 		if (version != baseVersion + 1) throw new SyncProtocolException($"The sync server stored the manifest as version {version}, not {baseVersion + 1}");
-		_vault.RaiseManifestFloor(user, version);
+		_vault.RaiseManifestFloor(user, version, blob);
 		_vault.MarkListed(user, entries);
 		return true;
 	}
@@ -418,7 +433,6 @@ public sealed class SyncEngine : IDisposable
 	/// <exception cref="NotSignedInToSyncException">Not signed in, or sync isn't on for the account signed in.</exception>
 	public async Task UploadLocalCopyAsync(CancellationToken cancellation = default)
 	{
-		if (!OffersUpload(Status.Error)) throw new SyncUploadNotOfferedException();
 		try
 		{
 			await UploadAsync(cancellation);
@@ -437,6 +451,8 @@ public sealed class SyncEngine : IDisposable
 	private async Task UploadAsync(CancellationToken cancellation)
 	{
 		using var gate = await SyncKeys.EnterGateAsync(_vault, cancellation);
+		// Read under the gate (N3): a second click waits for the first upload, which clears the error, and is then refused.
+		if (!OffersUpload(Status.Error)) throw new SyncUploadNotOfferedException();
 		var signedIn = _vault.SyncAccount() ?? throw new NotSignedInToSyncException();
 		await SyncKeys.SettlePendingAsync(_vault, _client, signedIn, cancellation);
 		if (_vault.SyncKeys?.UserId != signedIn.UserId) throw new NotSignedInToSyncException();
@@ -495,7 +511,7 @@ public sealed class SyncEngine : IDisposable
 		ServerWithheldItemException => ("server-withheld-item", error.Message),
 		VaultTamperedException => ("server-tampered", $"A login from the sync server failed its integrity check, so sync stopped and nothing of it was stored. {error.Message}"),
 		SyncProtocolException or InvalidDataException => ("server-invalid", $"The sync server sent something Zing can't use, so sync stopped. {error.Message}"),
-		SyncSignedOutException or NotSignedInToSyncException or SyncAccountUnreadableException or VaultClosedException => null,
+		SyncSignedOutException or NotSignedInToSyncException or SyncAccountUnreadableException or VaultClosedException or SyncUploadNotOfferedException => null,
 		OperationCanceledException when _stopping.IsCancellationRequested => null,
 		HttpRequestException or OperationCanceledException => ("unreachable", "Zing couldn't reach the sync server. It tries again in 5 minutes."),
 		SyncAccountChangedException => ("account-changed", error.Message),

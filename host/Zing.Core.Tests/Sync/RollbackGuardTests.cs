@@ -243,6 +243,67 @@ public sealed class RollbackGuardTests : IDisposable
 	}
 
 	[Fact]
+	public async Task APushAnswerThatBothAcceptsALoginAndSaysItWasPurgedIsRefusedAndTheLoginStays()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		A.Vault.UpdateSummary(id, "Edited", "", "ada");
+		var placeholder = new SyncItem(id, 0, 0, true, [], [], []);
+		_pcs.Server.Wire.Rewrite = (line, body) => line == "POST /changes" ? AddItem(body, "conflicts", placeholder) : body;
+
+		await Assert.ThrowsAsync<SyncProtocolException>(A.SyncAsync);
+
+		Assert.Equal("server-invalid", A.Engine.Status.Error);
+		Assert.Equal("Edited", A.Login(id).Title);
+		Assert.Equal("first-password", await A.Vault.PasswordAsync(id));
+		Assert.Single(A.Vault.Unsent());
+	}
+
+	/// <summary>
+	/// A saves login X after a backup, syncs it and lists it; the server is restored, so it loses X. B, which never had X, then
+	/// edits another login <paramref name="writesOnB"/> times, writing a manifest from its own view each time. Returns X.
+	/// </summary>
+	private async Task<string> ListedLoginLostInARestoreAsync(int writesOnB)
+	{
+		var other = await _pcs.SaveOnAAsync("https://shop.example.test");
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+		var backup = _pcs.Server.Backup();
+		var id = await _pcs.SaveOnAAsync();
+		await A.SyncAsync();
+		_pcs.Server.Restore(backup);
+		for (var i = 1; i <= writesOnB; i++)
+		{
+			B.Vault.UpdateSummary(other, $"Shop {i}", "", "ada");
+			await B.SyncAsync();
+		}
+		return id;
+	}
+
+	[Fact]
+	public async Task ALoginThatWasListedAndThatANewerManifestDropsWhileLiveHereIsHeldBack()
+	{
+		var id = await ListedLoginLostInARestoreAsync(writesOnB: 2);
+
+		// B's second manifest is past A's floor, and it doesn't list X, which no tombstone came for (Ruling 58).
+		var withheld = await Assert.ThrowsAsync<ServerWithheldItemException>(A.SyncAsync);
+
+		Assert.Equal(id, withheld.ItemId);
+		Assert.Equal("first-password", await A.Vault.PasswordAsync(id));
+	}
+
+	[Fact]
+	public async Task AManifestAtThisPcsFloorWithOtherBytesIsARollback()
+	{
+		await ListedLoginLostInARestoreAsync(writesOnB: 1);
+
+		// B's manifest has the version A wrote, with other entries: a forked manifest history (O2, Ruling 58).
+		await Assert.ThrowsAsync<ServerRolledBackException>(A.SyncAsync);
+
+		Assert.Equal("server-rolled-back", A.Engine.Status.Error);
+	}
+
+	[Fact]
 	public async Task AnUploadThatCouldNotRunForASignedOutPcKeepsTheRollbackError()
 	{
 		await _pcs.SaveOnAAsync();

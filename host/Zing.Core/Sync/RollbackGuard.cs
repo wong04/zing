@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace Zing.Core.Sync;
 
 /// <summary>
@@ -60,6 +62,19 @@ public static class RollbackGuard
 	{
 		if (served is null && floor > 0) throw new ServerRolledBackException($"The sync server has no account manifest, but this PC has seen version {floor}.");
 		if (served < floor) throw new ServerRolledBackException($"The sync server's account manifest is version {served}, but this PC has seen version {floor}.");
+	}
+
+	/// <summary>
+	/// O2 (Ruling 58): a manifest at the version this PC already holds must be the same blob; another one at that version is a
+	/// forked manifest history, such as one written over a restored server by a PC that never saw this PC's.
+	/// </summary>
+	/// <param name="floorHash">The SHA-256 of the manifest blob at <paramref name="floor"/>; null when this PC doesn't know it.</param>
+	/// <exception cref="ServerRolledBackException">Another manifest at the floor's version.</exception>
+	public static void CheckManifestAtFloor(long floor, byte[]? floorHash, VersionedBlob served)
+	{
+		if (served.Version != floor || floorHash is null) return;
+		if (CryptographicOperations.FixedTimeEquals(floorHash, SHA256.HashData(served.Blob))) return;
+		throw new ServerRolledBackException($"The sync server's account manifest version {floor} isn't the one this PC has seen.");
 	}
 
 	/// <param name="floor">The copy this PC last synced (or holds as a tombstone); null when it never had one from the server.</param>
