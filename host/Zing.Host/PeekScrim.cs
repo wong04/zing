@@ -117,6 +117,12 @@ public sealed class PeekScrim : IDisposable
 		throw new NativeCallException("CombineRgn scrim");
 	}
 
+	/// <summary>Takes the scrim off the screen until the next <see cref="Place"/>: the preview's page has the whole window.</summary>
+	public void Hide()
+	{
+		if (!_destroyed) Native.ShowWindow(Handle, Native.SW_HIDE);
+	}
+
 	/// <summary>Puts the scrim above the window's other popups; OverlayHost re-raises the ones that sit above it.</summary>
 	public void Raise()
 	{

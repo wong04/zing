@@ -459,4 +459,15 @@ public sealed class ChromeApiTests : IDisposable
 		Assert.True(_api.HandlePreviewKey(new KeyInput("KeyT", Ctrl: true, Shift: false, Alt: false)));
 		Assert.Equal(2, _api.Tabs.Records.Count);
 	}
+
+	[Fact]
+	public void A_held_Esc_closes_one_layer_not_one_per_repeat()
+	{
+		var preview = Peek();
+		var popup = (FakePage)preview.Events.Popup(new PopupRequest("https://login.example/", default, HasPopupFeatures: true));
+		Assert.True(_api.HandlePreviewKey(Esc));
+		Assert.True(popup.Closed);
+		Assert.True(_api.HandlePreviewKey(Esc with { Repeat = true }));
+		Assert.Same(preview, _api.Tabs.Preview!.Top.Page);
+	}
 }

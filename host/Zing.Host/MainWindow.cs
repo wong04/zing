@@ -284,7 +284,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		var pages = layers.Cast<WebView2Page>().ToList();
 		// A page leaving the preview may be staying on screen as a tab (Expand), which shows it itself.
 		foreach (var gone in _preview.Where(p => !pages.Contains(p) && p != _shown && !_panes.Contains(p))) gone.Visible = false;
+		var owner = ScreenOwner;
 		_preview = pages;
+		// Only the page now in front may keep the screen: a layer covered by a popup, or the tab under a new preview, gives it back.
+		if (owner != ScreenOwner) owner?.ExitFullScreen();
+		FollowFullScreen();
 		if (pages.Count == 0)
 		{
 			RemoveScrim();
@@ -318,13 +322,20 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	/// <summary>Where the preview's buttons go: beside its top layer. Null while there is no preview.</summary>
 	private Rect? PreviewButtons() =>
-		_preview.Count > 0 && _layout.PageRect() is { } area ? PeekLayout.Place(area, _preview.Count - 1).Buttons : null;
+		_preview.Count > 0 && !PreviewFullScreen && _layout.PageRect() is { } area ? PeekLayout.Place(area, _preview.Count - 1).Buttons : null;
 
 	private void PlacePreviewPages()
 	{
 		if (_preview.Count == 0 || _layout.PageRect() is not { } area) return;
 		for (var i = 0; i < _preview.Count; i++) _preview[i].Place(PeekLayout.Place(area, i).Page);
+		if (!PreviewFullScreen) return;
+		// Over the whole window, as a fullscreen tab's page is.
+		_preview[^1].Place(_layout.ContentRect());
+		_preview[^1].BringToFront();
 	}
+
+	/// <summary>The preview's top page has the screen: the scrim and the buttons step aside until it leaves.</summary>
+	private bool PreviewFullScreen => _fullScreen && _preview.Count > 0;
 
 	/// <summary>
 	/// The preview works without its dim, so a scrim that can't be made is recorded (an e2e run fails on it), never thrown
@@ -350,6 +361,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private void PlaceScrim()
 	{
 		if (_scrim is null || _preview.Count == 0 || _layout.PageRect() is not { } area) return;
+		if (PreviewFullScreen)
+		{
+			_scrim.Hide();
+			return;
+		}
 		try
 		{
 			_scrim.Place(ToPixels(area), ToPixels(PeekLayout.Place(area, _preview.Count - 1).Page));
@@ -545,10 +561,14 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public bool InPreview(WebView2Page page) => _preview.Contains(page);
 
+	/// <summary>The page that may have the screen: the preview's top page while a preview is open, otherwise the shown one.</summary>
+	private WebView2Page? ScreenOwner => _preview.Count > 0 ? _preview[^1] : _shown;
+
 	public void FullScreenChanged(WebView2Page page)
 	{
-		// Only the shown page may have the screen; one in the background (a video that went fullscreen as its tab left) is put back.
-		if (page != _shown)
+		// Only the page in front may have the screen; one in the background (a video that went fullscreen as its tab left,
+		// a preview layer under a popup, the tab under a preview) is put back.
+		if (page != ScreenOwner)
 		{
 			page.ExitFullScreen();
 			return;
@@ -557,12 +577,13 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	}
 
 	/// <summary>
-	/// The window follows the shown page: fullscreen while one of its elements is (the page then covers the chrome),
-	/// back to a normal window when it leaves. Test windows stay off-screen, so they only change the layout (AGENTS.md).
+	/// The window follows the page in front (ScreenOwner): fullscreen while one of its elements is (the page then covers the
+	/// chrome), back to a normal window when it leaves. Test windows stay off-screen, so they only change the layout (AGENTS.md).
 	/// </summary>
 	private void FollowFullScreen()
 	{
-		var wanted = _shown?.IsFullScreen == true;
+		var owner = ScreenOwner;
+		var wanted = owner?.IsFullScreen == true;
 		if (wanted == _fullScreen) return;
 		_fullScreen = wanted;
 		if (!TestHooks.KeepsOutOfTheWay)
@@ -577,7 +598,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		}
 		Relayout();
 		if (_notices is null || _scope.IsClosed) return;
-		if (wanted) TestHooks.Background(_notices.ShowFullScreenHintAsync(_shown!.Url), "fullscreen hint");
+		if (wanted) TestHooks.Background(_notices.ShowFullScreenHintAsync(owner!.Url), "fullscreen hint");
 		else _notices.HideFullScreenHint();
 	}
 
@@ -585,7 +606,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private void PlaceShown()
 	{
 		if (_shown is null) return;
-		if (_fullScreen)
+		if (_fullScreen && _shown == ScreenOwner)
 		{
 			_shown.Place(_layout.ContentRect());
 			_shown.BringToFront();
@@ -661,7 +682,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		}
 		if (Api is null || Commands.CodeOf((int)e.VirtualKey) is not { } code) return;
 		const int VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
-		var input = new KeyInput(code, Native.IsDown(VK_CONTROL), Native.IsDown(VK_SHIFT), Native.IsDown(VK_MENU));
+		var input = new KeyInput(code, Native.IsDown(VK_CONTROL), Native.IsDown(VK_SHIFT), Native.IsDown(VK_MENU), e.PhysicalKeyStatus.WasKeyDown != 0);
 		if (IsPreviewView(view) ? Api.HandlePreviewKey(input) : Api.HandleKey(input)) e.Handled = true;
 	}
 
