@@ -60,12 +60,14 @@ public sealed class PeekScrim : IDisposable
 
 	/// <summary>
 	/// Covers <paramref name="pageAreaPx"/> except <paramref name="holePx"/>, both in the owner's client pixels, and shows.
-	/// The region is rebuilt every time, so it follows a resize, a move and a DPI change.
+	/// The region is rebuilt every time, so it follows a resize, a move and a DPI change. Nothing happens while the owner is
+	/// minimised (Windows hides owned popups with it, and a show would bring this one back); the restore's WM_SIZE places it again.
 	/// </summary>
 	/// <exception cref="Win32Exception">The region could not be set.</exception>
+	/// <exception cref="NativeCallException">The window could not be moved, or the region could not be made.</exception>
 	public void Place(Rect pageAreaPx, Rect holePx)
 	{
-		if (_destroyed) return;
+		if (_destroyed || Native.IsIconic(_owner)) return;
 		PageArea = pageAreaPx;
 		var origin = new Native.POINT();
 		Native.ClientToScreen(_owner, ref origin);
@@ -81,11 +83,7 @@ public sealed class PeekScrim : IDisposable
 			Right = (int)(holePx.X + holePx.Width) - left,
 			Bottom = (int)(holePx.Y + holePx.Height) - top,
 		};
-		var region = Native.CreateRectRgn(0, 0, width, height);
-		var hole = Native.CreateRectRgn(_hole.Left, _hole.Top, _hole.Right, _hole.Bottom);
-		const int RGN_DIFF = 4;
-		Native.CombineRgn(region, region, hole, RGN_DIFF);
-		Native.DeleteObject(hole);
+		var region = HoledRegion(width, height);
 		// On success the window owns the region; on failure it is still the caller's.
 		if (Native.SetWindowRgn(Handle, region, true) == 0)
 		{
@@ -95,6 +93,28 @@ public sealed class PeekScrim : IDisposable
 		}
 		Native.InvalidateRect(Handle, 0, true);
 		Native.ShowWindow(Handle, Native.SW_SHOWNOACTIVATE);
+	}
+
+	/// <summary>
+	/// The page area minus the hole, in the scrim's own coordinates. A failed region must never be set: a null region would
+	/// drop the hole, and the scrim would take every click meant for the preview.
+	/// </summary>
+	private nint HoledRegion(int width, int height)
+	{
+		var region = Native.CreateRectRgn(0, 0, width, height);
+		if (region == 0) throw new NativeCallException("CreateRectRgn scrim");
+		var hole = Native.CreateRectRgn(_hole.Left, _hole.Top, _hole.Right, _hole.Bottom);
+		if (hole == 0)
+		{
+			Native.DeleteObject(region);
+			throw new NativeCallException("CreateRectRgn scrim hole");
+		}
+		const int RGN_DIFF = 4, ERROR = 0;
+		var combined = Native.CombineRgn(region, region, hole, RGN_DIFF);
+		Native.DeleteObject(hole);
+		if (combined != ERROR) return region;
+		Native.DeleteObject(region);
+		throw new NativeCallException("CombineRgn scrim");
 	}
 
 	/// <summary>Puts the scrim above the window's other popups; OverlayHost re-raises the ones that sit above it.</summary>

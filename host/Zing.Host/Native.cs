@@ -221,6 +221,9 @@ internal static class Native
 
 	public static bool IsDown(int virtualKey) => (GetKeyState(virtualKey) & 0x8000) != 0;
 
+	/// <summary>Whether the key is held now, by the system's state rather than this thread's (which lags input sent to another process's window).</summary>
+	public static bool IsHeldNow(int virtualKey) => (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+
 	/// <summary>How many sibling windows are stacked above <paramref name="hwnd"/>; 0 is the top.</summary>
 	public static int Depth(nint hwnd)
 	{

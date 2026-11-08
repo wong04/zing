@@ -1,8 +1,8 @@
 namespace Zing.Host;
 
 /// <summary>
-/// Where an overlay sits among a window's overlays, lowest first. Every overlay is an owned popup
-/// (HostedView), so the popups' z-order is the only thing that decides which one is in front.
+/// Where an overlay sits among a window's overlays, lowest first. Every overlay is an owned popup: a HostedView's,
+/// or a plain window of its own (the preview scrim), so the popups' z-order is the only thing that decides which one is in front.
 /// </summary>
 public enum OverlayLevel
 {
@@ -29,7 +29,8 @@ public enum OverlayLevel
 /// they ask here, and anything that must stay above the one shown is put back above it, so the order
 /// is always <see cref="OverlayLevel"/>'s, whichever overlay showed last. The order is the one a full layout
 /// pass used to leave behind (page UI, stack dropdown, overview, then the surface and the notices over it).
-/// The views stay owned by the window's scope (WindowScope); a view closed with it is skipped here.
+/// The views stay owned by the window's scope (WindowScope); a view closed with it is skipped here. An overlay that isn't a
+/// view is added as its raise action, and removed when it goes (the scrim, with its preview).
 /// </summary>
 public sealed class OverlayHost
 {

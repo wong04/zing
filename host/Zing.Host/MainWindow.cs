@@ -291,9 +291,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			return;
 		}
 		if (_scrim is null) CreateScrim();
-		PlacePreview();
+		// The pages first: a hole opened before the top page is up would show the tab under it.
+		PlacePreviewPages();
 		foreach (var page in pages) page.Visible = true;
 		RaisePreview();
+		PlaceScrim();
 		if (_scrim is not null) _overlays.Show(OverlayLevel.PeekScrim);
 	}
 
@@ -302,12 +304,17 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		if (_preview.Count > 0) _preview[^1].Focus();
 	}
 
-	/// <summary>Each layer of the preview inside the page area (the whole split area with split view), inset a little more than the one below.</summary>
+	/// <summary>Each layer of the preview inside the page area (the whole split area with split view), inset a little more than the one below, then the scrim.</summary>
 	private void PlacePreview()
+	{
+		PlacePreviewPages();
+		PlaceScrim();
+	}
+
+	private void PlacePreviewPages()
 	{
 		if (_preview.Count == 0 || _layout.PageRect() is not { } area) return;
 		for (var i = 0; i < _preview.Count; i++) _preview[i].Place(PeekLayout.Place(area, i).Page);
-		PlaceScrim();
 	}
 
 	/// <summary>

@@ -29,6 +29,8 @@ public sealed class WebView2Page : IPage
 	private bool _bornRelayed;
 	private static readonly TimeSpan AppLikeWait = TimeSpan.FromMilliseconds(1500);
 	private readonly List<Action<CoreWebView2>> _queued = [];
+	/// <summary>The queue has run: calls go straight to the engine. Until then they queue, even once the core exists, so none overtakes an earlier one while the page's scripts are added.</summary>
+	private bool _drained;
 	private readonly HostWindow _window;
 	private readonly WindowScope _scope;
 	private HostedView? _view;
@@ -47,6 +49,8 @@ public sealed class WebView2Page : IPage
 	private string? _mainFrameId;
 	/// <summary>The latest main-frame Page.frameRequestedNavigation: it arrives before NavigationStarting for the same address (spikes/link-preview, check C).</summary>
 	private (string Url, string Reason)? _lastReason;
+	/// <summary>When the page's script last saw a trusted middle press on a link (Environment.TickCount64), until a new-window request uses it.</summary>
+	private long? _middlePressedAt;
 
 	private static readonly Lazy<(string Script, string Css)> Reader = new(() =>
 	{
@@ -319,7 +323,7 @@ public sealed class WebView2Page : IPage
 	private void Run(Action<CoreWebView2> action)
 	{
 		if (!IsOpen) return;
-		if (_core is null) _queued.Add(action);
+		if (_core is null || !_drained) _queued.Add(action);
 		else action(_core);
 	}
 
@@ -339,11 +343,11 @@ public sealed class WebView2Page : IPage
 		_view.Visible = _visible;
 		_view.Place(_bounds);
 		_core = _view.Core;
-		// A page is not Zing's UI. No host object is added, and the only page messages anything listens for are the autofill
-		// script's (OnPageMessage), and only while the vault is on: with it off, web messages stay off as belt and braces
-		// (FollowAutofillAsync). chrome.webview itself stays on the page (the engine injects it) and postMessage still returns
-		// without error, as the relayed-page e2e observes.
+		// A page is not Zing's UI. No host object is added, and the only page messages anything listens for are the middle-click
+		// script's (MiddleClick) and the autofill script's (OnPageMessage), the latter only while the vault is on. So web messages
+		// are on for every page: the link-preview rules need the middle press, which Chromium reports to nothing else.
 		_core.Settings.AreHostObjectsAllowed = false;
+		_core.Settings.IsWebMessageEnabled = true;
 		_core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
@@ -364,12 +368,14 @@ public sealed class WebView2Page : IPage
 		};
 
 		_core.WebMessageReceived += OnPageMessage;
-		// Before any queued navigation, so every document gets the script; it installs itself in the top frame only.
+		// Before any queued navigation, so every document gets the scripts; they install themselves in the top frame only.
+		await WhileOpenAsync(_core.AddScriptToExecuteOnDocumentCreatedAsync(MiddleClick.Script).AsTask());
 		await FollowAutofillAsync();
 		if (!IsOpen) return;
 
 		foreach (var action in _queued) action(_core);
 		_queued.Clear();
+		_drained = true;
 	}
 
 	/// <summary>Whether the autofill channel is on for this page: web messages, the script, and OnPageMessage reading them.</summary>
@@ -379,16 +385,15 @@ public sealed class WebView2Page : IPage
 	private bool _addingAutofillScript;
 
 	/// <summary>
-	/// Follows passwordAutofill (Ruling 30): with it on, web messages are enabled and every new document gets the detection
-	/// script; with it off, both go, and OnPageMessage drops whatever still arrives. A document already loaded keeps the
-	/// script it started with until it reloads, but nothing it posts is read.
+	/// Follows passwordAutofill (Ruling 30): with it on, every new document gets the detection script; with it off, the script
+	/// goes, and OnPageMessage drops whatever autofill message still arrives. A document already loaded keeps the script it
+	/// started with until it reloads, but nothing it posts is read. Web messages stay on for the middle-click script.
 	/// </summary>
 	public async Task FollowAutofillAsync()
 	{
 		if (!IsOpen || _core is not { } core) return;
 		var on = _features.AutofillOn;
 		_autofill = on;
-		core.Settings.IsWebMessageEnabled = on;
 		if (!on)
 		{
 			if (_autofillScript is not { } added) return;
@@ -425,8 +430,14 @@ public sealed class WebView2Page : IPage
 	/// </summary>
 	private void OnPageMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e)
 	{
+		var json = e.WebMessageAsJson;
+		if (MiddleClick.IsMessage(json))
+		{
+			_middlePressedAt = Environment.TickCount64;
+			return;
+		}
 		if (!_autofill) return;
-		switch (Zing.Core.Vault.AutofillMessage.Read(e.WebMessageAsJson, out var message))
+		switch (Zing.Core.Vault.AutofillMessage.Read(json, out var message))
 		{
 			case Zing.Core.Vault.PageMessageVerdict.NotAutofill:
 				return;
@@ -578,6 +589,8 @@ public sealed class WebView2Page : IPage
 		using var request = System.Text.Json.JsonDocument.Parse(json);
 		var root = request.RootElement;
 		if (_mainFrameId is null || root.GetProperty("frameId").GetString() != _mainFrameId) return;
+		// A link that opens a window or downloads raises no NavigationStarting here, so its reason would linger for that address.
+		if (root.GetProperty("disposition").GetString() != "currentTab") return;
 		_lastReason = (root.GetProperty("url").GetString()!, root.GetProperty("reason").GetString()!);
 	}
 
@@ -827,15 +840,19 @@ public sealed class WebView2Page : IPage
 	}
 
 	/// <summary>
-	/// The keys and button held as the page asked for a window: WebView2 says nothing of them, so they are read as the event
-	/// fires. An e2e run never reads the real keyboard (AGENTS.md); its tests set them first (set-modifiers).
+	/// The keys and button that asked for a window: WebView2 says nothing of them. Shift and Ctrl are read as the event fires,
+	/// from the system (the input went to the engine's window, so this thread's key state can be stale); the middle button
+	/// from the page script's press (MiddleClick), used once. An e2e run never reads the real keyboard (AGENTS.md): its tests
+	/// set the modifiers first (set-modifiers), which win over everything.
 	/// </summary>
-	private static Modifiers HeldModifiers()
+	private Modifiers HeldModifiers()
 	{
+		var middle = MiddleClick.Made(_middlePressedAt, Environment.TickCount64);
+		_middlePressedAt = null;
 		if (TestHooks.TakeModifiers() is { } set) return set;
-		if (TestHooks.KeepsOutOfTheWay) return default;
-		const int VK_MBUTTON = 0x04, VK_SHIFT = 0x10, VK_CONTROL = 0x11;
-		return new Modifiers(Native.IsDown(VK_SHIFT), Native.IsDown(VK_CONTROL), Native.IsDown(VK_MBUTTON));
+		if (TestHooks.KeepsOutOfTheWay) return new Modifiers(false, false, middle);
+		const int VK_SHIFT = 0x10, VK_CONTROL = 0x11;
+		return new Modifiers(Native.IsHeldNow(VK_SHIFT), Native.IsHeldNow(VK_CONTROL), middle);
 	}
 
 	private async Task OpenPopupAsync(CoreWebView2NewWindowRequestedEventArgs e, PopupRequest request)
