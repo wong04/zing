@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generatePassphrase, isStrongEnoughForSync, PASSPHRASE_LIST_SIZE, passphraseWords, SYNC_MIN_GUESSES_LOG10, SYNC_PASSWORD_SCORE } from './passwordStrength'
+import { generatePassphrase, isStrongEnoughForSync, PASSPHRASE_LIST_SIZE, passphraseWords, SYNC_MIN_GUESSES_LOG10, SYNC_PASSWORD_SCORE, syncStrength, syncStrengthLabel } from './passwordStrength'
 import words from './passphraseWords.json'
 import vectors from './passwordStrength.vectors.json'
 
@@ -37,5 +37,19 @@ describe('the passphrase generator', () => {
 			expect(isStrongEnoughForSync(passphrase)).toBe(true)
 		}
 		expect(new Set(made).size).toBe(made.length)
+	})
+})
+
+describe('the meter', () => {
+	it('never says Strong beside a refusal', () => {
+		for (const { password, accepted } of vectors.cases) {
+			const label = syncStrengthLabel(syncStrength(password))
+			if (accepted) expect(label).toBe('Strong. Strong enough for sync.')
+			else expect(label).not.toMatch(/strong\b(?! enough)/i)
+		}
+	})
+
+	it('tells a score-4 password that falls short what sync needs', () => {
+		expect(syncStrengthLabel({ score: 4, enough: false })).toBe('Not enough for sync yet: use five random words, or 18 or more random characters.')
 	})
 })

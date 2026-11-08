@@ -629,16 +629,17 @@ public sealed class VaultStore : IDisposable, ISyncAccountStore
 	}
 
 	/// <summary>
-	/// The server took the pending keys at <paramref name="version"/>: they become the sync keys. A turn-on's recovery key is still to
-	/// be confirmed; a password change keeps the confirmation it had.
+	/// The server took <paramref name="blob"/> at <paramref name="version"/>, and it is the pending keys byte for byte: they become
+	/// the sync keys. A turn-on's recovery key is still to be confirmed; a password change keeps the confirmation it had.
 	/// </summary>
-	public void CommitPendingSyncKeys(long version)
+	/// <exception cref="SyncPendingKeysReplacedException">The pending keys are other keys, or there are none.</exception>
+	public void CommitPendingSyncKeys(byte[] blob, long version)
 	{
 		lock (_gate)
 		{
 			RequireOpen();
 			var keys = Keys();
-			var pending = keys.PendingSync ?? throw new InvalidOperationException("There are no pending sync keys to commit");
+			if (keys.PendingSync is not { } pending || !pending.Blob.AsSpan().SequenceEqual(blob)) throw new SyncPendingKeysReplacedException();
 			var confirmed = pending.BaseVersion > 0 && keys.Sync is { RecoveryConfirmed: true } stored && stored.UserId == pending.UserId;
 			var next = keys.WithSync(new VaultSyncKeys(pending.UserId, pending.Blob, version, pending.SealedRecoveryKey, confirmed)).WithPending(null);
 			next.Save(KeysFile);

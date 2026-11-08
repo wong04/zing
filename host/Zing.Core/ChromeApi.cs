@@ -349,7 +349,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
 		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
-		bridge.Register("account:reset-password", args => app.Account.Run(() => app.Account.ResetPassword(Text(args, 0))));
+		bridge.Register("account:reset-password", args => app.Account.Run(() => ResetAccountPassword(Text(args, 0))));
 		bridge.Register("account:sign-out", _ => app.Account.Run(app.Account.SignOut));
 		bridge.Register("account:continue-as-guest", _ => app.Account.Run(app.Account.ContinueAsGuest));
 		bridge.Register("account:update-profile", args => app.Account.Run(() => app.Account.UpdateProfile(Text(args, 0), Text(args, 1))));
@@ -1051,6 +1051,13 @@ public sealed class ChromeApi : IDisposable
 			return AccountOutcome.Rejected(error.Code);
 		}
 		return AccountOutcome.Ok(_app.Account.State());
+	}
+
+	/// <summary>A forgotten password's reset sets a new local check only, so with sync on it waits for Task 14's recovery-key path (Ruling 54).</summary>
+	private void ResetAccountPassword(string password)
+	{
+		if (_app.Vaults.SyncOnDisk) throw new SyncNeedsRecoveryKeyException();
+		_app.Account.ResetPassword(password);
 	}
 
 	/// <summary>Long enough to pick an account and pass Google's prompts in the browser.</summary>

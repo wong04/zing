@@ -49,18 +49,14 @@ export function useSyncState(): { sync: SyncState | undefined; error: string | u
 	return { sync, error, setSync }
 }
 
-const SCORE_WORDS = ['Very weak', 'Weak', 'Fair', 'Good', 'Strong'] as const
-
 /** The renderer's zxcvbn verdict, for the meter only: the host checks the password again with its own. */
 function StrengthMeter({ strength, password }: { strength: Strength | undefined; password: string }) {
 	if (!strength || password === '') return null
-	const { score, enough } = strength.syncStrength(password)
+	const verdict = strength.syncStrength(password)
 	return (
 		<div className="sync-strength" role="status" aria-live="polite">
-			<meter min={0} max={4} value={score} aria-label="Password strength" />
-			<span>
-				{SCORE_WORDS[score]}. {enough ? 'Strong enough for sync.' : 'Sync needs about 60 bits, such as five random words.'}
-			</span>
+			<meter min={0} max={4} value={verdict.enough ? verdict.score : Math.min(verdict.score, 3)} aria-label="Password strength" />
+			<span>{strength.syncStrengthLabel(verdict)}</span>
 		</div>
 	)
 }

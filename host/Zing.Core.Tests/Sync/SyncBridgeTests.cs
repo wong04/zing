@@ -368,4 +368,18 @@ public sealed class SyncBridgeTests : IDisposable
 		Assert.NotSame(first, app.SyncClients.For(switched.Vaults.Current!));
 		app.SyncClients.Dispose();
 	}
+
+	[Fact]
+	public async Task WithSyncOnAPasswordResetNeedsTheRecoveryKey()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+
+		var refused = await Invoke(bridge, "account:reset-password", "labour-muzzle-medici-rushes-fiction");
+
+		Assert.Equal(nameof(SyncNeedsRecoveryKeyException), refused.GetProperty("error").GetProperty("name").GetString());
+		account.CheckPassword(Strong);
+	}
 }

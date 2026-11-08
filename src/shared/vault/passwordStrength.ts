@@ -36,6 +36,18 @@ export function syncStrength(password: string): { score: number; enough: boolean
 
 export const isStrongEnoughForSync = (password: string): boolean => syncStrength(password).enough
 
+const SCORE_WORDS = ['Very weak', 'Weak', 'Fair', 'Good', 'Strong'] as const
+
+/**
+ * The meter's text. It never says Strong beside a refusal: zxcvbn's score 4 starts near 33 bits, so a score-4 password that
+ * falls short (16 random characters, say) is told what sync needs instead (Ruling 54).
+ */
+export function syncStrengthLabel({ score, enough }: { score: number; enough: boolean }): string {
+	if (enough) return 'Strong. Strong enough for sync.'
+	if (score >= SYNC_PASSWORD_SCORE) return 'Not enough for sync yet: use five random words, or 18 or more random characters.'
+	return `${SCORE_WORDS[score]}. Sync needs about 60 bits, such as five random words.`
+}
+
 /**
  * The passphrase words, frozen in passphraseWords.json so a zxcvbn update never changes them: zxcvbn-ts's English common words
  * (language-en 4.1.1), most common first, that are 4 to 8 plain letters, also in its Wikipedia list, not a first name, and not

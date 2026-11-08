@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Zing.Core.Vault;
 
 namespace Zing.Core.Sync;
@@ -74,6 +75,18 @@ public sealed class SyncSignInNeededException()
 public sealed class SyncNeedsTheVaultException()
 	: Exception("Turn on the password vault to change your Zing password while sync is on.");
 
+/// <summary>A reset of a forgotten Zing password while sync is on: the server's keys stay wrapped by the old one until Task 14's recovery-key path.</summary>
+public sealed class SyncNeedsRecoveryKeyException()
+	: Exception("Sync is on for this PC, so resetting a forgotten Zing password needs your recovery key. That isn't available yet.");
+
+/// <summary>A commit of keys that aren't the ones pending: another call replaced them, so the server may not hold these.</summary>
+public sealed class SyncPendingKeysReplacedException()
+	: Exception("The keys waiting for the sync server were replaced while they were sent, so Zing kept neither.");
+
+/// <summary>Turning on sync while a turn-on for another Google account never finished. That one is cleared, and this one stops.</summary>
+public sealed class SyncTurnOnUnfinishedForAnotherAccountException()
+	: Exception("This PC hadn't finished turning on sync for another Google account. That was cancelled, so turn on sync again.");
+
 /// <summary>So many items that the manifest listing them would be over the server's limit.</summary>
 public sealed class SyncManifestTooLargeException(int items)
 	: Exception($"Your {items} saved passwords are more than sync can list, so sync wasn't turned on.");
@@ -137,6 +150,26 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		account.CheckPassword(password);
 		if (!SyncPasswordStrength.IsStrongEnough(password)) throw new SyncPasswordTooWeakException();
 		var signedIn = vault.SyncAccount() ?? throw new NotSignedInToSyncException();
+		var gate = Gate();
+		await gate.WaitAsync(cancellation);
+		try
+		{
+			return await TurnOnAsync(password, profile, signedIn, cancellation);
+		}
+		finally
+		{
+			gate.Release();
+		}
+	}
+
+	/// <summary>Under <see cref="Gate"/>.</summary>
+	private async Task<string> TurnOnAsync(string password, AccountProfile profile, SyncAccount signedIn, CancellationToken cancellation)
+	{
+		if (vault.PendingSyncKeys is { } unfinished && unfinished.UserId != signedIn.UserId)
+		{
+			vault.DropPendingSyncKeys();
+			throw new SyncTurnOnUnfinishedForAnotherAccountException();
+		}
 		var resumed = await SettlePendingAsync(signedIn, cancellation);
 		if (vault.SyncKeys is { } stored && stored.UserId == signedIn.UserId)
 		{
@@ -179,6 +212,25 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		}
 		if (vault.SyncAccount() is not { } signedIn || signedIn.UserId != syncedAs) throw new SyncSignInNeededException();
 		if (!SyncPasswordStrength.IsStrongEnough(next)) throw new SyncPasswordTooWeakException();
+		var gate = Gate();
+		await gate.WaitAsync(cancellation);
+		try
+		{
+			await ChangeSyncedPasswordAsync(current, next, signedIn, cancellation);
+		}
+		finally
+		{
+			gate.Release();
+		}
+	}
+
+	/// <summary>
+	/// Under <see cref="Gate"/>. Settling first may commit a change whose PC stopped before its own password changed, wrapped under a
+	/// password nobody is typing now. The keys are wrapped afresh under <paramref name="next"/> over that version either way, so the
+	/// server, keys.bin and this PC's password check all end on the password just entered.
+	/// </summary>
+	private async Task ChangeSyncedPasswordAsync(string current, string next, SyncAccount signedIn, CancellationToken cancellation)
+	{
 		await SettlePendingAsync(signedIn, cancellation);
 		if (vault.SyncKeys is not { } stored || stored.UserId != signedIn.UserId)
 		{
@@ -200,23 +252,28 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	}
 
 	/// <summary>
-	/// Settles keys a PUT /keys left pending (its answer was lost, or Zing stopped) against the server's, byte for byte. A turn-on
-	/// the server took is committed, and answers true so the caller finishes it. A password change the server took is dropped: this
-	/// PC's own password never changed, so its stored keys are now behind and the next change is refused as changed elsewhere,
-	/// which asks for the newest password. Keys the server doesn't hold are dropped. Pending keys for another account are left.
+	/// Settles keys a PUT /keys left pending (its answer was lost, or Zing stopped) against the server's, byte for byte (Ruling 54).
+	/// Keys the server holds are committed, a password change's too; a turn-on answers true so the caller finishes it. Keys the
+	/// server doesn't hold are dropped. A failed fetch raises and leaves them pending for the next settle. Pending keys for another
+	/// account are left. Under <see cref="Gate"/>.
 	/// </summary>
 	private async Task<bool> SettlePendingAsync(SyncAccount signedIn, CancellationToken cancellation)
 	{
 		if (vault.PendingSyncKeys is not { } pending || pending.UserId != signedIn.UserId) return false;
 		var server = await client.GetKeysAsync(cancellation);
-		if (pending.BaseVersion == 0 && server is not null && server.Blob.AsSpan().SequenceEqual(pending.Blob))
+		if (server is null || !server.Blob.AsSpan().SequenceEqual(pending.Blob))
 		{
-			vault.CommitPendingSyncKeys(server.Version);
-			return true;
+			vault.DropPendingSyncKeys();
+			return false;
 		}
-		vault.DropPendingSyncKeys();
-		return false;
+		vault.CommitPendingSyncKeys(server.Blob, server.Version);
+		return pending.BaseVersion == 0;
 	}
+
+	/// <summary>One key operation at a time on a vault, whichever window starts it: the pending keys are one slot (Ruling 54).</summary>
+	private static readonly ConditionalWeakTable<VaultStore, SemaphoreSlim> Gates = new();
+
+	private SemaphoreSlim Gate() => Gates.GetValue(vault, _ => new SemaphoreSlim(1, 1));
 
 	/// <summary>
 	/// PUT /keys with a write-ahead (Ruling 53): the keys are stored as pending first. When the answer is lost, or is a conflict, the
@@ -236,7 +293,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		{
 			if (conflict.Current is { } current && current.Blob.AsSpan().SequenceEqual(pending.Blob))
 			{
-				vault.CommitPendingSyncKeys(current.Version);
+				vault.CommitPendingSyncKeys(current.Blob, current.Version);
 				return;
 			}
 			vault.DropPendingSyncKeys();
@@ -252,7 +309,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 			}
 			version = server.Version;
 		}
-		vault.CommitPendingSyncKeys(version);
+		vault.CommitPendingSyncKeys(pending.Blob, version);
 	}
 
 	/// <summary>A request that may or may not have reached the server: a dropped connection, a timeout that wasn't the caller's cancel, or a server failure.</summary>
