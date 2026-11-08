@@ -52,12 +52,16 @@ public sealed class SyncBuildException(string message) : Exception(message);
 /// account (its keys are on the server). <see cref="RecoveryPending"/>: this PC turned sync on and the person hasn't yet confirmed they
 /// saved the recovery key, whoever is signed in now. While on: <see cref="Error"/> and <see cref="Message"/>, the last sync's error
 /// (a code such as "server-rolled-back", and what to show), and <see cref="Unsent"/>, the logins that haven't uploaded yet.
+/// <see cref="PasswordChangedElsewhere"/>, while on: sync found the password changed on another PC, and the next start asks for it.
 /// </summary>
-public sealed record SyncState(bool SignedIn, string? Email, string? Notice = null, bool On = false, bool RecoveryPending = false, string? Error = null, string? Message = null, int Unsent = 0)
+public sealed record SyncState(bool SignedIn, string? Email, string? Notice = null, bool On = false, bool RecoveryPending = false, string? Error = null, string? Message = null, int Unsent = 0, bool PasswordChangedElsewhere = false)
 {
 	/// <param name="keys">What keys.bin holds, for whichever account.</param>
-	public static SyncState SignedInAs(SyncAccount account, VaultSyncKeys? keys = null) =>
-		new(true, account.Email, On: keys is not null && keys.UserId == account.UserId, RecoveryPending: Unconfirmed(keys));
+	public static SyncState SignedInAs(SyncAccount account, VaultSyncKeys? keys = null)
+	{
+		var on = keys is not null && keys.UserId == account.UserId;
+		return new(true, account.Email, On: on, RecoveryPending: Unconfirmed(keys), PasswordChangedElsewhere: on && keys!.NewerBlob is not null);
+	}
 
 	public static SyncState SignedOut(string? notice = null, VaultSyncKeys? keys = null) => new(false, null, notice, RecoveryPending: Unconfirmed(keys));
 
@@ -76,9 +80,12 @@ public sealed class SyncSignInNeededException()
 public sealed class SyncNeedsTheVaultException()
 	: Exception("Turn on the password vault to change your Zing password while sync is on.");
 
-/// <summary>A reset of a forgotten Zing password while sync is on: the server's keys stay wrapped by the old one until Task 14's recovery-key path.</summary>
+/// <summary>
+/// A reset of the local password check alone while sync is on, which would leave the server's keys wrapped by the old password. The
+/// gate answers it with Restore from sync's recovery key, which sets the new password for both (SyncRestore, Task 14).
+/// </summary>
 public sealed class SyncNeedsRecoveryKeyException()
-	: Exception("Sync is on for this PC, so resetting a forgotten Zing password needs your recovery key. That isn't available yet.");
+	: Exception("Sync is on for this PC, so a forgotten Zing password is reset with your recovery key: restore from sync with it, then choose a new password.");
 
 /// <summary>A commit of keys that aren't the ones pending: another call replaced them, so the server may not hold these.</summary>
 public sealed class SyncPendingKeysReplacedException()
@@ -191,7 +198,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 			if (!resumed) throw new SyncAlreadyOnException();
 			using var held = await vault.KeyMaterialAsync();
 			await UploadAsync(Snapshot(held), signedIn, cancellation);
-			return RecoverySeal.Open(held.SecretKey, held.VaultId, stored.SealedRecoveryKey);
+			return RecoverySeal.Open(held.SecretKey, held.VaultId, stored.SealedRecoveryKey ?? throw new SyncRecoveryKeyNotOnThisPcException());
 		}
 
 		var recovery = RecoveryKey.Generate();
@@ -200,7 +207,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		var blob = await Task.Run(() => SyncKeysBlob.Create(keys, password, recovery, profile).ToBytes(), cancellation);
 		try
 		{
-			await PutKeysWriteAheadAsync(new VaultPendingKeys(signedIn.UserId, blob, 0, RecoverySeal.Seal(keys.SecretKey, keys.VaultId, recovery)), cancellation);
+			await PutKeysWriteAheadAsync(vault, client, new VaultPendingKeys(signedIn.UserId, blob, 0, RecoverySeal.Seal(keys.SecretKey, keys.VaultId, recovery)), cancellation);
 		}
 		catch (SyncConflictException)
 		{
@@ -286,7 +293,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		var blob = await Task.Run(() => SyncKeysBlob.Parse(stored.Blob).WithPassword(keys, next).ToBytes(), cancellation);
 		try
 		{
-			await PutKeysWriteAheadAsync(new VaultPendingKeys(signedIn.UserId, blob, stored.Version, stored.SealedRecoveryKey), cancellation);
+			await PutKeysWriteAheadAsync(vault, client, new VaultPendingKeys(signedIn.UserId, blob, stored.Version, stored.SealedRecoveryKey), cancellation);
 		}
 		catch (SyncConflictException)
 		{
@@ -366,7 +373,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	/// Otherwise they're dropped and the error is raised. When even the server's keys can't be fetched, they stay pending for the next
 	/// turn-on or change to settle.
 	/// </summary>
-	private async Task PutKeysWriteAheadAsync(VaultPendingKeys pending, CancellationToken cancellation)
+	internal static async Task PutKeysWriteAheadAsync(VaultStore vault, SyncClient client, VaultPendingKeys pending, CancellationToken cancellation)
 	{
 		vault.SavePendingSyncKeys(pending);
 		long version;

@@ -349,7 +349,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("offer:dismiss", _ => Do(DismissOffer));
 		bridge.Register("account:get", _ => app.Account.State());
 		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
-		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
+		bridge.Register("account:sign-in", async args => await SignInToAccountAsync(Text(args, 0)));
 		bridge.Register("account:reset-password", args => app.Account.Run(() => ResetAccountPassword(Text(args, 0))));
 		bridge.Register("account:sign-out", _ => app.Account.Run(app.Account.SignOut));
 		bridge.Register("account:continue-as-guest", _ => app.Account.Run(app.Account.ContinueAsGuest));
@@ -403,6 +403,14 @@ public sealed class ChromeApi : IDisposable
 		});
 		bridge.Register("sync:show-recovery", async _ => new { recoveryKey = await Vault().RecoveryKeyAsync() });
 		bridge.Register("sync:upload-local", async _ => await UploadLocalCopyAsync());
+		bridge.Register("sync:restore-sign-in", async _ => await SignInToRestoreAsync());
+		bridge.Register("sync:restore-password", async args => await RestoreWithPasswordAsync(Text(args, 0)));
+		bridge.Register("sync:restore-recovery-key", async args =>
+		{
+			await RestoreWithRecoveryKeyAsync(Text(args, 0));
+			return null;
+		});
+		bridge.Register("sync:restore-new-password", async args => await SetPasswordAfterRecoveryAsync(Text(args, 0)));
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
@@ -890,12 +898,20 @@ public sealed class ChromeApi : IDisposable
 	{
 		vault.Changed += PushVaultState;
 		vault.SyncChanged += PushSyncState;
+		vault.SyncPasswordChangedElsewhere += PushPasswordChangedElsewhere;
 	}
 
 	private void Unwatch(VaultStore vault)
 	{
 		vault.Changed -= PushVaultState;
 		vault.SyncChanged -= PushSyncState;
+		vault.SyncPasswordChangedElsewhere -= PushPasswordChangedElsewhere;
+	}
+
+	private void PushPasswordChangedElsewhere()
+	{
+		_host.Push("sync:password-changed-elsewhere", null);
+		PushSyncState();
 	}
 
 	private void PushSyncState() => _host.Push("sync:state", CurrentSyncState());
@@ -1080,11 +1096,89 @@ public sealed class ChromeApi : IDisposable
 		return AccountOutcome.Ok(_app.Account.State());
 	}
 
-	/// <summary>A forgotten password's reset sets a new local check only, so with sync on it waits for Task 14's recovery-key path (Ruling 54).</summary>
+	/// <summary>
+	/// A forgotten password's reset sets a new local check only, so with sync on it's refused (Ruling 54): the gate sends the person to
+	/// Restore from sync with the recovery key instead, which sets the new password on the server and here (Task 14).
+	/// </summary>
 	private void ResetAccountPassword(string password)
 	{
 		if (_app.Vaults.SyncOnDisk) throw new SyncNeedsRecoveryKeyException();
 		_app.Account.ResetPassword(password);
+	}
+
+	/// <summary>
+	/// The gate's Sign In. After sync found the password changed on another PC, the password typed is checked against the newer synced
+	/// keys, not this PC's old check (Task 14). A broken account rule is a 'rejected' outcome, as the other account channels give.
+	/// </summary>
+	private async Task<AccountOutcome> SignInToAccountAsync(string password)
+	{
+		try
+		{
+			if (_app.Account.State().PasswordChangedElsewhere) await SyncRestore.SignInWithPasswordChangedElsewhereAsync(_app.Account, Vault(), password, _closing.Token);
+			else _app.Account.SignIn(password);
+		}
+		catch (AccountException error)
+		{
+			return AccountOutcome.Rejected(error.Code);
+		}
+		return AccountOutcome.Ok(_app.Account.State());
+	}
+
+	/// <summary>A recovery key restore waiting for its new password, in this window's gate.</summary>
+	private SyncRestore? _restoring;
+
+	/// <summary>
+	/// Restore from sync's first step at the gate: the vault is turned on (a restore is the person asking for it, and sync lives in
+	/// it), then the Google sign-in as Turn on sync does it.
+	/// </summary>
+	private async Task<object?> SignInToRestoreAsync()
+	{
+		if (_app.Sync is null) throw new SyncNotSetUpException();
+		if (_app.Vaults.Current is null) _app.Settings.Set("passwordAutofill", true);
+		return await SignInToSyncAsync();
+	}
+
+	private SyncRestore Restorer()
+	{
+		var vault = Vault();
+		return new SyncRestore(_app.Account, vault, SyncClient(vault));
+	}
+
+	private async Task<AccountOutcome> RestoreWithPasswordAsync(string password)
+	{
+		_restoring = null;
+		try
+		{
+			await Restorer().RestoreWithPasswordAsync(password, _closing.Token);
+		}
+		catch (AccountException error)
+		{
+			return AccountOutcome.Rejected(error.Code);
+		}
+		return AccountOutcome.Ok(_app.Account.State());
+	}
+
+	private async Task RestoreWithRecoveryKeyAsync(string key)
+	{
+		var restore = Restorer();
+		_restoring = null;
+		await restore.RestoreWithRecoveryKeyAsync(key, _closing.Token);
+		_restoring = restore;
+	}
+
+	private async Task<AccountOutcome> SetPasswordAfterRecoveryAsync(string password)
+	{
+		var restore = _restoring ?? throw new SyncNoNewPasswordNeededException();
+		try
+		{
+			await restore.ChangePasswordAfterRecoveryAsync(password, _closing.Token);
+		}
+		catch (AccountException error)
+		{
+			return AccountOutcome.Rejected(error.Code);
+		}
+		if (!restore.MustSetNewPassword) _restoring = null;
+		return AccountOutcome.Ok(_app.Account.State());
 	}
 
 	/// <summary>Long enough to pick an account and pass Google's prompts in the browser.</summary>

@@ -924,7 +924,7 @@ test('export warns first, writes Chrome-format CSV to Downloads after Hello, and
 	const fresh = await launchZing({ userDataDir: vaultProfile(true) })
 	const freshSheet = await openManage(fresh)
 	await pickAndImport(fresh, freshSheet, file)
-	await expect(freshSheet.getByRole('status')).toContainText('Added 2, merged 0 into logins you already had, skipped 0')
+	await expect(freshSheet.getByRole('status').filter({ hasText: 'Added' })).toContainText('Added 2, merged 0 into logins you already had, skipped 0')
 	const imported = await summaries(fresh)
 	expect(imported.map((l) => [l.origin, l.username, l.title, l.note]).sort()).toEqual([
 		['https://example.com', 'ada', 'Example', 'line one\nline two'],
@@ -935,7 +935,7 @@ test('export warns first, writes Chrome-format CSV to Downloads after Hello, and
 
 	// Importing the same file again changes nothing.
 	await pickAndImport(fresh, freshSheet, file)
-	await expect(freshSheet.getByRole('status')).toContainText('Added 0, merged 2 into logins you already had, skipped 0')
+	await expect(freshSheet.getByRole('status').filter({ hasText: 'Added' })).toContainText('Added 0, merged 2 into logins you already had, skipped 0')
 	expect(await summaries(fresh)).toHaveLength(2)
 	await fresh.close()
 })
@@ -957,7 +957,7 @@ test('a Chrome CSV with duplicates, a blank password, an android:// row and a no
 
 	await pickAndImport(zing, sheet, csv)
 
-	await expect(sheet.getByRole('status')).toContainText('Added 1, merged 1 into logins you already had, skipped 3')
+	await expect(sheet.getByRole('status').filter({ hasText: 'Added' })).toContainText('Added 1, merged 1 into logins you already had, skipped 3')
 	const skipped = sheet.getByRole('list', { name: 'Skipped rows' }).getByRole('listitem')
 	await expect(skipped).toHaveText(['Row 4: No password', 'Row 5: Not a web address: android://hash@com.app/', 'Row 6: Not a web address: not a url'])
 	await expect(loginList(sheet)).toHaveCount(1)

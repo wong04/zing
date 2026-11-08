@@ -273,6 +273,9 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 				{syncDetail(sync, busy)}
 			</div>
 			{sync.signedIn && !sync.on ? <SyncSetup turnOn={turnOn} /> : null}
+			{sync.signedIn && sync.passwordChangedElsewhere ? (
+				<InfoBanner kind="info">Your Zing password was changed on another PC. Zing asks for the new one the next time it starts.</InfoBanner>
+			) : null}
 			{notice ? <InfoBanner kind={notice === 'kept-on-server' ? 'info' : 'warning'}>{SYNC_NOTICES[notice]}</InfoBanner> : null}
 			{banner ? (
 				<InfoBanner kind="warning">

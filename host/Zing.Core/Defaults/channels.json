@@ -366,6 +366,22 @@
 			"args": 0
 		},
 		{
+			"channel": "sync:restore-new-password",
+			"args": 1
+		},
+		{
+			"channel": "sync:restore-password",
+			"args": 1
+		},
+		{
+			"channel": "sync:restore-recovery-key",
+			"args": 1
+		},
+		{
+			"channel": "sync:restore-sign-in",
+			"args": 0
+		},
+		{
 			"channel": "sync:show-recovery",
 			"args": 0
 		},
@@ -573,6 +589,7 @@
 		"settings:changed",
 		"shell:state",
 		"stack:dropdown",
+		"sync:password-changed-elsewhere",
 		"sync:state",
 		"tabs:state",
 		"toolpanel:state",

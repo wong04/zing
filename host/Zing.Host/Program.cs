@@ -246,6 +246,8 @@ public sealed class ZingApp
 		// HTML to PDF needs no engine, so its print folders are swept whether or not the engines folder opened.
 		HtmlPdfPrinter.SweepLeftovers();
 		var vaults = OpenVault(settings, clock);
+		// Sync found the Zing password changed on another PC: this start asks for the new one (Task 14).
+		Zing.Core.Sync.SyncRestore.AskIfPasswordChangedElsewhere(account, vaults.Current);
 		// Zing closing wipes the secret key the vault holds (Ruling 44).
 		_onQuit.Add(vaults.Dispose);
 		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults, Sync: TestHooks.IsEndToEndRun ? TestHooks.Sync() : SyncBuild.Setup(), SyncScheduler: _scheduler);

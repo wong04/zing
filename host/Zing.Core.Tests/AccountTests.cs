@@ -409,7 +409,7 @@ public sealed class AccountTests : IDisposable
 		Assert.Equal("""{"status":"rejected","code":"no-account","message":"No account yet. Create one first."}""", JsonSerializer.Serialize(rejected, ZingJson.Options));
 
 		var ok = JsonSerializer.Serialize(s.Run(() => s.ContinueAsGuest()), ZingJson.Options);
-		Assert.Equal("""{"status":"ok","state":{"hasAccount":false,"signedIn":true,"needsPasswordReset":false,"requirePasswordOnLaunch":false,"profile":null}}""", ok);
+		Assert.Equal("""{"status":"ok","state":{"hasAccount":false,"signedIn":true,"needsPasswordReset":false,"requirePasswordOnLaunch":false,"profile":null,"passwordChangedElsewhere":false}}""", ok);
 	}
 
 	[Fact]

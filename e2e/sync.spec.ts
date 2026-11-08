@@ -3,10 +3,10 @@
 // Zing's Google sign-in is a stand-in that asks that issuer for an ID token (ZING_E2E_SYNC_SERVER), so no browser opens.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 import { launchZing, pageWhere, scratchDir, test, type Launched } from './zing'
 import type { ZingApi } from '../src/shared/ipc'
 
@@ -21,6 +21,8 @@ const EMAIL = `${SUB}@example.test`
 const TURN_ON_SUBS = ['sub-e2e-turn-on', 'sub-e2e-weak'] as const
 // The two-PC sync test's Google account (Task 13).
 const TWO_PCS_SUB = 'sub-e2e-two-pcs'
+// Restore from sync, the recovery key, a password changed on another PC, and a conflict and a delete (Task 14).
+const RESTORE_SUBS = ['sub-e2e-restore', 'sub-e2e-recovery', 'sub-e2e-changed', 'sub-e2e-conflict'] as const
 
 let server: ChildProcess | undefined
 let serverUrl = ''
@@ -39,8 +41,11 @@ function serverEnvironment(): NodeJS.ProcessEnv {
 		ASPNETCORE_ENVIRONMENT: 'Staging',
 		ZING_SERVER_FAKE_GOOGLE: '1',
 		ZING_SESSION_KEY: randomBytes(32).toString('base64'),
-		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB].join(','),
+		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS].join(','),
 		ZING_DB_PATH: join(serverDir, 'zing.db'),
+		// Every PC of the run is 127.0.0.1, so one per-IP budget: the default 60 a minute is a production limit (its own tests cover it).
+		ZING_RATE_IP_PER_MINUTE: '100000',
+		ZING_RATE_USER_PER_MINUTE: '100000',
 	}
 }
 
@@ -236,8 +241,14 @@ test('a Zing password too weak for sync is changed to a suggested passphrase in 
 })
 
 // The sync engine (Task 13): two Zing profiles, each its own PC, share a login through the local server. Sync itself needs no
-// Windows Hello; turning it on and saving a password use the vault-hello stand-in. Until the recovery-key restore (Task 14), the
-// second PC gets the vault's keys by a copy of the first one's keys.bin, as SyncEngineTests do.
+// Windows Hello; turning it on, restoring and saving a password use the vault-hello stand-in. The second PC joins by restoring
+// from sync with the Zing password (Task 14).
+
+/** Restore from sync through the host, as the gate's Restore from sync does it, on a profile with no account. */
+async function restoreWithPassword(zing: Launched, password: string): Promise<void> {
+	expect((await zing.chrome.evaluate(() => window.zing.signInToRestore())).signedIn).toBe(true)
+	expect((await zing.chrome.evaluate((p) => window.zing.restoreWithPassword(p), password)).status).toBe('ok')
+}
 
 const titleOf = (zing: Launched, id: string): Promise<string | undefined> =>
 	zing.chrome.evaluate(async (loginId) => (await window.zing.vaultSummaries()).find((s) => s.id === loginId)?.title, id)
@@ -255,11 +266,9 @@ test('a login saved on one PC reaches the other, and an edit made there comes ba
 	expect(on).not.toHaveProperty('error')
 	await a.close()
 
-	const bDir = vaultProfile()
-	mkdirSync(join(bDir, 'vault'), { recursive: true })
-	copyFileSync(keysFile(a), join(bDir, 'vault', 'keys.bin'))
-	const b = await launchZing({ userDataDir: bDir, env: syncEnv(TWO_PCS_SUB) })
-	expect(await b.chrome.evaluate(() => window.zing.signInToSync())).toMatchObject({ signedIn: true, on: true })
+	const b = await launchZing({ env: syncEnv(TWO_PCS_SUB) })
+	await restoreWithPassword(b, STRONG)
+	expect(await b.chrome.evaluate(() => window.zing.getSyncState())).toMatchObject({ signedIn: true, on: true })
 	await expect.poll(() => titleOf(b, id), { timeout: 30_000, message: "B's sync didn't bring A's login" }).toBe('Bank')
 
 	await b.chrome.evaluate((loginId) => window.zing.updateLogin(loginId, { title: 'Edited on B', username: 'ada', note: '' }), id)
@@ -273,5 +282,177 @@ test('a login saved on one PC reaches the other, and an edit made there comes ba
 	await expect.poll(() => titleOf(again, id), { timeout: 30_000, message: "A's sync at start didn't bring B's edit" }).toBe('Edited on B')
 	const sheet = await openSync(again)
 	await expect(syncGroup(sheet)).toContainText(`Sync is on. Signed in as ${TWO_PCS_SUB}@example.test.`)
+	await again.close()
+})
+
+// A new PC, a forgotten password, and a password changed on another PC (Task 14). The new PC starts from an empty profile, at the
+// account gate, as a real first start does.
+
+/** Another generated five-word passphrase (src/shared/vault/passwordStrength.vectors.json). */
+const NEXT_STRONG = 'labour-muzzle-medici-rushes-fiction'
+
+/** A PC with an account, two logins and sync turned on for `sub`, its recovery key confirmed saved. */
+async function turnOnWithLogins(sub: string): Promise<{ zing: Launched; recovery: string; bank: string }> {
+	const zing = await launchZing({ userDataDir: vaultProfile(), env: syncEnv(sub) })
+	await signUp(zing, STRONG)
+	const bank = await zing.chrome.evaluate(() => window.zing.saveLogin({ origin: 'https://bank.example.test', username: 'ada', password: 'bank-password', title: 'Bank', note: '' }))
+	await zing.chrome.evaluate(() => window.zing.saveLogin({ origin: 'https://mail.example.test', username: 'ada.mail', password: 'mail-password', title: 'Mail', note: '' }))
+	expect((await zing.chrome.evaluate(() => window.zing.signInToSync())).signedIn).toBe(true)
+	const { recoveryKey } = await zing.chrome.evaluate((p) => window.zing.turnOnSync(p), STRONG)
+	expect(await zing.chrome.evaluate(() => window.zing.confirmRecoverySaved())).toMatchObject({ on: true, unsent: 0 })
+	return { zing, recovery: recoveryKey, bank }
+}
+
+/** The account gate shows, as on a real start: the harness skips it otherwise. */
+const gated = { ZING_SKIP_ACCOUNT_GATE: '' }
+
+const WRONG_PASSWORD = "That password doesn't match."
+
+const surfaceOf = (zing: Launched): Promise<Page> => pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+
+const titles = async (zing: Launched): Promise<string[]> => (await zing.chrome.evaluate(() => window.zing.vaultSummaries())).map((s) => s.title).sort()
+
+const isGated = async (zing: Launched): Promise<boolean> => (await zing.chrome.evaluate(() => window.zing.getShell())).gated
+
+const summaryOf = async (zing: Launched, id: string) => (await zing.chrome.evaluate(() => window.zing.vaultSummaries())).find((s) => s.id === id)
+
+/** The gate's Restore from sync, signed in with Google. */
+async function startRestore(zing: Launched, sub: string): Promise<Locator> {
+	const gate = await surfaceOf(zing)
+	await gate.getByRole('button', { name: 'Restore from sync' }).click()
+	const restore = gate.getByRole('form', { name: 'Restore from sync' })
+	await restore.getByRole('button', { name: 'Sign in with Google' }).click()
+	await expect(restore).toContainText(`Signed in as ${sub}@example.test.`)
+	return restore
+}
+
+test('restoring from sync on a new PC refuses a wrong password and makes nothing, then the password brings back every login', async () => {
+	test.setTimeout(240_000)
+	const sub = RESTORE_SUBS[0]
+	const { zing: a, bank } = await turnOnWithLogins(sub)
+	await a.close()
+
+	const b = await launchZing({ env: { ...syncEnv(sub), ...gated } })
+	const restore = await startRestore(b, sub)
+	await restore.getByLabel('Zing password', { exact: true }).fill(NEXT_STRONG)
+	await restore.getByRole('button', { name: 'Restore', exact: true }).click()
+
+	await expect(restore).toContainText(WRONG_PASSWORD)
+	expect(await b.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: false })
+	expect(existsSync(keysFile(b))).toBe(false)
+	expect(await isGated(b)).toBe(true)
+
+	await restore.getByLabel('Zing password', { exact: true }).fill(STRONG)
+	await restore.getByRole('button', { name: 'Restore', exact: true }).click()
+
+	await expect.poll(() => isGated(b)).toBe(false)
+	expect(await b.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({
+		hasAccount: true,
+		signedIn: true,
+		profile: { username: 'ada', displayName: 'Ada Lovelace', email: 'ada.profile@example.test' },
+	})
+	await expect.poll(() => titles(b), { timeout: 30_000, message: "B's sync didn't bring A's logins" }).toEqual(['Bank', 'Mail'])
+	expect(await b.chrome.evaluate((id) => window.zing.revealPassword(id), bank)).toBe('bank-password')
+	expect(await b.chrome.evaluate(() => window.zing.getSyncState())).toMatchObject({ signedIn: true, on: true, recoveryPending: false })
+	await b.close()
+})
+
+test('restoring with the recovery key asks for a new password at once, and the old password stops working on the next restore', async () => {
+	test.setTimeout(240_000)
+	const sub = RESTORE_SUBS[1]
+	const { zing: a, recovery } = await turnOnWithLogins(sub)
+	await a.close()
+
+	const b = await launchZing({ env: { ...syncEnv(sub), ...gated } })
+	const restore = await startRestore(b, sub)
+	await restore.getByRole('radio', { name: 'Recovery key' }).click()
+	await restore.getByLabel('Recovery key', { exact: true }).fill(recovery.toLowerCase().replaceAll('-', ' '))
+	await restore.getByRole('button', { name: 'Restore', exact: true }).click()
+
+	await expect(restore.getByRole('heading', { name: 'Choose a new Zing password' })).toBeVisible()
+	expect(await b.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: false })
+	expect(await isGated(b)).toBe(true)
+	await restore.getByLabel('New Zing password').fill(NEXT_STRONG)
+	await restore.getByLabel('New password again').fill(NEXT_STRONG)
+	await restore.getByRole('button', { name: 'Set password' }).click()
+
+	await expect.poll(() => isGated(b)).toBe(false)
+	expect(await b.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: true, signedIn: true, profile: { username: 'ada' } })
+	await expect.poll(() => titles(b), { timeout: 30_000, message: "B's sync didn't bring A's logins" }).toEqual(['Bank', 'Mail'])
+	await b.close()
+
+	const c = await launchZing({ env: syncEnv(sub) })
+	expect((await c.chrome.evaluate(() => window.zing.signInToRestore())).signedIn).toBe(true)
+	expect(await c.chrome.evaluate((p) => window.zing.restoreWithPassword(p), STRONG)).toMatchObject({ status: 'rejected', code: 'wrong-password' })
+	expect(await c.chrome.evaluate((p) => window.zing.restoreWithPassword(p), NEXT_STRONG)).toMatchObject({ status: 'ok' })
+	await c.close()
+})
+
+test('a password changed on one PC makes the other ask for the new one once, at its next start', async () => {
+	test.setTimeout(300_000)
+	const sub = RESTORE_SUBS[2]
+	const { zing: a } = await turnOnWithLogins(sub)
+	const b = await launchZing({ env: syncEnv(sub) })
+	await restoreWithPassword(b, STRONG)
+	await b.close()
+	expect(await a.chrome.evaluate(([current, next]) => window.zing.changePassword(current!, next!), [STRONG, NEXT_STRONG])).toMatchObject({ status: 'ok' })
+	await a.close()
+
+	// B's sync at start finds the newer keys and says so; this start doesn't lock.
+	const noticed = await launchZing({ userDataDir: b.userDataDir, env: syncEnv(sub) })
+	const sheet = await openSync(noticed)
+	await expect(syncGroup(sheet)).toContainText('Your Zing password was changed on another PC.')
+	expect(await isGated(noticed)).toBe(false)
+	await noticed.close()
+
+	const asked = await launchZing({ userDataDir: b.userDataDir, env: { ...syncEnv(sub), ...gated } })
+	const gate = await surfaceOf(asked)
+	await expect(gate.getByText('Your Zing password was changed on another PC. Enter the new one.')).toBeVisible()
+	await gate.getByLabel('Password', { exact: true }).fill(STRONG)
+	await gate.getByRole('button', { name: 'Sign In' }).click()
+	await expect(gate.getByText(WRONG_PASSWORD)).toBeVisible()
+	expect(await isGated(asked)).toBe(true)
+	await gate.getByLabel('Password', { exact: true }).fill(NEXT_STRONG)
+	await gate.getByRole('button', { name: 'Sign In' }).click()
+	await expect.poll(() => isGated(asked)).toBe(false)
+	await asked.close()
+
+	const once = await launchZing({ userDataDir: b.userDataDir, env: { ...syncEnv(sub), ...gated } })
+	expect(await once.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ signedIn: true, passwordChangedElsewhere: false })
+	expect(await isGated(once)).toBe(false)
+	await once.close()
+})
+
+// The spec's two PCs syncing "including a conflict and a delete" (M11, Task 13 review).
+test('an edit made on each PC while one was offline merges field by field, and a delete reaches the other PC', async () => {
+	test.setTimeout(300_000)
+	const sub = RESTORE_SUBS[3]
+	const { zing: a, bank } = await turnOnWithLogins(sub)
+	await a.close()
+	const b = await launchZing({ env: syncEnv(sub) })
+	await restoreWithPassword(b, STRONG)
+	await expect.poll(() => titleOf(b, bank), { timeout: 30_000, message: "B's sync didn't bring A's login" }).toBe('Bank')
+
+	// A edits the note with no sync server to reach (nothing listens on port 9), so its change waits.
+	const offline = await launchZing({ userDataDir: a.userDataDir, env: { ZING_E2E_SYNC_SERVER: 'http://127.0.0.1:9', ZING_E2E_SYNC_SUB: sub } })
+	await offline.chrome.evaluate((id) => window.zing.updateLogin(id, { title: 'Bank', username: 'ada', note: 'Note from A' }), bank)
+	await expect.poll(() => offline.chrome.evaluate(() => window.zing.getSyncState()), { timeout: 30_000 }).toMatchObject({ error: 'unreachable', unsent: 1 })
+	await offline.close()
+
+	await b.chrome.evaluate((id) => window.zing.updateLogin(id, { title: 'Edited on B', username: 'ada', note: '' }), bank)
+	await expect.poll(() => b.chrome.evaluate(() => window.zing.getSyncState()), { timeout: 30_000, message: "B's edit didn't upload" }).toMatchObject({ on: true, unsent: 0 })
+	await b.close()
+
+	const online = await launchZing({ userDataDir: a.userDataDir, env: syncEnv(sub) })
+	await expect.poll(() => summaryOf(online, bank), { timeout: 30_000, message: "A didn't merge B's edit with its own" }).toMatchObject({ title: 'Edited on B', note: 'Note from A' })
+	await expect.poll(() => online.chrome.evaluate(() => window.zing.getSyncState()), { timeout: 30_000 }).toMatchObject({ on: true, unsent: 0 })
+	expect(await online.chrome.evaluate(() => window.zing.getSyncState())).not.toHaveProperty('error')
+	await online.chrome.evaluate((id) => window.zing.deleteLogin(id), bank)
+	await expect.poll(() => online.chrome.evaluate(() => window.zing.getSyncState()), { timeout: 30_000, message: "A's delete didn't upload" }).toMatchObject({ unsent: 0 })
+	await online.close()
+
+	const again = await launchZing({ userDataDir: b.userDataDir, env: syncEnv(sub) })
+	await expect.poll(async () => (await summaryOf(again, bank))?.deletedAt != null, { timeout: 30_000, message: "B's sync didn't bring A's delete" }).toBe(true)
+	expect(await summaryOf(again, bank)).toMatchObject({ title: 'Edited on B', note: 'Note from A' })
 	await again.close()
 })

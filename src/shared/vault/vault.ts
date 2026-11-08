@@ -83,7 +83,17 @@ export function offersUploadLocal(error: SyncError | undefined): boolean {
 // in now, so Settings shows nothing else. While on: `unsent`, the logins that haven't uploaded yet, and `error`/`message`, the last
 // sync's error (unset after one that worked).
 export type SyncState =
-	| { signedIn: true; email: string; on: boolean; recoveryPending: boolean; unsent: number; error?: SyncError; message?: string }
+	| {
+			signedIn: true
+			email: string
+			on: boolean
+			recoveryPending: boolean
+			unsent: number
+			error?: SyncError
+			message?: string
+			/** Sync found the Zing password changed on another PC: the next start asks for the new one. */
+			passwordChangedElsewhere?: boolean
+	  }
 	| { signedIn: false; notice?: SyncNotice; on: false; recoveryPending: boolean }
 
 // The recovery key, as sync:turn-on and sync:show-recovery give it: 26 base32 characters in groups of four.

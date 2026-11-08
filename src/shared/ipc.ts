@@ -469,6 +469,27 @@ export interface InvokeContract {
 	 * replaces the server's, and the sync list is written from it. Needs no Windows Hello.
 	 */
 	'sync:upload-local': { args: []; result: SyncState }
+	/**
+	 * Restore from sync, at the account gate: turns the password vault on (sync lives in it), then signs in with Google as
+	 * sync:sign-in does. Rejects with SyncNotSetUpException in a build made without a Google client ID.
+	 */
+	'sync:restore-sign-in': { args: []; result: SyncState }
+	/**
+	 * Restores this PC from sync with the Zing password: the synced keys are unwrapped and sealed here (one Windows Hello), and the
+	 * account is made from the synced profile, or given the password when this PC has one. `wrong-password` when it doesn't open
+	 * them, and then nothing is made. Rejects with SyncNothingToRestoreException or SyncRestoreWouldReplaceLoginsException.
+	 */
+	'sync:restore-password': { args: [password: string]; result: AccountOutcome }
+	/**
+	 * Restores this PC from sync with the recovery key (one Windows Hello); the account waits for sync:restore-new-password. Rejects
+	 * with RecoveryKeyFormatException (a mistyped character), WrongRecoveryKeyException, or as sync:restore-password does.
+	 */
+	'sync:restore-recovery-key': { args: [key: string]; result: void }
+	/**
+	 * The new Zing password after a recovery key restore: the synced keys are wrapped under it with fresh parameters, and the account
+	 * is made or given it. Rejects with SyncPasswordTooWeakException (still waiting) or SyncNoNewPasswordNeededException.
+	 */
+	'sync:restore-new-password': { args: [password: string]; result: AccountOutcome }
 	'overview:close': { args: []; result: void }
 }
 
@@ -489,6 +510,8 @@ export interface EventContract {
 	'vault:state': VaultState
 	/** Sync was signed in or out, turned on, or its recovery key confirmed saved, here or in another window, or the server ended the sign-in. */
 	'sync:state': SyncState
+	/** Sync found the Zing password changed on another PC: the next start asks for the new one. */
+	'sync:password-changed-elsewhere': undefined
 	'engines:progress': EngineProgress
 	'engines:output': EngineOutput
 	'engines:exit': EngineExit
@@ -669,4 +692,9 @@ export interface ZingApi {
 	showRecoveryKey(): Promise<RecoveryKeyShown>
 	uploadLocalCopy(): Promise<SyncState>
 	onSyncState(listener: (state: SyncState) => void): Unsubscribe
+	signInToRestore(): Promise<SyncState>
+	restoreWithPassword(password: string): Promise<AccountOutcome>
+	restoreWithRecoveryKey(key: string): Promise<void>
+	setPasswordAfterRecovery(password: string): Promise<AccountOutcome>
+	onPasswordChangedElsewhere(listener: () => void): Unsubscribe
 }

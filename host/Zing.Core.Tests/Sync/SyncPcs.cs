@@ -89,11 +89,10 @@ internal sealed class SyncPc : IDisposable
 
 	private readonly LocalSyncServer _server;
 
-	public SyncPc(LocalSyncServer server, string? keysFrom = null)
+	public SyncPc(LocalSyncServer server)
 	{
 		_server = server;
 		Dir = Directory.CreateTempSubdirectory("zing-syncpc-").FullName;
-		if (keysFrom is not null) File.Copy(Path.Combine(keysFrom, VaultStore.KeysFileName), Path.Combine(Dir, VaultStore.KeysFileName));
 		(Vault, Client, Engine) = Open();
 	}
 
@@ -128,13 +127,14 @@ internal sealed class SyncPc : IDisposable
 	}
 }
 
-/// <summary>Two PCs syncing one vault: A turned sync on, and B holds the same keys (what restoring on B gives it, Task 14).</summary>
+/// <summary>Two PCs syncing one vault: A turned sync on, and B restored from sync with the Zing password (Task 14).</summary>
 internal sealed class TwoPcs : IDisposable
 {
 	/// <summary>A five-word passphrase the generator made (passwordStrength.vectors.json).</summary>
 	public const string Strong = "teaching-focused-onward-activist-steel";
 
 	private readonly string _accountDir = Directory.CreateTempSubdirectory("zing-syncpcs-account-").FullName;
+	private readonly string _bAccountDir = Directory.CreateTempSubdirectory("zing-syncpcs-account-b-").FullName;
 
 	public LocalSyncServer Server { get; }
 	public SyncPc A { get; }
@@ -160,11 +160,12 @@ internal sealed class TwoPcs : IDisposable
 		await new SyncKeys(Account, A.Vault, A.Client).TurnOnAsync(Strong, Ct);
 	}
 
-	/// <summary>B gets A's keys, signs in as the same Google account and syncs once.</summary>
+	/// <summary>B signs in as the same Google account, restores from sync with the Zing password, and syncs once.</summary>
 	public async Task JoinBAsync()
 	{
-		_b = new SyncPc(Server, keysFrom: A.Dir);
+		_b = new SyncPc(Server);
 		await B.SignInAsync();
+		await new SyncRestore(new AccountStore(_bAccountDir, new FakeCipher()), B.Vault, B.Client).RestoreWithPasswordAsync(Strong, Ct);
 		await B.SyncAsync();
 	}
 
@@ -192,5 +193,6 @@ internal sealed class TwoPcs : IDisposable
 		A.Dispose();
 		Server.Dispose();
 		Directory.Delete(_accountDir, recursive: true);
+		Directory.Delete(_bAccountDir, recursive: true);
 	}
 }

@@ -303,9 +303,9 @@ public sealed class SyncBridgeTests : IDisposable
 		public SettingsStore Settings { get; } = new();
 		public VaultSwitch Vaults { get; }
 
-		public Switched(FakeSealer sealer)
+		public Switched(FakeSealer sealer, bool on = true)
 		{
-			Settings.Set("passwordAutofill", true);
+			Settings.Set("passwordAutofill", on);
 			Vaults = new VaultSwitch(Settings, () => new VaultStore(Dir, new FakeCipher(), sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents()),
 				e => throw new Xunit.Sdk.XunitException($"the vault couldn't be read: {e}"), () => File.Exists(Path.Combine(Dir, VaultStore.VaultFileName)),
 				() => VaultKeys.SyncOnDisk(Path.Combine(Dir, VaultStore.KeysFileName)));
@@ -367,6 +367,77 @@ public sealed class SyncBridgeTests : IDisposable
 		switched.Settings.Set("passwordAutofill", true);
 		Assert.NotSame(first, app.SyncClients.For(switched.Vaults.Current!));
 		app.SyncClients.Dispose();
+	}
+
+	[Fact]
+	public async Task OnAFreshProfileRestoreFromSyncTurnsTheVaultOnAndMakesTheAccountWithThePassword()
+	{
+		var a = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		await _vault.SaveAsync(new NewLogin("https://bank.example.test", "ada", "bank-secret", "Bank", ""));
+		Value(await Invoke(a, "sync:sign-in"));
+		Value(await Invoke(a, "sync:turn-on", Strong));
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+
+		var signedIn = Value(await Invoke(b, "sync:restore-sign-in"));
+		var wrong = Value(await Invoke(b, "sync:restore-password", "labour-muzzle-medici-rushes-fiction"));
+		Assert.False(account.State().HasAccount);
+		var restored = Value(await Invoke(b, "sync:restore-password", Strong));
+
+		Assert.True(signedIn.GetProperty("signedIn").GetBoolean());
+		Assert.True(fresh.Settings.Get("passwordAutofill")!.GetValue<bool>());
+		Assert.Equal("wrong-password", wrong.GetProperty("code").GetString());
+		Assert.Equal("ok", restored.GetProperty("status").GetString());
+		Assert.True(restored.GetProperty("state").GetProperty("signedIn").GetBoolean());
+		account.CheckPassword(Strong);
+		Assert.Equal(_vault.VaultId, fresh.Vaults.Current!.VaultId);
+	}
+
+	[Fact]
+	public async Task ARecoveryKeyRestoreWaitsForANewPasswordBeforeTheAccountIsMade()
+	{
+		var a = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		Value(await Invoke(a, "sync:sign-in"));
+		var recovery = Value(await Invoke(a, "sync:turn-on", Strong)).GetProperty("recoveryKey").GetString()!;
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+
+		var mistyped = await Invoke(b, "sync:restore-recovery-key", recovery[..^1]);
+		Assert.True((await Invoke(b, "sync:restore-recovery-key", recovery)).GetProperty("ok").GetBoolean());
+		Assert.False(account.State().HasAccount);
+		var set = Value(await Invoke(b, "sync:restore-new-password", "labour-muzzle-medici-rushes-fiction"));
+
+		Assert.Equal(nameof(RecoveryKeyFormatException), mistyped.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal("ok", set.GetProperty("status").GetString());
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+	}
+
+	[Fact]
+	public async Task SigningInAfterAPasswordChangedElsewhereChecksTheNewPasswordByUnwrapping()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		var stored = _vault.SyncKeys!;
+		using (var keys = await _vault.KeyMaterialAsync())
+		{
+			var newer = SyncKeysBlob.Parse(stored.Blob).WithPassword(keys, "labour-muzzle-medici-rushes-fiction").ToBytes();
+			_vault.MarkPasswordChangedElsewhere(newer, stored.Version + 1);
+		}
+		SyncRestore.AskIfPasswordChangedElsewhere(account, _vault);
+
+		var old = Value(await Invoke(bridge, "account:sign-in", Strong));
+		var signedIn = Value(await Invoke(bridge, "account:sign-in", "labour-muzzle-medici-rushes-fiction"));
+
+		Assert.Equal("wrong-password", old.GetProperty("code").GetString());
+		Assert.Equal("ok", signedIn.GetProperty("status").GetString());
+		Assert.False(signedIn.GetProperty("state").GetProperty("passwordChangedElsewhere").GetBoolean());
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+		Assert.Equal(stored.Version + 1, _vault.SyncKeys!.Version);
 	}
 
 	[Fact]

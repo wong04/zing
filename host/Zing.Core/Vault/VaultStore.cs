@@ -692,20 +692,97 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	}
 
 	/// <summary>The recovery key, unsealed with the secret key: asks Hello unless it is held (Ruling 44). A cancelled Hello reveals nothing.</summary>
+	/// <exception cref="SyncRecoveryKeyNotOnThisPcException">This PC was restored with the password, so it never had the recovery key.</exception>
 	public async Task<string> RecoveryKeyAsync()
 	{
 		var sync = SyncKeys ?? throw new SyncNotOnException();
+		var sealedRecovery = sync.SealedRecoveryKey ?? throw new SyncRecoveryKeyNotOnThisPcException();
 		RequireHello();
 		var keys = Keys();
 		var secretKey = await SecretKeyAsync(keys);
 		try
 		{
-			return RecoverySeal.Open(secretKey, keys.VaultId, sync.SealedRecoveryKey);
+			return RecoverySeal.Open(secretKey, keys.VaultId, sealedRecovery);
 		}
 		finally
 		{
 			CryptographicOperations.ZeroMemory(secretKey);
 		}
+	}
+
+	/// <summary>
+	/// Restoring from sync (Task 14): <paramref name="keys"/>, unwrapped from the server's copy, become this PC's, sealed with one Hello
+	/// call, and sync is on as <paramref name="sync"/> says. Pending keys go with the old ones. Refused before Hello, and again before
+	/// the write, when this vault holds logins under other keys, which would no longer open.
+	/// </summary>
+	/// <exception cref="SyncRestoreWouldReplaceLoginsException">The vault holds logins under another vault ID.</exception>
+	public async Task RestoreKeysAsync(VaultKeyMaterial keys, VaultSyncKeys sync)
+	{
+		RequireHello();
+		lock (_gate) RequireRestorableOver(keys.VaultId);
+		await _creatingKeys.WaitAsync();
+		try
+		{
+			var restored = await VaultKeys.SealRestoredAsync(_cipher, _sealer, keys, sync);
+			lock (_gate)
+			{
+				RequireOpen();
+				RequireRestorableOver(keys.VaultId);
+				restored.Save(KeysFile);
+				_keys = restored;
+				// A secret key held from before was the old keys' one.
+				WipeHeldKey();
+			}
+		}
+		finally
+		{
+			_creatingKeys.Release();
+		}
+		SyncChanged?.Invoke();
+	}
+
+	/// <summary>Under <c>_gate</c>.</summary>
+	private void RequireRestorableOver(string vaultId)
+	{
+		if (_keys is { } held && held.VaultId != vaultId && _records.Count > 0) throw new SyncRestoreWouldReplaceLoginsException(_records.Count);
+	}
+
+	/// <summary>Sync found the server's keys at a later version than this PC's: the password was changed on another PC (Task 14).</summary>
+	public event Action? SyncPasswordChangedElsewhere;
+
+	/// <summary>
+	/// Keeps the server's keys at <paramref name="version"/>, later than this PC's and than any it kept before, in keys.bin beside this
+	/// PC's own, until the person enters the new password (<see cref="CommitNewerSyncKeys"/>). On disk when it returns.
+	/// </summary>
+	public void MarkPasswordChangedElsewhere(byte[] blob, long version)
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			var keys = Keys();
+			var sync = keys.Sync ?? throw new SyncNotOnException();
+			if (version <= Math.Max(sync.Version, sync.NewerVersion)) throw new ArgumentOutOfRangeException(nameof(version), version, $"The keys this PC holds are already at version {Math.Max(sync.Version, sync.NewerVersion)}");
+			var next = keys.WithSync(sync with { NewerBlob = blob, NewerVersion = version });
+			next.Save(KeysFile);
+			_keys = next;
+		}
+		SyncPasswordChangedElsewhere?.Invoke();
+	}
+
+	/// <summary>The newer keys were opened with the new password, so they become this PC's sync keys. On disk when it returns.</summary>
+	/// <exception cref="SyncPendingKeysReplacedException">The newer keys are other keys, or there are none.</exception>
+	public void CommitNewerSyncKeys(byte[] blob)
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			var keys = Keys();
+			if (keys.Sync is not { NewerBlob: { } newer } sync || !newer.AsSpan().SequenceEqual(blob)) throw new SyncPendingKeysReplacedException();
+			var next = keys.WithSync(sync with { Blob = newer, Version = sync.NewerVersion, NewerBlob = null, NewerVersion = 0 });
+			next.Save(KeysFile);
+			_keys = next;
+		}
+		SyncChanged?.Invoke();
 	}
 
 	/// <summary>Under <c>_gate</c>.</summary>

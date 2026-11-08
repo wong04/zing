@@ -301,6 +301,7 @@ public sealed class SyncEngine : IDisposable
 		await SyncKeys.SettlePendingAsync(_vault, _client, signedIn, cancellation);
 		if (_vault.SyncKeys?.UserId != signedIn.UserId) return;
 		var user = signedIn.UserId;
+		await CheckKeysVersionAsync(user, cancellation);
 		_vault.StartSyncAs(user);
 		_vault.TombstoneDue(_clock.Now());
 		for (var attempt = 0; attempt < ManifestAttempts; attempt++)
@@ -310,6 +311,21 @@ public sealed class SyncEngine : IDisposable
 			return;
 		}
 		throw new SyncManifestBusyException();
+	}
+
+	/// <summary>
+	/// The server's keys at a later version than this PC's mean the password was changed on another PC (Task 14): they're kept for the
+	/// next start, which asks for the new password and checks it by unwrapping them, and the vault says so once. The keys themselves are
+	/// the same, so the sync goes on. Keys for another vault, or that aren't Zing's, stop it.
+	/// </summary>
+	private async Task CheckKeysVersionAsync(string user, CancellationToken cancellation)
+	{
+		var stored = _vault.SyncKeys!;
+		var server = await _client.GetKeysAsync(cancellation, asUser: user);
+		if (server is null || server.Version <= Math.Max(stored.Version, stored.NewerVersion)) return;
+		var blob = SyncKeysBlob.Parse(server.Blob);
+		if (blob.VaultId != _vault.VaultId) throw new SyncProtocolException($"The sync server's keys are for vault {blob.VaultId}, not this vault ({_vault.VaultId})");
+		_vault.MarkPasswordChangedElsewhere(server.Blob, server.Version);
 	}
 
 	/// <summary>One pass; false when another PC replaced the manifest while this one wrote it, so the caller goes round again.</summary>

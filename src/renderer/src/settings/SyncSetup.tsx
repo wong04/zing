@@ -3,16 +3,16 @@ import type { SyncState } from '@shared/vault/vault'
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 
-type Strength = typeof import('@shared/vault/passwordStrength')
+export type Strength = typeof import('@shared/vault/passwordStrength')
 
 /** What went wrong, for the person. A refused host call carries the host's own sentence, after the channel. */
-function messageOf(error: unknown): string {
+export function messageOf(error: unknown): string {
 	if (!(error instanceof Error)) throw error
 	return error.message.replace(/^[a-z-]+:[a-z-]+: /, '')
 }
 
 /** zxcvbn and its English words are large, so they load only when Settings asks for a password. */
-function useStrength(): Strength | undefined {
+export function useStrength(): Strength | undefined {
 	const [strength, setStrength] = useState<Strength>()
 	useEffect(() => {
 		let current = true
@@ -50,7 +50,7 @@ export function useSyncState(): { sync: SyncState | undefined; error: string | u
 }
 
 /** The renderer's zxcvbn verdict, for the meter only: the host checks the password again with its own. */
-function StrengthMeter({ strength, password }: { strength: Strength | undefined; password: string }) {
+export function StrengthMeter({ strength, password }: { strength: Strength | undefined; password: string }) {
 	if (!strength || password === '') return null
 	const verdict = strength.syncStrength(password)
 	return (
