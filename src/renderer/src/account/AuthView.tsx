@@ -4,7 +4,7 @@ import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { LockIcon, MailIcon, PersonIcon, TextIcon } from '../components/icons'
 import { SyncRestore, type RestoreWith } from '../settings/SyncRestore'
-import { useSyncState } from '../settings/SyncSetup'
+import { messageOf, useSyncState } from '../settings/SyncSetup'
 import { initials } from './useAccount'
 import './account.css'
 
@@ -40,7 +40,8 @@ export function AuthView({ account }: { account: AccountState }) {
 				setError("The two passwords don't match.")
 				return
 			}
-			void zing.signUp(username, displayName, email, password).then(finish)
+			// With sync on (keys.bin says so), the host refuses a new account and says why (final review I2).
+			void zing.signUp(username, displayName, email, password).then(finish, (failure: unknown) => setError(messageOf(failure)))
 			return
 		}
 		if (!resetting) {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { AccountOutcome } from '@shared/shell/shellState'
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField, SegmentedControl } from '../components'
-import { messageOf, StrengthMeter, useStrength, useSyncState } from './SyncSetup'
+import { StrengthMeter, useAction, useStrength, useSyncState } from './SyncSetup'
 import './settings.css'
 
 export type RestoreWith = 'password' | 'recoveryKey'
@@ -31,21 +31,7 @@ export function SyncRestore({ start, onBack }: { start: RestoreWith; onBack: () 
 	const [secret, setSecret] = useState('')
 	const [next, setNext] = useState('')
 	const [again, setAgain] = useState('')
-	const [busy, setBusy] = useState(false)
-	const [error, setError] = useState<string>()
-
-	const run = (work: () => Promise<void>): void =>
-		void (async () => {
-			setError(undefined)
-			setBusy(true)
-			try {
-				await work()
-			} catch (failure) {
-				setError(messageOf(failure))
-			} finally {
-				setBusy(false)
-			}
-		})()
+	const { busy, error, run } = useAction()
 
 	const signIn = (): void =>
 		run(async () => {

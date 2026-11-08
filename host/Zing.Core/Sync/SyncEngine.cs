@@ -47,7 +47,7 @@ public sealed class SyncEngine : IDisposable
 	public static readonly TimeSpan RefreshRetry = TimeSpan.FromSeconds(10);
 
 	/// <summary>How long after the first unanswered refresh <see cref="RefreshRetry"/> is used, within the server's 2-minute window.</summary>
-	private static readonly TimeSpan RefreshRetryWindow = TimeSpan.FromSeconds(110);
+	public static readonly TimeSpan RefreshRetryWindow = TimeSpan.FromSeconds(110);
 
 	private const int PushRounds = 5;
 	private const int ManifestAttempts = 3;

@@ -611,19 +611,6 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 		}
 	}
 
-	/// <summary>Stores what turning on sync made, or a password change re-wrapped, in keys.bin beside the keys. On disk when it returns.</summary>
-	public void SaveSyncKeys(VaultSyncKeys sync)
-	{
-		lock (_gate)
-		{
-			RequireOpen();
-			var next = Keys().WithSync(sync);
-			next.Save(KeysFile);
-			_keys = next;
-		}
-		SyncChanged?.Invoke();
-	}
-
 	/// <summary>The keys a PUT /keys is sending or sent, until its outcome is settled; null otherwise. No Hello.</summary>
 	public VaultPendingKeys? PendingSyncKeys
 	{

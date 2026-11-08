@@ -10,11 +10,13 @@ export interface SyncBanner {
 }
 
 /**
- * The one warning the Sync row shows: the last sync's error when there is one (the host pushes it in sync:state, an action that
- * failed with it included), otherwise what the last action here failed with. Never both, so one failure isn't said twice (M11).
+ * The one warning the Sync row shows: what the last action here failed with, when it failed after the last state the host pushed
+ * (the row drops it when a newer state comes, M3), otherwise the last sync's error. Never both, so one failure isn't said twice (M11).
+ * Upload this PC's copy is offered whenever the last sync's error is one it answers.
  */
 export function syncBanner(sync: SyncState, failure: string | undefined): SyncBanner | undefined {
-	if (sync.signedIn && sync.error) return { message: sync.message ?? failure ?? 'Sync stopped.', offerUpload: offersUploadLocal(sync.error) }
-	if (failure) return { message: failure, offerUpload: false }
+	const offerUpload = sync.signedIn && offersUploadLocal(sync.error)
+	if (failure) return { message: failure, offerUpload }
+	if (sync.signedIn && sync.error) return { message: sync.message ?? 'Sync stopped.', offerUpload }
 	return undefined
 }

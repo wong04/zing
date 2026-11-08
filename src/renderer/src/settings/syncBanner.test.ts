@@ -25,6 +25,12 @@ describe('syncBanner', () => {
 		expect(syncBanner(state, 'The sync server went back.')).toEqual({ message: 'The sync server went back.', offerUpload: true })
 	})
 
+	it('shows an action’s own failure over an older sync error (M3)', () => {
+		const state = on({ error: 'unreachable', message: 'Zing couldn’t reach the sync server.' })
+		expect(syncBanner(state, 'Zing couldn’t write sync.json')).toEqual({ message: 'Zing couldn’t write sync.json', offerUpload: false })
+		expect(syncBanner(on({ error: 'server-withheld-item', message: 'Held back.' }), 'Sign in to sync first.')).toEqual({ message: 'Sign in to sync first.', offerUpload: true })
+	})
+
 	it('shows an action’s failure when the last sync has no error', () => {
 		expect(syncBanner(on(), 'Signed out of sync, sign in again')).toEqual({ message: 'Signed out of sync, sign in again', offerUpload: false })
 		expect(syncBanner({ signedIn: false, on: false, recoveryPending: false }, 'Sync isn’t set up')).toMatchObject({ offerUpload: false })

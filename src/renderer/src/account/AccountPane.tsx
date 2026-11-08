@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { zing } from '../api'
-import { PillButton, PillField, Toggle } from '../components'
+import { InfoBanner, PillButton, PillField, Toggle } from '../components'
 import { SettingRowShell } from '../settings/SettingRowShell'
+import { messageOf } from '../settings/SyncSetup'
 import { initials, useAccount } from './useAccount'
 
 /** Settings › Account: the profile, the launch lock, sign out and delete (Krackn accountPane). */
@@ -11,6 +12,8 @@ export function AccountPane() {
 	const [name, setName] = useState('')
 	const [email, setEmail] = useState('')
 	const [confirmDelete, setConfirmDelete] = useState(false)
+	// Why Delete was refused: with sync on, the host says to turn it off first (final review I2).
+	const [deleteError, setDeleteError] = useState<string>()
 	if (!account) return null
 	const user = account.profile
 	if (!user) {
@@ -27,6 +30,13 @@ export function AccountPane() {
 		setName(user.displayName)
 		setEmail(user.email)
 		setEditing(true)
+	}
+	const deleteAccount = (): void => {
+		setDeleteError(undefined)
+		zing.deleteAccount().then(
+			() => setConfirmDelete(false),
+			(failure: unknown) => setDeleteError(messageOf(failure)),
+		)
 	}
 	const save = (): void => {
 		void zing.updateProfile(name, email)
@@ -85,7 +95,7 @@ export function AccountPane() {
 						<PillButton variant="ghost" size="small" onClick={() => setConfirmDelete(false)}>
 							Keep
 						</PillButton>
-						<PillButton size="small" onClick={() => void zing.deleteAccount()}>
+						<PillButton size="small" onClick={deleteAccount}>
 							Delete
 						</PillButton>
 					</span>
@@ -95,6 +105,7 @@ export function AccountPane() {
 					</PillButton>
 				)}
 			</SettingRowShell>
+			{deleteError ? <InfoBanner kind="warning">{deleteError}</InfoBanner> : null}
 		</>
 	)
 }

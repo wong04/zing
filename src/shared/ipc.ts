@@ -513,8 +513,6 @@ export interface EventContract {
 	'vault:state': VaultState
 	/** Sync was signed in or out, turned on, or its recovery key confirmed saved, here or in another window, or the server ended the sign-in. */
 	'sync:state': SyncState
-	/** Sync found the Zing password changed on another PC: the next start asks for the new one. */
-	'sync:password-changed-elsewhere': undefined
 	'engines:progress': EngineProgress
 	'engines:output': EngineOutput
 	'engines:exit': EngineExit

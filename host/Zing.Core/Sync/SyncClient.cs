@@ -156,9 +156,19 @@ public sealed class SyncClient : IDisposable
 		await EnsureSuccess(response, "auth/google", cancellation);
 		var login = await Read<LoginResponse>(response, cancellation);
 		var account = new SyncAccount(login.UserId, email, login.Refresh);
-		var replaced = StoredToReplace();
-		_store.SaveSyncAccount(account);
-		_session = new Session(login.Session, login.UserId);
+		SyncAccount? replaced;
+		// Under the refresh lock, as AdoptAsync is (M5): a refresh finishing meanwhile can't write the old account back over this one.
+		await _refreshing.WaitAsync(CancellationToken.None);
+		try
+		{
+			replaced = StoredToReplace();
+			_store.SaveSyncAccount(account);
+			_session = new Session(login.Session, login.UserId);
+		}
+		finally
+		{
+			_refreshing.Release();
+		}
 		RevokeReplaced(replaced, account);
 		return account;
 	}
@@ -183,6 +193,17 @@ public sealed class SyncClient : IDisposable
 			_refreshing.Release();
 		}
 		RevokeReplaced(replaced, account);
+	}
+
+	/// <summary>
+	/// Sends the refresh that got no answer again (<see cref="RefreshUnanswered"/>), so the server still takes the same token as a retry:
+	/// for a client no sync engine runs on, such as a restore's (final review I3). A refresh answered meanwhile is used instead.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">The last refresh was answered: another one would spend a token for nothing.</exception>
+	public async Task RetryRefreshAsync(CancellationToken cancellation = default)
+	{
+		if (!RefreshUnanswered) throw new InvalidOperationException("The last refresh was answered, so there is nothing to retry");
+		await RefreshAsync(_session, cancellation);
 	}
 
 	/// <summary>The sign-in a save is about to replace; null when there's none, or when it doesn't unseal and so can't be revoked.</summary>

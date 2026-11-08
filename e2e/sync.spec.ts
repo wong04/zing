@@ -164,7 +164,7 @@ type StoredSync = { sync: { userId: string; version: number; recoveryConfirmed: 
 
 const recoveryScreen = (sheet: Page) => syncGroup(sheet).getByRole('alertdialog', { name: 'Save your recovery key' })
 
-test('turning on sync shows the recovery key, and nothing else of the vault, until it is confirmed saved, even after a restart', async () => {
+test('turning on sync shows the recovery key, and nothing else of the vault, until it is confirmed saved, even after a restart, and then the account can’t be deleted', async () => {
 	const first = await launchZing({ userDataDir: vaultProfile(), env: syncEnv(TURN_ON_SUBS[0]) })
 	await signUp(first, STRONG)
 	const sheet = await openSync(first)
@@ -210,6 +210,13 @@ test('turning on sync shows the recovery key, and nothing else of the vault, unt
 	await expect(syncGroup(reopened)).toContainText(`Sync is on. Signed in as ${TURN_ON_SUBS[0]}@example.test.`)
 	await expect(reopened.getByRole('button', { name: 'Import CSV' })).toBeVisible()
 	expect((JSON.parse(readFileSync(keysFile(again), 'utf8')) as StoredSync).sync).toMatchObject({ recoveryConfirmed: true })
+
+	// With sync on, the account password is the sync password, so the account isn't deleted (final review I2).
+	await reopened.getByRole('button', { name: 'Account' }).click()
+	await reopened.getByRole('button', { name: 'Delete…' }).click()
+	await reopened.getByRole('button', { name: 'Delete', exact: true }).click()
+	await expect(reopened.getByText('Sync is on for this PC. Turn off sync first.')).toBeVisible()
+	await expect(reopened.getByRole('button', { name: 'Sign Out' })).toBeVisible()
 	await again.close()
 })
 

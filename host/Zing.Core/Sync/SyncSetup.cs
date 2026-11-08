@@ -89,6 +89,12 @@ public sealed class SyncNeedsTheVaultException()
 public sealed class SyncNeedsRecoveryKeyException()
 	: Exception("Sync is on for this PC, so a forgotten Zing password is reset with your recovery key: restore from sync with it, then choose a new password.");
 
+/// <summary>
+/// Deleting the Zing account, or making a new one, while keys.bin holds sync keys (final review I2): the account password is the
+/// sync password, so a new local one would leave the server's keys wrapped by a password this PC no longer asks for.
+/// </summary>
+public sealed class SyncIsOnException() : Exception("Sync is on for this PC. Turn off sync first.");
+
 /// <summary>A commit of keys that aren't the ones pending: another call replaced them, so the server may not hold these.</summary>
 public sealed class SyncPendingKeysReplacedException()
 	: Exception("The keys waiting for the sync server were replaced while they were sent, so Zing kept neither.");
@@ -199,7 +205,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		{
 			if (!resumed) throw new SyncAlreadyOnException();
 			using var held = await vault.KeyMaterialAsync();
-			await UploadAsync(Snapshot(held), signedIn, cancellation);
+			await UploadAsync(ResumedSnapshot(held, signedIn.UserId), signedIn, cancellation);
 			return RecoverySeal.Open(held.SecretKey, held.VaultId, stored.SealedRecoveryKey ?? throw new SyncRecoveryKeyNotOnThisPcException());
 		}
 
@@ -429,20 +435,40 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	};
 
 	/// <summary>The items to upload and the manifest that lists them, sealed before the keys are sent so a manifest the server would refuse stops the turn-on first.</summary>
-	private (IReadOnlyList<LoginRecord> Records, byte[] Manifest) Snapshot(VaultKeyMaterial keys)
+	private Upload Snapshot(VaultKeyMaterial keys)
 	{
 		var records = vault.Records;
-		var manifest = SyncManifest.Seal(keys.IndexKey, keys.VaultId, 1, records.Select(r => new SyncManifestEntry(r.ItemId, r.Version)));
-		if (manifest.Length > SyncManifest.MaxBytes) throw new SyncManifestTooLargeException(records.Count);
-		return (records, manifest);
+		return Sealed(keys, records, [.. records.Select(r => new SyncManifestEntry(r.ItemId, r.Version))]);
 	}
+
+	/// <summary>
+	/// A turn-on that resumes one that stopped part way (M6) sends only what no batch of it got stored: an item with a sync base is
+	/// on the server already, and one edited here since goes with the next sync, over that base. The manifest lists it at the server's version.
+	/// </summary>
+	private Upload ResumedSnapshot(VaultKeyMaterial keys, string userId)
+	{
+		vault.StartSyncAs(userId);
+		var records = vault.Records;
+		var known = records.ToDictionary(r => r.ItemId, r => vault.KnownVersion(r.ItemId), StringComparer.Ordinal);
+		return Sealed(keys, [.. records.Where(r => known[r.ItemId] is null)], [.. records.Select(r => new SyncManifestEntry(r.ItemId, known[r.ItemId] ?? r.Version))]);
+	}
+
+	private static Upload Sealed(VaultKeyMaterial keys, IReadOnlyList<LoginRecord> sending, IReadOnlyList<SyncManifestEntry> listed)
+	{
+		var manifest = SyncManifest.Seal(keys.IndexKey, keys.VaultId, 1, listed);
+		if (manifest.Length > SyncManifest.MaxBytes) throw new SyncManifestTooLargeException(listed.Count);
+		return new Upload(sending, manifest, listed);
+	}
+
+	/// <summary>What a turn-on sends: the items, and the manifest sealed over what it lists.</summary>
+	private sealed record Upload(IReadOnlyList<LoginRecord> Records, byte[] Manifest, IReadOnlyList<SyncManifestEntry> Listed);
 
 	/// <summary>
 	/// Every item in batches, then the manifest. Each batch the server takes is stored at once as its items' sync bases, with the
 	/// revisions it gave, and leaves the queue; so does an item the server already holds byte for byte (a batch whose answer was lost,
 	/// or a PC that stopped part way), which is "already uploaded", not a conflict. The revision and manifest floors start here.
 	/// </summary>
-	private async Task UploadAsync((IReadOnlyList<LoginRecord> Records, byte[] Manifest) upload, SyncAccount signedIn, CancellationToken cancellation)
+	private async Task UploadAsync(Upload upload, SyncAccount signedIn, CancellationToken cancellation)
 	{
 		vault.StartSyncAs(signedIn.UserId);
 		foreach (var batch in upload.Records.Chunk(PushBatch))
@@ -460,16 +486,10 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		}
 		var manifest = await client.PutManifestAsync(upload.Manifest, 0, cancellation, asUser: signedIn.UserId);
 		vault.RaiseManifestFloor(signedIn.UserId, manifest, upload.Manifest);
-		vault.MarkListed(signedIn.UserId, [.. upload.Records.Select(r => new SyncManifestEntry(r.ItemId, r.Version))]);
+		vault.MarkListed(signedIn.UserId, upload.Listed);
 	}
 
-	private static bool AlreadyUploaded(LoginRecord sent, SyncItem held)
-	{
-		var stored = SyncWire.ToRecord(held);
-		return held.Revision > 0 && stored.Version == sent.Version && stored.Tombstone == sent.Tombstone
-			&& stored.Summary.AsSpan().SequenceEqual(sent.Summary) && stored.Password.AsSpan().SequenceEqual(sent.Password)
-			&& stored.History.Length == sent.History.Length && stored.History.Zip(sent.History).All(h => h.First.AsSpan().SequenceEqual(h.Second));
-	}
+	private static bool AlreadyUploaded(LoginRecord sent, SyncItem held) => held.Revision > 0 && VaultStore.SameRecord(sent, SyncWire.ToRecord(held));
 }
 
 /// <summary>Turn on sync in a build made without a Google client ID. Never a silent fallback (Ruling 48).</summary>

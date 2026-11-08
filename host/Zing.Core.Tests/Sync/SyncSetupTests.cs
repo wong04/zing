@@ -487,6 +487,32 @@ public sealed class SyncSetupTests : IDisposable
 		Assert.Contains("PUT /manifest", _server.Wire.Log);
 	}
 
+	[Fact]
+	public async Task AResumedTurnOnLeavesAnItemTheServerTookAndEditedHereSinceForTheNextSync()
+	{
+		var account = Account(Strong);
+		var id = await _vault.SaveAsync(new NewLogin(Origin, Username, LoginPassword, "Bank", ""));
+		await _vault.SaveAsync(new NewLogin("https://mail.example.test", Username, "mail-secret", "Mail", ""));
+		await SignInToSync();
+		var (pending, recovery) = await PendingTurnOn(account);
+		_vault.SavePendingSyncKeys(pending);
+		await _client.PutKeysAsync(pending.Blob, 0, Ct);
+		// The stopped turn-on's first batch: the server took the bank login and this PC stored its base (M6).
+		var user = _vault.SyncAccount()!.UserId;
+		_vault.StartSyncAs(user);
+		var bank = _vault.Records.Single(r => r.ItemId == id);
+		var taken = await _client.PostChangesAsync([SyncWire.NewItem(bank)], Ct, asUser: user);
+		_vault.MarkPushed(user, [bank], taken.Accepted);
+		_vault.UpdateSummary(id, "Bank, edited", "", Username);
+
+		Assert.Equal(recovery, await TurnOn(account));
+
+		var unsent = Assert.Single(_vault.Unsent());
+		Assert.Equal(id, unsent.Record.ItemId);
+		Assert.Equal(taken.Accepted.Single().Revision, unsent.BaseRevision);
+		Assert.Equal(1, _vault.SyncKeys!.Version);
+	}
+
 	private const string ThirdStrong = "velvet-orbit-candle-meadow-thistle";
 
 	/// <summary>A change the server took (wrapped under <see cref="NextStrong"/>) whose PC stopped before its own password changed.</summary>

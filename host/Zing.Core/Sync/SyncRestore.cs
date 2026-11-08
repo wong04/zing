@@ -10,9 +10,12 @@ public sealed class SyncNothingToRestoreException()
 public sealed class WrongRecoveryKeyException()
 	: Exception("That recovery key doesn't open the passwords this Google account syncs.");
 
-/// <summary>Restoring over a vault on this PC that holds logins under other keys: they would no longer open.</summary>
+/// <summary>
+/// Restoring over a vault on this PC that holds logins under other keys: they would no longer open. Nothing in Zing empties the vault
+/// (turning it off keeps its files, M4), so the advice is to export, then remove those files with Zing closed.
+/// </summary>
 public sealed class SyncRestoreWouldReplaceLoginsException(int logins)
-	: Exception($"This PC already has {logins} saved passwords that aren't the synced ones, so Zing didn't restore over them. Export them first, then turn the password vault off and on to start empty.");
+	: Exception($"This PC already has {logins} saved passwords that aren't the synced ones, so Zing didn't restore over them. Export them first, then close Zing and delete the vault folder in %APPDATA%\\Zing to start empty.");
 
 /// <summary>
 /// Restoring on a PC whose Zing account doesn't sync with the signed-in Google account (I1): only the forgotten-password case, keys.bin

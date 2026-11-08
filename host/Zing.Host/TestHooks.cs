@@ -121,7 +121,7 @@ public static class TestHooks
 		if (Environment.GetEnvironmentVariable("ZING_E2E_SYNC_SERVER") is not { Length: > 0 } url) return null;
 		var sub = Environment.GetEnvironmentVariable("ZING_E2E_SYNC_SUB") ?? throw new InvalidOperationException("ZING_E2E_SYNC_SERVER needs ZING_E2E_SYNC_SUB, the sub to sign in as");
 		var server = new Uri(url);
-		return new Zing.Core.Sync.SyncSetup(server, new FakeIssuerSignIn(server, sub));
+		return new Zing.Core.Sync.SyncSetup(server, new FakeIssuerSignIn(server, sub), Warn: Faults.Warning);
 	}
 
 	private static int? _closeNextAt;

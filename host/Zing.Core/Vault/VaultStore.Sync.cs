@@ -127,7 +127,7 @@ public sealed partial class VaultStore
 	/// <summary>
 	/// Stores a pulled page of server copies. Each is checked first (its tag, Ruling 25, and this PC's floor for it), and nothing of
 	/// the page is stored if one fails. A copy of an item unchanged here replaces it; one changed here too is merged
-	/// (<see cref="Merge.Items"/>) and stays unsent. The items and their bases are written in one replace, after the cursor and floor.
+	/// (<see cref="Merge.Items"/>) and stays unsent. The items and their bases are written in one replace, after the floor and before the cursor.
 	/// </summary>
 	/// <param name="cursor">Where the next pull starts once these are stored; null leaves it.</param>
 	/// <param name="serverRevision">The revision the server reported with them, for the floor.</param>
@@ -178,7 +178,12 @@ public sealed partial class VaultStore
 		if (placeholder is not null) throw new SyncProtocolException($"The sync server sent item {placeholder.ItemId} at revision {placeholder.Revision} in a pull");
 	}
 
-	/// <summary>Runs <paramref name="apply"/> on a stage, then writes the cursor and floor, then the items and bases if any changed.</summary>
+	/// <summary>
+	/// Runs <paramref name="apply"/> on a stage, then writes the raised floor, then the items and bases if any changed, then the cursor
+	/// (final review I1). The floor goes first for the reason <see cref="MarkPushed"/> gives; the cursor goes last, so a crash or a
+	/// failed write of vault.zing leaves it before the page, which the next pull serves again and finds the same as stored, rather
+	/// than past items this PC never stored, which would read as a server holding them back.
+	/// </summary>
 	private void ApplyStaged(string userId, Action<Stage> apply, long? cursor, long? serverRevision)
 	{
 		bool changed;
@@ -190,19 +195,19 @@ public sealed partial class VaultStore
 			apply(stage);
 			changed = stage.Changed;
 			var progress = ProgressFor(userId);
-			var next = progress with
-			{
-				Cursor = cursor ?? progress.Cursor,
-				RevisionFloor = Math.Max(progress.RevisionFloor, serverRevision ?? 0),
-			};
-			if (next != progress || _progress is null)
-			{
-				WriteSyncFile(_queued, _syncAccount, _syncSignedOut, next);
-				_progress = next;
-			}
+			var floored = progress with { RevisionFloor = Math.Max(progress.RevisionFloor, serverRevision ?? 0) };
+			if (floored != progress || _progress is null) WriteProgress(floored);
 			if (changed) stage.Write(userId);
+			if (cursor is { } next && next != floored.Cursor) WriteProgress(floored with { Cursor = next });
 		}
 		if (changed) Changed?.Invoke();
+	}
+
+	/// <summary>Under <c>_gate</c>: on disk first, then in memory, so a failed write leaves both as they were.</summary>
+	private void WriteProgress(SyncProgress progress)
+	{
+		WriteSyncFile(_queued, _syncAccount, _syncSignedOut, progress);
+		_progress = progress;
 	}
 
 	/// <summary>
@@ -436,7 +441,8 @@ public sealed partial class VaultStore
 		Changed?.Invoke();
 	}
 
-	private static bool SameRecord(LoginRecord a, LoginRecord b) =>
+	/// <summary>The same item at the same version, byte for byte: one this PC holds and a copy of it, here or on the server.</summary>
+	internal static bool SameRecord(LoginRecord a, LoginRecord b) =>
 		a.ItemId == b.ItemId && a.Version == b.Version && a.Tombstone == b.Tombstone
 		&& a.Summary.AsSpan().SequenceEqual(b.Summary) && a.Password.AsSpan().SequenceEqual(b.Password)
 		&& a.History.Length == b.History.Length && a.History.Zip(b.History).All(h => h.First.AsSpan().SequenceEqual(h.Second));

@@ -4,7 +4,7 @@ import { recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type Syn
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { SettingRowShell } from './SettingRowShell'
-import { RecoveryKeyScreen, ShowRecoveryKey, SyncSetup, useSyncState } from './SyncSetup'
+import { RecoveryKeyScreen, ShowRecoveryKey, SyncSetup, useAction, useSyncState } from './SyncSetup'
 import { syncBanner, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
 import { useVault } from './useVaultData'
 
@@ -217,27 +217,24 @@ function syncDetail(sync: SyncState, busy: boolean): string {
  * Upload this PC's copy, which says what it does before it runs.
  */
 function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: SyncState) => void; turnOn: (password: string) => Promise<void> }) {
-	const [error, setError] = useState<string>()
+	const { busy, error, setError, run } = useAction()
 	// What the last sign-out said (kept-on-server); a pushed state doesn't carry it.
 	const [signOutNotice, setSignOutNotice] = useState<SyncNotice>()
-	const [busy, setBusy] = useState(false)
 	const [confirmingUpload, setConfirmingUpload] = useState(false)
+	// A state pushed after an action failed is newer than that failure, so the failure goes (M3).
+	const [failedAgainst, setFailedAgainst] = useState(sync)
+	if (failedAgainst !== sync) {
+		setFailedAgainst(sync)
+		setError(undefined)
+	}
 
 	const act = (work: () => Promise<SyncState>, after: (state: SyncState) => void = () => undefined): void =>
-		void (async () => {
-			setError(undefined)
+		run(async () => {
 			setSignOutNotice(undefined)
-			setBusy(true)
-			try {
-				const state = await work()
-				setSync(state)
-				after(state)
-			} catch (failure) {
-				setError(messageOf(failure))
-			} finally {
-				setBusy(false)
-			}
-		})()
+			const state = await work()
+			setSync(state)
+			after(state)
+		})
 
 	const signIn = (): void => act(() => zing.signInToSync())
 	const signOut = (): void => act(() => zing.signOutOfSync(), (state) => setSignOutNotice(state.signedIn ? undefined : state.notice))

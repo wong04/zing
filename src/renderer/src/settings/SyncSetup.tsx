@@ -11,6 +11,25 @@ export function messageOf(error: unknown): string {
 	return error.message.replace(/^[a-z-]+:[a-z-]+: /, '')
 }
 
+/** One action at a time: busy while it runs, then what it failed with, for the person, until the next one starts. */
+export function useAction(): { busy: boolean; error: string | undefined; setError: (error: string | undefined) => void; run: (work: () => Promise<void>) => void } {
+	const [busy, setBusy] = useState(false)
+	const [error, setError] = useState<string>()
+	const run = (work: () => Promise<void>): void =>
+		void (async () => {
+			setError(undefined)
+			setBusy(true)
+			try {
+				await work()
+			} catch (failure) {
+				setError(messageOf(failure))
+			} finally {
+				setBusy(false)
+			}
+		})()
+	return { busy, error, setError, run }
+}
+
 /** zxcvbn and its English words are large, so they load only when Settings asks for a password. */
 export function useStrength(): Strength | undefined {
 	const [strength, setStrength] = useState<Strength>()
@@ -72,21 +91,7 @@ export function SyncSetup({ turnOn }: { turnOn: (password: string) => Promise<vo
 	const [next, setNext] = useState('')
 	const [again, setAgain] = useState('')
 	const [suggested, setSuggested] = useState<string>()
-	const [busy, setBusy] = useState(false)
-	const [error, setError] = useState<string>()
-
-	const run = (work: () => Promise<void>): void =>
-		void (async () => {
-			setError(undefined)
-			setBusy(true)
-			try {
-				await work()
-			} catch (failure) {
-				setError(messageOf(failure))
-			} finally {
-				setBusy(false)
-			}
-		})()
+	const { busy, error, run } = useAction()
 
 	const submitCurrent = (): void =>
 		run(async () => {
@@ -176,21 +181,7 @@ export function RecoveryKeyScreen({ recoveryKey, onConfirmed }: { recoveryKey: s
 	const [unsealed, setUnsealed] = useState<string>()
 	const shown = recoveryKey ?? unsealed
 	const [saved, setSaved] = useState(false)
-	const [busy, setBusy] = useState(false)
-	const [error, setError] = useState<string>()
-
-	const run = (work: () => Promise<void>): void =>
-		void (async () => {
-			setError(undefined)
-			setBusy(true)
-			try {
-				await work()
-			} catch (failure) {
-				setError(messageOf(failure))
-			} finally {
-				setBusy(false)
-			}
-		})()
+	const { busy, error, run } = useAction()
 
 	return (
 		<div className="sync-recovery" role="alertdialog" aria-label="Save your recovery key" aria-describedby="sync-recovery-why">
@@ -222,10 +213,10 @@ export function RecoveryKeyScreen({ recoveryKey, onConfirmed }: { recoveryKey: s
 	)
 }
 
-/** With sync on: the recovery key again, after Windows Hello, hidden again on request. */
 /** As long as a revealed password stays shown (VaultSection's REVEAL_MS). */
 const RECOVERY_REVEAL_MS = 30_000
 
+/** With sync on: the recovery key again, after Windows Hello, hidden again on request. */
 export function ShowRecoveryKey() {
 	const [shown, setShown] = useState<string>()
 	const [error, setError] = useState<string>()

@@ -399,6 +399,38 @@ public sealed class SyncBridgeTests : IDisposable
 		Assert.Equal(_vault.SyncAccount()!.UserId, fresh.Vaults.Current.SyncAccount()!.UserId);
 	}
 
+	[Fact]
+	public async Task ARestoreStepWhoseRefreshAnswerIsLostIsRetriedWithinTwoMinutesSoNoPcIsSignedOut()
+	{
+		var clock = new ServerClock();
+		using var server = new LocalSyncServer(clock);
+		var a = Api(new SyncSetup(server.Address, new FakeIssuerSignIn(server), server.Handler()), account: AccountWith(Strong));
+		Value(await Invoke(a, "sync:sign-in"));
+		Value(await Invoke(a, "sync:turn-on", Strong));
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var scheduler = new TestScheduler();
+		var bridge = new Bridge();
+		var api = new ChromeApi(bridge, new AppServices(fresh.Settings, _library, Address.FromDefaults(), new TickingClock(), account, new RelayConsent(), Switch: fresh.Vaults, Sync: new SyncSetup(server.Address, new FakeIssuerSignIn(server), server.Handler()), SyncScheduler: scheduler), _host, "test");
+		_apis.Add(api);
+		Value(await Invoke(bridge, "sync:restore-sign-in"));
+
+		// A step long after the Google sign-in needs a refresh, and its answer is lost (I3).
+		server.Wire.SpoilNext = 1;
+		server.Wire.LoseNextRefreshAnswer = true;
+		Assert.False((await Invoke(bridge, "sync:restore-password", Strong)).GetProperty("ok").GetBoolean());
+		scheduler.Fire(SyncEngine.RefreshRetry);
+		await api.RestoreRefreshRetrying;
+		// The person's next try comes after the server's 2-minute retry window.
+		clock.Advance(TimeSpan.FromMinutes(3));
+		server.Wire.SpoilNext = 1;
+		var restored = Value(await Invoke(bridge, "sync:restore-password", Strong));
+
+		Assert.Equal("ok", restored.GetProperty("status").GetString());
+		Assert.False(fresh.Vaults.Current!.SyncSignedOutByServer);
+		Assert.Equal(3, server.Wire.Refreshes);
+	}
+
 	/// <summary>A turns sync on under <see cref="Strong"/>; answers its recovery key.</summary>
 	private async Task<string> TurnOnElsewhereAsync()
 	{
@@ -575,6 +607,49 @@ public sealed class SyncBridgeTests : IDisposable
 
 		Assert.Equal(nameof(SyncNeedsRecoveryKeyException), refused.GetProperty("error").GetProperty("name").GetString());
 		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task WithSyncOnTheAccountCanNeitherBeDeletedNorMadeAgain()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+
+		var deleted = await Invoke(bridge, "account:delete");
+		var signedUp = await Invoke(bridge, "account:sign-up", "bob", "Bob", "bob@example.test", "a-new-local-password");
+
+		Assert.Equal(nameof(SyncIsOnException), deleted.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal(nameof(SyncIsOnException), signedUp.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal("ada", account.State().Profile!.Username);
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task WithTheVaultOffAndSyncOnTheAccountIsNotDeleted()
+	{
+		using var switched = new Switched(_sealer);
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), switched, account);
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		switched.Settings.Set("passwordAutofill", false);
+
+		var deleted = await Invoke(bridge, "account:delete");
+
+		Assert.Equal(nameof(SyncIsOnException), deleted.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal("ada", account.State().Profile!.Username);
+	}
+
+	[Fact]
+	public async Task WithSyncNeverOnTheAccountIsDeleted()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+
+		Assert.Equal("ok", Value(await Invoke(bridge, "account:delete")).GetProperty("status").GetString());
+		Assert.Null(account.State().Profile);
 	}
 
 	[Fact]

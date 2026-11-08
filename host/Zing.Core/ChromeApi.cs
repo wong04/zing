@@ -348,14 +348,22 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("offer:choose", args => ChooseOffer(Text(args, 0)));
 		bridge.Register("offer:dismiss", _ => Do(DismissOffer));
 		bridge.Register("account:get", _ => app.Account.State());
-		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
+		bridge.Register("account:sign-up", args =>
+		{
+			RequireSyncOff();
+			return app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3)));
+		});
 		bridge.Register("account:sign-in", async args => await SignInToAccountAsync(Text(args, 0)));
 		bridge.Register("account:reset-password", args => app.Account.Run(() => ResetAccountPassword(Text(args, 0))));
 		bridge.Register("account:sign-out", _ => app.Account.Run(app.Account.SignOut));
 		bridge.Register("account:continue-as-guest", _ => app.Account.Run(app.Account.ContinueAsGuest));
 		bridge.Register("account:update-profile", args => app.Account.Run(() => app.Account.UpdateProfile(Text(args, 0), Text(args, 1))));
 		bridge.Register("account:require-password", args => app.Account.Run(() => app.Account.SetRequirePasswordOnLaunch(Bool(args, 0))));
-		bridge.Register("account:delete", _ => app.Account.Run(app.Account.DeleteAccount));
+		bridge.Register("account:delete", _ =>
+		{
+			RequireSyncOff();
+			return app.Account.Run(app.Account.DeleteAccount);
+		});
 		bridge.Register("account:change-password", async args => await ChangeAccountPasswordAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("chrome:app-menu", args => Do(() => Menu(Menus.App(id => Run(id)), args, 0)));
 		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Saved, Text(args, 0), host.Shell), args, 1)));
@@ -899,20 +907,14 @@ public sealed class ChromeApi : IDisposable
 	{
 		vault.Changed += PushVaultState;
 		vault.SyncChanged += PushSyncState;
-		vault.SyncPasswordChangedElsewhere += PushPasswordChangedElsewhere;
+		vault.SyncPasswordChangedElsewhere += PushSyncState;
 	}
 
 	private void Unwatch(VaultStore vault)
 	{
 		vault.Changed -= PushVaultState;
 		vault.SyncChanged -= PushSyncState;
-		vault.SyncPasswordChangedElsewhere -= PushPasswordChangedElsewhere;
-	}
-
-	private void PushPasswordChangedElsewhere()
-	{
-		_host.Push("sync:password-changed-elsewhere", null);
-		PushSyncState();
+		vault.SyncPasswordChangedElsewhere -= PushSyncState;
 	}
 
 	private void PushSyncState() => _host.Push("sync:state", CurrentSyncState());
@@ -1105,6 +1107,15 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	/// <summary>
+	/// Deleting the account, or making one, with sync on (keys.bin says so) would leave the server's keys wrapped by a password this
+	/// PC no longer asks for (final review I2), so both are refused. Nothing signs out of sync on its own.
+	/// </summary>
+	private void RequireSyncOff()
+	{
+		if (_app.Vaults.SyncOnDisk) throw new SyncIsOnException();
+	}
+
+	/// <summary>
 	/// A forgotten password's reset sets a new local check only, so with sync on it's refused (Ruling 54): the gate sends the person to
 	/// Restore from sync with the recovery key instead, which sets the new password on the server and here (Task 14).
 	/// </summary>
@@ -1132,11 +1143,15 @@ public sealed class ChromeApi : IDisposable
 		return AccountOutcome.Ok(_app.Account.State());
 	}
 
-	/// <summary>A restore at this window's gate: its Google sign-in, held in memory until the restore succeeds (M4), its own client, and the restore.</summary>
-	private sealed class Restoring(HeldSyncSignIn signIn, SyncClient client, SyncRestore restore) : IDisposable
+	/// <summary>
+	/// A restore at this window's gate: its Google sign-in, held in memory until the restore succeeds (M4), its own client, the restore,
+	/// and that client's retry of a refresh that got no answer, as the engine does for the vault's client (I3; null without a scheduler).
+	/// </summary>
+	private sealed class Restoring(HeldSyncSignIn signIn, SyncClient client, SyncRestore restore, LostRefreshRetry? retry) : IDisposable
 	{
 		public HeldSyncSignIn SignIn { get; } = signIn;
 		public SyncRestore Restore { get; } = restore;
+		public LostRefreshRetry? Retry { get; } = retry;
 
 		/// <summary>Held by the step running (N5): a second one is refused, not queued. A retired restore keeps it held for good (N7).</summary>
 		public SemaphoreSlim Step { get; } = new(1, 1);
@@ -1145,7 +1160,11 @@ public sealed class ChromeApi : IDisposable
 		/// A newer restore sign-in replaced this one, or was refused: its refresh token is revoked in the background, best effort (Ruling
 		/// 49; N6), then the client goes. A revoke that didn't happen is told to <paramref name="warn"/>.
 		/// </summary>
-		public void Retire(Action<string, Exception> warn) => _ = RetireInBackgroundAsync(warn);
+		public void Retire(Action<string, Exception> warn)
+		{
+			Retry?.Dispose();
+			_ = RetireInBackgroundAsync(warn);
+		}
 
 		private async Task RetireInBackgroundAsync(Action<string, Exception> warn)
 		{
@@ -1163,10 +1182,17 @@ public sealed class ChromeApi : IDisposable
 			}
 		}
 
-		public void Dispose() => client.Dispose();
+		public void Dispose()
+		{
+			Retry?.Dispose();
+			client.Dispose();
+		}
 	}
 
 	private Restoring? _restore;
+
+	/// <summary>The restore client's retry of a refresh that got no answer, while one runs: tests wait on it.</summary>
+	internal Task RestoreRefreshRetrying => _restore?.Retry?.Retrying ?? Task.CompletedTask;
 
 	/// <summary>Whether this restore step turned the vault on, so a step that fails turns it off again.</summary>
 	private bool _restoreTurnedVaultOn;
@@ -1194,7 +1220,8 @@ public sealed class ChromeApi : IDisposable
 				client.Dispose();
 				throw;
 			}
-			var next = new Restoring(held, client, new SyncRestore(_app.Account, VaultForRestore, client, held));
+			var retry = _app.SyncScheduler is { } scheduler ? new LostRefreshRetry(client, scheduler, _app.Clock, _host.Warn) : null;
+			var next = new Restoring(held, client, new SyncRestore(_app.Account, VaultForRestore, client, held), retry);
 			var replaced = _restore;
 			// A step that started during the Google sign-in keeps its restore; taking its step lock retires it for good otherwise.
 			if ((replaced is not null && !replaced.Step.Wait(0)) || Interlocked.CompareExchange(ref _restore, next, replaced) != replaced)

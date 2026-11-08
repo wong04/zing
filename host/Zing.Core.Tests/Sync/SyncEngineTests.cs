@@ -125,6 +125,29 @@ public sealed class SyncEngineTests : IDisposable
 		Assert.Equal(("Edited", "Also edited"), (A.Login(id).Title, A.Login(id).Note));
 	}
 
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task APulledPageThatCouldNotBeStoredIsPulledAgainAndNotTakenAsWithheld(bool restart)
+	{
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+		var id = await _pcs.SaveOnAAsync();
+		await A.SyncAsync();
+
+		// Antivirus or OneDrive holding vault.zing (I1): the replace fails after the page was checked.
+		using (new FileStream(Path.Combine(B.Dir, VaultStore.VaultFileName), FileMode.Open, FileAccess.Read, FileShare.Read))
+		{
+			await Assert.ThrowsAsync<UnauthorizedAccessException>(B.SyncAsync);
+		}
+		if (restart) B.Restart();
+		await B.SyncAsync();
+
+		Assert.Equal("ada", B.Login(id).Username);
+		Assert.Equal("first-password", await B.Vault.PasswordAsync(id));
+		Assert.Null(B.Engine.Status.Error);
+	}
+
 	[Fact]
 	public async Task APcPastTheHorizonResyncsFullyAndADeletedLoginDoesNotComeBack()
 	{
