@@ -377,7 +377,8 @@ public sealed class WebView2Page : IPage
 		await FollowAutofillAsync();
 		if (!IsOpen) return;
 
-		foreach (var action in _queued) action(_core);
+		// By index: an action can call back into Run (a focus that activates a tab), which queues behind it until the end.
+		for (var i = 0; i < _queued.Count; i++) _queued[i](_core);
 		_queued.Clear();
 		_drained = true;
 	}
@@ -588,7 +589,9 @@ public sealed class WebView2Page : IPage
 
 	/// <summary>
 	/// The link-report channel (LinkReports): a script in an isolated world, which page scripts can't reach, calls one binding
-	/// that only that world has. Runtime.enable is what makes the engine send Runtime.bindingCalled.
+	/// that only that world has. Runtime.enable stays on: in this engine no Runtime.bindingCalled arrives without it, nor after
+	/// a Runtime.disable that follows the binding. It is a known automation fingerprint, kept as the price of telling a middle
+	/// click apart.
 	/// </summary>
 	private async Task ReportLinksAsync(CoreWebView2 core)
 	{

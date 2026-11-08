@@ -30,7 +30,8 @@ public static class LinkReports
 		"(() => { if (window.top !== window) return; "
 		+ $"const report = (kind) => globalThis.{BindingName}(JSON.stringify({{ kind }})); "
 		+ "addEventListener('mousedown', (e) => { "
-		+ "if (e.button === 1 && e.isTrusted && e.target instanceof Element && e.target.closest('a[href]')) report('middle'); "
+		// The path, not the target: a listener on window sees a shadow root's link retargeted to its host.
+		+ "if (e.button === 1 && e.isTrusted && e.composedPath().some((n) => n instanceof Element && n.localName === 'a' && n.hasAttribute('href'))) report('middle'); "
 		+ "}, true); })()";
 
 	/// <summary>The report a payload is, or null when it isn't exactly one the script sends. Never throws.</summary>
