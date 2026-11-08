@@ -120,6 +120,12 @@ export const SETTINGS_SCHEMA = {
 	/** The password vault's switch. Off by default: on, Zing keeps logins in vault/ in the profile, behind Windows Hello. */
 	passwordAutofill: flag(false),
 	tabDropdowns: flag(false),
+	/** Zing: links to another host open as a preview. */
+	linkPreviews: flag(true),
+	/** Zing: links to another host open as a preview on Shift+click, whatever the link. */
+	linkPreviewsShiftClick: flag(true),
+	/** Zing: links to another host open as a preview when the page asked for a new window. */
+	linkPreviewsFromNewWindows: flag(true),
 	/** Zing: where the tabs sit. On the side by default, as in Arc and Dia (docs/phase-4.md). */
 	tabBarPosition: oneOf(TAB_BAR_POSITIONS, 'left'),
 	/** Zing: tab cards and favourites in the theme's colour, or neutral. */

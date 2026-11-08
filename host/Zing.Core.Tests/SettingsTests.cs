@@ -30,6 +30,17 @@ public class SettingsTests
 		Assert.False(new SettingsStore().Get("passwordAutofill")!.GetValue<bool>());
 	}
 
+	[Theory]
+	[InlineData("linkPreviews")]
+	[InlineData("linkPreviewsShiftClick")]
+	[InlineData("linkPreviewsFromNewWindows")]
+	public void LinkPreviewSwitchesAreOnByDefaultAndTakeOnlyBooleans(string key)
+	{
+		Assert.True(SettingsSchema.Defaults()[key]!.GetValue<bool>());
+		Assert.True(new SettingsStore().Get(key)!.GetValue<bool>());
+		Assert.False(SettingsSchema.AcceptsValue(key, JsonValue.Create("yes")));
+	}
+
 	[Fact]
 	public void EveryDefaultIsAcceptedByItsOwnRule()
 	{

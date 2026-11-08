@@ -134,6 +134,15 @@
 	"tabDropdowns": {
 		"type": "flag"
 	},
+	"linkPreviews": {
+		"type": "flag"
+	},
+	"linkPreviewsShiftClick": {
+		"type": "flag"
+	},
+	"linkPreviewsFromNewWindows": {
+		"type": "flag"
+	},
 	"tabBarPosition": {
 		"type": "enum",
 		"values": [
