@@ -103,6 +103,12 @@ async function post(page: Page, message: unknown): Promise<void> {
 	await page.evaluate((m) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage(m), message)
 }
 
+/**
+ * Waits for the page's own landing report, sent 300 ms after load (autofillScript.ts). A page timer set after load fires
+ * after it, so a message posted next reaches the host behind it instead of being dropped as failed or withdrawn by it.
+ */
+const ownLanding = (page: Page): Promise<void> => page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 300)))
+
 const picker = (zing: Launched): Promise<Page> => pageWhere(zing.browser, (p) => p.url().endsWith('#picker'))
 
 // The bridge leaves out a null value, so a closed picker arrives as undefined.
@@ -707,6 +713,7 @@ test('a page that re-renders the same form, as after a wrong password, leaves no
 test('a page can prompt only for its own origin and with what it reported: a forged submit names the page, not the origin it claims', async () => {
 	const zing = await launchZing({ userDataDir: vaultProfile(true) })
 	const page = await open(zing, `${signInBase}/login`)
+	await ownLanding(page)
 
 	await post(page, { zingCredentialField: { kind: 'submit', username: 'forged@example.test', password: 'forged', origin: otherBase } })
 	await post(page, { zingCredentialField: { kind: 'landed', password: false, origin: otherBase } })
