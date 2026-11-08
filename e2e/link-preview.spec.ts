@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, test, layers, liveCounts, pageWhere, peekState, setModifiers, type Launched, type Layer } from './zing'
+import { clickScrim, launchZing, test, layers, liveCounts, pageWhere, peekState, setModifiers, type Launched, type Layer } from './zing'
 
 // Evaluated in the chrome renderer, where api.ts puts the bridge on window.
 declare const window: { readonly zing: ZingApi }
@@ -43,12 +43,15 @@ test.beforeAll(async () => {
 		if (name === 'a')
 			return void res.end(`<!doctype html><title>Page a</title>
 <a id="cross" href="${elsewhere}/b">cross</a>
+<a id="cross-a" href="${elsewhere}/a">cross a</a>
 <a id="same" href="/b">same</a>
 <a id="to-opener" href="${elsewhere}/opener">opener</a>
 <a id="blank" href="${elsewhere}/b" target="_blank">blank</a>
 <button id="open" onclick="window.open('${elsewhere}/b')">open</button>
 <button id="open-same" onclick="window.open('/b')">open same</button>
-<button id="open-blank" onclick="window.open('about:blank').location = '${elsewhere}/b'">open blank</button>`)
+<button id="open-blank" onclick="window.open('about:blank').location = '${elsewhere}/b'">open blank</button>
+<button id="open-popup" onclick="window.open('${elsewhere}/b', '', 'popup')">open popup</button>
+<button id="open-noopener" onclick="window.open('${elsewhere}/b', '_blank', 'noopener')">open noopener</button>`)
 		if (name === 'b')
 			return void res.end(`<!doctype html><title>Page b</title><body style="height:3000px">
 <input id="field" aria-label="field">
@@ -116,9 +119,14 @@ function place(area: Box, depth: number): { page: Box; buttons: Box } {
 
 const boxOf = ({ x, y, width, height }: Box): Box => ({ x, y, width, height })
 
+const edges = ['x', 'y', 'width', 'height'] as const
+
 /** Each edge within 1 DIP: the host rounds to pixels. */
+const isNear = (actual: Box, expected: Box): boolean => edges.every((key) => Math.abs(actual[key] - expected[key]) <= 1)
+
+/** Each edge within 1 DIP, saying which edge is off. */
 function expectNear(actual: Box, expected: Box, what: string): void {
-	for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(actual[key] - expected[key]), `${what} ${key}: ${actual[key]} against ${expected[key]}`).toBeLessThanOrEqual(1)
+	for (const key of edges) expect(Math.abs(actual[key] - expected[key]), `${what} ${key}: ${actual[key]} against ${expected[key]}`).toBeLessThanOrEqual(1)
 }
 
 /** The visible view on this address, once it shows. */
@@ -344,7 +352,7 @@ test('a preview page can go fullscreen and comes back', async () => {
 	await page.click('#full')
 	await expect.poll(fullscreen).toBe(true)
 	// The preview fills the window; the dim and the buttons step aside.
-	await expect.poll(async () => boxOf((await layers(zing.chrome)).find((l) => l.url === `${other}/opener`)!)).toEqual(content)
+	await expect.poll(async () => isNear(boxOf((await layers(zing.chrome)).find((l) => l.url === `${other}/opener`)!), content)).toBe(true)
 	await expect.poll(async () => (await layers(zing.chrome)).filter((l) => l.visible && (l.url === 'scrim' || l.url.endsWith('#peek'))).map((l) => l.url)).toEqual([])
 
 	await page.evaluate(() => document.exitFullscreen())
@@ -390,10 +398,6 @@ test('a download started in a preview completes', async () => {
 })
 
 test('a download still completes when its preview closes while it comes in', async () => {
-	// Known product bug, not the preview's own: the file is written whole, but the downloads list never hears the end once
-	// the page that started it is closed (its CoreWebView2 goes, and the operation's StateChanged with it). A tab closed
-	// mid-download shows the same. Remove this line when it is fixed.
-	test.fail(true, 'the downloads list keeps a download "progressing" after the page that started it closes')
 	const { zing, source } = await start()
 	const { sizeOf, statusOf } = downloadsOf(zing)
 	try {
@@ -407,8 +411,121 @@ test('a download still completes when its preview closes while it comes in', asy
 		expect(finishSlow, 'the server is holding the slow body').toBeDefined()
 		finishSlow!()
 		await expect.poll(sizeOf('slow.bin')).toBe(2048)
+		// Known product bug, not the preview's own: the file is written whole, but the downloads list never hears the end once
+		// the page that started it is closed (its CoreWebView2 goes, and the operation's StateChanged with it). A tab closed
+		// mid-download shows the same. Expected to fail from here only, so every step above must still pass. Remove this
+		// line when it is fixed.
+		test.fail(true, 'the downloads list keeps a download "progressing" after the page that started it closes')
 		await expect.poll(statusOf('slow.bin')).toBe('completed')
 	} finally {
 		await zing.close()
 	}
+})
+
+test('closing a preview gives the keyboard back to the page under it', async () => {
+	const { zing, source } = await start()
+	await source.click('#cross')
+	await previewShown(zing.chrome, `${own}/a`, `${other}/b`)
+	await expect.poll(async () => (await layers(zing.chrome)).find((l) => l.url === `${other}/b`)?.keyboard).toBe(true)
+	await run(zing.chrome, 'preview.close')
+	await expectNoPreview(zing.chrome, `${other}/b`)
+	await expect.poll(async () => (await layers(zing.chrome)).filter((l) => l.keyboard).map((l) => l.url)).toEqual([`${own}/a`])
+	await zing.close()
+})
+
+test('a click on the dim closes the preview', async () => {
+	const { zing, source } = await start()
+	const tabs = await tabCount(zing.chrome)
+	await source.click('#cross')
+	await previewShown(zing.chrome, `${own}/a`, `${other}/b`)
+	await clickScrim(zing.chrome)
+	await expectNoPreview(zing.chrome, `${other}/b`)
+	expect(await tabCount(zing.chrome)).toBe(tabs)
+	await zing.close()
+})
+
+test('the buttons are made, hidden, before the first preview', async () => {
+	const { zing } = await start()
+	// A cold renderer load would otherwise hold the first preview's buttons back.
+	await expect.poll(async () => (await layers(zing.chrome)).filter((l) => l.url.endsWith('#peek')).map((l) => l.visible)).toEqual([false])
+	await zing.close()
+})
+
+test('page commands act on the preview, and its own navigations keep it open', async () => {
+	const { zing, source } = await start()
+	const { activeId } = await tabsOf(zing.chrome)
+	await source.click('#cross-a')
+	const preview = await previewPage(zing, `${other}/a`)
+	await preview.click('#same')
+	await previewOf(zing, `${other}/b`)
+	// Alt+Left goes back in the preview, not in the tab hidden under it.
+	expect(await run(zing.chrome, 'history.back')).toMatchObject({ status: 'done' })
+	await previewOf(zing, `${other}/a`)
+	expect(await run(zing.chrome, 'page.reload')).toMatchObject({ status: 'done' })
+	await previewOf(zing, `${other}/a`)
+	// Find works on tabs only: nothing to search while a preview covers the tab.
+	expect(await run(zing.chrome, 'page.find')).toMatchObject({ status: 'not-applicable' })
+	expect((await tabsOf(zing.chrome)).tabs.find((t) => t.id === activeId)?.url).toBe(`${own}/a`)
+	await zing.close()
+})
+
+test('the source page navigating by itself closes the preview', async () => {
+	const { zing, source } = await start()
+	const { activeId } = await tabsOf(zing.chrome)
+	await source.click('#cross')
+	await previewOf(zing, `${other}/b`)
+	// Its own script, not Zing's Navigate.
+	await source.evaluate(() => location.reload())
+	await expectNoPreview(zing.chrome, `${other}/b`)
+
+	await source.waitForLoadState('load')
+	await source.click('#cross')
+	await previewOf(zing, `${other}/b`)
+	await source.evaluate(() => {
+		location.href = '/c'
+	})
+	await expectNoPreview(zing.chrome, `${other}/b`)
+	await expect.poll(async () => (await tabsOf(zing.chrome)).tabs.find((t) => t.id === activeId)?.url).toBe(`${own}/c`)
+	await zing.close()
+})
+
+test('Ctrl and middle click in a preview open a tab behind it; a plain window still stacks', async () => {
+	const { zing, source } = await start()
+	const { activeId } = await tabsOf(zing.chrome)
+	const tabs = await tabCount(zing.chrome)
+	await source.click('#cross-a')
+	const preview = await previewPage(zing, `${other}/a`)
+
+	await setModifiers(zing.chrome, { ctrl: true })
+	await preview.click('#open')
+	await expect.poll(() => tabCount(zing.chrome)).toBe(tabs + 1)
+	await setModifiers(zing.chrome, { middle: true })
+	await preview.click('#blank')
+	await expect.poll(() => tabCount(zing.chrome)).toBe(tabs + 2)
+	const after = await tabsOf(zing.chrome)
+	expect(after.activeId).toBe(activeId)
+	await expect.poll(async () => (await tabsOf(zing.chrome)).tabs.filter((t) => t.url === `${own}/b`).length).toBe(2)
+	expect((await peekState(zing.chrome)).layers.map((l) => l.url)).toEqual([`${other}/a`])
+
+	await preview.click('#open')
+	await expect.poll(async () => (await peekState(zing.chrome)).layers.map((l) => l.url)).toEqual([`${other}/a`, `${own}/b`])
+	expect(await tabCount(zing.chrome)).toBe(tabs + 2)
+	await zing.close()
+})
+
+test('window.open with popup opens a tab; with only noopener it previews', async () => {
+	const { zing, source } = await start()
+	const tabs = await tabCount(zing.chrome)
+	await source.click('#open-popup')
+	await expect.poll(() => tabCount(zing.chrome)).toBe(tabs + 1)
+	expect((await peekState(zing.chrome)).open).toBe(false)
+
+	const { tabs: list } = await tabsOf(zing.chrome)
+	const opener = list.find((t) => t.url === `${own}/a`)!
+	await zing.chrome.evaluate((id) => window.zing.activateTab(id), opener.id)
+	await expect.poll(async () => (await tabsOf(zing.chrome)).activeId).toBe(opener.id)
+	await source.click('#open-noopener')
+	await previewOf(zing, `${other}/b`)
+	expect(await tabCount(zing.chrome)).toBe(tabs + 1)
+	await zing.close()
 })

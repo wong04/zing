@@ -428,6 +428,8 @@ export interface Layer {
 	readonly height: number
 	/** How many sibling windows are stacked above the view's window (0 is the top); compare views of the same kind. */
 	readonly depth: number
+	/** Whether the window's keyboard focus is in this view (Win32 focus on the window's thread, which an off-screen window keeps too). */
+	readonly keyboard: boolean
 }
 
 /** What the window really shows, bottom to top (TestHooks "layers"); page-side visibility doesn't follow a hidden view. */
@@ -452,6 +454,16 @@ export async function peekState(chrome: Page): Promise<PeekState> {
 	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'peek-state', file: path }), file)
 	await expect.poll(() => existsSync(file)).toBe(true)
 	return JSON.parse(readFileSync(file, 'utf8')) as PeekState
+}
+
+/** A left-button press on the preview's dim, as a click there would send (TestHooks "click-scrim"). */
+export async function clickScrim(chrome: Page): Promise<void> {
+	await chrome.evaluate(async () => {
+		const view = globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } }; zing: { getTabs(): Promise<unknown> } }
+		view.chrome.webview.postMessage({ kind: 'test', action: 'click-scrim' })
+		// Answered after the message before it on the same channel: the press has been sent.
+		await view.zing.getTabs()
+	})
 }
 
 export interface Modifiers {
