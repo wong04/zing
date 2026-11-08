@@ -23,6 +23,7 @@ public sealed class HostedView
 	/// view's start (E_ABORT) from inside that, while the popup is still a window and the window doesn't count as closed yet.
 	/// </summary>
 	private static readonly HashSet<nint> Destroying = [];
+	private const int E_ABORT = unchecked((int)0x80004004);
 
 	private readonly HostWindow _window;
 	private readonly nint _hwnd;
@@ -94,7 +95,8 @@ public sealed class HostedView
 		}
 		// Closing a window destroys its owned popups before the window's own WM_DESTROY, so an overlay still
 		// starting is aborted (E_ABORT) while the window doesn't count as closed yet: its own window is gone, though.
-		catch (COMException) when (window.IsClosed || scope.IsClosed || !Native.IsWindow(hwnd) || Destroying.Contains(hwnd))
+		// Inside that destruction only the abort means gone; any other error is the engine's, and rethrown.
+		catch (COMException error) when (window.IsClosed || scope.IsClosed || !Native.IsWindow(hwnd) || (Destroying.Contains(hwnd) && error.HResult == E_ABORT))
 		{
 			tracked.Dispose();
 			throw new ViewGoneException(name);

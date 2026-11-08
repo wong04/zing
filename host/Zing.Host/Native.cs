@@ -69,6 +69,7 @@ internal static class Native
 	public const uint WM_CLOSE = 0x0010;
 	public const uint WM_NCACTIVATE = 0x0086;
 	public const uint WM_DPICHANGED = 0x02E0;
+	public const uint WM_SETTINGCHANGE = 0x001A;
 	public const uint WM_WTSSESSION_CHANGE = 0x02B1;
 	public const uint WM_INPUT = 0x00FF;
 

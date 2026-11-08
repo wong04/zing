@@ -49,6 +49,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private bool _surfaceWantsFocus;
 	private bool _fullScreen;
 	private Microsoft.UI.Windowing.AppWindowPresenter? _windowed;
+	private bool _highContrast;
 
 	public MainWindow(ZingApp app)
 	{
@@ -68,6 +69,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_window.KeyPressed += OnKey;
 		_window.Destroyed += OnClosed;
 		_window.Activated += () => _app.Focused(this);
+		ReadHighContrast();
+		_window.SettingChanged += ReadHighContrast;
 		// A preview open over the tab has the keyboard first.
 		_window.DefaultFocus = () => (_preview.Count > 0 ? _preview[^1].View : null) ?? _shown?.View ?? _chrome?.View;
 		TestHooks.Watch(_scope, () => Faults.Enqueue(_dispatcher, _window.Close, "test close"));
@@ -175,7 +178,26 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		ReserveCaptionButtons();
 		// A reloaded chrome (its renderer crashed) refetches its state, but the caption inset is a script the host sets.
 		_chrome.Crashed += view => view.View.Core.NavigationCompleted += CaptionsAfterReload;
+		await PreparePreviewButtonsAsync();
 		TestHooks.Started(_scope);
+	}
+
+	/// <summary>
+	/// The preview's buttons, made hidden with the window while previews are on, so the first preview has them at once.
+	/// Optional: a failure is recorded and startup goes on (the next preview tries again); a window closing meanwhile is gone.
+	/// </summary>
+	private async Task PreparePreviewButtonsAsync()
+	{
+		if (_peekControls is null || !_app.Services.Settings.Get("linkPreviews")!.GetValue<bool>()) return;
+		try
+		{
+			await _peekControls.PrepareAsync();
+		}
+		catch (Exception error) when (error is not ViewGoneException)
+		{
+			TestHooks.Record("preview buttons", error);
+		}
+		_scope.Checkpoint("startup");
 	}
 
 	/// <summary>
@@ -345,7 +367,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	{
 		try
 		{
-			var scrim = new PeekScrim(_window.Hwnd, Native.HighContrastOn());
+			var scrim = new PeekScrim(_window.Hwnd, _highContrast);
 			// Not inside the scrim's window procedure: closing the preview destroys the scrim.
 			scrim.Clicked += () => Faults.Enqueue(_dispatcher, () => Api?.Tabs.ClosePreview(), "closing the preview");
 			_overlays.Add(OverlayLevel.PeekScrim, scrim.Raise);
@@ -487,7 +509,23 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	/// <summary>Nothing reveals itself over a fullscreen page: the cursor counts as away.</summary>
 	public Point? Cursor => _fullScreen ? null : _layout.Cursor;
 
-	public bool HighContrast => Native.HighContrastOn();
+	public bool HighContrast => _highContrast;
+
+	/// <summary>
+	/// Read once, and again when Windows says a setting changed: the preview asks inside tab events (PreviewChanged), which
+	/// must never throw. A failed read is recorded (an e2e run fails on it) and the value read last stays.
+	/// </summary>
+	private void ReadHighContrast()
+	{
+		try
+		{
+			_highContrast = Native.HighContrastOn();
+		}
+		catch (NativeCallException error)
+		{
+			TestHooks.Record("high contrast", error);
+		}
+	}
 
 	public void SurfaceRegionChanged(Rect? region)
 	{

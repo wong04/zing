@@ -73,6 +73,8 @@ public sealed class HostWindow
 	/// <summary>The window moved on screen; owned popups that aren't views (the preview scrim) follow it by hand.</summary>
 	public event Action? Moved;
 	public event Action? Activated;
+	/// <summary>A system-wide setting changed (WM_SETTINGCHANGE), such as high contrast.</summary>
+	public event Action? SettingChanged;
 	public event Action<HostedView, CoreWebView2AcceleratorKeyPressedEventArgs>? KeyPressed;
 	public event Action? Destroyed;
 
@@ -193,6 +195,9 @@ public sealed class HostWindow
 				// The layout is in DIPs, so it changes with the scale even when the size in pixels (and so WM_SIZE) didn't.
 				TestHooks.Guard(() => window.Resized?.Invoke(), "window dpi changed");
 				return 0;
+			case Native.WM_SETTINGCHANGE:
+				TestHooks.Guard(() => window.SettingChanged?.Invoke(), "setting changed");
+				break;
 			case Native.WM_WTSSESSION_CHANGE:
 				SessionEvents.Instance.Raise();
 				break;

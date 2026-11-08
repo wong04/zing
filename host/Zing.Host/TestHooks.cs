@@ -129,7 +129,7 @@ public static class TestHooks
 	/// "picker-key" with <c>vk</c> enters the account picker's key handler as a real key press on its page would;
 	/// "page-messages" writes how many page messages were dropped to <c>file</c>;
 	/// "set-modifiers" with <c>shift</c>, <c>ctrl</c> and <c>middle</c> sets the keys the next new-window request is taken to have been made with, once;
-	/// "peek-state" writes the link preview's state to <c>file</c>;
+	/// "peek-state" writes the link preview's state to <c>file</c>; "click-scrim" sends the preview's scrim a left-button press, as a click on the dim would;
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
@@ -183,6 +183,13 @@ public static class TestHooks
 				canExpand = preview?.CanExpand ?? false,
 				sourceTabId = preview?.SourceTabId,
 			}));
+			return true;
+		}
+		if (action == "click-scrim")
+		{
+			var scrim = (Scrims.TryGetValue(window, out var scrimOf) ? scrimOf() : null) ?? throw new InvalidOperationException("click-scrim needs a window with a preview open");
+			const uint WM_LBUTTONDOWN = 0x0201;
+			Native.SendMessageW(scrim.Handle, WM_LBUTTONDOWN, 0, 0);
 			return true;
 		}
 		if (action == "layers")
@@ -282,11 +289,12 @@ public static class TestHooks
 			width = v.Bounds.Width,
 			height = v.Bounds.Height,
 			depth = v.Depth,
+			keyboard = v.HasKeyboard,
 		})];
 		if (!Scrims.TryGetValue(window, out var scrimOf) || scrimOf() is not { } scrim) return layers;
 		var scale = window.Scale;
 		var area = scrim.PageArea;
-		layers.Add(new { url = "scrim", visible = scrim.Visible, x = area.X / scale, y = area.Y / scale, width = area.Width / scale, height = area.Height / scale, depth = scrim.Depth });
+		layers.Add(new { url = "scrim", visible = scrim.Visible, x = area.X / scale, y = area.Y / scale, width = area.Width / scale, height = area.Height / scale, depth = scrim.Depth, keyboard = false });
 		return layers;
 	}
 

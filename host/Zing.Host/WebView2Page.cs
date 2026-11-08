@@ -552,6 +552,8 @@ public sealed class WebView2Page : IPage
 		core.ContentLoading += (_, _) =>
 		{
 			if (core.Source is not ("" or "about:blank")) _showedDocument = true;
+			// Raised for new documents only, however they started (a link, Back, a reload, the page's own script).
+			_events.NewDocument();
 		};
 		core.DownloadStarting += (_, e) =>
 		{
@@ -830,9 +832,16 @@ public sealed class WebView2Page : IPage
 			if (RelayedNavigation.PlainHttpNotice(TopOf(sender), e.Uri) is { } refused) _events.Notice(refused);
 			return;
 		}
-		var request = new PopupRequest(target, modifiers, e.WindowFeatures.HasSize || e.WindowFeatures.HasPosition);
+		var request = new PopupRequest(target, modifiers, IsPopup(e.WindowFeatures));
 		Background(OpenPopupAsync(e, request), "popup");
 	}
+
+	/// <summary>
+	/// Whether the page asked for a popup window rather than a tab: a size or a position, or the popup feature. WebView2 doesn't
+	/// list popup itself; a window asked for as one has no toolbar (ShouldDisplayToolbar), which a plain window.open, a
+	/// target=_blank link and noopener alone keep (link-preview e2e).
+	/// </summary>
+	private static bool IsPopup(CoreWebView2WindowFeatures features) => features.HasSize || features.HasPosition || !features.ShouldDisplayToolbar;
 
 	/// <summary>
 	/// The keys and button that asked for a window: WebView2 says nothing of them. Shift and Ctrl are read as the event fires,
@@ -860,7 +869,11 @@ public sealed class WebView2Page : IPage
 			if (RelayedContent.IsRelayUrl(target)) popup.AllowFirstNavigation(target);
 			await popup.Ready;
 			// The opener or the popup may have closed while the engine started it: then there is no window to hand over.
-			if (IsOpen && popup.IsOpen && popup.IsStarted) e.NewWindow = popup.Core;
+			if (IsOpen && popup.IsOpen && popup.IsStarted)
+			{
+				e.NewWindow = popup.Core;
+				popup._events.WindowOpened();
+			}
 		}
 		finally
 		{

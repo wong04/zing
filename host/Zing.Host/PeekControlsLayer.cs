@@ -6,8 +6,8 @@ namespace Zing.Host;
 /// <summary>
 /// A link preview's buttons (#peek): a transparent view in the margin at the top right of the preview's top layer
 /// (PeekLayout's Buttons), shown only while a preview is open. The dim and the border around the preview are the
-/// scrim's. Created on first use; its view closes with the window's scope, even one still loading.
-/// It never takes the keyboard on showing: the preview's page has it.
+/// scrim's. Made, hidden, once the chrome has loaded (Prepare), so the first preview doesn't wait on a cold renderer; its
+/// view closes with the window's scope, even one still loading. It never takes the keyboard on showing: the preview's page has it.
 /// </summary>
 public sealed class PeekControlsLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, Func<Rect?> buttons, Action<RendererView> created, OverlayHost overlays)
 {
@@ -21,6 +21,9 @@ public sealed class PeekControlsLayer(HostWindow window, WindowScope scope, Core
 		if (_ready is null && !open) return;
 		TestHooks.Background(ShowAsync(), "preview buttons");
 	}
+
+	/// <summary>Makes the view ahead of the first preview. It is optional: the caller records a failure, and the next preview tries again.</summary>
+	public Task PrepareAsync() => ShowAsync();
 
 	public void Layout()
 	{
@@ -41,7 +44,17 @@ public sealed class PeekControlsLayer(HostWindow window, WindowScope scope, Core
 
 	private async Task ShowAsync()
 	{
-		await (_ready ??= CreateAsync());
+		var ready = _ready ??= CreateAsync();
+		try
+		{
+			await ready;
+		}
+		catch (Exception) when (_ready == ready)
+		{
+			// Not kept: the next preview makes the view again rather than failing on this one for the window's life.
+			_ready = null;
+			throw;
+		}
 		scope.Checkpoint("preview buttons");
 		Layout();
 	}
