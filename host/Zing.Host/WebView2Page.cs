@@ -226,7 +226,8 @@ public sealed class WebView2Page : IPage
 	public bool InReader { get; private set; }
 
 	/// <summary>Whether an element of the page is fullscreen; the window then gives the page all of itself.</summary>
-	public bool IsFullScreen => _core?.ContainsFullScreenElement ?? false;
+	// A closed page has none, and its engine object would throw: a window closing with a preview open still asks its layers.
+	public bool IsFullScreen => IsOpen && _core?.ContainsFullScreenElement == true;
 
 	/// <summary>Takes the page's element out of fullscreen, as the page's own exit would.</summary>
 	public void ExitFullScreen()
