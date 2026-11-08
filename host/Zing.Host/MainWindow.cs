@@ -42,6 +42,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private Task? _surfaceReady;
 	private bool _surfaceWantsFocus;
 	private bool _fullScreen;
+	// Set as OnClosed starts: the HWND (and with it the AppWindow) is already gone while the tabs close.
+	private bool _destroyed;
 	private Microsoft.UI.Windowing.AppWindowPresenter? _windowed;
 
 	public MainWindow(ZingApp app)
@@ -436,6 +438,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	/// </summary>
 	private void FollowFullScreen()
 	{
+		// A fullscreen page closing with its window has no window left to lay out.
+		if (_destroyed) return;
 		var wanted = _shown?.IsFullScreen == true;
 		if (wanted == _fullScreen) return;
 		_fullScreen = wanted;
@@ -598,6 +602,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	{
 		// The tabs first (Tabs.Destroy closes their pages while they are still open), then everything else
 		// the window started: renderer views, those still loading included, and the theme subscription.
+		_destroyed = true;
 		_app.Services.Vaults.Changed -= FollowAutofill;
 		Api?.Dispose();
 		_scope.Close();
