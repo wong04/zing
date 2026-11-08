@@ -77,7 +77,7 @@ Two engine events carry link clicks:
 - **A new-window request** raises `NewWindowRequested`. That covers `target=_blank`, `window.open` without popup features, and Shift-, Ctrl- and middle-click.
   - **Shift held:** preview, whatever the host (decision 3), unless the Shift setting is off.
   - **Ctrl held or middle button:** unchanged. A tab, as today.
-  - **`window.open` with popup features** (`width`, `height`, `popup`): unchanged. Adopted as a tab with `window.opener`, as `TabService.AdoptPopup` does today.
+  - **`window.open` with popup features** (`width`, `height`, `popup`): unchanged. Adopted as a tab with `window.opener`, as `TabService.AdoptPopup` does today. WebView2's `WindowFeatures` has no `popup` flag: a size or position counts, and so does `ShouldDisplayToolbar` being false, which the e2e shows for `popup` while a plain `window.open`, a `target=_blank` link and `noopener` alone keep the toolbar.
   - **Otherwise** (`target=_blank`, plain `window.open`): preview if the host differs, a tab as today if it is the same. This matters for the owner's own case, because Gmail opens links in a new window.
 
 **Never preview** (the link behaves as it does today):
@@ -175,7 +175,7 @@ The spike, done 2026-11-08, is in `spikes/link-preview/` (throwaway, not part of
 2. **The owned-popup focus model** (the "activation dance", `WM_NCACTIVATE`). Two more owned popups bring bugs of that kind. The spike did not cover focus, a DPI change between monitors, or flicker during a live drag-resize. These are hand checks.
 3. **Expand into `TabService`.** Today "page exists" means "tab is awake". Injecting a page must not confuse sleep, restore or ordering.
 4. **Keys change meaning** while a preview is open (Ctrl+W, Esc). They are routed in one place and tested.
-5. **`Page.enable` on every page.** It opens a DevTools event stream per page. Check that it adds no visible cost and does not clash with any other DevTools use in the host.
+5. **`Page.enable` on every page.** It opens a DevTools event stream per page. Check that it adds no visible cost and does not clash with any other DevTools use in the host. With `linkPreviews` off, `Page.enable` still runs on every page and the raw-input sink for the middle button stays registered: the setting switches the behaviour off, not its cost.
 
 ## Tests (what "done" means)
 

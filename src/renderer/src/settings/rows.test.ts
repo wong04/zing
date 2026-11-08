@@ -49,6 +49,13 @@ describe('settings rows', () => {
 		expect(rows.map((r) => r.disabled?.(off) ?? false)).toEqual([false, true, true])
 	})
 
+	it('describes the preview as it is: nearly the whole page area, not a small window', () => {
+		const row = PANES.browsing.find((i) => i.type === 'setting' && i.key === 'linkPreviews') as SettingRow
+		const detail = typeof row.detail === 'function' ? row.detail(DEFAULT_SETTINGS) : row.detail
+		expect(detail).not.toMatch(/small/i)
+		expect(detail).toMatch(/nearly full size/i)
+	})
+
 	it('puts the saved passwords right after their switch, shown only while it is on', () => {
 		const items = PANES.browsing
 		const at = items.findIndex((i) => i.type === 'setting' && i.key === 'passwordAutofill')

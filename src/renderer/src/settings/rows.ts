@@ -175,7 +175,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 		}),
 		{ type: 'custom', id: 'vault', keys: [], visible: (s) => s.passwordAutofill },
 		toggle('linkPreviews', 'Open links to other sites as a preview', {
-			detail: 'A small window over the page, so you can look without leaving it.',
+			detail: 'It opens nearly full size over the page, so you can look without leaving it.',
 		}),
 		toggle('linkPreviewsShiftClick', 'Shift-click previews any link', { disabled: (s) => !s.linkPreviews }),
 		toggle('linkPreviewsFromNewWindows', 'Links that open a new window preview too', { disabled: (s) => !s.linkPreviews }),
