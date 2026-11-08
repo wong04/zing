@@ -31,6 +31,8 @@ export default defineConfig({
 	expect: { timeout: 15_000 },
 	// More workers fail even on a quiet PC: Zing dies at startup in AppInstance, workers crash, and timing tests go over. The gain stops at 2 or 3.
 	workers: 1,
+	// Runs started in other worktrees wait for this one: they share the PC, and overlapping runs fail (scripts/run-lock.ts).
+	globalSetup: './e2e/global-setup.ts',
 	// No retries, on CI too: a rerun that passes hides a race (AGENTS.md). The one CI retry (#140) hid unblock.spec.ts's
 	// keyboard-pick flake as well as the WebView2 profile-lock stall it was added for.
 	retries: 0,
