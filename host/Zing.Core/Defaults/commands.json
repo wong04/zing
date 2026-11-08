@@ -631,6 +631,14 @@
 	{
 		"id": "preview.expand",
 		"label": "Open Preview as Tab",
-		"shortcuts": []
+		"shortcuts": [
+			{
+				"code": "KeyO",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+O"
+			}
+		]
 	}
 ]

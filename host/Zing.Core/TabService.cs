@@ -11,6 +11,8 @@ public interface IPage
 	bool IsLoading { get; }
 	bool CanGoBack { get; }
 	bool CanGoForward { get; }
+	/// <summary>Whether an element of the page is in HTML fullscreen: Esc is then the page's, to leave it.</summary>
+	bool IsFullScreen { get; }
 	void Navigate(string url);
 	void GoBack();
 	void GoForward();

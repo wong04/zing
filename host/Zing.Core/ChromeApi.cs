@@ -492,6 +492,17 @@ public sealed class ChromeApi : IDisposable
 		return Run(command.Id) is not Outcome { Status: "not-applicable" };
 	}
 
+	/// <summary>
+	/// A key pressed in a link preview's page or its buttons. Esc closes the preview's top layer, unless that page is in
+	/// HTML fullscreen: then it is the page's, to leave fullscreen. Every other key is the window's, as anywhere else.
+	/// </summary>
+	public bool HandlePreviewKey(KeyInput input)
+	{
+		if (input is not { Code: "Escape", Ctrl: false, Shift: false, Alt: false } || Tabs.Preview is not { } preview) return HandleKey(input);
+		if (preview.Top.Page.IsFullScreen) return false;
+		return Run("preview.close") is not Outcome { Status: "not-applicable" };
+	}
+
 	public object Run(string command)
 	{
 		// Behind the account gate nothing may act on the browser.
@@ -557,7 +568,7 @@ public sealed class ChromeApi : IDisposable
 			"library.bookmarks" => Act(true, () => SetLibraryPanel(_libraryPanel == "bookmarks" ? null : "bookmarks")),
 			"library.readingList" => Act(true, () => SetLibraryPanel(_libraryPanel == "readingList" ? null : "readingList")),
 			"tab.new" => Act(true, NewTab),
-			"tab.close" => Act(Tabs.ActiveId is not null, () => Tabs.Close(Tabs.ActiveId!)),
+			"tab.close" => Tabs.Preview is not null ? Act(true, Tabs.ClosePreview) : Act(Tabs.ActiveId is not null, () => Tabs.Close(Tabs.ActiveId!)),
 			"tab.reopenClosed" => Tabs.ReopenClosed() is null ? NotApplicable : Done,
 			"tab.split" => Act(Tabs.ActiveId is not null, SplitWithNewTab),
 			"tab.next" => ActivateIfAny(Tabs.NextId()),

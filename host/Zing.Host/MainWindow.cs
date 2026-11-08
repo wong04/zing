@@ -662,8 +662,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		if (Api is null || Commands.CodeOf((int)e.VirtualKey) is not { } code) return;
 		const int VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
 		var input = new KeyInput(code, Native.IsDown(VK_CONTROL), Native.IsDown(VK_SHIFT), Native.IsDown(VK_MENU));
-		if (Api.HandleKey(input)) e.Handled = true;
+		if (IsPreviewView(view) ? Api.HandlePreviewKey(input) : Api.HandleKey(input)) e.Handled = true;
 	}
+
+	/// <summary>A view of the link preview: one of its pages, or its buttons.</summary>
+	private bool IsPreviewView(HostedView view) => _preview.Any(p => ReferenceEquals(p.View, view)) || _peekControls?.Hosts(view) == true;
 
 	/// <summary>
 	/// The account picker's keys (Ruling 28): real key presses while it's open, on its page's view or the picker's own,

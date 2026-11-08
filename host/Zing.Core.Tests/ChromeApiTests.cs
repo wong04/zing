@@ -391,4 +391,72 @@ public sealed class ChromeApiTests : IDisposable
 		Assert.Equal("not-applicable", await Status("preview.expand"));
 		Assert.NotNull(_api.Tabs.Preview);
 	}
+
+	private static readonly KeyInput Esc = new("Escape", Ctrl: false, Shift: false, Alt: false);
+
+	[Fact]
+	public async Task Tab_close_closes_the_preview_first()
+	{
+		Peek();
+		var tab = ActiveId;
+		Assert.Equal("done", await Status("tab.close"));
+		Assert.Null(_api.Tabs.Preview);
+		Assert.Equal(tab, Assert.Single(_api.Tabs.Records).Id);
+	}
+
+	[Fact]
+	public void Ctrl_O_opens_the_preview_as_a_tab()
+	{
+		var preview = Peek();
+		Assert.True(_api.HandleKey(new KeyInput("KeyO", Ctrl: true, Shift: false, Alt: false)));
+		Assert.Null(_api.Tabs.Preview);
+		Assert.Same(preview, _api.Tabs.ActivePage);
+	}
+
+	[Fact]
+	public void Ctrl_O_with_no_preview_is_left_to_the_page()
+	{
+		Assert.False(_api.HandleKey(new KeyInput("KeyO", Ctrl: true, Shift: false, Alt: false)));
+	}
+
+	[Fact]
+	public void Esc_in_a_preview_closes_its_top_layer()
+	{
+		var preview = Peek();
+		var popup = (FakePage)preview.Events.Popup(new PopupRequest("https://login.example/", default, HasPopupFeatures: true));
+		Assert.True(_api.HandlePreviewKey(Esc));
+		Assert.True(popup.Closed);
+		Assert.Same(preview, _api.Tabs.Preview!.Top.Page);
+		Assert.True(_api.HandlePreviewKey(Esc));
+		Assert.Null(_api.Tabs.Preview);
+	}
+
+	[Fact]
+	public void Esc_in_a_fullscreen_preview_is_left_to_the_page()
+	{
+		var preview = Peek();
+		preview.IsFullScreen = true;
+		ActivePage.IsLoading = true;
+		Assert.False(_api.HandlePreviewKey(Esc));
+		Assert.NotNull(_api.Tabs.Preview);
+		Assert.DoesNotContain("stop", ActivePage.Calls);
+	}
+
+	[Fact]
+	public void Esc_with_no_preview_stops_the_page()
+	{
+		ActivePage.IsLoading = true;
+		Assert.True(_api.HandlePreviewKey(Esc));
+		Assert.Equal("stop", ActivePage.Calls[^1]);
+		Assert.True(_api.HandleKey(Esc));
+		Assert.Equal("stop", ActivePage.Calls[^1]);
+	}
+
+	[Fact]
+	public void Other_keys_in_a_preview_are_the_window_commands()
+	{
+		Peek();
+		Assert.True(_api.HandlePreviewKey(new KeyInput("KeyT", Ctrl: true, Shift: false, Alt: false)));
+		Assert.Equal(2, _api.Tabs.Records.Count);
+	}
 }

@@ -12,6 +12,7 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public bool IsLoading { get; set; }
 	public bool CanGoBack { get; set; }
 	public bool CanGoForward { get; set; }
+	public bool IsFullScreen { get; set; }
 	public bool Shown { get; set; }
 	public bool Closed { get; private set; }
 
