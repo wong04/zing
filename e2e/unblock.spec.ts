@@ -914,6 +914,16 @@ test('the offer is a status a screen reader hears, and says what is on offer', a
 	await stand.close()
 })
 
+/** Types into the Toolbox's search and presses Return, which opens the result the sheet has selected; the sheet closing is the pick reaching the host. */
+async function pickOpenLinkByKeyboard(surface: Page): Promise<void> {
+	await surface.getByRole('searchbox', { name: 'Search tools' }).fill('open a link')
+	const best = surface.getByTestId('toolbox-result').first()
+	await expect(best).toHaveText('Open a Link')
+	await expect(best).toHaveAttribute('aria-current', 'true')
+	await surface.keyboard.press('Enter')
+	await expect(surface.getByRole('dialog', { name: 'Toolbox' })).toHaveCount(0)
+}
+
 test('with the offer showing, a tool picked by keyboard from the sheet starts with the failed address and runs nothing', async () => {
 	const stand = await methodsStand(blockedSite)
 	const zing = await launchWithoutDns(stand)
@@ -921,8 +931,7 @@ test('with the offer showing, a tool picked by keyboard from the sheet starts wi
 	await zing.chrome.getByRole('button', { name: 'Toolbox' }).first().click()
 	const surface = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
 	await expect(surface.getByRole('searchbox', { name: 'Search tools' })).toBeFocused()
-	await surface.getByRole('searchbox', { name: 'Search tools' }).fill('open a link')
-	await surface.keyboard.press('Enter')
+	await pickOpenLinkByKeyboard(surface)
 	const panel = surface.getByRole('dialog', { name: 'Open a Link' })
 	await expect(panel.getByRole('textbox', { name: 'Address' })).toHaveValue('https://blocked.test/a')
 	await settle(800)
@@ -933,8 +942,7 @@ test('with the offer showing, a tool picked by keyboard from the sheet starts wi
 	await overlay.getByTestId('unblock-offer').getByRole('button', { name: 'Dismiss' }).click()
 	await panel.getByRole('button', { name: 'Close Open a Link' }).click()
 	await zing.chrome.getByRole('button', { name: 'Toolbox' }).first().click()
-	await surface.getByRole('searchbox', { name: 'Search tools' }).fill('open a link')
-	await surface.keyboard.press('Enter')
+	await pickOpenLinkByKeyboard(surface)
 	await expect(surface.getByRole('dialog', { name: 'Open a Link' }).getByRole('textbox', { name: 'Address' })).toHaveValue('')
 	await zing.close()
 	await stand.close()
