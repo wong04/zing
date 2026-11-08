@@ -156,7 +156,9 @@ if ($Keys) {
 	[ZingRealInput]::Chord([uint16[]](Get-KeyCodes $Keys))
 }
 elseif ($X -ge 0 -and $Y -ge 0) {
-	$held = if ($Hold) { [uint16[]](Get-KeyCodes $Hold) } else { [uint16[]]@() }
+	# Typed first: an empty array returned from an if would arrive as $null.
+	[uint16[]]$held = @()
+	if ($Hold) { $held = Get-KeyCodes $Hold }
 	[ZingRealInput]::Click($window, $X, $Y, $Button -eq 'middle', $held)
 }
 else {
