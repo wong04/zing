@@ -40,6 +40,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private List<WebView2Page> _panes = [];
 	// A link preview's pages over the tab pages, bottom first. Empty when there is none.
 	private List<WebView2Page> _preview = [];
+	// The dim under the preview, while one is open.
+	private PeekScrim? _scrim;
 	private DispatcherScheduler? _scheduler;
 	private Rect? _surfaceRegion;
 	private Task? _surfaceReady;
@@ -60,13 +62,16 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			AppWindow.IsShownInSwitchers = false;
 		}
 		_window.Resized += Relayout;
+		_window.Moved += PlaceScrim;
 		// Keys from every view of the window, web pages included, before the page sees them.
 		_window.KeyPressed += OnKey;
 		_window.Destroyed += OnClosed;
 		_window.Activated += () => _app.Focused(this);
-		_window.DefaultFocus = () => _shown?.View ?? _chrome?.View;
+		// A preview open over the tab has the keyboard first.
+		_window.DefaultFocus = () => (_preview.Count > 0 ? _preview[^1].View : null) ?? _shown?.View ?? _chrome?.View;
 		TestHooks.Watch(_scope, () => Faults.Enqueue(_dispatcher, _window.Close, "test close"));
 		TestHooks.Register(_window, () => Api);
+		TestHooks.RegisterScrim(_window, () => _scrim);
 		TestHooks.RegisterPickerKeys(_window, PickerKeyOnPage);
 		_app.Services.Vaults.Changed += FollowAutofill;
 	}
@@ -278,10 +283,18 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		// A page leaving the preview may be staying on screen as a tab (Expand), which shows it itself.
 		foreach (var gone in _preview.Where(p => !pages.Contains(p) && p != _shown && !_panes.Contains(p))) gone.Visible = false;
 		_preview = pages;
+		if (pages.Count == 0)
+		{
+			RemoveScrim();
+			// The source tab's page (or, after Expand, the new tab's) takes the keyboard back.
+			_window.DefaultFocus()?.Focus();
+			return;
+		}
+		if (_scrim is null) CreateScrim();
 		PlacePreview();
 		foreach (var page in pages) page.Visible = true;
 		RaisePreview();
-		if (pages.Count == 0) _shown?.Focus();
+		if (_scrim is not null) _overlays.Show(OverlayLevel.PeekScrim);
 	}
 
 	public void FocusPreview()
@@ -294,6 +307,63 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	{
 		if (_preview.Count == 0 || _layout.PageRect() is not { } area) return;
 		for (var i = 0; i < _preview.Count; i++) _preview[i].Place(PeekLayout.Place(area, i).Page);
+		PlaceScrim();
+	}
+
+	/// <summary>
+	/// The preview works without its dim, so a scrim that can't be made is recorded (an e2e run fails on it), never thrown
+	/// into the tab code that opened the preview.
+	/// </summary>
+	private void CreateScrim()
+	{
+		try
+		{
+			var scrim = new PeekScrim(_window.Hwnd, Native.HighContrastOn());
+			// Not inside the scrim's window procedure: closing the preview destroys the scrim.
+			scrim.Clicked += () => Faults.Enqueue(_dispatcher, () => Api?.Tabs.ClosePreview(), "closing the preview");
+			_overlays.Add(OverlayLevel.PeekScrim, scrim.Raise);
+			_scrim = scrim;
+		}
+		catch (NativeCallException error)
+		{
+			TestHooks.Record("preview scrim", error);
+		}
+	}
+
+	/// <summary>The scrim covers the page area (the whole split area with split view) with a hole where the top layer is.</summary>
+	private void PlaceScrim()
+	{
+		if (_scrim is null || _preview.Count == 0 || _layout.PageRect() is not { } area) return;
+		try
+		{
+			_scrim.Place(ToPixels(area), ToPixels(PeekLayout.Place(area, _preview.Count - 1).Page));
+		}
+		catch (Exception error) when (error is System.ComponentModel.Win32Exception or NativeCallException)
+		{
+			TestHooks.Record("preview scrim", error);
+		}
+	}
+
+	private void RemoveScrim()
+	{
+		if (_scrim is not { } scrim) return;
+		_scrim = null;
+		_overlays.Remove(OverlayLevel.PeekScrim);
+		try
+		{
+			scrim.Dispose();
+		}
+		catch (NativeCallException error)
+		{
+			TestHooks.Record("preview scrim", error);
+		}
+	}
+
+	/// <summary>A rectangle of the content in the window's pixels, rounded as HostedView places a view, so the hole matches the preview's page exactly.</summary>
+	private Rect ToPixels(Rect dips)
+	{
+		var scale = _window.Scale;
+		return new Rect(Math.Round(dips.X * scale), Math.Round(dips.Y * scale), Math.Round(Math.Max(0, dips.Width) * scale), Math.Round(Math.Max(0, dips.Height) * scale));
 	}
 
 	/// <summary>The preview stays above the tab pages, bottom layer first.</summary>
@@ -454,6 +524,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public void PermissionRequested(WebView2Page page, CoreWebView2PermissionRequestedEventArgs e) => _permissions.Requested(page, e);
 
 	public void Left(WebView2Page page) => _permissions.Left(page);
+
+	public bool InPreview(WebView2Page page) => _preview.Contains(page);
 
 	public void FullScreenChanged(WebView2Page page)
 	{

@@ -221,6 +221,88 @@ internal static class Native
 
 	public static bool IsDown(int virtualKey) => (GetKeyState(virtualKey) & 0x8000) != 0;
 
+	/// <summary>How many sibling windows are stacked above <paramref name="hwnd"/>; 0 is the top.</summary>
+	public static int Depth(nint hwnd)
+	{
+		const uint GW_HWNDPREV = 3;
+		var depth = 0;
+		for (var above = GetWindow(hwnd, GW_HWNDPREV); above != 0; above = GetWindow(above, GW_HWNDPREV)) depth++;
+		return depth;
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
+	public struct PAINTSTRUCT
+	{
+		public nint Dc;
+		public int Erase;
+		public RECT Paint;
+		public int Restore;
+		public int IncUpdate;
+		[MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
+		public byte[] Reserved;
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct HIGHCONTRAST
+	{
+		public uint Size;
+		public uint Flags;
+		public nint DefaultScheme;
+	}
+
+	/// <summary>Whether Windows' high-contrast mode is on (SPI_GETHIGHCONTRAST).</summary>
+	public static bool HighContrastOn()
+	{
+		const uint SPI_GETHIGHCONTRAST = 0x0042, HCF_HIGHCONTRASTON = 0x1;
+		var info = new HIGHCONTRAST { Size = (uint)Marshal.SizeOf<HIGHCONTRAST>() };
+		if (!SystemParametersInfoW(SPI_GETHIGHCONTRAST, info.Size, ref info, 0)) throw new NativeCallException("SystemParametersInfo SPI_GETHIGHCONTRAST");
+		return (info.Flags & HCF_HIGHCONTRASTON) != 0;
+	}
+
+	[DllImport("user32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	private static extern bool SystemParametersInfoW(uint action, uint param, ref HIGHCONTRAST info, uint winIni);
+
+	[DllImport("user32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool SetLayeredWindowAttributes(nint hwnd, uint key, byte alpha, uint flags);
+
+	[DllImport("user32.dll", SetLastError = true)]
+	public static extern int SetWindowRgn(nint hwnd, nint region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
+	[DllImport("user32.dll")]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool InvalidateRect(nint hwnd, nint rect, [MarshalAs(UnmanagedType.Bool)] bool erase);
+
+	[DllImport("user32.dll")]
+	public static extern nint BeginPaint(nint hwnd, out PAINTSTRUCT paint);
+
+	[DllImport("user32.dll")]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool EndPaint(nint hwnd, ref PAINTSTRUCT paint);
+
+	[DllImport("user32.dll")]
+	public static extern int FillRect(nint dc, ref RECT rect, nint brush);
+
+	[DllImport("user32.dll")]
+	public static extern uint GetSysColor(int index);
+
+	[DllImport("gdi32.dll", SetLastError = true)]
+	public static extern nint CreateRectRgn(int left, int top, int right, int bottom);
+
+	[DllImport("gdi32.dll")]
+	public static extern int CombineRgn(nint destination, nint a, nint b, int mode);
+
+	[DllImport("gdi32.dll")]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool DeleteObject(nint obj);
+
+	[DllImport("gdi32.dll")]
+	public static extern nint GetStockObject(int index);
+
+	[DllImport("gdi32.dll")]
+	public static extern nint CreateSolidBrush(uint color);
+
 	public static nint RegisterClass(string name, WndProc proc, nint cursor = 0)
 	{
 		var wc = new WNDCLASSEXW

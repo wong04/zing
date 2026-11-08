@@ -6,6 +6,10 @@ namespace Zing.Host;
 /// </summary>
 public enum OverlayLevel
 {
+	/// <summary>The dim under a link preview (PeekScrim), below the page UI so find, downloads and prompts draw over a preview.</summary>
+	PeekScrim,
+	/// <summary>A link preview's buttons.</summary>
+	PeekControls,
 	/// <summary>The find bar, downloads list and permission prompt (PageUiLayer).</summary>
 	PageUi,
 	/// <summary>The vault's account picker under a sign-in field (PageUiLayer, #picker).</summary>
@@ -29,19 +33,28 @@ public enum OverlayLevel
 /// </summary>
 public sealed class OverlayHost
 {
-	private readonly SortedDictionary<OverlayLevel, HostedView> _views = [];
+	private readonly SortedDictionary<OverlayLevel, Action> _raises = [];
 
 	/// <summary>The view an overlay shows in, once it exists.</summary>
-	public void Add(OverlayLevel level, HostedView view)
+	public void Add(OverlayLevel level, HostedView view) => Add(level, view.Raise);
+
+	/// <summary>An overlay that is a window of its own rather than a view (the preview scrim): how to raise it.</summary>
+	public void Add(OverlayLevel level, Action raise)
 	{
-		if (_views.ContainsKey(level)) throw new InvalidOperationException($"The {level} overlay already has a view");
-		_views[level] = view;
+		if (_raises.ContainsKey(level)) throw new InvalidOperationException($"The {level} overlay already has a view");
+		_raises[level] = raise;
+	}
+
+	/// <summary>An overlay that comes and goes with what it shows (the preview scrim) is gone.</summary>
+	public void Remove(OverlayLevel level)
+	{
+		if (!_raises.Remove(level)) throw new InvalidOperationException($"The {level} overlay has no view");
 	}
 
 	/// <summary>Puts the overlay at <paramref name="level"/> above those below it, then re-raises the ones above it, lowest first.</summary>
 	public void Show(OverlayLevel level)
 	{
-		foreach (var (at, view) in _views)
-			if (at >= level) view.Raise();
+		foreach (var (at, raise) in _raises)
+			if (at >= level) raise();
 	}
 }

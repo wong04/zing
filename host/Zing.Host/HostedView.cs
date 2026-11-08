@@ -51,16 +51,7 @@ public sealed class HostedView
 	internal static int Pending { get; private set; }
 
 	/// <summary>How many sibling windows are stacked above the view's window; 0 is the top.</summary>
-	public int Depth
-	{
-		get
-		{
-			const uint GW_HWNDPREV = 3;
-			var depth = 0;
-			for (var above = Native.GetWindow(_hwnd, GW_HWNDPREV); above != 0; above = Native.GetWindow(above, GW_HWNDPREV)) depth++;
-			return depth;
-		}
-	}
+	public int Depth => Native.Depth(_hwnd);
 
 	/// <summary>Whether the view floats above the window in a popup of its own.</summary>
 	public bool IsOverlay => _overlay;

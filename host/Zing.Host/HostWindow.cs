@@ -63,6 +63,8 @@ public sealed class HostWindow
 	public IReadOnlyList<HostedView> Views => _views;
 
 	public event Action? Resized;
+	/// <summary>The window moved on screen; owned popups that aren't views (the preview scrim) follow it by hand.</summary>
+	public event Action? Moved;
 	public event Action? Activated;
 	public event Action<HostedView, CoreWebView2AcceleratorKeyPressedEventArgs>? KeyPressed;
 	public event Action? Destroyed;
@@ -168,6 +170,7 @@ public sealed class HostWindow
 			case Native.WM_MOVE:
 				// Owned popups are placed on screen, so they follow the window by hand; the engine needs to know too.
 				foreach (var view in window._views) view.WindowMoved();
+				TestHooks.Guard(() => window.Moved?.Invoke(), "window moved");
 				break;
 			case Native.WM_ACTIVATE:
 				const int WA_INACTIVE = 0;
@@ -180,6 +183,8 @@ public sealed class HostWindow
 			case Native.WM_DPICHANGED:
 				var suggested = System.Runtime.InteropServices.Marshal.PtrToStructure<Native.RECT>(lParam);
 				Native.SetWindowPos(hwnd, 0, suggested.Left, suggested.Top, suggested.Right - suggested.Left, suggested.Bottom - suggested.Top, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+				// The layout is in DIPs, so it changes with the scale even when the size in pixels (and so WM_SIZE) didn't.
+				TestHooks.Guard(() => window.Resized?.Invoke(), "window dpi changed");
 				return 0;
 			case Native.WM_WTSSESSION_CHANGE:
 				SessionEvents.Instance.Raise();

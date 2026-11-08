@@ -41,6 +41,12 @@ public sealed class WebView2Page : IPage
 	private int _downloads;
 	private ulong _navigation;
 	private static readonly TimeSpan DownloadGrace = TimeSpan.FromSeconds(1);
+	/// <summary>A real document has started to show (ContentLoading for anything but the blank first one).</summary>
+	private bool _showedDocument;
+	/// <summary>The main frame's DevTools id, once Page.getFrameTree has answered; frames' navigation reasons are not the page's.</summary>
+	private string? _mainFrameId;
+	/// <summary>The latest main-frame Page.frameRequestedNavigation: it arrives before NavigationStarting for the same address (spikes/link-preview, check C).</summary>
+	private (string Url, string Reason)? _lastReason;
 
 	private static readonly Lazy<(string Script, string Css)> Reader = new(() =>
 	{
@@ -455,8 +461,13 @@ public sealed class WebView2Page : IPage
 
 	private void Wire(CoreWebView2 core)
 	{
+		core.GetDevToolsProtocolEventReceiver("Page.frameRequestedNavigation").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => NavigationRequested(e.ParameterObjectAsJson), "navigation reason");
+		Background(ReadNavigationReasonsAsync(core), "navigation reasons");
 		core.NavigationStarting += (_, e) =>
 		{
+			// Decided here and now: NavigationStarting has no deferral, and the reason has already arrived.
+			var cause = _lastReason is { Url: var url, Reason: "anchorClick" } && url == e.Uri && !e.IsRedirected ? NavigationCause.AnchorClick : NavigationCause.Other;
+			_lastReason = null;
 			var origin = e.NavigationKind switch
 			{
 				CoreWebView2NavigationKind.Reload => NavigationOrigin.Reload,
@@ -479,8 +490,7 @@ public sealed class WebView2Page : IPage
 				return;
 			}
 			// Links a page offers are cleaned at navigation time, server redirects included.
-			// Task 6 tells link clicks apart (Page.frameRequestedNavigation); until then none previews.
-			switch (_events.Navigating(core.Source, e.Uri, NavigationCause.Other))
+			switch (_events.Navigating(core.Source, e.Uri, cause))
 			{
 				case NavigationDecision.Cancelled:
 					e.Cancel = true;
@@ -533,16 +543,42 @@ public sealed class WebView2Page : IPage
 		core.WindowCloseRequested += (_, _) => _events.Closed();
 		core.NewWindowRequested += OnNewWindowRequested;
 		core.ProcessFailed += OnProcessFailed;
+		core.ContentLoading += (_, _) =>
+		{
+			if (core.Source is not ("" or "about:blank")) _showedDocument = true;
+		};
 		core.DownloadStarting += (_, e) =>
 		{
 			_downloads++;
 			_features.DownloadStarting(this, e);
+			// A preview that never showed a document was only this download: it closes, and the download goes on in the list.
+			// After the event, so the engine has the answer before the page goes.
+			if (!_showedDocument && _features.InPreview(this)) Faults.Enqueue(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), () =>
+			{
+				if (IsOpen) _events.Closed();
+			}, "preview download");
 		};
 		core.PermissionRequested += (_, e) => _features.PermissionRequested(this, e);
 		core.ContainsFullScreenElementChanged += (_, _) => _features.FullScreenChanged(this);
 		// ActiveMatchIndex already counts from 1, as the find bar does; it is -1 with no match.
 		core.Find.MatchCountChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
 		core.Find.ActiveMatchIndexChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
+	}
+
+	/// <summary>Page.enable turns on the reason events; the frame tree says which frame is the main one, whose id stays for the page's life.</summary>
+	private async Task ReadNavigationReasonsAsync(CoreWebView2 core)
+	{
+		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.enable", "{}").AsTask());
+		using var tree = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}").AsTask()));
+		_mainFrameId = tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("id").GetString();
+	}
+
+	private void NavigationRequested(string json)
+	{
+		using var request = System.Text.Json.JsonDocument.Parse(json);
+		var root = request.RootElement;
+		if (_mainFrameId is null || root.GetProperty("frameId").GetString() != _mainFrameId) return;
+		_lastReason = (root.GetProperty("url").GetString()!, root.GetProperty("reason").GetString()!);
 	}
 
 	private async Task IconChangedAsync(CoreWebView2 core)
@@ -775,6 +811,8 @@ public sealed class WebView2Page : IPage
 	/// </summary>
 	private void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs e)
 	{
+		// First, so a test's one-shot modifiers go with this request even when it is refused.
+		var modifiers = HeldModifiers();
 		// A relayed page opens relayed windows only (an https address goes onto the relay, as its links do), and nothing else opens one
 		// onto the relay; none opens onto Visit anyway.
 		var target = RelayedNavigation.NewWindowTarget(TopOf(sender), e.Uri);
@@ -784,9 +822,20 @@ public sealed class WebView2Page : IPage
 			if (RelayedNavigation.PlainHttpNotice(TopOf(sender), e.Uri) is { } refused) _events.Notice(refused);
 			return;
 		}
-		// Task 6 reads the keys and button that asked.
-		var request = new PopupRequest(target, default, e.WindowFeatures.HasSize || e.WindowFeatures.HasPosition);
+		var request = new PopupRequest(target, modifiers, e.WindowFeatures.HasSize || e.WindowFeatures.HasPosition);
 		Background(OpenPopupAsync(e, request), "popup");
+	}
+
+	/// <summary>
+	/// The keys and button held as the page asked for a window: WebView2 says nothing of them, so they are read as the event
+	/// fires. An e2e run never reads the real keyboard (AGENTS.md); its tests set them first (set-modifiers).
+	/// </summary>
+	private static Modifiers HeldModifiers()
+	{
+		if (TestHooks.TakeModifiers() is { } set) return set;
+		if (TestHooks.KeepsOutOfTheWay) return default;
+		const int VK_MBUTTON = 0x04, VK_SHIFT = 0x10, VK_CONTROL = 0x11;
+		return new Modifiers(Native.IsDown(VK_SHIFT), Native.IsDown(VK_CONTROL), Native.IsDown(VK_MBUTTON));
 	}
 
 	private async Task OpenPopupAsync(CoreWebView2NewWindowRequestedEventArgs e, PopupRequest request)

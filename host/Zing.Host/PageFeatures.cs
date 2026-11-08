@@ -17,6 +17,8 @@ public interface IPageFeatureHost
 	void FullScreenChanged(WebView2Page page);
 	/// <summary>The password vault is on, so pages get the autofill script and may post its messages.</summary>
 	bool AutofillOn { get; }
+	/// <summary>The page is a layer of the window's link preview.</summary>
+	bool InPreview(WebView2Page page);
 }
 
 /// <summary>
