@@ -1138,15 +1138,24 @@ public sealed class ChromeApi : IDisposable
 		public HeldSyncSignIn SignIn { get; } = signIn;
 		public SyncRestore Restore { get; } = restore;
 
-		/// <summary>Held by the step running (N5): a second one is refused, not queued.</summary>
+		/// <summary>Held by the step running (N5): a second one is refused, not queued. A retired restore keeps it held for good (N7).</summary>
 		public SemaphoreSlim Step { get; } = new(1, 1);
 
-		/// <summary>A newer restore sign-in replaced this one: its refresh token is revoked, best effort (Ruling 49), then the client goes.</summary>
-		public async Task RetireAsync()
+		/// <summary>
+		/// A newer restore sign-in replaced this one, or was refused: its refresh token is revoked in the background, best effort (Ruling
+		/// 49; N6), then the client goes. A revoke that didn't happen is told to <paramref name="warn"/>.
+		/// </summary>
+		public void Retire(Action<string, Exception> warn) => _ = RetireInBackgroundAsync(warn);
+
+		private async Task RetireInBackgroundAsync(Action<string, Exception> warn)
 		{
 			try
 			{
-				await client.SignOutAsync(CancellationToken.None);
+				if (!await client.SignOutAsync(CancellationToken.None)) warn("revoke a replaced restore sign-in", new SyncRevokeFailedException("The sync server couldn't be reached to revoke a replaced restore sign-in; it expires unused"));
+			}
+			catch (Exception error)
+			{
+				warn("revoke a replaced restore sign-in", error);
 			}
 			finally
 			{
@@ -1165,14 +1174,16 @@ public sealed class ChromeApi : IDisposable
 	/// <summary>
 	/// Restore from sync's first step at the gate: the Google sign-in as Turn on sync does it, kept in memory by the restore's own client.
 	/// Nothing on this PC changes yet: the vault is turned on, and the sign-in kept in its sync.json, only once a restore succeeds (M4).
+	/// Refused with <see cref="SyncRestoreBusyException"/> while a step of the restore it would replace is running (N7).
 	/// </summary>
 	private async Task<object?> SignInToRestoreAsync()
 	{
 		var setup = _app.Sync ?? throw new SyncNotSetUpException();
+		if (_restore is { Step.CurrentCount: 0 }) throw new SyncRestoreBusyException();
 		return await WithGoogleSignInAsync(setup, async (idToken, cancellation) =>
 		{
 			var held = new HeldSyncSignIn();
-			var client = new SyncClient(setup.Server, held, setup.Handler);
+			var client = new SyncClient(setup.Server, held, setup.Handler, setup.Warn);
 			SyncAccount account;
 			try
 			{
@@ -1183,7 +1194,15 @@ public sealed class ChromeApi : IDisposable
 				client.Dispose();
 				throw;
 			}
-			if (Interlocked.Exchange(ref _restore, new Restoring(held, client, new SyncRestore(_app.Account, VaultForRestore, client, held))) is { } replaced) await replaced.RetireAsync();
+			var next = new Restoring(held, client, new SyncRestore(_app.Account, VaultForRestore, client, held));
+			var replaced = _restore;
+			// A step that started during the Google sign-in keeps its restore; taking its step lock retires it for good otherwise.
+			if ((replaced is not null && !replaced.Step.Wait(0)) || Interlocked.CompareExchange(ref _restore, next, replaced) != replaced)
+			{
+				next.Retire(_host.Warn);
+				throw new SyncRestoreBusyException();
+			}
+			replaced?.Retire(_host.Warn);
 			return new SyncState(SignedIn: true, account.Email);
 		}, () => SyncState.SignedOut());
 	}
@@ -1225,6 +1244,9 @@ public sealed class ChromeApi : IDisposable
 		return AccountOutcome.Ok(_app.Account.State());
 	}
 
+	/// <summary>The account is made, so the vault the restore turned on stays on whatever fails after (Ruling 65).</summary>
+	private void KeepVaultOn() => _restoreTurnedVaultOn = false;
+
 	/// <summary>The restore made the account: its sign-in goes into the vault's sync.json through the vault's own client, and the restore ends.</summary>
 	private async Task KeepRestoreSignInAsync(Restoring restoring)
 	{
@@ -1236,6 +1258,7 @@ public sealed class ChromeApi : IDisposable
 	private Task<AccountOutcome> RestoreWithPasswordAsync(string password) => RestoreStepAsync(async restoring =>
 	{
 		await restoring.Restore.RestoreWithPasswordAsync(password, _closing.Token);
+		KeepVaultOn();
 		await KeepRestoreSignInAsync(restoring);
 	});
 
@@ -1245,6 +1268,7 @@ public sealed class ChromeApi : IDisposable
 	private Task<AccountOutcome> SetPasswordAfterRecoveryAsync(string password) => RestoreStepAsync(async restoring =>
 	{
 		await restoring.Restore.ChangePasswordAfterRecoveryAsync(password, _closing.Token);
+		KeepVaultOn();
 		await KeepRestoreSignInAsync(restoring);
 	});
 

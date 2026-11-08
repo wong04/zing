@@ -436,8 +436,56 @@ public sealed class SyncBridgeTests : IDisposable
 
 		Value(await Invoke(b, "sync:restore-sign-in"));
 
+		// The revoke runs in the background (N6).
+		var waited = System.Diagnostics.Stopwatch.StartNew();
+		while (_server.Wire.Count("POST /auth/signout") == signOuts && waited.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(20, TestContext.Current.CancellationToken);
 		Assert.Equal(signOuts + 1, _server.Wire.Count("POST /auth/signout"));
 		Assert.Equal("ok", Value(await Invoke(b, "sync:restore-password", Strong)).GetProperty("status").GetString());
+	}
+
+	[Fact]
+	public async Task ARestoreSignInWhileAStepRunsIsRefused()
+	{
+		await TurnOnElsewhereAsync();
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+		var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		_server.Wire.BeforeSend = async line =>
+		{
+			if (line != "GET /keys" || reached.Task.IsCompleted) return;
+			reached.SetResult();
+			await release.Task;
+		};
+
+		var step = Invoke(b, "sync:restore-password", Strong);
+		await reached.Task;
+		var signIn = await Invoke(b, "sync:restore-sign-in");
+		release.SetResult();
+
+		Assert.Equal(nameof(SyncRestoreBusyException), signIn.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal("ok", Value(await step).GetProperty("status").GetString());
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task AFailureAfterTheAccountIsMadeLeavesTheVaultOn()
+	{
+		await TurnOnElsewhereAsync();
+		using var fresh = new Switched(_sealer, on: false);
+		// The sync.json write that keeps the restore's sign-in fails: its temp file's name is taken by a folder.
+		Directory.CreateDirectory(Path.Combine(fresh.Dir, $"{VaultStore.SyncFileName}.{Environment.ProcessId}.tmp"));
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+
+		var failed = await Invoke(b, "sync:restore-password", Strong);
+
+		Assert.False(failed.GetProperty("ok").GetBoolean());
+		account.CheckPassword(Strong);
+		Assert.True(fresh.Settings.Get("passwordAutofill")!.GetValue<bool>());
 	}
 
 	[Fact]

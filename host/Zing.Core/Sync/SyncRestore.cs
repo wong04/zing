@@ -86,8 +86,9 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 		var store = vault();
 		using var gate = await SyncKeys.EnterGateAsync(store, cancellation);
 		RequireRestorableHere(store, signedIn.UserId, keys.VaultId);
-		await RequireServerNotBehindAsync(store, signedIn.UserId, keys.VaultId, server, password, cancellation);
+		// After the settle (N1 of re-review 2): it may commit later keys, and the check must see the keys that are kept.
 		await SyncKeys.SettlePendingAsync(store, client, signedIn, cancellation);
+		await RequireServerNotBehindAsync(store, signedIn.UserId, keys.VaultId, server, password, cancellation);
 		await store.RestoreKeysAsync(keys, KeptWith(store, signedIn.UserId, keys.VaultId, server));
 		MakeAccount(profile, password);
 	}
@@ -211,7 +212,7 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 	}
 
 	/// <summary>
-	/// Under the key lock, before Hello (N1 of the Task 14 re-review). Over this PC's own keys for the same account and vault at a later
+	/// Under the key lock, after the settle and before Hello (N1 of the Task 14 re-reviews). Over this PC's own keys for the same account and vault at a later
 	/// version than the server's, the password must open those too: one that opens only the server's older keys is an old password, and
 	/// making it the account password would split it from the sync password.
 	/// </summary>

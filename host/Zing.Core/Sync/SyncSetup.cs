@@ -12,12 +12,14 @@ public interface IGoogleSignIn
 
 /// <summary>What this build syncs with (Ruling 48): null when it was built without a Google client ID.</summary>
 /// <param name="Handler">How requests reach the server; null is the network. Tests pass the in-process server's.</param>
-public sealed record SyncSetup(Uri Server, IGoogleSignIn SignIn, HttpMessageHandler? Handler = null)
+/// <param name="Warn">Told what a sync client's background work couldn't do (a replaced sign-in's revoke); null traces it.</param>
+public sealed record SyncSetup(Uri Server, IGoogleSignIn SignIn, HttpMessageHandler? Handler = null, Action<string, Exception>? Warn = null)
 {
 	/// <summary>Sync as the build's metadata gives it: null for a build without a Google client, which Turn on sync then says.</summary>
 	/// <param name="signIn">Makes the Google sign-in from the client ID and secret.</param>
-	public static SyncSetup? FromBuild(Func<string, string?> metadata, Func<string, string, IGoogleSignIn> signIn) =>
-		SyncBuildSettings.Read(metadata) is { } build ? new SyncSetup(build.Server, signIn(build.ClientId, build.ClientSecret)) : null;
+	/// <param name="warn">Where background failures go (the host's fault log).</param>
+	public static SyncSetup? FromBuild(Func<string, string?> metadata, Func<string, string, IGoogleSignIn> signIn, Action<string, Exception>? warn = null) =>
+		SyncBuildSettings.Read(metadata) is { } build ? new SyncSetup(build.Server, signIn(build.ClientId, build.ClientSecret), Warn: warn) : null;
 }
 
 /// <summary>
@@ -574,7 +576,7 @@ public sealed class SyncClients : IDisposable
 		if (_client is not null && ReferenceEquals(_vault, vault)) return _client;
 		_client?.Dispose();
 		_vault = vault;
-		_client = new SyncClient(_setup.Server, vault, _setup.Handler);
+		_client = new SyncClient(_setup.Server, vault, _setup.Handler, _setup.Warn);
 		return _client;
 	}
 

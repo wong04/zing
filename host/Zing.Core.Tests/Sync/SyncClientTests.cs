@@ -210,8 +210,37 @@ public sealed class SyncClientTests : IDisposable
 		var replaced = store.SyncAccount()!.Refresh;
 
 		await client.SignInAsync(await _server.MintIdTokenAsync(), Ct);
+		await client.Revoking;
 
 		Assert.NotEqual(replaced, store.SyncAccount()!.Refresh);
+		Assert.Equal(HttpStatusCode.Unauthorized, await RefreshStatusAsync(replaced));
+	}
+
+	[Fact]
+	public async Task AStalledRevokeDoesntHoldUpTheSignInThatReplacedIt()
+	{
+		var (client, store) = await SignedIn();
+		using var _ = client;
+		var replaced = store.SyncAccount()!.Refresh;
+		var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		_server.Wire.BeforeSend = async line =>
+		{
+			if (line == "POST /auth/signout") await held.Task;
+		};
+
+		var signIn = client.SignInAsync(await _server.MintIdTokenAsync(), Ct);
+		Task first;
+		try
+		{
+			first = await Task.WhenAny(signIn, Task.Delay(TimeSpan.FromSeconds(10), Ct));
+		}
+		finally
+		{
+			held.SetResult();
+		}
+
+		Assert.Same(signIn, first);
+		await client.Revoking;
 		Assert.Equal(HttpStatusCode.Unauthorized, await RefreshStatusAsync(replaced));
 	}
 
@@ -226,6 +255,7 @@ public sealed class SyncClientTests : IDisposable
 		var adopted = otherStore.SyncAccount()!;
 
 		await client.AdoptAsync(adopted, Ct);
+		await client.Revoking;
 
 		Assert.Equal(adopted, store.SyncAccount());
 		Assert.Equal(HttpStatusCode.Unauthorized, await RefreshStatusAsync(replaced));

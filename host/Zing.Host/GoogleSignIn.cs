@@ -193,7 +193,7 @@ public sealed class FakeIssuerSignIn(Uri server, string sub) : IGoogleSignIn
 /// <summary>What this build syncs with (Ruling 48), from its assembly metadata (Zing.Host.csproj): see <see cref="SyncBuildSettings"/>.</summary>
 public static class SyncBuild
 {
-	public static SyncSetup? Setup() => SyncSetup.FromBuild(Metadata, (clientId, secret) => new GoogleSignIn(clientId, secret));
+	public static SyncSetup? Setup() => SyncSetup.FromBuild(Metadata, (clientId, secret) => new GoogleSignIn(clientId, secret), Faults.Warning);
 
 	private static string? Metadata(string key) =>
 		typeof(SyncBuild).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(a => a.Key == key)?.Value;

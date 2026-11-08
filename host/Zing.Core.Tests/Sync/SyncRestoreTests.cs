@@ -296,6 +296,46 @@ public sealed class SyncRestoreTests : IDisposable
 		Assert.Equal(hello, _pcs.A.Sealer.Calls);
 	}
 
+	[Fact]
+	public async Task APasswordRestoreIsRefusedWhenTheSettleCommitsLaterKeysThanTheServerFirstServed()
+	{
+		await TurnOnAWithALoginAsync();
+		var wire = _pcs.Server.Wire;
+		string? v1Body = null;
+		wire.Rewrite = (line, body) =>
+		{
+			if (line == "GET /keys") v1Body = body;
+			return body;
+		};
+		await _pcs.A.Client.GetKeysAsync(Ct);
+		wire.Rewrite = null;
+		var dropped = false;
+		wire.LoseNextAnswerTo = "PUT /keys";
+		wire.FailWhen = line =>
+		{
+			if (dropped || line != "GET /keys" || wire.Count("PUT /keys") < 2) return false;
+			dropped = true;
+			return true;
+		};
+		await Assert.ThrowsAsync<HttpRequestException>(() => new SyncKeys(_pcs.Account, _pcs.A.Vault, _pcs.A.Client).ChangePasswordAsync(Strong, NextStrong, Ct));
+		wire.FailWhen = null;
+		Assert.Equal(2, _pcs.A.Vault.PendingSyncKeys!.BaseVersion + 1);
+		_pcs.Account.SignOut();
+		var served = false;
+		wire.Rewrite = (line, body) =>
+		{
+			if (line != "GET /keys" || served) return body;
+			served = true;
+			return v1Body!;
+		};
+
+		await Assert.ThrowsAsync<SyncServerBehindException>(() => Restore(_pcs.A, _pcs.Account).RestoreWithPasswordAsync(Strong, Ct));
+
+		Assert.False(_pcs.Account.State().SignedIn);
+		_pcs.Account.CheckPassword(Strong);
+		Assert.Equal(2, _pcs.A.Vault.SyncKeys!.Version);
+	}
+
 	/// <summary>A turns sync on (v1, Strong) and changes the password (v2, NextStrong); the server then serves v1's bytes as v3.</summary>
 	private async Task<VersionedBlob> ReplayOldKeysAsync()
 	{

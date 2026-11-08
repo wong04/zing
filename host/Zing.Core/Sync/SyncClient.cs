@@ -23,6 +23,9 @@ public sealed class SyncConflictException(VersionedBlob? current)
 /// <summary>A sync call with no account to call as: sign in first.</summary>
 public sealed class NotSignedInToSyncException() : Exception("Sync isn't on. Turn on sync in Settings first.");
 
+/// <summary>A replaced sign-in's refresh token couldn't be revoked: it stays unused until it expires.</summary>
+public sealed class SyncRevokeFailedException(string message) : Exception(message);
+
 /// <summary>The server's answer had no body, or not the one its endpoint documents.</summary>
 public sealed class SyncProtocolException(string message) : Exception(message);
 
@@ -112,6 +115,11 @@ public sealed class SyncClient : IDisposable
 	/// </summary>
 	public bool RefreshUnanswered { get; private set; }
 
+	/// <summary>The last revoke of a replaced sign-in, which runs in the background (N6): tests wait on it.</summary>
+	internal Task Revoking { get; private set; } = Task.CompletedTask;
+
+	private readonly Action<string, Exception> _warn;
+
 	/// <summary>A refresh got no answer, whatever sent it (M12): the sync engine retries within the server's 2-minute window.</summary>
 	public event Action? RefreshLost;
 
@@ -119,8 +127,10 @@ public sealed class SyncClient : IDisposable
 	private sealed record Session(string Token, string UserId);
 
 	/// <param name="handler">How requests are sent; null sends them over the network. Not disposed with the client.</param>
-	public SyncClient(Uri server, ISyncAccountStore store, HttpMessageHandler? handler = null)
+	/// <param name="warn">Told when a background revoke fails; null traces it.</param>
+	public SyncClient(Uri server, ISyncAccountStore store, HttpMessageHandler? handler = null, Action<string, Exception>? warn = null)
 	{
+		_warn = warn ?? ((what, error) => System.Diagnostics.Trace.TraceWarning($"{what}: {error}"));
 		_http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
 		_http.BaseAddress = server;
 		// Each call sets its own: a refresh gets longer than the rest.
@@ -149,7 +159,7 @@ public sealed class SyncClient : IDisposable
 		var replaced = StoredToReplace();
 		_store.SaveSyncAccount(account);
 		_session = new Session(login.Session, login.UserId);
-		await RevokeReplacedAsync(replaced, account);
+		RevokeReplaced(replaced, account);
 		return account;
 	}
 
@@ -172,7 +182,7 @@ public sealed class SyncClient : IDisposable
 		{
 			_refreshing.Release();
 		}
-		await RevokeReplacedAsync(replaced, account);
+		RevokeReplaced(replaced, account);
 	}
 
 	/// <summary>The sign-in a save is about to replace; null when there's none, or when it doesn't unseal and so can't be revoked.</summary>
@@ -189,13 +199,26 @@ public sealed class SyncClient : IDisposable
 	}
 
 	/// <summary>
-	/// A replaced sign-in's refresh token is revoked best effort, as signing out does (Ruling 49): an unreachable server leaves it to
-	/// expire unused within 90 days. Not the caller's cancel: the new sign-in is already stored.
+	/// A replaced sign-in's refresh token is revoked best effort, as signing out does (Ruling 49), in the background so the sign-in
+	/// that replaced it answers at once (N6). An unreachable server leaves it to expire unused within 90 days; either way, a revoke
+	/// that didn't happen is told to <c>warn</c>.
 	/// </summary>
-	private async Task RevokeReplacedAsync(SyncAccount? replaced, SyncAccount account)
+	private void RevokeReplaced(SyncAccount? replaced, SyncAccount account)
 	{
 		if (replaced is null || replaced.Refresh == account.Refresh) return;
-		await RevokeAsync(replaced.Refresh, CancellationToken.None);
+		Revoking = RevokeInBackgroundAsync(replaced.Refresh);
+	}
+
+	private async Task RevokeInBackgroundAsync(string refresh)
+	{
+		try
+		{
+			if (!await RevokeAsync(refresh, CancellationToken.None)) _warn("revoke a replaced sync sign-in", new SyncRevokeFailedException("The sync server couldn't be reached to revoke a replaced sign-in; it expires unused"));
+		}
+		catch (Exception error)
+		{
+			_warn("revoke a replaced sync sign-in", error);
+		}
 	}
 
 	/// <summary>
