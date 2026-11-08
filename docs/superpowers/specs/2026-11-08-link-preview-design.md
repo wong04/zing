@@ -205,3 +205,15 @@ The spike, done 2026-11-08, is in `spikes/link-preview/` (throwaway, not part of
 - Animation timing, shadow size and the exact dim alpha, within the values above.
 - How to tell that Esc was "used by the page". If it cannot be told reliably, ship Ctrl+W and the buttons, and say so.
 - The PARITY row ID and the GitHub issue.
+
+## Hand checks (owner)
+
+- [ ] H1: the dim and the hole at 100% and 150% DPI.
+- [ ] H2: dragging the window to a monitor with different scaling while a preview is open.
+- [ ] H3: live drag-resize, with no flicker that exposes the dim over the preview.
+- [ ] H4: Narrator reads "Close preview" and "Open as tab" and the live region.
+- [ ] H5: Alt+Tab away and back, and focus returns to the preview page.
+- [ ] H6: high contrast.
+- [ ] H7: Gmail → a Docs link, and a Google search result loads in place.
+- [ ] H8: `Page.enable` cost. Open 20 tabs and compare memory and CPU with the previous build, and note it.
+- [ ] H9: run the three link-preview @real-input tests (npm run test:e2e:real-input) on an idle PC; they have not run yet.
