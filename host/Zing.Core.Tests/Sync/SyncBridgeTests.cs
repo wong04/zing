@@ -26,6 +26,19 @@ public sealed class SyncBridgeTests : IDisposable
 		Directory.Delete(_dir, recursive: true);
 	}
 
+	/// <summary>A Google sign-in the person never finishes: it waits until it is cancelled.</summary>
+	private sealed class NeverFinishedSignIn : IGoogleSignIn
+	{
+		public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public async Task<string> SignInAsync(CancellationToken cancellation)
+		{
+			Started.SetResult();
+			await Task.Delay(Timeout.Infinite, cancellation);
+			throw new InvalidOperationException("unreachable");
+		}
+	}
+
 	private sealed class FakeIssuerSignIn(LocalSyncServer server) : IGoogleSignIn
 	{
 		public int Calls { get; private set; }
@@ -37,12 +50,18 @@ public sealed class SyncBridgeTests : IDisposable
 		}
 	}
 
-	private Bridge Api(SyncSetup? sync)
+	private readonly FakeWindowHost _host = new();
+
+	private Bridge Api(SyncSetup? sync, VaultStore? vault = null)
 	{
 		var bridge = new Bridge();
-		_apis.Add(new ChromeApi(bridge, new AppServices(new SettingsStore(), _library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), Vault: _vault, Sync: sync), new FakeWindowHost(), "test"));
+		_apis.Add(new ChromeApi(bridge, new AppServices(new SettingsStore(), _library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), Vault: vault ?? _vault, Sync: sync), _host, "test"));
 		return bridge;
 	}
+
+	private List<SyncState> PushedStates() => [.. _host.Pushed.Where(p => p.Channel == "sync:state").Select(p => (SyncState)p.Payload!)];
+
+	private static string? Notice(JsonElement state) => state.TryGetProperty("notice", out var notice) ? notice.GetString() : null;
 
 	private SyncSetup Setup(IGoogleSignIn signIn) => new(_server.Address, signIn, _server.Handler());
 
@@ -73,7 +92,7 @@ public sealed class SyncBridgeTests : IDisposable
 	}
 
 	[Fact]
-	public async Task SigningOutForgetsTheAccount()
+	public async Task SigningOutRevokesOnTheServerAndForgetsTheAccount()
 	{
 		var bridge = Api(Setup(new FakeIssuerSignIn(_server)));
 		Value(await Invoke(bridge, "sync:sign-in"));
@@ -81,7 +100,80 @@ public sealed class SyncBridgeTests : IDisposable
 		var state = Value(await Invoke(bridge, "sync:sign-out"));
 
 		Assert.False(state.GetProperty("signedIn").GetBoolean());
+		Assert.Null(Notice(state));
 		Assert.Null(_vault.SyncAccount());
+		Assert.Equal(1, _server.Wire.Count("POST /auth/signout"));
+	}
+
+	[Fact]
+	public async Task SigningOutWithTheServerDownForgetsTheAccountAndSaysTheServerCopyExpires()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		_server.Wire.Down = true;
+
+		var state = Value(await Invoke(bridge, "sync:sign-out"));
+
+		Assert.False(state.GetProperty("signedIn").GetBoolean());
+		Assert.Equal("kept-on-server", Notice(state));
+		Assert.Null(_vault.SyncAccount());
+	}
+
+	[Fact]
+	public async Task ASignInTheServerEndedSaysSoUntilTheNextSignIn()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		_vault.MarkSyncSignedOut();
+
+		Assert.Equal("signed-out", Notice(Value(await Invoke(bridge, "sync:get"))));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Assert.Null(Notice(Value(await Invoke(bridge, "sync:get"))));
+	}
+
+	[Fact]
+	public async Task AnUnreadableSignInIsReportedAndSigningInAgainReplacesIt()
+	{
+		_vault.SaveSyncAccount(new SyncAccount("user", "old@example.test", "old"));
+		using var foreign = new VaultStore(_dir, new FakeCipher(foreign: true), new FakeSealer(), new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), foreign);
+
+		var state = Value(await Invoke(bridge, "sync:get"));
+		Assert.False(state.GetProperty("signedIn").GetBoolean());
+		Assert.Equal("unreadable", Notice(state));
+
+		var again = Value(await Invoke(bridge, "sync:sign-in"));
+		Assert.True(again.GetProperty("signedIn").GetBoolean());
+		using var readable = new VaultStore(_dir, new FakeCipher(), new FakeSealer(), new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
+		Assert.Equal(LocalSyncServer.Email, readable.SyncAccount()!.Email);
+	}
+
+	[Fact]
+	public async Task CancellingASignInEndsItWithoutAnError()
+	{
+		var signIn = new NeverFinishedSignIn();
+		var bridge = Api(Setup(signIn));
+
+		var signingIn = Invoke(bridge, "sync:sign-in");
+		await signIn.Started.Task;
+		Assert.True((await Invoke(bridge, "sync:cancel-sign-in")).GetProperty("ok").GetBoolean());
+		var state = Value(await signingIn);
+
+		Assert.False(state.GetProperty("signedIn").GetBoolean());
+		Assert.Null(_vault.SyncAccount());
+	}
+
+	[Fact]
+	public async Task EveryChangeIsPushedToTheWindow()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)));
+
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:sign-out"));
+
+		var pushed = PushedStates();
+		Assert.Contains(pushed, s => s.SignedIn && s.Email == LocalSyncServer.Email);
+		Assert.False(pushed[^1].SignedIn);
 	}
 
 	[Fact]

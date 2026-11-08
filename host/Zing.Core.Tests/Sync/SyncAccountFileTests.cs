@@ -75,6 +75,51 @@ public sealed class SyncAccountFileTests : IDisposable
 	}
 
 	[Fact]
+	public void SignedOutByTheServerIsKeptUntilTheNextSignIn()
+	{
+		using (var vault = Open())
+		{
+			vault.SaveSyncAccount(Account);
+			vault.MarkSyncSignedOut();
+		}
+
+		using var reopened = Open();
+		Assert.Null(reopened.SyncAccount());
+		Assert.True(reopened.SyncSignedOutByServer);
+		reopened.SaveSyncAccount(Account);
+		Assert.False(reopened.SyncSignedOutByServer);
+		reopened.ForgetSyncAccount();
+		Assert.False(reopened.SyncSignedOutByServer);
+	}
+
+	[Fact]
+	public void EveryAccountChangeIsAnnounced()
+	{
+		using var vault = Open();
+		var changes = 0;
+		vault.SyncChanged += () => changes++;
+
+		vault.SaveSyncAccount(Account);
+		vault.MarkSyncSignedOut();
+		vault.ForgetSyncAccount();
+
+		Assert.Equal(3, changes);
+	}
+
+	[Fact]
+	public void AnUnreadableAccountCanBeForgottenAndReplaced()
+	{
+		using (var vault = Open()) vault.SaveSyncAccount(Account);
+		using var foreign = new VaultStore(_dir, new FakeCipher(foreign: true), new FakeSealer(), new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
+
+		foreign.SaveSyncAccount(Account with { Refresh = "replaced" });
+
+		foreign.Dispose();
+		using var reopened = Open();
+		Assert.Equal("replaced", reopened.SyncAccount()!.Refresh);
+	}
+
+	[Fact]
 	public void AClosedVaultRefusesToSaveTheAccount()
 	{
 		var vault = Open();

@@ -58,6 +58,10 @@ Separate several `sub` values with commas to allow more than one account.
 6. **Health check**: Railway calls `/health` (from `railway.json`) and only switches traffic when it returns 200. Check it yourself with `curl https://<your-domain>/health`.
 7. **Usage limit**: in Railway's billing settings, set a usage limit and a usage alert so a runaway bill cannot happen on the Hobby plan.
 
+## Sessions and refresh tokens
+
+`POST /auth/google` starts a sign-in: a 15-minute session and a refresh token that rotates on each `POST /auth/refresh`. Reusing a rotated token revokes every refresh token of that user, except a repeat within 2 minutes of its first use while its successor is still unused: that is a client that lost the answer, so it gets a new pair and the successor it never saw is revoked. `POST /auth/signout` with `{"refresh": "..."}` revokes every token of that sign-in (and no other); it answers 204 whether or not the token was known.
+
 ## Network exposure
 
 Reach the service only through Railway's proxy, and never expose its port directly (no TCP proxy, no public port mapping, nothing else in front of it). The per-IP rate limits trust the last `X-Forwarded-For` hop, which Railway's proxy appends. A client that can reach the port directly can forge that header and sidestep the limits.

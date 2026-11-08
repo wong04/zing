@@ -89,6 +89,8 @@ public sealed class VaultStore : IDisposable, ISyncAccountStore
 	private readonly List<QueuedChange> _queued;
 	/// <summary>Who this PC syncs as, its refresh token sealed; under <c>_gate</c>, and written with the queue into sync.json.</summary>
 	private SyncAccountFile? _syncAccount;
+	/// <summary>The server ended the last sign-in (Ruling 50); cleared by the next sign-in or a sign-out. Under <c>_gate</c>.</summary>
+	private bool _syncSignedOut;
 	private readonly Dictionary<string, SummaryPayload> _summaries;
 	private VaultKeys? _keys;
 	private readonly Action _availabilityChanged;
@@ -116,7 +118,7 @@ public sealed class VaultStore : IDisposable, ISyncAccountStore
 		_session = session;
 		_keys = Guard(KeysFile, VaultKeys.Load);
 		_records = Guard(VaultFile, LoadRecords);
-		(_queued, _syncAccount) = Guard(SyncFile, LoadSyncFile);
+		(_queued, _syncAccount, _syncSignedOut) = Guard(SyncFile, LoadSyncFile);
 		_summaries = Guard(VaultFile, _ => DecryptSummaries());
 		_availabilityChanged = () =>
 		{
@@ -531,37 +533,47 @@ public sealed class VaultStore : IDisposable, ISyncAccountStore
 		}
 	}
 
-	/// <summary>Writes the account into sync.json beside the queue, the refresh token sealed (DPAPI). On disk when it returns.</summary>
-	public void SaveSyncAccount(SyncAccount account)
+	/// <summary>The server ended the last sign-in (a refused refresh token), and nobody has signed in or out since.</summary>
+	public bool SyncSignedOutByServer
 	{
-		var stored = new SyncAccountFile(account.UserId, account.Email, _cipher.Encrypt(Encoding.UTF8.GetBytes(account.Refresh)));
-		lock (_gate)
+		get
 		{
-			RequireOpen();
-			WriteSyncFile(_queued, stored);
-			_syncAccount = stored;
+			lock (_gate) return _syncSignedOut;
 		}
 	}
 
+	/// <summary>Fires after the sync account was saved, forgotten or ended by the server.</summary>
+	public event Action? SyncChanged;
+
+	/// <summary>Writes the account into sync.json beside the queue, the refresh token sealed (DPAPI). On disk when it returns. Replaces one that doesn't unseal.</summary>
+	public void SaveSyncAccount(SyncAccount account) =>
+		WriteSyncAccount(new SyncAccountFile(account.UserId, account.Email, _cipher.Encrypt(Encoding.UTF8.GetBytes(account.Refresh))), signedOut: false);
+
 	/// <summary>Signs this PC out of sync: the account leaves sync.json; queued changes stay.</summary>
-	public void ForgetSyncAccount()
+	public void ForgetSyncAccount() => WriteSyncAccount(null, signedOut: false);
+
+	public void MarkSyncSignedOut() => WriteSyncAccount(null, signedOut: true);
+
+	private void WriteSyncAccount(SyncAccountFile? account, bool signedOut)
 	{
 		lock (_gate)
 		{
 			RequireOpen();
-			WriteSyncFile(_queued, null);
-			_syncAccount = null;
+			WriteSyncFile(_queued, account, signedOut);
+			_syncAccount = account;
+			_syncSignedOut = signedOut;
 		}
+		SyncChanged?.Invoke();
 	}
 
 	/// <summary>Under <c>_gate</c>.</summary>
-	private void WriteSyncFile(IReadOnlyList<QueuedChange> queued, SyncAccountFile? account) =>
-		JsonFiles.WriteAllBytesAtomic(SyncFile, JsonSerializer.SerializeToUtf8Bytes(new SyncFileContent(Format, queued, account), VaultJson.Options));
+	private void WriteSyncFile(IReadOnlyList<QueuedChange> queued, SyncAccountFile? account, bool signedOut) =>
+		JsonFiles.WriteAllBytesAtomic(SyncFile, JsonSerializer.SerializeToUtf8Bytes(new SyncFileContent(Format, queued, account, signedOut), VaultJson.Options));
 
 	private void Persist(List<LoginRecord> records, IReadOnlyList<QueuedChange> newlyQueued)
 	{
 		List<QueuedChange> queued = [.. _queued, .. newlyQueued];
-		WriteSyncFile(queued, _syncAccount);
+		WriteSyncFile(queued, _syncAccount, _syncSignedOut);
 		JsonFiles.WriteAllBytesAtomic(VaultFile, JsonSerializer.SerializeToUtf8Bytes(new VaultFileContent(Format, records), VaultJson.Options));
 		_records.Clear();
 		_records.AddRange(records);
@@ -750,16 +762,16 @@ public sealed class VaultStore : IDisposable, ISyncAccountStore
 		return [.. file.Items];
 	}
 
-	private static (List<QueuedChange> Queued, SyncAccountFile? Account) LoadSyncFile(string path)
+	private static (List<QueuedChange> Queued, SyncAccountFile? Account, bool SignedOut) LoadSyncFile(string path)
 	{
-		if (!File.Exists(path)) return ([], null);
+		if (!File.Exists(path)) return ([], null, false);
 		var file = JsonSerializer.Deserialize<SyncFileContent>(File.ReadAllBytes(path), VaultJson.Options) ?? throw new InvalidDataException($"{path} is empty");
 		if (file.Format != Format) throw new InvalidDataException($"{path} is format {file.Format}; this Zing reads {Format}");
 		if (file.Queued is null) throw new InvalidDataException($"{path} has no queued list");
 		if (file.Queued.Any(c => c is null || string.IsNullOrEmpty(c.ItemId))) throw new InvalidDataException($"{path} has a queued change without an item ID");
 		if (file.Account is { } account && (string.IsNullOrEmpty(account.UserId) || account.Email is null || account.SealedRefresh is not { Length: > 0 }))
 			throw new InvalidDataException($"{path} has a sync account without its user, email or refresh token");
-		return ([.. file.Queued], file.Account);
+		return ([.. file.Queued], file.Account, file.SignedOut);
 	}
 
 	private Dictionary<string, SummaryPayload> DecryptSummaries()
@@ -802,7 +814,7 @@ public sealed class VaultStore : IDisposable, ISyncAccountStore
 
 	private sealed record VaultFileContent(int Format, IReadOnlyList<LoginRecord> Items);
 
-	private sealed record SyncFileContent(int Format, IReadOnlyList<QueuedChange> Queued, SyncAccountFile? Account = null);
+	private sealed record SyncFileContent(int Format, IReadOnlyList<QueuedChange> Queued, SyncAccountFile? Account = null, bool SignedOut = false);
 
 	private sealed record SyncAccountFile(string UserId, string Email, byte[] SealedRefresh);
 }

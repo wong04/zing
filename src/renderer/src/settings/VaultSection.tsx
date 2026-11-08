@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { generatePassword } from '@shared/devtools/password'
-import { recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type SyncState, type VaultImportResult } from '@shared/vault/vault'
+import { recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type SyncNotice, type SyncState, type VaultImportResult } from '@shared/vault/vault'
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { SettingRowShell } from './SettingRowShell'
@@ -191,30 +191,57 @@ function LoginRow({ login, revealed, editing, run, notify, setRevealed, setEditi
 	)
 }
 
-/** Sync's sign-in: Turn on sync signs in with Google in the browser; signed in, it shows the account and a Sign out. Logins sync in later tasks. */
+const SYNC_NOTICES: Record<SyncNotice, string> = {
+	'signed-out': 'Signed out of sync, sign in again.',
+	unreadable: 'This PC\u2019s sync sign-in can\u2019t be read.',
+	'kept-on-server': 'Signed out on this PC. Zing couldn\u2019t reach the sync server, so its copy of the sign-in expires within 90 days.',
+}
+
+function syncDetail(sync: SyncState, busy: boolean): string {
+	if (sync.signedIn) return `Signed in as ${sync.email}.`
+	if (busy) return 'Finish signing in with Google in your browser.'
+	return 'Keep saved passwords in step across your PCs. The server only ever sees them encrypted.'
+}
+
+/**
+ * Sync's sign-in: Turn on sync signs in with Google in the browser, with Cancel while it waits; signed in, it shows the account and a
+ * Sign out. A sign-in the server ended, or one this PC can't read, says so and offers Sign in again. Logins sync in later tasks.
+ */
 function SyncRow() {
 	const [sync, setSync] = useState<SyncState>()
 	const [error, setError] = useState<string>()
+	// What the last sign-out said (kept-on-server); a pushed state doesn't carry it.
+	const [signOutNotice, setSignOutNotice] = useState<SyncNotice>()
 	const [busy, setBusy] = useState(false)
 
 	useEffect(() => {
 		let current = true
-		void zing.getSyncState().then((state) => {
-			if (current) setSync(state)
-		})
+		const unsubscribe = zing.onSyncState((state) => setSync(state))
+		zing.getSyncState().then(
+			(state) => {
+				if (current) setSync(state)
+			},
+			(failure: unknown) => {
+				if (current) setError(messageOf(failure))
+			},
+		)
 		return () => {
 			current = false
+			unsubscribe()
 		}
 	}, [])
 
-	if (!sync) return null
+	if (!sync) return error ? <InfoBanner kind="warning">{error}</InfoBanner> : null
 
-	const act = (work: () => Promise<SyncState>): void =>
+	const act = (work: () => Promise<SyncState>, after: (state: SyncState) => void = () => undefined): void =>
 		void (async () => {
 			setError(undefined)
+			setSignOutNotice(undefined)
 			setBusy(true)
 			try {
-				setSync(await work())
+				const state = await work()
+				setSync(state)
+				after(state)
 			} catch (failure) {
 				setError(messageOf(failure))
 			} finally {
@@ -222,22 +249,32 @@ function SyncRow() {
 			}
 		})()
 
+	const signIn = (): void => act(() => zing.signInToSync())
+	const signOut = (): void => act(() => zing.signOutOfSync(), (state) => setSignOutNotice(state.signedIn ? undefined : state.notice))
+	const notice = signOutNotice ?? (sync.signedIn ? undefined : sync.notice)
+	const signInLabel = notice === 'signed-out' || notice === 'unreadable' ? 'Sign in again' : 'Turn on sync'
+
 	return (
 		<div className="vault-sync" role="group" aria-label="Sync">
-			<SettingRowShell
-				title="Sync"
-				detail={sync.signedIn ? `Signed in as ${sync.email ?? ''}.` : busy ? 'Finish signing in with Google in your browser.' : 'Keep saved passwords in step across your PCs. The server only ever sees them encrypted.'}
-			>
+			<SettingRowShell title="Sync">
 				{sync.signedIn ? (
-					<PillButton variant="outlined" size="small" disabled={busy} onClick={() => act(() => zing.signOutOfSync())}>
+					<PillButton variant="outlined" size="small" disabled={busy} onClick={signOut}>
 						Sign out
 					</PillButton>
+				) : busy ? (
+					<PillButton variant="outlined" size="small" onClick={() => void zing.cancelSyncSignIn()}>
+						Cancel
+					</PillButton>
 				) : (
-					<PillButton variant="outlined" size="small" disabled={busy} onClick={() => act(() => zing.signInToSync())}>
-						Turn on sync
+					<PillButton variant="outlined" size="small" onClick={signIn}>
+						{signInLabel}
 					</PillButton>
 				)}
 			</SettingRowShell>
+			<div className="setting-row-detail" role="status" aria-live="polite">
+				{syncDetail(sync, busy)}
+			</div>
+			{notice ? <InfoBanner kind={notice === 'kept-on-server' ? 'info' : 'warning'}>{SYNC_NOTICES[notice]}</InfoBanner> : null}
 			{error ? <InfoBanner kind="warning">{error}</InfoBanner> : null}
 		</div>
 	)

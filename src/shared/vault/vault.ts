@@ -56,11 +56,13 @@ export interface VaultState {
 	filesExist: boolean
 }
 
-// Sync's sign-in, as Settings shows it (sync:get). The bridge leaves out a null email.
-export interface SyncState {
-	signedIn: boolean
-	email?: string
-}
+// Why a PC isn't signed in to sync, when Settings has something to say about it: the server ended the
+// sign-in (a refused refresh token), the saved sign-in can't be decrypted on this PC, or (from a sign-out
+// only) the server couldn't be reached, so its copy of the sign-in expires within 90 days.
+export type SyncNotice = 'signed-out' | 'unreadable' | 'kept-on-server'
+
+// Sync's sign-in, as Settings shows it (sync:get, sync:state). The bridge leaves out null fields.
+export type SyncState = { signedIn: true; email: string } | { signedIn: false; notice?: SyncNotice }
 
 // "Never for this site", kept per exact origin apart from the logins.
 export interface NeverSave {

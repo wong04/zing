@@ -33,7 +33,10 @@ public interface ISyncAccountStore
 {
 	SyncAccount? SyncAccount();
 	void SaveSyncAccount(SyncAccount account);
+	/// <summary>The person signed out.</summary>
 	void ForgetSyncAccount();
+	/// <summary>The server refused the refresh token: forget the account, and remember that the server ended it, for Settings to say.</summary>
+	void MarkSyncSignedOut();
 }
 
 /// <summary>The wrapped keys or the account manifest, with the version the server gave it.</summary>
@@ -62,10 +65,16 @@ public static class SyncJson
 /// <summary>
 /// The sync server's HTTP calls (server/Zing.Server), and nothing else. Every call but sign-in carries the 15-minute session; a
 /// 401 refreshes it once and retries, and a second 401 raises. Refresh tokens rotate and reusing one revokes them all, so a
-/// refresh runs one at a time and the rotated token is saved before the new session is used.
+/// refresh runs one at a time, is never cancelled once sent, and the rotated token is saved before anything else runs (Ruling 50).
+/// A refresh the server refuses signs this PC out.
 /// </summary>
 public sealed class SyncClient : IDisposable
 {
+	private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
+
+	/// <summary>Longer than a request's: giving up on a refresh the server may have done costs the token (the server's retry window is 2 minutes).</summary>
+	private static readonly TimeSpan RefreshTimeout = TimeSpan.FromSeconds(90);
+
 	private readonly HttpClient _http;
 	private readonly ISyncAccountStore _store;
 	private readonly SemaphoreSlim _refreshing = new(1, 1);
@@ -76,7 +85,8 @@ public sealed class SyncClient : IDisposable
 	{
 		_http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
 		_http.BaseAddress = server;
-		_http.Timeout = TimeSpan.FromSeconds(30);
+		// Each call sets its own: a refresh gets longer than the rest.
+		_http.Timeout = Timeout.InfiniteTimeSpan;
 		_store = store;
 	}
 
@@ -90,13 +100,55 @@ public sealed class SyncClient : IDisposable
 	public async Task<SyncAccount> SignInAsync(string idToken, CancellationToken cancellation = default)
 	{
 		var email = IdTokenEmail(idToken);
-		using var response = await _http.PostAsJsonAsync("auth/google", new { idToken }, SyncJson.Options, cancellation);
+		using var timeout = Limit(cancellation, RequestTimeout);
+		using var response = await _http.PostAsJsonAsync("auth/google", new { idToken }, SyncJson.Options, timeout.Token);
 		await EnsureSuccess(response, "auth/google", cancellation);
 		var login = await Read<LoginResponse>(response, cancellation);
 		var account = new SyncAccount(login.UserId, email, login.Refresh);
 		_store.SaveSyncAccount(account);
 		_session = login.Session;
 		return account;
+	}
+
+	/// <summary>
+	/// Signs this PC out (Ruling 49): asks the server to revoke this sign-in's refresh tokens, then forgets the account whatever the
+	/// server said. Answers whether the server revoked them; when it couldn't be reached, its copy expires unused within 90 days.
+	/// </summary>
+	public async Task<bool> SignOutAsync(CancellationToken cancellation = default)
+	{
+		// Under the refresh lock, so a refresh finishing meanwhile can't save the account back.
+		await _refreshing.WaitAsync(cancellation);
+		try
+		{
+			var account = _store.SyncAccount();
+			var revoked = account is null || await RevokeAsync(account.Refresh, cancellation);
+			_store.ForgetSyncAccount();
+			_session = null;
+			return revoked;
+		}
+		finally
+		{
+			_refreshing.Release();
+		}
+	}
+
+	/// <summary>Only an unreachable or failing server answers false; the caller's own cancel still raises.</summary>
+	private async Task<bool> RevokeAsync(string refresh, CancellationToken cancellation)
+	{
+		using var timeout = Limit(cancellation, RequestTimeout);
+		try
+		{
+			using var response = await _http.PostAsJsonAsync("auth/signout", new { refresh }, SyncJson.Options, timeout.Token);
+			return response.IsSuccessStatusCode;
+		}
+		catch (HttpRequestException)
+		{
+			return false;
+		}
+		catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+		{
+			return false;
+		}
 	}
 
 	/// <summary>The wrapped keys, or null before any were stored.</summary>
@@ -148,12 +200,16 @@ public sealed class SyncClient : IDisposable
 		return (await Read<PutResponse>(response, cancellation)).Version;
 	}
 
-	/// <summary>Sends with the session, refreshing it first if there is none; a 401 refreshes once and sends again. A request can't be sent twice, so it is made anew.</summary>
+	/// <summary>
+	/// Sends with the session, refreshing it first if there is none; a 401 refreshes once and sends again. A session this call has
+	/// just got that is refused raises at once: a second refresh would not help. A request can't be sent twice, so it is made anew.
+	/// </summary>
 	private async Task<HttpResponseMessage> SendAsync(Func<HttpRequestMessage> request, CancellationToken cancellation)
 	{
+		var fresh = _session is null;
 		var session = _session ?? await RefreshAsync(stale: null, cancellation);
 		var response = await SendWith(request(), session, cancellation);
-		if (response.StatusCode != HttpStatusCode.Unauthorized) return response;
+		if (response.StatusCode != HttpStatusCode.Unauthorized || fresh) return response;
 
 		response.Dispose();
 		var renewed = await RefreshAsync(session, cancellation);
@@ -165,7 +221,8 @@ public sealed class SyncClient : IDisposable
 		using (request)
 		{
 			request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session);
-			return await _http.SendAsync(request, cancellation);
+			using var timeout = Limit(cancellation, RequestTimeout);
+			return await _http.SendAsync(request, timeout.Token);
 		}
 	}
 
@@ -181,18 +238,36 @@ public sealed class SyncClient : IDisposable
 			if (_session is { } current && current != stale) return current;
 
 			var account = _store.SyncAccount() ?? throw new NotSignedInToSyncException();
-			using var response = await _http.PostAsJsonAsync("auth/refresh", new { refresh = account.Refresh }, SyncJson.Options, cancellation);
-			await EnsureSuccess(response, "auth/refresh", cancellation);
-			var refreshed = await Read<RefreshResponse>(response, cancellation);
-			// Saved before the session is used: the old token is already spent, and only this one gets the account back after a restart.
+			cancellation.ThrowIfCancellationRequested();
+
+			// Once sent, the server may rotate the token whether or not the answer gets back, so nothing the caller does stops it.
+			using var limit = new CancellationTokenSource(RefreshTimeout);
+			using var response = await _http.PostAsJsonAsync("auth/refresh", new { refresh = account.Refresh }, SyncJson.Options, limit.Token);
+			if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+			{
+				_session = null;
+				_store.MarkSyncSignedOut();
+				throw new SyncSignedOutException();
+			}
+			await EnsureSuccess(response, "auth/refresh", limit.Token);
+			var refreshed = await Read<RefreshResponse>(response, limit.Token);
+			// Saved before anything else: the old token is spent, and only this one gets the account back after a restart.
 			_store.SaveSyncAccount(account with { Refresh = refreshed.Refresh });
 			_session = refreshed.Session;
+			cancellation.ThrowIfCancellationRequested();
 			return refreshed.Session;
 		}
 		finally
 		{
 			_refreshing.Release();
 		}
+	}
+
+	private static CancellationTokenSource Limit(CancellationToken cancellation, TimeSpan after)
+	{
+		var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+		limit.CancelAfter(after);
+		return limit;
 	}
 
 	private static async Task EnsureSuccess(HttpResponseMessage response, string path, CancellationToken cancellation)

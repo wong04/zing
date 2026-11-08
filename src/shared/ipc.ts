@@ -440,8 +440,13 @@ export interface InvokeContract {
 	 * SyncNotSetUpException in a build made without a Google client ID, and VaultOffException while the vault is off.
 	 */
 	'sync:sign-in': { args: []; result: SyncState }
-	/** Forgets the sync sign-in on this PC. The vault's logins stay. */
+	/**
+	 * Revokes this PC's sync sign-in on the server, then forgets it here; the vault's logins stay. When the server can't be reached it is
+	 * still forgotten here, and the answer's notice is `kept-on-server`.
+	 */
 	'sync:sign-out': { args: []; result: SyncState }
+	/** Stops waiting for a Google sign-in in progress; that sync:sign-in then resolves with the state as it is, without an error. */
+	'sync:cancel-sign-in': { args: []; result: void }
 	'overview:close': { args: []; result: void }
 }
 
@@ -460,6 +465,8 @@ export interface EventContract {
 	'toolpanel:state': ToolPanelsState
 	'account:state': AccountState
 	'vault:state': VaultState
+	/** Sync was signed in or out, here or in another window, or the server ended the sign-in. */
+	'sync:state': SyncState
 	'engines:progress': EngineProgress
 	'engines:output': EngineOutput
 	'engines:exit': EngineExit
@@ -633,4 +640,6 @@ export interface ZingApi {
 	getSyncState(): Promise<SyncState>
 	signInToSync(): Promise<SyncState>
 	signOutOfSync(): Promise<SyncState>
+	cancelSyncSignIn(): Promise<void>
+	onSyncState(listener: (state: SyncState) => void): Unsubscribe
 }

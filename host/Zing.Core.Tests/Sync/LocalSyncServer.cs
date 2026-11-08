@@ -57,7 +57,8 @@ internal sealed class LocalSyncServer : WebApplicationFactory<ZingServer::Progra
 		base.Dispose(disposing);
 		if (!disposing) return;
 		SqliteConnection.ClearAllPools();
-		try { Directory.Delete(_dbDir, true); } catch (IOException) { }
+		// The factory disposes twice (DisposeAsync, then Dispose); the second finds the folder already gone.
+		if (Directory.Exists(_dbDir)) Directory.Delete(_dbDir, true);
 	}
 
 	private sealed record MintedToken(string IdToken);
@@ -77,6 +78,15 @@ internal sealed class Wire : DelegatingHandler
 	/// <summary>Every session-carrying request gets a junk session.</summary>
 	public bool SpoilAll { get; set; }
 
+	/// <summary>The server can't be reached: every request fails before it is sent.</summary>
+	public bool Down { get; set; }
+
+	/// <summary>The next refresh reaches the server and is answered, but the answer is lost on the way back.</summary>
+	public bool LoseNextRefreshAnswer { get; set; }
+
+	/// <summary>Runs once the server has answered a refresh, before the client sees the answer.</summary>
+	public Action? AfterRefreshAnswered { get; set; }
+
 	public int Refreshes => Count("POST /auth/refresh");
 
 	public int Count(string line)
@@ -89,11 +99,19 @@ internal sealed class Wire : DelegatingHandler
 		lock (_gate) Log.Add(line);
 	}
 
-	protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+	protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
 	{
-		Note($"{request.Method} {request.RequestUri!.AbsolutePath}");
+		var line = $"{request.Method} {request.RequestUri!.AbsolutePath}";
+		Note(line);
+		if (Down) throw new HttpRequestException("The test's sync server is down");
 		if (request.Headers.Authorization is not null && Spoil()) request.Headers.Authorization = new("Bearer", "user.1.junk");
-		return base.SendAsync(request, cancellationToken);
+		var response = await base.SendAsync(request, cancellationToken);
+		if (line != "POST /auth/refresh") return response;
+		AfterRefreshAnswered?.Invoke();
+		if (!LoseNextRefreshAnswer) return response;
+		LoseNextRefreshAnswer = false;
+		response.Dispose();
+		throw new HttpRequestException("The test lost the refresh answer");
 	}
 
 	private bool Spoil()
@@ -124,5 +142,13 @@ internal sealed class MemoryAccountStore(Wire? wire = null) : ISyncAccountStore
 		_account = account;
 	}
 
+	public bool SignedOutByServer { get; private set; }
+
 	public void ForgetSyncAccount() => _account = null;
+
+	public void MarkSyncSignedOut()
+	{
+		_account = null;
+		SignedOutByServer = true;
+	}
 }

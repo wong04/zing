@@ -154,6 +154,8 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		getSyncState: () => invoke('sync:get'),
 		signInToSync: () => invoke('sync:sign-in'),
 		signOutOfSync: () => invoke('sync:sign-out'),
+		cancelSyncSignIn: () => invoke('sync:cancel-sign-in'),
+		onSyncState: (listener) => listen('sync:state', listener),
 		onTabsState: (listener) => listen('tabs:state', listener),
 		onFocusAddress: (listener) => listen('chrome:focus-address', () => listener()),
 		onStackDropdown: (listener) => listen('stack:dropdown', listener),

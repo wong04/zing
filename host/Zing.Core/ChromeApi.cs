@@ -388,12 +388,13 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("vault:answer-save", async args => await SignIn.AnswerAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("sync:get", _ => CurrentSyncState());
 		bridge.Register("sync:sign-in", async _ => await SignInToSyncAsync());
-		bridge.Register("sync:sign-out", _ => SignOutOfSync());
+		bridge.Register("sync:sign-out", async _ => await SignOutOfSyncAsync());
+		bridge.Register("sync:cancel-sign-in", _ => Do(CancelSyncSignIn));
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
 		_watchedVault = app.Vaults.Current;
-		if (_watchedVault is { } vault) vault.Changed += PushVaultState;
+		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;
 
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
@@ -510,7 +511,8 @@ public sealed class ChromeApi : IDisposable
 		_host.OfferEnded -= EndOffer;
 		foreach (var subscription in _subscriptions) subscription.Dispose();
 		_app.Vaults.Changed -= VaultSwitched;
-		if (_watchedVault is { } vault) vault.Changed -= PushVaultState;
+		if (_watchedVault is { } vault) Unwatch(vault);
+		CancelSyncSignIn();
 		Autofill.Dispose();
 		SignIn.Dispose();
 		_secretCopy.Dispose();
@@ -860,13 +862,28 @@ public sealed class ChromeApi : IDisposable
 	/// <summary>passwordAutofill was turned on or off: follow the new store, and a picker on screen goes (Ruling 30).</summary>
 	private void VaultSwitched()
 	{
-		if (_watchedVault is { } old) old.Changed -= PushVaultState;
+		if (_watchedVault is { } old) Unwatch(old);
 		_watchedVault = _app.Vaults.Current;
-		if (_watchedVault is { } now) now.Changed += PushVaultState;
+		if (_watchedVault is { } now) Watch(now);
 		Autofill.Close();
 		SignIn.Clear();
 		PushVaultState();
+		PushSyncState();
 	}
+
+	private void Watch(VaultStore vault)
+	{
+		vault.Changed += PushVaultState;
+		vault.SyncChanged += PushSyncState;
+	}
+
+	private void Unwatch(VaultStore vault)
+	{
+		vault.Changed -= PushVaultState;
+		vault.SyncChanged -= PushSyncState;
+	}
+
+	private void PushSyncState() => _host.Push("sync:state", CurrentSyncState());
 
 	private void PushVaultState() => _host.Push("vault:state", CurrentVaultState());
 
@@ -911,25 +928,84 @@ public sealed class ChromeApi : IDisposable
 		return Grants.Issue(VaultCsv.SaveExport(_placement, _host.DownloadsDirectory, logins));
 	}
 
-	private SyncState CurrentSyncState() => _app.Vaults.Current?.SyncAccount() is { } account ? new(true, account.Email) : new(false, null);
+	/// <summary>Signed out while the vault is off. A saved sign-in that doesn't unseal is reported, so Settings can offer Sign in again (Ruling 50).</summary>
+	private SyncState CurrentSyncState()
+	{
+		if (_app.Vaults.Current is not { } vault) return SyncState.SignedOut();
+		try
+		{
+			if (vault.SyncAccount() is { } account) return SyncState.SignedInAs(account.Email);
+		}
+		catch (SyncAccountUnreadableException)
+		{
+			return SyncState.SignedOut("unreadable");
+		}
+		return SyncState.SignedOut(vault.SyncSignedOutByServer ? "signed-out" : null);
+	}
 
-	/// <summary>Google in the system browser, then the server's own session; the account is kept in the vault's sync.json. Keys and items sync later (Tasks 12 and 13).</summary>
+	/// <summary>The sign-in waiting on the browser, for Cancel; null when none is.</summary>
+	private CancellationTokenSource? _syncSigningIn;
+
+	/// <summary>
+	/// Google in the system browser, then the server's own session; the account is kept in the vault's sync.json, replacing one that
+	/// doesn't unseal. Cancel (or the window closing) ends it without an error. Keys and items sync later (Tasks 12 and 13).
+	/// </summary>
 	private async Task<object?> SignInToSyncAsync()
 	{
 		var setup = _app.Sync ?? throw new SyncNotSetUpException();
 		var vault = Vault();
-		using var timeout = new CancellationTokenSource(SyncSignInTimeout);
-		var idToken = await setup.SignIn.SignInAsync(timeout.Token);
-		using var client = new SyncClient(setup.Server, vault, setup.Handler);
-		var account = await client.SignInAsync(idToken, timeout.Token);
-		return new SyncState(true, account.Email);
+		using var cancel = CancellationTokenSource.CreateLinkedTokenSource(_closing.Token);
+		using var signingIn = CancellationTokenSource.CreateLinkedTokenSource(cancel.Token);
+		signingIn.CancelAfter(SyncSignInTimeout);
+		Interlocked.Exchange(ref _syncSigningIn, cancel)?.Cancel();
+		try
+		{
+			var idToken = await setup.SignIn.SignInAsync(signingIn.Token);
+			using var client = new SyncClient(setup.Server, vault, setup.Handler);
+			var account = await client.SignInAsync(idToken, signingIn.Token);
+			return SyncState.SignedInAs(account.Email);
+		}
+		catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+		{
+			return CurrentSyncState();
+		}
+		catch (OperationCanceledException error) when (signingIn.IsCancellationRequested)
+		{
+			throw new SyncSignInTimeoutException(error);
+		}
+		finally
+		{
+			Interlocked.CompareExchange(ref _syncSigningIn, null, cancel);
+		}
 	}
 
-	/// <summary>The server has no endpoint that revokes a refresh token, so signing out forgets it here; unused, it expires on the server after 90 days.</summary>
-	private SyncState SignOutOfSync()
+	private void CancelSyncSignIn() => _syncSigningIn?.Cancel();
+
+	/// <summary>
+	/// Revokes this sign-in on the server, then forgets it here (Ruling 49). An unreachable server still signs this PC out, and the
+	/// answer says the server's copy expires within 90 days. A saved sign-in that doesn't unseal has nothing to revoke and is forgotten.
+	/// </summary>
+	private async Task<object?> SignOutOfSyncAsync()
 	{
-		Vault().ForgetSyncAccount();
-		return new(false, null);
+		var vault = Vault();
+		var setup = _app.Sync;
+		try
+		{
+			if (vault.SyncAccount() is null) return CurrentSyncState();
+		}
+		catch (SyncAccountUnreadableException)
+		{
+			vault.ForgetSyncAccount();
+			return SyncState.SignedOut();
+		}
+		if (setup is null)
+		{
+			vault.ForgetSyncAccount();
+			return SyncState.SignedOut("kept-on-server");
+		}
+		using var client = new SyncClient(setup.Server, vault, setup.Handler);
+		var revoked = await client.SignOutAsync(_closing.Token);
+		return SyncState.SignedOut(revoked ? null : "kept-on-server");
 	}
 
 	/// <summary>Long enough to pick an account and pass Google's prompts in the browser.</summary>

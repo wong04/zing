@@ -350,6 +350,10 @@
 			"args": 2
 		},
 		{
+			"channel": "sync:cancel-sign-in",
+			"args": 0
+		},
+		{
 			"channel": "sync:get",
 			"args": 0
 		},
@@ -549,6 +553,7 @@
 		"settings:changed",
 		"shell:state",
 		"stack:dropdown",
+		"sync:state",
 		"tabs:state",
 		"toolpanel:state",
 		"vault:state"

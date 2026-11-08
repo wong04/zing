@@ -105,15 +105,106 @@ public sealed class SyncClientTests : IDisposable
 	}
 
 	[Fact]
-	public async Task ARefusedRefreshRaisesItsStatus()
+	public async Task ARefreshTheServerRefusesSignsThisPcOutOnceWithoutALoop()
 	{
 		var store = new MemoryAccountStore();
 		store.SaveSyncAccount(new SyncAccount("user", LocalSyncServer.Email, "not-a-refresh-token"));
 		using var client = Client(store);
 
-		var refused = await Assert.ThrowsAsync<SyncHttpException>(() => client.GetKeysAsync(Ct));
+		await Assert.ThrowsAsync<SyncSignedOutException>(() => client.GetKeysAsync(Ct));
+		await Assert.ThrowsAsync<NotSignedInToSyncException>(() => client.GetManifestAsync(Ct));
+
+		Assert.Null(store.SyncAccount());
+		Assert.True(store.SignedOutByServer);
+		Assert.Equal(["POST /auth/refresh"], _server.Wire.Log);
+	}
+
+	[Fact]
+	public async Task AServerThatCantBeReachedDuringARefreshKeepsTheAccount()
+	{
+		var (client, store) = await SignedIn();
+		using var _ = client;
+		using var fresh = Client(store);
+		_server.Wire.Down = true;
+
+		await Assert.ThrowsAsync<HttpRequestException>(() => fresh.GetKeysAsync(Ct));
+
+		Assert.NotNull(store.SyncAccount());
+		Assert.False(store.SignedOutByServer);
+	}
+
+	[Fact]
+	public async Task ACancelOnceTheServerAnsweredStillStoresTheRotatedToken()
+	{
+		var (client, store) = await SignedIn();
+		using var _ = client;
+		var first = store.SyncAccount()!.Refresh;
+		using var fresh = Client(store);
+		using var cancel = new CancellationTokenSource();
+		_server.Wire.AfterRefreshAnswered = cancel.Cancel;
+
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fresh.GetKeysAsync(cancel.Token));
+
+		Assert.NotEqual(first, store.SyncAccount()!.Refresh);
+		_server.Wire.AfterRefreshAnswered = null;
+		using var later = Client(store);
+		Assert.Null(await later.GetKeysAsync(Ct));
+	}
+
+	[Fact]
+	public async Task ALostRefreshAnswerIsRetriedWithTheSameTokenAndTheAccountSurvives()
+	{
+		var (client, store) = await SignedIn();
+		using var _ = client;
+		using var fresh = Client(store);
+		_server.Wire.LoseNextRefreshAnswer = true;
+
+		await Assert.ThrowsAsync<HttpRequestException>(() => fresh.GetKeysAsync(Ct));
+		Assert.Null(await fresh.GetKeysAsync(Ct));
+
+		Assert.False(store.SignedOutByServer);
+		Assert.Equal(2, _server.Wire.Refreshes);
+	}
+
+	[Fact]
+	public async Task ASessionThisCallJustGotThatIsRefusedRaisesWithoutASecondRefresh()
+	{
+		var (client, store) = await SignedIn();
+		using var _ = client;
+		using var fresh = Client(store);
+		_server.Wire.SpoilAll = true;
+
+		var refused = await Assert.ThrowsAsync<SyncHttpException>(() => fresh.GetKeysAsync(Ct));
 
 		Assert.Equal(HttpStatusCode.Unauthorized, refused.Status);
+		Assert.Equal(1, _server.Wire.Refreshes);
+	}
+
+	[Fact]
+	public async Task SigningOutRevokesTheSignInOnTheServerThenForgetsIt()
+	{
+		var (client, store) = await SignedIn();
+		using var _ = client;
+		var refresh = store.SyncAccount()!.Refresh;
+
+		Assert.True(await client.SignOutAsync(Ct));
+
+		Assert.Null(store.SyncAccount());
+		using var raw = new HttpClient(_server.Handler(), disposeHandler: false) { BaseAddress = _server.Address };
+		var reused = await raw.PostAsync("auth/refresh", System.Net.Http.Json.JsonContent.Create(new { refresh }), Ct);
+		Assert.Equal(HttpStatusCode.Unauthorized, reused.StatusCode);
+	}
+
+	[Fact]
+	public async Task SigningOutWithTheServerDownStillForgetsTheAccount()
+	{
+		var (client, store) = await SignedIn();
+		using var _ = client;
+		_server.Wire.Down = true;
+
+		Assert.False(await client.SignOutAsync(Ct));
+
+		Assert.Null(store.SyncAccount());
 	}
 
 	[Fact]

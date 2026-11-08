@@ -138,11 +138,14 @@ public class AuthTests
 	[Fact]
 	public async Task Reused_refresh_token_gets_401_and_revokes_that_users_tokens()
 	{
-		using var factory = new ServerFactory();
+		var clock = new ManualClock(DateTimeOffset.UtcNow);
+		using var factory = new ServerFactory(clock: clock);
 		var client = factory.CreateClient();
 		var login = await factory.SignIn(client);
 		var other = await factory.SignIn(client, ServerFactory.OtherAllowedSub);
 		var rotated = (await (await PostRefresh(client, login.Refresh)).Content.ReadFromJsonAsync<Refreshed>(ServerFactory.JsonOpts))!;
+		// Past the retry window (Ruling 50), a repeat is reuse.
+		clock.Advance(TimeSpan.FromMinutes(3));
 
 		Assert.Equal(HttpStatusCode.Unauthorized, (await PostRefresh(client, login.Refresh)).StatusCode);
 
@@ -272,7 +275,7 @@ public class AuthTests
 	}
 
 	[Fact]
-	public async Task Concurrent_refreshes_with_one_token_let_exactly_one_through()
+	public async Task Concurrent_refreshes_with_one_token_leave_exactly_one_live_successor()
 	{
 		using var factory = new ServerFactory();
 		var client = factory.CreateClient();
@@ -280,8 +283,12 @@ public class AuthTests
 
 		var responses = await Task.WhenAll(Enumerable.Range(0, 2).Select(_ => Task.Run(() => PostRefresh(client, login.Refresh))));
 
-		Assert.Equal(1, responses.Count(r => r.StatusCode == HttpStatusCode.OK));
-		Assert.Equal(1, responses.Count(r => r.StatusCode == HttpStatusCode.Unauthorized));
+		// The second, inside the retry window, is a retry (Ruling 50): both get a pair, and only the later successor stays live.
+		Assert.All(responses, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+		var successors = await Task.WhenAll(responses.Select(async r => (await r.Content.ReadFromJsonAsync<Refreshed>(ServerFactory.JsonOpts))!.Refresh));
+		var outcomes = new List<HttpStatusCode>();
+		foreach (var successor in successors) outcomes.Add((await PostRefresh(client, successor)).StatusCode);
+		Assert.Equal(1, outcomes.Count(o => o == HttpStatusCode.OK));
 	}
 
 	[Fact]

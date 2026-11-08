@@ -15,6 +15,7 @@ public static class AuthEndpoints
 		app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 		app.MapPost("/auth/google", SignIn);
 		app.MapPost("/auth/refresh", Refresh);
+		app.MapPost("/auth/signout", SignOut);
 		app.MapGet("/me", Me);
 	}
 
@@ -54,6 +55,16 @@ public static class AuthEndpoints
 		if (outcome == RefreshOutcome.Forbidden) return Results.StatusCode(StatusCodes.Status403Forbidden);
 		if (outcome != RefreshOutcome.Rotated) return Results.Unauthorized();
 		return Results.Ok(new RefreshResponse(sessions.Issue(userId!), next));
+	}
+
+	// Holding the token is the proof, so it needs no session (an expired one is the usual case). Every well-formed request gets
+	// the same 204, so it says nothing about whether the token was known.
+	private static IResult SignOut(RefreshRequest? body, Db db)
+	{
+		if (string.IsNullOrEmpty(body?.Refresh)) return Results.BadRequest(new { error = "refresh is required." });
+
+		db.RevokeFamily(Tokens.HashRefresh(body.Refresh));
+		return Results.NoContent();
 	}
 
 	private static IResult Me(HttpContext context, SessionTokens sessions)

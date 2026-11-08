@@ -4,8 +4,6 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
-import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page } from '@playwright/test'
@@ -22,20 +20,15 @@ let serverUrl = ''
 let serverDir = ''
 let serverLog = ''
 
-async function freePort(): Promise<number> {
-	const probe = createServer()
-	await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve))
-	const { port } = probe.address() as AddressInfo
-	await new Promise<void>((resolve) => probe.close(() => resolve()))
-	return port
-}
+const LISTENING = /Now listening on: (http:\/\/127\.0\.0\.1:\d+)/
 
 /** Only what the server needs from the shell: its own ZING_* and ASPNETCORE_* variables would change the run. */
-function serverEnvironment(port: number): NodeJS.ProcessEnv {
+function serverEnvironment(): NodeJS.ProcessEnv {
 	const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(ZING_|ASPNETCORE_|DOTNET_ENVIRONMENT)/i.test(key)))
 	return {
 		...inherited,
-		ASPNETCORE_URLS: `http://127.0.0.1:${port}`,
+		// Port 0: the server binds a free port itself and logs it, so nothing can take it between a probe and the bind.
+		ASPNETCORE_URLS: 'http://127.0.0.1:0',
 		ASPNETCORE_ENVIRONMENT: 'Staging',
 		ZING_SERVER_FAKE_GOOGLE: '1',
 		ZING_SESSION_KEY: randomBytes(32).toString('base64'),
@@ -46,17 +39,21 @@ function serverEnvironment(port: number): NodeJS.ProcessEnv {
 
 test.beforeAll(async () => {
 	test.setTimeout(180_000)
-	execFileSync('dotnet', ['build', SERVER_PROJECT, '-c', 'Release', '--nologo', '-v', 'quiet'], { stdio: 'ignore', timeout: 170_000 })
+	try {
+		execFileSync('dotnet', ['build', SERVER_PROJECT, '-c', 'Release', '--nologo', '-v', 'quiet'], { stdio: 'pipe', timeout: 170_000 })
+	} catch (error) {
+		const output = error as { stdout?: Buffer; stderr?: Buffer }
+		throw new Error(`Building the sync server failed:\n${output.stdout?.toString() ?? ''}${output.stderr?.toString() ?? ''}`, { cause: error })
+	}
 	if (!existsSync(SERVER_DLL)) throw new Error(`No server build at ${SERVER_DLL}`)
 	serverDir = mkdtempSync(join(tmpdir(), 'zing-sync-server-'))
-	const port = await freePort()
-	serverUrl = `http://127.0.0.1:${port}`
-	server = spawn('dotnet', [SERVER_DLL], { env: serverEnvironment(port), stdio: ['ignore', 'pipe', 'pipe'] })
+	server = spawn('dotnet', [SERVER_DLL], { env: serverEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] })
 	server.stdout?.on('data', (chunk: Buffer) => (serverLog += chunk.toString()))
 	server.stderr?.on('data', (chunk: Buffer) => (serverLog += chunk.toString()))
-	await expect
-		.poll(async () => (await fetch(`${serverUrl}/health`).then((r) => r.status, () => 0)), { timeout: 60_000, message: `the local sync server didn't start:\n${serverLog}` })
-		.toBe(200)
+	await expect.poll(() => LISTENING.test(serverLog), { timeout: 60_000, message: "the local sync server didn't say where it listens" }).toBe(true)
+	serverUrl = LISTENING.exec(serverLog)![1]!
+	const health = await fetch(`${serverUrl}/health`)
+	if (health.status !== 200) throw new Error(`The local sync server answered /health with ${health.status}:\n${serverLog}`)
 })
 
 test.afterAll(async () => {
@@ -115,7 +112,7 @@ test('Turn on sync signs in against the sync server, stays signed in after a res
 	await again.close()
 })
 
-test('a build without a Google client says sync is not set up, and opens nothing', async () => {
+test('without a sync server, as in a build without a Google client, Turn on sync says sync is not set up and opens nothing', async () => {
 	const zing = await launchZing({ userDataDir: vaultProfile() })
 	const sheet = await openSync(zing)
 
