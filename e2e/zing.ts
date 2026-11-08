@@ -83,8 +83,14 @@ const QUIT_TIMEOUT = 15_000
 async function quitCleanly(self: Running): Promise<void> {
 	const code = await Promise.race([self.exit, new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), QUIT_TIMEOUT))])
 	if (code === 'timeout') self.host.kill()
-	if (existsSync(self.errors)) throw new HostProcessError(`The host recorded errors during this test:\n\n${readFileSync(self.errors, 'utf8')}\n${hostLogs(undefined, self.userData)}`)
-	await engineReleased(self.userData)
+	const recorded = existsSync(self.errors) ? readFileSync(self.errors, 'utf8') : undefined
+	// Released before any error is thrown: a test that expects close() to reject still has its profile deleted after it.
+	const release = await engineReleased(self.userData).then(
+		() => undefined,
+		(error: unknown) => error,
+	)
+	if (recorded !== undefined) throw new HostProcessError(`The host recorded errors during this test:\n\n${recorded}\n${hostLogs(undefined, self.userData)}${release ? `\n${String(release)}` : ''}`)
+	if (release) throw release
 	if (code === 'timeout') throw new HostProcessError(`Zing did not quit within ${QUIT_TIMEOUT / 1000} s of its last window closing`)
 	if (code !== 0) throw new HostProcessError(`Zing quit with ${describeExit(code)}\n${hostLogs(undefined, self.userData)}`)
 }
@@ -142,16 +148,35 @@ async function collect(testInfo: TestInfo): Promise<void> {
 			}
 		}
 		if (zing.browser?.isConnected()) await zing.browser.close().catch(() => undefined)
-		if (zing.host.exitCode !== null) continue
-		zing.host.kill()
-		await zing.exit
+		if (zing.host.exitCode === null) {
+			zing.host.kill()
+			await zing.exit
+		}
+		// A host killed on purpose leaves its engine to notice and exit on its own; its profile is deleted below.
+		if (!failed) await engineReleased(zing.userData)
 	}
 	const made = [...scratchDirs]
 	scratchDirs.clear()
 	if (failed) return
 	if (unclosed.length > 0) throw new HostProcessError(`The test left ${unclosed.length} Zing without zing.close(), so its errors were never checked:\n\n${unclosed.join('\n\n')}`)
-	// WebView2's own processes can hold profile files for a moment after Zing exits; one still holding them after the retries is a leak worth seeing.
-	for (const dir of made) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+	for (const dir of made) await removeScratch(dir)
+}
+
+/**
+ * The engine's lockfile goes with its browser process, but after a page crash its crash reporter (msedgewebview2
+ * --type=crashpad-handler) stays a while longer, holding the profile's Crashpad folder. A folder that can't be removed
+ * waits until no engine process names it, which is slow to ask, so only then.
+ */
+async function removeScratch(dir: string): Promise<void> {
+	try {
+		rmSync(dir, { recursive: true, force: true })
+		return
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code
+		if (code !== 'EPERM' && code !== 'EBUSY') throw error
+	}
+	await engineGone(dir)
+	rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
 }
 
 // A cold start on a CI runner has taken 29 s and more, while a warm one takes under 5.
@@ -333,13 +358,29 @@ function reportSlowRelease(started: number): void {
  * stalled release shows what is alive (a browser process, a crashpad handler, a leftover renderer) and who owns it.
  */
 function engineProcesses(userData: string): string {
-	const script = `$d = '${userData.replaceAll("'", "''")}'; Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($d) } | Sort-Object CreationDate | ForEach-Object { '{0} parent={1} started={2:HH:mm:ss.fff} {3}' -f $_.ProcessId, $_.ParentProcessId, $_.CreationDate, $_.CommandLine.Substring(0, [Math]::Min(220, $_.CommandLine.Length)) }`
 	try {
-		const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 20_000 }).trim()
+		const out = listEngineProcesses(userData)
 		return out.length > 0 ? `Processes using ${userData}:
 ${out}` : `No process has ${userData} on its command line.`
 	} catch (error) {
 		return `Could not list the engine's processes: ${(error as Error).message}`
+	}
+}
+
+/** One line per engine process with this folder on its command line; empty when there is none. */
+function listEngineProcesses(userData: string): string {
+	const script = `$d = '${userData.replaceAll("'", "''")}'; Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($d) } | Sort-Object CreationDate | ForEach-Object { '{0} parent={1} started={2:HH:mm:ss.fff} {3}' -f $_.ProcessId, $_.ParentProcessId, $_.CreationDate, $_.CommandLine.Substring(0, [Math]::Min(220, $_.CommandLine.Length)) }`
+	return execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 20_000 }).trim()
+}
+
+/** Waits until no engine process names this folder. */
+async function engineGone(userData: string): Promise<void> {
+	const deadline = Date.now() + ENGINE_RELEASE_TIMEOUT
+	for (;;) {
+		const left = listEngineProcesses(userData)
+		if (left.length === 0) return
+		if (Date.now() > deadline) throw new HostProcessError(`The WebView2 engine still uses ${userData} ${ENGINE_RELEASE_TIMEOUT / 1000} s after Zing quit:\n${left}`)
+		await new Promise((resolve) => setTimeout(resolve, 250))
 	}
 }
 
