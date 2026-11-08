@@ -3,6 +3,7 @@ using Zing.Core;
 
 namespace Zing.Core.Tests;
 
+[Collection("Timing")]
 public sealed class PanelLayoutTests
 {
 	private const string LayoutPath = "src/shared/shell/panelLayout.vectors.json";

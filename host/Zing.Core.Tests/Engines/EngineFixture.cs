@@ -9,7 +9,7 @@ namespace Zing.Core.Tests.Engines;
 /// <summary>A loopback HTTP server that stands in for an engine's release host, and a scratch folder for the store.</summary>
 public sealed class EngineFixture : IDisposable
 {
-	private readonly HttpListener _listener = new();
+	private readonly HttpListener _listener;
 	private readonly Dictionary<string, Func<HttpListenerContext, Task>> _routes = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, int> _requests = new(StringComparer.Ordinal);
 	private readonly CancellationTokenSource _stop = new();
@@ -20,9 +20,7 @@ public sealed class EngineFixture : IDisposable
 	{
 		Root = Path.Combine(Path.GetTempPath(), "zing-engine-test-" + Guid.NewGuid().ToString("N"));
 		Directory.CreateDirectory(Root);
-		Port = FreePort();
-		_listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
-		_listener.Start();
+		(_listener, Port) = LoopbackHttp.Start();
 		_loop = Task.Run(Accept);
 	}
 
@@ -128,15 +126,6 @@ public sealed class EngineFixture : IDisposable
 		}
 	}
 
-	private static int FreePort()
-	{
-		var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-		probe.Start();
-		var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-		probe.Stop();
-		return port;
-	}
-
 	public static string Sha256(byte[] body) => Convert.ToHexStringLower(SHA256.HashData(body));
 
 	public static byte[] Bytes(int length, byte seed = 7)
@@ -170,7 +159,8 @@ public sealed class EngineFixture : IDisposable
 
 	public EngineStore Store(params Engine[] engines) => Store(new EngineCatalog(engines, Url("yt-dlp/latest/SHA2-256SUMS"), Url("yt-dlp/")));
 
-	public EngineStore Store(EngineCatalog catalog) => new(Root, catalog, new HttpClient(), (where, error) => _errors.Add((where, error)));
+	/// <summary>Its client reaches this loopback server directly: through a proxy (the machine's, or a test's process-wide one) it would need the network.</summary>
+	public EngineStore Store(EngineCatalog catalog) => new(Root, catalog, new HttpClient(new SocketsHttpHandler { UseProxy = false }), (where, error) => _errors.Add((where, error)));
 
 	/// <summary>What is in the store's folder now: an engine's folder, or a temp folder that should not outlive an install.</summary>
 	public string[] Entries() => Directory.Exists(Root) ? [.. Directory.GetFileSystemEntries(Root).Select(Path.GetFileName).Cast<string>().Order()] : [];
