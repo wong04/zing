@@ -284,11 +284,13 @@ public class AuthTests
 		var responses = await Task.WhenAll(Enumerable.Range(0, 2).Select(_ => Task.Run(() => PostRefresh(client, login.Refresh))));
 
 		// The second, inside the retry window, is a retry (Ruling 50): both get a pair, and only the later successor stays live.
+		// The earlier one is a revoked marker (Ruling 51), so presenting it would revoke both; count the live rows instead.
 		Assert.All(responses, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
-		var successors = await Task.WhenAll(responses.Select(async r => (await r.Content.ReadFromJsonAsync<Refreshed>(ServerFactory.JsonOpts))!.Refresh));
-		var outcomes = new List<HttpStatusCode>();
-		foreach (var successor in successors) outcomes.Add((await PostRefresh(client, successor)).StatusCode);
-		Assert.Equal(1, outcomes.Count(o => o == HttpStatusCode.OK));
+		using var connection = new SqliteConnection($"Data Source={factory.DbPath}");
+		connection.Open();
+		using var command = connection.CreateCommand();
+		command.CommandText = "SELECT COUNT(*) FROM refresh_tokens WHERE used = 0";
+		Assert.Equal(1L, (long)command.ExecuteScalar()!);
 	}
 
 	[Fact]

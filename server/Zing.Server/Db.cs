@@ -70,20 +70,23 @@ public sealed class Db
 		UpgradeRefreshTokens(connection);
 	}
 
-	// Columns added after the first deploy (Rulings 49 and 50). A token from before them is its own family.
+	// Columns added after the first deploy (Rulings 49 to 51), in one transaction (SQLite's DDL is transactional), so a crash leaves
+	// the table as it was or fully upgraded. A token from before them is its own family. Every step can run again.
 	private static void UpgradeRefreshTokens(SqliteConnection connection)
 	{
+		using var transaction = connection.BeginTransaction();
 		var columns = new HashSet<string>(StringComparer.Ordinal);
-		using (var info = Command(connection, "PRAGMA table_info(refresh_tokens)"))
+		using (var info = Command(connection, "PRAGMA table_info(refresh_tokens)", transaction))
 		using (var reader = info.ExecuteReader())
 		{
 			while (reader.Read()) columns.Add(reader.GetString(1));
 		}
-		if (!columns.Contains("family")) Execute(connection, "ALTER TABLE refresh_tokens ADD COLUMN family TEXT");
-		if (!columns.Contains("used_at")) Execute(connection, "ALTER TABLE refresh_tokens ADD COLUMN used_at INTEGER");
-		if (!columns.Contains("successor")) Execute(connection, "ALTER TABLE refresh_tokens ADD COLUMN successor TEXT");
-		Execute(connection, "UPDATE refresh_tokens SET family = hash WHERE family IS NULL");
-		Execute(connection, "CREATE INDEX IF NOT EXISTS refresh_tokens_by_family ON refresh_tokens (family)");
+		if (!columns.Contains("family")) Execute(connection, "ALTER TABLE refresh_tokens ADD COLUMN family TEXT", transaction);
+		if (!columns.Contains("used_at")) Execute(connection, "ALTER TABLE refresh_tokens ADD COLUMN used_at INTEGER", transaction);
+		if (!columns.Contains("successor")) Execute(connection, "ALTER TABLE refresh_tokens ADD COLUMN successor TEXT", transaction);
+		Execute(connection, "UPDATE refresh_tokens SET family = hash WHERE family IS NULL", transaction);
+		Execute(connection, "CREATE INDEX IF NOT EXISTS refresh_tokens_by_family ON refresh_tokens (family)", transaction);
+		transaction.Commit();
 	}
 
 	public string FindOrCreateUser(string sub)
@@ -116,7 +119,7 @@ public sealed class Db
 		using var transaction = connection.BeginTransaction();
 
 		using var select = Command(connection, """
-			SELECT r.user_id, r.used, u.sub, r.family, r.used_at, r.successor
+			SELECT r.user_id, r.used, u.sub, COALESCE(r.family, r.hash), r.used_at, r.successor
 			FROM refresh_tokens r JOIN users u ON u.user_id = r.user_id WHERE r.hash = $hash
 			""", transaction);
 		select.Parameters.AddWithValue("$hash", oldHash);
@@ -143,7 +146,9 @@ public sealed class Db
 
 		if (used)
 		{
-			using var dropSuccessor = Command(connection, "DELETE FROM refresh_tokens WHERE hash = $successor", transaction);
+			// The successor the client never saw stays as a spent marker with no first-use time (Ruling 51): whoever presents it later
+			// is reusing it, which revokes everything. So a thief who wins the retry window loses the sign-in as soon as the PC comes back.
+			using var dropSuccessor = Command(connection, "UPDATE refresh_tokens SET used = 1, used_at = NULL, successor = NULL WHERE hash = $successor", transaction);
 			dropSuccessor.Parameters.AddWithValue("$successor", successor);
 			dropSuccessor.ExecuteNonQuery();
 			using var repoint = Command(connection, "UPDATE refresh_tokens SET successor = $next WHERE hash = $hash", transaction);
@@ -180,7 +185,7 @@ public sealed class Db
 	{
 		using var connection = Open();
 		using var revoke = Command(connection, """
-			DELETE FROM refresh_tokens WHERE family = (SELECT family FROM refresh_tokens WHERE hash = $hash)
+			DELETE FROM refresh_tokens WHERE COALESCE(family, hash) = (SELECT COALESCE(family, hash) FROM refresh_tokens WHERE hash = $hash)
 			""");
 		revoke.Parameters.AddWithValue("$hash", hash);
 		revoke.ExecuteNonQuery();
@@ -221,9 +226,9 @@ public sealed class Db
 		return command;
 	}
 
-	private static void Execute(SqliteConnection connection, string sql)
+	private static void Execute(SqliteConnection connection, string sql, SqliteTransaction? transaction = null)
 	{
-		using var command = Command(connection, sql);
+		using var command = Command(connection, sql, transaction);
 		command.ExecuteNonQuery();
 	}
 }

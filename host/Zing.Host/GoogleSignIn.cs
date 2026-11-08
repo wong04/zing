@@ -6,7 +6,6 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Web;
 using Zing.Core.Sync;
 
 namespace Zing.Host;
@@ -25,7 +24,8 @@ public sealed class GoogleSignIn(string clientId, string clientSecret) : IGoogle
 	private const string AuthorizeEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
 	private const string TokenEndpoint = "https://oauth2.googleapis.com/token";
 	private const int MaxRequestBytes = 16 * 1024;
-	private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(10);
+	/// <summary>Short: connections are read one at a time, and a browser's idle preconnect mustn't hold up the redirect behind it for long.</summary>
+	private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(3);
 
 	public async Task<string> SignInAsync(CancellationToken cancellation)
 	{
@@ -34,7 +34,7 @@ public sealed class GoogleSignIn(string clientId, string clientSecret) : IGoogle
 		var state = Base64Url(RandomNumberGenerator.GetBytes(16));
 
 		// Bound by the socket itself to 127.0.0.1 on a port the system picks: nothing else on the network reaches it, and no other process can take the port first.
-		var listener = new TcpListener(IPAddress.Loopback, 0);
+		var listener = new TcpListener(IPAddress.Loopback, 0) { ExclusiveAddressUse = true };
 		listener.Start();
 		try
 		{
@@ -108,41 +108,38 @@ public sealed class GoogleSignIn(string clientId, string clientSecret) : IGoogle
 			using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
 			timeout.CancelAfter(ConnectionTimeout);
 			var stream = connection.GetStream();
-			string? target;
+			string head;
 			try
 			{
-				target = await ReadRequestTargetAsync(stream, timeout.Token);
+				head = await ReadRequestHeadAsync(stream, timeout.Token);
 			}
 			catch (Exception error) when (!cancellation.IsCancellationRequested && error is OperationCanceledException or IOException)
 			{
 				// A connection that stalls or drops is one more stray request.
 				continue;
 			}
-			if (target is null)
-			{
-				await AnswerAsync(stream, 400, "This isn't a request Zing understands.", cancellation);
-				continue;
-			}
 
-			var query = HttpUtility.ParseQueryString(target.Contains('?') ? target[(target.IndexOf('?') + 1)..] : "");
-			if (query["code"] is null && query["error"] is null)
+			var request = LoopbackRedirect.Read(head, state);
+			switch (request.Kind)
 			{
-				await AnswerAsync(stream, 404, "Nothing here.", cancellation);
-				continue;
-			}
-			if (query["state"] != state)
-			{
-				await AnswerAsync(stream, 400, "This sign-in isn't the one Zing started.", cancellation);
-				continue;
+				case LoopbackRequestKind.NotHttp:
+					await AnswerAsync(stream, 400, "This isn't a request Zing understands.", cancellation);
+					continue;
+				case LoopbackRequestKind.NotFound:
+					await AnswerAsync(stream, 404, "Nothing here.", cancellation);
+					continue;
+				case LoopbackRequestKind.WrongState:
+					await AnswerAsync(stream, 400, "This sign-in isn't the one Zing started.", cancellation);
+					continue;
 			}
 			await AnswerAsync(stream, 200, "You can close this tab and go back to Zing.", cancellation);
-			if (query["error"] is { } refused) throw new GoogleSignInException(refused == "access_denied" ? "Google sign-in was cancelled in the browser." : $"Google ended the sign-in ({refused}). Try turning on sync again.");
-			return query["code"]!;
+			if (request.Kind == LoopbackRequestKind.Error) throw new GoogleSignInException(request.Value == "access_denied" ? "Google sign-in was cancelled in the browser." : $"Google ended the sign-in ({request.Value}). Try turning on sync again.");
+			return request.Value!;
 		}
 	}
 
-	/// <summary>The target of a GET request line, or null for anything else. Reads only the request head, at most 16 KiB.</summary>
-	private static async Task<string?> ReadRequestTargetAsync(NetworkStream stream, CancellationToken cancellation)
+	/// <summary>The request head as ASCII, up to the blank line or 16 KiB, whichever comes first.</summary>
+	private static async Task<string> ReadRequestHeadAsync(NetworkStream stream, CancellationToken cancellation)
 	{
 		var head = new MemoryStream();
 		var buffer = new byte[2048];
@@ -153,12 +150,7 @@ public sealed class GoogleSignIn(string clientId, string clientSecret) : IGoogle
 			head.Write(buffer, 0, read);
 			if (Encoding.ASCII.GetString(head.GetBuffer(), 0, (int)head.Length).Contains("\r\n\r\n", StringComparison.Ordinal)) break;
 		}
-		var text = Encoding.ASCII.GetString(head.GetBuffer(), 0, (int)head.Length);
-		var lineEnd = text.IndexOf("\r\n", StringComparison.Ordinal);
-		if (lineEnd < 0) return null;
-		var parts = text[..lineEnd].Split(' ');
-		if (parts.Length != 3 || parts[0] != "GET" || !parts[2].StartsWith("HTTP/1.", StringComparison.Ordinal) || !parts[1].StartsWith('/')) return null;
-		return parts[1];
+		return Encoding.ASCII.GetString(head.GetBuffer(), 0, (int)head.Length);
 	}
 
 	private static async Task AnswerAsync(NetworkStream stream, int status, string text, CancellationToken cancellation)

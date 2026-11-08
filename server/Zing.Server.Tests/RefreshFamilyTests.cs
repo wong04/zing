@@ -34,9 +34,25 @@ public class RefreshFamilyTests
 		var retried = await Rotate(client, pc.Refresh);
 
 		Assert.NotEqual(lost, retried);
-		Assert.Equal(HttpStatusCode.Unauthorized, (await PostRefresh(client, lost)).StatusCode);
 		Assert.Equal(HttpStatusCode.OK, (await PostRefresh(client, retried)).StatusCode);
 		Assert.Equal(HttpStatusCode.OK, (await PostRefresh(client, otherPc.Refresh)).StatusCode);
+	}
+
+	[Fact]
+	public async Task A_thief_who_wins_the_retry_window_loses_the_sign_in_when_the_real_pc_presents_its_successor()
+	{
+		var clock = new ManualClock(DateTimeOffset.UtcNow);
+		using var factory = new ServerFactory(clock: clock);
+		var client = factory.CreateClient();
+		var pc = await factory.SignIn(client);
+
+		var pcSuccessor = await Rotate(client, pc.Refresh);
+		clock.Advance(TimeSpan.FromSeconds(30));
+		var thiefSuccessor = await Rotate(client, pc.Refresh);
+
+		// The successor the retry dropped stays as a revoked marker (Ruling 51): presenting it is reuse, so the whole family goes.
+		Assert.Equal(HttpStatusCode.Unauthorized, (await PostRefresh(client, pcSuccessor)).StatusCode);
+		Assert.Equal(HttpStatusCode.Unauthorized, (await PostRefresh(client, thiefSuccessor)).StatusCode);
 	}
 
 	[Fact]
@@ -119,8 +135,55 @@ public class RefreshFamilyTests
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 	}
 
+	// refresh_tokens exactly as 36081e6 (PR B, on Railway) created it.
+	private const string OldRefreshTokensDdl = """
+		CREATE TABLE refresh_tokens (
+			hash TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			used INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE INDEX refresh_tokens_by_user ON refresh_tokens (user_id);
+		""";
+
 	[Fact]
-	public async Task A_database_from_before_families_is_upgraded_and_its_tokens_still_refresh()
+	public async Task A_database_from_before_families_is_upgraded_twice_and_its_tokens_keep_their_meaning()
+	{
+		using var first = new ServerFactory();
+		var firstClient = first.CreateClient();
+		var spent = await first.SignIn(firstClient);
+		await Rotate(firstClient, spent.Refresh);
+		var unused = await first.SignIn(firstClient);
+		using (var connection = new SqliteConnection($"Data Source={first.DbPath}"))
+		{
+			connection.Open();
+			using var command = connection.CreateCommand();
+			command.CommandText = $"""
+				CREATE TABLE kept AS SELECT hash, user_id, created_at, used FROM refresh_tokens;
+				DROP TABLE refresh_tokens;
+				{OldRefreshTokensDdl}
+				INSERT INTO refresh_tokens (hash, user_id, created_at, used) SELECT hash, user_id, created_at, used FROM kept;
+				DROP TABLE kept;
+				""";
+			command.ExecuteNonQuery();
+			command.CommandText = "SELECT COUNT(*) FROM refresh_tokens WHERE used = 1";
+			Assert.Equal(1L, (long)command.ExecuteScalar()!);
+		}
+		SqliteConnection.ClearAllPools();
+
+		using (var once = new ServerFactory(new() { ["ZING_DB_PATH"] = first.DbPath })) once.CreateClient();
+		SqliteConnection.ClearAllPools();
+		using var twice = new ServerFactory(new() { ["ZING_DB_PATH"] = first.DbPath });
+		var client = twice.CreateClient();
+
+		var rotated = await Rotate(client, unused.Refresh);
+		// A token used before the upgrade has no first-use time, so it can never be a retry: presenting it is reuse.
+		Assert.Equal(HttpStatusCode.Unauthorized, (await PostRefresh(client, spent.Refresh)).StatusCode);
+		Assert.Equal(HttpStatusCode.Unauthorized, (await PostRefresh(client, rotated)).StatusCode);
+	}
+
+	[Fact]
+	public async Task An_upgraded_token_signs_out_with_its_own_family()
 	{
 		using var first = new ServerFactory();
 		var login = await first.SignIn(first.CreateClient());
@@ -128,10 +191,12 @@ public class RefreshFamilyTests
 		{
 			connection.Open();
 			using var command = connection.CreateCommand();
-			command.CommandText = """
-				CREATE TABLE old_tokens AS SELECT hash, user_id, created_at, used FROM refresh_tokens;
+			command.CommandText = $"""
+				CREATE TABLE kept AS SELECT hash, user_id, created_at, used FROM refresh_tokens;
 				DROP TABLE refresh_tokens;
-				ALTER TABLE old_tokens RENAME TO refresh_tokens;
+				{OldRefreshTokensDdl}
+				INSERT INTO refresh_tokens (hash, user_id, created_at, used) SELECT hash, user_id, created_at, used FROM kept;
+				DROP TABLE kept;
 				""";
 			command.ExecuteNonQuery();
 		}
@@ -139,6 +204,25 @@ public class RefreshFamilyTests
 
 		using var upgraded = new ServerFactory(new() { ["ZING_DB_PATH"] = first.DbPath });
 		var client = upgraded.CreateClient();
+		var rotated = await Rotate(client, login.Refresh);
+		Assert.Equal(HttpStatusCode.NoContent, (await PostSignOut(client, rotated)).StatusCode);
+		Assert.Equal(HttpStatusCode.Unauthorized, (await PostRefresh(client, rotated)).StatusCode);
+	}
+
+	[Fact]
+	public async Task A_row_old_code_wrote_without_a_family_still_refreshes_and_signs_out()
+	{
+		using var factory = new ServerFactory();
+		var client = factory.CreateClient();
+		var login = await factory.SignIn(client);
+		using (var connection = new SqliteConnection($"Data Source={factory.DbPath}"))
+		{
+			connection.Open();
+			using var command = connection.CreateCommand();
+			command.CommandText = "UPDATE refresh_tokens SET family = NULL";
+			command.ExecuteNonQuery();
+		}
+
 		var rotated = await Rotate(client, login.Refresh);
 		Assert.Equal(HttpStatusCode.NoContent, (await PostSignOut(client, rotated)).StatusCode);
 		Assert.Equal(HttpStatusCode.Unauthorized, (await PostRefresh(client, rotated)).StatusCode);
