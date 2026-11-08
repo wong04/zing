@@ -438,6 +438,38 @@ export async function layers(chrome: Page): Promise<Layer[]> {
 	return JSON.parse(readFileSync(file, 'utf8')) as Layer[]
 }
 
+export interface PeekState {
+	readonly open: boolean
+	/** The preview's pages, bottom first: its page, then any popups stacked over it. */
+	readonly layers: readonly { readonly url: string }[]
+	readonly canExpand: boolean
+	readonly sourceTabId: string | null
+}
+
+/** The link preview open in this window, if any (TestHooks "peek-state"). */
+export async function peekState(chrome: Page): Promise<PeekState> {
+	const file = join(scratchDir('zing-peek-'), 'peek.json')
+	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'peek-state', file: path }), file)
+	await expect.poll(() => existsSync(file)).toBe(true)
+	return JSON.parse(readFileSync(file, 'utf8')) as PeekState
+}
+
+export interface Modifiers {
+	readonly shift?: boolean
+	readonly ctrl?: boolean
+	readonly middle?: boolean
+}
+
+/** The keys and button the next new-window request is taken to have been made with, once (TestHooks "set-modifiers"); e2e runs never read the real ones. */
+export async function setModifiers(chrome: Page, { shift = false, ctrl = false, middle = false }: Modifiers): Promise<void> {
+	await chrome.evaluate(async (m) => {
+		const view = globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } }; zing: { getTabs(): Promise<unknown> } }
+		view.chrome.webview.postMessage({ kind: 'test', action: 'set-modifiers', ...m })
+		// Answered after the message before it on the same channel: the modifiers are set before the click that reads them.
+		await view.zing.getTabs()
+	}, { shift, ctrl, middle })
+}
+
 /** The colours the host gave Windows' caption buttons, as channels, and their height in DIPs. */
 export async function captionColours(chrome: Page): Promise<CaptionState> {
 	const file = join(scratchDir('zing-caption-'), 'caption.json')
