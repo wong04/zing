@@ -159,8 +159,18 @@ async function startFakeGoogle(): Promise<{ url: string; close: () => Promise<vo
 			const back = new URL(url.searchParams.get('redirect_uri')!)
 			back.searchParams.set('code', FAKE_CODE)
 			back.searchParams.set('state', url.searchParams.get('state')!)
+			const help = `http://${request.headers.host}/help`
 			response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-			response.end(`<!doctype html><title>Fake Google</title><a href="${back.href}">Continue</a>`)
+			// The script opens a window as the page loads, with no click: Playwright's evaluate would count as one (userGesture).
+			response.end(
+				`<!doctype html><title>Fake Google</title><a href="${back.href}">Continue</a>` +
+					`<a href="zing://settings" target="_blank">Zing settings</a><a href="${help}" target="_blank">Help</a>` +
+					`<script>window.open(${JSON.stringify(`${help}?by=script`)})</script>`,
+			)
+			return
+		}
+		if (request.method === 'GET' && url.pathname === '/help') {
+			response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end('<!doctype html><title>Fake Google help</title>')
 			return
 		}
 		if (request.method === 'POST' && url.pathname === '/token') {
@@ -218,6 +228,34 @@ test('Turn on sync opens Google in a small window owned by Zing’s, and its red
 
 	await expect(syncGroup(sheet)).toContainText(`Signed in as ${POPUP_SUB}@example.test.`)
 	await expect.poll(async () => (await signInWindow(zing)).open).toBe(false)
+	await zing.close()
+	await google.close()
+})
+
+test('the Google sign-in window opens a clicked web link as a tab, but not script’s window.open or a zing:// link, and still signs in', async () => {
+	const google = await startFakeGoogle()
+	const zing = await launchZing({ userDataDir: vaultProfile(), env: popupEnv(google.url) })
+	const sheet = await openSync(zing)
+	const tabIds = async (): Promise<string[]> => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.map((t) => t.id)
+	const before = await tabIds()
+	await syncGroup(sheet).getByRole('button', { name: 'Turn on sync' }).click()
+	const page = await pageWhere(zing.browser, (p) => p.url().startsWith(`${google.url}/authorize?`))
+
+	// The page's own window.open ran as it loaded, with no click.
+	await page.getByRole('link', { name: 'Zing settings' }).click()
+	// Last, and handled in order after the two before it: once its tab is there, they've had their chance to open one.
+	await page.getByRole('link', { name: 'Help' }).click()
+
+	const help = `${google.url}/help`
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.map((t) => t.url)).toContain(help)
+	const opened = (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.filter((t) => !before.includes(t.id))
+	expect(opened.map((t) => t.url)).toEqual([help])
+	expect(page.url().startsWith(`${google.url}/authorize?`)).toBe(true)
+	expect((await signInWindow(zing)).open).toBe(true)
+
+	await page.getByRole('link', { name: 'Continue' }).click()
+	await expect(syncGroup(sheet)).toContainText(`Signed in as ${POPUP_SUB}@example.test.`)
+	expect((await tabIds()).length).toBe(before.length + 1)
 	await zing.close()
 	await google.close()
 })

@@ -183,6 +183,32 @@ public sealed class GoogleSignInTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ASignInWhoseListenerFailedToStartLeavesTheNextOneToStartItsOwn()
+	{
+		// A listener on a port another holds exclusively: its Start fails, as it does when the system has no port to give.
+		var holder = GoogleSignIn.Loopback();
+		holder.Start();
+		try
+		{
+			var port = ((IPEndPoint)holder.LocalEndpoint).Port;
+			var clashes = 1;
+			_google.Listener = () => clashes-- > 0 ? new TcpListener(IPAddress.Loopback, port) : GoogleSignIn.Loopback();
+			var google = _google.SignIn();
+
+			await Assert.ThrowsAsync<SocketException>(() => google.SignInAsync(Ct));
+			var second = google.SignInAsync(Ct);
+
+			var popup = Assert.Single(_google.Popups);
+			await popup.RedirectAsync($"code=the-code&state={popup.Query("state")}");
+			Assert.Equal(IdToken, await second);
+		}
+		finally
+		{
+			holder.Stop();
+		}
+	}
+
+	[Fact]
 	public async Task ASignInWhoseWindowFailedToOpenLeavesTheNextOneToOpenItsOwn()
 	{
 		var google = _google.SignIn();

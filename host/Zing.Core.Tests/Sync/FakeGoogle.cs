@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Web;
@@ -47,7 +48,10 @@ public sealed class FakeGoogle : IDisposable
 	/// <summary>How many of the next windows fail to open, as a window with no Zing window under it does.</summary>
 	public int FailingOpens { get; set; }
 
-	public GoogleSignIn SignIn() => new("test-client", "test-secret", Endpoints, Open, (_, error) => Warnings.Enqueue(error));
+	/// <summary>Makes each sign-in's loopback listener, for a test whose listener fails to start.</summary>
+	public Func<TcpListener> Listener { get; set; } = GoogleSignIn.Loopback;
+
+	public GoogleSignIn SignIn() => new("test-client", "test-secret", Endpoints, Open, (_, error) => Warnings.Enqueue(error)) { Listener = Listener };
 
 	private FakeSignInPopup Open(Uri authorize)
 	{

@@ -79,6 +79,12 @@ public sealed class GoogleSignIn(string clientId, string clientSecret, GoogleEnd
 
 	private void Warn(string what, Exception error) => warn(what, error);
 
+	/// <summary>Makes each sign-in's loopback listener, not yet started; a test swaps in one whose Start fails.</summary>
+	internal Func<TcpListener> Listener { get; init; } = Loopback;
+
+	// Bound by the socket itself to 127.0.0.1 on a port the system picks: nothing else on the network reaches it, and no other process can take the port first.
+	internal static TcpListener Loopback() => new(IPAddress.Loopback, 0) { ExclusiveAddressUse = true };
+
 	/// <exception cref="SignInWindowClosedException">The person closed the window before Google sent them back.</exception>
 	/// <exception cref="SignInTakenOverException">Another sign-in took the window over.</exception>
 	/// <exception cref="GoogleSignInException">Google ended the sign-in, or its token endpoint refused the code.</exception>
@@ -116,8 +122,7 @@ public sealed class GoogleSignIn(string clientId, string clientSecret, GoogleEnd
 		private readonly GoogleSignIn _owner;
 		private readonly CancellationTokenSource _stop = new();
 		private readonly string _state = Base64Url(RandomNumberGenerator.GetBytes(16));
-		// Bound by the socket itself to 127.0.0.1 on a port the system picks: nothing else on the network reaches it, and no other process can take the port first.
-		private readonly TcpListener _listener = new(IPAddress.Loopback, 0) { ExclusiveAddressUse = true };
+		private readonly TcpListener _listener;
 		private ISignInPopup? _popup;
 		private TaskCompletionSource<string>? _waiter;
 		private bool _ended;
@@ -125,6 +130,7 @@ public sealed class GoogleSignIn(string clientId, string clientSecret, GoogleEnd
 		public Attempt(GoogleSignIn owner)
 		{
 			_owner = owner;
+			_listener = owner.Listener();
 			Verifier = Base64Url(RandomNumberGenerator.GetBytes(64));
 		}
 
