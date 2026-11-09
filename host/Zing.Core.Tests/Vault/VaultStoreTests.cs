@@ -253,6 +253,8 @@ public sealed class VaultStoreTests : IDisposable
 		var reopened = Open();
 		Assert.Equal("third", await reopened.PasswordAsync(id));
 		Assert.Equal(2, reopened.History(id).Count);
+		// The manage page offers "2 earlier passwords" from the summary, without asking for the list.
+		Assert.Equal(2, reopened.Summaries().Single().HistoryCount);
 		Assert.Equal("second", await reopened.HistoryPasswordAsync(id, 0));
 		Assert.Equal("correct horse battery staple", await reopened.HistoryPasswordAsync(id, 1));
 		var history = reopened.History(id);

@@ -4,7 +4,7 @@ import vectors from './vault.vectors.json'
 
 // Vectors list only the fields a rule reads; the rest take these.
 function summary(partial: Partial<LoginSummary>): LoginSummary {
-	return { id: 'x', origin: 'https://a.example', username: 'u', title: '', note: '', createdAt: 0, updatedAt: 0, passwordUpdatedAt: 0, deletedAt: null, ...partial }
+	return { id: 'x', origin: 'https://a.example', username: 'u', title: '', note: '', createdAt: 0, updatedAt: 0, passwordUpdatedAt: 0, deletedAt: null, historyCount: 0, ...partial }
 }
 
 describe('origins', () => {

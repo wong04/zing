@@ -1,4 +1,4 @@
-import { offersUploadLocal, type SyncState } from '@shared/vault/vault'
+import { offersUploadLocal, type SyncNotice, type SyncState } from '@shared/vault/vault'
 
 /** What Upload this PC's copy does, said before it runs (Ruling 56). */
 export const UPLOAD_LOCAL_CONFIRM = 'Zing merges this PC’s logins into the server’s copy. It can bring back logins deleted on another PC. Other PCs that synced since the backup may ask the same.'
@@ -38,9 +38,20 @@ function unsentText(count: number): string {
 	return count === 1 ? '1 login hasn’t uploaded yet.' : `${count} logins haven’t uploaded yet.`
 }
 
+/** Sync pulls at start, after a change here and every 5 minutes, so the text never says another PC's edit shows up at once. */
+export const SYNC_TIMING = 'Changes made on your other PCs come in when Zing starts, then every 5 minutes.'
+
 export function syncDetail(sync: SyncState, signingIn: boolean): string {
-	if (sync.signedIn && sync.on) return `Sync is on. Signed in as ${sync.email}.${sync.unsent > 0 ? ` ${unsentText(sync.unsent)}` : ''}`
+	if (sync.signedIn && sync.on) return `Sync is on. Signed in as ${sync.email}. ${SYNC_TIMING}${sync.unsent > 0 ? ` ${unsentText(sync.unsent)}` : ''}`
 	if (sync.signedIn) return `Signed in as ${sync.email}.`
 	if (signingIn) return 'Finish signing in with Google in your browser.'
+	// Sign out keeps the sync keys (Ruling 68): this PC is still set up, and signing in again resumes it.
+	if (sync.keysHere) return 'Sync is set up on this PC, but signed out. Sign in again to keep syncing.'
 	return 'Keep saved passwords in step across your PCs. The server only ever sees them encrypted.'
+}
+
+/** The signed-out row's button: Sign in again while this PC is still set up for sync or its sign-in ended, otherwise Turn on sync. */
+export function signInLabel(sync: SyncState, notice: SyncNotice | undefined): string {
+	if (sync.keysHere || notice === 'signed-out' || notice === 'unreadable') return 'Sign in again'
+	return 'Turn on sync'
 }

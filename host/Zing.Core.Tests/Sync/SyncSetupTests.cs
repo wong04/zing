@@ -128,6 +128,11 @@ public sealed class SyncSetupTests : IDisposable
 		Assert.Equal(0, _sealer.Calls);
 	}
 
+	// The same Google sign-in runs from Turn on sync, Sign in again and the restore screen's Sign in with Google (Task 15 text check).
+	[Fact]
+	public void ASignInThatTookTooLongNamesNoButton() =>
+		Assert.Equal("Google sign-in took longer than 5 minutes, so Zing stopped waiting. Try again.", new SyncSignInTimeoutException(new OperationCanceledException()).Message);
+
 	[Fact]
 	public async Task TurningOnUploadsTheKeysThenEveryItemInBatchesThenTheManifest()
 	{

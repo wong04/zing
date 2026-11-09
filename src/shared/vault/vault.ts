@@ -16,6 +16,8 @@ export interface LoginSummary {
 	updatedAt: number
 	passwordUpdatedAt: number
 	deletedAt: number | null
+	/** How many earlier passwords the history holds; vault:history lists them. */
+	historyCount: number
 }
 
 // A login to save (vault:save). The host stores the origin of `origin`, so any

@@ -169,7 +169,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 		toggle('showFavouritesBar', 'Show the favourites bar'),
 		toggle('favouritesHint', 'Show the Ctrl+D hint on an empty favourites bar'),
 		toggle('passwordAutofill', 'Offer to fill saved passwords', {
-			detail: 'A key appears in sign-in fields. Passwords are kept only in the vault on this PC.',
+			detail: 'A key appears in sign-in fields. Passwords are kept in the vault on this PC, and with sync on, an encrypted copy is kept on the sync server.',
 		}),
 		{ type: 'custom', id: 'vault', keys: [], visible: (s) => s.passwordAutofill },
 		toggle('blockTrackers', 'Block trackers', { detail: 'Refuses tracking domains and strips tracking parameters.' }),

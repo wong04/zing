@@ -452,6 +452,10 @@
 	font-size: 12px;
 }
 
+.vault-history-toggle {
+	align-self: flex-start;
+}
+
 .vault-history-title {
 	color: var(--muted);
 	font-size: 11.5px;

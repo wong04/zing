@@ -315,7 +315,9 @@ public sealed class RollbackGuardTests : IDisposable
 		await Assert.ThrowsAsync<ServerRolledBackException>(A.SyncAsync);
 		A.Vault.ForgetSyncAccount();
 
-		await Assert.ThrowsAsync<NotSignedInToSyncException>(() => A.Engine.UploadLocalCopyAsync(Ct));
+		var refused = await Assert.ThrowsAsync<NotSignedInToSyncException>(() => A.Engine.UploadLocalCopyAsync(Ct));
+		// Sync is still on here, only signed out, so the refusal says to sign in, not that sync is off (Task 15 text check).
+		Assert.Equal("Zing isn't signed in to sync on this PC. Sign in with Google first.", refused.Message);
 
 		// Nothing was uploaded, so Settings still says why sync stopped (M7).
 		Assert.Equal("server-rolled-back", A.Engine.Status.Error);

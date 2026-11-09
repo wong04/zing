@@ -1153,7 +1153,7 @@ internal sealed record SummaryPayload(
 	// The SHA-256 of the password's ciphertext (Ruling 56); null for an item with no password ("never" marks and tombstones).
 	byte[]? PasswordHash = null)
 {
-	public LoginSummary ToSummary(string id) => new(id, Origin, Username, Title, Note, CreatedAt, UpdatedAt, PasswordUpdatedAt, DeletedAt);
+	public LoginSummary ToSummary(string id) => new(id, Origin, Username, Title, Note, CreatedAt, UpdatedAt, PasswordUpdatedAt, DeletedAt, History.Count);
 }
 
 /// <summary>One old password: the version it was sealed under (as the password), when it was replaced, and its ciphertext's SHA-256 (Ruling 56).</summary>

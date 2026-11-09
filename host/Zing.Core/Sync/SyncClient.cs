@@ -21,7 +21,7 @@ public sealed class SyncConflictException(VersionedBlob? current)
 }
 
 /// <summary>A sync call with no account to call as: sign in first.</summary>
-public sealed class NotSignedInToSyncException() : Exception("Sync isn't on. Turn on sync in Settings first.");
+public sealed class NotSignedInToSyncException() : Exception("Zing isn't signed in to sync on this PC. Sign in with Google first.");
 
 /// <summary>A replaced sign-in's refresh token couldn't be revoked: it stays unused until it expires.</summary>
 public sealed class SyncRevokeFailedException(string message) : Exception(message);

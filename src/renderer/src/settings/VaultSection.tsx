@@ -5,7 +5,7 @@ import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { SettingRowShell } from './SettingRowShell'
 import { RecoveryKeyScreen, ShowRecoveryKey, SyncSetup, useAction, useSyncState } from './SyncSetup'
-import { syncBanner, syncControls, syncDetail, TURN_OFF_SYNC_CONFIRM, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
+import { signInLabel, syncBanner, syncControls, syncDetail, TURN_OFF_SYNC_CONFIRM, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
 import { useVault } from './useVaultData'
 
 /** A password stays shown for this long, then hides itself. */
@@ -36,15 +36,12 @@ interface Revealed {
 	readonly password: string
 }
 
-function EditForm({ login, onDone, run }: { login: LoginSummary; onDone: () => void; run: Run }) {
-	const [title, setTitle] = useState(login.title)
-	const [username, setUsername] = useState(login.username)
-	const [note, setNote] = useState(login.note)
-	const [password, setPassword] = useState('')
-	const [shown, setShown] = useState(false)
+/** Earlier passwords, newest first: each is shown on request, after Windows Hello, and hides itself after REVEAL_MS. */
+function PasswordHistory({ login, run }: { login: LoginSummary; run: Run }) {
 	const [history, setHistory] = useState<readonly PasswordHistoryEntry[]>([])
 	const [old, setOld] = useState<Revealed>()
 
+	// historyCount too: a merge from another PC can add an earlier password without changing this one.
 	useEffect(() => {
 		let current = true
 		void zing.loginHistory(login.id).then((entries) => {
@@ -53,7 +50,7 @@ function EditForm({ login, onDone, run }: { login: LoginSummary; onDone: () => v
 		return () => {
 			current = false
 		}
-	}, [login.id, login.passwordUpdatedAt])
+	}, [login.id, login.passwordUpdatedAt, login.historyCount])
 
 	useEffect(() => {
 		if (!old) return
@@ -61,6 +58,41 @@ function EditForm({ login, onDone, run }: { login: LoginSummary; onDone: () => v
 		return () => clearTimeout(timer)
 	}, [old])
 
+	return (
+		<div className="vault-history" role="group" aria-label="Earlier passwords">
+			<div className="vault-history-title">Earlier passwords</div>
+			{history.map((entry, index) => {
+				const key = `${login.id}/${index}`
+				const shownOld = old?.key === key
+				return (
+					<div key={`${entry.replacedAt}/${index}`} className="vault-history-row">
+						<span>Replaced {dateOf(entry.replacedAt)}</span>
+						{shownOld ? <code className="vault-secret">{old.password}</code> : null}
+						<PillButton
+							variant="ghost"
+							size="small"
+							aria-label={`${shownOld ? 'Hide' : 'Show'} earlier password from ${dateOf(entry.replacedAt)}`}
+							onClick={() =>
+								shownOld ? setOld(undefined) : void run(async () => setOld({ key, password: await zing.revealOldPassword(login.id, index) }))
+							}
+						>
+							{shownOld ? 'Hide' : 'Show'}
+						</PillButton>
+					</div>
+				)
+			})}
+		</div>
+	)
+}
+
+const earlierPasswords = (count: number): string => (count === 1 ? '1 earlier password' : `${count} earlier passwords`)
+
+function EditForm({ login, onDone, run }: { login: LoginSummary; onDone: () => void; run: Run }) {
+	const [title, setTitle] = useState(login.title)
+	const [username, setUsername] = useState(login.username)
+	const [note, setNote] = useState(login.note)
+	const [password, setPassword] = useState('')
+	const [shown, setShown] = useState(false)
 	const save = (): void =>
 		void run(async () => {
 			await zing.updateLogin(login.id, { title, username, note, ...(password === '' ? {} : { password }) })
@@ -101,31 +133,7 @@ function EditForm({ login, onDone, run }: { login: LoginSummary; onDone: () => v
 				</PillButton>
 			</div>
 			<PillField label="Note" value={note} onChange={setNote} autoComplete="off" />
-			{history.length > 0 ? (
-				<div className="vault-history" role="group" aria-label="Earlier passwords">
-					<div className="vault-history-title">Earlier passwords</div>
-					{history.map((entry, index) => {
-						const key = `${login.id}/${index}`
-						const shownOld = old?.key === key
-						return (
-							<div key={`${entry.replacedAt}/${index}`} className="vault-history-row">
-								<span>Replaced {dateOf(entry.replacedAt)}</span>
-								{shownOld ? <code className="vault-secret">{old.password}</code> : null}
-								<PillButton
-									variant="ghost"
-									size="small"
-									aria-label={`${shownOld ? 'Hide' : 'Show'} earlier password from ${dateOf(entry.replacedAt)}`}
-									onClick={() =>
-										shownOld ? setOld(undefined) : void run(async () => setOld({ key, password: await zing.revealOldPassword(login.id, index) }))
-									}
-								>
-									{shownOld ? 'Hide' : 'Show'}
-								</PillButton>
-							</div>
-						)
-					})}
-				</div>
-			) : null}
+			{login.historyCount > 0 ? <PasswordHistory login={login} run={run} /> : null}
 			<div className="vault-edit-actions">
 				<PillButton variant="ghost" size="small" onClick={onDone}>
 					Cancel
@@ -151,6 +159,7 @@ function LoginRow({ login, revealed, editing, run, notify, setRevealed, setEditi
 }) {
 	const name = siteName(login)
 	const shown = revealed?.key === login.id
+	const [historyOpen, setHistoryOpen] = useState(false)
 	if (editing) return <li className="vault-row editing"><EditForm login={login} onDone={() => setEditing(undefined)} run={run} /></li>
 	return (
 		<li className="vault-row">
@@ -161,6 +170,14 @@ function LoginRow({ login, revealed, editing, run, notify, setRevealed, setEditi
 				</small>
 				{login.note === '' ? null : <small>{login.note.split(/\r?\n/)[0]}</small>}
 				{shown ? <code className="vault-secret">{revealed.password}</code> : null}
+				{login.historyCount > 0 ? (
+					<span className="vault-history-toggle">
+						<PillButton variant="ghost" size="small" aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}>
+							{earlierPasswords(login.historyCount)}
+						</PillButton>
+					</span>
+				) : null}
+				{historyOpen && login.historyCount > 0 ? <PasswordHistory login={login} run={run} /> : null}
 			</span>
 			<PillButton
 				variant="ghost"
@@ -238,7 +255,6 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 	const signIn = (): void => act(() => zing.signInToSync())
 	const signOut = (): void => act(() => zing.signOutOfSync(), (state) => setSignOutNotice(state.signedIn ? undefined : state.notice))
 	const notice = signOutNotice ?? (sync.signedIn ? undefined : sync.notice)
-	const signInLabel = notice === 'signed-out' || notice === 'unreadable' ? 'Sign in again' : 'Turn on sync'
 	const banner = syncBanner(sync, error)
 	const upload = (): void => {
 		setConfirmingUpload(false)
@@ -251,7 +267,7 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 	}
 	const controls = syncControls(sync, acting)
 	const turnOffButton = sync.keysHere ? (
-		<PillButton variant="ghost" size="small" disabled={busy} onClick={() => setConfirmingTurnOff(true)}>
+		<PillButton variant="outlined" size="small" disabled={busy} onClick={() => setConfirmingTurnOff(true)}>
 			Turn off sync on this PC
 		</PillButton>
 	) : null
@@ -274,7 +290,7 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 				) : (
 					<div className="vault-actions">
 						<PillButton variant="outlined" size="small" disabled={busy} onClick={signIn}>
-							{signInLabel}
+							{signInLabel(sync, notice)}
 						</PillButton>
 						{turnOffButton}
 					</div>
@@ -435,7 +451,7 @@ export function VaultSection() {
 
 	return (
 		<div className="vault" role="group" aria-label="Saved passwords">
-			<SettingRowShell title="Saved passwords" detail={logins.length === 1 ? '1 login. Windows Hello is asked before a password is shown.' : `${logins.length} logins. Windows Hello is asked before a password is shown.`}>
+			<SettingRowShell title="Saved passwords" detail={`${logins.length === 1 ? '1 login' : `${logins.length} logins`}. Showing a password asks for Windows Hello, at most once every 5 minutes.`}>
 				<div className="vault-actions">
 					<PillButton variant="outlined" size="small" disabled={busy} onClick={importCsv}>
 						Import CSV

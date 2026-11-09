@@ -315,7 +315,10 @@ async function turnOnWithLogins(sub: string): Promise<{ zing: Launched; recovery
 test('Turn off sync on this PC keeps the logins, forgets the sync sign-in and keys, and then the account can be deleted', async () => {
 	const { zing, bank } = await turnOnWithLogins(TURN_OFF_SUB)
 	const sheet = await openSync(zing)
-	await expect(syncGroup(sheet)).toContainText(`Sync is on. Signed in as ${TURN_OFF_SUB}@example.test.`)
+	await expect(syncGroup(sheet)).toContainText(`Sync is on. Signed in as ${TURN_OFF_SUB}@example.test. Changes made on your other PCs come in when Zing starts, then every 5 minutes.`)
+	// Styled as the row's other buttons are (Task 15 text check).
+	const signOutClass = await syncGroup(sheet).getByRole('button', { name: 'Sign out' }).getAttribute('class')
+	await expect(syncGroup(sheet).getByRole('button', { name: 'Turn off sync on this PC' })).toHaveAttribute('class', signOutClass!)
 
 	await syncGroup(sheet).getByRole('button', { name: 'Turn off sync on this PC' }).click()
 	const confirm = syncGroup(sheet).getByRole('alertdialog', { name: 'Turn off sync on this PC' })

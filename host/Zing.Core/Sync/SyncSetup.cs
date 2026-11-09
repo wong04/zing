@@ -558,7 +558,7 @@ public sealed class SyncAccountUnreadableException(string path, Exception inner)
 
 /// <summary>Google sign-in wasn't finished in the browser within 5 minutes, so Zing stopped waiting for it.</summary>
 public sealed class SyncSignInTimeoutException(Exception inner)
-	: Exception("Google sign-in took longer than 5 minutes, so Zing stopped waiting. Turn on sync to try again.", inner);
+	: Exception("Google sign-in took longer than 5 minutes, so Zing stopped waiting. Try again.", inner);
 
 /// <summary>
 /// The open vault's one <see cref="SyncClient"/>, shared by every window (Rulings 49-51): its refresh lock only works if sign-in,

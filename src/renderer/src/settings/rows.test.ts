@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, SETTING_KEYS, acceptsValue } from '@shared/settings'
 import { SETTINGS_CATEGORIES } from '@shared/shell/shellState'
-import { boundKeys, CATEGORIES, PANES, isVisible } from './rows'
+import { boundKeys, CATEGORIES, PANES, detailOf, isVisible } from './rows'
 
 describe('settings rows', () => {
 	it('binds every setting in the schema to a control', () => {
@@ -48,5 +48,16 @@ describe('settings rows', () => {
 		expect(vault).toMatchObject({ type: 'custom', id: 'vault' })
 		expect(isVisible(vault!, DEFAULT_SETTINGS)).toBe(false)
 		expect(isVisible(vault!, { ...DEFAULT_SETTINGS, passwordAutofill: true })).toBe(true)
+	})
+
+	// The switch's detail shows whatever sync is doing, so it must be true with sync on too (Task 15 text check).
+	it('says the vault is on this PC and, with sync on, encrypted on the sync server', () => {
+		const row = PANES.browsing.find((i) => i.type === 'setting' && i.key === 'passwordAutofill')
+		if (row?.type !== 'setting') throw new Error('No passwordAutofill row')
+		for (const passwordAutofill of [false, true]) {
+			expect(detailOf(row, { ...DEFAULT_SETTINGS, passwordAutofill })).toBe(
+				'A key appears in sign-in fields. Passwords are kept in the vault on this PC, and with sync on, an encrypted copy is kept on the sync server.',
+			)
+		}
 	})
 })

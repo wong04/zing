@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SyncState } from '@shared/vault/vault'
-import { syncBanner, syncControls, syncDetail, TURN_OFF_SYNC_CONFIRM, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
+import { signInLabel, syncBanner, syncControls, syncDetail, SYNC_TIMING, TURN_OFF_SYNC_CONFIRM, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
 
 const on = (patch: Partial<Extract<SyncState, { signedIn: true }>> = {}): SyncState => ({ signedIn: true, email: 'ada@example.test', on: true, recoveryPending: false, unsent: 0, keysHere: true, ...patch })
 
@@ -67,6 +67,26 @@ describe('syncControls and syncDetail', () => {
 
 	it('shows the account controls when signed in, whatever runs', () => {
 		expect(syncControls(on(), true)).toBe('account')
-		expect(syncDetail(on({ unsent: 1 }), false)).toBe('Sync is on. Signed in as ada@example.test. 1 login hasn’t uploaded yet.')
+		expect(syncDetail(on({ unsent: 1 }), false)).toBe(`Sync is on. Signed in as ada@example.test. ${SYNC_TIMING} 1 login hasn’t uploaded yet.`)
+	})
+
+	// Task 15 text check: the states a hand check found stale.
+	it('says when another PC’s changes come in, never that they arrive at once', () => {
+		expect(SYNC_TIMING).toBe('Changes made on your other PCs come in when Zing starts, then every 5 minutes.')
+		expect(syncDetail(on(), false)).toBe(`Sync is on. Signed in as ada@example.test. ${SYNC_TIMING}`)
+	})
+
+	it('says a PC signed out with its sync keys is still set up, and offers Sign in again', () => {
+		expect(syncDetail(signedOutWithKeys, false)).toBe('Sync is set up on this PC, but signed out. Sign in again to keep syncing.')
+		expect(signInLabel(signedOutWithKeys, undefined)).toBe('Sign in again')
+	})
+
+	it('offers Turn on sync with the plain detail once sync is off or turned off on this PC', () => {
+		const off: SyncState = { signedIn: false, on: false, recoveryPending: false, keysHere: false }
+		expect(syncDetail(off, false)).toBe('Keep saved passwords in step across your PCs. The server only ever sees them encrypted.')
+		expect(signInLabel(off, undefined)).toBe('Turn on sync')
+		expect(signInLabel(off, 'kept-on-server')).toBe('Turn on sync')
+		expect(signInLabel(off, 'signed-out')).toBe('Sign in again')
+		expect(signInLabel(off, 'unreadable')).toBe('Sign in again')
 	})
 })
