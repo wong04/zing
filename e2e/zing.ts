@@ -164,19 +164,24 @@ async function collect(testInfo: TestInfo): Promise<void> {
 
 /**
  * The engine's lockfile goes with its browser process, but after a page crash its crash reporter (msedgewebview2
- * --type=crashpad-handler) stays a while longer, holding the profile's Crashpad folder. A folder that can't be removed
- * waits until no engine process names it, which is slow to ask, so only then.
+ * --type=crashpad-handler) stays a while longer, holding the profile's Crashpad folder. The delete is retried until
+ * nothing holds the folder: asking Windows which processes name it means a PowerShell and CIM start each time, which
+ * has passed 20 s on a loaded runner, so the process list is only asked for once, to explain a folder still held.
  */
 async function removeScratch(dir: string): Promise<void> {
-	try {
-		rmSync(dir, { recursive: true, force: true })
-		return
-	} catch (error) {
-		const code = (error as NodeJS.ErrnoException).code
-		if (code !== 'EPERM' && code !== 'EBUSY') throw error
+	const deadline = Date.now() + ENGINE_RELEASE_TIMEOUT
+	for (;;) {
+		try {
+			rmSync(dir, { recursive: true, force: true })
+			return
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code
+			if (code !== 'EPERM' && code !== 'EBUSY') throw error
+			if (Date.now() > deadline) throw new HostProcessError(`${dir} could not be removed ${ENGINE_RELEASE_TIMEOUT / 1000} s after Zing quit (${code}: ${(error as Error).message})
+${engineProcesses(dir)}`)
+		}
+		await new Promise((resolve) => setTimeout(resolve, 250))
 	}
-	await engineGone(dir)
-	rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
 }
 
 // A cold start on a CI runner has taken 29 s and more, while a warm one takes under 5.
@@ -368,29 +373,13 @@ function reportSlowRelease(started: number): void {
  * stalled release shows what is alive (a browser process, a crashpad handler, a leftover renderer) and who owns it.
  */
 function engineProcesses(userData: string): string {
+	const script = `$d = '${userData.replaceAll("'", "''")}'; Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($d) } | Sort-Object CreationDate | ForEach-Object { '{0} parent={1} started={2:HH:mm:ss.fff} {3}' -f $_.ProcessId, $_.ParentProcessId, $_.CreationDate, $_.CommandLine.Substring(0, [Math]::Min(220, $_.CommandLine.Length)) }`
 	try {
-		const out = listEngineProcesses(userData)
+		const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 60_000 }).trim()
 		return out.length > 0 ? `Processes using ${userData}:
 ${out}` : `No process has ${userData} on its command line.`
 	} catch (error) {
 		return `Could not list the engine's processes: ${(error as Error).message}`
-	}
-}
-
-/** One line per engine process with this folder on its command line; empty when there is none. */
-function listEngineProcesses(userData: string): string {
-	const script = `$d = '${userData.replaceAll("'", "''")}'; Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($d) } | Sort-Object CreationDate | ForEach-Object { '{0} parent={1} started={2:HH:mm:ss.fff} {3}' -f $_.ProcessId, $_.ParentProcessId, $_.CreationDate, $_.CommandLine.Substring(0, [Math]::Min(220, $_.CommandLine.Length)) }`
-	return execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 20_000 }).trim()
-}
-
-/** Waits until no engine process names this folder. */
-async function engineGone(userData: string): Promise<void> {
-	const deadline = Date.now() + ENGINE_RELEASE_TIMEOUT
-	for (;;) {
-		const left = listEngineProcesses(userData)
-		if (left.length === 0) return
-		if (Date.now() > deadline) throw new HostProcessError(`The WebView2 engine still uses ${userData} ${ENGINE_RELEASE_TIMEOUT / 1000} s after Zing quit:\n${left}`)
-		await new Promise((resolve) => setTimeout(resolve, 250))
 	}
 }
 
