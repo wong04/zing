@@ -116,6 +116,9 @@ test('closing the focused tab hands the keyboard to a view, so shortcuts still w
 
 test('a real click on a stack dropdown row switches to that tab', { tag: '@real-input' }, async () => {
 	const zing = await launchZing({ env: ON_SCREEN })
+	// Stacks are the top strip's; the rail on the left is the default.
+	await zing.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'top'))
+	await expect(zing.chrome.locator('.tabstrip')).toBeVisible()
 	const first = await openPage(zing.chrome, 'a.site', 'Inbox')
 	await openPage(zing.chrome, 'b.site', 'Docs')
 	await openPage(zing.chrome, 'solo', 'Alone')
