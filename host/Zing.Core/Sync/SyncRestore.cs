@@ -137,7 +137,7 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 	/// them, and when they already open with <paramref name="next"/> there's nothing more to upload.
 	/// </summary>
 	/// <exception cref="SyncNoNewPasswordNeededException">No recovery key restore is waiting.</exception>
-	/// <exception cref="SyncPasswordTooWeakException">Below the sync floor (Ruling 52); still waiting.</exception>
+	/// <exception cref="SyncPasswordTooWeakException">Fails the sync password rules; still waiting.</exception>
 	/// <exception cref="SyncAccountChangedException">The Google sign-in changed since the recovery key was checked.</exception>
 	/// <exception cref="SyncRestoreOverAnotherAccountException">This PC has an account, and the keys are another vault's.</exception>
 	/// <exception cref="SyncRestoreKeysNotThisVaultsException">This PC has an account, and the keys carry its vault ID but not its index key.</exception>
@@ -147,7 +147,7 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 	{
 		var recovered = _recovered ?? throw new SyncNoNewPasswordNeededException();
 		account.CheckNewPassword(next);
-		if (!SyncPasswordStrength.IsStrongEnough(next)) throw new SyncPasswordTooWeakException();
+		SyncPasswordStrength.Require(next);
 		var signedIn = signIn.SyncAccount() ?? throw new NotSignedInToSyncException();
 		if (signedIn.UserId != recovered.UserId) throw new SyncAccountChangedException();
 		using var keys = UnwrapWithRecoveryKey(SyncKeysBlob.Parse(recovered.Server.Blob, recovered.Server.Version), recovered.RecoveryKey);

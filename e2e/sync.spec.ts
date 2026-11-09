@@ -1,8 +1,11 @@
 // Sync's Google sign-in (Task 11). No test reaches Google or Railway: the real sync server (server/Zing.Server) runs on this PC with
 // its fake Google issuer (ZING_SERVER_FAKE_GOOGLE=1 in the Staging environment, as its own tests and CI run it), and in an e2e run
-// Zing's Google sign-in is a stand-in that asks that issuer for an ID token (ZING_E2E_SYNC_SERVER), so no browser opens.
+// Zing's Google sign-in is a stand-in that asks that issuer for an ID token (ZING_E2E_SYNC_SERVER), so no window opens. The
+// sign-in window's own tests point the real sign-in at a fake Google on this PC instead (ZING_E2E_GOOGLE_AUTHORIZE).
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,6 +28,8 @@ const TWO_PCS_SUB = 'sub-e2e-two-pcs'
 const RESTORE_SUBS = ['sub-e2e-restore', 'sub-e2e-recovery', 'sub-e2e-changed', 'sub-e2e-conflict'] as const
 // Turn off sync on this PC (Ruling 68).
 const TURN_OFF_SUB = 'sub-e2e-turn-off'
+// The Google sign-in window: Google's page in a small Zing window, and its redirect.
+const POPUP_SUB = 'sub-e2e-popup'
 
 let server: ChildProcess | undefined
 let serverUrl = ''
@@ -43,7 +48,7 @@ function serverEnvironment(): NodeJS.ProcessEnv {
 		ASPNETCORE_ENVIRONMENT: 'Staging',
 		ZING_SERVER_FAKE_GOOGLE: '1',
 		ZING_SESSION_KEY: randomBytes(32).toString('base64'),
-		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB].join(','),
+		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB, POPUP_SUB].join(','),
 		ZING_DB_PATH: join(serverDir, 'zing.db'),
 		// Every PC of the run is 127.0.0.1, so one per-IP budget: the default 60 a minute is a production limit (its own tests cover it).
 		ZING_RATE_IP_PER_MINUTE: '1000',
@@ -140,11 +145,107 @@ test('without a sync server, as in a build without a Google client, Turn on sync
 	await zing.close()
 })
 
+// The Google sign-in window. Google is a fake on this PC: its authorize page links back to Zing's loopback port with the state, and
+// its token endpoint trades the code for an ID token from the sync server's fake issuer. Under ZING_E2E only, the real sign-in is
+// pointed at it (TestHooks.Sync), so nothing reaches Google.
+
+const FAKE_CODE = 'e2e-code'
+
+/** The fake Google, on a port of its own, for one test. */
+async function startFakeGoogle(): Promise<{ url: string; close: () => Promise<void> }> {
+	const google: Server = createServer((request, response) => {
+		const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+		if (request.method === 'GET' && url.pathname === '/authorize') {
+			const back = new URL(url.searchParams.get('redirect_uri')!)
+			back.searchParams.set('code', FAKE_CODE)
+			back.searchParams.set('state', url.searchParams.get('state')!)
+			response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+			response.end(`<!doctype html><title>Fake Google</title><a href="${back.href}">Continue</a>`)
+			return
+		}
+		if (request.method === 'POST' && url.pathname === '/token') {
+			let body = ''
+			request.on('data', (chunk: Buffer) => (body += chunk.toString()))
+			request.on('end', () => {
+				void (async () => {
+					const form = new URLSearchParams(body)
+					if (form.get('code') !== FAKE_CODE || !form.get('code_verifier')) {
+						response.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'invalid_grant' }))
+						return
+					}
+					const minted = await fetch(`${serverUrl}/fake-google/token`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sub: POPUP_SUB }) })
+					const { idToken } = (await minted.json()) as { idToken: string }
+					response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ id_token: idToken }))
+				})()
+			})
+			return
+		}
+		response.writeHead(404).end()
+	})
+	await new Promise<void>((resolve) => google.listen(0, '127.0.0.1', resolve))
+	return { url: `http://127.0.0.1:${(google.address() as AddressInfo).port}`, close: () => new Promise((resolve) => google.close(() => resolve())) }
+}
+
+const popupEnv = (google: string): Record<string, string> => ({ ...syncEnv(POPUP_SUB), ZING_E2E_GOOGLE_AUTHORIZE: `${google}/authorize`, ZING_E2E_GOOGLE_TOKEN: `${google}/token` })
+
+type SignInWindow = { open: boolean; ownedByThisWindow: boolean; address: string; width: number; height: number }
+
+/** The Google sign-in window (TestHooks "sign-in-window"); with close, then closed as the person would. */
+async function signInWindow(zing: Launched, close = false): Promise<SignInWindow> {
+	const file = join(scratchDir('zing-sign-in-window-'), 'window.json')
+	await zing.chrome.evaluate(
+		(m) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'sign-in-window', ...m }),
+		{ file, close },
+	)
+	await expect.poll(() => existsSync(file)).toBe(true)
+	return JSON.parse(readFileSync(file, 'utf8')) as SignInWindow
+}
+
+test('Turn on sync opens Google in a small window owned by Zing’s, and its redirect signs in and closes it', async () => {
+	const google = await startFakeGoogle()
+	const zing = await launchZing({ userDataDir: vaultProfile(), env: popupEnv(google.url) })
+	const sheet = await openSync(zing)
+
+	await syncGroup(sheet).getByRole('button', { name: 'Turn on sync' }).click()
+
+	const page = await pageWhere(zing.browser, (p) => p.url().startsWith(`${google.url}/authorize?`))
+	const shown = await signInWindow(zing)
+	expect(shown).toMatchObject({ open: true, ownedByThisWindow: true })
+	expect(shown.address.startsWith(`${google.url}/authorize?`)).toBe(true)
+	expect(shown.width).toBeCloseTo(500, 0)
+	expect(shown.height).toBeCloseTo(650, 0)
+	await page.getByRole('link', { name: 'Continue' }).click()
+
+	await expect(syncGroup(sheet)).toContainText(`Signed in as ${POPUP_SUB}@example.test.`)
+	await expect.poll(async () => (await signInWindow(zing)).open).toBe(false)
+	await zing.close()
+	await google.close()
+})
+
+test('closing the Google sign-in window cancels the sign-in, and Settings still offers Turn on sync', async () => {
+	const google = await startFakeGoogle()
+	const zing = await launchZing({ userDataDir: vaultProfile(), env: popupEnv(google.url) })
+	const sheet = await openSync(zing)
+	await syncGroup(sheet).getByRole('button', { name: 'Turn on sync' }).click()
+	await pageWhere(zing.browser, (p) => p.url().startsWith(`${google.url}/authorize?`))
+
+	expect((await signInWindow(zing, true)).open).toBe(true)
+
+	await expect(syncGroup(sheet).getByRole('button', { name: 'Turn on sync' })).toBeEnabled()
+	await expect(syncGroup(sheet).getByRole('button', { name: 'Cancel' })).toHaveCount(0)
+	await expect(syncGroup(sheet)).not.toContainText('Signed in as')
+	await expect(syncGroup(sheet).locator('.info-banner')).toHaveCount(0)
+	expect((await signInWindow(zing)).open).toBe(false)
+	expect(existsSync(syncFile(zing))).toBe(false)
+	await zing.close()
+	await google.close()
+})
+
 // Turning sync on (Task 12): the Zing password wraps the vault's keys, and the recovery key is shown until it's confirmed saved.
 // Windows Hello is the e2e stand-in (vault-hello), never a real prompt.
 
-/** A five-word passphrase the generator made (src/shared/vault/passwordStrength.vectors.json). */
-const STRONG = 'teaching-focused-onward-activist-steel'
+/** A passphrase the generator made, five words and a digit (src/shared/vault/passwordStrength.vectors.json). */
+const STRONG = 'teaching-focused-onward-activist-steel4'
 const RECOVERY_KEY = /^[A-Z2-7]{4}(-[A-Z2-7]{4}){5}-[A-Z2-7]{2}$/
 
 type TestMessage = { action: 'vault-hello'; result: 'pass' | 'cancel' }
@@ -222,7 +323,7 @@ test('turning on sync shows the recovery key, and nothing else of the vault, unt
 	await again.close()
 })
 
-test('a Zing password too weak for sync is changed to a suggested passphrase in the same flow', async () => {
+test('a Zing password the sync rules turn down says why, and is changed to a suggested passphrase in the same flow', async () => {
 	const zing = await launchZing({ userDataDir: vaultProfile(), env: syncEnv(TURN_ON_SUBS[1]) })
 	await signUp(zing, 'correct horse')
 	const sheet = await openSync(zing)
@@ -230,13 +331,18 @@ test('a Zing password too weak for sync is changed to a suggested passphrase in 
 	await expect(syncGroup(sheet)).toContainText(`Signed in as ${TURN_ON_SUBS[1]}@example.test.`)
 
 	await syncGroup(sheet).getByLabel('Zing password').fill('correct horse')
-	await expect(syncGroup(sheet).getByRole('status').filter({ hasText: 'Sync needs about 60 bits, such as five random words.' })).toBeVisible()
+	// Long enough, with a space for its symbol, and not common to zxcvbn: only the number is missing.
+	await expect(syncGroup(sheet).getByRole('status').filter({ hasText: 'Add a number.' })).toBeVisible()
 	await syncGroup(sheet).getByRole('form', { name: 'Turn on sync' }).getByRole('button', { name: 'Turn on sync' }).click()
 
 	const stronger = syncGroup(sheet).getByRole('form', { name: 'Choose a stronger password' })
+	// The host's own refusal, the first rule it failed, not the renderer's.
+	await expect(stronger).toContainText('Add a number. Sync protects your passwords on the server too')
+	await stronger.getByLabel('New Zing password', { exact: true }).fill('Password1234!')
+	await expect(stronger.getByRole('status').filter({ hasText: 'This password is too common. Add more words or characters.' })).toBeVisible()
 	await stronger.getByRole('button', { name: 'Suggest a passphrase' }).click()
 	const suggested = (await stronger.getByLabel('Suggested passphrase').textContent())!
-	expect(suggested.split('-')).toHaveLength(5)
+	expect(suggested).toMatch(/^([a-z]+-){4}[a-z]+\d$/)
 	await stronger.getByRole('button', { name: 'Use it' }).click()
 	await expect(stronger.getByRole('status').filter({ hasText: 'Strong enough for sync.' })).toBeVisible()
 	await stronger.getByRole('button', { name: 'Change password and turn on sync' }).click()
@@ -297,8 +403,8 @@ test('a login saved on one PC reaches the other, and an edit made there comes ba
 // A new PC, a forgotten password, and a password changed on another PC (Task 14). The new PC starts from an empty profile, at the
 // account gate, as a real first start does.
 
-/** Another generated five-word passphrase (src/shared/vault/passwordStrength.vectors.json). */
-const NEXT_STRONG = 'labour-muzzle-medici-rushes-fiction'
+/** Another generated passphrase (src/shared/vault/passwordStrength.vectors.json). */
+const NEXT_STRONG = 'labour-muzzle-medici-rushes-fiction7'
 
 /** A PC with an account, two logins and sync turned on for `sub`, its recovery key confirmed saved. */
 async function turnOnWithLogins(sub: string): Promise<{ zing: Launched; recovery: string; bank: string }> {

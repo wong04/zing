@@ -348,7 +348,7 @@ public sealed class SyncEngineTests : IDisposable
 	[Fact]
 	public async Task ATurnOnSettledByAPasswordChangeIsUploadedByTheNextSync()
 	{
-		const string next = "labour-muzzle-medici-rushes-fiction";
+		const string next = "labour-muzzle-medici-rushes-fiction7";
 		await PendingTurnOnTheServerTook();
 		await new SyncKeys(_pcs.Account, A.Vault, A.Client).ChangePasswordAsync(TwoPcs.Strong, next, Ct);
 		Assert.Equal(0, _pcs.Server.Wire.Count("POST /changes"));

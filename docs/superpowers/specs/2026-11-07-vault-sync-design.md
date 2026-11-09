@@ -82,10 +82,10 @@ The owner hasn't confirmed these yet; they are open to change.
   - Changing it on one PC re-wraps the keys and uploads them. Each other PC asks for the new password once, the next time it starts, then updates its local check.
   - Restoring on a new PC creates the local account from an encrypted account profile (name and email) stored with the keys.
   - `AccountStore` gains a change-password operation, which today it doesn't have.
-  - If the password is weaker than the sync floor, turning on sync asks for a new one as part of the same flow.
+  - If the password fails the sync password rules, turning on sync asks for a new one as part of the same flow.
 - **The recovery key** is shown once, when sync is turned on, and the user must confirm they've saved or printed it before carrying on. It can be shown again later from Settings, after Windows Hello.
   - **Deviation, accepted (Ruling 61): a PC restored with the Zing password can't show the recovery key.** The server copy holds the recovery key only as a key, not as the printable code, and the password restore never sees the code. Only a PC that turned sync on, or that was restored with the recovery key, holds a sealed copy and can show it again. On a password-restored PC, Settings says to use the saved copy or show it on the PC that turned sync on. A password restore on a PC that already holds the sealed copy keeps it.
-- **Password strength.** Turning on sync requires a Zing password of about 60 bits or more (zxcvbn score 4), and offers a generated five-word passphrase. Today's 8-character minimum still applies when sync is off.
+- **Password strength.** The sync password (set when turning on sync, chosen after a recovery-key restore, or changed while sync is on) needs at least 12 characters, at least one digit, at least one character that's neither a letter nor a digit, and a zxcvbn score of at least 3. The rules are checked in that order (length, number, special, common), and Settings shows the first one that fails as a plain sentence. The host enforces them and never trusts the renderer's verdict; `passwordStrength.vectors.json` pins them for both. Turning on sync offers a generated passphrase of five words and a digit. Changed on 2026-11-09 by the owner, replacing the earlier floor of about 60 bits (zxcvbn score 4). Today's 8-character minimum still applies when sync is off.
 - **The manage page lives in Settings:**
   - a searchable list by site, with username, password (hidden) and note
   - edit and delete
@@ -137,7 +137,7 @@ on this PC:  index key  ──sealed by──▶ DPAPI
 
 ### The server and authentication
 
-- **Google OAuth** runs in the system browser, with PKCE and a loopback redirect. The server checks the Google ID token and identifies the user by the token's `sub`.
+- **Google OAuth** runs in a small Zing window owned by Zing's main window (about 500 by 650 DIPs, with a taskbar entry), with PKCE and a loopback redirect. Its WebView2 uses the same environment and browsing profile as tabs, so an existing Google sign-in in Zing is reused, and the address shows read-only at the top. Closing the window before the redirect cancels the sign-in, and only one is open at a time. Changed on 2026-11-09 by the owner, replacing sign-in in the system browser (Ruling 23, RFC 8252's external user-agent); a spike that day confirmed Google accepts the authorize page in a Zing window with WebView2's default user agent. The server checks the Google ID token and identifies the user by the token's `sub`.
   - **Allow-list:** only the two `sub` values in a Railway variable can use the server. Anyone else gets a 403.
   - The server issues its own short-lived session token. Its refresh token is stored on the PC under DPAPI.
 - **Nothing derived from the password ever leaves the PC.** No hash or verifier is sent; Google is the only authentication. This avoids the weakness in Firefox Sync and Bitwarden, where a password-derived value on the server can be attacked offline.
@@ -234,7 +234,7 @@ Run these before building on them. Each one can change the design:
 1. **Tying the vault key to Windows Hello.** Prove that a key sealed with Windows Hello can't be opened without a Hello prompt, and that it survives a Zing restart. If neither method works, stop and come back to the owner.
 2. **Passkeys work in Zing:** a WebAuthn sign-in through Windows Hello, and through a phone via QR code, on a real site. If they don't, record it in the README's Known differences, and raise it with the owner.
 3. **WebView2's built-in password saving can be turned off** with no prompt of its own left over.
-4. **Google sign-in through the system browser**, with a loopback redirect, from the unpackaged `Zing.exe`.
+4. **Google sign-in in a Zing window**, with a loopback redirect, from the unpackaged `Zing.exe` (first proved through the system browser; moved to a Zing window on 2026-11-09).
 
 ## Testing
 

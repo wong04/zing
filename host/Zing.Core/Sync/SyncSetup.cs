@@ -1,9 +1,10 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using Zing.Core.Vault;
 
 namespace Zing.Core.Sync;
 
-/// <summary>Google sign-in for sync: the system browser, PKCE and a loopback port in Zing (Zing.Host.GoogleSignIn); the server's fake issuer in e2e.</summary>
+/// <summary>Google sign-in for sync: Google's page in a Zing window, PKCE and a loopback port (<see cref="GoogleSignIn"/>); the server's fake issuer in most e2e tests.</summary>
 public interface IGoogleSignIn
 {
 	/// <summary>A Google ID token for the person who signed in, with the <c>openid email</c> scopes.</summary>
@@ -76,9 +77,15 @@ public sealed record SyncState(bool SignedIn, string? Email, string? Notice = nu
 	private static bool Unconfirmed(VaultSyncKeys? keys) => keys is { RecoveryConfirmed: false };
 }
 
-/// <summary>Turning on sync, or changing the password while it's on, with a Zing password below the floor (<see cref="SyncPasswordStrength"/>).</summary>
-public sealed class SyncPasswordTooWeakException()
-	: Exception("Sync needs a stronger Zing password: about 60 bits or more, such as five random words. Choose a new one to turn on sync.");
+/// <summary>
+/// Turning on sync, changing the password while it's on, or choosing one after a recovery key restore, with a password that fails
+/// <see cref="SyncPasswordStrength"/>'s rules: the message is the first failed rule's sentence, which Settings shows.
+/// </summary>
+public sealed class SyncPasswordTooWeakException(IReadOnlyList<SyncPasswordRule> failed) : Exception(SyncPasswordStrength.Sentence(failed[0]))
+{
+	/// <summary>Every rule the password failed, in <see cref="SyncPasswordRule"/>'s order.</summary>
+	public IReadOnlyList<SyncPasswordRule> Failed { get; } = failed;
+}
 
 /// <summary>Changing the password while sync is on, signed out of sync or signed in as another Google account than the one it was turned on for (Ruling 53).</summary>
 public sealed class SyncSignInNeededException()
@@ -158,21 +165,56 @@ public sealed class SyncNotOnException() : Exception("Sync isn't on for this PC,
 public sealed class SyncUploadRefusedException(string itemId)
 	: Exception($"The sync server already held item {itemId} while sync was being turned on, so Zing stopped.");
 
+/// <summary>The sync password's rules, in the order they're checked and reported.</summary>
+public enum SyncPasswordRule
+{
+	/// <summary>At least <see cref="SyncPasswordStrength.MinimumLength"/> characters.</summary>
+	Length,
+	/// <summary>At least one digit.</summary>
+	Number,
+	/// <summary>At least one character that's neither a letter nor a digit.</summary>
+	Special,
+	/// <summary>A zxcvbn score of at least <see cref="SyncPasswordStrength.MinimumScore"/>.</summary>
+	Common,
+}
+
 /// <summary>
-/// The sync floor for the Zing password (Ruling 52): zxcvbn score 4 and at least 10^18 guesses, about 60 bits (zxcvbn-core), the
-/// same verdict as the renderer's meter (passwordStrength.vectors.json). Score 4 alone is only about 33 bits.
+/// The sync password's rules (zxcvbn-core for the score), the same verdict as the renderer's meter (passwordStrength.vectors.json).
+/// Characters are counted as runes, as the renderer counts code points. The host's check is the one that counts.
 /// </summary>
 public static class SyncPasswordStrength
 {
-	public const int MinimumScore = 4;
+	public const int MinimumLength = 12;
 
-	public const double MinimumGuessesLog10 = 18;
+	public const int MinimumScore = 3;
 
-	public static bool IsStrongEnough(string password)
+	/// <summary>The rules <paramref name="password"/> fails, in <see cref="SyncPasswordRule"/>'s order; empty when it passes.</summary>
+	public static IReadOnlyList<SyncPasswordRule> Failures(string password)
 	{
-		var verdict = Zxcvbn.Core.EvaluatePassword(password);
-		return verdict.Score >= MinimumScore && verdict.GuessesLog10 >= MinimumGuessesLog10;
+		var runes = password.EnumerateRunes().ToList();
+		var failed = new List<SyncPasswordRule>();
+		if (runes.Count < MinimumLength) failed.Add(SyncPasswordRule.Length);
+		if (!runes.Any(Rune.IsDigit)) failed.Add(SyncPasswordRule.Number);
+		if (!runes.Any(r => !Rune.IsLetter(r) && !Rune.IsDigit(r))) failed.Add(SyncPasswordRule.Special);
+		if (Zxcvbn.Core.EvaluatePassword(password).Score < MinimumScore) failed.Add(SyncPasswordRule.Common);
+		return failed;
 	}
+
+	/// <exception cref="SyncPasswordTooWeakException">The password fails a rule.</exception>
+	public static void Require(string password)
+	{
+		if (Failures(password) is { Count: > 0 } failed) throw new SyncPasswordTooWeakException(failed);
+	}
+
+	/// <summary>What Settings tells the person about a failed rule.</summary>
+	public static string Sentence(SyncPasswordRule rule) => rule switch
+	{
+		SyncPasswordRule.Length => "Use at least 12 characters.",
+		SyncPasswordRule.Number => "Add a number.",
+		SyncPasswordRule.Special => "Add a symbol, such as ! or #.",
+		SyncPasswordRule.Common => "This password is too common. Add more words or characters.",
+		_ => throw new ArgumentOutOfRangeException(nameof(rule), rule, "Not a sync password rule"),
+	};
 }
 
 /// <summary>
@@ -186,7 +228,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	public const int PushBatch = 100;
 
 	/// <summary>
-	/// Checks the account, its password and the strength floor before anything asks Hello or reaches the server. Then wraps the
+	/// Checks the account, its password and the sync password rules before anything asks Hello or reaches the server. Then wraps the
 	/// index and secret keys with the password key and a new recovery key, seals the profile, and uploads the keys, then every item
 	/// in batches, then the manifest. The keys go first and over version 0, so a Google account that already has keys is refused
 	/// before anything else is sent. Returns the recovery key, which keys.bin keeps sealed under the secret key. A turn-on whose keys
@@ -201,7 +243,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 		var gate = await EnterAsync(password, cancellation);
 		try
 		{
-			if (!SyncPasswordStrength.IsStrongEnough(password)) throw new SyncPasswordTooWeakException();
+			SyncPasswordStrength.Require(password);
 			var signedIn = vault.SyncAccount() ?? throw new NotSignedInToSyncException();
 			return await TurnOnAsync(password, profile, signedIn, cancellation);
 		}
@@ -254,7 +296,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	/// Every change of the Zing password while the vault is open, synced or not, all under <see cref="KeyGate"/> (Ruling 55): the
 	/// current-password check, the new password's rules, the choice of a local or a synced change, and the signed-in read. With sync
 	/// off, the local change alone. With it on: only while signed in to sync as the account it was turned on for, and the new password
-	/// must pass the floor, both checked before Hello. The keys are re-wrapped with the new password key and uploaded over the version
+	/// must pass the sync password rules, both checked before Hello. The keys are re-wrapped with the new password key and uploaded over the version
 	/// this PC stored, and only then does this PC's own password check change. A server that moved past that version raises
 	/// <see cref="SyncKeysChangedElsewhereException"/>, and nothing changes here.
 	/// </summary>
@@ -272,7 +314,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 				return;
 			}
 			if (vault.SyncAccount() is not { } signedIn || signedIn.UserId != syncedAs) throw new SyncSignInNeededException();
-			if (!SyncPasswordStrength.IsStrongEnough(next)) throw new SyncPasswordTooWeakException();
+			SyncPasswordStrength.Require(next);
 			await ChangeSyncedPasswordAsync(current, next, signedIn, cancellation);
 		}
 		finally

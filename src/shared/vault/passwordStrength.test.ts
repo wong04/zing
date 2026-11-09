@@ -1,21 +1,44 @@
 import { describe, expect, it } from 'vitest'
-import { generatePassphrase, isStrongEnoughForSync, PASSPHRASE_LIST_SIZE, passphraseWords, SYNC_MIN_GUESSES_LOG10, SYNC_PASSWORD_SCORE, syncStrength, syncStrengthLabel } from './passwordStrength'
+import {
+	generatePassphrase,
+	isStrongEnoughForSync,
+	PASSPHRASE_LIST_SIZE,
+	passphraseWords,
+	SYNC_PASSWORD_MIN_LENGTH,
+	SYNC_PASSWORD_RULES,
+	SYNC_PASSWORD_SCORE,
+	SYNC_PASSWORD_SENTENCES,
+	syncPasswordFailures,
+	syncStrength,
+	syncStrengthLabel,
+} from './passwordStrength'
 import words from './passphraseWords.json'
 import vectors from './passwordStrength.vectors.json'
 
-describe('the sync password floor, as the host holds it', () => {
-	it('is the score the vectors give the host', () => {
+describe('the sync password rules, as the host holds them', () => {
+	it('are the ones the vectors give the host', () => {
+		expect(SYNC_PASSWORD_MIN_LENGTH).toBe(vectors.minimumLength)
 		expect(SYNC_PASSWORD_SCORE).toBe(vectors.minimumScore)
-		expect(SYNC_MIN_GUESSES_LOG10).toBe(vectors.minimumGuessesLog10)
+		expect(SYNC_PASSWORD_RULES).toEqual(vectors.rules)
+		expect(SYNC_PASSWORD_SENTENCES).toEqual(vectors.sentences)
 	})
 
-	it.each(vectors.cases)('$name', ({ password, accepted }) => {
-		expect(isStrongEnoughForSync(password)).toBe(accepted)
+	it.each(vectors.cases)('$name', ({ password, failed }) => {
+		expect(syncPasswordFailures(password)).toEqual(failed)
+		expect(isStrongEnoughForSync(password)).toBe(failed.length === 0)
 	})
 
-	it('the generated vectors are words of the passphrase list', () => {
+	it('the generated vectors are words of the passphrase list and a digit', () => {
 		const list = new Set(passphraseWords())
-		for (const { password } of vectors.cases.filter((c) => 'generated' in c)) for (const word of password.split('-')) expect(list.has(word)).toBe(true)
+		for (const { password } of vectors.cases.filter((c) => 'generated' in c)) {
+			expect(password).toMatch(/\d$/)
+			for (const word of password.slice(0, -1).split('-')) expect(list.has(word)).toBe(true)
+		}
+	})
+
+	it('counts characters by code point, as the host counts runes', () => {
+		expect(syncPasswordFailures('😀😀😀😀😀😀😀😀😀😀a1')).not.toContain('length')
+		expect(syncPasswordFailures('😀😀😀😀😀a1')).toContain('length')
 	})
 })
 
@@ -30,10 +53,10 @@ describe('the passphrase generator', () => {
 		for (const word of words) expect(word).toMatch(/^[a-z]{4,8}$/)
 	})
 
-	it('makes five words that pass the floor, different each time', () => {
+	it('makes five words and a digit that pass the rules, different each time', () => {
 		const made = Array.from({ length: 20 }, generatePassphrase)
 		for (const passphrase of made) {
-			expect(passphrase.split('-')).toHaveLength(5)
+			expect(passphrase).toMatch(/^([a-z]{4,8}-){4}[a-z]{4,8}\d$/)
 			expect(isStrongEnoughForSync(passphrase)).toBe(true)
 		}
 		expect(new Set(made).size).toBe(made.length)
@@ -41,15 +64,10 @@ describe('the passphrase generator', () => {
 })
 
 describe('the meter', () => {
-	it('never says Strong beside a refusal', () => {
-		for (const { password, accepted } of vectors.cases) {
-			const label = syncStrengthLabel(syncStrength(password))
-			if (accepted) expect(label).toBe('Strong. Strong enough for sync.')
-			else expect(label).not.toMatch(/strong\b(?! enough)/i)
+	it('says the first failed rule as a sentence, and Strong enough only when every rule passes', () => {
+		for (const { password, failed } of vectors.cases) {
+			const first = failed[0] as keyof typeof vectors.sentences | undefined
+			expect(syncStrengthLabel(syncStrength(password))).toBe(first ? vectors.sentences[first] : 'Strong enough for sync.')
 		}
-	})
-
-	it('tells a score-4 password that falls short what sync needs', () => {
-		expect(syncStrengthLabel({ score: 4, enough: false })).toBe('Not enough for sync yet: use five random words, or 18 or more random characters.')
 	})
 })

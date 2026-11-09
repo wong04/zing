@@ -31,7 +31,7 @@
   - the server keeps tombstones another 30 days
 - **Sign-in:**
   - a successful sign-in is a submitted form with a password box, then landing within 10 s on a page in that origin with no visible password box
-  - the sync password floor is zxcvbn score 4
+  - the sync password needs at least 12 characters, a digit, a character that's neither a letter nor a digit, and zxcvbn score 3 (changed from score 4 on 2026-11-09)
 - e2e never reaches Google, Railway or any outside service. Windows Hello is faked only when `ZING_E2E=1`, and the real prompt is checked by hand with the owner.
 - WebView2's own password saving and general autofill are off in every profile (`IsPasswordAutosaveEnabled = false`, `IsGeneralAutofillEnabled = false`).
 - Pure rules shared by TS and C# use `*.vectors.json`, as elsewhere.

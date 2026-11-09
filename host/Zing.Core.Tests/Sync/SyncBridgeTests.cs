@@ -150,6 +150,63 @@ public sealed class SyncBridgeTests : IDisposable
 		Assert.Equal(LocalSyncServer.Email, readable.SyncAccount()!.Email);
 	}
 
+	private static async Task<FakeSignInPopup> OpenedPopup(FakeGoogle google)
+	{
+		using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+		timeout.CancelAfter(TimeSpan.FromSeconds(10));
+		while (google.Popups.Count == 0) await Task.Delay(20, timeout.Token);
+		return google.Popups[^1];
+	}
+
+	[Fact]
+	public async Task GooglesRedirectInTheSignInWindowSignsInAndClosesIt()
+	{
+		using var google = new FakeGoogle(() => _server.MintIdTokenAsync());
+		var bridge = Api(Setup(google.SignIn()));
+
+		var signingIn = Invoke(bridge, "sync:sign-in");
+		var popup = await OpenedPopup(google);
+		await popup.RedirectAsync($"code=the-code&state={popup.Query("state")}");
+		var state = Value(await signingIn);
+
+		Assert.True(state.GetProperty("signedIn").GetBoolean());
+		Assert.Equal(LocalSyncServer.Email, _vault.SyncAccount()!.Email);
+		Assert.True(popup.ClosedBySignIn);
+	}
+
+	[Fact]
+	public async Task ClosingTheSignInWindowCancelsTheSignInWithoutAnError()
+	{
+		using var google = new FakeGoogle(() => _server.MintIdTokenAsync());
+		var bridge = Api(Setup(google.SignIn()));
+
+		var signingIn = Invoke(bridge, "sync:sign-in");
+		(await OpenedPopup(google)).CloseAsThePersonWould();
+		var state = Value(await signingIn);
+
+		Assert.False(state.GetProperty("signedIn").GetBoolean());
+		Assert.Null(Notice(state));
+		Assert.Null(_vault.SyncAccount());
+		Assert.Empty(google.TokenRequests);
+	}
+
+	[Fact]
+	public async Task SigningInAgainWhileTheWindowIsOpenBringsItToTheFrontAndUsesIt()
+	{
+		using var google = new FakeGoogle(() => _server.MintIdTokenAsync());
+		var bridge = Api(Setup(google.SignIn()));
+		var first = Invoke(bridge, "sync:sign-in");
+		var popup = await OpenedPopup(google);
+
+		var second = Invoke(bridge, "sync:sign-in");
+		Assert.False(Value(await first).GetProperty("signedIn").GetBoolean());
+		await popup.RedirectAsync($"code=the-code&state={popup.Query("state")}");
+
+		Assert.True(Value(await second).GetProperty("signedIn").GetBoolean());
+		Assert.Same(popup, Assert.Single(google.Popups));
+		Assert.Equal(1, popup.BroughtToFront);
+	}
+
 	[Fact]
 	public async Task CancellingASignInEndsItWithoutAnError()
 	{
@@ -203,8 +260,8 @@ public sealed class SyncBridgeTests : IDisposable
 		Assert.NotEqual(first, _vault.SyncAccount()!.Refresh);
 	}
 
-	/// <summary>A five-word passphrase the generator made (passwordStrength.vectors.json).</summary>
-	private const string Strong = "teaching-focused-onward-activist-steel";
+	/// <summary>A passphrase the generator made, five words and a digit (passwordStrength.vectors.json).</summary>
+	private const string Strong = "teaching-focused-onward-activist-steel4";
 
 	private static AccountStore AccountWith(string password)
 	{
@@ -337,7 +394,7 @@ public sealed class SyncBridgeTests : IDisposable
 		Value(await Invoke(bridge, "sync:turn-on", Strong));
 		switched.Settings.Set("passwordAutofill", false);
 
-		var refused = await Invoke(bridge, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction");
+		var refused = await Invoke(bridge, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction7");
 
 		Assert.Equal(nameof(SyncNeedsTheVaultException), refused.GetProperty("error").GetProperty("name").GetString());
 		account.CheckPassword(Strong);
@@ -352,8 +409,8 @@ public sealed class SyncBridgeTests : IDisposable
 		await switched.Vaults.Current!.SaveAsync(new NewLogin("https://bank.example.test", "ada", "pw", "", ""));
 		switched.Settings.Set("passwordAutofill", false);
 
-		Assert.Equal("ok", Value(await Invoke(bridge, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction")).GetProperty("status").GetString());
-		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+		Assert.Equal("ok", Value(await Invoke(bridge, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction7")).GetProperty("status").GetString());
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction7");
 	}
 
 	[Fact]
@@ -383,7 +440,7 @@ public sealed class SyncBridgeTests : IDisposable
 		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
 
 		var signedIn = Value(await Invoke(b, "sync:restore-sign-in"));
-		var wrong = Value(await Invoke(b, "sync:restore-password", "labour-muzzle-medici-rushes-fiction"));
+		var wrong = Value(await Invoke(b, "sync:restore-password", "labour-muzzle-medici-rushes-fiction7"));
 		Assert.False(account.State().HasAccount);
 		Assert.False(fresh.Settings.Get("passwordAutofill")!.GetValue<bool>());
 		Assert.Null(fresh.Vaults.Current);
@@ -563,11 +620,11 @@ public sealed class SyncBridgeTests : IDisposable
 		Assert.False(account.State().HasAccount);
 		Assert.False(fresh.Settings.Get("passwordAutofill")!.GetValue<bool>());
 		Assert.Null(fresh.Vaults.Current);
-		var set = Value(await Invoke(b, "sync:restore-new-password", "labour-muzzle-medici-rushes-fiction"));
+		var set = Value(await Invoke(b, "sync:restore-new-password", "labour-muzzle-medici-rushes-fiction7"));
 
 		Assert.Equal(nameof(RecoveryKeyFormatException), mistyped.GetProperty("error").GetProperty("name").GetString());
 		Assert.Equal("ok", set.GetProperty("status").GetString());
-		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction7");
 	}
 
 	[Fact]
@@ -580,18 +637,18 @@ public sealed class SyncBridgeTests : IDisposable
 		var stored = _vault.SyncKeys!;
 		using (var keys = await _vault.KeyMaterialAsync())
 		{
-			var newer = SyncKeysBlob.Parse(stored.Blob, stored.Version).WithPassword(keys, "labour-muzzle-medici-rushes-fiction", stored.Version + 1).ToBytes();
+			var newer = SyncKeysBlob.Parse(stored.Blob, stored.Version).WithPassword(keys, "labour-muzzle-medici-rushes-fiction7", stored.Version + 1).ToBytes();
 			_vault.MarkPasswordChangedElsewhere(newer, stored.Version + 1);
 		}
 		SyncRestore.AskIfPasswordChangedElsewhere(account, _vault);
 
 		var old = Value(await Invoke(bridge, "account:sign-in", Strong));
-		var signedIn = Value(await Invoke(bridge, "account:sign-in", "labour-muzzle-medici-rushes-fiction"));
+		var signedIn = Value(await Invoke(bridge, "account:sign-in", "labour-muzzle-medici-rushes-fiction7"));
 
 		Assert.Equal("wrong-password", old.GetProperty("code").GetString());
 		Assert.Equal("ok", signedIn.GetProperty("status").GetString());
 		Assert.False(signedIn.GetProperty("state").GetProperty("passwordChangedElsewhere").GetBoolean());
-		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction7");
 		Assert.Equal(stored.Version + 1, _vault.SyncKeys!.Version);
 	}
 
@@ -603,7 +660,7 @@ public sealed class SyncBridgeTests : IDisposable
 		Value(await Invoke(bridge, "sync:sign-in"));
 		Value(await Invoke(bridge, "sync:turn-on", Strong));
 
-		var refused = await Invoke(bridge, "account:reset-password", "labour-muzzle-medici-rushes-fiction");
+		var refused = await Invoke(bridge, "account:reset-password", "labour-muzzle-medici-rushes-fiction7");
 
 		Assert.Equal(nameof(SyncNeedsRecoveryKeyException), refused.GetProperty("error").GetProperty("name").GetString());
 		account.CheckPassword(Strong);
@@ -786,17 +843,17 @@ public sealed class SyncBridgeTests : IDisposable
 		var turnOn = Task.Run(() => Invoke(first, "sync:turn-on", Strong), TestContext.Current.CancellationToken);
 		await reached.Task;
 
-		var change = Task.Run(() => Invoke(second, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction"), TestContext.Current.CancellationToken);
+		var change = Task.Run(() => Invoke(second, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction7"), TestContext.Current.CancellationToken);
 		await SyncKeys.QueuedBehind(_vault).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 		Assert.False(change.IsCompleted);
 		release.SetResult();
 		Value(await turnOn);
 
 		Assert.Equal("ok", Value(await change).GetProperty("status").GetString());
-		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction7");
 		var client = app.SyncClients!.For(_vault);
 		var served = (await client.GetKeysAsync(TestContext.Current.CancellationToken))!;
-		using var opened = SyncKeysBlob.Parse(served.Blob, served.Version).UnwrapWithPassword("labour-muzzle-medici-rushes-fiction");
+		using var opened = SyncKeysBlob.Parse(served.Blob, served.Version).UnwrapWithPassword("labour-muzzle-medici-rushes-fiction7");
 		app.SyncClients.Dispose();
 	}
 }

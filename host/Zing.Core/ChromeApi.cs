@@ -1044,12 +1044,12 @@ public sealed class ChromeApi : IDisposable
 		return CurrentSyncState();
 	}
 
-	/// <summary>The sign-in waiting on the browser, for Cancel; null when none is.</summary>
+	/// <summary>The sign-in waiting on Google's window, for Cancel; null when none is.</summary>
 	private CancellationTokenSource? _syncSigningIn;
 
 	/// <summary>
-	/// Google in the system browser, then the server's own session; the account is kept in the vault's sync.json, replacing one that
-	/// doesn't unseal. Cancel (or the window closing) ends it without an error. Keys and items sync later (Tasks 12 and 13).
+	/// Google in its sign-in window, then the server's own session; the account is kept in the vault's sync.json, replacing one that
+	/// doesn't unseal. Cancel (or either window closing) ends it without an error. Keys and items sync later (Tasks 12 and 13).
 	/// </summary>
 	private async Task<object?> SignInToSyncAsync()
 	{
@@ -1059,20 +1059,24 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	/// <summary>
-	/// Google in the system browser, then <paramref name="signIn"/> with its ID token, within 5 minutes. Cancel (or the window
-	/// closing) answers <paramref name="cancelled"/> without an error.
+	/// Google in its sign-in window, then <paramref name="signIn"/> with its ID token, within 5 minutes. Cancel, Zing's window
+	/// closing, the person closing the sign-in window, or another sign-in taking that window over answers <paramref name="cancelled"/>
+	/// without an error.
 	/// </summary>
 	private async Task<object?> WithGoogleSignInAsync(SyncSetup setup, Func<string, CancellationToken, Task<object?>> signIn, Func<object?> cancelled)
 	{
 		using var cancel = CancellationTokenSource.CreateLinkedTokenSource(_closing.Token);
 		using var signingIn = CancellationTokenSource.CreateLinkedTokenSource(cancel.Token);
 		signingIn.CancelAfter(SyncSignInTimeout);
-		Interlocked.Exchange(ref _syncSigningIn, cancel)?.Cancel();
+		var previous = Interlocked.Exchange(ref _syncSigningIn, cancel);
 		try
 		{
-			return await signIn(await setup.SignIn.SignInAsync(signingIn.Token), signingIn.Token);
+			// Started before the previous one is cancelled, so it takes over the sign-in window that one has open (GoogleSignIn).
+			var idToken = setup.SignIn.SignInAsync(signingIn.Token);
+			previous?.Cancel();
+			return await signIn(await idToken, signingIn.Token);
 		}
-		catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+		catch (OperationCanceledException error) when (cancel.IsCancellationRequested || error is SignInWindowClosedException or SignInTakenOverException)
 		{
 			return cancelled();
 		}

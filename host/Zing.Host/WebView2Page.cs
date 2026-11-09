@@ -333,12 +333,21 @@ public sealed class WebView2Page : IPage
 		else action(_core);
 	}
 
-	private async Task StartAsync(CoreWebView2Environment environment)
+	/// <summary>
+	/// The person's browsing profile, which tabs and the Google sign-in window (SignInPopup) use. Keeps nothing by default: an
+	/// in-memory profile, as Electron's non-persistent partition was; <paramref name="persistent"/> is the opt-in on-disk one.
+	/// </summary>
+	public static CoreWebView2ControllerOptions BrowsingProfile(CoreWebView2Environment environment, bool persistent)
 	{
 		var options = environment.CreateCoreWebView2ControllerOptions();
-		// Keeps nothing by default: an in-memory profile, as Electron's non-persistent partition was.
-		options.IsInPrivateModeEnabled = !_persistent;
-		options.ProfileName = _persistent ? "zing" : "zing-private";
+		options.IsInPrivateModeEnabled = !persistent;
+		options.ProfileName = persistent ? "zing" : "zing-private";
+		return options;
+	}
+
+	private async Task StartAsync(CoreWebView2Environment environment)
+	{
+		var options = BrowsingProfile(environment, _persistent);
 		// The window's scope tracks the view from the start, so a window that closes meanwhile closes it.
 		_view = await HostedView.CreateAsync(_window, _scope, environment, options, "page", overlay: false);
 		if (!IsOpen)
