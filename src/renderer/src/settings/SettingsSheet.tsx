@@ -42,7 +42,7 @@ function control(row: SettingRow, settings: Settings, set: SettingsHandle['set']
 	const c = row.control
 	switch (c.kind) {
 		case 'toggle':
-			return <Toggle aria-label={row.title} checked={value === true} onChange={write} />
+			return <Toggle aria-label={row.title} checked={value === true} disabled={row.disabled?.(settings) ?? false} onChange={write} />
 		case 'segmented':
 			return (
 				<SegmentedControl

@@ -50,6 +50,13 @@ export const CloseIcon = () => (
 	</Glyph>
 )
 
+/** Two arrows out to opposite corners: a link preview opened as a tab. */
+export const ExpandIcon = () => (
+	<Glyph>
+		<path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" />
+	</Glyph>
+)
+
 export const PlusIcon = () => (
 	<Glyph>
 		<path d="M8 3v10M3 8h10" />

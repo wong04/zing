@@ -1,5 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
+using Zing.Core.LinkPreview;
 using Zing.Core.Net;
 
 namespace Zing.Host;
@@ -11,7 +12,7 @@ namespace Zing.Host;
 public sealed class WebView2Page : IPage
 {
 
-	private readonly IPageEvents _events;
+	private IPageEvents _events;
 	private readonly Func<string, StartPageResponse> _serveStartPage;
 	private readonly IPageFeatureHost _features;
 	private readonly bool _persistent;
@@ -28,6 +29,8 @@ public sealed class WebView2Page : IPage
 	private bool _bornRelayed;
 	private static readonly TimeSpan AppLikeWait = TimeSpan.FromMilliseconds(1500);
 	private readonly List<Action<CoreWebView2>> _queued = [];
+	/// <summary>The queue has run: calls go straight to the engine. Until then they queue, even once the core exists, so none overtakes an earlier one while the page's scripts are added.</summary>
+	private bool _drained;
 	private readonly HostWindow _window;
 	private readonly WindowScope _scope;
 	private HostedView? _view;
@@ -40,6 +43,13 @@ public sealed class WebView2Page : IPage
 	private int _downloads;
 	private ulong _navigation;
 	private static readonly TimeSpan DownloadGrace = TimeSpan.FromSeconds(1);
+	/// <summary>A real document has started to show (ContentLoading for anything but the blank first one).</summary>
+	private bool _showedDocument;
+	/// <summary>The main frame's DevTools id, once Page.getFrameTree has answered; frames' navigation reasons are not the page's.</summary>
+	private string? _mainFrameId;
+	/// <summary>The latest main-frame Page.frameRequestedNavigation: it arrives before NavigationStarting for the same address (spikes/link-preview, check C).</summary>
+	private (string Url, string Reason)? _lastReason;
+	private bool _dialogOpen;
 
 	private static readonly Lazy<(string Script, string Css)> Reader = new(() =>
 	{
@@ -93,6 +103,8 @@ public sealed class WebView2Page : IPage
 	public CoreWebView2 Core => _core ?? throw new InvalidOperationException("The page has not started");
 
 	public bool IsOpen { get; private set; } = true;
+
+	public void Rebind(IPageEvents events) => _events = events;
 
 	public bool IsStarted => _core is not null;
 
@@ -215,7 +227,14 @@ public sealed class WebView2Page : IPage
 	public bool InReader { get; private set; }
 
 	/// <summary>Whether an element of the page is fullscreen; the window then gives the page all of itself.</summary>
-	public bool IsFullScreen => _core?.ContainsFullScreenElement ?? false;
+	// A closed page has none, and its engine object would throw: a window closing with a preview open still asks its layers.
+	public bool IsFullScreen => IsOpen && _core?.ContainsFullScreenElement == true;
+
+	/// <summary>
+	/// From the DevTools Page domain (Page.enable is on for the navigation reasons): javascriptDialogOpening and javascriptDialogClosed,
+	/// for any frame of the page. A dialog can't outlive its document, so a new one clears it too, and a missed Closed can't hold it.
+	/// </summary>
+	public bool HasOpenDialog => IsOpen && _dialogOpen;
 
 	/// <summary>Takes the page's element out of fullscreen, as the page's own exit would.</summary>
 	public void ExitFullScreen()
@@ -310,7 +329,7 @@ public sealed class WebView2Page : IPage
 	private void Run(Action<CoreWebView2> action)
 	{
 		if (!IsOpen) return;
-		if (_core is null) _queued.Add(action);
+		if (_core is null || !_drained) _queued.Add(action);
 		else action(_core);
 	}
 
@@ -329,6 +348,7 @@ public sealed class WebView2Page : IPage
 		}
 		_view.Visible = _visible;
 		_view.Place(_bounds);
+		_features.ViewStarted(this);
 		_core = _view.Core;
 		// A page is not Zing's UI. No host object is added, and the only page messages anything listens for are the autofill
 		// script's (OnPageMessage), and only while the vault is on: with it off, web messages stay off as belt and braces
@@ -359,8 +379,10 @@ public sealed class WebView2Page : IPage
 		await FollowAutofillAsync();
 		if (!IsOpen) return;
 
-		foreach (var action in _queued) action(_core);
+		// By index: an action can call back into Run (a focus that activates a tab), which queues behind it until the end.
+		for (var i = 0; i < _queued.Count; i++) _queued[i](_core);
 		_queued.Clear();
+		_drained = true;
 	}
 
 	/// <summary>Whether the autofill channel is on for this page: web messages, the script, and OnPageMessage reading them.</summary>
@@ -452,8 +474,15 @@ public sealed class WebView2Page : IPage
 
 	private void Wire(CoreWebView2 core)
 	{
+		core.GetDevToolsProtocolEventReceiver("Page.frameRequestedNavigation").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => NavigationRequested(e.ParameterObjectAsJson), "navigation reason");
+		core.GetDevToolsProtocolEventReceiver("Page.javascriptDialogOpening").DevToolsProtocolEventReceived += (_, _) => _dialogOpen = true;
+		core.GetDevToolsProtocolEventReceiver("Page.javascriptDialogClosed").DevToolsProtocolEventReceived += (_, _) => _dialogOpen = false;
+		Background(ReadNavigationReasonsAsync(core), "navigation reasons");
 		core.NavigationStarting += (_, e) =>
 		{
+			// Decided here and now: NavigationStarting has no deferral, and the reason has already arrived.
+			var cause = _lastReason is { Url: var url, Reason: "anchorClick" } && url == e.Uri && !e.IsRedirected ? NavigationCause.AnchorClick : NavigationCause.Other;
+			_lastReason = null;
 			var origin = e.NavigationKind switch
 			{
 				CoreWebView2NavigationKind.Reload => NavigationOrigin.Reload,
@@ -476,7 +505,7 @@ public sealed class WebView2Page : IPage
 				return;
 			}
 			// Links a page offers are cleaned at navigation time, server redirects included.
-			switch (_events.Navigating(core.Source, e.Uri))
+			switch (_events.Navigating(core.Source, e.Uri, cause))
 			{
 				case NavigationDecision.Cancelled:
 					e.Cancel = true;
@@ -529,16 +558,47 @@ public sealed class WebView2Page : IPage
 		core.WindowCloseRequested += (_, _) => _events.Closed();
 		core.NewWindowRequested += OnNewWindowRequested;
 		core.ProcessFailed += OnProcessFailed;
+		core.ContentLoading += (_, _) =>
+		{
+			if (core.Source is not ("" or "about:blank")) _showedDocument = true;
+			_dialogOpen = false;
+			// Raised for new documents only, however they started (a link, Back, a reload, the page's own script).
+			_events.NewDocument();
+		};
 		core.DownloadStarting += (_, e) =>
 		{
 			_downloads++;
 			_features.DownloadStarting(this, e);
+			// A preview that never showed a document was only this download: it closes, and the download goes on in the list.
+			// After the event, so the engine has the answer before the page goes.
+			if (!_showedDocument && _features.InPreview(this)) Faults.Enqueue(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), () =>
+			{
+				if (IsOpen) _events.Closed();
+			}, "preview download");
 		};
 		core.PermissionRequested += (_, e) => _features.PermissionRequested(this, e);
 		core.ContainsFullScreenElementChanged += (_, _) => _features.FullScreenChanged(this);
 		// ActiveMatchIndex already counts from 1, as the find bar does; it is -1 with no match.
 		core.Find.MatchCountChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
 		core.Find.ActiveMatchIndexChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
+	}
+
+	/// <summary>Page.enable turns on the reason events; the frame tree says which frame is the main one, whose id stays for the page's life.</summary>
+	private async Task ReadNavigationReasonsAsync(CoreWebView2 core)
+	{
+		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.enable", "{}").AsTask());
+		using var tree = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}").AsTask()));
+		_mainFrameId = tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("id").GetString();
+	}
+
+	private void NavigationRequested(string json)
+	{
+		using var request = System.Text.Json.JsonDocument.Parse(json);
+		var root = request.RootElement;
+		if (_mainFrameId is null || root.GetProperty("frameId").GetString() != _mainFrameId) return;
+		// A link that opens a window or downloads raises no NavigationStarting here, so its reason would linger for that address.
+		if (root.GetProperty("disposition").GetString() != "currentTab") return;
+		_lastReason = (root.GetProperty("url").GetString()!, root.GetProperty("reason").GetString()!);
 	}
 
 	private async Task IconChangedAsync(CoreWebView2 core)
@@ -753,6 +813,8 @@ public sealed class WebView2Page : IPage
 			case CoreWebView2ProcessFailedKind.RenderProcessExited:
 				// A load the renderer took with it never completes; the tab mustn't spin over the error page.
 				IsLoading = false;
+				// The dialog went with its renderer, which may never say so.
+				_dialogOpen = false;
 				_events.Crashed(PageFault.Crashed);
 				break;
 			case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
@@ -771,6 +833,8 @@ public sealed class WebView2Page : IPage
 	/// </summary>
 	private void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs e)
 	{
+		// First, so a test's one-shot modifiers go with this request even when it is refused.
+		var modifiers = HeldModifiers();
 		// A relayed page opens relayed windows only (an https address goes onto the relay, as its links do), and nothing else opens one
 		// onto the relay; none opens onto Visit anyway.
 		var target = RelayedNavigation.NewWindowTarget(TopOf(sender), e.Uri);
@@ -780,20 +844,48 @@ public sealed class WebView2Page : IPage
 			if (RelayedNavigation.PlainHttpNotice(TopOf(sender), e.Uri) is { } refused) _events.Notice(refused);
 			return;
 		}
-		Background(OpenPopupAsync(e, target), "popup");
+		var request = new PopupRequest(target, modifiers, IsPopup(e.WindowFeatures));
+		Background(OpenPopupAsync(e, request), "popup");
 	}
 
-	private async Task OpenPopupAsync(CoreWebView2NewWindowRequestedEventArgs e, string target)
+	/// <summary>
+	/// Whether the page asked for a popup window rather than a tab: a size or a position, or the popup feature. WebView2 doesn't
+	/// list popup itself; a window asked for as one has no toolbar (ShouldDisplayToolbar), which a plain window.open, a
+	/// target=_blank link and noopener alone keep (link-preview e2e).
+	/// </summary>
+	private static bool IsPopup(CoreWebView2WindowFeatures features) => features.HasSize || features.HasPosition || !features.ShouldDisplayToolbar;
+
+	/// <summary>
+	/// The keys and button that asked for a window: WebView2 says nothing of them. Shift and Ctrl are read as the event fires,
+	/// from the system (the input went to the engine's window, so this thread's key state can be stale); the middle button
+	/// from the window's last middle press (HostWindow.MiddlePress, from Raw Input), used once. An e2e run never reads the real
+	/// input (AGENTS.md): its tests set the modifiers first (set-modifiers), which win over everything.
+	/// </summary>
+	private Modifiers HeldModifiers()
 	{
+		var middle = _window.MiddlePress.Take(Environment.TickCount64);
+		if (TestHooks.TakeModifiers() is { } set) return set;
+		if (TestHooks.KeepsOutOfTheWay) return default;
+		const int VK_SHIFT = 0x10, VK_CONTROL = 0x11;
+		return new Modifiers(Native.IsHeldNow(VK_SHIFT), Native.IsHeldNow(VK_CONTROL), middle);
+	}
+
+	private async Task OpenPopupAsync(CoreWebView2NewWindowRequestedEventArgs e, PopupRequest request)
+	{
+		var target = request.Url;
 		var deferral = e.GetDeferral();
 		try
 		{
-			var popup = (WebView2Page)_events.Popup(target, background: false);
+			var popup = (WebView2Page)_events.Popup(request);
 			// The engine starts the window on the address the page gave; for a mapped one that navigation is sent onto the relay by the rule for a relayed page's own.
 			if (RelayedContent.IsRelayUrl(target)) popup.AllowFirstNavigation(target);
 			await popup.Ready;
 			// The opener or the popup may have closed while the engine started it: then there is no window to hand over.
-			if (IsOpen && popup.IsOpen && popup.IsStarted) e.NewWindow = popup.Core;
+			if (IsOpen && popup.IsOpen && popup.IsStarted)
+			{
+				e.NewWindow = popup.Core;
+				popup._events.WindowOpened();
+			}
 		}
 		finally
 		{

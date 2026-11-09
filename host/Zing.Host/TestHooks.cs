@@ -140,7 +140,10 @@ public static class TestHooks
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
 	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers, and reset makes it forget the key it sealed with;
 	/// "picker-key" with <c>vk</c> enters the account picker's key handler as a real key press on its page would;
+	/// "preview-key" with <c>code</c> enters the window's key handler as that key pressed on the link preview's top page would;
 	/// "page-messages" writes how many page messages were dropped to <c>file</c>;
+	/// "set-modifiers" with <c>shift</c>, <c>ctrl</c> and <c>middle</c> sets the keys the next new-window request is taken to have been made with, once;
+	/// "peek-state" writes the link preview's state to <c>file</c>; "click-scrim" sends the preview's scrim a left-button press, as a click on the dim would;
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
@@ -176,6 +179,31 @@ public static class TestHooks
 		{
 			// What a copied password put on the clipboard (the real clipboard is never opened in an e2e run), and the formats that keep it out of history and cloud sync.
 			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { text = SecretClipboard.Held, formats = Zing.Core.Vault.SecretClipboardWriter.ExclusionFormats }));
+			return true;
+		}
+		if (action == "set-modifiers")
+		{
+			lock (ModifiersGate) _modifiers = new Zing.Core.LinkPreview.Modifiers(root.GetProperty("shift").GetBoolean(), root.GetProperty("ctrl").GetBoolean(), root.GetProperty("middle").GetBoolean());
+			return true;
+		}
+		if (action == "peek-state")
+		{
+			var api = (Apis.TryGetValue(window, out var peekApi) ? peekApi() : null) ?? throw new InvalidOperationException("peek-state needs a window with its chrome started");
+			var preview = api.Tabs.Preview;
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new
+			{
+				open = preview is not null,
+				layers = preview?.Layers.Select(l => new { url = l.Page.Url }).ToArray() ?? [],
+				canExpand = preview?.CanExpand ?? false,
+				sourceTabId = preview?.SourceTabId,
+			}));
+			return true;
+		}
+		if (action == "click-scrim")
+		{
+			var scrim = (Scrims.TryGetValue(window, out var scrimOf) ? scrimOf() : null) ?? throw new InvalidOperationException("click-scrim needs a window with a preview open");
+			const uint WM_LBUTTONDOWN = 0x0201;
+			Native.SendMessageW(scrim.Handle, WM_LBUTTONDOWN, 0, 0);
 			return true;
 		}
 		if (action == "layers")
@@ -226,6 +254,12 @@ public static class TestHooks
 			handler(root.GetProperty("vk").GetInt32());
 			return true;
 		}
+		if (action == "preview-key")
+		{
+			var handler = PreviewKeyHandlers.TryGetValue(window, out var keys) ? keys : throw new InvalidOperationException("preview-key needs a window with its chrome started");
+			handler(new Zing.Core.KeyInput(root.GetProperty("code").GetString()!, Ctrl: false, Shift: false, Alt: false));
+			return true;
+		}
 		if (action == "page-messages")
 		{
 			File.WriteAllText(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { dropped = Volatile.Read(ref _droppedPageMessages) }));
@@ -262,9 +296,11 @@ public static class TestHooks
 	/// <summary>
 	/// What the window actually shows: each WebView2 with its address, whether it is visible, and its place
 	/// in the window's content and size in DIPs. Page-side signals (document.visibilityState) don't follow a hidden view.
+	/// A link preview's scrim, while it exists, is one more entry with the address "scrim".
 	/// </summary>
-	private static List<object> Layers(HostWindow window) =>
-		[.. window.Views.Select(v => new
+	private static List<object> Layers(HostWindow window)
+	{
+		List<object> layers = [.. window.Views.Select(v => new
 		{
 			url = v.Core.Source,
 			visible = v.Visible,
@@ -273,7 +309,39 @@ public static class TestHooks
 			width = v.Bounds.Width,
 			height = v.Bounds.Height,
 			depth = v.Depth,
+			keyboard = v.HasKeyboard,
 		})];
+		if (!Scrims.TryGetValue(window, out var scrimOf) || scrimOf() is not { } scrim) return layers;
+		var scale = window.Scale;
+		var area = scrim.PageArea;
+		layers.Add(new { url = "scrim", visible = scrim.Visible, x = area.X / scale, y = area.Y / scale, width = area.Width / scale, height = area.Height / scale, depth = scrim.Depth, keyboard = false });
+		return layers;
+	}
+
+	/// <summary>Each window's preview scrim, for the layers hook; e2e runs only.</summary>
+	private static readonly Dictionary<HostWindow, Func<PeekScrim?>> Scrims = [];
+
+	public static void RegisterScrim(HostWindow window, Func<PeekScrim?> scrim)
+	{
+		if (!IsEndToEndRun) return;
+		Scrims[window] = scrim;
+		window.Destroyed += () => Scrims.Remove(window);
+	}
+
+	private static readonly object ModifiersGate = new();
+	private static Zing.Core.LinkPreview.Modifiers? _modifiers;
+
+	/// <summary>The modifiers a test set for the next new-window request (set-modifiers), once; null when none is set or outside an e2e run.</summary>
+	public static Zing.Core.LinkPreview.Modifiers? TakeModifiers()
+	{
+		if (!IsEndToEndRun) return null;
+		lock (ModifiersGate)
+		{
+			var set = _modifiers;
+			_modifiers = null;
+			return set;
+		}
+	}
 
 	/// <summary>
 	/// What is still alive, for the teardown guard: windows not yet destroyed, views not yet closed and
@@ -306,6 +374,16 @@ public static class TestHooks
 		if (!IsEndToEndRun) return;
 		PickerKeyHandlers[window] = handler;
 		window.Destroyed += () => PickerKeyHandlers.Remove(window);
+	}
+
+	/// <summary>Each window's key handler for its link preview's top page (MainWindow.PreviewKeyOnPage), for preview-key; e2e runs only.</summary>
+	private static readonly Dictionary<HostWindow, Func<Zing.Core.KeyInput, bool>> PreviewKeyHandlers = [];
+
+	public static void RegisterPreviewKeys(HostWindow window, Func<Zing.Core.KeyInput, bool> handler)
+	{
+		if (!IsEndToEndRun) return;
+		PreviewKeyHandlers[window] = handler;
+		window.Destroyed += () => PreviewKeyHandlers.Remove(window);
 	}
 
 	private static int _droppedPageMessages;

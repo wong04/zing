@@ -6,13 +6,16 @@ namespace Zing.Core.Tests;
 
 public sealed class FakePage(IPageEvents events) : IPage
 {
-	public IPageEvents Events { get; } = events;
+	public IPageEvents Events { get; private set; } = events;
+	public void Rebind(IPageEvents events) => Events = events;
 	public List<string> Calls { get; } = [];
 	public string Url { get; set; } = "";
 	public string Title { get; set; } = "";
 	public bool IsLoading { get; set; }
 	public bool CanGoBack { get; set; }
 	public bool CanGoForward { get; set; }
+	public bool IsFullScreen { get; set; }
+	public bool HasOpenDialog { get; set; }
 	public bool Shown { get; set; }
 	public bool Closed { get; private set; }
 
@@ -108,6 +111,13 @@ public sealed class FakePageHost : IPageHost
 		((FakePage)page).Shown = false;
 		if (_focused == page) _focused = null;
 	}
+
+	/// <summary>Every ShowPreview call's layers, bottom first; an empty one removed the preview.</summary>
+	public List<IReadOnlyList<IPage>> Previews { get; } = [];
+	public int PreviewFocuses { get; private set; }
+
+	public void ShowPreview(IReadOnlyList<IPage> layers) => Previews.Add([.. layers]);
+	public void FocusPreview() => PreviewFocuses++;
 }
 
 public sealed class FakeWindowHost : IWindowHost
@@ -173,6 +183,7 @@ public sealed class FakeWindowHost : IWindowHost
 	public ContentSize ContentSize { get; set; } = new(1280, 820);
 	public Point ContentOrigin => new(0, 0);
 	public Point? Cursor { get; set; }
+	public bool HighContrast { get; set; }
 	public List<Rect?> SurfaceRegions { get; } = [];
 	public void SurfaceRegionChanged(Rect? region) => SurfaceRegions.Add(region);
 

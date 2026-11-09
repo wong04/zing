@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Zing.Core.Engines;
+using Zing.Core.LinkPreview;
 using Zing.Core.Viewer;
 using Zing.Core.Net;
 using Zing.Core.Sync;
@@ -32,6 +33,8 @@ public interface IWindowHost
 	Point ContentOrigin { get; }
 	/// <summary>The cursor over the content, or null when it is outside or Zing is not the focused app.</summary>
 	Point? Cursor { get; }
+	/// <summary>Whether Windows' high-contrast mode is on.</summary>
+	bool HighContrast { get; }
 	/// <summary>Where the surface view (settings sheet, account gate, sidebar, panels) goes; null hides it.</summary>
 	void SurfaceRegionChanged(Rect? region);
 	/// <summary>Shows a native menu at a point of the window content, in DIPs.</summary>
@@ -181,7 +184,7 @@ public sealed class ChromeApi : IDisposable
 		_host = host;
 		_appVersion = appVersion;
 		_placement = OutputPlacement.ForSettings(app.Settings);
-		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text));
+		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text), PeekSettings, host.Scheduler);
 		Saved = new SavedTabs(Tabs, app.Library);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
@@ -262,6 +265,10 @@ public sealed class ChromeApi : IDisposable
 			host.Push("pageui:state", state);
 			host.PageUiChanged(state);
 		};
+		// The host places and hides the buttons' view with the preview's pages; this is only what they show.
+		Tabs.PreviewChanged += () => host.Push("peek:state", Peek());
+		// Never an offer: that would act on the tab under the preview, whose page is fine.
+		Tabs.PreviewLoadFailed += (url, description) => host.Notify(CouldNotLoad(url, description));
 
 		bridge.Register("tabs:get", _ => State());
 		bridge.Register("tabs:activate", args => Do(() => Tabs.Activate(Text(args, 0))));
@@ -423,6 +430,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
+		bridge.Register("peek:get", _ => Peek());
 		_watchedVault = app.Vaults.Current;
 		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;
@@ -523,6 +531,19 @@ public sealed class ChromeApi : IDisposable
 		return Run(command.Id) is not Outcome { Status: "not-applicable" };
 	}
 
+	/// <summary>
+	/// A key pressed in a link preview's page or its buttons. Esc closes the preview's top layer, unless that page is in
+	/// HTML fullscreen or shows a JavaScript dialog: then it is the page's, to leave fullscreen or close the dialog. A held Esc closes one layer: its repeats are taken and do
+	/// nothing. Every other key is the window's, as anywhere else.
+	/// </summary>
+	public bool HandlePreviewKey(KeyInput input)
+	{
+		if (input is not { Code: "Escape", Ctrl: false, Shift: false, Alt: false } || Tabs.Preview is not { } preview) return HandleKey(input);
+		if (preview.Top.Page.IsFullScreen || preview.Top.Page.HasOpenDialog) return false;
+		if (input.Repeat) return true;
+		return Run("preview.close") is not Outcome { Status: "not-applicable" };
+	}
+
 	public object Run(string command)
 	{
 		// Behind the account gate nothing may act on the browser.
@@ -557,6 +578,20 @@ public sealed class ChromeApi : IDisposable
 		Tabs.Destroy();
 	}
 
+	/// <summary>What a link preview's buttons show (src/shared/browser/peek.ts).</summary>
+	public sealed record PeekState(string Host, bool CanExpand, bool HighContrast);
+
+	/// <summary>The open preview's buttons, or null when there is none.</summary>
+	private PeekState? Peek() =>
+		Tabs.Preview is { } preview ? new PeekState(HostOf(preview.Top.Address), preview.CanExpand, _host.HighContrast) : null;
+
+	/// <summary>The site a preview shows (a relayed page by the site it stands for); an address with no host, such as about:blank, as it is.</summary>
+	private static string HostOf(string url)
+	{
+		var web = Net.RelayedContent.ToWebAddress(url);
+		return Uri.TryCreate(web, UriKind.Absolute, out var uri) && uri.Host != "" ? uri.Host : web;
+	}
+
 	private sealed record Outcome(string Status);
 	private sealed record NotImplemented(string Label) { public string Status => "not-implemented"; }
 
@@ -565,7 +600,10 @@ public sealed class ChromeApi : IDisposable
 
 	private object RunCommand(string command)
 	{
-		var page = Tabs.ActivePage;
+		// The page in front: an open preview's top page, never the tab hidden under it.
+		var page = Tabs.Preview?.Top.Page ?? Tabs.ActivePage;
+		// Find works on the active tab only (FindController), so it has nothing to search while a preview covers it.
+		var findable = Tabs.Preview is null && page is not null;
 		if (command.StartsWith("tab.select", StringComparison.Ordinal) && int.TryParse(command["tab.select".Length..], out var n)) return ActivateIfAny(Tabs.IdForShortcut(n));
 		return command switch
 		{
@@ -577,7 +615,7 @@ public sealed class ChromeApi : IDisposable
 			"library.bookmarks" => Act(true, () => SetLibraryPanel(_libraryPanel == "bookmarks" ? null : "bookmarks")),
 			"library.readingList" => Act(true, () => SetLibraryPanel(_libraryPanel == "readingList" ? null : "readingList")),
 			"tab.new" => Act(true, NewTab),
-			"tab.close" => Act(Tabs.ActiveId is not null, () => Tabs.Close(Tabs.ActiveId!)),
+			"tab.close" => Tabs.Preview is not null ? Act(true, Tabs.ClosePreview) : Act(Tabs.ActiveId is not null, () => Tabs.Close(Tabs.ActiveId!)),
 			"tab.reopenClosed" => Tabs.ReopenClosed() is null ? NotApplicable : Done,
 			"tab.split" => Act(Tabs.ActiveId is not null, SplitWithNewTab),
 			"tab.next" => ActivateIfAny(Tabs.NextId()),
@@ -589,7 +627,7 @@ public sealed class ChromeApi : IDisposable
 			"history.forward" => Act(page is { CanGoForward: true }, () => page!.GoForward()),
 			"history.home" => Act(Tabs.ActiveId is not null, () => Tabs.Navigate(Tabs.ActiveId!, HomepageUrl())),
 			"page.reload" => Act(page is not null, () => page!.Reload()),
-			"page.find" => Act(page is not null, Find.Open),
+			"page.find" => Act(findable, Find.Open),
 			"page.print" => Act(page is not null, () => page!.Print()),
 			"page.reader" => Act(page is not null, () => ToggleReader(page!)),
 			"tabs.overview" => Act(true, () => _host.Background(Overview.ToggleAsync(), "tab overview")),
@@ -598,9 +636,11 @@ public sealed class ChromeApi : IDisposable
 			"page.zoomIn" => Act(page is not null, () => page!.Zoom = Zoom.In(page.Zoom)),
 			"page.zoomOut" => Act(page is not null, () => page!.Zoom = Zoom.Out(page.Zoom)),
 			"page.actualSize" => Act(page is not null, () => page!.Zoom = Zoom.Default),
-			"page.findNext" => Act(page is not null, () => Find.Step(FindDirection.Next)),
-			"page.findPrevious" => Act(page is not null, () => Find.Step(FindDirection.Previous)),
+			"page.findNext" => Act(findable, () => Find.Step(FindDirection.Next)),
+			"page.findPrevious" => Act(findable, () => Find.Step(FindDirection.Previous)),
 			"page.stop" => Act(page is { IsLoading: true }, () => page!.Stop()),
+			"preview.close" => Act(Tabs.Preview is not null, Tabs.CloseTopLayer),
+			"preview.expand" => Act(Tabs.Preview is { CanExpand: true }, () => Tabs.ExpandPreview()),
 			_ => new NotImplemented(Commands.Get(command).Label),
 		};
 	}
@@ -1363,7 +1403,7 @@ public sealed class ChromeApi : IDisposable
 		// An offer for a page you aren't looking at would be about something else than what is on screen.
 		if (tab.Id != Tabs.ActiveId || LoadFailureOffer.For(tab.Url, description) is not { } address)
 		{
-			_host.Notify($"Couldn't load {tab.Url} ({description})");
+			_host.Notify(CouldNotLoad(tab.Url, description));
 			return;
 		}
 		_offered = address;
@@ -1371,6 +1411,8 @@ public sealed class ChromeApi : IDisposable
 		Shell.OfferedAddress = address;
 		_host.OfferUnblock(address);
 	}
+
+	private static string CouldNotLoad(string url, string description) => $"Couldn't load {url} ({description})";
 
 	/// <summary>A click on one of the offer's buttons: the tool opens with the address filled in, and nothing starts until a click there.</summary>
 	private OpenPanelOutcome ChooseOffer(string tool)
@@ -1609,6 +1651,8 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	private string Setting(string key) => _app.Settings.Get(key)?.GetValue<string>() ?? throw new InvalidDataException($"Setting {key} is missing");
+
+	private PeekSettings PeekSettings() => new(Flag("linkPreviews"), Flag("linkPreviewsShiftClick"), Flag("linkPreviewsFromNewWindows"));
 
 	private bool Flag(string key) => _app.Settings.Get(key)?.GetValue<bool>() ?? throw new InvalidDataException($"Setting {key} is missing");
 

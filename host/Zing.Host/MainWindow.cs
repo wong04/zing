@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Zing.Core;
+using Zing.Core.LinkPreview;
 using Zing.Core.Net;
 
 namespace Zing.Host;
@@ -30,6 +31,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private RendererView? _surface;
 	private NoticeLayer? _notices;
 	private PageUiLayer? _pageUi;
+	private PeekControlsLayer? _peekControls;
 	private CoveringLayer? _stacks;
 	private CoveringLayer? _overview;
 	private CoreWebView2Environment? _environment;
@@ -37,6 +39,10 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	// A split on screen: its layout and its pages in pane order (_shown is the focused one). Empty otherwise.
 	private SplitLayout? _split;
 	private List<WebView2Page> _panes = [];
+	// A link preview's pages over the tab pages, bottom first. Empty when there is none.
+	private List<WebView2Page> _preview = [];
+	// The dim under the preview, while one is open.
+	private PeekScrim? _scrim;
 	private DispatcherScheduler? _scheduler;
 	private Rect? _surfaceRegion;
 	private Task? _surfaceReady;
@@ -45,6 +51,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	// Set as OnClosed starts: the HWND (and with it the AppWindow) is already gone while the tabs close.
 	private bool _destroyed;
 	private Microsoft.UI.Windowing.AppWindowPresenter? _windowed;
+	private bool _highContrast;
 
 	public MainWindow(ZingApp app)
 	{
@@ -59,14 +66,20 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			AppWindow.IsShownInSwitchers = false;
 		}
 		_window.Resized += Relayout;
+		_window.Moved += PlaceScrim;
 		// Keys from every view of the window, web pages included, before the page sees them.
 		_window.KeyPressed += OnKey;
 		_window.Destroyed += OnClosed;
 		_window.Activated += () => _app.Focused(this);
-		_window.DefaultFocus = () => _shown?.View ?? _chrome?.View;
+		ReadHighContrast();
+		_window.SettingChanged += ReadHighContrast;
+		// A preview open over the tab has the keyboard first.
+		_window.DefaultFocus = () => (_preview.Count > 0 ? _preview[^1].View : null) ?? _shown?.View ?? _chrome?.View;
 		TestHooks.Watch(_scope, () => Faults.Enqueue(_dispatcher, _window.Close, "test close"));
 		TestHooks.Register(_window, () => Api);
+		TestHooks.RegisterScrim(_window, () => _scrim);
 		TestHooks.RegisterPickerKeys(_window, PickerKeyOnPage);
+		TestHooks.RegisterPreviewKeys(_window, PreviewKeyOnPage);
 		_app.Services.Vaults.Changed += FollowAutofill;
 	}
 
@@ -120,6 +133,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_stacks = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-stack", _layout.ContentRect, () => Zing.Core.Layout.TabStripHeight, _renderers.Add, _overlays, OverlayLevel.StackDropdown);
 		_overview = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-overview", _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays, OverlayLevel.Overview);
 		_pageUi = new PageUiLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays);
+		_peekControls = new PeekControlsLayer(_window, _scope, _environment, _bridge, PreviewButtons, _renderers.Add, _overlays);
 		_bridge.Register("default-browser:open-settings", _ =>
 		{
 			Shell.OpenExternal("ms-settings:defaultapps");
@@ -167,7 +181,26 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		ReserveCaptionButtons();
 		// A reloaded chrome (its renderer crashed) refetches its state, but the caption inset is a script the host sets.
 		_chrome.Crashed += view => view.View.Core.NavigationCompleted += CaptionsAfterReload;
+		await PreparePreviewButtonsAsync();
 		TestHooks.Started(_scope);
+	}
+
+	/// <summary>
+	/// The preview's buttons, made hidden with the window while previews are on, so the first preview has them at once.
+	/// Optional: a failure is recorded and startup goes on (the next preview tries again); a window closing meanwhile is gone.
+	/// </summary>
+	private async Task PreparePreviewButtonsAsync()
+	{
+		if (_peekControls is null || !_app.Services.Settings.Get("linkPreviews")!.GetValue<bool>()) return;
+		try
+		{
+			await _peekControls.PrepareAsync();
+		}
+		catch (Exception error) when (error is not ViewGoneException)
+		{
+			TestHooks.Record("preview buttons", error);
+		}
+		_scope.Checkpoint("startup");
 	}
 
 	/// <summary>
@@ -219,6 +252,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		shown.Visible = true;
 		// Over any page that is still drawn while its picture is taken (Hide).
 		shown.BringToFront();
+		RaisePreview();
 		FollowFullScreen();
 	}
 
@@ -245,6 +279,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			pane.Visible = true;
 			pane.BringToFront();
 		}
+		RaisePreview();
 		FollowFullScreen();
 	}
 
@@ -267,6 +302,131 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			return;
 		}
 		hidden.Visible = false;
+	}
+
+	public void ShowPreview(IReadOnlyList<IPage> layers)
+	{
+		var pages = layers.Cast<WebView2Page>().ToList();
+		// A page leaving the preview may be staying on screen as a tab (Expand), which shows it itself.
+		foreach (var gone in _preview.Where(p => !pages.Contains(p) && p != _shown && !_panes.Contains(p))) gone.Visible = false;
+		var owner = ScreenOwner;
+		_preview = pages;
+		// Only the page now in front may keep the screen: a layer covered by a popup, or the tab under a new preview, gives it back.
+		if (owner != ScreenOwner) owner?.ExitFullScreen();
+		FollowFullScreen();
+		if (pages.Count == 0)
+		{
+			RemoveScrim();
+			_peekControls?.Changed(false);
+			// The source tab's page (or, after Expand, the new tab's) takes the keyboard back.
+			_window.DefaultFocus()?.Focus();
+			return;
+		}
+		if (_scrim is null) CreateScrim();
+		// The pages first: a hole opened before the top page is up would show the tab under it.
+		PlacePreviewPages();
+		foreach (var page in pages) page.Visible = true;
+		RaisePreview();
+		PlaceScrim();
+		if (_scrim is not null) _overlays.Show(OverlayLevel.PeekScrim);
+		_peekControls?.Changed(true);
+	}
+
+	public void FocusPreview()
+	{
+		if (_preview.Count > 0) _preview[^1].Focus();
+	}
+
+	/// <summary>Each layer of the preview inside the page area (the whole split area with split view), inset a little more than the one below, then the scrim.</summary>
+	private void PlacePreview()
+	{
+		PlacePreviewPages();
+		PlaceScrim();
+		_peekControls?.Layout();
+	}
+
+	/// <summary>Where the preview's buttons go: beside its top layer. Null while there is no preview.</summary>
+	private Rect? PreviewButtons() =>
+		_preview.Count > 0 && !PreviewFullScreen && _layout.PageRect() is { } area ? PeekLayout.Place(area, _preview.Count - 1).Buttons : null;
+
+	private void PlacePreviewPages()
+	{
+		if (_preview.Count == 0 || _layout.PageRect() is not { } area) return;
+		for (var i = 0; i < _preview.Count; i++) _preview[i].Place(PeekLayout.Place(area, i).Page);
+		if (!PreviewFullScreen) return;
+		// Over the whole window, as a fullscreen tab's page is.
+		_preview[^1].Place(_layout.ContentRect());
+		_preview[^1].BringToFront();
+	}
+
+	/// <summary>The preview's top page has the screen: the scrim and the buttons step aside until it leaves.</summary>
+	private bool PreviewFullScreen => _fullScreen && _preview.Count > 0;
+
+	/// <summary>
+	/// The preview works without its dim, so a scrim that can't be made is recorded (an e2e run fails on it), never thrown
+	/// into the tab code that opened the preview.
+	/// </summary>
+	private void CreateScrim()
+	{
+		try
+		{
+			var scrim = new PeekScrim(_window.Hwnd, _highContrast);
+			// Not inside the scrim's window procedure: closing the preview destroys the scrim.
+			scrim.Clicked += () => Faults.Enqueue(_dispatcher, () => Api?.Tabs.ClosePreview(), "closing the preview");
+			_overlays.Add(OverlayLevel.PeekScrim, scrim.Raise);
+			_scrim = scrim;
+		}
+		catch (NativeCallException error)
+		{
+			TestHooks.Record("preview scrim", error);
+		}
+	}
+
+	/// <summary>The scrim covers the page area (the whole split area with split view) with a hole where the top layer is.</summary>
+	private void PlaceScrim()
+	{
+		if (_scrim is null || _preview.Count == 0 || _layout.PageRect() is not { } area) return;
+		if (PreviewFullScreen)
+		{
+			_scrim.Hide();
+			return;
+		}
+		try
+		{
+			_scrim.Place(ToPixels(area), ToPixels(PeekLayout.Place(area, _preview.Count - 1).Page));
+		}
+		catch (Exception error) when (error is System.ComponentModel.Win32Exception or NativeCallException)
+		{
+			TestHooks.Record("preview scrim", error);
+		}
+	}
+
+	private void RemoveScrim()
+	{
+		if (_scrim is not { } scrim) return;
+		_scrim = null;
+		_overlays.Remove(OverlayLevel.PeekScrim);
+		try
+		{
+			scrim.Dispose();
+		}
+		catch (NativeCallException error)
+		{
+			TestHooks.Record("preview scrim", error);
+		}
+	}
+
+	/// <summary>A rectangle of the content in the window's pixels, rounded as HostedView places a view, so the hole matches the preview's page exactly.</summary>
+	private Rect ToPixels(Rect dips)
+	{
+		var scale = _window.Scale;
+		return new Rect(Math.Round(dips.X * scale), Math.Round(dips.Y * scale), Math.Round(Math.Max(0, dips.Width) * scale), Math.Round(Math.Max(0, dips.Height) * scale));
+	}
+
+	/// <summary>The preview stays above the tab pages, bottom layer first.</summary>
+	private void RaisePreview()
+	{
+		foreach (var page in _preview) page.BringToFront();
 	}
 
 	private async Task HideAfterPictureAsync(WebView2Page page, Task capture)
@@ -336,6 +496,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		ReserveCaptionButtons();
 		_chrome?.Place(_layout.ContentRect());
 		PlaceShown();
+		PlacePreview();
 		_notices?.Layout();
 		_pageUi?.Layout();
 		_stacks?.Layout();
@@ -350,6 +511,24 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	/// <summary>Nothing reveals itself over a fullscreen page: the cursor counts as away.</summary>
 	public Point? Cursor => _fullScreen ? null : _layout.Cursor;
+
+	public bool HighContrast => _highContrast;
+
+	/// <summary>
+	/// Read once, and again when Windows says a setting changed: the preview asks inside tab events (PreviewChanged), which
+	/// must never throw. A failed read is recorded (an e2e run fails on it) and the value read last stays.
+	/// </summary>
+	private void ReadHighContrast()
+	{
+		try
+		{
+			_highContrast = Native.HighContrastOn();
+		}
+		catch (NativeCallException error)
+		{
+			TestHooks.Record("high contrast", error);
+		}
+	}
 
 	public void SurfaceRegionChanged(Rect? region)
 	{
@@ -421,10 +600,22 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public void Left(WebView2Page page) => _permissions.Left(page);
 
+	public bool InPreview(WebView2Page page) => _preview.Contains(page);
+
+	/// <summary>A preview layer is shown as soon as it is made, before its view exists, so it goes above the tab pages once that does.</summary>
+	public void ViewStarted(WebView2Page page)
+	{
+		if (_preview.Contains(page)) RaisePreview();
+	}
+
+	/// <summary>The page that may have the screen: the preview's top page while a preview is open, otherwise the shown one.</summary>
+	private WebView2Page? ScreenOwner => _preview.Count > 0 ? _preview[^1] : _shown;
+
 	public void FullScreenChanged(WebView2Page page)
 	{
-		// Only the shown page may have the screen; one in the background (a video that went fullscreen as its tab left) is put back.
-		if (page != _shown)
+		// Only the page in front may have the screen; one in the background (a video that went fullscreen as its tab left,
+		// a preview layer under a popup, the tab under a preview) is put back.
+		if (page != ScreenOwner)
 		{
 			page.ExitFullScreen();
 			return;
@@ -433,14 +624,15 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	}
 
 	/// <summary>
-	/// The window follows the shown page: fullscreen while one of its elements is (the page then covers the chrome),
-	/// back to a normal window when it leaves. Test windows stay off-screen, so they only change the layout (AGENTS.md).
+	/// The window follows the page in front (ScreenOwner): fullscreen while one of its elements is (the page then covers the
+	/// chrome), back to a normal window when it leaves. Test windows stay off-screen, so they only change the layout (AGENTS.md).
 	/// </summary>
 	private void FollowFullScreen()
 	{
 		// A fullscreen page closing with its window has no window left to lay out.
 		if (_destroyed) return;
-		var wanted = _shown?.IsFullScreen == true;
+		var owner = ScreenOwner;
+		var wanted = owner?.IsFullScreen == true;
 		if (wanted == _fullScreen) return;
 		_fullScreen = wanted;
 		if (!TestHooks.KeepsOutOfTheWay)
@@ -455,7 +647,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		}
 		Relayout();
 		if (_notices is null || _scope.IsClosed) return;
-		if (wanted) TestHooks.Background(_notices.ShowFullScreenHintAsync(_shown!.Url), "fullscreen hint");
+		if (wanted) TestHooks.Background(_notices.ShowFullScreenHintAsync(owner!.Url), "fullscreen hint");
 		else _notices.HideFullScreenHint();
 	}
 
@@ -463,7 +655,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private void PlaceShown()
 	{
 		if (_shown is null) return;
-		if (_fullScreen)
+		if (_fullScreen && _shown == ScreenOwner)
 		{
 			_shown.Place(_layout.ContentRect());
 			_shown.BringToFront();
@@ -539,9 +731,24 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		}
 		if (Api is null || Commands.CodeOf((int)e.VirtualKey) is not { } code) return;
 		const int VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
-		var input = new KeyInput(code, Native.IsDown(VK_CONTROL), Native.IsDown(VK_SHIFT), Native.IsDown(VK_MENU));
-		if (Api.HandleKey(input)) e.Handled = true;
+		var input = new KeyInput(code, Native.IsDown(VK_CONTROL), Native.IsDown(VK_SHIFT), Native.IsDown(VK_MENU), e.PhysicalKeyStatus.WasKeyDown != 0);
+		if (Key(view, input)) e.Handled = true;
 	}
+
+	private bool Key(HostedView view, KeyInput input) => IsPreviewView(view) ? Api!.HandlePreviewKey(input) : Api!.HandleKey(input);
+
+	/// <summary>
+	/// The e2e seam (preview-key): CDP input never reaches AcceleratorKeyPressed, so a test enters Key as a key press on the
+	/// preview's top page would. Whatever that page shows (a dialog, fullscreen) is the engine's real state.
+	/// </summary>
+	private bool PreviewKeyOnPage(KeyInput input)
+	{
+		if (Api is null || _preview.Count == 0 || _preview[^1].View is not { } view) throw new InvalidOperationException("preview-key needs a window with a preview showing");
+		return Key(view, input);
+	}
+
+	/// <summary>A view of the link preview: one of its pages, or its buttons.</summary>
+	private bool IsPreviewView(HostedView view) => _preview.Any(p => ReferenceEquals(p.View, view)) || _peekControls?.Hosts(view) == true;
 
 	/// <summary>
 	/// The account picker's keys (Ruling 28): real key presses while it's open, on its page's view or the picker's own,

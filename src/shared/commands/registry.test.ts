@@ -62,8 +62,9 @@ describe('command registry', () => {
 		expect(COMMANDS.map((c) => c.id).sort()).toEqual([...COMMAND_IDS].sort())
 	})
 
-	it('gives every command at least one shortcut', () => {
-		for (const c of COMMANDS) expect(c.shortcuts.length, c.id).toBeGreaterThan(0)
+	it('gives every command at least one shortcut, but closing a preview', () => {
+		// That is Esc, which the host routes while a preview has the keyboard: page.stop owns Esc in the registry.
+		for (const c of COMMANDS) if (c.id !== 'preview.close') expect(c.shortcuts.length, c.id).toBeGreaterThan(0)
 	})
 
 	it('never binds one shortcut to two commands', () => {
@@ -75,6 +76,12 @@ describe('command registry', () => {
 				owners.set(accel, c.id)
 			}
 		}
+	})
+
+	it('opens a link preview as a tab with Ctrl+O, and binds Ctrl+O to nothing else', () => {
+		expect(commandForInput(key('KeyO', { control: true }))?.id).toBe('preview.expand')
+		const bound = COMMANDS.filter((c) => c.shortcuts.some((s) => toAccelerator(s) === 'Ctrl+O')).map((c) => c.id)
+		expect(bound).toEqual(['preview.expand'])
 	})
 
 	it('uses Windows conventions', () => {

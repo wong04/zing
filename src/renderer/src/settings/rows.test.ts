@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, SETTING_KEYS, acceptsValue } from '@shared/settings'
 import { SETTINGS_CATEGORIES } from '@shared/shell/shellState'
-import { boundKeys, CATEGORIES, PANES, detailOf, isVisible } from './rows'
+import { boundKeys, CATEGORIES, PANES, detailOf, isVisible, type SettingRow } from './rows'
 
 describe('settings rows', () => {
 	it('binds every setting in the schema to a control', () => {
@@ -39,6 +39,21 @@ describe('settings rows', () => {
 		const after = PANES.tabs.find((i) => i.type === 'setting' && i.key === 'autoCloseRule')!
 		expect(isVisible(after, DEFAULT_SETTINGS)).toBe(false)
 		expect(isVisible(after, { ...DEFAULT_SETTINGS, autoCloseEnabled: true })).toBe(true)
+	})
+
+	it('disables the other two link preview switches while the first is off', () => {
+		const rows = PANES.browsing.filter((i) => i.type === 'setting' && i.key.startsWith('linkPreviews')) as SettingRow[]
+		expect(rows.map((r) => r.key)).toEqual(['linkPreviews', 'linkPreviewsShiftClick', 'linkPreviewsFromNewWindows'])
+		const off = { ...DEFAULT_SETTINGS, linkPreviews: false }
+		expect(rows.map((r) => r.disabled?.(DEFAULT_SETTINGS) ?? false)).toEqual([false, false, false])
+		expect(rows.map((r) => r.disabled?.(off) ?? false)).toEqual([false, true, true])
+	})
+
+	it('describes the preview as it is: nearly the whole page area, not a small window', () => {
+		const row = PANES.browsing.find((i) => i.type === 'setting' && i.key === 'linkPreviews') as SettingRow
+		const detail = typeof row.detail === 'function' ? row.detail(DEFAULT_SETTINGS) : row.detail
+		expect(detail).not.toMatch(/small/i)
+		expect(detail).toMatch(/nearly full size/i)
 	})
 
 	it('puts the saved passwords right after their switch, shown only while it is on', () => {

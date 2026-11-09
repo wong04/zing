@@ -622,5 +622,23 @@
 				"label": "Ctrl+,"
 			}
 		]
+	},
+	{
+		"id": "preview.close",
+		"label": "Close Preview",
+		"shortcuts": []
+	},
+	{
+		"id": "preview.expand",
+		"label": "Open Preview as Tab",
+		"shortcuts": [
+			{
+				"code": "KeyO",
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"label": "Ctrl+O"
+			}
+		]
 	}
 ]

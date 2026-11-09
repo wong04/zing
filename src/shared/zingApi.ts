@@ -50,6 +50,8 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		setAccountPickerHeight: (height) => invoke('pageui:picker-height', height),
 		closeAccountPicker: () => invoke('pageui:picker-close'),
 		onAccountPicker: (listener) => listen('pageui:account-picker', listener),
+		getPeek: () => invoke('peek:get'),
+		onPeek: (listener) => listen('peek:state', listener),
 		updateFind: (text) => invoke('find:update', text),
 		stepFind: (direction) => invoke('find:step', direction),
 		closeFind: () => invoke('find:close'),

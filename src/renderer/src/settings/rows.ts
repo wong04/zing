@@ -34,6 +34,8 @@ export interface SettingRow {
 	readonly detail?: string | ((s: Settings) => string | undefined)
 	readonly warning?: (s: Settings) => boolean
 	readonly visible?: (s: Settings) => boolean
+	/** Shown but not editable; only toggles honour it. */
+	readonly disabled?: (s: Settings) => boolean
 	readonly control: RowControl
 }
 
@@ -172,6 +174,11 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 			detail: 'A key appears in sign-in fields. Passwords are kept in the vault on this PC, and with sync on, an encrypted copy is kept on the sync server.',
 		}),
 		{ type: 'custom', id: 'vault', keys: [], visible: (s) => s.passwordAutofill },
+		toggle('linkPreviews', 'Open links to other sites as a preview', {
+			detail: 'It opens nearly full size over the page, so you can look without leaving it.',
+		}),
+		toggle('linkPreviewsShiftClick', 'Shift-click previews any link', { disabled: (s) => !s.linkPreviews }),
+		toggle('linkPreviewsFromNewWindows', 'Links that open a new window preview too', { disabled: (s) => !s.linkPreviews }),
 		toggle('blockTrackers', 'Block trackers', { detail: 'Refuses tracking domains and strips tracking parameters.' }),
 		toggle('restoreTabs', 'Reopen tabs from last time', {
 			detail: (s) => (s.restoreTabs ? 'Your open tabs are saved to a file on this PC. Relaunch to apply.' : undefined),
