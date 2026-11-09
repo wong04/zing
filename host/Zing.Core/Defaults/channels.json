@@ -249,6 +249,10 @@
 			"args": 1
 		},
 		{
+			"channel": "peek:get",
+			"args": 0
+		},
+		{
 			"channel": "permission:allow",
 			"args": 1
 		},
@@ -533,6 +537,7 @@
 		"overlay:overview",
 		"pageui:account-picker",
 		"pageui:state",
+		"peek:state",
 		"relay:attempt",
 		"settings:changed",
 		"shell:state",

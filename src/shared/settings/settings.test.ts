@@ -18,6 +18,13 @@ describe('settings schema', () => {
 		expect(new SettingsStore().get('passwordAutofill')).toBe(false)
 	})
 
+	it('previews links to other sites by default, and rejects non-boolean values', () => {
+		for (const key of ['linkPreviews', 'linkPreviewsShiftClick', 'linkPreviewsFromNewWindows'] as const) {
+			expect(DEFAULT_SETTINGS[key], key).toBe(true)
+			expect(acceptsValue(key, 'yes'), key).toBe(false)
+		}
+	})
+
 	it('gives every key a default its own validator accepts, readable through the typed accessor', () => {
 		const store = new SettingsStore()
 		for (const key of SETTING_KEYS) {

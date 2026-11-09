@@ -1,0 +1,72 @@
+/* A link preview's buttons (#peek): the view is exactly the two buttons, stacked. Tokens only, no literal colours. */
+
+.peek {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	animation: peek-in 120ms ease-out;
+}
+
+@keyframes peek-in {
+	from {
+		opacity: 0;
+		transform: scale(0.9);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.peek {
+		animation: none;
+	}
+}
+
+.peek-button {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border-radius: 50%;
+	border: 1px solid var(--border);
+	background: var(--raised);
+	color: var(--text);
+	cursor: pointer;
+}
+
+.peek-button:hover:not(:disabled) {
+	background: var(--accent);
+	color: var(--on-accent);
+	border-color: transparent;
+}
+
+.peek-button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* Inside the button: the view ends at its edge, so a ring outside it would be cut off. */
+.peek-button:focus-visible {
+	outline: 2px solid var(--outline);
+	outline-offset: -2px;
+}
+
+/* Read by Narrator, not drawn. */
+.peek-live {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.peek.high-contrast .peek-button,
+.peek.high-contrast .peek-button:hover:not(:disabled) {
+	border: 2px solid CanvasText;
+	background: Canvas;
+	color: CanvasText;
+}
+
+.peek.high-contrast .peek-button:focus-visible {
+	outline-color: Highlight;
+}

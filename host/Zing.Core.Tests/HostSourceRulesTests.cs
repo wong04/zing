@@ -63,6 +63,31 @@ public sealed partial class HostSourceRulesTests
 		Assert.Contains("core.Settings.AreDevToolsEnabled = TestHooks.IsEndToEndRun;", source);
 	}
 
+	/// <summary>
+	/// SystemParametersInfo can fail, and the preview reads high contrast inside tab events (PreviewChanged, from
+	/// NavigationStarting and close paths). So the window reads it in one place, records a failure there, and hands out
+	/// the value it keeps.
+	/// </summary>
+	[Fact]
+	public void HighContrastIsReadInOnePlace()
+	{
+		var reads = HostSources()
+			.Where(file => Path.GetFileName(file) != "Native.cs")
+			.SelectMany(file => File.ReadAllLines(file).Select((line, index) => (file, line, number: index + 1)))
+			.Where(l => !l.line.TrimStart().StartsWith("//", StringComparison.Ordinal) && l.line.Contains("Native.HighContrastOn()", StringComparison.Ordinal))
+			.Select(l => $"{Path.GetFileName(l.file)}:{l.number}")
+			.ToList();
+		Assert.True(reads.Count == 1, "Read high contrast through MainWindow's kept value, not Native.HighContrastOn: " + string.Join(" ", reads));
+	}
+
+	/// <summary>A view's start ended while its popup is being destroyed is gone only when the engine aborted it (E_ABORT); any other error is a real one.</summary>
+	[Fact]
+	public void AViewStartFailingWhileItsPopupIsDestroyedIsGoneOnlyWhenAborted()
+	{
+		var source = File.ReadAllText(HostSources().Single(f => Path.GetFileName(f) == "HostedView.cs"));
+		Assert.Contains("Destroying.Contains(hwnd) && error.HResult == E_ABORT", source);
+	}
+
 	[Fact]
 	public void RuleSeesTheHostSources()
 	{

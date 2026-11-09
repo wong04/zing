@@ -428,6 +428,8 @@ export interface Layer {
 	readonly height: number
 	/** How many sibling windows are stacked above the view's window (0 is the top); compare views of the same kind. */
 	readonly depth: number
+	/** Whether the window's keyboard focus is in this view (Win32 focus on the window's thread, which an off-screen window keeps too). */
+	readonly keyboard: boolean
 }
 
 /** What the window really shows, bottom to top (TestHooks "layers"); page-side visibility doesn't follow a hidden view. */
@@ -436,6 +438,61 @@ export async function layers(chrome: Page): Promise<Layer[]> {
 	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'layers', file: path }), file)
 	await expect.poll(() => existsSync(file)).toBe(true)
 	return JSON.parse(readFileSync(file, 'utf8')) as Layer[]
+}
+
+export interface PeekState {
+	readonly open: boolean
+	/** The preview's pages, bottom first: its page, then any popups stacked over it. */
+	readonly layers: readonly { readonly url: string }[]
+	readonly canExpand: boolean
+	readonly sourceTabId: string | null
+}
+
+/** The link preview open in this window, if any (TestHooks "peek-state"). */
+export async function peekState(chrome: Page): Promise<PeekState> {
+	const file = join(scratchDir('zing-peek-'), 'peek.json')
+	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'peek-state', file: path }), file)
+	await expect.poll(() => existsSync(file)).toBe(true)
+	return JSON.parse(readFileSync(file, 'utf8')) as PeekState
+}
+
+/** A left-button press on the preview's dim, as a click there would send (TestHooks "click-scrim"). */
+export async function clickScrim(chrome: Page): Promise<void> {
+	await chrome.evaluate(async () => {
+		const view = globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } }; zing: { getTabs(): Promise<unknown> } }
+		view.chrome.webview.postMessage({ kind: 'test', action: 'click-scrim' })
+		// Answered after the message before it on the same channel: the press has been sent.
+		await view.zing.getTabs()
+	})
+}
+
+/**
+ * A key pressed on the link preview's top page, through the window's key handler as the engine's AcceleratorKeyPressed
+ * would enter it (TestHooks "preview-key"): CDP input never reaches that event.
+ */
+export async function pressInPreview(chrome: Page, code: 'Escape'): Promise<void> {
+	await chrome.evaluate(async (c) => {
+		const view = globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } }; zing: { getTabs(): Promise<unknown> } }
+		view.chrome.webview.postMessage({ kind: 'test', action: 'preview-key', code: c })
+		// Answered after the message before it on the same channel: the key has been handled.
+		await view.zing.getTabs()
+	}, code)
+}
+
+export interface Modifiers {
+	readonly shift?: boolean
+	readonly ctrl?: boolean
+	readonly middle?: boolean
+}
+
+/** The keys and button the next new-window request is taken to have been made with, once (TestHooks "set-modifiers"); e2e runs never read the real ones. */
+export async function setModifiers(chrome: Page, { shift = false, ctrl = false, middle = false }: Modifiers): Promise<void> {
+	await chrome.evaluate(async (m) => {
+		const view = globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } }; zing: { getTabs(): Promise<unknown> } }
+		view.chrome.webview.postMessage({ kind: 'test', action: 'set-modifiers', ...m })
+		// Answered after the message before it on the same channel: the modifiers are set before the click that reads them.
+		await view.zing.getTabs()
+	}, { shift, ctrl, middle })
 }
 
 /** The colours the host gave Windows' caption buttons, as channels, and their height in DIPs. */

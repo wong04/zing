@@ -8,7 +8,8 @@ public sealed record Shortcut(string Code, bool Ctrl, bool Shift, bool Alt, stri
 public sealed record Command(string Id, string Label, IReadOnlyList<Shortcut> Shortcuts);
 
 /// <summary>A key press as the host saw it, already mapped to a KeyboardEvent.code.</summary>
-public readonly record struct KeyInput(string Code, bool Ctrl, bool Shift, bool Alt);
+/// <param name="Repeat">The key was already down: the keyboard's auto-repeat of a held key.</param>
+public readonly record struct KeyInput(string Code, bool Ctrl, bool Shift, bool Alt, bool Repeat = false);
 
 /// <summary>The command registry (src/shared/commands/registry.ts), from the generated commands.json.</summary>
 public static class Commands

@@ -23,6 +23,7 @@ npm start
 - **Tab bar on the top, left or right**, with split view
 - **Colourful themes** with presets and a custom theme from one colour
 - **Built-in password vault** (Windows Hello) instead of the macOS Keychain bridge
+- **Link previews**: a link to another site opens over the tab, and you can expand it into a tab
 - **Import** from Chrome, Edge, Brave, Dia and Arc
 - **Full ad and tracker blocking** (EasyList/EasyPrivacy)
 

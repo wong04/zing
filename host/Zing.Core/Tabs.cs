@@ -237,6 +237,12 @@ public sealed partial class TabStore(Func<long> now, Func<string>? newId = null)
 		return new CloseResult(closed, next.Id);
 	}
 
+	/// <summary>Offers a page that never had a tab (a closed link preview) for reopening, as an ordinary unpinned tab.</summary>
+	public void PushClosed(string url, string title)
+	{
+		if (WebUrl().IsMatch(url)) _closed.Push(new ClosedTab(url, title, false));
+	}
+
 	/// <summary>Brings back the most recently closed tab, unactivated. Null when there is none.</summary>
 	public TabRecord? ReopenClosed()
 	{

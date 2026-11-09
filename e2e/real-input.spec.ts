@@ -3,9 +3,9 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Dialog, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, test, layers, pageWhere, pages, type Launched, type Layer } from './zing'
+import { launchZing, test, layers, pageWhere, pages, peekState, type Launched, type Layer } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -23,8 +23,11 @@ let port = 0
 
 test.beforeAll(async () => {
 	server = createServer((req, res) => {
-		const title = decodeURIComponent((req.url ?? '/').slice(1)) || 'Home'
+		const [path = '/', query] = (req.url ?? '/').split('?')
 		res.setHeader('content-type', 'text/html')
+		// A page that is one link, over all of it, to the address in ?to.
+		if (path === '/Linked') return void res.end(`<!doctype html><title>Linked</title><body style="margin:0"><a href="${new URLSearchParams(query).get('to')}" style="display:block;height:100vh">link</a></body>`)
+		const title = decodeURIComponent(path.slice(1)) || 'Home'
 		res.end(`<!doctype html><title>${title}</title><body style="height:100vh">${title}</body>`)
 	})
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -35,11 +38,22 @@ test.afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())
 
 const url = (host: string, title: string): string => `http://${host}.localhost:${port}/${encodeURIComponent(title)}`
 
-/** Brings Zing to the front and sends real input: a key chord ("ctrl+t") or a left click at a point of the window's content in DIPs. */
-async function realInput(zing: Launched, input: { keys: string } | { x: number; y: number }): Promise<void> {
+type RealInput = { keys: string; asIs?: boolean } | { x: number; y: number; button?: 'left' | 'middle'; hold?: string }
+
+/**
+ * Brings Zing to the front and sends real input: a key chord ("ctrl+t") or a click at a point of the window's content in
+ * DIPs, left unless `button` says middle, with the `hold` keys ("shift") down around it. `asIs` sends the keys to whatever
+ * is in front now, such as a page's own dialog.
+ */
+async function realInput(zing: Launched, input: RealInput): Promise<void> {
 	const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, '-ProcessId', String(zing.pid)]
-	if ('keys' in input) args.push('-Keys', input.keys)
-	else args.push('-X', String(input.x), '-Y', String(input.y))
+	if ('keys' in input) {
+		args.push('-Keys', input.keys)
+		if (input.asIs) args.push('-AsIs')
+	} else {
+		args.push('-X', String(input.x), '-Y', String(input.y), '-Button', input.button ?? 'left')
+		if (input.hold) args.push('-Hold', input.hold)
+	}
 	await run('powershell.exe', args)
 }
 
@@ -55,12 +69,20 @@ async function viewHasFocus(zing: Launched): Promise<boolean> {
 
 /** Opens a tab on a page with this title through the API and waits until the strip shows it. */
 async function openPage(chrome: Page, host: string, title: string): Promise<string> {
+	return openAddress(chrome, url(host, title), title)
+}
+
+/** Opens a tab on this address through the API and waits until the strip shows the page's title. */
+async function openAddress(chrome: Page, address: string, title: string): Promise<string> {
 	await chrome.evaluate(() => window.zing.runCommand('tab.new'))
 	const { activeId } = await chrome.evaluate(() => window.zing.getTabs())
-	await chrome.evaluate(([id, address]) => window.zing.navigateTab(id!, address!), [activeId!, url(host, title)])
+	await chrome.evaluate(([id, to]) => window.zing.navigateTab(id!, to!), [activeId!, address])
 	await expect.poll(async () => (await chrome.evaluate(() => window.zing.getTabs())).tabs.find((t) => t.id === activeId)?.title).toBe(title)
 	return activeId!
 }
+
+/** A page on this host that is one link to `to`. */
+const linkedTo = (host: string, to: string): string => `http://${host}.localhost:${port}/Linked?to=${encodeURIComponent(to)}`
 
 /** The window's visible view whose address ends so, once it shows (TestHooks "layers"). */
 async function shownLayer(chrome: Page, suffix: string): Promise<Layer> {
@@ -173,5 +195,67 @@ test('Ctrl+S on the keyboard puts the sidebar away and brings it back', { tag: '
 	await expect.poll(async () => (await layers(zing.chrome)).find((l) => l.url.startsWith('zing://home') && l.visible)?.x).toBeLessThan(left)
 	await realInput(zing, { keys: 'ctrl+s' })
 	await expect.poll(pinned).toBe(true)
+	await zing.close()
+})
+
+test('a real shift-click on a link previews it, even on the same site', { tag: '@real-input' }, async () => {
+	const zing = await launchZing({ env: ON_SCREEN })
+	const source = linkedTo('a.site', url('a.site', 'Target'))
+	await openAddress(zing.chrome, source, 'Linked')
+	const tabs = await tabCount(zing.chrome)
+	// Shift as Windows has it (GetAsyncKeyState): an e2e run kept off-screen never reads it, so only this tier tries it.
+	await realInput(zing, { ...center(await shownLayer(zing.chrome, source)), hold: 'shift' })
+	await expect.poll(async () => (await peekState(zing.chrome)).layers.map((l) => l.url)).toEqual([url('a.site', 'Target')])
+	expect(await tabCount(zing.chrome)).toBe(tabs)
+	await zing.close()
+})
+
+test('Esc closes the preview, and Esc in a page dialog does not', { tag: '@real-input' }, async () => {
+	const zing = await launchZing({ env: ON_SCREEN })
+	const target = url('b.site', 'Target')
+	const source = linkedTo('a.site', target)
+	await openAddress(zing.chrome, source, 'Linked')
+	// A real click on a link to another site: the engine reports it as an anchor click.
+	await realInput(zing, center(await shownLayer(zing.chrome, source)))
+	await expect.poll(async () => (await peekState(zing.chrome)).layers.map((l) => l.url)).toEqual([target])
+	const preview = await pageWhere(zing.browser, (p) => p.url() === target)
+	await preview.waitForLoadState('load')
+
+	// While the page has a dialog open, Esc is the dialog's. Playwright's listener takes the dialog over, so the engine shows
+	// none and it is held until something answers it; Zing still hears it open through its own DevTools session.
+	let held: Dialog | undefined
+	preview.on('dialog', (dialog) => {
+		held = dialog
+	})
+	await preview.evaluate(() => {
+		setTimeout(() => {
+			alert('A dialog of the page')
+			document.title = 'Dismissed'
+		})
+	})
+	await expect.poll(() => held !== undefined).toBe(true)
+	await realInput(zing, { keys: 'esc' })
+	// Zing leaves that Esc alone, so the engine gives it to the dialog, which closes; the preview stays.
+	await expect.poll(() => preview.title()).toBe('Dismissed')
+	expect((await peekState(zing.chrome)).layers.map((l) => l.url)).toEqual([target])
+
+	await realInput(zing, { keys: 'esc' })
+	await expect.poll(async () => (await peekState(zing.chrome)).open).toBe(false)
+	await zing.close()
+})
+
+test('a real middle-click on a link to another site opens a background tab, not a preview', { tag: '@real-input' }, async () => {
+	const zing = await launchZing({ env: ON_SCREEN })
+	const target = url('b.site', 'Target')
+	const source = linkedTo('a.site', target)
+	const sourceId = await openAddress(zing.chrome, source, 'Linked')
+	const tabs = await tabCount(zing.chrome)
+	// Chromium tells the new-window request nothing of the button; Zing reads it from Raw Input, which only real input reaches.
+	await realInput(zing, { ...center(await shownLayer(zing.chrome, source)), button: 'middle' })
+	await expect.poll(() => tabCount(zing.chrome)).toBe(tabs + 1)
+	const after = await zing.chrome.evaluate(() => window.zing.getTabs())
+	expect(after.tabs.some((t) => t.url === target)).toBe(true)
+	expect(after.activeId).toBe(sourceId)
+	expect((await peekState(zing.chrome)).open).toBe(false)
 	await zing.close()
 })

@@ -117,6 +117,7 @@ Also dropped:
 | B32 | Sleeping tabs | new | - | [#59](https://github.com/wong04/zing/issues/59) | Done |
 | B33 | Lazy session restore | new | - | [#60](https://github.com/wong04/zing/issues/60) | Done |
 | B34 | Shared UI components | parity | App/Components.swift, FileComponents.swift, ScrollFade.swift | [#61](https://github.com/wong04/zing/issues/61) | Partial |
+| B35 | Link previews (Arc Peek) | new | - | - | Open: built and tested, awaiting the hand checks (H1-H9) in [the design](docs/superpowers/specs/2026-11-08-link-preview-design.md); screenshots in `docs/screenshots/link-preview/` |
 
 **B rows, 2026-11-01:** re-verified on the WebView2 host. Evidence for each Done row is in its issue, and every cited test passed on Windows CI ([run 41289375469](https://github.com/wong04/zing/actions/runs/41289375469), the whole e2e suite plus vitest and xUnit). Partial rows, still open:
 - B11: domain blocking is Edge Strict, untested; full blocking waits on uBO Lite

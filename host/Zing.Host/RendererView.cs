@@ -99,7 +99,16 @@ public sealed class RendererView
 		// A closed view never completes its navigation; the scope (which closes the view) ends the wait.
 		using var gone = scope.Token.Register(() => loaded.TrySetException(new ViewGoneException(hash)));
 		core.Navigate(home);
-		await loaded.Task;
+		try
+		{
+			await loaded.Task;
+		}
+		catch (RendererLoadException)
+		{
+			// Nobody gets a view that failed to load, so nobody else would close it: a caller that tries again makes a new one.
+			view.Close();
+			throw;
+		}
 		scope.Checkpoint(hash);
 		return renderer;
 	}
