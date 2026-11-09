@@ -470,7 +470,7 @@ public sealed class ViewerFilesTests : IDisposable
 		Assert.True(Directory.Exists(session.Folder));
 		Assert.Empty(_errors);
 		held.Dispose();
-		await Task.Delay(800, TestContext.Current.CancellationToken);
+		for (var i = 0; i < 100 && Directory.Exists(session.Folder) && _errors.Count == 0; i++) await Task.Delay(50, TestContext.Current.CancellationToken);
 		Assert.False(Directory.Exists(session.Folder));
 		Assert.Empty(_errors);
 	}
