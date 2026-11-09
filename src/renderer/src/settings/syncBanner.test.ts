@@ -76,9 +76,17 @@ describe('syncControls and syncDetail', () => {
 		expect(syncDetail(on(), false)).toBe(`Sync is on. Signed in as ada@example.test. ${SYNC_TIMING}`)
 	})
 
-	it('says a PC signed out with its sync keys is still set up, and offers Sign in again', () => {
-		expect(syncDetail(signedOutWithKeys, false)).toBe('Sync is set up on this PC, but signed out. Sign in again to keep syncing.')
+	it('says a PC signed out with its sync keys holds them, and offers Sign in again', () => {
+		expect(syncDetail(signedOutWithKeys, false)).toBe('This PC has sync keys but is signed out. Sign in again to continue.')
 		expect(signInLabel(signedOutWithKeys, undefined)).toBe('Sign in again')
+	})
+
+	// Keys uploaded, recovery key never confirmed, then signed out: sync isn't on, so the text mustn't say it is set up (review I1).
+	it('says nothing about sync being set up when only pending keys are here', () => {
+		const pending: SyncState = { signedIn: false, on: false, recoveryPending: true, keysHere: true }
+		expect(syncDetail(pending, false)).toBe('This PC has sync keys but is signed out. Sign in again to continue.')
+		expect(syncDetail(pending, false)).not.toMatch(/set up|keep syncing|Sync is on/)
+		expect(signInLabel(pending, undefined)).toBe('Sign in again')
 	})
 
 	it('offers Turn on sync with the plain detail once sync is off or turned off on this PC', () => {

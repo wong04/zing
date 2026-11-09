@@ -102,6 +102,8 @@ public sealed class SyncEngineTests : IDisposable
 			var old = new List<string>();
 			for (var i = 0; i < history.Count; i++) old.Add(await pc.Vault.HistoryPasswordAsync(id, i));
 			Assert.Equal(["changed-on-a", "first-password"], old);
+			// The manage page's "2 earlier passwords" follows the merge, without a local password change.
+			Assert.Equal(2, pc.Vault.Summaries().Single().HistoryCount);
 		}
 	}
 

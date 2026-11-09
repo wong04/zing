@@ -7,6 +7,7 @@ import { SettingRowShell } from './SettingRowShell'
 import { RecoveryKeyScreen, ShowRecoveryKey, SyncSetup, useAction, useSyncState } from './SyncSetup'
 import { signInLabel, syncBanner, syncControls, syncDetail, TURN_OFF_SYNC_CONFIRM, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
 import { useVault } from './useVaultData'
+import { earlierPasswords, loginsDetail } from './vaultText'
 
 /** A password stays shown for this long, then hides itself. */
 const REVEAL_MS = 30_000
@@ -58,6 +59,8 @@ function PasswordHistory({ login, run }: { login: LoginSummary; run: Run }) {
 		return () => clearTimeout(timer)
 	}, [old])
 
+	// Nothing until the list arrives, so no empty "Earlier passwords" box flashes (review M2).
+	if (history.length === 0) return null
 	return (
 		<div className="vault-history" role="group" aria-label="Earlier passwords">
 			<div className="vault-history-title">Earlier passwords</div>
@@ -84,8 +87,6 @@ function PasswordHistory({ login, run }: { login: LoginSummary; run: Run }) {
 		</div>
 	)
 }
-
-const earlierPasswords = (count: number): string => (count === 1 ? '1 earlier password' : `${count} earlier passwords`)
 
 function EditForm({ login, onDone, run }: { login: LoginSummary; onDone: () => void; run: Run }) {
 	const [title, setTitle] = useState(login.title)
@@ -451,7 +452,7 @@ export function VaultSection() {
 
 	return (
 		<div className="vault" role="group" aria-label="Saved passwords">
-			<SettingRowShell title="Saved passwords" detail={`${logins.length === 1 ? '1 login' : `${logins.length} logins`}. Showing a password asks for Windows Hello, at most once every 5 minutes.`}>
+			<SettingRowShell title="Saved passwords" detail={loginsDetail(logins.length)}>
 				<div className="vault-actions">
 					<PillButton variant="outlined" size="small" disabled={busy} onClick={importCsv}>
 						Import CSV

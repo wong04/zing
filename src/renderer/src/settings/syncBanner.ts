@@ -45,8 +45,8 @@ export function syncDetail(sync: SyncState, signingIn: boolean): string {
 	if (sync.signedIn && sync.on) return `Sync is on. Signed in as ${sync.email}. ${SYNC_TIMING}${sync.unsent > 0 ? ` ${unsentText(sync.unsent)}` : ''}`
 	if (sync.signedIn) return `Signed in as ${sync.email}.`
 	if (signingIn) return 'Finish signing in with Google in your browser.'
-	// Sign out keeps the sync keys (Ruling 68): this PC is still set up, and signing in again resumes it.
-	if (sync.keysHere) return 'Sync is set up on this PC, but signed out. Sign in again to keep syncing.'
+	// Sign out keeps the sync keys (Ruling 68), set up or still pending from a turn-on that never finished: signing in again resumes it.
+	if (sync.keysHere) return 'This PC has sync keys but is signed out. Sign in again to continue.'
 	return 'Keep saved passwords in step across your PCs. The server only ever sees them encrypted.'
 }
 
