@@ -862,10 +862,24 @@ test('a login is edited, its old password listed in the history, deleted, and re
 	await manage(sheet).getByRole('button', { name: 'Edit Example' }).click()
 	const form = manage(sheet).getByRole('form', { name: 'Edit Example' })
 	await expect(form.getByRole('group', { name: 'Earlier passwords' })).toHaveCount(0)
+	await expect(manage(sheet).getByRole('button', { name: /earlier password/ })).toHaveCount(0)
 	await form.getByLabel('Username', { exact: true }).fill('ada2')
 	await form.getByLabel('Password', { exact: true }).fill('new password')
 	await form.getByRole('button', { name: 'Save' }).click()
 	await expect(loginList(sheet).first()).toContainText('ada2')
+
+	// The history is offered from the login's own row, without opening Edit (Task 15 text check).
+	await loginList(sheet).first().getByRole('button', { name: '1 earlier password' }).click()
+	const fromRow = loginList(sheet).first().getByRole('group', { name: 'Earlier passwords' })
+	await expect(fromRow).toContainText('Replaced')
+	await expect(fromRow.getByText('old password')).toHaveCount(0)
+	await hello(zing, 'pass')
+	await fromRow.getByRole('button', { name: /^Show earlier password/ }).click()
+	await expect(fromRow.getByText('old password')).toBeVisible()
+	await fromRow.getByRole('button', { name: /^Hide earlier password/ }).click()
+	await expect(fromRow.getByText('old password')).toHaveCount(0)
+	await loginList(sheet).first().getByRole('button', { name: '1 earlier password' }).click()
+	await expect(fromRow).toHaveCount(0)
 
 	await manage(sheet).getByRole('button', { name: 'Edit Example' }).click()
 	const history = manage(sheet).getByRole('group', { name: 'Earlier passwords' })
@@ -931,7 +945,7 @@ test('export warns first, writes Chrome-format CSV to Downloads after Hello, and
 	const fresh = await launchZing({ userDataDir: vaultProfile(true) })
 	const freshSheet = await openManage(fresh)
 	await pickAndImport(fresh, freshSheet, file)
-	await expect(freshSheet.getByRole('status')).toContainText('Added 2, merged 0 into logins you already had, skipped 0')
+	await expect(freshSheet.getByRole('status').filter({ hasText: 'Added' })).toContainText('Added 2, merged 0 into logins you already had, skipped 0')
 	const imported = await summaries(fresh)
 	expect(imported.map((l) => [l.origin, l.username, l.title, l.note]).sort()).toEqual([
 		['https://example.com', 'ada', 'Example', 'line one\nline two'],
@@ -942,7 +956,7 @@ test('export warns first, writes Chrome-format CSV to Downloads after Hello, and
 
 	// Importing the same file again changes nothing.
 	await pickAndImport(fresh, freshSheet, file)
-	await expect(freshSheet.getByRole('status')).toContainText('Added 0, merged 2 into logins you already had, skipped 0')
+	await expect(freshSheet.getByRole('status').filter({ hasText: 'Added' })).toContainText('Added 0, merged 2 into logins you already had, skipped 0')
 	expect(await summaries(fresh)).toHaveLength(2)
 	await fresh.close()
 })
@@ -964,7 +978,7 @@ test('a Chrome CSV with duplicates, a blank password, an android:// row and a no
 
 	await pickAndImport(zing, sheet, csv)
 
-	await expect(sheet.getByRole('status')).toContainText('Added 1, merged 1 into logins you already had, skipped 3')
+	await expect(sheet.getByRole('status').filter({ hasText: 'Added' })).toContainText('Added 1, merged 1 into logins you already had, skipped 3')
 	const skipped = sheet.getByRole('list', { name: 'Skipped rows' }).getByRole('listitem')
 	await expect(skipped).toHaveText(['Row 4: No password', 'Row 5: Not a web address: android://hash@com.app/', 'Row 6: Not a web address: not a url'])
 	await expect(loginList(sheet)).toHaveCount(1)

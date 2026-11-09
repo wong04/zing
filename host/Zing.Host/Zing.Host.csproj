@@ -21,6 +21,15 @@
 		<ApplicationIcon>..\..\build\icons\icon.ico</ApplicationIcon>
 		<ApplicationManifest>app.manifest</ApplicationManifest>
 	</PropertyGroup>
+	<PropertyGroup>
+		<!--
+			Sync (Ruling 48). ZingGoogleClientId and ZingGoogleClientSecret (the Google Desktop OAuth client) come from the build
+			environment, as MSBuild reads environment variables as properties, and are never committed. Without a client ID the build
+			has no sync, and Turn on sync says so. The secret isn't confidential for an installed app (Google's own words), but is
+			still never printed.
+		-->
+		<ZingSyncServerUrl Condition="'$(ZingSyncServerUrl)' == ''">https://zing-server-production.up.railway.app</ZingSyncServerUrl>
+	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
 		<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
@@ -34,6 +43,20 @@
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Zing.Core\Zing.Core.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+			<_Parameter1>ZingSyncServerUrl</_Parameter1>
+			<_Parameter2>$(ZingSyncServerUrl)</_Parameter2>
+		</AssemblyAttribute>
+		<AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute" Condition="'$(ZingGoogleClientId)' != ''">
+			<_Parameter1>ZingGoogleClientId</_Parameter1>
+			<_Parameter2>$(ZingGoogleClientId)</_Parameter2>
+		</AssemblyAttribute>
+		<AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute" Condition="'$(ZingGoogleClientSecret)' != ''">
+			<_Parameter1>ZingGoogleClientSecret</_Parameter1>
+			<_Parameter2>$(ZingGoogleClientSecret)</_Parameter2>
+		</AssemblyAttribute>
 	</ItemGroup>
 	<ItemGroup>
 		<!-- Where `npm run build` puts the renderer in this checkout. The app loads it from here and never searches (RendererLocation). -->

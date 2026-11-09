@@ -16,6 +16,8 @@ export interface LoginSummary {
 	updatedAt: number
 	passwordUpdatedAt: number
 	deletedAt: number | null
+	/** How many earlier passwords the history holds; vault:history lists them. */
+	historyCount: number
 }
 
 // A login to save (vault:save). The host stores the origin of `origin`, so any
@@ -54,6 +56,53 @@ export interface VaultState {
 	error?: 'unreadable'
 	// Vault files are on disk, whether or not the vault is on or could be read. The privacy banner warns about them.
 	filesExist: boolean
+}
+
+// Why a PC isn't signed in to sync, when Settings has something to say about it: the server ended the
+// sign-in (a refused refresh token), the saved sign-in can't be decrypted on this PC, or (from a sign-out
+// only) the server couldn't be reached, so its copy of the sign-in expires within 90 days.
+export type SyncNotice = 'signed-out' | 'unreadable' | 'kept-on-server'
+
+// Why the last sync stopped. `server-rolled-back` (the server went back to an older copy) and `server-withheld-item` (it held a
+// login back) are answered with sync:upload-local; the rest clear on a sync that works.
+export type SyncError =
+	| 'server-rolled-back'
+	| 'server-withheld-item'
+	| 'server-tampered'
+	| 'server-invalid'
+	| 'unreachable'
+	| 'server-error'
+	| 'account-changed'
+	| 'failed'
+
+// The errors Upload this PC's copy answers.
+export function offersUploadLocal(error: SyncError | undefined): boolean {
+	return error === 'server-rolled-back' || error === 'server-withheld-item'
+}
+
+// Sync as Settings shows it (sync:get, sync:state). The bridge leaves out null fields. `on`: this PC turned sync on for the
+// signed-in account; `recoveryPending`: this PC turned sync on and the recovery key isn't yet confirmed saved, whoever is signed
+// in now, so Settings shows nothing else. While on: `unsent`, the logins that haven't uploaded yet, and `error`/`message`, the last
+// sync's error (unset after one that worked).
+export type SyncState =
+	| {
+			signedIn: true
+			email: string
+			on: boolean
+			recoveryPending: boolean
+			unsent: number
+			error?: SyncError
+			message?: string
+			/** Sync found the Zing password changed on another PC: the next start asks for the new one. */
+			passwordChangedElsewhere?: boolean
+			/** keys.bin holds sync keys (pending ones included), for any account: Settings offers Turn off sync on this PC. */
+			keysHere: boolean
+	  }
+	| { signedIn: false; notice?: SyncNotice; on: false; recoveryPending: boolean; keysHere: boolean }
+
+// The recovery key, as sync:turn-on and sync:show-recovery give it: 26 base32 characters in groups of four.
+export interface RecoveryKeyShown {
+	recoveryKey: string
 }
 
 // "Never for this site", kept per exact origin apart from the logins.

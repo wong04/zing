@@ -4,6 +4,7 @@ using Zing.Core.Engines;
 using Zing.Core.LinkPreview;
 using Zing.Core.Viewer;
 using Zing.Core.Net;
+using Zing.Core.Sync;
 using Zing.Core.Vault;
 
 namespace Zing.Core;
@@ -86,12 +87,17 @@ public interface IWindowHost
 /// <param name="Vault">A vault already open that never follows the setting (tests); <paramref name="Switch"/> is the real one.</param>
 /// <param name="VaultUnreadable">With <paramref name="Vault"/>: the vault is off because its files couldn't be read.</param>
 /// <param name="Switch">The password vault, shared by every window, open only while <c>passwordAutofill</c> is on.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null)
+/// <param name="Sync">The sync server and Google sign-in this build has; null when it was built without a Google client ID (Ruling 48).</param>
+/// <param name="SyncScheduler">Runs the open vault's sync engine (Task 13); null runs none.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null)
 {
 	public long Now() => Clock.Now();
 
 	/// <summary>The vault as it is now: <see cref="VaultSwitch.Current"/> is null while it's off.</summary>
 	public VaultSwitch Vaults { get; } = Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable);
+
+	/// <summary>The open vault's one sync client, for every window; null without <see cref="Sync"/>.</summary>
+	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync, Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable), SyncScheduler, Clock);
 }
 
 /// <summary>
@@ -349,14 +355,23 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("offer:choose", args => ChooseOffer(Text(args, 0)));
 		bridge.Register("offer:dismiss", _ => Do(DismissOffer));
 		bridge.Register("account:get", _ => app.Account.State());
-		bridge.Register("account:sign-up", args => app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3))));
-		bridge.Register("account:sign-in", args => app.Account.Run(() => app.Account.SignIn(Text(args, 0))));
-		bridge.Register("account:reset-password", args => app.Account.Run(() => app.Account.ResetPassword(Text(args, 0))));
+		bridge.Register("account:sign-up", args =>
+		{
+			RequireSyncOff();
+			return app.Account.Run(() => app.Account.SignUp(Text(args, 0), Text(args, 1), Text(args, 2), Text(args, 3)));
+		});
+		bridge.Register("account:sign-in", async args => await SignInToAccountAsync(Text(args, 0)));
+		bridge.Register("account:reset-password", args => app.Account.Run(() => ResetAccountPassword(Text(args, 0))));
 		bridge.Register("account:sign-out", _ => app.Account.Run(app.Account.SignOut));
 		bridge.Register("account:continue-as-guest", _ => app.Account.Run(app.Account.ContinueAsGuest));
 		bridge.Register("account:update-profile", args => app.Account.Run(() => app.Account.UpdateProfile(Text(args, 0), Text(args, 1))));
 		bridge.Register("account:require-password", args => app.Account.Run(() => app.Account.SetRequirePasswordOnLaunch(Bool(args, 0))));
-		bridge.Register("account:delete", _ => app.Account.Run(app.Account.DeleteAccount));
+		bridge.Register("account:delete", _ =>
+		{
+			RequireSyncOff();
+			return app.Account.Run(app.Account.DeleteAccount);
+		});
+		bridge.Register("account:change-password", async args => await ChangeAccountPasswordAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("chrome:app-menu", args => Do(() => Menu(Menus.App(id => Run(id)), args, 0)));
 		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Saved, Text(args, 0), host.Shell), args, 1)));
 		bridge.Register("library:folder-menu", args => Do(() => Menu(Menus.LibraryFolder(app.Library, Text(args, 0), id => OpenLibraryItem(id, "current"), OpenAll), args, 1)));
@@ -391,13 +406,35 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("vault:remove-never-save", args => Do(() => Vault().RemoveNeverSave(Text(args, 0))));
 		bridge.Register("vault:fill", async args => await Autofill.FillAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("vault:answer-save", async args => await SignIn.AnswerAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("sync:get", _ => CurrentSyncState());
+		bridge.Register("sync:sign-in", async _ => await SignInToSyncAsync());
+		bridge.Register("sync:sign-out", async _ => await SignOutOfSyncAsync());
+		bridge.Register("sync:cancel-sign-in", _ => Do(CancelSyncSignIn));
+		bridge.Register("sync:turn-off", async _ => await TurnOffSyncAsync());
+		bridge.Register("sync:turn-on", async args => new { recoveryKey = await TurnOnSyncAsync(Text(args, 0)) });
+		bridge.Register("sync:confirm-recovery-saved", _ =>
+		{
+			Vault().ConfirmRecoverySaved();
+			return CurrentSyncState();
+		});
+		bridge.Register("sync:show-recovery", async _ => new { recoveryKey = await Vault().RecoveryKeyAsync() });
+		bridge.Register("sync:upload-local", async _ => await UploadLocalCopyAsync());
+		bridge.Register("sync:restore-sign-in", async _ => await SignInToRestoreAsync());
+		bridge.Register("sync:restore-password", async args => await RestoreWithPasswordAsync(Text(args, 0)));
+		bridge.Register("sync:restore-recovery-key", async args =>
+		{
+			await RestoreWithRecoveryKeyAsync(Text(args, 0));
+			return null;
+		});
+		bridge.Register("sync:restore-new-password", async args => await SetPasswordAfterRecoveryAsync(Text(args, 0)));
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
 		bridge.Register("peek:get", _ => Peek());
 		_watchedVault = app.Vaults.Current;
-		if (_watchedVault is { } vault) vault.Changed += PushVaultState;
+		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;
+		if (app.SyncClients is { } syncClients) syncClients.EngineStatusChanged += PushSyncState;
 
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
 		_unsubscribeLibrary = app.Library.Subscribe(_ => host.Push("library:state", LibraryState()));
@@ -526,7 +563,10 @@ public sealed class ChromeApi : IDisposable
 		_host.OfferEnded -= EndOffer;
 		foreach (var subscription in _subscriptions) subscription.Dispose();
 		_app.Vaults.Changed -= VaultSwitched;
-		if (_watchedVault is { } vault) vault.Changed -= PushVaultState;
+		if (_app.SyncClients is { } syncClients) syncClients.EngineStatusChanged -= PushSyncState;
+		if (_watchedVault is { } vault) Unwatch(vault);
+		CancelSyncSignIn();
+		Interlocked.Exchange(ref _restore, null)?.Dispose();
 		Autofill.Dispose();
 		SignIn.Dispose();
 		_secretCopy.Dispose();
@@ -895,13 +935,30 @@ public sealed class ChromeApi : IDisposable
 	/// <summary>passwordAutofill was turned on or off: follow the new store, and a picker on screen goes (Ruling 30).</summary>
 	private void VaultSwitched()
 	{
-		if (_watchedVault is { } old) old.Changed -= PushVaultState;
+		if (_watchedVault is { } old) Unwatch(old);
 		_watchedVault = _app.Vaults.Current;
-		if (_watchedVault is { } now) now.Changed += PushVaultState;
+		if (_watchedVault is { } now) Watch(now);
 		Autofill.Close();
 		SignIn.Clear();
 		PushVaultState();
+		PushSyncState();
 	}
+
+	private void Watch(VaultStore vault)
+	{
+		vault.Changed += PushVaultState;
+		vault.SyncChanged += PushSyncState;
+		vault.SyncPasswordChangedElsewhere += PushSyncState;
+	}
+
+	private void Unwatch(VaultStore vault)
+	{
+		vault.Changed -= PushVaultState;
+		vault.SyncChanged -= PushSyncState;
+		vault.SyncPasswordChangedElsewhere -= PushSyncState;
+	}
+
+	private void PushSyncState() => _host.Push("sync:state", CurrentSyncState());
 
 	private void PushVaultState() => _host.Push("vault:state", CurrentVaultState());
 
@@ -945,6 +1002,357 @@ public sealed class ChromeApi : IDisposable
 		var logins = await Vault().ExportAsync();
 		return Grants.Issue(VaultCsv.SaveExport(_placement, _host.DownloadsDirectory, logins));
 	}
+
+	/// <summary>
+	/// Signed out while the vault is off. A saved sign-in that doesn't unseal is reported, so Settings can offer Sign in again
+	/// (Ruling 50). A recovery key still to confirm is reported whoever is signed in, or no one.
+	/// </summary>
+	private SyncState CurrentSyncState()
+	{
+		if (_app.Vaults.Current is not { } vault) return SyncState.SignedOut();
+		try
+		{
+			if (vault.SyncAccount() is { } account) return SignedInState(vault, account);
+		}
+		catch (SyncAccountUnreadableException)
+		{
+			return SyncState.SignedOut("unreadable", vault);
+		}
+		return SyncState.SignedOut(vault.SyncSignedOutByServer ? "signed-out" : null, vault);
+	}
+
+	/// <summary>
+	/// Sync is on only for the account this PC turned it on for: keys.bin names that server user. The engine's last error shows
+	/// whenever signed in, so one met settling a turn-on still pending shows too (M7); how many logins wait to upload, only while on.
+	/// </summary>
+	private SyncState SignedInState(VaultStore vault, SyncAccount account)
+	{
+		var state = SyncState.SignedInAs(account, vault);
+		if (_app.SyncClients?.Engine is not { } engine) return state;
+		var status = engine.Status;
+		return state with { Error = status.Error, Message = status.Message, Unsent = state.On ? status.Unsent : 0 };
+	}
+
+	/// <summary>
+	/// Upload this PC's copy (spec, Rollback protection): what Settings offers after the server went back or held a login back, and
+	/// only then (the engine refuses it otherwise, Ruling 56).
+	/// </summary>
+	private async Task<SyncState> UploadLocalCopyAsync()
+	{
+		var engine = _app.SyncClients?.Engine ?? throw new SyncNotSetUpException();
+		await engine.UploadLocalCopyAsync(_closing.Token);
+		return CurrentSyncState();
+	}
+
+	/// <summary>The sign-in waiting on the browser, for Cancel; null when none is.</summary>
+	private CancellationTokenSource? _syncSigningIn;
+
+	/// <summary>
+	/// Google in the system browser, then the server's own session; the account is kept in the vault's sync.json, replacing one that
+	/// doesn't unseal. Cancel (or the window closing) ends it without an error. Keys and items sync later (Tasks 12 and 13).
+	/// </summary>
+	private async Task<object?> SignInToSyncAsync()
+	{
+		var setup = _app.Sync ?? throw new SyncNotSetUpException();
+		var vault = Vault();
+		return await WithGoogleSignInAsync(setup, async (idToken, cancellation) => SignedInState(vault, await SyncClient(vault).SignInAsync(idToken, cancellation)), CurrentSyncState);
+	}
+
+	/// <summary>
+	/// Google in the system browser, then <paramref name="signIn"/> with its ID token, within 5 minutes. Cancel (or the window
+	/// closing) answers <paramref name="cancelled"/> without an error.
+	/// </summary>
+	private async Task<object?> WithGoogleSignInAsync(SyncSetup setup, Func<string, CancellationToken, Task<object?>> signIn, Func<object?> cancelled)
+	{
+		using var cancel = CancellationTokenSource.CreateLinkedTokenSource(_closing.Token);
+		using var signingIn = CancellationTokenSource.CreateLinkedTokenSource(cancel.Token);
+		signingIn.CancelAfter(SyncSignInTimeout);
+		Interlocked.Exchange(ref _syncSigningIn, cancel)?.Cancel();
+		try
+		{
+			return await signIn(await setup.SignIn.SignInAsync(signingIn.Token), signingIn.Token);
+		}
+		catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+		{
+			return cancelled();
+		}
+		catch (OperationCanceledException error) when (signingIn.IsCancellationRequested)
+		{
+			throw new SyncSignInTimeoutException(error);
+		}
+		finally
+		{
+			Interlocked.CompareExchange(ref _syncSigningIn, null, cancel);
+		}
+	}
+
+	private void CancelSyncSignIn() => _syncSigningIn?.Cancel();
+
+	/// <summary>
+	/// Revokes this sign-in on the server, then forgets it here (Ruling 49). An unreachable server still signs this PC out, and the
+	/// answer says the server's copy expires within 90 days. A saved sign-in that doesn't unseal has nothing to revoke and is forgotten.
+	/// </summary>
+	private async Task<object?> SignOutOfSyncAsync()
+	{
+		var vault = Vault();
+		var setup = _app.Sync;
+		try
+		{
+			if (vault.SyncAccount() is null) return CurrentSyncState();
+		}
+		catch (SyncAccountUnreadableException)
+		{
+			vault.ForgetSyncAccount();
+			return SyncState.SignedOut(null, vault);
+		}
+		if (setup is null)
+		{
+			vault.ForgetSyncAccount();
+			return SyncState.SignedOut("kept-on-server", vault);
+		}
+		var revoked = await SyncClient(vault).SignOutAsync(_closing.Token);
+		return SyncState.SignedOut(revoked ? null : "kept-on-server", vault);
+	}
+
+	/// <summary>Turn off sync on this PC (Ruling 68): signs out, best effort, and forgets every sync record here; the logins stay.</summary>
+	private async Task<SyncState> TurnOffSyncAsync()
+	{
+		var vault = Vault();
+		var revoked = await SyncKeys.TurnOffAsync(vault, _app.SyncClients?.For(vault), _closing.Token);
+		return SyncState.SignedOut(revoked ? null : "kept-on-server", vault);
+	}
+
+	private SyncClient SyncClient(VaultStore vault) => (_app.SyncClients ?? throw new SyncNotSetUpException()).For(vault);
+
+	/// <summary>Turns sync on for the signed-in Google account (SyncKeys.TurnOnAsync) and answers the recovery key, the one time it is given without Hello.</summary>
+	private async Task<string> TurnOnSyncAsync(string password)
+	{
+		var vault = Vault();
+		return await new SyncKeys(_app.Account, vault, SyncClient(vault)).TurnOnAsync(password, _closing.Token);
+	}
+
+	/// <summary>
+	/// A broken account rule is a 'rejected' outcome, as the other account channels give. With sync on (keys.bin says so), the keys
+	/// are re-wrapped and uploaded first, and a weak password or keys changed on another PC raise. With the vault open, every change
+	/// goes through SyncKeys, synced or not, so it runs under the vault's key lock and can't slip past a turn-on in another window
+	/// (Ruling 55). While the vault is off, a keys.bin that says sync is on refuses the change rather than leave the server's keys
+	/// wrapped by the old password.
+	/// </summary>
+	private async Task<object?> ChangeAccountPasswordAsync(string current, string next)
+	{
+		if (_app.Vaults.Current is null && _app.Vaults.SyncOnDisk) throw new SyncNeedsTheVaultException();
+		try
+		{
+			if (_app.Vaults.Current is { } vault && _app.SyncClients is { } clients)
+				await new SyncKeys(_app.Account, vault, clients.For(vault)).ChangePasswordAsync(current, next, _closing.Token);
+			else if (_app.Vaults.SyncOnDisk) throw new SyncNotSetUpException();
+			else _app.Account.ChangePassword(current, next);
+		}
+		catch (AccountException error)
+		{
+			return AccountOutcome.Rejected(error.Code);
+		}
+		return AccountOutcome.Ok(_app.Account.State());
+	}
+
+	/// <summary>
+	/// Deleting the account, or making one, with sync on (keys.bin says so) would leave the server's keys wrapped by a password this
+	/// PC no longer asks for (final review I2), so both are refused. Nothing signs out of sync on its own.
+	/// </summary>
+	private void RequireSyncOff()
+	{
+		if (!_app.Vaults.SyncOnDisk) return;
+		if (_app.Vaults.Unreadable) throw new SyncIsOnWithTheVaultUnreadableException();
+		if (_app.Vaults.Current is null) throw new SyncIsOnWithTheVaultOffException();
+		throw new SyncIsOnException();
+	}
+
+	/// <summary>
+	/// A forgotten password's reset sets a new local check only, so with sync on it's refused (Ruling 54): the gate sends the person to
+	/// Restore from sync with the recovery key instead, which sets the new password on the server and here (Task 14).
+	/// </summary>
+	private void ResetAccountPassword(string password)
+	{
+		if (_app.Vaults.SyncOnDisk) throw new SyncNeedsRecoveryKeyException();
+		_app.Account.ResetPassword(password);
+	}
+
+	/// <summary>
+	/// The gate's Sign In. After sync found the password changed on another PC, the password typed is checked against the newer synced
+	/// keys, not this PC's old check (Task 14). A broken account rule is a 'rejected' outcome, as the other account channels give.
+	/// </summary>
+	private async Task<AccountOutcome> SignInToAccountAsync(string password)
+	{
+		try
+		{
+			if (_app.Account.State().PasswordChangedElsewhere) await SyncRestore.SignInWithPasswordChangedElsewhereAsync(_app.Account, Vault(), password, _closing.Token);
+			else _app.Account.SignIn(password);
+		}
+		catch (AccountException error)
+		{
+			return AccountOutcome.Rejected(error.Code);
+		}
+		return AccountOutcome.Ok(_app.Account.State());
+	}
+
+	/// <summary>
+	/// A restore at this window's gate: its Google sign-in, held in memory until the restore succeeds (M4), its own client, the restore,
+	/// and that client's retry of a refresh that got no answer, as the engine does for the vault's client (I3; null without a scheduler).
+	/// </summary>
+	private sealed class Restoring(HeldSyncSignIn signIn, SyncClient client, SyncRestore restore, LostRefreshRetry? retry) : IDisposable
+	{
+		public HeldSyncSignIn SignIn { get; } = signIn;
+		public SyncRestore Restore { get; } = restore;
+		public LostRefreshRetry? Retry { get; } = retry;
+
+		/// <summary>Held by the step running (N5): a second one is refused, not queued. A retired restore keeps it held for good (N7).</summary>
+		public SemaphoreSlim Step { get; } = new(1, 1);
+
+		/// <summary>
+		/// A newer restore sign-in replaced this one, or was refused: its refresh token is revoked in the background, best effort (Ruling
+		/// 49; N6), then the client goes. A revoke that didn't happen is told to <paramref name="warn"/>.
+		/// </summary>
+		public void Retire(Action<string, Exception> warn)
+		{
+			Retry?.Dispose();
+			_ = RetireInBackgroundAsync(warn);
+		}
+
+		private async Task RetireInBackgroundAsync(Action<string, Exception> warn)
+		{
+			try
+			{
+				if (!await client.SignOutAsync(CancellationToken.None)) warn("revoke a replaced restore sign-in", new SyncRevokeFailedException("The sync server couldn't be reached to revoke a replaced restore sign-in; it expires unused"));
+			}
+			catch (Exception error)
+			{
+				warn("revoke a replaced restore sign-in", error);
+			}
+			finally
+			{
+				client.Dispose();
+			}
+		}
+
+		public void Dispose()
+		{
+			Retry?.Dispose();
+			client.Dispose();
+		}
+	}
+
+	private Restoring? _restore;
+
+	/// <summary>The restore client's retry of a refresh that got no answer, while one runs: tests wait on it.</summary>
+	internal Task RestoreRefreshRetrying => _restore?.Retry?.Retrying ?? Task.CompletedTask;
+
+	/// <summary>Whether this restore step turned the vault on, so a step that fails turns it off again.</summary>
+	private bool _restoreTurnedVaultOn;
+
+	/// <summary>
+	/// Restore from sync's first step at the gate: the Google sign-in as Turn on sync does it, kept in memory by the restore's own client.
+	/// Nothing on this PC changes yet: the vault is turned on, and the sign-in kept in its sync.json, only once a restore succeeds (M4).
+	/// Refused with <see cref="SyncRestoreBusyException"/> while a step of the restore it would replace is running (N7).
+	/// </summary>
+	private async Task<object?> SignInToRestoreAsync()
+	{
+		var setup = _app.Sync ?? throw new SyncNotSetUpException();
+		if (_restore is { Step.CurrentCount: 0 }) throw new SyncRestoreBusyException();
+		return await WithGoogleSignInAsync(setup, async (idToken, cancellation) =>
+		{
+			var held = new HeldSyncSignIn();
+			var client = new SyncClient(setup.Server, held, setup.Handler, setup.Warn);
+			SyncAccount account;
+			try
+			{
+				account = await client.SignInAsync(idToken, cancellation);
+			}
+			catch
+			{
+				client.Dispose();
+				throw;
+			}
+			var retry = _app.SyncScheduler is { } scheduler ? new LostRefreshRetry(client, scheduler, _app.Clock, _host.Warn) : null;
+			var next = new Restoring(held, client, new SyncRestore(_app.Account, VaultForRestore, client, held), retry);
+			var replaced = _restore;
+			// A step that started during the Google sign-in keeps its restore; taking its step lock retires it for good otherwise.
+			if ((replaced is not null && !replaced.Step.Wait(0)) || Interlocked.CompareExchange(ref _restore, next, replaced) != replaced)
+			{
+				next.Retire(_host.Warn);
+				throw new SyncRestoreBusyException();
+			}
+			replaced?.Retire(_host.Warn);
+			return new SyncState(SignedIn: true, account.Email);
+		}, () => SyncState.SignedOut());
+	}
+
+	/// <summary>The vault a restore writes, turned on now if the setting is off. A vault that's on but unreadable stays as it is (N2).</summary>
+	private VaultStore VaultForRestore()
+	{
+		if (_app.Vaults.Current is null && _app.Settings.Get("passwordAutofill")?.GetValue<bool>() != true)
+		{
+			_app.Settings.Set("passwordAutofill", true);
+			_restoreTurnedVaultOn = true;
+		}
+		return Vault();
+	}
+
+	/// <summary>
+	/// One restore step, one at a time per window's restore (N5): a step while another runs raises <see cref="SyncRestoreBusyException"/>.
+	/// A step that fails leaves passwordAutofill as it found it.
+	/// </summary>
+	private async Task<AccountOutcome> RestoreStepAsync(Func<Restoring, Task> step)
+	{
+		var restoring = _restore ?? throw new NotSignedInToSyncException();
+		if (!restoring.Step.Wait(0)) throw new SyncRestoreBusyException();
+		try
+		{
+			_restoreTurnedVaultOn = false;
+			await step(restoring);
+		}
+		catch (Exception error)
+		{
+			if (_restoreTurnedVaultOn) _app.Settings.Set("passwordAutofill", false);
+			if (error is AccountException account) return AccountOutcome.Rejected(account.Code);
+			throw;
+		}
+		finally
+		{
+			restoring.Step.Release();
+		}
+		return AccountOutcome.Ok(_app.Account.State());
+	}
+
+	/// <summary>The account is made, so the vault the restore turned on stays on whatever fails after (Ruling 65).</summary>
+	private void KeepVaultOn() => _restoreTurnedVaultOn = false;
+
+	/// <summary>The restore made the account: its sign-in goes into the vault's sync.json through the vault's own client, and the restore ends.</summary>
+	private async Task KeepRestoreSignInAsync(Restoring restoring)
+	{
+		var signedIn = restoring.SignIn.SyncAccount() ?? throw new NotSignedInToSyncException();
+		await SyncClient(Vault()).AdoptAsync(signedIn, _closing.Token);
+		if (Interlocked.CompareExchange(ref _restore, null, restoring) == restoring) restoring.Dispose();
+	}
+
+	private Task<AccountOutcome> RestoreWithPasswordAsync(string password) => RestoreStepAsync(async restoring =>
+	{
+		await restoring.Restore.RestoreWithPasswordAsync(password, _closing.Token);
+		KeepVaultOn();
+		await KeepRestoreSignInAsync(restoring);
+	});
+
+	private Task<AccountOutcome> RestoreWithRecoveryKeyAsync(string key) =>
+		RestoreStepAsync(restoring => restoring.Restore.RestoreWithRecoveryKeyAsync(key, _closing.Token));
+
+	private Task<AccountOutcome> SetPasswordAfterRecoveryAsync(string password) => RestoreStepAsync(async restoring =>
+	{
+		await restoring.Restore.ChangePasswordAfterRecoveryAsync(password, _closing.Token);
+		KeepVaultOn();
+		await KeepRestoreSignInAsync(restoring);
+	});
+
+	/// <summary>Long enough to pick an account and pass Google's prompts in the browser.</summary>
+	private static readonly TimeSpan SyncSignInTimeout = TimeSpan.FromMinutes(5);
 
 	private static NewLogin NewLoginArg(JsonElement login) =>
 		new(RequiredText(login, "origin"), RequiredText(login, "username"), RequiredText(login, "password"), RequiredText(login, "title"), RequiredText(login, "note"));

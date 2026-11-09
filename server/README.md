@@ -18,7 +18,7 @@ Generate the session key:
 openssl rand -base64 32
 ```
 
-Never set `ZING_SERVER_FAKE_GOOGLE` in production. It swaps Google token checks for a test issuer, and the server refuses to start with it in the Production environment. It exists for tests and CI only.
+Never set `ZING_SERVER_FAKE_GOOGLE` in production. It swaps Google token checks for a test issuer, and the server refuses to start with it in the Production environment. It exists for tests and CI only. With it on, `POST /fake-google/token` with `{"sub": "...", "email": "..."}` answers `{"idToken": "..."}` signed by the test issuer, which is how Zing's e2e runs sign in without Google; without it the endpoint doesn't exist.
 
 Keep every value in Railway's Variables tab. Never put them in a file in the repo.
 
@@ -57,6 +57,10 @@ Separate several `sub` values with commas to allow more than one account.
 5. **Networking**: generate a public domain, then deploy.
 6. **Health check**: Railway calls `/health` (from `railway.json`) and only switches traffic when it returns 200. Check it yourself with `curl https://<your-domain>/health`.
 7. **Usage limit**: in Railway's billing settings, set a usage limit and a usage alert so a runaway bill cannot happen on the Hobby plan.
+
+## Sessions and refresh tokens
+
+`POST /auth/google` starts a sign-in: a 15-minute session and a refresh token that rotates on each `POST /auth/refresh`. Reusing a rotated token revokes every refresh token of that user, except a repeat within 2 minutes of its first use while its successor is still unused: that is a client that lost the answer, so it gets a new pair and the successor it never saw is revoked. `POST /auth/signout` with `{"refresh": "..."}` revokes every token of that sign-in (and no other); it answers 204 whether or not the token was known.
 
 ## Network exposure
 

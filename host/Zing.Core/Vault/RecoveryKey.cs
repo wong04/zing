@@ -47,6 +47,21 @@ public static class RecoveryKey
 		}
 	}
 
+	/// <summary>The code as <see cref="Generate"/> shows it, however it was typed (lowercase, spaces, no hyphens).</summary>
+	/// <exception cref="RecoveryKeyFormatException">The code isn't a recovery key.</exception>
+	public static string Canonical(string code)
+	{
+		var bytes = Parse(code);
+		try
+		{
+			return Format(bytes);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+		}
+	}
+
 	internal static byte[] Hkdf(ReadOnlySpan<byte> ikm, ReadOnlySpan<byte> salt, ReadOnlySpan<byte> info, int length) =>
 		KeyDerivationAlgorithm.HkdfSha256.DeriveBytes(ikm, salt, info, length);
 

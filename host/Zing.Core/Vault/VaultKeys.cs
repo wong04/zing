@@ -17,15 +17,45 @@ public sealed class VaultKeys
 	/// </summary>
 	public string VaultId { get; }
 
+	/// <summary>What turning on sync stored here; null until then.</summary>
+	public VaultSyncKeys? Sync { get; }
+
+	/// <summary>Keys on their way to the server (Ruling 53): stored before PUT /keys, and committed or dropped once its outcome is known.</summary>
+	public VaultPendingKeys? PendingSync { get; }
+
 	private readonly byte[] _sealedIndexKey;
 	private readonly byte[] _sealedSecretKey;
 
-	private VaultKeys(string vaultId, byte[] sealedIndexKey, byte[] sealedSecretKey)
+	private VaultKeys(string vaultId, byte[] sealedIndexKey, byte[] sealedSecretKey, VaultSyncKeys? sync = null, VaultPendingKeys? pendingSync = null)
 	{
 		VaultId = vaultId;
 		_sealedIndexKey = sealedIndexKey;
 		_sealedSecretKey = sealedSecretKey;
+		Sync = sync;
+		PendingSync = pendingSync;
 	}
+
+	/// <summary>The same keys with <paramref name="sync"/> stored beside them, and the pending keys kept. Nothing is written until <see cref="Save"/>.</summary>
+	public VaultKeys WithSync(VaultSyncKeys sync) => new(VaultId, _sealedIndexKey, _sealedSecretKey, sync, PendingSync);
+
+	/// <summary>The same keys with no sync keys and no pending ones: sync turned off on this PC (Ruling 68).</summary>
+	public VaultKeys WithoutSync() => new(VaultId, _sealedIndexKey, _sealedSecretKey, null, null);
+
+	/// <summary>The same keys with <paramref name="pending"/> as the pending sync keys (null drops them), and the sync keys kept.</summary>
+	public VaultKeys WithPending(VaultPendingKeys? pending) => new(VaultId, _sealedIndexKey, _sealedSecretKey, Sync, pending);
+
+	/// <summary>
+	/// Keys unwrapped from the sync server's copy, sealed for this PC as <see cref="CreateAsync"/> seals new ones (one Hello call), with
+	/// <paramref name="sync"/> beside them: what restoring from sync stores. Nothing is written until <see cref="Save"/>.
+	/// </summary>
+	public static async Task<VaultKeys> SealRestoredAsync(ISecretCipher cipher, IHelloSealer sealer, VaultKeyMaterial keys, VaultSyncKeys sync)
+	{
+		var helloSealed = await sealer.SealAsync(keys.SecretKey);
+		return new VaultKeys(keys.VaultId, cipher.Encrypt(keys.IndexKey), cipher.Encrypt(helloSealed), sync);
+	}
+
+	/// <summary>Whether the keys.bin at <paramref name="path"/> holds sync keys, stored or pending, read without opening the vault.</summary>
+	public static bool SyncOnDisk(string path) => Load(path) is { Sync: not null } or { PendingSync: not null };
 
 	/// <summary>
 	/// New keys and a new vault ID, sealed; one Hello call. Also returns the unsealed secret key for the write that needed the
@@ -77,16 +107,54 @@ public sealed class VaultKeys
 		var file = JsonSerializer.Deserialize<KeysFile>(File.ReadAllBytes(path), VaultJson.Options) ?? throw new InvalidDataException($"{path} is empty");
 		if (file.Format != Format) throw new InvalidDataException($"{path} is format {file.Format}; this Zing reads {Format}");
 		if (string.IsNullOrEmpty(file.VaultId) || file.IndexKey is not { Length: > 0 } || file.SecretKey is not { Length: > 0 }) throw new InvalidDataException($"{path} is missing a key or the vault ID");
-		return new VaultKeys(file.VaultId, file.IndexKey, file.SecretKey);
+		// A PC restored with the password never had the recovery key, so it has none sealed; an empty one is still refused.
+		if (file.Sync is { } sync && (string.IsNullOrEmpty(sync.UserId) || sync.Blob is not { Length: > 0 } || sync.Version < 1 || sync.SealedRecoveryKey is { Length: 0 }))
+			throw new InvalidDataException($"{path} has sync keys without their user, blob or version, or with an empty recovery key");
+		if (file.Sync is { } changed && (changed.NewerBlob is { Length: 0 } || (changed.NewerBlob is null) != (changed.NewerVersion == 0) || (changed.NewerBlob is not null && changed.NewerVersion <= changed.Version)))
+			throw new InvalidDataException($"{path} has newer sync keys without their blob or version, or not newer than the keys it holds");
+		if (file.PendingSync is { } pending && (string.IsNullOrEmpty(pending.UserId) || pending.Blob is not { Length: > 0 } || pending.BaseVersion < 0 || pending.SealedRecoveryKey is { Length: 0 }))
+			throw new InvalidDataException($"{path} has pending sync keys without their user, blob or base version, or with an empty recovery key");
+		return new VaultKeys(file.VaultId, file.IndexKey, file.SecretKey, file.Sync, file.PendingSync);
 	}
 
 	public void Save(string path) =>
-		JsonFiles.WriteAllBytesAtomic(path, JsonSerializer.SerializeToUtf8Bytes(new KeysFile(Format, VaultId, _sealedIndexKey, _sealedSecretKey), VaultJson.Options));
+		JsonFiles.WriteAllBytesAtomic(path, JsonSerializer.SerializeToUtf8Bytes(new KeysFile(Format, VaultId, _sealedIndexKey, _sealedSecretKey, Sync, PendingSync), VaultJson.Options));
 
-	private sealed record KeysFile(int Format, string VaultId, byte[] IndexKey, byte[] SecretKey);
+	// Sync and PendingSync are absent from a keys.bin written before sync was turned on, which reads as null.
+	private sealed record KeysFile(int Format, string VaultId, byte[] IndexKey, byte[] SecretKey, VaultSyncKeys? Sync = null, VaultPendingKeys? PendingSync = null);
 }
 
 internal static class VaultJson
 {
 	public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+}
+
+/// <summary>
+/// What turning on sync keeps in keys.bin: the server user it was turned on for, the wrapped keys as uploaded and the version the
+/// server gave them (a password change re-wraps from these, over that version), and the recovery key sealed under the secret key,
+/// so it can only be shown again after Windows Hello; null on a PC restored with the password, which never had it.
+/// <see cref="RecoveryConfirmed"/> is false until the person says they saved it. <see cref="NewerBlob"/> and <see cref="NewerVersion"/>:
+/// the server's keys at a later version, which sync found (the password was changed on another PC), kept until the person enters
+/// the new password, which is checked by unwrapping them (Task 14); null and 0 otherwise.
+/// </summary>
+public sealed record VaultSyncKeys(string UserId, byte[] Blob, long Version, byte[]? SealedRecoveryKey, bool RecoveryConfirmed, byte[]? NewerBlob = null, long NewerVersion = 0);
+
+/// <summary>
+/// Wrapped keys stored before PUT /keys sends them over <see cref="BaseVersion"/> (0 for turning on), so a lost answer or a crash
+/// can be settled by comparing them with the server's byte for byte (Ruling 53).
+/// </summary>
+public sealed record VaultPendingKeys(string UserId, byte[] Blob, long BaseVersion, byte[]? SealedRecoveryKey);
+
+/// <summary>The vault's ID and both keys unsealed, for sync to wrap. Dispose wipes the keys.</summary>
+public sealed class VaultKeyMaterial(string vaultId, byte[] indexKey, byte[] secretKey) : IDisposable
+{
+	public string VaultId { get; } = vaultId;
+	public byte[] IndexKey { get; } = indexKey;
+	public byte[] SecretKey { get; } = secretKey;
+
+	public void Dispose()
+	{
+		CryptographicOperations.ZeroMemory(IndexKey);
+		CryptographicOperations.ZeroMemory(SecretKey);
+	}
 }

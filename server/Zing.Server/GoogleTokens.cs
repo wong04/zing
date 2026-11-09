@@ -140,7 +140,8 @@ public sealed class FakeGoogleIssuer : ISigningKeySource, IDisposable
 	}
 }
 
-public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId) : IGoogleTokenValidator
+/// <param name="clock">The clock every other server check reads, so a token's lifetime is checked on the same time (M13).</param>
+public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId, TimeProvider clock) : IGoogleTokenValidator
 {
 	private static readonly string[] Issuers = ["https://accounts.google.com", "accounts.google.com"];
 	private readonly JsonWebTokenHandler handler = new();
@@ -163,6 +164,7 @@ public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId
 			ValidateLifetime = true,
 			RequireExpirationTime = true,
 			ClockSkew = TimeSpan.FromMinutes(1),
+			LifetimeValidator = WithinLifetime,
 			ValidateIssuerSigningKey = true,
 			RequireSignedTokens = true,
 			ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
@@ -181,6 +183,14 @@ public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId
 		return new GoogleIdentity(token.Subject);
 	}
 
+	private bool WithinLifetime(DateTime? notBefore, DateTime? expires, SecurityToken token, TokenValidationParameters parameters)
+	{
+		if (expires is null) return false;
+		var now = clock.GetUtcNow().UtcDateTime;
+		if (notBefore is { } from && now + parameters.ClockSkew < from) return false;
+		return now - parameters.ClockSkew < expires.Value;
+	}
+
 	private static string? ReadKeyId(string idToken)
 	{
 		try
@@ -191,5 +201,37 @@ public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId
 		{
 			throw new InvalidIdTokenException("ID token is not a JWT.", error);
 		}
+	}
+}
+
+public sealed record FakeTokenRequest(string? Sub, string? Email);
+
+// Only mapped with ZING_SERVER_FAKE_GOOGLE=1, which the Production environment refuses (ServerConfig): Zing's e2e runs and
+// host tests ask it for an ID token in place of Google, so no test signs in with a real account.
+public static class FakeGoogleEndpoints
+{
+	public static void MapFakeGoogle(this IEndpointRouteBuilder app) => app.MapPost("/fake-google/token", Mint);
+
+	private static IResult Mint(FakeTokenRequest? body, FakeGoogleIssuer issuer, ServerConfig config, TimeProvider clock)
+	{
+		if (string.IsNullOrEmpty(body?.Sub)) return Results.BadRequest(new { error = "sub is required." });
+
+		var now = clock.GetUtcNow().UtcDateTime;
+		var descriptor = new SecurityTokenDescriptor
+		{
+			Issuer = "https://accounts.google.com",
+			Audience = config.GoogleClientId,
+			IssuedAt = now,
+			NotBefore = now,
+			Expires = now + TimeSpan.FromHours(1),
+			Claims = new Dictionary<string, object>
+			{
+				["sub"] = body.Sub,
+				["email"] = body.Email ?? $"{body.Sub}@example.test",
+				["email_verified"] = true,
+			},
+			SigningCredentials = new SigningCredentials(issuer.SigningKey, SecurityAlgorithms.RsaSha256),
+		};
+		return Results.Ok(new { idToken = new JsonWebTokenHandler().CreateToken(descriptor) });
 	}
 }

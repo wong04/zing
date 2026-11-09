@@ -30,11 +30,15 @@ internal sealed class FakeSealer : IHelloSealer
 	/// <summary>How many stores listen for availability: one per store not yet disposed.</summary>
 	public int Listeners => AvailabilityChanged?.GetInvocationList().Length ?? 0;
 
-	public Task<byte[]> SealAsync(byte[] key)
+	/// <summary>Awaited while the fake prompt is "up", seal or unseal: a test holds Hello here to start something else meanwhile.</summary>
+	public Func<Task>? Prompting { get; set; }
+
+	public async Task<byte[]> SealAsync(byte[] key)
 	{
 		Seals++;
+		if (Prompting is { } prompting) await prompting();
 		Answer();
-		return Task.FromResult<byte[]>([.. Mark, .. key.Reverse()]);
+		return [.. Mark, .. key.Reverse()];
 	}
 
 	/// <summary>Runs while the fake prompt is "up", e.g. to navigate the page during Hello.</summary>
@@ -43,14 +47,15 @@ internal sealed class FakeSealer : IHelloSealer
 	/// <summary>What a reset Hello key or a key sealed by another sealer looks like: the unseal itself fails.</summary>
 	public Exception? UnsealFailure { get; set; }
 
-	public Task<byte[]> UnsealAsync(byte[] sealedBytes)
+	public async Task<byte[]> UnsealAsync(byte[] sealedBytes)
 	{
 		Unseals++;
 		Unsealing?.Invoke();
+		if (Prompting is { } prompting) await prompting();
 		Answer();
 		if (UnsealFailure is { } failure) throw failure;
 		if (!sealedBytes.AsSpan().StartsWith(Mark)) throw new CryptographicException("not sealed by this fake");
-		return Task.FromResult<byte[]>([.. sealedBytes.Skip(Mark.Length).Reverse()]);
+		return [.. sealedBytes.Skip(Mark.Length).Reverse()];
 	}
 
 	private void Answer()
@@ -248,6 +253,8 @@ public sealed class VaultStoreTests : IDisposable
 		var reopened = Open();
 		Assert.Equal("third", await reopened.PasswordAsync(id));
 		Assert.Equal(2, reopened.History(id).Count);
+		// The manage page offers "2 earlier passwords" from the summary, without asking for the list.
+		Assert.Equal(2, reopened.Summaries().Single().HistoryCount);
 		Assert.Equal("second", await reopened.HistoryPasswordAsync(id, 0));
 		Assert.Equal("correct horse battery staple", await reopened.HistoryPasswordAsync(id, 1));
 		var history = reopened.History(id);
@@ -369,14 +376,16 @@ public sealed class VaultStoreTests : IDisposable
 	public async Task APasswordMovedToAnotherItemFailsItsTag()
 	{
 		var store = Open();
-		var first = await store.SaveAsync(Login);
+		await store.SaveAsync(Login);
 		await store.SaveAsync(Login with { Username = "grace", Password = "grace's" });
 		var file = JsonNode.Parse(File.ReadAllText(VaultFile))!;
 		var items = file["items"]!.AsArray();
 		(items[0]!["password"], items[1]!["password"]) = (items[1]!["password"]!.DeepClone(), items[0]!["password"]!.DeepClone());
 		File.WriteAllText(VaultFile, file.ToJsonString());
 
-		await Assert.ThrowsAsync<VaultTamperedException>(() => Open().PasswordAsync(first));
+		// Caught at load now: each sealed summary names its password's ciphertext (Ruling 56), before any tag is tried.
+		var error = Assert.Throws<VaultFileException>(() => Open());
+		Assert.IsType<VaultTamperedException>(error.InnerException);
 	}
 
 	[Fact]
@@ -540,6 +549,8 @@ public sealed class VaultStoreTests : IDisposable
 		"""{"format":1,"queued":null}""",
 		"""{"format":1,"queued":[null]}""",
 		"""{"format":1,"queued":[{"version":1}]}""",
+		// A manifest hash that isn't a SHA-256 (O4, Ruling 60): unreadable, not a rollback at the next sync.
+		"""{"format":1,"queued":[],"progress":{"userId":"u","cursor":0,"revisionFloor":0,"manifestFloor":1,"manifestHash":"AAAA"}}""",
 	];
 
 	[Theory]
@@ -586,7 +597,7 @@ public sealed class VaultStoreTests : IDisposable
 	}
 
 	[Fact]
-	public async Task ATombstoneWhoseSealedSummaryIsDeletedOpens()
+	public async Task ATombstoneFlagOnALoginInRecentlyDeletedIsTampering()
 	{
 		var store = Open();
 		var id = await store.SaveAsync(Login);
@@ -595,9 +606,9 @@ public sealed class VaultStoreTests : IDisposable
 		file["items"]![0]!["tombstone"] = true;
 		File.WriteAllText(VaultFile, file.ToJsonString());
 
-		var reopened = Open();
-		Assert.Empty(reopened.Summaries());
-		Assert.Single(reopened.Records);
+		// Ruling 25 both ways (Ruling 56): a deleted summary isn't a sealed tombstone, so the flag would hide it from Recently deleted.
+		var error = Assert.Throws<VaultFileException>(() => Open());
+		Assert.IsType<VaultTamperedException>(error.InnerException);
 	}
 
 	[Fact]
@@ -610,10 +621,9 @@ public sealed class VaultStoreTests : IDisposable
 		item["history"]![0] = password;
 		File.WriteAllText(VaultFile, file.ToJsonString());
 
-		var store = Open();
-		var id = store.Summaries().Single().Id;
-		await Assert.ThrowsAsync<VaultTamperedException>(() => store.PasswordAsync(id));
-		await Assert.ThrowsAsync<VaultTamperedException>(() => store.HistoryPasswordAsync(id, 0));
+		// Caught at load: the sealed summary names the password and each old one by its ciphertext's hash (Ruling 56).
+		var error = Assert.Throws<VaultFileException>(() => Open());
+		Assert.IsType<VaultTamperedException>(error.InnerException);
 	}
 
 	[Fact]

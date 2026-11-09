@@ -1,6 +1,10 @@
 {
 	"invoke": [
 		{
+			"channel": "account:change-password",
+			"args": 2
+		},
+		{
 			"channel": "account:continue-as-guest",
 			"args": 0
 		},
@@ -354,6 +358,58 @@
 			"args": 2
 		},
 		{
+			"channel": "sync:cancel-sign-in",
+			"args": 0
+		},
+		{
+			"channel": "sync:confirm-recovery-saved",
+			"args": 0
+		},
+		{
+			"channel": "sync:get",
+			"args": 0
+		},
+		{
+			"channel": "sync:restore-new-password",
+			"args": 1
+		},
+		{
+			"channel": "sync:restore-password",
+			"args": 1
+		},
+		{
+			"channel": "sync:restore-recovery-key",
+			"args": 1
+		},
+		{
+			"channel": "sync:restore-sign-in",
+			"args": 0
+		},
+		{
+			"channel": "sync:show-recovery",
+			"args": 0
+		},
+		{
+			"channel": "sync:sign-in",
+			"args": 0
+		},
+		{
+			"channel": "sync:sign-out",
+			"args": 0
+		},
+		{
+			"channel": "sync:turn-off",
+			"args": 0
+		},
+		{
+			"channel": "sync:turn-on",
+			"args": 1
+		},
+		{
+			"channel": "sync:upload-local",
+			"args": 0
+		},
+		{
 			"channel": "tabs:activate",
 			"args": 1
 		},
@@ -542,6 +598,7 @@
 		"settings:changed",
 		"shell:state",
 		"stack:dropdown",
+		"sync:state",
 		"tabs:state",
 		"toolpanel:state",
 		"vault:state"

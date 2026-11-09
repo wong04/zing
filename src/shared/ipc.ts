@@ -11,7 +11,7 @@ import type { Settings, SettingKey } from './settings'
 import type { DiagnosticReport } from './unblock/blockDiagnostics'
 import type { DnsOutcome, DnsPreview } from './unblock/dnsSetup'
 import type { RelayAttemptEvent, RelayOpenResult } from './unblock/relayOpen'
-import type { LoginEdit, LoginSummary, NeverSave, NewLogin, PasswordHistoryEntry, VaultImportResult, VaultState } from './vault/vault'
+import type { LoginEdit, LoginSummary, NeverSave, NewLogin, PasswordHistoryEntry, RecoveryKeyShown, SyncState, VaultImportResult, VaultState } from './vault/vault'
 import type {
 	AccountOutcome,
 	AccountState,
@@ -397,6 +397,12 @@ export interface InvokeContract {
 	'account:update-profile': { args: [displayName: string, email: string]; result: AccountOutcome }
 	'account:require-password': { args: [required: boolean]; result: AccountOutcome }
 	'account:delete': { args: []; result: AccountOutcome }
+	/**
+	 * Changes the Zing password. A wrong current password is a `rejected` outcome. With sync on, the new one must pass the sync
+	 * floor (SyncPasswordTooWeakException) and the keys are re-wrapped and uploaded before this PC's password changes; keys changed
+	 * on another PC reject with SyncKeysChangedElsewhereException and change nothing.
+	 */
+	'account:change-password': { args: [current: string, next: string]; result: AccountOutcome }
 	/** Whether the vault is on, whether Windows Hello is set up, and how many logins it holds. Asks nothing. */
 	'vault:get': { args: []; result: VaultState }
 	/** Every login without its password, those in Recently deleted included. Never asks Windows Hello. Rejects (VaultOffException) while the vault is off. */
@@ -436,6 +442,70 @@ export interface InvokeContract {
 	 * once; a cancelled Hello stores nothing and closes the prompt without an error. `never` marks the site, for every prompt.
 	 */
 	'vault:answer-save': { args: [pageId: TabId, answer: SaveAnswer]; result: SaveOutcome }
+	/** Whether this PC is signed in to sync, and as whom. Signed out while the vault is off. */
+	'sync:get': { args: []; result: SyncState }
+	/**
+	 * Turn on sync: Google sign-in in the system browser, then the sync server's session, kept in the vault. Rejects with
+	 * SyncNotSetUpException in a build made without a Google client ID, and VaultOffException while the vault is off.
+	 */
+	'sync:sign-in': { args: []; result: SyncState }
+	/**
+	 * Revokes this PC's sync sign-in on the server, then forgets it here; the vault's logins stay. When the server can't be reached it is
+	 * still forgotten here, and the answer's notice is `kept-on-server`.
+	 */
+	'sync:sign-out': { args: []; result: SyncState }
+	/**
+	 * Turn off sync on this PC (Ruling 68): signs out as sync:sign-out does, then forgets this PC's sync keys, its sync progress and
+	 * the sync records of every login. The logins stay, unsynced; the server copy stays for the other PCs. Runs under the vault's key
+	 * lock, so it waits for a sync running. After it, the account can be deleted or made again.
+	 */
+	'sync:turn-off': { args: []; result: SyncState }
+	/** Stops waiting for a Google sign-in in progress; that sync:sign-in then resolves with the state as it is, without an error. */
+	'sync:cancel-sign-in': { args: []; result: void }
+	/**
+	 * Turns sync on for the signed-in Google account with the Zing password: wraps the vault's keys, then uploads them, every login
+	 * and the manifest. Asks Windows Hello unless it was passed in the last 5 minutes. Answers the recovery key, the only time it is
+	 * given without Hello; Settings shows it until sync:confirm-recovery-saved. Rejects with AccountException (no account, wrong
+	 * password), SyncPasswordTooWeakException, SyncAlreadySetUpForThisVaultException when the Google account already syncs this vault
+	 * (sync was turned off here; restoring from sync turns it on again), or SyncAlreadySetUpElsewhereException when it syncs another.
+	 */
+	'sync:turn-on': { args: [password: string]; result: RecoveryKeyShown }
+	/** The person confirmed they saved or printed the recovery key, so Settings stops showing it. */
+	'sync:confirm-recovery-saved': { args: []; result: SyncState }
+	/** The recovery key again, after Windows Hello (unless it was passed in the last 5 minutes). A cancelled Hello rejects and reveals nothing. */
+	'sync:show-recovery': { args: []; result: RecoveryKeyShown }
+	/**
+	 * Upload this PC's copy, after a sync stopped with `server-rolled-back` or `server-withheld-item`: this PC's copy of every login
+	 * replaces the server's, and the sync list is written from it. Needs no Windows Hello.
+	 */
+	'sync:upload-local': { args: []; result: SyncState }
+	/**
+	 * Restore from sync, at the account gate: signs in with Google as sync:sign-in does, but keeps the sign-in in memory. Nothing on
+	 * this PC changes until a restore succeeds: only then is the password vault turned on (sync lives in it) and the sign-in kept.
+	 * Rejects with SyncNotSetUpException in a build made without a Google client ID.
+	 */
+	'sync:restore-sign-in': { args: []; result: SyncState }
+	/**
+	 * Restores this PC from sync with the Zing password: the synced keys are unwrapped and sealed here (one Windows Hello), and the
+	 * account is made from the synced profile, or given the password when this PC has one. `wrong-password` when it doesn't open
+	 * them, and then nothing is made. Rejects with SyncNothingToRestoreException, SyncRestoreWouldReplaceLoginsException,
+	 * SyncRestoreOverAnotherAccountException (this PC has an account, and the keys are another vault's), SyncRestoreKeysNotThisVaultsException
+	 * (they carry its vault ID but not its keys), SyncRestoreWhileSyncingAnotherAccountException (this PC syncs as another Google
+	 * account), or SyncKeysFormatException.
+	 */
+	'sync:restore-password': { args: [password: string]; result: AccountOutcome }
+	/**
+	 * Checks the recovery key against the synced keys; nothing on this PC changes until sync:restore-new-password. Rejects with
+	 * RecoveryKeyFormatException (a mistyped character), WrongRecoveryKeyException, or as sync:restore-password does.
+	 */
+	'sync:restore-recovery-key': { args: [key: string]; result: void }
+	/**
+	 * The new Zing password after a recovery key restore: the synced keys are sealed here (one Windows Hello) and wrapped under it with
+	 * fresh parameters, and the account is made or given it. Rejects with SyncPasswordTooWeakException (still waiting),
+	 * SyncNoNewPasswordNeededException, SyncRestoreOverAnotherAccountException, SyncRestoreKeysNotThisVaultsException,
+	 * SyncRestoreWhileSyncingAnotherAccountException or SyncKeysChangedElsewhereException.
+	 */
+	'sync:restore-new-password': { args: [password: string]; result: AccountOutcome }
 	'overview:close': { args: []; result: void }
 }
 
@@ -455,6 +525,8 @@ export interface EventContract {
 	'toolpanel:state': ToolPanelsState
 	'account:state': AccountState
 	'vault:state': VaultState
+	/** Sync was signed in or out, turned on, or its recovery key confirmed saved, here or in another window, or the server ended the sign-in. */
+	'sync:state': SyncState
 	'engines:progress': EngineProgress
 	'engines:output': EngineOutput
 	'engines:exit': EngineExit
@@ -583,6 +655,7 @@ export interface ZingApi {
 	updateProfile(displayName: string, email: string): Promise<AccountOutcome>
 	setRequirePassword(required: boolean): Promise<AccountOutcome>
 	deleteAccount(): Promise<AccountOutcome>
+	changePassword(current: string, next: string): Promise<AccountOutcome>
 	listEngines(): Promise<EngineInfo[]>
 	ensureEngine(id: string): Promise<EnsureOutcome>
 	cancelEngine(id: string): Promise<void>
@@ -627,4 +700,18 @@ export interface ZingApi {
 	onVaultState(listener: (state: VaultState) => void): Unsubscribe
 	fillLogin(pageId: TabId, id: string): Promise<FillOutcome>
 	answerSaveLogin(pageId: TabId, answer: SaveAnswer): Promise<SaveOutcome>
+	getSyncState(): Promise<SyncState>
+	signInToSync(): Promise<SyncState>
+	signOutOfSync(): Promise<SyncState>
+	turnOffSync(): Promise<SyncState>
+	cancelSyncSignIn(): Promise<void>
+	turnOnSync(password: string): Promise<RecoveryKeyShown>
+	confirmRecoverySaved(): Promise<SyncState>
+	showRecoveryKey(): Promise<RecoveryKeyShown>
+	uploadLocalCopy(): Promise<SyncState>
+	onSyncState(listener: (state: SyncState) => void): Unsubscribe
+	signInToRestore(): Promise<SyncState>
+	restoreWithPassword(password: string): Promise<AccountOutcome>
+	restoreWithRecoveryKey(key: string): Promise<void>
+	setPasswordAfterRecovery(password: string): Promise<AccountOutcome>
 }

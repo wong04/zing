@@ -94,6 +94,8 @@ export interface AccountState {
 	readonly needsPasswordReset: boolean
 	readonly requirePasswordOnLaunch: boolean
 	readonly profile: AccountProfile | null
+	/** Sync found the password changed on another PC: the gate asks for the new one, which the host checks against the synced keys. */
+	readonly passwordChangedElsewhere: boolean
 }
 
 export const ACCOUNT_ERROR_CODES = [

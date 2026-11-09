@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Zing.Core.Sync;
 
 namespace Zing.Core.Vault;
 
@@ -64,7 +65,7 @@ public sealed class VaultFileException(string path, Exception inner) : Exception
 /// password's ciphertext and moves the losing one into the history as it is, bump the version without needing the secret key; and a
 /// password can't be swapped for another item's, or for an older one, because its sealed version is pinned by the summary.
 /// </remarks>
-public sealed class VaultStore : IDisposable
+public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 {
 
 	public const string VaultFileName = "vault.zing";
@@ -85,7 +86,17 @@ public sealed class VaultStore : IDisposable
 	private readonly Lock _gate = new();
 	private readonly SemaphoreSlim _creatingKeys = new(1, 1);
 	private readonly List<LoginRecord> _records;
+	/// <summary>The server's copy of each item as this PC last synced it (<see cref="SyncBase"/>), kept in vault.zing with the records so both change in one write. Under <c>_gate</c>.</summary>
+	private readonly Dictionary<string, SyncBase> _bases;
+	/// <summary>The server user <see cref="_bases"/> belong to; null before the first sync. Under <c>_gate</c>.</summary>
+	private string? _basesUser;
+	/// <summary>The pull cursor and the rollback floors (sync.json). Under <c>_gate</c>.</summary>
+	private SyncProgress? _progress;
 	private readonly List<QueuedChange> _queued;
+	/// <summary>Who this PC syncs as, its refresh token sealed; under <c>_gate</c>, and written with the queue into sync.json.</summary>
+	private SyncAccountFile? _syncAccount;
+	/// <summary>The server ended the last sign-in (Ruling 50); cleared by the next sign-in or a sign-out. Under <c>_gate</c>.</summary>
+	private bool _syncSignedOut;
 	private readonly Dictionary<string, SummaryPayload> _summaries;
 	private VaultKeys? _keys;
 	private readonly Action _availabilityChanged;
@@ -100,6 +111,15 @@ public sealed class VaultStore : IDisposable
 	/// <summary>Fires after every write, and when Hello becomes available or stops being.</summary>
 	public event Action? Changed;
 
+	/// <summary>Fires after a change made on this PC (a save, an edit, a delete, an import), not one sync brought in: sync's 2-second debounce follows it.</summary>
+	public event Action? Edited;
+
+	private void OnEdited()
+	{
+		Changed?.Invoke();
+		Edited?.Invoke();
+	}
+
 	/// <exception cref="VaultFileException">A vault file can't be read or doesn't decrypt.</exception>
 	/// <param name="scheduler">Wipes the held secret key when its 5 minutes are up.</param>
 	/// <param name="session">Windows locking or the session switching wipes the held key; while it isn't watched, nothing is held.</param>
@@ -112,8 +132,8 @@ public sealed class VaultStore : IDisposable
 		_scheduler = scheduler;
 		_session = session;
 		_keys = Guard(KeysFile, VaultKeys.Load);
-		_records = Guard(VaultFile, LoadRecords);
-		_queued = Guard(SyncFile, LoadQueue);
+		(_records, _bases, _basesUser) = Guard(VaultFile, LoadRecords);
+		(_queued, _syncAccount, _syncSignedOut, _progress) = Guard(SyncFile, LoadSyncFile);
 		_summaries = Guard(VaultFile, _ => DecryptSummaries());
 		_availabilityChanged = () =>
 		{
@@ -153,6 +173,23 @@ public sealed class VaultStore : IDisposable
 
 	/// <summary>Null until the first save makes the keys.</summary>
 	public string? VaultId => _keys?.VaultId;
+
+	/// <summary>Whether <paramref name="indexKey"/> is this vault's own, read from its DPAPI seal: no Hello (Ruling 71). False before there are keys.</summary>
+	public bool HoldsIndexKey(byte[] indexKey)
+	{
+		VaultKeys? keys;
+		lock (_gate) keys = _keys;
+		if (keys is null) return false;
+		var own = keys.IndexKey(_cipher);
+		try
+		{
+			return CryptographicOperations.FixedTimeEquals(own, indexKey);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(own);
+		}
+	}
 
 	public IReadOnlyList<LoginRecord> Records
 	{
@@ -214,7 +251,7 @@ public sealed class VaultStore : IDisposable
 			var summary = new SummaryPayload(exact, "", "", "", now, now, now, null, 0, [], NeverSave: true);
 			Commit(null, new LoginRecord(id, 1, SealSummary(keys, id, 1, summary), [], [], false), summary);
 		}
-		Changed?.Invoke();
+		OnEdited();
 	}
 
 	/// <summary>No Hello.</summary>
@@ -251,11 +288,11 @@ public sealed class VaultStore : IDisposable
 			{
 				id = Guid.NewGuid().ToString("N");
 				var now = _clock.Now();
-				var summary = new SummaryPayload(origin, login.Username, login.Title, login.Note, now, now, now, null, 1, []);
 				var password = Seal(secretKey, keys, id, 1, ItemPart.Password, login.Password);
+				var summary = new SummaryPayload(origin, login.Username, login.Title, login.Note, now, now, now, null, 1, [], PasswordHash: CipherHash.Of(password));
 				Commit(null, new LoginRecord(id, 1, SealSummary(keys, id, 1, summary), password, [], false), summary);
 			}
-			Changed?.Invoke();
+			OnEdited();
 			return id;
 		}
 		finally
@@ -294,7 +331,7 @@ public sealed class VaultStore : IDisposable
 				var (changedRecord, changed) = WithNewPassword(secretKey, keys, record, summary, password, edit);
 				Commit(record, changedRecord, changed);
 			}
-			Changed?.Invoke();
+			OnEdited();
 			return true;
 		}
 		finally
@@ -308,14 +345,15 @@ public sealed class VaultStore : IDisposable
 	{
 		var version = record.Version + 1;
 		var now = _clock.Now();
+		var sealedPassword = Seal(secretKey, keys, record.ItemId, version, ItemPart.Password, password);
 		var changed = edit(summary) with
 		{
 			UpdatedAt = now,
 			PasswordUpdatedAt = now,
 			PasswordVersion = version,
-			History = [new HistoryPayload(summary.PasswordVersion, now), .. summary.History],
+			PasswordHash = CipherHash.Of(sealedPassword),
+			History = [new HistoryPayload(summary.PasswordVersion, now, CipherHash.Of(record.Password)), .. summary.History],
 		};
-		var sealedPassword = Seal(secretKey, keys, record.ItemId, version, ItemPart.Password, password);
 		return (record with { Version = version, Summary = SealSummary(keys, record.ItemId, version, changed), Password = sealedPassword, History = [record.Password, .. record.History] }, changed);
 	}
 
@@ -364,8 +402,9 @@ public sealed class VaultStore : IDisposable
 					}
 					var newId = Guid.NewGuid().ToString("N");
 					var now = _clock.Now();
-					var fresh = new SummaryPayload(origins[i], login.Username, login.Title, login.Note, now, now, now, null, 1, []);
-					changed[newId] = (new LoginRecord(newId, 1, SealSummary(keys, newId, 1, fresh), Seal(secretKey, keys, newId, 1, ItemPart.Password, login.Password), [], false), fresh);
+					var password = Seal(secretKey, keys, newId, 1, ItemPart.Password, login.Password);
+					var fresh = new SummaryPayload(origins[i], login.Username, login.Title, login.Note, now, now, now, null, 1, [], PasswordHash: CipherHash.Of(password));
+					changed[newId] = (new LoginRecord(newId, 1, SealSummary(keys, newId, 1, fresh), password, [], false), fresh);
 					added.Add(newId);
 					live[(origins[i], login.Username)] = newId;
 				}
@@ -373,7 +412,7 @@ public sealed class VaultStore : IDisposable
 				if (wrote) CommitBatch(changed, added);
 				outcome = new ImportOutcome(added.Count, merged);
 			}
-			if (wrote) Changed?.Invoke();
+			if (wrote) OnEdited();
 			return outcome;
 		}
 		finally
@@ -445,7 +484,7 @@ public sealed class VaultStore : IDisposable
 			}
 			CommitBatch(changed, []);
 		}
-		Changed?.Invoke();
+		OnEdited();
 	}
 
 	private static bool IsSame(byte[] secretKey, VaultKeys keys, LoginRecord record, SummaryPayload summary, string password)
@@ -487,7 +526,7 @@ public sealed class VaultStore : IDisposable
 			var version = record.Version + 1;
 			Commit(record, record with { Version = version, Summary = SealSummary(keys, id, version, changed) }, changed);
 		}
-		Changed?.Invoke();
+		OnEdited();
 	}
 
 	/// <summary>
@@ -498,7 +537,7 @@ public sealed class VaultStore : IDisposable
 	{
 		RequireOpen();
 		List<LoginRecord> records = replaced is null ? [.. _records, record] : [.. _records.Select(r => ReferenceEquals(r, replaced) ? record : r)];
-		Persist(records, [new QueuedChange(record.ItemId, record.Version)]);
+		Persist(records, [new QueuedChange(record.ItemId, record.Version)], KeepingOriginals(replaced is null ? [] : [replaced]));
 		_summaries[record.ItemId] = summary;
 	}
 
@@ -507,18 +546,316 @@ public sealed class VaultStore : IDisposable
 	{
 		RequireOpen();
 		List<LoginRecord> records = [.. _records.Select(r => changed.TryGetValue(r.ItemId, out var next) ? next.Record : r), .. added.Select(id => changed[id].Record)];
-		Persist(records, [.. changed.Values.Select(c => new QueuedChange(c.Record.ItemId, c.Record.Version))]);
+		Persist(records, [.. changed.Values.Select(c => new QueuedChange(c.Record.ItemId, c.Record.Version))], KeepingOriginals(_records.Where(r => changed.ContainsKey(r.ItemId))));
 		foreach (var (id, change) in changed) _summaries[id] = change.Summary;
 	}
 
-	private void Persist(List<LoginRecord> records, IReadOnlyList<QueuedChange> newlyQueued)
+	/// <summary>The sync account, its refresh token unsealed; null when this PC isn't signed in to sync.</summary>
+	/// <exception cref="SyncAccountUnreadableException">The refresh token doesn't unseal.</exception>
+	public SyncAccount? SyncAccount()
+	{
+		SyncAccountFile? stored;
+		lock (_gate) stored = _syncAccount;
+		if (stored is null) return null;
+		try
+		{
+			return new(stored.UserId, stored.Email, Encoding.UTF8.GetString(_cipher.Decrypt(stored.SealedRefresh)));
+		}
+		catch (CryptographicException error)
+		{
+			throw new SyncAccountUnreadableException(SyncFile, error);
+		}
+	}
+
+	/// <summary>The server ended the last sign-in (a refused refresh token), and nobody has signed in or out since.</summary>
+	public bool SyncSignedOutByServer
+	{
+		get
+		{
+			lock (_gate) return _syncSignedOut;
+		}
+	}
+
+	/// <summary>Fires after the sync account was saved, forgotten or ended by the server.</summary>
+	public event Action? SyncChanged;
+
+	/// <summary>Writes the account into sync.json beside the queue, the refresh token sealed (DPAPI). On disk when it returns. Replaces one that doesn't unseal.</summary>
+	public void SaveSyncAccount(SyncAccount account) =>
+		WriteSyncAccount(new SyncAccountFile(account.UserId, account.Email, _cipher.Encrypt(Encoding.UTF8.GetBytes(account.Refresh))), signedOut: false);
+
+	/// <summary>Signs this PC out of sync: the account leaves sync.json; queued changes stay.</summary>
+	public void ForgetSyncAccount() => WriteSyncAccount(null, signedOut: false);
+
+	public void MarkSyncSignedOut() => WriteSyncAccount(null, signedOut: true);
+
+	private void WriteSyncAccount(SyncAccountFile? account, bool signedOut)
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			WriteSyncFile(_queued, account, signedOut);
+			_syncAccount = account;
+			_syncSignedOut = signedOut;
+		}
+		SyncChanged?.Invoke();
+	}
+
+	/// <summary>
+	/// Turns sync off on this PC (Ruling 68), once its sign-in is gone: sync.json's queue, account and progress (cursor, floors,
+	/// manifest hash), then the sync bases in vault.zing, then the sync keys and any pending ones in keys.bin, last, so a crash part way
+	/// still reads as sync on and the person can turn it off again. Every login stays, unsynced. No Hello.
+	/// </summary>
+	public void TurnOffSync()
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			WriteSyncFile([], null, false, null);
+			_queued.Clear();
+			_syncAccount = null;
+			_syncSignedOut = false;
+			_progress = null;
+			WriteVaultFile([.. _records], new Dictionary<string, SyncBase>(StringComparer.Ordinal), null);
+			if (_keys is { } keys && (keys.Sync is not null || keys.PendingSync is not null))
+			{
+				var next = keys.WithoutSync();
+				next.Save(KeysFile);
+				_keys = next;
+			}
+		}
+		SyncChanged?.Invoke();
+	}
+
+	/// <summary>What turning on sync stored in keys.bin; null before. No Hello.</summary>
+	public VaultSyncKeys? SyncKeys
+	{
+		get
+		{
+			lock (_gate) return _keys?.Sync;
+		}
+	}
+
+	/// <summary>
+	/// The vault's ID and both keys unsealed, for sync to wrap them: asks Hello unless the secret key is held, and on a vault with no
+	/// keys yet makes them, with that one Hello call. The caller disposes it.
+	/// </summary>
+	public async Task<VaultKeyMaterial> KeyMaterialAsync()
+	{
+		RequireHello();
+		var (keys, secretKey) = await SecretKeyForWriteAsync();
+		try
+		{
+			return new VaultKeyMaterial(keys.VaultId, keys.IndexKey(_cipher), secretKey);
+		}
+		catch
+		{
+			CryptographicOperations.ZeroMemory(secretKey);
+			throw;
+		}
+	}
+
+	/// <summary>The keys a PUT /keys is sending or sent, until its outcome is settled; null otherwise. No Hello.</summary>
+	public VaultPendingKeys? PendingSyncKeys
+	{
+		get
+		{
+			lock (_gate) return _keys?.PendingSync;
+		}
+	}
+
+	/// <summary>Stores keys about to be sent with PUT /keys in keys.bin, replacing any pending before. On disk when it returns.</summary>
+	public void SavePendingSyncKeys(VaultPendingKeys pending)
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			var next = Keys().WithPending(pending);
+			next.Save(KeysFile);
+			_keys = next;
+		}
+	}
+
+	/// <summary>
+	/// The server took <paramref name="blob"/> at <paramref name="version"/>, and it is the pending keys byte for byte: they become
+	/// the sync keys. A turn-on's recovery key is still to be confirmed; a password change keeps the confirmation it had.
+	/// </summary>
+	/// <exception cref="SyncPendingKeysReplacedException">The pending keys are other keys, or there are none.</exception>
+	public void CommitPendingSyncKeys(byte[] blob, long version)
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			var keys = Keys();
+			if (keys.PendingSync is not { } pending || !pending.Blob.AsSpan().SequenceEqual(blob)) throw new SyncPendingKeysReplacedException();
+			var confirmed = pending.BaseVersion > 0 && keys.Sync is { RecoveryConfirmed: true } stored && stored.UserId == pending.UserId;
+			var next = keys.WithSync(new VaultSyncKeys(pending.UserId, pending.Blob, version, pending.SealedRecoveryKey, confirmed)).WithPending(null);
+			next.Save(KeysFile);
+			_keys = next;
+		}
+		SyncChanged?.Invoke();
+	}
+
+	/// <summary>The server didn't take the pending keys (or took others): forgets them.</summary>
+	public void DropPendingSyncKeys()
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			var next = Keys().WithPending(null);
+			next.Save(KeysFile);
+			_keys = next;
+		}
+	}
+
+	/// <summary>The person confirmed they saved the recovery key, so Settings stops asking.</summary>
+	public void ConfirmRecoverySaved()
+	{
+		lock (_gate)
+		{
+			var sync = _keys?.Sync ?? throw new SyncNotOnException();
+			RequireOpen();
+			var next = _keys.WithSync(sync with { RecoveryConfirmed = true });
+			next.Save(KeysFile);
+			_keys = next;
+		}
+		SyncChanged?.Invoke();
+	}
+
+	/// <summary>The recovery key, unsealed with the secret key: asks Hello unless it is held (Ruling 44). A cancelled Hello reveals nothing.</summary>
+	/// <exception cref="SyncRecoveryKeyNotOnThisPcException">This PC was restored with the password, so it never had the recovery key.</exception>
+	public async Task<string> RecoveryKeyAsync()
+	{
+		var sync = SyncKeys ?? throw new SyncNotOnException();
+		var sealedRecovery = sync.SealedRecoveryKey ?? throw new SyncRecoveryKeyNotOnThisPcException();
+		RequireHello();
+		var keys = Keys();
+		var secretKey = await SecretKeyAsync(keys);
+		try
+		{
+			return RecoverySeal.Open(secretKey, keys.VaultId, sealedRecovery);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(secretKey);
+		}
+	}
+
+	/// <summary>
+	/// Restoring from sync (Task 14): <paramref name="keys"/>, unwrapped from the server's copy, become this PC's, sealed with one Hello
+	/// call, and sync is on as <paramref name="sync"/> says. Pending keys go with the old ones. Refused before Hello, and again before
+	/// the write, when this vault holds logins under other keys, which would no longer open.
+	/// </summary>
+	/// <exception cref="SyncRestoreWouldReplaceLoginsException">The vault holds logins under another vault ID.</exception>
+	public async Task RestoreKeysAsync(VaultKeyMaterial keys, VaultSyncKeys sync)
+	{
+		RequireHello();
+		lock (_gate) RequireRestorableOver(keys.VaultId);
+		await _creatingKeys.WaitAsync();
+		try
+		{
+			var restored = await VaultKeys.SealRestoredAsync(_cipher, _sealer, keys, sync);
+			lock (_gate)
+			{
+				RequireOpen();
+				RequireRestorableOver(keys.VaultId);
+				restored.Save(KeysFile);
+				_keys = restored;
+				// A secret key held from before was the old keys' one.
+				WipeHeldKey();
+			}
+		}
+		finally
+		{
+			_creatingKeys.Release();
+		}
+		SyncChanged?.Invoke();
+	}
+
+	/// <summary>Under <c>_gate</c>.</summary>
+	private void RequireRestorableOver(string vaultId)
+	{
+		if (_keys is { } held && held.VaultId != vaultId && _records.Count > 0) throw new SyncRestoreWouldReplaceLoginsException(_records.Count);
+	}
+
+	/// <summary>Sync found the server's keys at a later version than this PC's: the password was changed on another PC (Task 14).</summary>
+	public event Action? SyncPasswordChangedElsewhere;
+
+	/// <summary>
+	/// Keeps the server's keys at <paramref name="version"/>, later than this PC's and than any it kept before, in keys.bin beside this
+	/// PC's own, until the person enters the new password (<see cref="CommitNewerSyncKeys"/>). On disk when it returns.
+	/// </summary>
+	public void MarkPasswordChangedElsewhere(byte[] blob, long version)
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			var keys = Keys();
+			var sync = keys.Sync ?? throw new SyncNotOnException();
+			if (version <= Math.Max(sync.Version, sync.NewerVersion)) throw new ArgumentOutOfRangeException(nameof(version), version, $"The keys this PC holds are already at version {Math.Max(sync.Version, sync.NewerVersion)}");
+			var next = keys.WithSync(sync with { NewerBlob = blob, NewerVersion = version });
+			next.Save(KeysFile);
+			_keys = next;
+		}
+		SyncPasswordChangedElsewhere?.Invoke();
+	}
+
+	/// <summary>The newer keys were opened with the new password, so they become this PC's sync keys. On disk when it returns.</summary>
+	/// <exception cref="SyncPendingKeysReplacedException">The newer keys are other keys, or there are none.</exception>
+	public void CommitNewerSyncKeys(byte[] blob)
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			var keys = Keys();
+			if (keys.Sync is not { NewerBlob: { } newer } sync || !newer.AsSpan().SequenceEqual(blob)) throw new SyncPendingKeysReplacedException();
+			var next = keys.WithSync(sync with { Blob = newer, Version = sync.NewerVersion, NewerBlob = null, NewerVersion = 0 });
+			next.Save(KeysFile);
+			_keys = next;
+		}
+		SyncChanged?.Invoke();
+	}
+
+	/// <summary>Under <c>_gate</c>.</summary>
+	private void WriteSyncFile(IReadOnlyList<QueuedChange> queued, SyncAccountFile? account, bool signedOut) => WriteSyncFile(queued, account, signedOut, _progress);
+
+	/// <summary>Under <c>_gate</c>. One atomic replace, so the queue, the account and the sync progress change together.</summary>
+	private void WriteSyncFile(IReadOnlyList<QueuedChange> queued, SyncAccountFile? account, bool signedOut, SyncProgress? progress) =>
+		JsonFiles.WriteAllBytesAtomic(SyncFile, JsonSerializer.SerializeToUtf8Bytes(new SyncFileContent(Format, queued, account, signedOut, progress), VaultJson.Options));
+
+	/// <summary>A local change: queued first, then the items with their sync bases in one replace of vault.zing. Under <c>_gate</c>.</summary>
+	private void Persist(List<LoginRecord> records, IReadOnlyList<QueuedChange> newlyQueued, Dictionary<string, SyncBase> bases)
 	{
 		List<QueuedChange> queued = [.. _queued, .. newlyQueued];
-		JsonFiles.WriteAllBytesAtomic(SyncFile, JsonSerializer.SerializeToUtf8Bytes(new SyncFileContent(Format, queued), VaultJson.Options));
-		JsonFiles.WriteAllBytesAtomic(VaultFile, JsonSerializer.SerializeToUtf8Bytes(new VaultFileContent(Format, records), VaultJson.Options));
+		WriteSyncFile(queued, _syncAccount, _syncSignedOut);
+		WriteVaultFile(records, bases, _basesUser);
+		_queued.AddRange(newlyQueued);
+	}
+
+	/// <summary>Under <c>_gate</c>. The items and their sync bases in one atomic replace, so an item and the server copy it is merged against never part.</summary>
+	private void WriteVaultFile(List<LoginRecord> records, Dictionary<string, SyncBase> bases, string? basesUser)
+	{
+		var sync = basesUser is null ? null : new SyncBasesFile(basesUser, bases);
+		JsonFiles.WriteAllBytesAtomic(VaultFile, JsonSerializer.SerializeToUtf8Bytes(new VaultFileContent(Format, records, sync), VaultJson.Options));
 		_records.Clear();
 		_records.AddRange(records);
-		_queued.AddRange(newlyQueued);
+		_basesUser = basesUser;
+		if (ReferenceEquals(bases, _bases)) return;
+		_bases.Clear();
+		foreach (var (id, b) in bases) _bases[id] = b;
+	}
+
+	/// <summary>
+	/// The bases after a local change replaced <paramref name="replaced"/>: an item that matched the server's copy keeps that copy as
+	/// its base, so the change counts as unsent and a later conflict merges against it. Under <c>_gate</c>.
+	/// </summary>
+	private Dictionary<string, SyncBase> KeepingOriginals(IEnumerable<LoginRecord> replaced)
+	{
+		var bases = new Dictionary<string, SyncBase>(_bases, StringComparer.Ordinal);
+		foreach (var record in replaced)
+		{
+			if (bases.TryGetValue(record.ItemId, out var b) && b.Original is null) bases[record.ItemId] = b with { Original = record };
+		}
+		return bases;
 	}
 
 	/// <summary>The secret key for a write: the held one or one unsealed with one Hello call, or, before the first save, made (and sealed) with one.</summary>
@@ -685,9 +1022,9 @@ public sealed class VaultStore : IDisposable
 		}
 	}
 
-	private static List<LoginRecord> LoadRecords(string path)
+	private static (List<LoginRecord> Records, Dictionary<string, SyncBase> Bases, string? BasesUser) LoadRecords(string path)
 	{
-		if (!File.Exists(path)) return [];
+		if (!File.Exists(path)) return ([], new(StringComparer.Ordinal), null);
 		var file = JsonSerializer.Deserialize<VaultFileContent>(File.ReadAllBytes(path), VaultJson.Options) ?? throw new InvalidDataException($"{path} is empty");
 		if (file.Format != Format) throw new InvalidDataException($"{path} is format {file.Format}; this Zing reads {Format}");
 		if (file.Items is null) throw new InvalidDataException($"{path} has no items list");
@@ -700,17 +1037,35 @@ public sealed class VaultStore : IDisposable
 			if (item.Version < 1) throw new InvalidDataException($"Item {item.ItemId} has version {item.Version}; versions start at 1");
 			if (item.Summary is null || item.Password is null || item.History is null || item.History.Any(h => h is null)) throw new InvalidDataException($"Item {item.ItemId} is missing a ciphertext");
 		}
-		return [.. file.Items];
+		var bases = new Dictionary<string, SyncBase>(StringComparer.Ordinal);
+		if (file.Sync is not { } sync) return ([.. file.Items], bases, null);
+		if (string.IsNullOrEmpty(sync.UserId) || sync.Bases is null) throw new InvalidDataException($"{path} has sync bases without their user");
+		foreach (var (id, b) in sync.Bases)
+		{
+			if (!ids.Contains(id)) throw new InvalidDataException($"{path} has a sync base for item {id}, which it doesn't hold");
+			if (b is null || b.Revision < 0) throw new InvalidDataException($"Item {id}'s sync base has no revision");
+			if (b.Original is { } original && (original.ItemId != id || original.Summary is null || original.Password is null || original.History is null || original.History.Any(h => h is null)))
+				throw new InvalidDataException($"Item {id}'s sync base isn't a copy of it");
+			bases[id] = b;
+		}
+		return ([.. file.Items], bases, sync.UserId);
 	}
 
-	private static List<QueuedChange> LoadQueue(string path)
+	private static (List<QueuedChange> Queued, SyncAccountFile? Account, bool SignedOut, SyncProgress? Progress) LoadSyncFile(string path)
 	{
-		if (!File.Exists(path)) return [];
+		if (!File.Exists(path)) return ([], null, false, null);
 		var file = JsonSerializer.Deserialize<SyncFileContent>(File.ReadAllBytes(path), VaultJson.Options) ?? throw new InvalidDataException($"{path} is empty");
 		if (file.Format != Format) throw new InvalidDataException($"{path} is format {file.Format}; this Zing reads {Format}");
 		if (file.Queued is null) throw new InvalidDataException($"{path} has no queued list");
 		if (file.Queued.Any(c => c is null || string.IsNullOrEmpty(c.ItemId))) throw new InvalidDataException($"{path} has a queued change without an item ID");
-		return [.. file.Queued];
+		if (file.Account is { } account && (string.IsNullOrEmpty(account.UserId) || account.Email is null || account.SealedRefresh is not { Length: > 0 }))
+			throw new InvalidDataException($"{path} has a sync account without its user, email or refresh token");
+		if (file.Progress is { } progress && (string.IsNullOrEmpty(progress.UserId) || progress.Cursor < 0 || progress.RevisionFloor < 0 || progress.ManifestFloor < 0))
+			throw new InvalidDataException($"{path} has sync progress without its user, or with a negative revision");
+		// A wrong-length hash would read as a rollback at the next sync, so it's an unreadable file instead (O4, Ruling 60).
+		if (file.Progress?.ManifestHash is { } hash && hash.Length != SHA256.HashSizeInBytes)
+			throw new InvalidDataException($"{path} has a manifest hash of {hash.Length} bytes, not a SHA-256");
+		return ([.. file.Queued], file.Account, file.SignedOut, file.Progress);
 	}
 
 	private Dictionary<string, SummaryPayload> DecryptSummaries()
@@ -726,8 +1081,6 @@ public sealed class VaultStore : IDisposable
 				var plain = VaultCrypto.Open(indexKey, record.Summary, new ItemAd(keys.VaultId, record.ItemId, record.Version, ItemPart.Summary));
 				var summary = JsonSerializer.Deserialize<SummaryPayload>(plain, VaultJson.Options) ?? throw new InvalidDataException($"Login {record.ItemId} has an empty summary");
 				CheckSummary(record, summary);
-				// Ruling 25: the tombstone flag is outside every ciphertext's associated data, so it counts only if the sealed summary is deleted too.
-				if (record.Tombstone && summary.DeletedAt is null) throw new VaultTamperedException($"Item {record.ItemId} is flagged as a tombstone but its sealed summary isn't deleted");
 				if (!record.Tombstone) summaries[record.ItemId] = summary;
 			}
 			return summaries;
@@ -738,22 +1091,45 @@ public sealed class VaultStore : IDisposable
 		}
 	}
 
+	/// <summary>The checks every summary passes, those that come from the server included.</summary>
 	private static void CheckSummary(LoginRecord record, SummaryPayload summary)
 	{
 		if (summary.Origin is null || summary.Username is null || summary.Title is null || summary.Note is null) throw new InvalidDataException($"Login {record.ItemId}'s summary is missing a field");
+		// Ruling 25, both ways (Ruling 56): the tombstone flag is outside every ciphertext's associated data, so it counts only if the
+		// sealed summary is a tombstone too. A flag on a login in Recently deleted would hide it, and a sealed tombstone with its flag
+		// cleared would pass as a login.
+		if (record.Tombstone != summary.Tombstone) throw new VaultTamperedException($"Item {record.ItemId}'s tombstone flag doesn't match its sealed summary");
+		if (summary.Tombstone)
+		{
+			if (summary.DeletedAt is null) throw new VaultTamperedException($"Tombstone {record.ItemId}'s sealed summary isn't deleted");
+			if (record.Password.Length != 0 || record.History.Length != 0 || summary.History is not { Count: 0 } || summary.PasswordHash is not null) throw new InvalidDataException($"Tombstone {record.ItemId} still holds a password");
+			return;
+		}
 		if (summary.NeverSave)
 		{
-			if (record.Password.Length != 0 || record.History.Length != 0 || summary.PasswordVersion != 0) throw new InvalidDataException($"Item {record.ItemId} is a \"never for this site\" mark but holds a password");
+			if (record.Password.Length != 0 || record.History.Length != 0 || summary.PasswordVersion != 0 || summary.PasswordHash is not null) throw new InvalidDataException($"Item {record.ItemId} is a \"never for this site\" mark but holds a password");
 			return;
 		}
 		if (summary.History is null || summary.History.Any(h => h is null)) throw new InvalidDataException($"Login {record.ItemId}'s summary has no history list");
 		if (summary.History.Count != record.History.Length) throw new InvalidDataException($"Login {record.ItemId}'s summary lists {summary.History.Count} old passwords but it holds {record.History.Length}");
 		if (summary.PasswordVersion < 1 || summary.PasswordVersion > record.Version) throw new InvalidDataException($"Login {record.ItemId}'s password is sealed at version {summary.PasswordVersion}, outside 1 to {record.Version}");
+		// Ruling 56 (amends Ruling 24): two ciphertexts can share a version (a merge keeps both new passwords of version v+1), so their
+		// associated data alone can't tell the password from an old one. The sealed summary names each ciphertext by its hash.
+		if (!CipherHash.Matches(summary.PasswordHash, record.Password)) throw new VaultTamperedException($"Login {record.ItemId}'s password isn't the one its sealed summary names");
+		for (var i = 0; i < record.History.Length; i++)
+		{
+			if (!CipherHash.Matches(summary.History[i].Hash, record.History[i])) throw new VaultTamperedException($"Login {record.ItemId}'s old password {i} isn't the one its sealed summary names");
+		}
 	}
 
-	private sealed record VaultFileContent(int Format, IReadOnlyList<LoginRecord> Items);
+	// Sync is absent from a vault.zing written before sync, which reads as no bases.
+	private sealed record VaultFileContent(int Format, IReadOnlyList<LoginRecord> Items, SyncBasesFile? Sync = null);
 
-	private sealed record SyncFileContent(int Format, IReadOnlyList<QueuedChange> Queued);
+	private sealed record SyncBasesFile(string UserId, Dictionary<string, SyncBase> Bases);
+
+	private sealed record SyncFileContent(int Format, IReadOnlyList<QueuedChange> Queued, SyncAccountFile? Account = null, bool SignedOut = false, SyncProgress? Progress = null);
+
+	private sealed record SyncAccountFile(string UserId, string Email, byte[] SealedRefresh);
 }
 
 /// <summary>What the summary ciphertext holds: the login's fields, and the version each password ciphertext was sealed under.</summary>
@@ -769,10 +1145,24 @@ internal sealed record SummaryPayload(
 	long PasswordVersion,
 	IReadOnlyList<HistoryPayload> History,
 	// A "never for this site" mark: a summary-only item, with no password and no history.
-	bool NeverSave = false)
+	bool NeverSave = false,
+	// A login purged 30 days after its delete: only DeletedAt is kept, and the record is flagged too (Ruling 25 checks both ways).
+	bool Tombstone = false,
+	// Goes up by one when a login purged meanwhile is made again from this PC's edit (Ruling 18), so it orders after its own tombstone.
+	long Generation = 0,
+	// The SHA-256 of the password's ciphertext (Ruling 56); null for an item with no password ("never" marks and tombstones).
+	byte[]? PasswordHash = null)
 {
-	public LoginSummary ToSummary(string id) => new(id, Origin, Username, Title, Note, CreatedAt, UpdatedAt, PasswordUpdatedAt, DeletedAt);
+	public LoginSummary ToSummary(string id) => new(id, Origin, Username, Title, Note, CreatedAt, UpdatedAt, PasswordUpdatedAt, DeletedAt, History.Count);
 }
 
-/// <summary>One old password: the version it was sealed under (as the password), and when it was replaced.</summary>
-internal sealed record HistoryPayload(long Version, long ReplacedAt);
+/// <summary>One old password: the version it was sealed under (as the password), when it was replaced, and its ciphertext's SHA-256 (Ruling 56).</summary>
+internal sealed record HistoryPayload(long Version, long ReplacedAt, byte[] Hash);
+
+/// <summary>How a sealed summary names a password ciphertext (Ruling 56): its SHA-256, so the server can't swap two that share a version.</summary>
+internal static class CipherHash
+{
+	public static byte[] Of(byte[] ciphertext) => SHA256.HashData(ciphertext);
+
+	public static bool Matches(byte[]? hash, byte[] ciphertext) => hash is { Length: SHA256.HashSizeInBytes } && CryptographicOperations.FixedTimeEquals(hash, SHA256.HashData(ciphertext));
+}

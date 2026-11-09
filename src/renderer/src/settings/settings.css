@@ -452,6 +452,10 @@
 	font-size: 12px;
 }
 
+.vault-history-toggle {
+	align-self: flex-start;
+}
+
 .vault-history-title {
 	color: var(--muted);
 	font-size: 11.5px;
@@ -476,4 +480,44 @@
 	padding-left: 18px;
 	color: var(--muted);
 	font-size: 11.5px;
+}
+
+.sync-setup,
+.sync-recovery {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	font-size: 12px;
+}
+
+.sync-strength,
+.sync-suggestion,
+.sync-recovery-saved {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.sync-strength {
+	color: var(--muted);
+	font-size: 11.5px;
+}
+
+.sync-strength meter {
+	width: 96px;
+}
+
+.sync-suggestion code,
+.sync-recovery-key {
+	font-family: var(--mono, ui-monospace, monospace);
+	font-size: 13px;
+	overflow-wrap: anywhere;
+}
+
+.sync-recovery-key {
+	padding: 8px 10px;
+	border-radius: 8px;
+	background: var(--surface-2, rgba(127, 127, 127, 0.12));
+	letter-spacing: 0.04em;
 }

@@ -13,7 +13,9 @@ public sealed record LoginSummary(
 	long UpdatedAt,
 	long PasswordUpdatedAt,
 	// The renderer tests deletedAt === null, so it must be an explicit null, not an absent key.
-	[property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] long? DeletedAt);
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] long? DeletedAt,
+	// How many earlier passwords the history holds, so the manage page can offer them without asking for the list per login.
+	int HistoryCount = 0);
 
 /// <summary>"Never for this site", kept per exact origin apart from the logins.</summary>
 public sealed record NeverSave(string Origin);

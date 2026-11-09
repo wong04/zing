@@ -201,6 +201,45 @@ public sealed class AccountTests : IDisposable
 	}
 
 	[Fact]
+	public void ChangingThePasswordNeedsTheCurrentOneAndOnlyTheNewOneSignsInAfterwards()
+	{
+		var dir = TempDir();
+		var s = Store(dir);
+		s.SignUp("jdoe", "Jane", "", "longenough1");
+
+		Assert.Equal(AccountErrorCode.WrongPassword, CodeOf(() => s.ChangePassword("wrong password", "anotherlong1")));
+		Assert.Equal(AccountErrorCode.WeakPassword, CodeOf(() => s.ChangePassword("longenough1", "short")));
+		s.ChangePassword("longenough1", "anotherlong1");
+
+		var again = Store(dir);
+		again.SignOut();
+		Assert.Equal(AccountErrorCode.WrongPassword, CodeOf(() => again.SignIn("longenough1")));
+		again.SignIn("anotherlong1");
+		Assert.True(again.State().SignedIn);
+	}
+
+	[Fact]
+	public void AGuestHasNoPasswordToChangeOrCheck()
+	{
+		var guest = Store(TempDir(), startAsGuest: true);
+
+		Assert.Equal(AccountErrorCode.NoAccount, CodeOf(() => guest.ChangePassword("longenough1", "anotherlong1")));
+		Assert.Equal(AccountErrorCode.NoAccount, CodeOf(() => guest.CheckPassword("longenough1")));
+	}
+
+	[Fact]
+	public void CheckingThePasswordLeavesASignedOutAccountSignedOut()
+	{
+		var s = Store(TempDir());
+		s.SignUp("jdoe", "Jane", "", "longenough1");
+		s.SignOut();
+
+		Assert.Equal(AccountErrorCode.WrongPassword, CodeOf(() => s.CheckPassword("wrong password")));
+		s.CheckPassword("longenough1");
+		Assert.False(s.State().SignedIn);
+	}
+
+	[Fact]
 	public void UpdatesTheProfileAndDeletingRemovesEveryFile()
 	{
 		var dir = TempDir();
@@ -370,7 +409,7 @@ public sealed class AccountTests : IDisposable
 		Assert.Equal("""{"status":"rejected","code":"no-account","message":"No account yet. Create one first."}""", JsonSerializer.Serialize(rejected, ZingJson.Options));
 
 		var ok = JsonSerializer.Serialize(s.Run(() => s.ContinueAsGuest()), ZingJson.Options);
-		Assert.Equal("""{"status":"ok","state":{"hasAccount":false,"signedIn":true,"needsPasswordReset":false,"requirePasswordOnLaunch":false,"profile":null}}""", ok);
+		Assert.Equal("""{"status":"ok","state":{"hasAccount":false,"signedIn":true,"needsPasswordReset":false,"requirePasswordOnLaunch":false,"profile":null,"passwordChangedElsewhere":false}}""", ok);
 	}
 
 	[Fact]

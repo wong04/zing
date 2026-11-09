@@ -1,0 +1,802 @@
+using System.Text.Json;
+using Zing.Core.Net;
+using Zing.Core.Sync;
+using Zing.Core.Tests.Vault;
+using Zing.Core.Vault;
+
+namespace Zing.Core.Tests.Sync;
+
+/// <summary>Settings' Turn on sync over the real bridge, against the local server; Google is the fake issuer's stand-in.</summary>
+public sealed class SyncBridgeTests : IDisposable
+{
+	private readonly string _dir = Directory.CreateTempSubdirectory("zing-syncbridge-").FullName;
+	private readonly LocalSyncServer _server = new();
+	private readonly VaultStore _vault;
+	private readonly LibraryStore _library = new(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+	private readonly List<ChromeApi> _apis = [];
+
+	private readonly FakeSealer _sealer = new();
+
+	public SyncBridgeTests() =>
+		_vault = new VaultStore(_dir, new FakeCipher(), _sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
+
+	public void Dispose()
+	{
+		foreach (var api in _apis) api.Dispose();
+		_vault.Dispose();
+		_server.Dispose();
+		Directory.Delete(_dir, recursive: true);
+	}
+
+	/// <summary>A Google sign-in the person never finishes: it waits until it is cancelled.</summary>
+	private sealed class NeverFinishedSignIn : IGoogleSignIn
+	{
+		public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public async Task<string> SignInAsync(CancellationToken cancellation)
+		{
+			Started.SetResult();
+			await Task.Delay(Timeout.Infinite, cancellation);
+			throw new InvalidOperationException("unreachable");
+		}
+	}
+
+	private sealed class FakeIssuerSignIn(LocalSyncServer server) : IGoogleSignIn
+	{
+		public int Calls { get; private set; }
+
+		public Task<string> SignInAsync(CancellationToken cancellation)
+		{
+			Calls++;
+			return server.MintIdTokenAsync();
+		}
+	}
+
+	private readonly FakeWindowHost _host = new();
+
+	private Bridge Api(SyncSetup? sync, VaultStore? vault = null, AccountStore? account = null)
+	{
+		var bridge = new Bridge();
+		_apis.Add(new ChromeApi(bridge, new AppServices(new SettingsStore(), _library, Address.FromDefaults(), new TickingClock(), account ?? Accounts.Guest(), new RelayConsent(), Vault: vault ?? _vault, Sync: sync), _host, "test"));
+		return bridge;
+	}
+
+	private List<SyncState> PushedStates() => [.. _host.Pushed.Where(p => p.Channel == "sync:state").Select(p => (SyncState)p.Payload!)];
+
+	private static string? Notice(JsonElement state) => state.TryGetProperty("notice", out var notice) ? notice.GetString() : null;
+
+	private SyncSetup Setup(IGoogleSignIn signIn) => new(_server.Address, signIn, _server.Handler());
+
+	private static async Task<JsonElement> Invoke(Bridge bridge, string channel, params object[] args)
+	{
+		var json = JsonSerializer.Serialize(new { kind = "invoke", id = 1, channel, args });
+		return JsonDocument.Parse(await bridge.HandleAsync(json)).RootElement;
+	}
+
+	private static JsonElement Value(JsonElement result)
+	{
+		if (!result.GetProperty("ok").GetBoolean()) throw new Xunit.Sdk.XunitException(result.GetProperty("error").ToString());
+		return result.GetProperty("value");
+	}
+
+	[Fact]
+	public async Task TurningOnSyncSignsInAndShowsTheEmail()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)));
+		Assert.False(Value(await Invoke(bridge, "sync:get")).GetProperty("signedIn").GetBoolean());
+
+		var state = Value(await Invoke(bridge, "sync:sign-in"));
+
+		Assert.True(state.GetProperty("signedIn").GetBoolean());
+		Assert.Equal(LocalSyncServer.Email, state.GetProperty("email").GetString());
+		Assert.Equal(LocalSyncServer.Email, _vault.SyncAccount()!.Email);
+		Assert.Equal(LocalSyncServer.Email, Value(await Invoke(bridge, "sync:get")).GetProperty("email").GetString());
+	}
+
+	[Fact]
+	public async Task SigningOutRevokesOnTheServerAndForgetsTheAccount()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)));
+		Value(await Invoke(bridge, "sync:sign-in"));
+
+		var state = Value(await Invoke(bridge, "sync:sign-out"));
+
+		Assert.False(state.GetProperty("signedIn").GetBoolean());
+		Assert.Null(Notice(state));
+		Assert.Null(_vault.SyncAccount());
+		Assert.Equal(1, _server.Wire.Count("POST /auth/signout"));
+	}
+
+	[Fact]
+	public async Task SigningOutWithTheServerDownForgetsTheAccountAndSaysTheServerCopyExpires()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		_server.Wire.Down = true;
+
+		var state = Value(await Invoke(bridge, "sync:sign-out"));
+
+		Assert.False(state.GetProperty("signedIn").GetBoolean());
+		Assert.Equal("kept-on-server", Notice(state));
+		Assert.Null(_vault.SyncAccount());
+	}
+
+	[Fact]
+	public async Task ASignInTheServerEndedSaysSoUntilTheNextSignIn()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		_vault.MarkSyncSignedOut();
+
+		Assert.Equal("signed-out", Notice(Value(await Invoke(bridge, "sync:get"))));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Assert.Null(Notice(Value(await Invoke(bridge, "sync:get"))));
+	}
+
+	[Fact]
+	public async Task AnUnreadableSignInIsReportedAndSigningInAgainReplacesIt()
+	{
+		_vault.SaveSyncAccount(new SyncAccount("user", "old@example.test", "old"));
+		using var foreign = new VaultStore(_dir, new FakeCipher(foreign: true), new FakeSealer(), new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), foreign);
+
+		var state = Value(await Invoke(bridge, "sync:get"));
+		Assert.False(state.GetProperty("signedIn").GetBoolean());
+		Assert.Equal("unreadable", Notice(state));
+
+		var again = Value(await Invoke(bridge, "sync:sign-in"));
+		Assert.True(again.GetProperty("signedIn").GetBoolean());
+		using var readable = new VaultStore(_dir, new FakeCipher(), new FakeSealer(), new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
+		Assert.Equal(LocalSyncServer.Email, readable.SyncAccount()!.Email);
+	}
+
+	[Fact]
+	public async Task CancellingASignInEndsItWithoutAnError()
+	{
+		var signIn = new NeverFinishedSignIn();
+		var bridge = Api(Setup(signIn));
+
+		var signingIn = Invoke(bridge, "sync:sign-in");
+		await signIn.Started.Task;
+		Assert.True((await Invoke(bridge, "sync:cancel-sign-in")).GetProperty("ok").GetBoolean());
+		var state = Value(await signingIn);
+
+		Assert.False(state.GetProperty("signedIn").GetBoolean());
+		Assert.Null(_vault.SyncAccount());
+	}
+
+	[Fact]
+	public async Task EveryChangeIsPushedToTheWindow()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)));
+
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:sign-out"));
+
+		var pushed = PushedStates();
+		Assert.Contains(pushed, s => s.SignedIn && s.Email == LocalSyncServer.Email);
+		Assert.False(pushed[^1].SignedIn);
+	}
+
+	[Fact]
+	public async Task ABuildWithoutAGoogleClientSaysSyncIsNotSetUp()
+	{
+		var bridge = Api(sync: null);
+
+		var error = (await Invoke(bridge, "sync:sign-in")).GetProperty("error");
+
+		Assert.Equal(nameof(SyncNotSetUpException), error.GetProperty("name").GetString());
+		Assert.Equal("Sync isn't set up in this build of Zing", error.GetProperty("message").GetString());
+	}
+
+	[Fact]
+	public async Task SigningInWhileSignedInAsksGoogleAgain()
+	{
+		var signIn = new FakeIssuerSignIn(_server);
+		var bridge = Api(Setup(signIn));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		var first = _vault.SyncAccount()!.Refresh;
+
+		Value(await Invoke(bridge, "sync:sign-in"));
+
+		Assert.Equal(2, signIn.Calls);
+		Assert.NotEqual(first, _vault.SyncAccount()!.Refresh);
+	}
+
+	/// <summary>A five-word passphrase the generator made (passwordStrength.vectors.json).</summary>
+	private const string Strong = "teaching-focused-onward-activist-steel";
+
+	private static AccountStore AccountWith(string password)
+	{
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-account-").FullName, new FakeCipher());
+		account.SignUp("ada", "Ada", "ada@example.test", password);
+		return account;
+	}
+
+	private static bool RecoveryPending(JsonElement state) => state.GetProperty("recoveryPending").GetBoolean();
+
+	[Fact]
+	public async Task TurningOnGivesTheRecoveryKeyOnceAndSyncWaitsUntilItIsConfirmedSaved()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Assert.False(Value(await Invoke(bridge, "sync:get")).GetProperty("on").GetBoolean());
+
+		var turnedOn = Value(await Invoke(bridge, "sync:turn-on", Strong));
+
+		var recovery = turnedOn.GetProperty("recoveryKey").GetString()!;
+		Assert.Matches("^[A-Z2-7]{4}(-[A-Z2-7]{4}){5}-[A-Z2-7]{2}$", recovery);
+		var state = Value(await Invoke(bridge, "sync:get"));
+		Assert.True(state.GetProperty("on").GetBoolean());
+		Assert.True(RecoveryPending(state));
+		Assert.Contains(PushedStates(), s => s.On && s.RecoveryPending);
+
+		var confirmed = Value(await Invoke(bridge, "sync:confirm-recovery-saved"));
+		Assert.False(RecoveryPending(confirmed));
+		Assert.False(PushedStates()[^1].RecoveryPending);
+	}
+
+	[Fact]
+	public async Task ShowingTheRecoveryKeyAsksHelloAndACancelRevealsNothing()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		var recovery = Value(await Invoke(bridge, "sync:turn-on", Strong)).GetProperty("recoveryKey").GetString()!;
+		_vault.ForgetSecretKey();
+		_sealer.Result = HelloResult.Cancel;
+
+		var cancelled = await Invoke(bridge, "sync:show-recovery");
+
+		Assert.False(cancelled.GetProperty("ok").GetBoolean());
+		Assert.Equal(nameof(HelloCancelledException), cancelled.GetProperty("error").GetProperty("name").GetString());
+		Assert.DoesNotContain(recovery, cancelled.ToString());
+		Assert.DoesNotContain(recovery.Replace("-", ""), cancelled.ToString());
+
+		_sealer.Result = HelloResult.Pass;
+		Assert.Equal(recovery, Value(await Invoke(bridge, "sync:show-recovery")).GetProperty("recoveryKey").GetString());
+	}
+
+	[Fact]
+	public async Task AWeakPasswordIsRefusedWithItsOwnError()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith("correct horse"));
+		Value(await Invoke(bridge, "sync:sign-in"));
+
+		var refused = await Invoke(bridge, "sync:turn-on", "correct horse");
+
+		Assert.Equal(nameof(SyncPasswordTooWeakException), refused.GetProperty("error").GetProperty("name").GetString());
+		Assert.False(Value(await Invoke(bridge, "sync:get")).GetProperty("on").GetBoolean());
+	}
+
+	[Fact]
+	public async Task ChangingThePasswordOverTheBridgeIsRefusedAsAnOutcomeWhenTheCurrentOneIsWrong()
+	{
+		var account = AccountWith("correct horse");
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+
+		var refused = Value(await Invoke(bridge, "account:change-password", "wrong password", Strong));
+		Assert.Equal("rejected", refused.GetProperty("status").GetString());
+		Assert.Equal("wrong-password", refused.GetProperty("code").GetString());
+
+		Assert.Equal("ok", Value(await Invoke(bridge, "account:change-password", "correct horse", Strong)).GetProperty("status").GetString());
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task SignedOutTheRecoveryKeyIsStillAskedForUntilItIsConfirmedSaved()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+
+		var signedOut = Value(await Invoke(bridge, "sync:sign-out"));
+
+		Assert.False(signedOut.GetProperty("on").GetBoolean());
+		Assert.True(RecoveryPending(signedOut));
+		Assert.True(RecoveryPending(Value(await Invoke(bridge, "sync:get"))));
+	}
+
+	/// <summary>A vault that follows passwordAutofill, in its own folder, as Zing builds it (Program.OpenVault).</summary>
+	private sealed class Switched : IDisposable
+	{
+		public string Dir { get; } = Directory.CreateTempSubdirectory("zing-syncbridge-switched-").FullName;
+		public SettingsStore Settings { get; } = new();
+		public VaultSwitch Vaults { get; }
+
+		/// <param name="unreadable">Told when the vault's files can't be read; null fails the test.</param>
+		public Switched(FakeSealer sealer, bool on = true, Action<VaultFileException>? unreadable = null, Action<string>? beforeOpen = null)
+		{
+			beforeOpen?.Invoke(Dir);
+			Settings.Set("passwordAutofill", on);
+			Vaults = new VaultSwitch(Settings, () => new VaultStore(Dir, new FakeCipher(), sealer, new TickingClock(), new ManualScheduler(), new FakeSessionEvents()),
+				unreadable ?? (e => throw new Xunit.Sdk.XunitException($"the vault couldn't be read: {e}")), () => File.Exists(Path.Combine(Dir, VaultStore.VaultFileName)),
+				() => VaultKeys.SyncOnDisk(Path.Combine(Dir, VaultStore.KeysFileName)));
+		}
+
+		public void Dispose()
+		{
+			Vaults.Dispose();
+			Directory.Delete(Dir, recursive: true);
+		}
+	}
+
+	private Bridge Api(SyncSetup sync, Switched switched, AccountStore account)
+	{
+		var bridge = new Bridge();
+		_apis.Add(new ChromeApi(bridge, new AppServices(switched.Settings, _library, Address.FromDefaults(), new TickingClock(), account, new RelayConsent(), Switch: switched.Vaults, Sync: sync), _host, "test"));
+		return bridge;
+	}
+
+	[Fact]
+	public async Task WithTheVaultOffAndSyncOnThePasswordChangeAsksForTheVaultFirst()
+	{
+		using var switched = new Switched(_sealer);
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), switched, account);
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		switched.Settings.Set("passwordAutofill", false);
+
+		var refused = await Invoke(bridge, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction");
+
+		Assert.Equal(nameof(SyncNeedsTheVaultException), refused.GetProperty("error").GetProperty("name").GetString());
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task WithTheVaultOffAndSyncNeverOnThePasswordChangesHere()
+	{
+		using var switched = new Switched(_sealer);
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), switched, account);
+		await switched.Vaults.Current!.SaveAsync(new NewLogin("https://bank.example.test", "ada", "pw", "", ""));
+		switched.Settings.Set("passwordAutofill", false);
+
+		Assert.Equal("ok", Value(await Invoke(bridge, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction")).GetProperty("status").GetString());
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+	}
+
+	[Fact]
+	public async Task TurningTheVaultOffDisposesItsSyncClient()
+	{
+		using var switched = new Switched(_sealer);
+		var app = new AppServices(switched.Settings, _library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), Switch: switched.Vaults, Sync: Setup(new FakeIssuerSignIn(_server)));
+		var first = app.SyncClients!.For(switched.Vaults.Current!);
+
+		switched.Settings.Set("passwordAutofill", false);
+
+		await Assert.ThrowsAsync<ObjectDisposedException>(() => first.SignOutAsync(TestContext.Current.CancellationToken));
+		switched.Settings.Set("passwordAutofill", true);
+		Assert.NotSame(first, app.SyncClients.For(switched.Vaults.Current!));
+		app.SyncClients.Dispose();
+	}
+
+	[Fact]
+	public async Task OnAFreshProfileRestoreFromSyncTurnsTheVaultOnAndKeepsTheSignInOnlyOnceTheAccountIsMade()
+	{
+		var a = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		await _vault.SaveAsync(new NewLogin("https://bank.example.test", "ada", "bank-secret", "Bank", ""));
+		Value(await Invoke(a, "sync:sign-in"));
+		Value(await Invoke(a, "sync:turn-on", Strong));
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+
+		var signedIn = Value(await Invoke(b, "sync:restore-sign-in"));
+		var wrong = Value(await Invoke(b, "sync:restore-password", "labour-muzzle-medici-rushes-fiction"));
+		Assert.False(account.State().HasAccount);
+		Assert.False(fresh.Settings.Get("passwordAutofill")!.GetValue<bool>());
+		Assert.Null(fresh.Vaults.Current);
+		var restored = Value(await Invoke(b, "sync:restore-password", Strong));
+
+		Assert.True(signedIn.GetProperty("signedIn").GetBoolean());
+		Assert.True(fresh.Settings.Get("passwordAutofill")!.GetValue<bool>());
+		Assert.Equal("wrong-password", wrong.GetProperty("code").GetString());
+		Assert.Equal("ok", restored.GetProperty("status").GetString());
+		Assert.True(restored.GetProperty("state").GetProperty("signedIn").GetBoolean());
+		account.CheckPassword(Strong);
+		Assert.Equal(_vault.VaultId, fresh.Vaults.Current!.VaultId);
+		Assert.Equal(_vault.SyncAccount()!.UserId, fresh.Vaults.Current.SyncAccount()!.UserId);
+	}
+
+	[Fact]
+	public async Task ARestoreStepWhoseRefreshAnswerIsLostIsRetriedWithinTwoMinutesSoNoPcIsSignedOut()
+	{
+		var clock = new ServerClock();
+		using var server = new LocalSyncServer(clock);
+		var a = Api(new SyncSetup(server.Address, new FakeIssuerSignIn(server), server.Handler()), account: AccountWith(Strong));
+		Value(await Invoke(a, "sync:sign-in"));
+		Value(await Invoke(a, "sync:turn-on", Strong));
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var scheduler = new TestScheduler();
+		var bridge = new Bridge();
+		var api = new ChromeApi(bridge, new AppServices(fresh.Settings, _library, Address.FromDefaults(), new TickingClock(), account, new RelayConsent(), Switch: fresh.Vaults, Sync: new SyncSetup(server.Address, new FakeIssuerSignIn(server), server.Handler()), SyncScheduler: scheduler), _host, "test");
+		_apis.Add(api);
+		Value(await Invoke(bridge, "sync:restore-sign-in"));
+
+		// A step long after the Google sign-in needs a refresh, and its answer is lost (I3).
+		server.Wire.SpoilNext = 1;
+		server.Wire.LoseNextRefreshAnswer = true;
+		Assert.False((await Invoke(bridge, "sync:restore-password", Strong)).GetProperty("ok").GetBoolean());
+		scheduler.Fire(SyncEngine.RefreshRetry);
+		await api.RestoreRefreshRetrying;
+		// The person's next try comes after the server's 2-minute retry window.
+		clock.Advance(TimeSpan.FromMinutes(3));
+		server.Wire.SpoilNext = 1;
+		var restored = Value(await Invoke(bridge, "sync:restore-password", Strong));
+
+		Assert.Equal("ok", restored.GetProperty("status").GetString());
+		Assert.False(fresh.Vaults.Current!.SyncSignedOutByServer);
+		Assert.Equal(3, server.Wire.Refreshes);
+	}
+
+	/// <summary>A turns sync on under <see cref="Strong"/>; answers its recovery key.</summary>
+	private async Task<string> TurnOnElsewhereAsync()
+	{
+		var a = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		Value(await Invoke(a, "sync:sign-in"));
+		return Value(await Invoke(a, "sync:turn-on", Strong)).GetProperty("recoveryKey").GetString()!;
+	}
+
+	[Fact]
+	public async Task AFailedRestoreOverAnUnreadableVaultLeavesTheSettingOn()
+	{
+		await TurnOnElsewhereAsync();
+		using var broken = new Switched(_sealer, on: true, unreadable: _ => { }, beforeOpen: dir => File.WriteAllText(Path.Combine(dir, VaultStore.VaultFileName), "not a vault"));
+		Assert.True(broken.Vaults.Unreadable);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), broken, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+
+		var refused = await Invoke(b, "sync:restore-password", Strong);
+
+		Assert.False(refused.GetProperty("ok").GetBoolean());
+		Assert.True(broken.Settings.Get("passwordAutofill")!.GetValue<bool>());
+		Assert.False(account.State().HasAccount);
+	}
+
+	[Fact]
+	public async Task ASecondRestoreSignInRevokesTheOneItReplaces()
+	{
+		await TurnOnElsewhereAsync();
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+		var signOuts = _server.Wire.Count("POST /auth/signout");
+
+		Value(await Invoke(b, "sync:restore-sign-in"));
+
+		// The revoke runs in the background (N6).
+		var waited = System.Diagnostics.Stopwatch.StartNew();
+		while (_server.Wire.Count("POST /auth/signout") == signOuts && waited.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(20, TestContext.Current.CancellationToken);
+		Assert.Equal(signOuts + 1, _server.Wire.Count("POST /auth/signout"));
+		Assert.Equal("ok", Value(await Invoke(b, "sync:restore-password", Strong)).GetProperty("status").GetString());
+	}
+
+	[Fact]
+	public async Task ARestoreSignInWhileAStepRunsIsRefused()
+	{
+		await TurnOnElsewhereAsync();
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+		var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		_server.Wire.BeforeSend = async line =>
+		{
+			if (line != "GET /keys" || reached.Task.IsCompleted) return;
+			reached.SetResult();
+			await release.Task;
+		};
+
+		var step = Invoke(b, "sync:restore-password", Strong);
+		await reached.Task;
+		var signIn = await Invoke(b, "sync:restore-sign-in");
+		release.SetResult();
+
+		Assert.Equal(nameof(SyncRestoreBusyException), signIn.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal("ok", Value(await step).GetProperty("status").GetString());
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task AFailureAfterTheAccountIsMadeLeavesTheVaultOn()
+	{
+		await TurnOnElsewhereAsync();
+		using var fresh = new Switched(_sealer, on: false);
+		// The sync.json write that keeps the restore's sign-in fails: its temp file's name is taken by a folder.
+		Directory.CreateDirectory(Path.Combine(fresh.Dir, $"{VaultStore.SyncFileName}.{Environment.ProcessId}.tmp"));
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+
+		var failed = await Invoke(b, "sync:restore-password", Strong);
+
+		Assert.False(failed.GetProperty("ok").GetBoolean());
+		account.CheckPassword(Strong);
+		Assert.True(fresh.Settings.Get("passwordAutofill")!.GetValue<bool>());
+	}
+
+	[Fact]
+	public async Task ASecondRestoreStepWhileOneRunsIsRefused()
+	{
+		await TurnOnElsewhereAsync();
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+		var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		_server.Wire.BeforeSend = async line =>
+		{
+			if (line != "GET /keys" || reached.Task.IsCompleted) return;
+			reached.SetResult();
+			await release.Task;
+		};
+
+		var first = Invoke(b, "sync:restore-password", Strong);
+		await reached.Task;
+		var second = await Invoke(b, "sync:restore-password", Strong);
+		release.SetResult();
+
+		Assert.Equal(nameof(SyncRestoreBusyException), second.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal("ok", Value(await first).GetProperty("status").GetString());
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task ARecoveryKeyRestoreWaitsForANewPasswordBeforeTheAccountIsMade()
+	{
+		var a = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		Value(await Invoke(a, "sync:sign-in"));
+		var recovery = Value(await Invoke(a, "sync:turn-on", Strong)).GetProperty("recoveryKey").GetString()!;
+		using var fresh = new Switched(_sealer, on: false);
+		var account = new AccountStore(Directory.CreateTempSubdirectory("zing-syncbridge-fresh-").FullName, new FakeCipher());
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), fresh, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+
+		var mistyped = await Invoke(b, "sync:restore-recovery-key", recovery[..^1]);
+		Assert.True((await Invoke(b, "sync:restore-recovery-key", recovery)).GetProperty("ok").GetBoolean());
+		Assert.False(account.State().HasAccount);
+		Assert.False(fresh.Settings.Get("passwordAutofill")!.GetValue<bool>());
+		Assert.Null(fresh.Vaults.Current);
+		var set = Value(await Invoke(b, "sync:restore-new-password", "labour-muzzle-medici-rushes-fiction"));
+
+		Assert.Equal(nameof(RecoveryKeyFormatException), mistyped.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal("ok", set.GetProperty("status").GetString());
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+	}
+
+	[Fact]
+	public async Task SigningInAfterAPasswordChangedElsewhereChecksTheNewPasswordByUnwrapping()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		var stored = _vault.SyncKeys!;
+		using (var keys = await _vault.KeyMaterialAsync())
+		{
+			var newer = SyncKeysBlob.Parse(stored.Blob, stored.Version).WithPassword(keys, "labour-muzzle-medici-rushes-fiction", stored.Version + 1).ToBytes();
+			_vault.MarkPasswordChangedElsewhere(newer, stored.Version + 1);
+		}
+		SyncRestore.AskIfPasswordChangedElsewhere(account, _vault);
+
+		var old = Value(await Invoke(bridge, "account:sign-in", Strong));
+		var signedIn = Value(await Invoke(bridge, "account:sign-in", "labour-muzzle-medici-rushes-fiction"));
+
+		Assert.Equal("wrong-password", old.GetProperty("code").GetString());
+		Assert.Equal("ok", signedIn.GetProperty("status").GetString());
+		Assert.False(signedIn.GetProperty("state").GetProperty("passwordChangedElsewhere").GetBoolean());
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+		Assert.Equal(stored.Version + 1, _vault.SyncKeys!.Version);
+	}
+
+	[Fact]
+	public async Task WithSyncOnAPasswordResetNeedsTheRecoveryKey()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+
+		var refused = await Invoke(bridge, "account:reset-password", "labour-muzzle-medici-rushes-fiction");
+
+		Assert.Equal(nameof(SyncNeedsRecoveryKeyException), refused.GetProperty("error").GetProperty("name").GetString());
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task WithSyncOnTheAccountCanNeitherBeDeletedNorMadeAgain()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+
+		var deleted = await Invoke(bridge, "account:delete");
+		var signedUp = await Invoke(bridge, "account:sign-up", "bob", "Bob", "bob@example.test", "a-new-local-password");
+
+		Assert.Equal(nameof(SyncIsOnException), deleted.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal(nameof(SyncIsOnException), signedUp.GetProperty("error").GetProperty("name").GetString());
+		Assert.Equal("ada", account.State().Profile!.Username);
+		account.CheckPassword(Strong);
+	}
+
+	[Fact]
+	public async Task WithTheVaultOffAndSyncOnTheAccountIsNotDeletedOrMadeAndTheRefusalSaysToTurnTheVaultOnFirst()
+	{
+		using var switched = new Switched(_sealer);
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), switched, account);
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		switched.Settings.Set("passwordAutofill", false);
+
+		var deleted = (await Invoke(bridge, "account:delete")).GetProperty("error");
+		var signedUp = (await Invoke(bridge, "account:sign-up", "bob", "Bob", "bob@example.test", "a-new-local-password")).GetProperty("error");
+
+		// Turn off sync on this PC shows only with the vault on (Ruling 69).
+		foreach (var refused in new[] { deleted, signedUp })
+		{
+			Assert.Equal(nameof(SyncIsOnWithTheVaultOffException), refused.GetProperty("name").GetString());
+			Assert.EndsWith("Sync is on for this PC. Turn the password vault on, then Turn off sync on this PC.", refused.GetProperty("message").GetString());
+		}
+		Assert.Equal("ada", account.State().Profile!.Username);
+	}
+
+	[Fact]
+	public async Task TurningSyncOffOnThisPcKeepsTheLoginsForgetsTheSyncStateAndLetsTheAccountBeDeleted()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+		var id = await _vault.SaveAsync(new NewLogin("https://bank.example.test", "ada", "bank-secret", "Bank", ""));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		var user = _vault.SyncAccount()!.UserId;
+		Assert.True(_vault.SyncProgressFor(user).RevisionFloor > 0);
+
+		var off = Value(await Invoke(bridge, "sync:turn-off"));
+
+		Assert.False(off.GetProperty("signedIn").GetBoolean());
+		Assert.False(off.GetProperty("keysHere").GetBoolean());
+		Assert.Equal(1, _server.Wire.Count("POST /auth/signout"));
+		Assert.Null(_vault.SyncKeys);
+		Assert.Null(_vault.PendingSyncKeys);
+		Assert.Null(_vault.SyncAccount());
+		Assert.False(VaultKeys.SyncOnDisk(Path.Combine(_dir, VaultStore.KeysFileName)));
+		var sync = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(_dir, "sync.json")))!;
+		Assert.Null(sync["progress"]);
+		Assert.Null(sync["account"]);
+		Assert.Null(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(_dir, VaultStore.VaultFileName)))!["sync"]);
+		Assert.Equal(0, _vault.SyncProgressFor(user).RevisionFloor);
+		Assert.Equal("bank-secret", await _vault.PasswordAsync(id));
+		Assert.Equal(id, Assert.Single(_vault.Unsent()).Record.ItemId);
+		// The server copy stays for the other PCs.
+		Assert.Equal(1, _server.Wire.Count("POST /changes"));
+
+		Assert.Equal("ok", Value(await Invoke(bridge, "account:delete")).GetProperty("status").GetString());
+		Assert.Null(account.State().Profile);
+	}
+
+	[Fact]
+	public async Task AfterTurningSyncOffTurningItOnAgainSaysToRestoreAndTheRestoreKeepsThisPcsAccountAndLogins()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+		var id = await _vault.SaveAsync(new NewLogin("https://bank.example.test", "ada", "bank-secret", "Bank", ""));
+		var vaultId = _vault.VaultId;
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		Value(await Invoke(bridge, "sync:turn-off"));
+		Value(await Invoke(bridge, "sync:sign-in"));
+
+		var again = (await Invoke(bridge, "sync:turn-on", Strong)).GetProperty("error");
+
+		Assert.Equal(nameof(SyncAlreadySetUpForThisVaultException), again.GetProperty("name").GetString());
+		Assert.EndsWith("This Google account already syncs this vault from before sync was turned off here. To turn it on again, sign out of Zing, then choose Restore from sync on the sign-in screen.", again.GetProperty("message").GetString());
+
+		// The server's keys carry this vault's ID, bound in their wraps' associated data, so they can only have come from here (Ruling 70).
+		Value(await Invoke(bridge, "sync:restore-sign-in"));
+		var restored = Value(await Invoke(bridge, "sync:restore-password", Strong));
+
+		Assert.Equal("ok", restored.GetProperty("status").GetString());
+		account.CheckPassword(Strong);
+		Assert.Equal("ada", account.State().Profile!.Username);
+		Assert.Equal(vaultId, _vault.VaultId);
+		Assert.NotNull(_vault.SyncKeys);
+		Assert.Equal("bank-secret", await _vault.PasswordAsync(id));
+	}
+
+	[Fact]
+	public async Task ARestoreOverThisPcsAccountFromAnotherVaultsKeysIsStillRefused()
+	{
+		await TurnOnElsewhereAsync();
+		const string bobPassword = "violet-anchor-pebble-harbour";
+		using var other = new Switched(_sealer);
+		await other.Vaults.Current!.SaveAsync(new NewLogin("https://shop.example.test", "bob", "shop-secret", "Shop", ""));
+		Assert.NotEqual(_vault.VaultId, other.Vaults.Current.VaultId);
+		var account = AccountWith(bobPassword);
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), other, account);
+		Value(await Invoke(b, "sync:restore-sign-in"));
+
+		var refused = (await Invoke(b, "sync:restore-password", Strong)).GetProperty("error");
+
+		Assert.Equal(nameof(SyncRestoreOverAnotherAccountException), refused.GetProperty("name").GetString());
+		account.CheckPassword(bobPassword);
+		Assert.Null(other.Vaults.Current.SyncKeys);
+	}
+
+	[Fact]
+	public async Task WithTheVaultUnreadableAndSyncOnTheRefusalSaysTheVaultCantBeRead()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		using var broken = new Switched(_sealer, on: true, unreadable: _ => { }, beforeOpen: dir =>
+		{
+			File.Copy(Path.Combine(_dir, VaultStore.KeysFileName), Path.Combine(dir, VaultStore.KeysFileName));
+			File.WriteAllText(Path.Combine(dir, VaultStore.VaultFileName), "not a vault");
+		});
+		Assert.True(broken.Vaults.Unreadable);
+		Assert.True(broken.Vaults.SyncOnDisk);
+		var account = AccountWith(Strong);
+		var b = Api(Setup(new FakeIssuerSignIn(_server)), broken, account);
+
+		var deleted = (await Invoke(b, "account:delete")).GetProperty("error");
+
+		// The vault is on, so "turn the vault on" would name a switch that already is (N2 of the final re-review).
+		Assert.Equal(nameof(SyncIsOnWithTheVaultUnreadableException), deleted.GetProperty("name").GetString());
+		Assert.EndsWith("Sync is on for this PC, but its password vault can't be read, so sync can't be turned off here.", deleted.GetProperty("message").GetString());
+		Assert.Equal("ada", account.State().Profile!.Username);
+	}
+
+	[Fact]
+	public async Task WithSyncNeverOnTheAccountIsDeleted()
+	{
+		var account = AccountWith(Strong);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+
+		Assert.Equal("ok", Value(await Invoke(bridge, "account:delete")).GetProperty("status").GetString());
+		Assert.Null(account.State().Profile);
+	}
+
+	[Fact]
+	public async Task APasswordChangeInOneWindowWaitsForATurnOnInAnotherAndIsSynced()
+	{
+		var account = AccountWith(Strong);
+		var app = new AppServices(new SettingsStore(), _library, Address.FromDefaults(), new TickingClock(), account, new RelayConsent(), Vault: _vault, Sync: Setup(new FakeIssuerSignIn(_server)));
+		var first = new Bridge();
+		var second = new Bridge();
+		_apis.Add(new ChromeApi(first, app, _host, "first"));
+		_apis.Add(new ChromeApi(second, app, _host, "second"));
+		Value(await Invoke(first, "sync:sign-in"));
+		var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var held = 0;
+		_sealer.Prompting = async () =>
+		{
+			if (Interlocked.Exchange(ref held, 1) == 1) return;
+			reached.SetResult();
+			await release.Task;
+		};
+		var turnOn = Task.Run(() => Invoke(first, "sync:turn-on", Strong), TestContext.Current.CancellationToken);
+		await reached.Task;
+
+		var change = Task.Run(() => Invoke(second, "account:change-password", Strong, "labour-muzzle-medici-rushes-fiction"), TestContext.Current.CancellationToken);
+		await SyncKeys.QueuedBehind(_vault).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+		Assert.False(change.IsCompleted);
+		release.SetResult();
+		Value(await turnOn);
+
+		Assert.Equal("ok", Value(await change).GetProperty("status").GetString());
+		account.CheckPassword("labour-muzzle-medici-rushes-fiction");
+		var client = app.SyncClients!.For(_vault);
+		var served = (await client.GetKeysAsync(TestContext.Current.CancellationToken))!;
+		using var opened = SyncKeysBlob.Parse(served.Blob, served.Version).UnwrapWithPassword("labour-muzzle-medici-rushes-fiction");
+		app.SyncClients.Dispose();
+	}
+}

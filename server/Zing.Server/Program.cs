@@ -24,7 +24,7 @@ else
 	builder.Services.AddSingleton<ISigningKeySource>(provider => new GoogleKeySource(provider.GetRequiredService<TimeProvider>()));
 }
 builder.Services.AddSingleton<IGoogleTokenValidator>(provider =>
-	new GoogleTokenValidator(provider.GetRequiredService<ISigningKeySource>(), config.GoogleClientId));
+	new GoogleTokenValidator(provider.GetRequiredService<ISigningKeySource>(), config.GoogleClientId, provider.GetRequiredService<TimeProvider>()));
 
 // Behind Railway's proxy the client address arrives in X-Forwarded-For; trust only the last hop, which the proxy appends.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
@@ -46,6 +46,7 @@ app.UseForwardedHeaders();
 app.UseRateLimiter();
 app.MapAuth();
 app.MapSync();
+if (config.FakeGoogle) app.MapFakeGoogle();
 app.Run();
 
 public partial class Program;

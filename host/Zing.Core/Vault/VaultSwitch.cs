@@ -13,13 +13,16 @@ public sealed class VaultSwitch : IDisposable
 	private readonly Action<VaultFileException>? _unreadable;
 	private readonly IDisposable? _subscription;
 	private readonly Func<bool>? _filesExist;
+	private readonly Func<bool>? _syncOnDisk;
 
 	/// <param name="open">Opens the store; throws <see cref="VaultFileException"/> when its files can't be read.</param>
 	/// <param name="unreadable">Told when an open failed.</param>
 	/// <param name="filesExist">Whether the vault file is on disk, for the times no store is open.</param>
-	public VaultSwitch(SettingsStore settings, Func<VaultStore> open, Action<VaultFileException> unreadable, Func<bool>? filesExist = null)
+	/// <param name="syncOnDisk">Whether keys.bin holds sync keys, for the times no store is open (<see cref="VaultKeys.SyncOnDisk"/>).</param>
+	public VaultSwitch(SettingsStore settings, Func<VaultStore> open, Action<VaultFileException> unreadable, Func<bool>? filesExist = null, Func<bool>? syncOnDisk = null)
 	{
 		_filesExist = filesExist;
+		_syncOnDisk = syncOnDisk;
 		_open = open;
 		_unreadable = unreadable;
 		Follow(On(settings.Get(Setting)));
@@ -45,6 +48,9 @@ public sealed class VaultSwitch : IDisposable
 
 	/// <summary>The vault's files are on disk, whatever the setting says, found without opening the store. An unreadable vault has files by definition.</summary>
 	public bool FilesExist => Unreadable || Current is { Records.Count: > 0 } || (_filesExist?.Invoke() ?? false);
+
+	/// <summary>This PC turned sync on (keys.bin holds its keys, stored or pending), found without opening the store when it's off.</summary>
+	public bool SyncOnDisk => Current is { } open ? open.SyncKeys is not null || open.PendingSyncKeys is not null : _syncOnDisk?.Invoke() ?? false;
 
 	/// <summary>The setting is on but the vault's files couldn't be read.</summary>
 	public bool Unreadable { get; private set; }

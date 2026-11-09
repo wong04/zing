@@ -8,6 +8,7 @@ public sealed class DispatcherScheduler(DispatcherQueue dispatcher) : IScheduler
 {
 	public IDisposable Schedule(TimeSpan delay, Action action)
 	{
+		if (!dispatcher.HasThreadAccess) throw new InvalidOperationException("Work was scheduled off the UI thread, where the stores it reads don't lock");
 		var timer = dispatcher.CreateTimer();
 		timer.Interval = delay;
 		timer.IsRepeating = false;

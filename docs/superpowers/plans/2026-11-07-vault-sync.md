@@ -428,5 +428,6 @@ Add both projects to the solution.
   - turn on sync on one PC
   - restore on a second profile or PC
   - edit on both, and confirm the history keeps the losing password
+- [ ] Check every piece of user-facing text in the vault and sync UI (Settings rows and their descriptions, buttons, confirmations, banners, errors, the account gate and restore screens, the privacy banner) against what the code does in each state: vault off, on, unreadable; sync off, on, signed out, restored with the password, restored with the recovery key, turned off on this PC. Fix any line that is false or stale in some state (for example "Passwords are kept only in the vault on this PC" while sync is on), make button styles consistent, and pin state-dependent text with tests. Added at the owner's request during the hand check (2026-11-09).
 - [ ] Update `docs/PLAN.md` (6b, plus sync for passwords pulled forward), `PARITY.md` and the README (privacy section: what the server stores).
 - [ ] Run every command in the Global Constraints, including the server tests, then open the PR `phase-6b/sync` → `main`.

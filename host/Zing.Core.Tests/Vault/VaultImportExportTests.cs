@@ -64,6 +64,7 @@ public sealed class VaultImportExportTests : IDisposable
 		Assert.Equal("a different one", await store.PasswordAsync(id));
 		Assert.Equal("correct horse battery staple", await store.HistoryPasswordAsync(id, 0));
 		Assert.Single(store.History(id));
+		Assert.Equal(1, store.Summaries().Single().HistoryCount);
 	}
 
 	[Fact]

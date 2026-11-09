@@ -59,6 +59,10 @@ public sealed class AccountFileException(string path, Exception inner)
 	public string Path { get; } = path;
 }
 
+/// <summary>A sign-in with this PC's own password check while the password was changed on another PC: sync checks the new one.</summary>
+public sealed class AccountPasswordChangedElsewhereException()
+	: Exception("Your Zing password was changed on another PC, so sign in with the new one.");
+
 /// <summary>The OS key store, injected so the rules here can be tested without Windows.</summary>
 public interface ISecretCipher
 {
@@ -78,7 +82,9 @@ public sealed record AccountState(
 	bool NeedsPasswordReset,
 	bool RequirePasswordOnLaunch,
 	// The renderer expects an explicit null here, not an absent key.
-	[property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] AccountProfile? Profile);
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] AccountProfile? Profile,
+	// The Zing password was changed on another PC that syncs with this one: the gate asks for the new one (Task 14).
+	bool PasswordChangedElsewhere = false);
 
 /// <summary>`{status:'ok', state}` or `{status:'rejected', code, message}` (src/shared/shell/shellState.ts AccountOutcome).</summary>
 public sealed record AccountOutcome(string Status, AccountState? State = null, string? Code = null, string? Message = null)
@@ -109,6 +115,7 @@ public sealed class AccountStore
 	private readonly bool _readOnly;
 	private StoredAccount? _account;
 	private bool _signedIn;
+	private bool _passwordChangedElsewhere;
 
 	/// <summary>Strict: a profile that can't be read throws <see cref="AccountFileException"/>. Startup uses <see cref="Open"/>.</summary>
 	/// <param name="startAsGuest">Starts signed in as a guest. Only for development and tests.</param>
@@ -171,7 +178,8 @@ public sealed class AccountStore
 			SignedIn: _signedIn,
 			NeedsPasswordReset: NeedsReset(),
 			RequirePasswordOnLaunch: account?.RequirePassword ?? false,
-			Profile: account is null ? null : new AccountProfile(account.Username, account.DisplayName, account.Email));
+			Profile: account is null ? null : new AccountProfile(account.Username, account.DisplayName, account.Email),
+			PasswordChangedElsewhere: _passwordChangedElsewhere);
 	}
 
 	public IDisposable Subscribe(Action<AccountState> listener)
@@ -202,14 +210,44 @@ public sealed class AccountStore
 		Emit();
 	}
 
+	/// <exception cref="AccountPasswordChangedElsewhereException">The password was changed on another PC: sync checks the new one instead.</exception>
 	public void SignIn(string password)
+	{
+		if (_passwordChangedElsewhere) throw new AccountPasswordChangedElsewhereException();
+		CheckPassword(password);
+		_signedIn = true;
+		Emit();
+	}
+
+	/// <summary>Raises <see cref="AccountErrorCode.WrongPassword"/> unless this is the account's password; signs nobody in or out.</summary>
+	public void CheckPassword(string password)
 	{
 		var account = _account ?? throw new AccountException(AccountErrorCode.NoAccount);
 		var stored = ReadVerifier() ?? throw new AccountException(AccountErrorCode.NoAccount);
 		var candidate = Scrypt.Derive(password, Convert.FromHexString(account.Salt));
 		if (!CryptographicOperations.FixedTimeEquals(candidate, stored)) Fail(AccountErrorCode.WrongPassword);
-		_signedIn = true;
+	}
+
+	/// <summary>
+	/// Replaces the password check on this PC, keeping the profile and its salt, as <see cref="ResetPassword"/> does, so the two
+	/// files never disagree. With sync on, the vault's keys are re-wrapped and uploaded first (SyncKeys.ChangePasswordAsync), so a
+	/// change that the server refuses leaves this PC's password as it was.
+	/// </summary>
+	public void ChangePassword(string current, string next)
+	{
+		var account = _account ?? throw new AccountException(AccountErrorCode.NoAccount);
+		CheckPassword(current);
+		CheckNewPassword(next);
+		StoreVerifier(next, Convert.FromHexString(account.Salt));
 		Emit();
+	}
+
+	/// <summary>What <see cref="ChangePassword"/> needs of the new password and this PC, checked alone so sync can refuse before its PUT.</summary>
+	public void CheckNewPassword(string next)
+	{
+		if (next == "") Fail(AccountErrorCode.EmptyField);
+		if (next.Length < MinPasswordLength) Fail(AccountErrorCode.WeakPassword);
+		if (!_cipher.IsAvailable) Fail(AccountErrorCode.EncryptionUnavailable);
 	}
 
 	/// <summary>For when the stored check can't be read; sets a new password on the same profile.</summary>
@@ -220,6 +258,33 @@ public sealed class AccountStore
 		if (password.Length < MinPasswordLength) Fail(AccountErrorCode.WeakPassword);
 		if (!_cipher.IsAvailable) Fail(AccountErrorCode.EncryptionUnavailable);
 		StoreVerifier(password, Convert.FromHexString(account.Salt));
+		_signedIn = true;
+		Emit();
+	}
+
+	/// <summary>
+	/// The password was changed on another PC that syncs with this one: the gate asks for the new one, even for an account that
+	/// doesn't lock at launch or a guest start, and this PC's check stays the old one until sync has checked the new one by
+	/// unwrapping its keys (SyncRestore.SignInWithPasswordChangedElsewhereAsync).
+	/// </summary>
+	public void AskForPasswordChangedElsewhere()
+	{
+		if (_account is null) Fail(AccountErrorCode.NoAccount);
+		_passwordChangedElsewhere = true;
+		_signedIn = false;
+		Emit();
+	}
+
+	/// <summary>
+	/// The Zing password as sync has just checked it, by unwrapping the synced keys with it (a restore, a recovery, or a password
+	/// changed on another PC): it replaces this PC's check, whatever the old one was, and signs in. The profile stays.
+	/// </summary>
+	public void SetPasswordFromSync(string password)
+	{
+		var account = _account ?? throw new AccountException(AccountErrorCode.NoAccount);
+		CheckNewPassword(password);
+		StoreVerifier(password, Convert.FromHexString(account.Salt));
+		_passwordChangedElsewhere = false;
 		_signedIn = true;
 		Emit();
 	}
