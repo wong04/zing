@@ -79,6 +79,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		TestHooks.Register(_window, () => Api);
 		TestHooks.RegisterScrim(_window, () => _scrim);
 		TestHooks.RegisterPickerKeys(_window, PickerKeyOnPage);
+		TestHooks.RegisterPreviewKeys(_window, PreviewKeyOnPage);
 		_app.Services.Vaults.Changed += FollowAutofill;
 	}
 
@@ -731,7 +732,19 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		if (Api is null || Commands.CodeOf((int)e.VirtualKey) is not { } code) return;
 		const int VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
 		var input = new KeyInput(code, Native.IsDown(VK_CONTROL), Native.IsDown(VK_SHIFT), Native.IsDown(VK_MENU), e.PhysicalKeyStatus.WasKeyDown != 0);
-		if (IsPreviewView(view) ? Api.HandlePreviewKey(input) : Api.HandleKey(input)) e.Handled = true;
+		if (Key(view, input)) e.Handled = true;
+	}
+
+	private bool Key(HostedView view, KeyInput input) => IsPreviewView(view) ? Api!.HandlePreviewKey(input) : Api!.HandleKey(input);
+
+	/// <summary>
+	/// The e2e seam (preview-key): CDP input never reaches AcceleratorKeyPressed, so a test enters Key as a key press on the
+	/// preview's top page would. Whatever that page shows (a dialog, fullscreen) is the engine's real state.
+	/// </summary>
+	private bool PreviewKeyOnPage(KeyInput input)
+	{
+		if (Api is null || _preview.Count == 0 || _preview[^1].View is not { } view) throw new InvalidOperationException("preview-key needs a window with a preview showing");
+		return Key(view, input);
 	}
 
 	/// <summary>A view of the link preview: one of its pages, or its buttons.</summary>

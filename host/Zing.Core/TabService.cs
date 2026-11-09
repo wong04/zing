@@ -13,6 +13,8 @@ public interface IPage
 	bool CanGoForward { get; }
 	/// <summary>Whether an element of the page is in HTML fullscreen: Esc is then the page's, to leave it.</summary>
 	bool IsFullScreen { get; }
+	/// <summary>Whether a frame of the page shows a JavaScript dialog (alert, confirm, prompt, beforeunload): Esc is then the dialog's.</summary>
+	bool HasOpenDialog { get; }
 	void Navigate(string url);
 	void GoBack();
 	void GoForward();

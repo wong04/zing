@@ -443,6 +443,30 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
+	public void Esc_while_a_preview_page_shows_a_dialog_is_left_to_the_dialog()
+	{
+		var preview = Peek();
+		preview.HasOpenDialog = true;
+		Assert.False(_api.HandlePreviewKey(Esc));
+		Assert.Same(preview, _api.Tabs.Preview!.Top.Page);
+		Assert.False(preview.Closed);
+		preview.HasOpenDialog = false;
+		Assert.True(_api.HandlePreviewKey(Esc));
+		Assert.Null(_api.Tabs.Preview);
+	}
+
+	[Fact]
+	public void Esc_while_a_popup_over_the_preview_shows_a_dialog_closes_nothing()
+	{
+		var preview = Peek();
+		var popup = (FakePage)preview.Events.Popup(new PopupRequest("https://login.example/", default, HasPopupFeatures: true));
+		popup.HasOpenDialog = true;
+		Assert.False(_api.HandlePreviewKey(Esc));
+		Assert.False(popup.Closed);
+		Assert.Same(popup, _api.Tabs.Preview!.Top.Page);
+	}
+
+	[Fact]
 	public void Esc_with_no_preview_stops_the_page()
 	{
 		ActivePage.IsLoading = true;

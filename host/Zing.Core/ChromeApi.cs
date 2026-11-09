@@ -496,13 +496,13 @@ public sealed class ChromeApi : IDisposable
 
 	/// <summary>
 	/// A key pressed in a link preview's page or its buttons. Esc closes the preview's top layer, unless that page is in
-	/// HTML fullscreen: then it is the page's, to leave fullscreen. A held Esc closes one layer: its repeats are taken and do
+	/// HTML fullscreen or shows a JavaScript dialog: then it is the page's, to leave fullscreen or close the dialog. A held Esc closes one layer: its repeats are taken and do
 	/// nothing. Every other key is the window's, as anywhere else.
 	/// </summary>
 	public bool HandlePreviewKey(KeyInput input)
 	{
 		if (input is not { Code: "Escape", Ctrl: false, Shift: false, Alt: false } || Tabs.Preview is not { } preview) return HandleKey(input);
-		if (preview.Top.Page.IsFullScreen) return false;
+		if (preview.Top.Page.IsFullScreen || preview.Top.Page.HasOpenDialog) return false;
 		if (input.Repeat) return true;
 		return Run("preview.close") is not Outcome { Status: "not-applicable" };
 	}

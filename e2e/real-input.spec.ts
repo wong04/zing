@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Dialog, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
 import { launchZing, test, layers, pageWhere, pages, peekState, type Launched, type Layer } from './zing'
 
@@ -221,10 +221,11 @@ test('Esc closes the preview, and Esc in a page dialog does not', { tag: '@real-
 	const preview = await pageWhere(zing.browser, (p) => p.url() === target)
 	await preview.waitForLoadState('load')
 
-	// The page's own dialog takes Esc. A listener that never answers leaves the dialog to the person; with none, Playwright dismisses it.
-	let opened = false
-	preview.on('dialog', () => {
-		opened = true
+	// While the page has a dialog open, Esc is the dialog's. Playwright's listener takes the dialog over, so the engine shows
+	// none and it is held until answered here; Zing still hears it open through its own DevTools session.
+	let held: Dialog | undefined
+	preview.on('dialog', (dialog) => {
+		held = dialog
 	})
 	await preview.evaluate(() => {
 		setTimeout(() => {
@@ -232,10 +233,12 @@ test('Esc closes the preview, and Esc in a page dialog does not', { tag: '@real-
 			document.title = 'Dismissed'
 		})
 	})
-	await expect.poll(() => opened).toBe(true)
-	await realInput(zing, { keys: 'esc', asIs: true })
+	await expect.poll(() => held !== undefined).toBe(true)
+	await realInput(zing, { keys: 'esc' })
+	// Esc reaches AcceleratorKeyPressed but is left alone: the preview stays.
+	expect((await peekState(zing.chrome)).layers.map((l) => l.url)).toEqual([target])
+	await held!.dismiss()
 	await expect.poll(() => preview.title()).toBe('Dismissed')
-	expect((await peekState(zing.chrome)).open).toBe(true)
 
 	await realInput(zing, { keys: 'esc' })
 	await expect.poll(async () => (await peekState(zing.chrome)).open).toBe(false)

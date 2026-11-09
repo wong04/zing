@@ -466,6 +466,19 @@ export async function clickScrim(chrome: Page): Promise<void> {
 	})
 }
 
+/**
+ * A key pressed on the link preview's top page, through the window's key handler as the engine's AcceleratorKeyPressed
+ * would enter it (TestHooks "preview-key"): CDP input never reaches that event.
+ */
+export async function pressInPreview(chrome: Page, code: 'Escape'): Promise<void> {
+	await chrome.evaluate(async (c) => {
+		const view = globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } }; zing: { getTabs(): Promise<unknown> } }
+		view.chrome.webview.postMessage({ kind: 'test', action: 'preview-key', code: c })
+		// Answered after the message before it on the same channel: the key has been handled.
+		await view.zing.getTabs()
+	}, code)
+}
+
 export interface Modifiers {
 	readonly shift?: boolean
 	readonly ctrl?: boolean

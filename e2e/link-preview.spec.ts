@@ -4,9 +4,9 @@ import { existsSync, statSync } from 'node:fs'
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Dialog, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { clickScrim, launchZing, test, layers, liveCounts, pageWhere, peekState, setModifiers, type Launched, type Layer } from './zing'
+import { clickScrim, launchZing, test, layers, liveCounts, pageWhere, peekState, pressInPreview, setModifiers, type Launched, type Layer } from './zing'
 
 // Evaluated in the chrome renderer, where api.ts puts the bridge on window.
 declare const window: { readonly zing: ZingApi }
@@ -420,6 +420,32 @@ test('a download still completes when its preview closes while it comes in', asy
 	} finally {
 		await zing.close()
 	}
+})
+
+test('Esc leaves a page dialog in a preview to the dialog, then closes the preview', async () => {
+	const { zing, source } = await start()
+	await source.click('#cross')
+	const preview = await previewPage(zing, `${other}/b`)
+	// Held unanswered: Playwright's listener takes the dialog over, so the engine shows none, but Zing's own DevTools session still hears it open.
+	let held: Dialog | undefined
+	preview.on('dialog', (dialog) => {
+		held = dialog
+	})
+	await preview.evaluate(() => {
+		setTimeout(() => {
+			alert('A dialog of the page')
+			document.title = 'Dismissed'
+		})
+	})
+	await expect.poll(() => held !== undefined).toBe(true)
+	await pressInPreview(zing.chrome, 'Escape')
+	expect((await peekState(zing.chrome)).layers.map((l) => l.url)).toEqual([`${other}/b`])
+
+	await held!.dismiss()
+	await expect.poll(() => preview.title()).toBe('Dismissed')
+	await pressInPreview(zing.chrome, 'Escape')
+	await expectNoPreview(zing.chrome, `${other}/b`)
+	await zing.close()
 })
 
 test('closing a preview gives the keyboard back to the page under it', async () => {

@@ -49,6 +49,7 @@ public sealed class WebView2Page : IPage
 	private string? _mainFrameId;
 	/// <summary>The latest main-frame Page.frameRequestedNavigation: it arrives before NavigationStarting for the same address (spikes/link-preview, check C).</summary>
 	private (string Url, string Reason)? _lastReason;
+	private bool _dialogOpen;
 
 	private static readonly Lazy<(string Script, string Css)> Reader = new(() =>
 	{
@@ -228,6 +229,12 @@ public sealed class WebView2Page : IPage
 	/// <summary>Whether an element of the page is fullscreen; the window then gives the page all of itself.</summary>
 	// A closed page has none, and its engine object would throw: a window closing with a preview open still asks its layers.
 	public bool IsFullScreen => IsOpen && _core?.ContainsFullScreenElement == true;
+
+	/// <summary>
+	/// From the DevTools Page domain (Page.enable is on for the navigation reasons): javascriptDialogOpening and javascriptDialogClosed,
+	/// for any frame of the page. A dialog can't outlive its document, so a new one clears it too, and a missed Closed can't hold it.
+	/// </summary>
+	public bool HasOpenDialog => IsOpen && _dialogOpen;
 
 	/// <summary>Takes the page's element out of fullscreen, as the page's own exit would.</summary>
 	public void ExitFullScreen()
@@ -468,6 +475,8 @@ public sealed class WebView2Page : IPage
 	private void Wire(CoreWebView2 core)
 	{
 		core.GetDevToolsProtocolEventReceiver("Page.frameRequestedNavigation").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => NavigationRequested(e.ParameterObjectAsJson), "navigation reason");
+		core.GetDevToolsProtocolEventReceiver("Page.javascriptDialogOpening").DevToolsProtocolEventReceived += (_, _) => _dialogOpen = true;
+		core.GetDevToolsProtocolEventReceiver("Page.javascriptDialogClosed").DevToolsProtocolEventReceived += (_, _) => _dialogOpen = false;
 		Background(ReadNavigationReasonsAsync(core), "navigation reasons");
 		core.NavigationStarting += (_, e) =>
 		{
@@ -552,6 +561,7 @@ public sealed class WebView2Page : IPage
 		core.ContentLoading += (_, _) =>
 		{
 			if (core.Source is not ("" or "about:blank")) _showedDocument = true;
+			_dialogOpen = false;
 			// Raised for new documents only, however they started (a link, Back, a reload, the page's own script).
 			_events.NewDocument();
 		};
@@ -803,6 +813,8 @@ public sealed class WebView2Page : IPage
 			case CoreWebView2ProcessFailedKind.RenderProcessExited:
 				// A load the renderer took with it never completes; the tab mustn't spin over the error page.
 				IsLoading = false;
+				// The dialog went with its renderer, which may never say so.
+				_dialogOpen = false;
 				_events.Crashed(PageFault.Crashed);
 				break;
 			case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
