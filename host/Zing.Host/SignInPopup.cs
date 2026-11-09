@@ -29,6 +29,8 @@ public sealed class SignInPopup : ISignInPopup
 	private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 	private CoreWebView2Controller? _controller;
 	private nint _font;
+	/// <summary>Why the window couldn't show Google's page, which <see cref="Closed"/> faults with once it's gone.</summary>
+	private SignInWindowFailedException? _failure;
 
 	private SignInPopup(ZingApp app, MainWindow owner, Uri authorize)
 	{
@@ -43,20 +45,26 @@ public sealed class SignInPopup : ISignInPopup
 		// An owned window has no taskbar entry of its own unless it asks for one; an e2e run's stays out of the switchers.
 		const uint WS_EX_APPWINDOW = 0x40000, WS_EX_TOOLWINDOW = 0x80;
 		var exStyle = TestHooks.KeepsOutOfTheWay ? WS_EX_TOOLWINDOW : WS_EX_APPWINDOW;
-		_hwnd = Native.CreateWindowExW(exStyle, ClassName, "Sign in with Google - Zing", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_CLIPCHILDREN, 0, 0, 0, 0, owner.Hwnd, 0, Native.GetModuleHandleW(null), 0);
+		// Created where it goes, at the owner's DPI, so it starts on the owner's monitor and no DPI change rescales it.
+		var (x, y, width, height) = Bounds(owner.Hwnd);
+		_hwnd = Native.CreateWindowExW(exStyle, ClassName, "Sign in with Google - Zing", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_CLIPCHILDREN, x, y, width, height, owner.Hwnd, 0, Native.GetModuleHandleW(null), 0);
 		if (_hwnd == 0) throw new NativeCallException("CreateWindowEx sign-in");
 		Open[_hwnd] = this;
-		const uint WS_CHILD = 0x40000000, WS_VISIBLE = 0x10000000, ES_AUTOHSCROLL = 0x80, ES_READONLY = 0x800;
-		_address = Native.CreateWindowExW(0, "EDIT", authorize.AbsoluteUri, WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY, 0, 0, 0, 0, _hwnd, 0, Native.GetModuleHandleW(null), 0);
-		if (_address == 0)
+		try
 		{
-			var error = new NativeCallException("CreateWindowEx sign-in address");
-			Native.DestroyWindow(_hwnd);
-			throw error;
+			const uint WS_CHILD = 0x40000000, WS_VISIBLE = 0x10000000, ES_AUTOHSCROLL = 0x80, ES_READONLY = 0x800;
+			_address = Native.CreateWindowExW(0, "EDIT", authorize.AbsoluteUri, WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY, 0, 0, 0, 0, _hwnd, 0, Native.GetModuleHandleW(null), 0);
+			if (_address == 0) throw new NativeCallException("CreateWindowEx sign-in address");
+			Address = authorize.AbsoluteUri;
+			UseFont();
+			Layout();
 		}
-		Address = authorize.AbsoluteUri;
-		UseFont();
-		Place();
+		catch
+		{
+			// Gone with its WM_DESTROY, which also takes it out of Open.
+			Native.DestroyWindow(_hwnd);
+			throw;
+		}
 		Native.ShowWindow(_hwnd, TestHooks.KeepsOutOfTheWay ? Native.SW_SHOWNOACTIVATE : Native.SW_SHOW);
 		if (!TestHooks.KeepsOutOfTheWay) Native.SetForegroundWindow(_hwnd);
 		TestHooks.Background(StartAsync(authorize), "sign-in window");
@@ -73,7 +81,7 @@ public sealed class SignInPopup : ISignInPopup
 	public Task Closed => _closed.Task;
 
 	/// <summary>The address shown along the top.</summary>
-	internal string Address { get; private set; }
+	internal string Address { get; private set; } = "";
 
 	/// <summary>The window that owns it (GW_OWNER).</summary>
 	internal nint Owner => Native.GetWindow(_hwnd, 4);
@@ -129,12 +137,19 @@ public sealed class SignInPopup : ISignInPopup
 			core.Settings.IsGeneralAutofillEnabled = false;
 			core.Settings.AreHostObjectsAllowed = false;
 			core.Settings.IsWebMessageEnabled = false;
+			core.Settings.AreDevToolsEnabled = TestHooks.IsEndToEndRun;
 			core.SourceChanged += (_, _) => ShowAddress(core.Source);
-			// A link that opens a window (Google's help, its privacy policy) opens as a tab of the Zing window under this one.
+			// A sign-in has nothing to download or ask permission for; neither goes around Zing's downloads list and site permissions.
+			core.DownloadStarting += (_, e) => e.Cancel = true;
+			core.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
+			core.ProcessFailed += (_, e) => TestHooks.Guard(() => OnProcessFailed(e.ProcessFailedKind), "sign-in window engine");
+			// A link the person clicks that opens a window (Google's help, its privacy policy) opens as a tab of the Zing window under
+			// this one, by the rules tabs follow; nothing else opens (SignInWindowLinks).
 			core.NewWindowRequested += (_, e) =>
 			{
 				e.Handled = true;
-				TestHooks.Guard(() => (_owner.Api ?? throw new InvalidOperationException("The Zing window under the sign-in window has no tabs yet")).Tabs.Open(e.Uri), "sign-in window link");
+				if (SignInWindowLinks.TabFor(core.Source, e.Uri, e.IsUserInitiated) is not { } tab) return;
+				TestHooks.Guard(() => (_owner.Api ?? throw new InvalidOperationException("The Zing window under the sign-in window has no tabs yet")).Tabs.Open(tab), "sign-in window link");
 			};
 			Layout();
 			core.Navigate(authorize.AbsoluteUri);
@@ -144,12 +159,26 @@ public sealed class SignInPopup : ISignInPopup
 			// Closed while the engine started it (by the person, or with Zing's window): gone, not broken.
 			throw new ViewGoneException("sign-in window");
 		}
-		catch
+		catch (Exception error)
 		{
-			// An empty window would wait for a redirect that never comes: closing it cancels the sign-in.
-			Close();
+			// An empty window would wait for a redirect that never comes: the sign-in ends with this error, which Settings shows.
+			Fail(error);
 			throw;
 		}
+	}
+
+	/// <summary>The page's engine process ended: the window can't finish the sign-in, which ends with an error.</summary>
+	private void OnProcessFailed(CoreWebView2ProcessFailedKind kind)
+	{
+		if (kind is not (CoreWebView2ProcessFailedKind.BrowserProcessExited or CoreWebView2ProcessFailedKind.RenderProcessExited)) return;
+		Fail(new InvalidOperationException($"The sign-in window's engine process ended ({kind})"));
+	}
+
+	/// <summary>Closes the window, and <see cref="Closed"/> faults with why.</summary>
+	private void Fail(Exception error)
+	{
+		_failure ??= new SignInWindowFailedException(error);
+		Close();
 	}
 
 	private void ShowAddress(string url)
@@ -170,16 +199,16 @@ public sealed class SignInPopup : ISignInPopup
 		_font = font;
 	}
 
-	/// <summary>Centres the window over its owner, or off-screen in an e2e run.</summary>
-	private void Place()
+	/// <summary>Centred over the owner at its DPI, or off-screen in an e2e run, in screen pixels.</summary>
+	private static (int X, int Y, int Width, int Height) Bounds(nint ownerHwnd)
 	{
-		if (!Native.GetWindowRect(_owner.Hwnd, out var owner)) throw new NativeCallException("GetWindowRect sign-in owner");
-		var scale = Native.GetDpiForWindow(_owner.Hwnd) / 96.0;
+		if (!Native.GetWindowRect(ownerHwnd, out var owner)) throw new NativeCallException("GetWindowRect sign-in owner");
+		var scale = Native.GetDpiForWindow(ownerHwnd) / 96.0;
 		var width = (int)Math.Round(Width * scale);
 		var height = (int)Math.Round(Height * scale);
 		var x = TestHooks.KeepsOutOfTheWay ? -20000 : owner.Left + (owner.Right - owner.Left - width) / 2;
 		var y = TestHooks.KeepsOutOfTheWay ? -20000 : owner.Top + (owner.Bottom - owner.Top - height) / 2;
-		if (!Native.SetWindowPos(_hwnd, 0, x, y, width, height, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE)) throw new NativeCallException("SetWindowPos sign-in");
+		return (x, y, width, height);
 	}
 
 	/// <summary>The address along the top, the page under it, in the window's client pixels.</summary>
@@ -230,7 +259,8 @@ public sealed class SignInPopup : ISignInPopup
 			_controller = null;
 			if (_font != 0) Native.DeleteObject(_font);
 			_font = 0;
-			_closed.TrySetResult();
+			if (_failure is { } failure) _closed.TrySetException(failure);
+			else _closed.TrySetResult();
 		}
 	}
 }

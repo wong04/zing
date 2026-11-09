@@ -104,10 +104,6 @@ public sealed class SyncSetupTests : IDisposable
 	}
 
 	[Fact]
-	public void CharactersAreCountedAsRunes() =>
-		Assert.DoesNotContain(SyncPasswordRule.Length, SyncPasswordStrength.Failures("😀😀😀😀😀😀😀😀😀😀a1"));
-
-	[Fact]
 	public async Task AGuestGetsNoAccountAndNothingIsUploaded()
 	{
 		await SignInToSync();

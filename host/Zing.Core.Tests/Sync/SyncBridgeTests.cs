@@ -191,6 +191,23 @@ public sealed class SyncBridgeTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ASignInWindowThatCantShowThePageIsAnErrorSettingsShows()
+	{
+		using var google = new FakeGoogle(() => _server.MintIdTokenAsync());
+		var bridge = Api(Setup(google.SignIn()));
+
+		var signingIn = Invoke(bridge, "sync:sign-in");
+		(await OpenedPopup(google)).FailToStart();
+		var refused = await signingIn;
+
+		Assert.False(refused.GetProperty("ok").GetBoolean());
+		var error = refused.GetProperty("error");
+		Assert.Equal(nameof(SignInWindowFailedException), error.GetProperty("name").GetString());
+		Assert.Contains("Zing couldn't open the Google sign-in window.", error.GetProperty("message").GetString());
+		Assert.Null(_vault.SyncAccount());
+	}
+
+	[Fact]
 	public async Task SigningInAgainWhileTheWindowIsOpenBringsItToTheFrontAndUsesIt()
 	{
 		using var google = new FakeGoogle(() => _server.MintIdTokenAsync());

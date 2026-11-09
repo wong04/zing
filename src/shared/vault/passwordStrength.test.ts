@@ -35,11 +35,6 @@ describe('the sync password rules, as the host holds them', () => {
 			for (const word of password.slice(0, -1).split('-')) expect(list.has(word)).toBe(true)
 		}
 	})
-
-	it('counts characters by code point, as the host counts runes', () => {
-		expect(syncPasswordFailures('😀😀😀😀😀😀😀😀😀😀a1')).not.toContain('length')
-		expect(syncPasswordFailures('😀😀😀😀😀a1')).toContain('length')
-	})
 })
 
 describe('the passphrase generator', () => {

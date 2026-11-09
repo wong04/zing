@@ -168,6 +168,36 @@ public sealed class GoogleSignInTests : IDisposable
 	}
 
 	[Fact]
+	public async Task AWindowThatCantShowThePageEndsTheSignInWithAnErrorNotACancellation()
+	{
+		var signIn = _google.SignIn().SignInAsync(Ct);
+		var popup = Assert.Single(_google.Popups);
+		var port = new Uri(popup.Query("redirect_uri")).Port;
+
+		popup.FailToStart();
+
+		var failed = await Assert.ThrowsAsync<SignInWindowFailedException>(() => signIn);
+		Assert.IsNotAssignableFrom<OperationCanceledException>(failed);
+		Assert.Equal("Zing couldn't open the Google sign-in window. Try turning on sync again.", failed.Message);
+		await WaitUntil(() => Refuses(port), "the loopback port to close");
+	}
+
+	[Fact]
+	public async Task ASignInWhoseWindowFailedToOpenLeavesTheNextOneToOpenItsOwn()
+	{
+		var google = _google.SignIn();
+		_google.FailingOpens = 1;
+
+		await Assert.ThrowsAsync<InvalidOperationException>(() => google.SignInAsync(Ct));
+		var second = google.SignInAsync(Ct);
+
+		var popup = Assert.Single(_google.Popups);
+		Assert.Equal(0, popup.BroughtToFront);
+		await popup.RedirectAsync($"code=the-code&state={popup.Query("state")}");
+		Assert.Equal(IdToken, await second);
+	}
+
+	[Fact]
 	public async Task AfterAWindowClosesTheNextSignInOpensANewOne()
 	{
 		var google = _google.SignIn();

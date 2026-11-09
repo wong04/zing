@@ -19,6 +19,12 @@ public sealed class SignInWindowClosedException() : OperationCanceledException("
 /// </summary>
 public sealed class SignInTakenOverException() : OperationCanceledException("Another Google sign-in took over the open sign-in window.");
 
+/// <summary>
+/// The sign-in window couldn't show Google's page (its engine didn't start, or its process ended): an error Settings shows, not a
+/// cancellation, since the person didn't choose to stop.
+/// </summary>
+public sealed class SignInWindowFailedException(Exception inner) : Exception("Zing couldn't open the Google sign-in window. Try turning on sync again.", inner);
+
 /// <summary>Google's OAuth endpoints: Google's own, or an e2e run's local fake (Zing.Host.TestHooks.Sync), which never reaches Google.</summary>
 public sealed record GoogleEndpoints(Uri Authorize, Uri Token)
 {
@@ -31,7 +37,7 @@ public sealed record GoogleEndpoints(Uri Authorize, Uri Token)
 /// </summary>
 public interface ISignInPopup
 {
-	/// <summary>Completes once the window is gone, whoever closed it.</summary>
+	/// <summary>Completes once the window is gone, whoever closed it; faults with <see cref="SignInWindowFailedException"/> when it couldn't show the page.</summary>
 	Task Closed { get; }
 
 	/// <summary>Brings the window in front of the others, restoring it if it was minimised.</summary>
@@ -49,7 +55,8 @@ public interface ISignInPopup
 /// started while one is open brings it to the front and takes it over.
 /// </summary>
 /// <param name="openPopup">Opens the sign-in window at the authorize address. Called on the thread that calls <see cref="SignInAsync"/>.</param>
-public sealed class GoogleSignIn(string clientId, string clientSecret, GoogleEndpoints endpoints, Func<Uri, ISignInPopup> openPopup) : IGoogleSignIn
+/// <param name="warn">Told what tidying up after a sign-in couldn't do (closing its window), which no caller is left to hear.</param>
+public sealed class GoogleSignIn(string clientId, string clientSecret, GoogleEndpoints endpoints, Func<Uri, ISignInPopup> openPopup, Action<string, Exception> warn) : IGoogleSignIn
 {
 	private const int MaxRequestBytes = 16 * 1024;
 	/// <summary>Short: connections are read one at a time, and a browser's idle preconnect mustn't hold up the redirect behind it for long.</summary>
@@ -70,9 +77,12 @@ public sealed class GoogleSignIn(string clientId, string clientSecret, GoogleEnd
 
 	private ISignInPopup OpenPopup(Uri authorize) => openPopup(authorize);
 
+	private void Warn(string what, Exception error) => warn(what, error);
+
 	/// <exception cref="SignInWindowClosedException">The person closed the window before Google sent them back.</exception>
 	/// <exception cref="SignInTakenOverException">Another sign-in took the window over.</exception>
 	/// <exception cref="GoogleSignInException">Google ended the sign-in, or its token endpoint refused the code.</exception>
+	/// <exception cref="SignInWindowFailedException">The window couldn't show Google's page.</exception>
 	public async Task<string> SignInAsync(CancellationToken cancellation)
 	{
 		cancellation.ThrowIfCancellationRequested();
@@ -87,8 +97,10 @@ public sealed class GoogleSignIn(string clientId, string clientSecret, GoogleEnd
 			}
 			else
 			{
-				attempt = _open = new Attempt(this);
-				code = attempt.Start(cancellation);
+				// Kept as the open one only once it started: one that failed to (no port, no window) must not be joined.
+				var fresh = new Attempt(this);
+				code = fresh.Start(cancellation);
+				attempt = _open = fresh;
 			}
 		}
 		return await RedeemAsync(await code, attempt.Verifier, attempt.Redirect, cancellation);
@@ -124,9 +136,9 @@ public sealed class GoogleSignIn(string clientId, string clientSecret, GoogleEnd
 		public Task<string> Start(CancellationToken cancellation)
 		{
 			var challenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(Verifier)));
-			_listener.Start();
 			try
 			{
+				_listener.Start();
 				Redirect = $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/";
 				_popup = _owner.OpenPopup(_owner.AuthorizeAddress(Redirect, challenge, _state));
 			}
@@ -134,10 +146,11 @@ public sealed class GoogleSignIn(string clientId, string clientSecret, GoogleEnd
 			{
 				_ended = true;
 				_listener.Stop();
+				_stop.Dispose();
 				throw;
 			}
 			var waiting = Wait(cancellation);
-			_ = RunAsync(_popup);
+			_ = RunAsync(_popup).ContinueWith(run => _owner.Warn("google sign-in window", run.Exception!.GetBaseException()), CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 			return waiting;
 		}
 
@@ -183,7 +196,7 @@ public sealed class GoogleSignIn(string clientId, string clientSecret, GoogleEnd
 				lock (_owner._gate)
 				{
 					var waiter = _waiter!;
-					if (finished != receive) waiter.TrySetException(new SignInWindowClosedException());
+					if (finished != receive) waiter.TrySetException(popup.Closed.Exception?.GetBaseException() ?? new SignInWindowClosedException());
 					else if (receive.IsCompletedSuccessfully) waiter.TrySetResult(receive.Result);
 					else if (receive.Exception is { } error) waiter.TrySetException(error.InnerExceptions);
 					// Stopped because the last waiter left, which is already cancelled.
@@ -201,8 +214,14 @@ public sealed class GoogleSignIn(string clientId, string clientSecret, GoogleEnd
 				// The listener's loop ends on the cancellation (or already has), before its socket closes under it.
 				await Task.WhenAny(receive);
 				_listener.Stop();
-				popup.Close();
-				_stop.Dispose();
+				try
+				{
+					popup.Close();
+				}
+				finally
+				{
+					_stop.Dispose();
+				}
 			}
 		}
 	}

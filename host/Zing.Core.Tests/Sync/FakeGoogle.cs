@@ -17,6 +17,8 @@ public sealed class FakeGoogle : IDisposable
 	private readonly Func<Task<string>> _idToken;
 	private readonly Task _serving;
 	private readonly List<FakeSignInPopup> _popups = [];
+	// Set before Stop: HttpListener faults the pending GetContext before IsListening turns false.
+	private volatile bool _stopping;
 
 	public FakeGoogle(Func<Task<string>> idToken)
 	{
@@ -39,10 +41,21 @@ public sealed class FakeGoogle : IDisposable
 		}
 	}
 
-	public GoogleSignIn SignIn() => new("test-client", "test-secret", Endpoints, Open);
+	/// <summary>What the sign-in warned of while tidying up.</summary>
+	public ConcurrentQueue<Exception> Warnings { get; } = new();
+
+	/// <summary>How many of the next windows fail to open, as a window with no Zing window under it does.</summary>
+	public int FailingOpens { get; set; }
+
+	public GoogleSignIn SignIn() => new("test-client", "test-secret", Endpoints, Open, (_, error) => Warnings.Enqueue(error));
 
 	private FakeSignInPopup Open(Uri authorize)
 	{
+		if (FailingOpens > 0)
+		{
+			FailingOpens--;
+			throw new InvalidOperationException("No window to open the sign-in over");
+		}
 		var popup = new FakeSignInPopup(authorize);
 		lock (_popups) _popups.Add(popup);
 		return popup;
@@ -57,7 +70,7 @@ public sealed class FakeGoogle : IDisposable
 			{
 				context = await _listener.GetContextAsync();
 			}
-			catch (Exception error) when (error is HttpListenerException or ObjectDisposedException && !_listener.IsListening)
+			catch (Exception error) when (_stopping && error is HttpListenerException or ObjectDisposedException)
 			{
 				return;
 			}
@@ -78,6 +91,7 @@ public sealed class FakeGoogle : IDisposable
 
 	public void Dispose()
 	{
+		_stopping = true;
 		_listener.Stop();
 		_listener.Close();
 		_serving.Wait(TimeSpan.FromSeconds(5));
@@ -110,6 +124,9 @@ public sealed class FakeSignInPopup(Uri authorize) : ISignInPopup
 
 	/// <summary>The person clicked the window's close button.</summary>
 	public void CloseAsThePersonWould() => _closed.TrySetResult();
+
+	/// <summary>The window couldn't show the page (its engine didn't start) and closed.</summary>
+	public void FailToStart() => _closed.TrySetException(new SignInWindowFailedException(new InvalidOperationException("The engine didn't start")));
 
 	/// <summary>A parameter of the authorize address.</summary>
 	public string Query(string name) => HttpUtility.ParseQueryString(authorize.Query)[name] ?? throw new KeyNotFoundException($"The authorize address has no {name}");

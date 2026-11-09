@@ -27,7 +27,7 @@ public static class SyncBuild
 {
 	/// <param name="app">What the sign-in window (SignInPopup) opens over.</param>
 	public static SyncSetup? Setup(ZingApp app) =>
-		SyncSetup.FromBuild(Metadata, (clientId, secret) => new GoogleSignIn(clientId, secret, GoogleEndpoints.Google, authorize => SignInPopup.OpenOver(app, authorize)), Faults.Warning);
+		SyncSetup.FromBuild(Metadata, (clientId, secret) => new GoogleSignIn(clientId, secret, GoogleEndpoints.Google, authorize => SignInPopup.OpenOver(app, authorize), Faults.Warning), Faults.Warning);
 
 	private static string? Metadata(string key) =>
 		typeof(SyncBuild).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(a => a.Key == key)?.Value;

@@ -1073,7 +1073,7 @@ public sealed class ChromeApi : IDisposable
 		{
 			// Started before the previous one is cancelled, so it takes over the sign-in window that one has open (GoogleSignIn).
 			var idToken = setup.SignIn.SignInAsync(signingIn.Token);
-			previous?.Cancel();
+			CancelReplaced(previous);
 			return await signIn(await idToken, signingIn.Token);
 		}
 		catch (OperationCanceledException error) when (cancel.IsCancellationRequested || error is SignInWindowClosedException or SignInTakenOverException)
@@ -1091,6 +1091,19 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	private void CancelSyncSignIn() => _syncSigningIn?.Cancel();
+
+	/// <summary>Cancels the sign-in a newer one replaced; one that already finished has disposed its source, and needs nothing.</summary>
+	private static void CancelReplaced(CancellationTokenSource? replaced)
+	{
+		try
+		{
+			replaced?.Cancel();
+		}
+		catch (ObjectDisposedException)
+		{
+			// Finished between the exchange and here: there's nothing left to cancel.
+		}
+	}
 
 	/// <summary>
 	/// Revokes this sign-in on the server, then forgets it here (Ruling 49). An unreachable server still signs this PC out, and the

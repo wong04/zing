@@ -131,14 +131,15 @@ public static class TestHooks
 			return new Zing.Core.Sync.SyncSetup(server, new FakeIssuerSignIn(server, sub), Warn: Faults.Warning);
 		var token = Environment.GetEnvironmentVariable("ZING_E2E_GOOGLE_TOKEN") ?? throw new InvalidOperationException("ZING_E2E_GOOGLE_AUTHORIZE needs ZING_E2E_GOOGLE_TOKEN, the fake token endpoint");
 		var endpoints = new Zing.Core.Sync.GoogleEndpoints(OnThisPc(authorize), OnThisPc(token));
-		return new Zing.Core.Sync.SyncSetup(server, new Zing.Core.Sync.GoogleSignIn("zing-e2e-client", "zing-e2e-secret", endpoints, address => SignInPopup.OpenOver(app, address)), Warn: Faults.Warning);
+		return new Zing.Core.Sync.SyncSetup(server, new Zing.Core.Sync.GoogleSignIn("zing-e2e-client", "zing-e2e-secret", endpoints, address => SignInPopup.OpenOver(app, address), Faults.Warning), Warn: Faults.Warning);
 	}
 
-	/// <summary>A fake Google endpoint, which must be on this PC: an e2e run never reaches Google.</summary>
+	/// <summary>A fake Google endpoint, which must be http on a loopback address (no name, which the hosts file could point elsewhere): an e2e run never reaches Google.</summary>
 	private static Uri OnThisPc(string address)
 	{
 		var uri = new Uri(address);
-		if (!uri.IsLoopback) throw new InvalidOperationException($"An e2e run's Google endpoints must be on this PC, not {uri.Host}");
+		if (uri.Scheme != Uri.UriSchemeHttp || !System.Net.IPAddress.TryParse(uri.Host, out var ip) || !System.Net.IPAddress.IsLoopback(ip))
+			throw new InvalidOperationException($"An e2e run's Google endpoints must be http://127.0.0.1:<port>, not {uri.Scheme}://{uri.Host}");
 		return uri;
 	}
 
