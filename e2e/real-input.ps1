@@ -39,8 +39,10 @@ public static class ZingRealInput
 	[DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
 	[DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hwnd, ref POINT point);
 	[DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+	[DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
 	[DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, INPUT[] inputs, int size);
 
+	private static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = new IntPtr(-4);
 	private const uint INPUT_MOUSE = 0, INPUT_KEYBOARD = 1, KEYEVENTF_KEYUP = 2, MOUSEEVENTF_LEFTDOWN = 2, MOUSEEVENTF_LEFTUP = 4, MOUSEEVENTF_MIDDLEDOWN = 0x20, MOUSEEVENTF_MIDDLEUP = 0x40;
 
 	/// <summary>Zing's main window (class ZingWindow) of this process.</summary>
@@ -94,6 +96,9 @@ public static class ZingRealInput
 	/// <summary>A click at a point of the window's content, in DIPs, with the held keys down around it.</summary>
 	public static void Click(IntPtr window, double x, double y, bool middle, ushort[] held)
 	{
+		// Windows PowerShell is DPI-unaware, so it sees screen points scaled to 96 DPI while GetDpiForWindow reports
+		// Zing's real DPI: per-monitor aware, every point here is a physical pixel.
+		if (SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) == IntPtr.Zero) throw new InvalidOperationException("SetThreadDpiAwarenessContext failed");
 		var scale = GetDpiForWindow(window) / 96.0;
 		var origin = new POINT();
 		ClientToScreen(window, ref origin);
