@@ -222,7 +222,7 @@ test('Esc closes the preview, and Esc in a page dialog does not', { tag: '@real-
 	await preview.waitForLoadState('load')
 
 	// While the page has a dialog open, Esc is the dialog's. Playwright's listener takes the dialog over, so the engine shows
-	// none and it is held until answered here; Zing still hears it open through its own DevTools session.
+	// none and it is held until something answers it; Zing still hears it open through its own DevTools session.
 	let held: Dialog | undefined
 	preview.on('dialog', (dialog) => {
 		held = dialog
@@ -235,10 +235,9 @@ test('Esc closes the preview, and Esc in a page dialog does not', { tag: '@real-
 	})
 	await expect.poll(() => held !== undefined).toBe(true)
 	await realInput(zing, { keys: 'esc' })
-	// Esc reaches AcceleratorKeyPressed but is left alone: the preview stays.
-	expect((await peekState(zing.chrome)).layers.map((l) => l.url)).toEqual([target])
-	await held!.dismiss()
+	// Zing leaves that Esc alone, so the engine gives it to the dialog, which closes; the preview stays.
 	await expect.poll(() => preview.title()).toBe('Dismissed')
+	expect((await peekState(zing.chrome)).layers.map((l) => l.url)).toEqual([target])
 
 	await realInput(zing, { keys: 'esc' })
 	await expect.poll(async () => (await peekState(zing.chrome)).open).toBe(false)

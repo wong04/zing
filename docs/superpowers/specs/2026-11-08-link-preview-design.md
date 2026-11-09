@@ -216,6 +216,8 @@ The spike, done 2026-11-08, is in `spikes/link-preview/` (throwaway, not part of
 - [x] H6: high contrast.
 - [x] H7: Gmail → a Docs link, and a Google search result loads in place.
 - [x] H8: `Page.enable` cost. Open 20 tabs and compare memory and CPU with the previous build, and note it.
-- [ ] H9: run the three link-preview @real-input tests (npm run test:e2e:real-input) on an idle PC; they have not run yet.
+- [x] H9: run the three link-preview @real-input tests (npm run test:e2e:real-input) on an idle PC; they have not run yet.
 
 Owner hand check, 2026-11-08: H1–H8 passed on a scratch profile (no memory or CPU figures were recorded for H8). On 2026-11-09 the dark screenshot was taken. H9 ran from this branch, but 7 of 8 real-input tests failed, main's own included, because the real input never reached Zing on that PC. The tier has to be fixed before H9 can be judged; the owner checked Shift-click, Esc and middle-click by hand.
+
+On 2026-11-09, after the tier's high-DPI fix (#164), H9 found that Esc over a page's own dialog closed the preview; the owner confirmed it by hand. Zing now leaves Esc to an open dialog (it follows Page.javascriptDialogOpening/Closed), and the owner checked the fix by hand. The whole real-input tier then passed, 8 of 8.
