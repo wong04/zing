@@ -31,7 +31,7 @@
   - the server keeps tombstones another 30 days
 - **Sign-in:**
   - a successful sign-in is a submitted form with a password box, then landing within 10 s on a page in that origin with no visible password box
-  - the sync password floor is zxcvbn score 4
+  - the sync password needs at least 12 characters, a digit, a character that's neither a letter nor a digit, and zxcvbn score 3 (changed from score 4 on 2026-11-09)
 - e2e never reaches Google, Railway or any outside service. Windows Hello is faked only when `ZING_E2E=1`, and the real prompt is checked by hand with the owner.
 - WebView2's own password saving and general autofill are off in every profile (`IsPasswordAutosaveEnabled = false`, `IsGeneralAutofillEnabled = false`).
 - Pure rules shared by TS and C# use `*.vectors.json`, as elsewhere.
@@ -79,7 +79,7 @@ These come from the spec. Each gets one report line in the ledger. **If C1 or C2
   - Compare with Windows Hello's key protection API, if present, and pick one.
 - [ ] **C2, passkeys:** in Zing, sign in with a passkey on webauthn.io, using Windows Hello and then a phone via QR code. If it fails, record what happens.
 - [ ] **C3, WebView2's own password saving:** with `IsPasswordAutosaveEnabled` and `IsGeneralAutofillEnabled` both false, submit a sign-in form. No WebView2 prompt or suggestion may appear.
-- [ ] **C4, Google sign-in:** the unpackaged `Zing.exe` opens the system browser for Google OAuth, with PKCE and a `http://127.0.0.1:<port>/` redirect, and receives the code. Use a test OAuth client the owner creates. Note the console steps for the PR body.
+- [ ] **C4, Google sign-in:** the unpackaged `Zing.exe` opens the system browser for Google OAuth, with PKCE and a `http://127.0.0.1:<port>/` redirect, and receives the code. Use a test OAuth client the owner creates. Note the console steps for the PR body. Moved to a Zing window on 2026-11-09: the authorize page now opens in a small window owned by Zing's, with the same redirect, PKCE and state check.
 
 ---
 
@@ -339,7 +339,7 @@ Add both projects to the solution.
 
 **Interfaces:**
 - **Produces:**
-  - `GoogleSignIn.SignInAsync(CancellationToken): Task<string idToken>`, using the system browser, PKCE and a loopback port
+  - `GoogleSignIn.SignInAsync(CancellationToken): Task<string idToken>`, using the system browser, PKCE and a loopback port (moved to a small Zing window on 2026-11-09: Zing.Core.Sync.GoogleSignIn with Zing.Host.SignInPopup behind ISignInPopup)
   - `SyncClient(Uri server)`, with `SignInAsync(idToken)`, `GetKeys`, `PutKeys`, `GetChanges`, `PostChanges`, `GetManifest`, `PutManifest`; it raises `SyncHttpException(status)`
 - **The session:** the refresh token is stored under DPAPI in `vault/sync.json`.
 - **In e2e,** `GoogleSignIn` is replaced by one that asks the local server's fake issuer for a token.

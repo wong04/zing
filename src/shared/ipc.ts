@@ -399,8 +399,9 @@ export interface InvokeContract {
 	'account:delete': { args: []; result: AccountOutcome }
 	/**
 	 * Changes the Zing password. A wrong current password is a `rejected` outcome. With sync on, the new one must pass the sync
-	 * floor (SyncPasswordTooWeakException) and the keys are re-wrapped and uploaded before this PC's password changes; keys changed
-	 * on another PC reject with SyncKeysChangedElsewhereException and change nothing.
+	 * password rules (SyncPasswordTooWeakException, whose message is the first failed rule's sentence) and the keys are re-wrapped
+	 * and uploaded before this PC's password changes; keys changed on another PC reject with SyncKeysChangedElsewhereException and
+	 * change nothing.
 	 */
 	'account:change-password': { args: [current: string, next: string]; result: AccountOutcome }
 	/** Whether the vault is on, whether Windows Hello is set up, and how many logins it holds. Asks nothing. */
@@ -445,7 +446,7 @@ export interface InvokeContract {
 	/** Whether this PC is signed in to sync, and as whom. Signed out while the vault is off. */
 	'sync:get': { args: []; result: SyncState }
 	/**
-	 * Turn on sync: Google sign-in in the system browser, then the sync server's session, kept in the vault. Rejects with
+	 * Turn on sync: Google sign-in in a small Zing window, then the sync server's session, kept in the vault. Rejects with
 	 * SyncNotSetUpException in a build made without a Google client ID, and VaultOffException while the vault is off.
 	 */
 	'sync:sign-in': { args: []; result: SyncState }

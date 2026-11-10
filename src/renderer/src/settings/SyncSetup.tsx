@@ -68,21 +68,25 @@ export function useSyncState(): { sync: SyncState | undefined; error: string | u
 	return { sync, error, setSync }
 }
 
-/** The renderer's zxcvbn verdict, for the meter only: the host checks the password again with its own. */
+/**
+ * The renderer's verdict, for the meter and its sentence only: the host checks the password again with its own. A refused password
+ * never fills the meter past half, so it never looks as good as one that passes.
+ */
 export function StrengthMeter({ strength, password }: { strength: Strength | undefined; password: string }) {
 	if (!strength || password === '') return null
 	const verdict = strength.syncStrength(password)
 	return (
 		<div className="sync-strength" role="status" aria-live="polite">
-			<meter min={0} max={4} value={verdict.enough ? verdict.score : Math.min(verdict.score, 3)} aria-label="Password strength" />
+			<meter min={0} max={4} value={verdict.enough ? verdict.score : Math.min(verdict.score, 2)} aria-label="Password strength" />
 			<span>{strength.syncStrengthLabel(verdict)}</span>
 		</div>
 	)
 }
 
 /**
- * Turning on sync once signed in with Google: the Zing password, which becomes the sync password on every PC. One weaker than
- * the sync floor (zxcvbn 4 and about 60 bits) is changed first, in the same flow, with a generated five-word passphrase on offer.
+ * Turning on sync once signed in with Google: the Zing password, which becomes the sync password on every PC. One the host turns
+ * down (at least 12 characters, a number, a symbol, and not common) is changed first, in the same flow, with a generated
+ * passphrase on offer. The host's sentence for the first rule it failed says why.
  */
 export function SyncSetup({ turnOn }: { turnOn: (password: string) => Promise<void> }) {
 	const strength = useStrength()
@@ -91,6 +95,7 @@ export function SyncSetup({ turnOn }: { turnOn: (password: string) => Promise<vo
 	const [next, setNext] = useState('')
 	const [again, setAgain] = useState('')
 	const [suggested, setSuggested] = useState<string>()
+	const [refusal, setRefusal] = useState<string>()
 	const { busy, error, run } = useAction()
 
 	const submitCurrent = (): void =>
@@ -99,6 +104,7 @@ export function SyncSetup({ turnOn }: { turnOn: (password: string) => Promise<vo
 				await turnOn(current)
 			} catch (failure) {
 				if (failure instanceof Error && failure.name === 'SyncPasswordTooWeakException') {
+					setRefusal(messageOf(failure))
 					setStronger(true)
 					return
 				}
@@ -109,6 +115,9 @@ export function SyncSetup({ turnOn }: { turnOn: (password: string) => Promise<vo
 	const submitStronger = (): void =>
 		run(async () => {
 			if (next !== again) throw new Error('The two new passwords aren’t the same.')
+			// Only so a refused password isn't made the account's first; the host checks it again when sync turns on.
+			const failed = strength?.syncPasswordFailures(next)[0]
+			if (strength && failed) throw new Error(strength.SYNC_PASSWORD_SENTENCES[failed])
 			const outcome = await zing.changePassword(current, next)
 			if (outcome.status === 'rejected') throw new Error(outcome.message)
 			// The new password is the account's now, so a turn-on that fails is retried with it.
@@ -145,7 +154,9 @@ export function SyncSetup({ turnOn }: { turnOn: (password: string) => Promise<vo
 
 	return (
 		<div className="sync-setup" role="form" aria-label="Choose a stronger password">
-			<InfoBanner kind="info">Sync needs a stronger Zing password, about 60 bits or more, because it protects your passwords on the server too. Five random words are easy to remember and strong enough.</InfoBanner>
+			<InfoBanner kind="info">
+				{refusal} Sync protects your passwords on the server too, so its password needs at least 12 characters, a number and a symbol, and mustn’t be a common one.
+			</InfoBanner>
 			<div className="sync-suggestion">
 				{suggested ? <code aria-label="Suggested passphrase">{suggested}</code> : null}
 				<PillButton variant="outlined" size="small" disabled={!strength} onClick={suggest}>

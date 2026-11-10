@@ -17,7 +17,7 @@ function accepted(outcome: AccountOutcome): void {
 /**
  * Restore from sync, from the account gate (spec, New PC or recovery): sign in with Google, then the Zing password or the recovery
  * key unlocks the synced passwords on this PC. A recovery key restore then asks for a new Zing password straight away, which must
- * pass the sync floor like any sync password. Once the account is made or given its password the gate goes, and the logins come
+ * pass the sync password rules like any sync password. Once the account is made or given its password the gate goes, and the logins come
  * with the next sync. The Google sign-in is the host's restore sign-in, held apart from the vault until a restore succeeds, so the
  * screen keeps it from signInToRestore rather than from the vault's sync state, which a failed step turning the vault on and off
  * again would reset.

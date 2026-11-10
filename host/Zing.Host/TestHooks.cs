@@ -117,14 +117,30 @@ public static class TestHooks
 	/// <summary>
 	/// Sync in an e2e run, which never reaches Google or Railway: ZING_E2E_SYNC_SERVER is a local Zing.Server started with its fake
 	/// issuer, and ZING_E2E_SYNC_SUB the Google sub to sign in as. Without them an e2e run has no sync, whatever the build has.
+	/// With ZING_E2E_GOOGLE_AUTHORIZE and ZING_E2E_GOOGLE_TOKEN, a test's fake Google on this PC, the sign-in is the real one, in
+	/// its window (SignInPopup); without them it's the fake issuer's, with no window (FakeIssuerSignIn).
 	/// </summary>
-	public static Zing.Core.Sync.SyncSetup? Sync()
+	/// <param name="app">What the sign-in window opens over.</param>
+	public static Zing.Core.Sync.SyncSetup? Sync(ZingApp app)
 	{
 		if (!IsEndToEndRun) throw new InvalidOperationException("TestHooks.Sync is for e2e runs only");
 		if (Environment.GetEnvironmentVariable("ZING_E2E_SYNC_SERVER") is not { Length: > 0 } url) return null;
 		var sub = Environment.GetEnvironmentVariable("ZING_E2E_SYNC_SUB") ?? throw new InvalidOperationException("ZING_E2E_SYNC_SERVER needs ZING_E2E_SYNC_SUB, the sub to sign in as");
 		var server = new Uri(url);
-		return new Zing.Core.Sync.SyncSetup(server, new FakeIssuerSignIn(server, sub), Warn: Faults.Warning);
+		if (Environment.GetEnvironmentVariable("ZING_E2E_GOOGLE_AUTHORIZE") is not { Length: > 0 } authorize)
+			return new Zing.Core.Sync.SyncSetup(server, new FakeIssuerSignIn(server, sub), Warn: Faults.Warning);
+		var token = Environment.GetEnvironmentVariable("ZING_E2E_GOOGLE_TOKEN") ?? throw new InvalidOperationException("ZING_E2E_GOOGLE_AUTHORIZE needs ZING_E2E_GOOGLE_TOKEN, the fake token endpoint");
+		var endpoints = new Zing.Core.Sync.GoogleEndpoints(OnThisPc(authorize), OnThisPc(token));
+		return new Zing.Core.Sync.SyncSetup(server, new Zing.Core.Sync.GoogleSignIn("zing-e2e-client", "zing-e2e-secret", endpoints, address => SignInPopup.OpenOver(app, address), Faults.Warning), Warn: Faults.Warning);
+	}
+
+	/// <summary>A fake Google endpoint, which must be http on a loopback address (no name, which the hosts file could point elsewhere): an e2e run never reaches Google.</summary>
+	private static Uri OnThisPc(string address)
+	{
+		var uri = new Uri(address);
+		if (uri.Scheme != Uri.UriSchemeHttp || !System.Net.IPAddress.TryParse(uri.Host, out var ip) || !System.Net.IPAddress.IsLoopback(ip))
+			throw new InvalidOperationException($"An e2e run's Google endpoints must be http://127.0.0.1:<port>, not {uri.Scheme}://{uri.Host}");
+		return uri;
 	}
 
 	private static int? _closeNextAt;
@@ -144,6 +160,7 @@ public static class TestHooks
 	/// "page-messages" writes how many page messages were dropped to <c>file</c>;
 	/// "set-modifiers" with <c>shift</c>, <c>ctrl</c> and <c>middle</c> sets the keys the next new-window request is taken to have been made with, once;
 	/// "peek-state" writes the link preview's state to <c>file</c>; "click-scrim" sends the preview's scrim a left-button press, as a click on the dim would;
+	/// "sign-in-window" writes the Google sign-in window's state to <c>file</c>, and with <c>close</c> closes it as the person would;
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// </summary>
@@ -278,6 +295,14 @@ public static class TestHooks
 		if (action == "exit-code-on-quit")
 		{
 			QuitExitCode = root.GetProperty("code").GetInt32();
+			return true;
+		}
+		if (action == "sign-in-window")
+		{
+			// The Google sign-in window: what it shows and where, written to file, then closed as the person would with close.
+			var popup = SignInPopup.Current;
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(popup is null ? new { open = false, ownedByThisWindow = false, address = "", width = 0.0, height = 0.0 } : new { open = true, ownedByThisWindow = popup.Owner == window.Hwnd, address = popup.Address, width = popup.Size.Width, height = popup.Size.Height }));
+			if (root.TryGetProperty("close", out var close) && close.GetBoolean()) (popup ?? throw new InvalidOperationException("sign-in-window close needs the window open")).CloseAsThePersonWould();
 			return true;
 		}
 		if (action == "close-at")

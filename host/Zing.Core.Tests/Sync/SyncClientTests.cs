@@ -244,6 +244,36 @@ public sealed class SyncClientTests : IDisposable
 		Assert.Equal(HttpStatusCode.Unauthorized, await RefreshStatusAsync(replaced));
 	}
 
+	/// <summary>
+	/// A test can end while a replaced sign-in's revoke is still in the server, holding zing.db open: disposing the server deleted the
+	/// folder under it ("used by another process"). The server waits for every request on its wire before it goes.
+	/// </summary>
+	[Fact]
+	public async Task DisposingTheServerWaitsForARevokeStillOnTheWire()
+	{
+		var server = new LocalSyncServer();
+		var warnings = new List<Exception>();
+		using var client = new SyncClient(server.Address, new MemoryAccountStore(), server.Handler(), (_, error) => warnings.Add(error));
+		await client.SignInAsync(await server.MintIdTokenAsync(), Ct);
+		var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		server.Wire.BeforeSend = async line =>
+		{
+			if (line != "POST /auth/signout") return;
+			reached.SetResult();
+			await held.Task;
+		};
+		await client.SignInAsync(await server.MintIdTokenAsync(), Ct);
+		await reached.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+
+		var disposing = server.DisposeAsync().AsTask();
+		held.SetResult();
+		await disposing;
+		await client.Revoking;
+
+		Assert.Empty(warnings);
+	}
+
 	[Fact]
 	public async Task AdoptingASignInRevokesTheOneItReplacesAndSendsAsTheAdoptedOne()
 	{
