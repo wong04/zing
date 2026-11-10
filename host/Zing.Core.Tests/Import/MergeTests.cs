@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Zing.Core.Import;
 
 namespace Zing.Core.Tests.Import;
@@ -33,6 +34,8 @@ public sealed class MergeTests
 		Assert.Equal(expected.GetProperty("addedToBar").GetInt32(), outcome.AddedToBar);
 		Assert.Equal(expected.GetProperty("addedToFolder").GetInt32(), outcome.AddedToFolder);
 		Assert.Equal(expected.GetProperty("folderTitle").GetString(), outcome.FolderTitle);
+		if (JsonNode.DeepEquals(JsonNode.Parse(c.GetProperty("library").GetRawText()), JsonNode.Parse(expected.GetProperty("library").GetRawText())))
+			Assert.Same(library, outcome.Library);
 	}
 
 	[Fact]

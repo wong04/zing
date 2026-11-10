@@ -1,5 +1,5 @@
 {
-	"note": "Ids come from a counter newId: \"n1\", \"n2\", ... assigned in creation order: bar before other, depth first, a folder before its children (so the \"Imported from\" folder takes its id before the nodes inside it). Nodes in the input library use other ids. Merged folders that gain a link get updatedAt = now; Favourites itself is left as is.",
+	"note": "Ids come from a counter newId: \"n1\", \"n2\", ... assigned in creation order: bar before other, depth first, a folder before its children (so the \"Imported from\" folder takes its id before the nodes inside it). Nodes in the input library use other ids. The URLs already imported are every link anywhere in the library marked with the source, taken before the merge; an incoming link with one of those URLs is never added again, wherever the user moved or renamed it, and a link the user deleted comes back. The import folder is the first folder in depth-first order, outside Favourites, marked with the source whose parent is not; with none, a new top-level one is made. Bar folders match on title and mark, folders under the import folder on title; an incoming folder that matches nothing is added without its already-imported links, and not at all if it had links and none are left. Merged folders that gain something get updatedAt = now; Favourites and the folders above the import folder are left as is. When nothing is added the library comes back unchanged (the same object in C#).",
 	"merge": [
 		{
 			"name": "first import",
@@ -860,7 +860,7 @@
 			}
 		},
 		{
-			"name": "link moved out by the user comes back on re-import",
+			"name": "a link the user moved out is not added again",
 			"library": {
 				"bookmarks": [
 					{
@@ -930,16 +930,8 @@
 						{
 							"id": "a1",
 							"title": "Imported from Chrome",
-							"children": [
-								{
-									"id": "n1",
-									"title": "News",
-									"url": "https://news.example/",
-									"updatedAt": 7,
-									"importedFrom": "Chrome"
-								}
-							],
-							"updatedAt": 7,
+							"children": [],
+							"updatedAt": 1,
 							"importedFrom": "Chrome"
 						},
 						{
@@ -960,7 +952,7 @@
 					"readingList": []
 				},
 				"addedToBar": 0,
-				"addedToFolder": 1,
+				"addedToFolder": 0,
 				"folderTitle": "Imported from Chrome"
 			}
 		},
@@ -1355,7 +1347,7 @@
 			}
 		},
 		{
-			"name": "a user own unmarked bar folder is left alone and a marked one is added beside it",
+			"name": "a user's own unmarked bar folder is left alone and a marked one is added beside it",
 			"library": {
 				"bookmarks": [
 					{
@@ -1710,6 +1702,1017 @@
 				},
 				"addedToBar": 0,
 				"addedToFolder": 2,
+				"folderTitle": "Imported from Chrome"
+			}
+		},
+		{
+			"name": "renamed sub-folder in the import folder: only its new links come in, under the source title",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "a1",
+						"title": "Imported from Chrome",
+						"children": [
+							{
+								"id": "a2",
+								"title": "Dev tools",
+								"children": [
+									{
+										"id": "a3",
+										"title": "MDN",
+										"url": "https://developer.mozilla.org/",
+										"updatedAt": 1,
+										"importedFrom": "Chrome"
+									}
+								],
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							}
+						],
+						"updatedAt": 1,
+						"importedFrom": "Chrome"
+					}
+				],
+				"readingList": []
+			},
+			"result": {
+				"bar": [],
+				"other": [
+					{
+						"kind": "folder",
+						"title": "Dev",
+						"children": [
+							{
+								"kind": "link",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org/"
+							},
+							{
+								"kind": "link",
+								"title": "web.dev",
+								"url": "https://web.dev/"
+							}
+						]
+					}
+				],
+				"skipped": []
+			},
+			"source": "Chrome",
+			"now": 7,
+			"expected": {
+				"library": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "a1",
+							"title": "Imported from Chrome",
+							"children": [
+								{
+									"id": "a2",
+									"title": "Dev tools",
+									"children": [
+										{
+											"id": "a3",
+											"title": "MDN",
+											"url": "https://developer.mozilla.org/",
+											"updatedAt": 1,
+											"importedFrom": "Chrome"
+										}
+									],
+									"updatedAt": 1,
+									"importedFrom": "Chrome"
+								},
+								{
+									"id": "n1",
+									"title": "Dev",
+									"children": [
+										{
+											"id": "n2",
+											"title": "web.dev",
+											"url": "https://web.dev/",
+											"updatedAt": 7,
+											"importedFrom": "Chrome"
+										}
+									],
+									"updatedAt": 7,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 7,
+							"importedFrom": "Chrome"
+						}
+					],
+					"readingList": []
+				},
+				"addedToBar": 0,
+				"addedToFolder": 1,
+				"folderTitle": "Imported from Chrome"
+			}
+		},
+		{
+			"name": "renamed imported bar folder: only its new links come in, under the source title",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "a1",
+								"title": "Tools",
+								"children": [
+									{
+										"id": "a2",
+										"title": "MDN",
+										"url": "https://developer.mozilla.org/",
+										"updatedAt": 1,
+										"importedFrom": "Chrome"
+									}
+								],
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							}
+						],
+						"updatedAt": 1
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"result": {
+				"bar": [
+					{
+						"kind": "folder",
+						"title": "Dev",
+						"children": [
+							{
+								"kind": "link",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org/"
+							},
+							{
+								"kind": "link",
+								"title": "web.dev",
+								"url": "https://web.dev/"
+							}
+						]
+					}
+				],
+				"other": [],
+				"skipped": []
+			},
+			"source": "Chrome",
+			"now": 7,
+			"expected": {
+				"library": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [
+								{
+									"id": "a1",
+									"title": "Tools",
+									"children": [
+										{
+											"id": "a2",
+											"title": "MDN",
+											"url": "https://developer.mozilla.org/",
+											"updatedAt": 1,
+											"importedFrom": "Chrome"
+										}
+									],
+									"updatedAt": 1,
+									"importedFrom": "Chrome"
+								},
+								{
+									"id": "n1",
+									"title": "Dev",
+									"children": [
+										{
+											"id": "n2",
+											"title": "web.dev",
+											"url": "https://web.dev/",
+											"updatedAt": 7,
+											"importedFrom": "Chrome"
+										}
+									],
+									"updatedAt": 7,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				},
+				"addedToBar": 1,
+				"addedToFolder": 0,
+				"folderTitle": "Imported from Chrome"
+			}
+		},
+		{
+			"name": "renamed imported bar folder with nothing new is not added again",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "a1",
+								"title": "Tools",
+								"children": [
+									{
+										"id": "a2",
+										"title": "MDN",
+										"url": "https://developer.mozilla.org/",
+										"updatedAt": 1,
+										"importedFrom": "Chrome"
+									}
+								],
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							}
+						],
+						"updatedAt": 1
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"result": {
+				"bar": [
+					{
+						"kind": "folder",
+						"title": "Dev",
+						"children": [
+							{
+								"kind": "link",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org/"
+							}
+						]
+					}
+				],
+				"other": [],
+				"skipped": []
+			},
+			"source": "Chrome",
+			"now": 7,
+			"expected": {
+				"library": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [
+								{
+									"id": "a1",
+									"title": "Tools",
+									"children": [
+										{
+											"id": "a2",
+											"title": "MDN",
+											"url": "https://developer.mozilla.org/",
+											"updatedAt": 1,
+											"importedFrom": "Chrome"
+										}
+									],
+									"updatedAt": 1,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				},
+				"addedToBar": 0,
+				"addedToFolder": 0,
+				"folderTitle": "Imported from Chrome"
+			}
+		},
+		{
+			"name": "import folder nested inside a user folder still receives new links",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "a1",
+						"title": "Archive",
+						"children": [
+							{
+								"id": "a2",
+								"title": "Imported from Chrome",
+								"children": [
+									{
+										"id": "a3",
+										"title": "News",
+										"url": "https://news.example/",
+										"updatedAt": 1,
+										"importedFrom": "Chrome"
+									}
+								],
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							}
+						],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"result": {
+				"bar": [],
+				"other": [
+					{
+						"kind": "link",
+						"title": "News",
+						"url": "https://news.example/"
+					},
+					{
+						"kind": "link",
+						"title": "Blog",
+						"url": "https://blog.example/"
+					}
+				],
+				"skipped": []
+			},
+			"source": "Chrome",
+			"now": 7,
+			"expected": {
+				"library": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "a1",
+							"title": "Archive",
+							"children": [
+								{
+									"id": "a2",
+									"title": "Imported from Chrome",
+									"children": [
+										{
+											"id": "a3",
+											"title": "News",
+											"url": "https://news.example/",
+											"updatedAt": 1,
+											"importedFrom": "Chrome"
+										},
+										{
+											"id": "n1",
+											"title": "Blog",
+											"url": "https://blog.example/",
+											"updatedAt": 7,
+											"importedFrom": "Chrome"
+										}
+									],
+									"updatedAt": 7,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				},
+				"addedToBar": 0,
+				"addedToFolder": 1,
+				"folderTitle": "Imported from Chrome"
+			}
+		},
+		{
+			"name": "a marked sub-folder dragged to the top level beside the import folder is not doubled",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "a1",
+						"title": "Imported from Chrome",
+						"children": [
+							{
+								"id": "a2",
+								"title": "News",
+								"url": "https://news.example/",
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							}
+						],
+						"updatedAt": 1,
+						"importedFrom": "Chrome"
+					},
+					{
+						"id": "a3",
+						"title": "Dev",
+						"children": [
+							{
+								"id": "a4",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org/",
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							}
+						],
+						"updatedAt": 1,
+						"importedFrom": "Chrome"
+					}
+				],
+				"readingList": []
+			},
+			"result": {
+				"bar": [],
+				"other": [
+					{
+						"kind": "link",
+						"title": "News",
+						"url": "https://news.example/"
+					},
+					{
+						"kind": "folder",
+						"title": "Dev",
+						"children": [
+							{
+								"kind": "link",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org/"
+							}
+						]
+					}
+				],
+				"skipped": []
+			},
+			"source": "Chrome",
+			"now": 7,
+			"expected": {
+				"library": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "a1",
+							"title": "Imported from Chrome",
+							"children": [
+								{
+									"id": "a2",
+									"title": "News",
+									"url": "https://news.example/",
+									"updatedAt": 1,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 1,
+							"importedFrom": "Chrome"
+						},
+						{
+							"id": "a3",
+							"title": "Dev",
+							"children": [
+								{
+									"id": "a4",
+									"title": "MDN",
+									"url": "https://developer.mozilla.org/",
+									"updatedAt": 1,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 1,
+							"importedFrom": "Chrome"
+						}
+					],
+					"readingList": []
+				},
+				"addedToBar": 0,
+				"addedToFolder": 0,
+				"folderTitle": "Imported from Chrome"
+			}
+		},
+		{
+			"name": "a deleted link comes back",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "a1",
+						"title": "Imported from Chrome",
+						"children": [
+							{
+								"id": "a2",
+								"title": "Blog",
+								"url": "https://blog.example/",
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							}
+						],
+						"updatedAt": 1,
+						"importedFrom": "Chrome"
+					}
+				],
+				"readingList": []
+			},
+			"result": {
+				"bar": [],
+				"other": [
+					{
+						"kind": "link",
+						"title": "News",
+						"url": "https://news.example/"
+					},
+					{
+						"kind": "link",
+						"title": "Blog",
+						"url": "https://blog.example/"
+					}
+				],
+				"skipped": []
+			},
+			"source": "Chrome",
+			"now": 7,
+			"expected": {
+				"library": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "a1",
+							"title": "Imported from Chrome",
+							"children": [
+								{
+									"id": "a2",
+									"title": "Blog",
+									"url": "https://blog.example/",
+									"updatedAt": 1,
+									"importedFrom": "Chrome"
+								},
+								{
+									"id": "n1",
+									"title": "News",
+									"url": "https://news.example/",
+									"updatedAt": 7,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 7,
+							"importedFrom": "Chrome"
+						}
+					],
+					"readingList": []
+				},
+				"addedToBar": 0,
+				"addedToFolder": 1,
+				"folderTitle": "Imported from Chrome"
+			}
+		},
+		{
+			"name": "a re-import of what is all already there, moved about, adds nothing and leaves the library unchanged",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "a1",
+								"title": "GitHub",
+								"url": "https://github.com/",
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							}
+						],
+						"updatedAt": 1
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "a2",
+						"title": "Imported from Chrome",
+						"children": [
+							{
+								"id": "a3",
+								"title": "Phone",
+								"url": "https://phone.example/",
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							}
+						],
+						"updatedAt": 1,
+						"importedFrom": "Chrome"
+					},
+					{
+						"id": "a4",
+						"title": "Mine",
+						"children": [
+							{
+								"id": "a5",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org/",
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							},
+							{
+								"id": "a6",
+								"title": "News",
+								"url": "https://news.example/",
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							}
+						],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"result": {
+				"bar": [
+					{
+						"kind": "link",
+						"title": "GitHub",
+						"url": "https://github.com/"
+					},
+					{
+						"kind": "folder",
+						"title": "Dev",
+						"children": [
+							{
+								"kind": "link",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org/"
+							}
+						]
+					}
+				],
+				"other": [
+					{
+						"kind": "link",
+						"title": "News",
+						"url": "https://news.example/"
+					},
+					{
+						"kind": "folder",
+						"title": "Mobile",
+						"children": [
+							{
+								"kind": "link",
+								"title": "Phone",
+								"url": "https://phone.example/"
+							}
+						]
+					}
+				],
+				"skipped": []
+			},
+			"source": "Chrome",
+			"now": 7,
+			"expected": {
+				"library": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [
+								{
+									"id": "a1",
+									"title": "GitHub",
+									"url": "https://github.com/",
+									"updatedAt": 1,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "a2",
+							"title": "Imported from Chrome",
+							"children": [
+								{
+									"id": "a3",
+									"title": "Phone",
+									"url": "https://phone.example/",
+									"updatedAt": 1,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 1,
+							"importedFrom": "Chrome"
+						},
+						{
+							"id": "a4",
+							"title": "Mine",
+							"children": [
+								{
+									"id": "a5",
+									"title": "MDN",
+									"url": "https://developer.mozilla.org/",
+									"updatedAt": 1,
+									"importedFrom": "Chrome"
+								},
+								{
+									"id": "a6",
+									"title": "News",
+									"url": "https://news.example/",
+									"updatedAt": 1,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				},
+				"addedToBar": 0,
+				"addedToFolder": 0,
+				"folderTitle": "Imported from Chrome"
+			}
+		},
+		{
+			"name": "with the import folder deleted, links the user kept elsewhere are not imported again",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "a1",
+						"title": "Mine",
+						"children": [
+							{
+								"id": "a2",
+								"title": "News",
+								"url": "https://news.example/",
+								"updatedAt": 1,
+								"importedFrom": "Chrome"
+							}
+						],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"result": {
+				"bar": [],
+				"other": [
+					{
+						"kind": "link",
+						"title": "News",
+						"url": "https://news.example/"
+					},
+					{
+						"kind": "link",
+						"title": "Blog",
+						"url": "https://blog.example/"
+					}
+				],
+				"skipped": []
+			},
+			"source": "Chrome",
+			"now": 7,
+			"expected": {
+				"library": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "a1",
+							"title": "Mine",
+							"children": [
+								{
+									"id": "a2",
+									"title": "News",
+									"url": "https://news.example/",
+									"updatedAt": 1,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 1
+						},
+						{
+							"id": "n1",
+							"title": "Imported from Chrome",
+							"children": [
+								{
+									"id": "n2",
+									"title": "Blog",
+									"url": "https://blog.example/",
+									"updatedAt": 7,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 7,
+							"importedFrom": "Chrome"
+						}
+					],
+					"readingList": []
+				},
+				"addedToBar": 0,
+				"addedToFolder": 1,
+				"folderTitle": "Imported from Chrome"
+			}
+		},
+		{
+			"name": "an empty folder from the source is kept, since it had no links to prune",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"result": {
+				"bar": [],
+				"other": [
+					{
+						"kind": "folder",
+						"title": "Empty",
+						"children": []
+					}
+				],
+				"skipped": []
+			},
+			"source": "Chrome",
+			"now": 7,
+			"expected": {
+				"library": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "n1",
+							"title": "Imported from Chrome",
+							"children": [
+								{
+									"id": "n2",
+									"title": "Empty",
+									"children": [],
+									"updatedAt": 7,
+									"importedFrom": "Chrome"
+								}
+							],
+							"updatedAt": 7,
+							"importedFrom": "Chrome"
+						}
+					],
+					"readingList": []
+				},
+				"addedToBar": 0,
+				"addedToFolder": 0,
 				"folderTitle": "Imported from Chrome"
 			}
 		}
