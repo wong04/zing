@@ -77,6 +77,9 @@ function toLibraryNodes(nodes: readonly ImportedNode[], source: string, now: num
 function mergeChildren(existing: readonly BookmarkNode[], incoming: readonly ImportedNode[], matches: FolderMatch, source: string, now: number, newId: () => string): Merged {
 	const urls = new Set(existing.filter((n) => !isFolder(n)).map((n) => (n as BookmarkLink).url))
 	const children = [...existing]
+	// Folders match only nodes from before this merge, each at most once, so two
+	// same-titled incoming folders never merge into each other.
+	const taken = new Set<number>()
 	let added = 0
 	for (const node of incoming) {
 		if (node.kind === 'link') {
@@ -86,7 +89,7 @@ function mergeChildren(existing: readonly BookmarkNode[], incoming: readonly Imp
 			added += built.added
 			continue
 		}
-		const index = children.findIndex((n) => isFolder(n) && matches(n, node))
+		const index = existing.findIndex((n, i) => !taken.has(i) && isFolder(n) && matches(n, node))
 		const match = children[index]
 		if (index === -1 || !match || !isFolder(match)) {
 			const built = toLibraryNodes([node], source, now, newId)
@@ -94,6 +97,7 @@ function mergeChildren(existing: readonly BookmarkNode[], incoming: readonly Imp
 			added += built.added
 			continue
 		}
+		taken.add(index)
 		const inner = mergeChildren(match.children, node.children, matches, source, now, newId)
 		if (inner.added === 0) continue
 		children[index] = { ...match, children: inner.children, updatedAt: now }
