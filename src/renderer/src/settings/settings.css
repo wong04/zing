@@ -324,6 +324,20 @@
 	font-size: 12px;
 }
 
+.credits-text {
+	max-height: 280px;
+	overflow: auto;
+	margin: 6px 0 0;
+	padding: 12px;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: var(--well);
+	color: var(--text);
+	font: 11px/1.45 ui-monospace, Consolas, monospace;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.sheet,
 	.sheet-backdrop,

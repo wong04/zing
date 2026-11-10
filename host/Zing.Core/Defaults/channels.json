@@ -1,6 +1,10 @@
 {
 	"invoke": [
 		{
+			"channel": "about:credits",
+			"args": 0
+		},
+		{
 			"channel": "account:change-password",
 			"args": 2
 		},

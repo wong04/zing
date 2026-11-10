@@ -182,5 +182,6 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		onUpdateState: (listener) => listen('update:state', listener),
 		getDefaultBrowserState: () => invoke('default-browser:get'),
 		dismissDefaultBrowserOffer: () => invoke('default-browser:dismiss'),
+		getCredits: () => invoke('about:credits'),
 	}
 }

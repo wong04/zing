@@ -537,6 +537,8 @@ export interface InvokeContract {
 	'default-browser:get': { args: []; result: DefaultBrowserState }
 	/** "Don't ask again": sets defaultBrowserDismissed and takes the offer down. */
 	'default-browser:dismiss': { args: []; result: void }
+	/** The third-party notices the build generated (THIRD-PARTY-NOTICES.txt). Rejects if the file is missing. */
+	'about:credits': { args: []; result: string }
 }
 
 /** Host → renderer pushes. The host sends one per change, uncoalesced. */
@@ -752,4 +754,5 @@ export interface ZingApi {
 	onUpdateState(listener: (state: UpdateState) => void): Unsubscribe
 	getDefaultBrowserState(): Promise<DefaultBrowserState>
 	dismissDefaultBrowserOffer(): Promise<void>
+	getCredits(): Promise<string>
 }

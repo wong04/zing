@@ -47,6 +47,10 @@ test('Check now finds a ready update, every window shows the pill, and clicking 
 	await expect(sheet.getByRole('switch', { name: 'Check for updates' })).toHaveAttribute('aria-checked', 'true')
 	await expect(sheet.getByText('Asks GitHub for the latest version every few hours. Sends nothing about you.')).toBeVisible()
 	await expect(sheet.getByText('Version 0.9.0')).toBeVisible()
+	await sheet.getByRole('button', { name: 'Show' }).click()
+	await expect(sheet.getByRole('region', { name: 'Credits' })).toContainText('@mozilla/readability')
+	await sheet.getByRole('button', { name: 'Hide' }).click()
+	await expect(sheet.getByRole('region', { name: 'Credits' })).toHaveCount(0)
 	await sheet.getByRole('button', { name: 'Check now' }).click()
 	await expect(sheet.getByText('Ready: relaunch to update')).toBeVisible()
 

@@ -225,6 +225,7 @@ public sealed class FakeWindowHost : IWindowHost
 	public void SetUpdatePillSize(int width, int height) => UpdatePillSizes.Add((width, height));
 	/// <summary>Not installed, so not the default, unless a test sets it.</summary>
 	public DefaultBrowserState DefaultBrowserState { get; set; } = new(false, false);
+	public string ThirdPartyNoticesPath { get; set; } = "";
 }
 
 public sealed class FakeDownloads : IDownloadHost

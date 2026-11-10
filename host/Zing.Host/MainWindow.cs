@@ -694,6 +694,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public Updater Updates => _app.Updates;
 
+	public string ThirdPartyNoticesPath => Path.Combine(AppContext.BaseDirectory, "Assets", "THIRD-PARTY-NOTICES.txt");
+
 	public void SetUpdatePillSize(int width, int height) => _updatePill?.SetSize(width, height);
 
 	/// <summary>Raised by the app's Updater, which must not see a throw: a closed window has nothing to show it on.</summary>

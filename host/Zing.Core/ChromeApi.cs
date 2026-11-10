@@ -78,6 +78,8 @@ public interface IWindowHost
 	void SetUpdatePillSize(int width, int height);
 	/// <summary>Whether Zing is installed and the default browser, asked anew each time (the person may have changed it in Windows' Settings).</summary>
 	DefaultBrowserState DefaultBrowserState { get; }
+	/// <summary>The generated third-party notices file, shown by About's Credits.</summary>
+	string ThirdPartyNoticesPath { get; }
 }
 
 /// <summary>What every window shares: one settings store, one library, one address rule.</summary>
@@ -444,6 +446,7 @@ public sealed class ChromeApi : IDisposable
 		// CSS pixels, fractional on a scaled display; the view takes whole DIPs, rounded up.
 		bridge.Register("update:pill-size", args => Do(() => host.SetUpdatePillSize((int)Math.Ceiling(Number(args, 0)), (int)Math.Ceiling(Number(args, 1)))));
 		bridge.Register("default-browser:get", _ => host.DefaultBrowserState);
+		bridge.Register("about:credits", _ => File.ReadAllText(host.ThirdPartyNoticesPath));
 		bridge.Register("default-browser:dismiss", _ => Do(() =>
 		{
 			app.Settings.Set("defaultBrowserDismissed", true);
