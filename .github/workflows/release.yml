@@ -51,8 +51,6 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     env:
-      ZingGoogleClientId: ${{ github.event_name != 'pull_request' && secrets.ZING_GOOGLE_CLIENT_ID || '' }}
-      ZingGoogleClientSecret: ${{ github.event_name != 'pull_request' && secrets.ZING_GOOGLE_CLIENT_SECRET || '' }}
       # Step `if:` can't read secrets, so the sign step tests this instead.
       AZURE_SIGNING_ACCOUNT: ${{ github.event_name != 'pull_request' && secrets.AZURE_SIGNING_ACCOUNT || '' }}
     steps:
@@ -89,13 +87,20 @@ jobs:
       # The latest published release, so vpk pack can build a delta package from it.
       - name: Download the previous release
         if: github.event_name == 'push'
-        run: dotnet vpk download github --repoUrl https://github.com/wong04/zing --token ${{ secrets.GITHUB_TOKEN }} --outputDir artifacts/releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: dotnet vpk download github --repoUrl https://github.com/wong04/zing --token $env:GH_TOKEN --outputDir artifacts/releases
       - name: Sign
         if: env.AZURE_SIGNING_ACCOUNT != ''
         # Code signing plugs in here: Azure Trusted Signing (`vpk pack --azureTrustedSignFile metadata.json`) or SignPath
         # (`vpk pack --signTemplate "<command> {{file}}"`), passed through scripts/pack.ps1. Not set up yet.
         run: echo "signing is not configured"
-      - run: npm run pack -- -Version ${{ steps.version.outputs.version }}
+      - name: Pack
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ZingGoogleClientId: ${{ github.event_name != 'pull_request' && secrets.ZING_GOOGLE_CLIENT_ID || '' }}
+          ZingGoogleClientSecret: ${{ github.event_name != 'pull_request' && secrets.ZING_GOOGLE_CLIENT_SECRET || '' }}
+        run: npm run pack -- -Version $env:VERSION
       - uses: actions/upload-artifact@v4
         with:
           name: zing-${{ steps.version.outputs.version }}
@@ -122,7 +127,10 @@ jobs:
           name: zing-${{ needs.pack.outputs.version }}
           path: artifacts/releases
       # vpk leaves the release a draft unless --publish is given.
-      - run: dotnet vpk upload github --repoUrl https://github.com/wong04/zing --token ${{ secrets.GITHUB_TOKEN }} --outputDir artifacts/releases --releaseName "Zing ${{ env.VERSION }}" --tag ${{ github.ref_name }}
+      # A prerelease tag (v1.1.0-beta.1) is uploaded without --pre too: the owner marks it when publishing the draft.
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: dotnet vpk upload github --repoUrl https://github.com/wong04/zing --token $env:GH_TOKEN --outputDir artifacts/releases --releaseName "Zing $env:VERSION" --tag $env:GITHUB_REF_NAME
 
   # Enabled at 1.0: after a release is published, opens a winget-pkgs PR bumping wong04.Zing (winget/manifests).
   winget:
@@ -130,6 +138,9 @@ jobs:
     needs: [pack, release]
     runs-on: windows-latest
     steps:
-      - run: |
-          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          .\wingetcreate.exe update wong04.Zing --version ${{ needs.pack.outputs.version }} --urls "https://github.com/wong04/zing/releases/download/${{ github.ref_name }}/ZingBrowser-win-Setup.exe" --submit --token ${{ secrets.WINGET_TOKEN }}
+      - env:
+          VERSION: ${{ needs.pack.outputs.version }}
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          Invoke-WebRequest https://github.com/microsoft/winget-create/releases/download/v1.12.13.0/wingetcreate.exe -OutFile wingetcreate.exe
+          .\wingetcreate.exe update wong04.Zing --version $env:VERSION --urls "https://github.com/wong04/zing/releases/download/$env:GITHUB_REF_NAME/ZingBrowser-win-Setup.exe" --submit --token $env:WINGET_TOKEN
