@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint'
 import reactHooks from 'eslint-plugin-react-hooks'
 
 export default tseslint.config(
-	{ ignores: ['out/**', 'dist/**', 'release/**', 'reference/**', 'node_modules/**', 'host/**/bin/**', 'host/**/obj/**', 'host/Zing.Host/Assets/**'] },
+	{ ignores: ['out/**', 'dist/**', 'release/**', 'reference/**', 'node_modules/**', 'host/**/bin/**', 'host/**/obj/**', 'host/Zing.Host/Assets/**', 'artifacts/**'] },
 	js.configs.recommended,
 	...tseslint.configs.recommended,
 	{

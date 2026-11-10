@@ -1,0 +1,135 @@
+# Builds the Velopack installer (scripts/pack.ps1) and, on a v* tag, uploads it to a draft GitHub release.
+#
+# Secrets (Settings → Secrets and variables → Actions), passed only on tag pushes and manual runs, never on pull requests:
+#   ZING_GOOGLE_CLIENT_ID     → env ZingGoogleClientId      (MSBuild reads it as a property; without it the build has no sync)
+#   ZING_GOOGLE_CLIENT_SECRET → env ZingGoogleClientSecret
+#   AZURE_SIGNING_ACCOUNT     → env AZURE_SIGNING_ACCOUNT   (unset for now, so the sign step never runs)
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/pack.ps1
+      - .github/workflows/release.yml
+      - .config/dotnet-tools.json
+      - winget/**
+      - host/Zing.Host/Zing.Host.csproj
+
+permissions:
+  contents: read
+
+jobs:
+  # The same checks as ci.yml's check job, so a tag never ships a red build.
+  checks:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('host/**/*.csproj', 'global.json') }}
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:host
+
+  pack:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      ZingGoogleClientId: ${{ github.event_name != 'pull_request' && secrets.ZING_GOOGLE_CLIENT_ID || '' }}
+      ZingGoogleClientSecret: ${{ github.event_name != 'pull_request' && secrets.ZING_GOOGLE_CLIENT_SECRET || '' }}
+      # Step `if:` can't read secrets, so the sign step tests this instead.
+      AZURE_SIGNING_ACCOUNT: ${{ github.event_name != 'pull_request' && secrets.AZURE_SIGNING_ACCOUNT || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('host/**/*.csproj', 'global.json') }}
+      - run: npm ci
+      - run: dotnet tool restore
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          switch ($env:GITHUB_EVENT_NAME) {
+            'push' {
+              if ($env:GITHUB_REF_NAME -notmatch '^v(\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?)$') {
+                throw "tag $env:GITHUB_REF_NAME is not v<semver>"
+              }
+              $version = $Matches[1]
+            }
+            'workflow_dispatch' { $version = "0.0.0-dispatch.$env:GITHUB_RUN_NUMBER" }
+            default { $version = "0.0.0-pr.$env:GITHUB_RUN_NUMBER" }
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "version $version"
+      # The latest published release, so vpk pack can build a delta package from it.
+      - name: Download the previous release
+        if: github.event_name == 'push'
+        run: dotnet vpk download github --repoUrl https://github.com/wong04/zing --token ${{ secrets.GITHUB_TOKEN }} --outputDir artifacts/releases
+      - name: Sign
+        if: env.AZURE_SIGNING_ACCOUNT != ''
+        # Code signing plugs in here: Azure Trusted Signing (`vpk pack --azureTrustedSignFile metadata.json`) or SignPath
+        # (`vpk pack --signTemplate "<command> {{file}}"`), passed through scripts/pack.ps1. Not set up yet.
+        run: echo "signing is not configured"
+      - run: npm run pack -- -Version ${{ steps.version.outputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zing-${{ steps.version.outputs.version }}
+          path: artifacts/releases/
+          retention-days: 14
+
+  # Tag pushes only: uploads the packed release as a draft, which the owner publishes by hand.
+  release:
+    if: github.event_name == 'push'
+    needs: [checks, pack]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.pack.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - run: dotnet tool restore
+      - uses: actions/download-artifact@v4
+        with:
+          name: zing-${{ needs.pack.outputs.version }}
+          path: artifacts/releases
+      # vpk leaves the release a draft unless --publish is given.
+      - run: dotnet vpk upload github --repoUrl https://github.com/wong04/zing --token ${{ secrets.GITHUB_TOKEN }} --outputDir artifacts/releases --releaseName "Zing ${{ env.VERSION }}" --tag ${{ github.ref_name }}
+
+  # Enabled at 1.0: after a release is published, opens a winget-pkgs PR bumping wong04.Zing (winget/manifests).
+  winget:
+    if: false
+    needs: [pack, release]
+    runs-on: windows-latest
+    steps:
+      - run: |
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe update wong04.Zing --version ${{ needs.pack.outputs.version }} --urls "https://github.com/wong04/zing/releases/download/${{ github.ref_name }}/ZingBrowser-win-Setup.exe" --submit --token ${{ secrets.WINGET_TOKEN }}

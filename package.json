@@ -17,6 +17,7 @@
 		"gen:reader": "rolldown scripts/reader-entry.ts --format iife --file host/Zing.Host/Assets/reader.js && rolldown scripts/gen-reader.ts --platform node --format esm --file out/gen-reader.mjs && node out/gen-reader.mjs",
 		"gen:notices": "rolldown scripts/gen-notices.ts --platform node --format esm --file out/gen-notices.mjs && node out/gen-notices.mjs",
 		"build:host": "npm run gen:reader && npm run gen:notices && dotnet build host/Zing.Host -c Release",
+		"pack": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack.ps1",
 		"test:host": "dotnet test host/Zing.Core.Tests",
 		"test:server": "dotnet test server/Zing.Server.Tests",
 		"test:e2e": "npm run build && npm run build:host && playwright test",
