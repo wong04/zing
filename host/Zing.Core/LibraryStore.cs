@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Zing.Core.Import;
 
 namespace Zing.Core;
 
@@ -148,6 +149,14 @@ public sealed class LibraryStore
 	/// <summary>Every link under a node, depth-first: what Ctrl-clicking a bar folder opens.</summary>
 	public IReadOnlyList<string> UrlsOf(string id) =>
 		Library.Find(id, Snapshot.Bookmarks) is { } node ? Library.Urls(node) : [];
+
+	/// <summary>Merges what a parser read into the library: it only adds (see <see cref="ImportMerge.Merge"/>).</summary>
+	public MergeOutcome Import(BookmarkImport result, string source)
+	{
+		var outcome = ImportMerge.Merge(Snapshot, result, source, _now(), _newId);
+		Set(outcome.Library);
+		return outcome;
+	}
 
 	private string NewFolder(IReadOnlyList<string> ids)
 	{
