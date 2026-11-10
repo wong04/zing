@@ -10,6 +10,8 @@ export interface BookmarkLink {
 	title: string
 	url: string
 	updatedAt: number
+	// The browser an import came from, e.g. "Chrome (Personal)". Absent on anything the user made.
+	importedFrom?: string
 }
 
 export interface BookmarkFolder {
@@ -17,6 +19,7 @@ export interface BookmarkFolder {
 	title: string
 	children: BookmarkNode[]
 	updatedAt: number
+	importedFrom?: string
 }
 
 export type BookmarkNode = BookmarkLink | BookmarkFolder
@@ -50,6 +53,12 @@ export function isFixedFolder(id: string): boolean {
 
 export function isFolder(node: BookmarkNode): node is BookmarkFolder {
 	return 'children' in node
+}
+
+// True if any node, at any depth, came from an import: the privacy banner's cue.
+export function holdsImports(library: BrowserLibrary): boolean {
+	const imported = (node: BookmarkNode): boolean => node.importedFrom !== undefined || (isFolder(node) && node.children.some(imported))
+	return library.bookmarks.some(imported)
 }
 
 export function link(title: string, url: string, now = Date.now()): BookmarkLink {

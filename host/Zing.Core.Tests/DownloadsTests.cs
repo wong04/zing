@@ -23,6 +23,24 @@ public sealed class DownloadsTests
 	}
 
 	[Fact]
+	public void A_download_is_a_frames_only_while_that_frame_is_navigating_to_it()
+	{
+		var now = new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc);
+		var frames = new FrameNavigations(() => now);
+		frames.Started("https://a.test/inner.zip");
+		frames.Started("https://a.test/page.html");
+		frames.Showed("https://a.test/page.html");
+		Assert.False(frames.ClaimDownload("https://a.test/page.html"));
+		Assert.False(frames.ClaimDownload("https://a.test/other.zip"));
+		Assert.True(frames.ClaimDownload("https://a.test/inner.zip"));
+		// Claimed once: the same address downloaded again from the main frame is the main frame's.
+		Assert.False(frames.ClaimDownload("https://a.test/inner.zip"));
+		frames.Started("https://a.test/late.zip");
+		now += TimeSpan.FromSeconds(31);
+		Assert.False(frames.ClaimDownload("https://a.test/late.zip"));
+	}
+
+	[Fact]
 	public void A_download_gets_a_safe_numbered_name()
 	{
 		foreach (var c in Cases("src/shared/browser/downloadName.vectors.json", "fileName"))

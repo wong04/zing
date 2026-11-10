@@ -7,6 +7,7 @@ import {
 	favourites,
 	find,
 	groupIntoFolder,
+	holdsImports,
 	link,
 	move,
 	readingItem,
@@ -102,6 +103,9 @@ describe('library vectors', () => {
 		const before = [...c.list]
 		expect(move(c.list, c.from, c.to)).toEqual(c.expected)
 		expect(c.list).toEqual(before)
+	})
+	it.each(vectors.holdsImports)('holdsImports: $name', (c) => {
+		expect(holdsImports(c.library as BrowserLibrary)).toBe(c.expected)
 	})
 	it('the library round-trips through JSON', () => {
 		const library = vectors.serialised.library

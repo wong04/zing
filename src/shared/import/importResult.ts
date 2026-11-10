@@ -1,4 +1,4 @@
-import { folder, isFolder, link, type BookmarkNode, type BrowserLibrary, FAVOURITES_ID, favourites, withFavourites } from '../library/library'
+import { FAVOURITES_ID, isFolder, type BookmarkFolder, type BookmarkLink, type BookmarkNode, type BrowserLibrary, favourites, withFavourites } from '../library/library'
 
 export interface ImportedLink {
 	kind: 'link'
@@ -43,29 +43,146 @@ export function countLinks(nodes: readonly ImportedNode[]): number {
 	return nodes.reduce((sum, node) => sum + (node.kind === 'link' ? 1 : countLinks(node.children)), 0)
 }
 
-function toLibraryNodes(nodes: readonly ImportedNode[], now: number): BookmarkNode[] {
-	return nodes.map((node) => (node.kind === 'link' ? link(node.title, node.url, now) : folder(node.title, toLibraryNodes(node.children, now), undefined, now)))
+export interface MergeOutcome {
+	library: BrowserLibrary
+	addedToBar: number
+	addedToFolder: number
+	folderTitle: string
 }
 
-function libraryUrls(nodes: readonly BookmarkNode[]): Set<string> {
-	const out = new Set<string>()
-	for (const node of nodes) {
-		if (isFolder(node)) libraryUrls(node.children).forEach((u) => out.add(u))
-		else out.add(node.url)
+interface Merged {
+	// The same array as the existing children when nothing changed.
+	children: BookmarkNode[]
+	added: number
+}
+
+type FolderMatch = (existing: BookmarkFolder, incoming: ImportedFolder) => boolean
+
+// Ids are handed out parent first, so the order is the same on every port.
+function toLibraryNodes(nodes: readonly ImportedNode[], source: string, now: number, newId: () => string): Merged {
+	let added = 0
+	const build = (node: ImportedNode): BookmarkNode => {
+		if (node.kind === 'link') {
+			added++
+			return { id: newId(), title: node.title, url: node.url, updatedAt: now, importedFrom: source }
+		}
+		const id = newId()
+		return { id, title: node.title, children: node.children.map(build), updatedAt: now, importedFrom: source }
 	}
-	return out
+	return { children: nodes.map(build), added }
 }
 
-// Bar items join the Favourites bar (skipping addresses already on it);
-// everything else lands in one "Imported from <source>" folder so a second
-// import never scatters duplicates through the user's own tree.
-export function mergeImport(library: BrowserLibrary, result: BookmarkImport, source: string, now = Date.now()): BrowserLibrary {
-	const existingBar = favourites(library)
-	const onBar = libraryUrls(existingBar)
-	const newBar = toLibraryNodes(result.bar, now).filter((node) => isFolder(node) || !onBar.has(node.url))
-	let merged = withFavourites(library, [...existingBar, ...newBar])
-	if (result.other.length === 0) return merged
-	const imported = folder(`Imported from ${source}`, toLibraryNodes(result.other, now), undefined, now)
-	merged = { ...merged, bookmarks: [...merged.bookmarks.filter((n) => n.id === FAVOURITES_ID || n.title !== imported.title), imported] }
-	return merged
+// Every URL this source already put in the library, wherever the user has
+// since moved it, so a re-import never adds it twice.
+function importedUrls(nodes: readonly BookmarkNode[], source: string, into = new Set<string>()): Set<string> {
+	for (const node of nodes) {
+		if (isFolder(node)) importedUrls(node.children, source, into)
+		else if (node.importedFrom === source) into.add(node.url)
+	}
+	return into
+}
+
+// Drops links already imported. A folder whose links were all imported goes
+// too; one that never had links stays.
+function withoutImported(nodes: readonly ImportedNode[], imported: ReadonlySet<string>): ImportedNode[] {
+	return nodes.flatMap((node): ImportedNode[] => {
+		if (node.kind === 'link') return imported.has(node.url) ? [] : [node]
+		const children = withoutImported(node.children, imported)
+		return children.length === 0 && countLinks(node.children) > 0 ? [] : [importedFolder(node.title, children)]
+	})
+}
+
+// The first folder marked with the source whose parent isn't, depth first,
+// outside Favourites: the import folder, wherever the user put it.
+function findImportFolder(nodes: readonly BookmarkNode[], source: string, parentMarked: boolean): BookmarkFolder | undefined {
+	for (const node of nodes) {
+		if (!isFolder(node) || node.id === FAVOURITES_ID) continue
+		const marked = node.importedFrom === source
+		if (marked && !parentMarked) return node
+		const found = findImportFolder(node.children, source, marked)
+		if (found) return found
+	}
+	return undefined
+}
+
+// Copies only the folders on the way down to the replaced one.
+function replaceFolder(nodes: BookmarkNode[], replacement: BookmarkFolder): BookmarkNode[] {
+	let result = nodes
+	nodes.forEach((node, index) => {
+		if (!isFolder(node)) return
+		const next = node.id === replacement.id ? replacement : { ...node, children: replaceFolder(node.children, replacement) }
+		if (next !== replacement && next.children === node.children) return
+		if (result === nodes) result = [...nodes]
+		result[index] = next
+	})
+	return result
+}
+
+// Adds what isn't there yet and touches nothing else. A link is "there" when a
+// direct child has its address or the source imported it before; a folder when
+// `matches` finds one, and then we go one level down. The user's own edits
+// (renames, moves, extra links) stay.
+function mergeChildren(existing: BookmarkNode[], incoming: readonly ImportedNode[], matches: FolderMatch, imported: ReadonlySet<string>, source: string, now: number, newId: () => string): Merged {
+	const urls = new Set(existing.filter((n) => !isFolder(n)).map((n) => (n as BookmarkLink).url))
+	const children = [...existing]
+	// Folders match only nodes from before this merge, each at most once, so two
+	// same-titled incoming folders never merge into each other.
+	const taken = new Set<number>()
+	let changed = false
+	let added = 0
+	for (const node of incoming) {
+		if (node.kind === 'link') {
+			if (urls.has(node.url) || imported.has(node.url)) continue
+			const built = toLibraryNodes([node], source, now, newId)
+			children.push(...built.children)
+			added += built.added
+			changed = true
+			continue
+		}
+		const index = existing.findIndex((n, i) => !taken.has(i) && isFolder(n) && matches(n, node))
+		const match = children[index]
+		if (index === -1 || !match || !isFolder(match)) {
+			const built = toLibraryNodes(withoutImported([node], imported), source, now, newId)
+			if (built.children.length === 0) continue
+			children.push(...built.children)
+			added += built.added
+			changed = true
+			continue
+		}
+		taken.add(index)
+		const inner = mergeChildren(match.children, node.children, matches, imported, source, now, newId)
+		if (inner.children === match.children) continue
+		children[index] = { ...match, children: inner.children, updatedAt: now }
+		added += inner.added
+		changed = true
+	}
+	return { children: changed ? children : existing, added }
+}
+
+// Bar items join the Favourites bar; everything else lands in one
+// "Imported from <source>" folder, found again by its importedFrom mark even if
+// renamed or moved. Re-importing only adds: nothing is ever removed, renamed or
+// reordered, and nothing the source imported before is added again.
+export function mergeImport(library: BrowserLibrary, result: BookmarkImport, source: string, now: number, newId: () => string): MergeOutcome {
+	const folderTitle = `Imported from ${source}`
+	const imported = importedUrls(library.bookmarks, source)
+	const bar = favourites(library)
+	const barMerge = mergeChildren(bar, result.bar, (existing, incoming) => existing.title === incoming.title && existing.importedFrom === source, imported, source, now, newId)
+	const merged = barMerge.children === bar ? library : withFavourites(library, barMerge.children)
+	const unchanged = { library: merged, addedToBar: barMerge.added, addedToFolder: 0, folderTitle }
+	if (result.other.length === 0) return unchanged
+	const existing = findImportFolder(merged.bookmarks, source, false)
+	if (!existing) {
+		const other = withoutImported(result.other, imported)
+		if (other.length === 0) return unchanged
+		const id = newId()
+		const built = toLibraryNodes(other, source, now, newId)
+		const folder: BookmarkFolder = { id, title: folderTitle, children: built.children, updatedAt: now, importedFrom: source }
+		return { ...unchanged, library: { ...merged, bookmarks: [...merged.bookmarks, folder] }, addedToFolder: built.added }
+	}
+	const byTitle: FolderMatch = (existing, incoming) => existing.title === incoming.title
+	const inner = mergeChildren(existing.children, result.other, byTitle, imported, source, now, newId)
+	if (inner.children === existing.children) return unchanged
+	const bookmarks = replaceFolder(merged.bookmarks, { ...existing, children: inner.children, updatedAt: now })
+	return { ...unchanged, library: { ...merged, bookmarks }, addedToFolder: inner.added }
 }

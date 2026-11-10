@@ -1,4 +1,5 @@
 using System.Text;
+using Zing.Core.Import;
 
 namespace Zing.Core.Vault;
 
@@ -23,7 +24,7 @@ public sealed class CsvTooLargeException() : Exception($"This file is too large 
 public static class VaultCsv
 {
 	/// <summary>A real export is some hundreds of kilobytes at most; a bigger file isn't one, and is refused before it is read.</summary>
-	public const int MaxFileBytes = 10 * 1024 * 1024;
+	public const int MaxFileBytes = ImportFile.MaxBytes;
 
 	public const string ExportFileName = "Zing Passwords.csv";
 
@@ -48,15 +49,15 @@ public static class VaultCsv
 	/// <exception cref="CsvSyntaxException">Not UTF-8 text.</exception>
 	public static string ReadFile(string path)
 	{
-		using var stream = File.OpenRead(path);
-		if (stream.Length > MaxFileBytes) throw new CsvTooLargeException();
-		var bytes = new byte[stream.Length];
-		stream.ReadExactly(bytes);
 		try
 		{
-			return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(bytes);
+			return ImportFile.ReadText(path);
 		}
-		catch (DecoderFallbackException)
+		catch (ImportFileTooLargeException)
+		{
+			throw new CsvTooLargeException();
+		}
+		catch (ImportFileNotUtf8Exception)
 		{
 			throw new CsvSyntaxException("The file isn't UTF-8 text, so it can't be a password export.");
 		}

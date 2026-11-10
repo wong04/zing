@@ -1,0 +1,25 @@
+{
+	"note": "ImportSources.ProfileNames (host/Zing.Core/Import/ImportSources.cs): the display names (\"Work\", \"Person 1\") live in Local State's profile.info_cache, keyed by profile folder. A missing or empty name falls back to the folder name. Ported from the Electron-era profiles.node.ts. Read only by the host tests (host/Zing.Core.Tests/Import/ImportSourcesTests.cs): the TS original is gone, and the file stays here beside the other import vectors.",
+	"profileNames": [
+		{
+			"name": "reads display names from Local State",
+			"localState": { "profile": { "info_cache": { "Default": { "name": "Personal" }, "Profile 1": { "name": "Work" } } } },
+			"expected": { "Default": "Personal", "Profile 1": "Work" }
+		},
+		{
+			"name": "a missing name falls back to the folder name",
+			"localState": { "profile": { "info_cache": { "Default": {}, "Profile 2": { "name": "" } } } },
+			"expected": { "Default": "Default", "Profile 2": "Profile 2" }
+		},
+		{
+			"name": "no info_cache means no names",
+			"localState": { "profile": {} },
+			"expected": {}
+		},
+		{
+			"name": "no profile section means no names",
+			"localState": {},
+			"expected": {}
+		}
+	]
+}

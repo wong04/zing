@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Zing.Core.Sync;
 
 namespace Zing.Core.Tests.Sync;
@@ -24,6 +25,7 @@ internal sealed class LocalSyncServer(TimeProvider? clock = null) : WebApplicati
 	public const string Email = "ada@example.test";
 
 	private readonly string _dbDir = Directory.CreateTempSubdirectory("zing-sync-server-").FullName;
+	private ZingServer::Zing.Server.Db? _db;
 
 	public Uri Address => new("http://localhost/");
 
@@ -50,7 +52,7 @@ internal sealed class LocalSyncServer(TimeProvider? clock = null) : WebApplicati
 		builder.ConfigureTestServices(services => services.AddSingleton(clock));
 	}
 
-	private string DbPath => Path.Combine(_dbDir, "zing.db");
+	public string DbPath => Path.Combine(_dbDir, "zing.db");
 
 	/// <summary>A copy of the server's whole database as it is now, as a backup would take it. Returns where it is.</summary>
 	public string Backup()
@@ -112,13 +114,33 @@ internal sealed class LocalSyncServer(TimeProvider? clock = null) : WebApplicati
 		await base.DisposeAsync();
 	}
 
+	protected override IHost CreateHost(IHostBuilder builder)
+	{
+		var host = base.CreateHost(builder);
+		_db = host.Services.GetRequiredService<ZingServer::Zing.Server.Db>();
+		return host;
+	}
+
 	protected override void Dispose(bool disposing)
 	{
 		base.Dispose(disposing);
 		if (!disposing) return;
-		SqliteConnection.ClearAllPools();
+		ClearOwnPool();
 		// The factory disposes twice (DisposeAsync, then Dispose); the second finds the folder already gone.
 		if (Directory.Exists(_dbDir)) Directory.Delete(_dbDir, true);
+	}
+
+	/// <summary>
+	/// Closes this server's pooled connections so its folder can be deleted. Only its own: test classes run in parallel, and
+	/// closing another server's last connection takes that database's exclusive lock to checkpoint it, which fails a Backup()
+	/// there (it has no busy timeout) with "database is locked".
+	/// </summary>
+	private void ClearOwnPool()
+	{
+		if (_db is not { } db) return;
+		_db = null;
+		using var connection = db.Open();
+		SqliteConnection.ClearPool(connection);
 	}
 
 	private sealed record MintedToken(string IdToken);

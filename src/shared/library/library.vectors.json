@@ -1651,6 +1651,128 @@
 					],
 					"readingList": []
 				}
+			},
+			{
+				"name": "a link carrying importedFrom round-trips",
+				"input": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"updatedAt": 1,
+							"children": [
+								{
+									"id": "imp",
+									"title": "imp",
+									"url": "https://imp.test",
+									"updatedAt": 1,
+									"importedFrom": "Chrome (Personal)"
+								}
+							]
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				},
+				"expected": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"updatedAt": 1,
+							"children": [
+								{
+									"id": "imp",
+									"title": "imp",
+									"url": "https://imp.test",
+									"updatedAt": 1,
+									"importedFrom": "Chrome (Personal)"
+								}
+							]
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				}
+			},
+			{
+				"name": "a folder carrying importedFrom round-trips",
+				"input": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"updatedAt": 1,
+							"children": [
+								{
+									"id": "impf",
+									"title": "Imported",
+									"children": [
+										{
+											"id": "in",
+											"title": "in",
+											"url": "https://in.test",
+											"updatedAt": 1,
+											"importedFrom": "Chrome (Personal)"
+										}
+									],
+									"updatedAt": 1,
+									"importedFrom": "Chrome (Personal)"
+								}
+							]
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				},
+				"expected": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"updatedAt": 1,
+							"children": [
+								{
+									"id": "impf",
+									"title": "Imported",
+									"children": [
+										{
+											"id": "in",
+											"title": "in",
+											"url": "https://in.test",
+											"updatedAt": 1,
+											"importedFrom": "Chrome (Personal)"
+										}
+									],
+									"updatedAt": 1,
+									"importedFrom": "Chrome (Personal)"
+								}
+							]
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				}
 			}
 		],
 		"invalid": [
@@ -1741,6 +1863,62 @@
 			{
 				"name": "not an object",
 				"input": []
+			},
+			{
+				"name": "a link with a numeric importedFrom",
+				"input": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"updatedAt": 1,
+							"children": [
+								{
+									"id": "bad",
+									"title": "bad",
+									"url": "https://bad.test",
+									"updatedAt": 1,
+									"importedFrom": 5
+								}
+							]
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				}
+			},
+			{
+				"name": "a folder with a numeric importedFrom",
+				"input": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"updatedAt": 1,
+							"children": [
+								{
+									"id": "f",
+									"title": "F",
+									"children": [],
+									"updatedAt": 1,
+									"importedFrom": 5
+								}
+							]
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						}
+					],
+					"readingList": []
+				}
 			}
 		]
 	},
@@ -2725,5 +2903,148 @@
 				}
 			]
 		}
-	}
+	},
+	"holdsImports": [
+		{
+			"name": "an empty library holds no imports",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"updatedAt": 1,
+						"children": []
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"expected": false
+		},
+		{
+			"name": "a library of user bookmarks holds no imports",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"updatedAt": 1,
+						"children": [
+							{
+								"id": "a",
+								"title": "a",
+								"url": "https://a.test",
+								"updatedAt": 1
+							}
+						]
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "u3",
+						"title": "Plain",
+						"children": [
+							{
+								"id": "b",
+								"title": "b",
+								"url": "https://b.test",
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"expected": false
+		},
+		{
+			"name": "an imported link nested two deep in a user folder",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"updatedAt": 1,
+						"children": []
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "u",
+						"title": "Mine",
+						"children": [
+							{
+								"id": "u2",
+								"title": "Inner",
+								"children": [
+									{
+										"id": "imp",
+										"title": "imp",
+										"url": "https://imp.test",
+										"updatedAt": 1,
+										"importedFrom": "Chrome (Personal)"
+									}
+								],
+								"updatedAt": 1
+							}
+						],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"expected": true
+		},
+		{
+			"name": "an imported folder on the bar",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"updatedAt": 1,
+						"children": [
+							{
+								"id": "impf",
+								"title": "Imported",
+								"children": [
+									{
+										"id": "in",
+										"title": "in",
+										"url": "https://in.test",
+										"updatedAt": 1,
+										"importedFrom": "Chrome (Personal)"
+									}
+								],
+								"updatedAt": 1,
+								"importedFrom": "Chrome (Personal)"
+							}
+						]
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					}
+				],
+				"readingList": []
+			},
+			"expected": true
+		}
+	]
 }
