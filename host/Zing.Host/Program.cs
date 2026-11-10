@@ -210,13 +210,19 @@ public sealed class ZingApp
 		Native.PostQuitMessage(0);
 	}
 
-	/// <summary>A failed check is a warning, never a fault: offline or rate-limited is expected, and the next interval tries again.</summary>
+	/// <summary>A failed check, relaunch or apply is a warning, never a fault: offline or rate-limited is expected, and the next interval or quit tries again.</summary>
 	private Updater OpenUpdates()
 	{
 		var scheduler = _scheduler ?? throw new InvalidOperationException("Launch creates the scheduler first");
-		var updates = new Updater(Installation.UpdateSource(() => { foreach (var flush in _onQuit) flush(); }), scheduler, () => Flag("checkForUpdates"));
-		updates.Failed += error => Faults.Warning("update check", error);
+		var updates = new Updater(Installation.UpdateSource(QuitAll), scheduler, () => Flag("checkForUpdates"));
+		updates.Failed += error => Faults.Warning("update", error);
 		return updates;
+	}
+
+	/// <summary>Closes every window, the oldest last, so the session saved on quit is still the oldest window's.</summary>
+	private void QuitAll()
+	{
+		foreach (var window in Enumerable.Reverse(_windows.ToList())) window.CloseWindow();
 	}
 
 	private AppServices OpenServices()

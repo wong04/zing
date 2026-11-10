@@ -41,13 +41,13 @@ public static class Installation
 
 	/// <summary>
 	/// What the app's Updater checks: the e2e fake, Velopack for an installed build, or null for a build that isn't installed.
-	/// <paramref name="beforeRestart"/> saves what quitting would, because a restart into an update exits at once.
+	/// <paramref name="quit"/> closes every window, the normal quit, once the updater is waiting for Zing to exit.
 	/// </summary>
-	public static IUpdateSource? UpdateSource(Action beforeRestart)
+	public static IUpdateSource? UpdateSource(Action quit)
 	{
 		if (TestHooks.UpdateSource() is { } fake) return fake;
 		if (!Manager.IsInstalled) return null;
-		return new VelopackUpdateSource(Manager, beforeRestart);
+		return new VelopackUpdateSource(Manager, quit);
 	}
 
 	private static UpdateManager Manager => _manager ??= System.Environment.GetEnvironmentVariable("ZING_UPDATE_FEED") is { Length: > 0 } feed
@@ -79,7 +79,9 @@ public static class Installation
 			foreach (var value in DefaultBrowserRegistration.NamedValuesToDelete())
 			{
 				using var key = Registry.CurrentUser.OpenSubKey(value.Key, writable: true);
-				key?.DeleteValue(value.Name ?? "", throwOnMissingValue: false);
+				// A null name is the key's default value, and these keys are shared: never delete it.
+				var name = value.Name ?? throw new InvalidOperationException($"Zing's value in {value.Key} has no name, so unregistering would delete the shared key's default value");
+				key?.DeleteValue(name, throwOnMissingValue: false);
 			}
 			AssociationsChanged();
 		}

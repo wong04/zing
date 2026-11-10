@@ -14,6 +14,8 @@ public sealed class UpdaterTests
 		public int Downloads { get; private set; }
 		public int Restarts { get; private set; }
 		public int AppliedOnExit { get; private set; }
+		public Exception? RestartError { get; set; }
+		public Exception? ApplyError { get; set; }
 
 		public Task<string?> FindAsync(CancellationToken cancel)
 		{
@@ -28,9 +30,17 @@ public sealed class UpdaterTests
 			return Task.CompletedTask;
 		}
 
-		public void RestartIntoUpdate() => Restarts++;
+		public void RestartIntoUpdate()
+		{
+			Restarts++;
+			if (RestartError is not null) throw RestartError;
+		}
 
-		public void ApplyOnExit() => AppliedOnExit++;
+		public void ApplyOnExit()
+		{
+			AppliedOnExit++;
+			if (ApplyError is not null) throw ApplyError;
+		}
 	}
 
 	private readonly ManualScheduler _scheduler = new();
@@ -192,6 +202,46 @@ public sealed class UpdaterTests
 		updater.Relaunch();
 		updater.Quitting();
 		Assert.Equal(0, _source.AppliedOnExit);
+	}
+
+	[Fact]
+	public async Task A_failed_relaunch_stays_ready_and_quitting_still_applies()
+	{
+		_source.Newer = "0.9.1";
+		var error = new InvalidOperationException("updater would not start");
+		_source.RestartError = error;
+		var updater = Make();
+		await updater.CheckNowAsync();
+		updater.Relaunch();
+		Assert.Equal(UpdateStatus.Ready, updater.State.Status);
+		Assert.Same(error, Assert.Single(_failures));
+		updater.Quitting();
+		Assert.Equal(1, _source.AppliedOnExit);
+	}
+
+	[Fact]
+	public async Task A_failed_relaunch_can_be_retried()
+	{
+		_source.Newer = "0.9.1";
+		_source.RestartError = new InvalidOperationException("updater would not start");
+		var updater = Make();
+		await updater.CheckNowAsync();
+		updater.Relaunch();
+		_source.RestartError = null;
+		updater.Relaunch();
+		Assert.Equal(2, _source.Restarts);
+	}
+
+	[Fact]
+	public async Task A_failed_apply_on_exit_is_reported_and_quitting_goes_on()
+	{
+		_source.Newer = "0.9.1";
+		var error = new IOException("updater missing");
+		_source.ApplyError = error;
+		var updater = Make();
+		await updater.CheckNowAsync();
+		updater.Quitting();
+		Assert.Same(error, Assert.Single(_failures));
 	}
 
 	[Fact]

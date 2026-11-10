@@ -4,7 +4,7 @@ using Zing.Core;
 namespace Zing.Host;
 
 /// <summary>Updates for an installed Zing, through Velopack. Its awaits resume on the UI thread, where the Updater runs.</summary>
-public sealed class VelopackUpdateSource(UpdateManager manager, Action beforeRestart) : IUpdateSource
+public sealed class VelopackUpdateSource(UpdateManager manager, Action quit) : IUpdateSource
 {
 	private UpdateInfo? _found;
 
@@ -18,12 +18,14 @@ public sealed class VelopackUpdateSource(UpdateManager manager, Action beforeRes
 
 	public Task DownloadAsync(CancellationToken cancel) => manager.DownloadUpdatesAsync(Found(), null, cancel);
 
-	/// <summary>Exits Zing at once, so what quitting saves is saved first.</summary>
+	/// <summary>
+	/// Starts the updater first, waiting for Zing to exit, and only then quits as a person would, so a failure leaves every window and the vault as they were.
+	/// The updater shows its progress, applies the update and starts Zing again.
+	/// </summary>
 	public void RestartIntoUpdate()
 	{
-		var release = Found().TargetFullRelease;
-		beforeRestart();
-		manager.ApplyUpdatesAndRestart(release);
+		manager.WaitExitThenApplyUpdates(Found().TargetFullRelease, silent: false, restart: true);
+		quit();
 	}
 
 	/// <summary>The updater waits for Zing to exit, applies the update silently, and doesn't start Zing again.</summary>

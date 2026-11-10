@@ -41,7 +41,7 @@ public sealed class Updater(IUpdateSource? source, IScheduler scheduler, Func<bo
 
 	public event Action<UpdateState>? Changed;
 
-	/// <summary>Raised once per failed check.</summary>
+	/// <summary>Raised once per failed check, relaunch or apply on quit. Handlers must not throw.</summary>
 	public event Action<Exception>? Failed;
 
 	public void Start()
@@ -89,7 +89,16 @@ public sealed class Updater(IUpdateSource? source, IScheduler scheduler, Func<bo
 	{
 		if (source is null || State.Status != UpdateStatus.Ready || _restarting) return;
 		_restarting = true;
-		source.RestartIntoUpdate();
+		try
+		{
+			source.RestartIntoUpdate();
+		}
+		// Still Ready: the pill can try again, and quitting applies the update.
+		catch (Exception error)
+		{
+			_restarting = false;
+			Failed?.Invoke(error);
+		}
 	}
 
 	public void Quitting()
@@ -99,7 +108,15 @@ public sealed class Updater(IUpdateSource? source, IScheduler scheduler, Func<bo
 		_timer?.Dispose();
 		_cancel.Cancel();
 		if (State.Status != UpdateStatus.Ready || _restarting) return;
-		source.ApplyOnExit();
+		// Nothing may stop Zing quitting; the update stays downloaded for the next try.
+		try
+		{
+			source.ApplyOnExit();
+		}
+		catch (Exception error)
+		{
+			Failed?.Invoke(error);
+		}
 	}
 
 	private void ScheduleNext(TimeSpan delay) => _timer = scheduler.Schedule(delay, OnTimer);
