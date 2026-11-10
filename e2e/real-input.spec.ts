@@ -38,23 +38,32 @@ test.afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())
 
 const url = (host: string, title: string): string => `http://${host}.localhost:${port}/${encodeURIComponent(title)}`
 
-type RealInput = { keys: string; asIs?: boolean } | { x: number; y: number; button?: 'left' | 'middle'; hold?: string }
+type RealInput = { keys: string; asIs?: boolean } | { x: number; y: number; button?: 'left' | 'middle'; hold?: string } | { x: number; y: number; toX: number; toY: number }
 
 /**
- * Brings Zing to the front and sends real input: a key chord ("ctrl+t") or a click at a point of the window's content in
- * DIPs, left unless `button` says middle, with the `hold` keys ("shift") down around it. `asIs` sends the keys to whatever
- * is in front now, such as a page's own dialog.
+ * Brings Zing to the front and sends real input: a key chord ("ctrl+t"), a click at a point of the window's content in
+ * DIPs, left unless `button` says middle, with the `hold` keys ("shift") down around it, or a left-button drag from (x, y)
+ * to (toX, toY). `asIs` sends the keys to whatever is in front now, such as a page's own dialog.
  */
 async function realInput(zing: Launched, input: RealInput): Promise<void> {
 	const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, '-ProcessId', String(zing.pid)]
 	if ('keys' in input) {
 		args.push('-Keys', input.keys)
 		if (input.asIs) args.push('-AsIs')
+	} else if ('toX' in input) {
+		args.push('-X', String(input.x), '-Y', String(input.y), '-ToX', String(input.toX), '-ToY', String(input.toY))
 	} else {
 		args.push('-X', String(input.x), '-Y', String(input.y), '-Button', input.button ?? 'left')
 		if (input.hold) args.push('-Hold', input.hold)
 	}
 	await run('powershell.exe', args)
+}
+
+/** The window's top-left on the screen, in physical pixels. */
+async function windowAt(zing: Launched): Promise<{ x: number; y: number }> {
+	const { stdout } = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, '-ProcessId', String(zing.pid), '-Where'])
+	const [x, y] = stdout.trim().split(' ').map(Number)
+	return { x: x!, y: y! }
 }
 
 const tabCount = async (chrome: Page): Promise<number> => (await chrome.evaluate(() => window.zing.getTabs())).tabs.length
@@ -257,5 +266,41 @@ test('a real middle-click on a link to another site opens a background tab, not 
 	expect(after.tabs.some((t) => t.url === target)).toBe(true)
 	expect(after.activeId).toBe(sourceId)
 	expect((await peekState(zing.chrome)).open).toBe(false)
+	await zing.close()
+})
+
+test('dragging the tab strip’s empty space moves the window, and dragging a tab does not', { tag: '@real-input' }, async () => {
+	const zing = await launchZing({ env: ON_SCREEN })
+	await zing.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'top'))
+	await expect(zing.chrome.locator('.tabstrip')).toBeVisible()
+	const first = await openPage(zing.chrome, 'one', 'First')
+	await openPage(zing.chrome, 'two', 'Second')
+	const order = async (): Promise<string[]> => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.map((t) => t.id)
+	// The chrome view starts at the window's content origin, so its CSS pixels are the script's DIPs.
+	const chromeAt = (await layers(zing.chrome)).find((l) => l.url.endsWith('#chrome'))!
+	const tabBox = async (id: string) => {
+		const box = await zing.chrome.locator(`.tabstrip .tab[data-tab-id="${id}"]`).boundingBox()
+		if (!box) throw new Error(`tab ${id} has no box`)
+		return { x: chromeAt.x + box.x, y: chromeAt.y + box.y, width: box.width, height: box.height }
+	}
+
+	// Krackn's WindowDragArea gotcha: a tab is a drag of its own, which reorders and leaves the window where it is.
+	const before = await windowAt(zing)
+	const tabsBefore = await order()
+	const tab = await tabBox(first)
+	const last = await tabBox(tabsBefore.at(-1)!)
+	await realInput(zing, { x: tab.x + tab.width / 2, y: tab.y + tab.height / 2, toX: last.x + last.width - 4, toY: tab.y + tab.height / 2 })
+	await expect.poll(order).not.toEqual(tabsBefore)
+	expect(await windowAt(zing)).toEqual(before)
+
+	// The strip's empty space, past the New Tab button and short of the caption buttons, moves the window.
+	const strip = (await zing.chrome.locator('.tabstrip').boundingBox())!
+	const inset = await zing.chrome.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--caption-inset')) || 0)
+	const plus = (await zing.chrome.locator('.tabstrip .new-tab').boundingBox())!
+	const x = chromeAt.x + (plus.x + plus.width + strip.x + strip.width - inset) / 2
+	const y = chromeAt.y + strip.y + strip.height / 2
+	await realInput(zing, { x, y, toX: x + 120, toY: y + 80 })
+	await expect.poll(async () => (await windowAt(zing)).x).toBeGreaterThan(before.x + 50)
+	expect((await windowAt(zing)).y).toBeGreaterThan(before.y + 30)
 	await zing.close()
 })

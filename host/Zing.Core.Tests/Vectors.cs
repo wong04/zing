@@ -9,11 +9,13 @@ namespace Zing.Core.Tests;
 /// </summary>
 public static class Vectors
 {
-	public static JsonElement Load(string repoRelativePath)
+	public static JsonElement Load(string repoRelativePath) => JsonDocument.Parse(Text(repoRelativePath)).RootElement;
+
+	public static string Text(string repoRelativePath)
 	{
 		var path = Path.Combine(RepoRoot(), repoRelativePath);
 		if (!File.Exists(path)) throw new FileNotFoundException($"No vectors at {path}", path);
-		return JsonDocument.Parse(File.ReadAllText(path)).RootElement;
+		return File.ReadAllText(path);
 	}
 
 	private static string RepoRoot()

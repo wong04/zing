@@ -1,16 +1,28 @@
-// The Zing password's strength for sync, as the host enforces it (host/Zing.Core/Sync/SyncSetup.cs SyncPasswordStrength,
-// zxcvbn-core): turning on sync needs zxcvbn score 4 and at least 10^18 guesses, about 60 bits (Ruling 52). Score 4 alone is
-// only about 33 bits. Both sides are held to the same verdict on clear cases by passwordStrength.vectors.json. The renderer's
-// verdict only drives the meter; the host's is the one that counts.
+// The sync password's rules, as the host enforces them (host/Zing.Core/Sync/SyncSetup.cs SyncPasswordStrength, zxcvbn-core): at
+// least 12 characters, a digit, a character that's neither a letter nor a digit, and a zxcvbn score of at least 3. Characters are
+// counted by code point, as the host counts runes. Both sides are held to the same failed rules by passwordStrength.vectors.json.
+// The renderer's verdict only drives the meter and its sentence; the host's is the one that counts.
 import { ZxcvbnFactory } from '@zxcvbn-ts/core'
 import * as common from '@zxcvbn-ts/language-common'
 import * as en from '@zxcvbn-ts/language-en'
 import words from './passphraseWords.json'
 
-export const SYNC_PASSWORD_SCORE = 4
+export const SYNC_PASSWORD_MIN_LENGTH = 12
 
-/** 10^18 guesses is about 60 bits. */
-export const SYNC_MIN_GUESSES_LOG10 = 18
+export const SYNC_PASSWORD_SCORE = 3
+
+/** The rules in the order they're checked and reported. */
+export const SYNC_PASSWORD_RULES = ['length', 'number', 'special', 'common'] as const
+
+export type SyncPasswordRule = (typeof SYNC_PASSWORD_RULES)[number]
+
+/** What the person is told about the first rule a password fails. */
+export const SYNC_PASSWORD_SENTENCES: Readonly<Record<SyncPasswordRule, string>> = {
+	length: 'Use at least 12 characters.',
+	number: 'Add a number.',
+	special: 'Add a symbol, such as ! or #.',
+	common: 'This password is too common. Add more words or characters.',
+}
 
 export const PASSPHRASE_WORD_COUNT = 5
 
@@ -28,24 +40,31 @@ function factory(): ZxcvbnFactory {
 	return zxcvbn
 }
 
-/** zxcvbn's 0 to 4, and whether the password passes the sync floor. */
-export function syncStrength(password: string): { score: number; enough: boolean } {
-	const verdict = factory().check(password)
-	return { score: verdict.score, enough: verdict.score >= SYNC_PASSWORD_SCORE && Math.log10(verdict.guesses) >= SYNC_MIN_GUESSES_LOG10 }
+function failures(password: string, score: number): SyncPasswordRule[] {
+	const characters = [...password]
+	const failed: SyncPasswordRule[] = []
+	if (characters.length < SYNC_PASSWORD_MIN_LENGTH) failed.push('length')
+	if (!characters.some((c) => /\p{Nd}/u.test(c))) failed.push('number')
+	if (!characters.some((c) => !/[\p{L}\p{Nd}]/u.test(c))) failed.push('special')
+	if (score < SYNC_PASSWORD_SCORE) failed.push('common')
+	return failed
 }
+
+/** zxcvbn's 0 to 4, the rules the password fails in their fixed order, and whether it passes them all. */
+export function syncStrength(password: string): { score: number; failed: SyncPasswordRule[]; enough: boolean } {
+	const score = factory().check(password).score
+	const failed = failures(password, score)
+	return { score, failed, enough: failed.length === 0 }
+}
+
+export const syncPasswordFailures = (password: string): SyncPasswordRule[] => syncStrength(password).failed
 
 export const isStrongEnoughForSync = (password: string): boolean => syncStrength(password).enough
 
-const SCORE_WORDS = ['Very weak', 'Weak', 'Fair', 'Good', 'Strong'] as const
-
-/**
- * The meter's text. It never says Strong beside a refusal: zxcvbn's score 4 starts near 33 bits, so a score-4 password that
- * falls short (16 random characters, say) is told what sync needs instead (Ruling 54).
- */
-export function syncStrengthLabel({ score, enough }: { score: number; enough: boolean }): string {
-	if (enough) return 'Strong. Strong enough for sync.'
-	if (score >= SYNC_PASSWORD_SCORE) return 'Not enough for sync yet: use five random words, or 18 or more random characters.'
-	return `${SCORE_WORDS[score]}. Sync needs about 60 bits, such as five random words.`
+/** The meter's text: the first failed rule as a sentence, so the person knows why it would be turned down. */
+export function syncStrengthLabel({ failed }: { failed: readonly SyncPasswordRule[] }): string {
+	const first = failed[0]
+	return first ? SYNC_PASSWORD_SENTENCES[first] : 'Strong enough for sync.'
 }
 
 /**
@@ -59,8 +78,9 @@ export function passphraseWords(): readonly string[] {
 }
 
 /**
- * Five words drawn uniformly with the CSPRNG, joined by hyphens: 60 bits. A draw below the floor (five of the most common words
- * in a row, rarely) is drawn again, so what's offered always passes the host's check.
+ * Five words drawn uniformly with the CSPRNG, joined by hyphens, and a random digit after the last: about 63 bits, with the
+ * number and symbol the rules ask for. A draw that fails them (five of the most common words in a row, rarely) is drawn again,
+ * so what's offered always passes the host's check.
  */
 export function generatePassphrase(): string {
 	const list = passphraseWords()
@@ -68,7 +88,15 @@ export function generatePassphrase(): string {
 		const draw = new Uint32Array(PASSPHRASE_WORD_COUNT)
 		crypto.getRandomValues(draw)
 		// 2^32 is a multiple of 4096, so taking the low 12 bits has no modulo bias.
-		const passphrase = Array.from(draw, (value) => list[value % PASSPHRASE_LIST_SIZE]).join('-')
+		const passphrase = Array.from(draw, (value) => list[value % PASSPHRASE_LIST_SIZE]).join('-') + randomDigit()
 		if (isStrongEnoughForSync(passphrase)) return passphrase
 	}
+}
+
+/** 0 to 9 with no modulo bias: bytes of 250 and up are drawn again. */
+function randomDigit(): string {
+	const byte = new Uint8Array(1)
+	do crypto.getRandomValues(byte)
+	while (byte[0]! >= 250)
+	return String(byte[0]! % 10)
 }

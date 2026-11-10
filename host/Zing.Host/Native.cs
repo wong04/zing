@@ -146,6 +146,13 @@ internal static class Native
 	[return: MarshalAs(UnmanagedType.Bool)]
 	public static extern bool GetClientRect(nint hwnd, out RECT rect);
 
+	[DllImport("user32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool GetWindowRect(nint hwnd, out RECT rect);
+
+	[DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+	public static extern nint CreateFontW(int height, int width, int escapement, int orientation, int weight, uint italic, uint underline, uint strikeOut, uint charSet, uint outPrecision, uint clipPrecision, uint quality, uint pitchAndFamily, string face);
+
 	[DllImport("user32.dll")]
 	public static extern uint GetDpiForWindow(nint hwnd);
 

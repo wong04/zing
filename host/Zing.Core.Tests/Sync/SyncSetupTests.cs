@@ -10,9 +10,9 @@ namespace Zing.Core.Tests.Sync;
 /// <summary>Turning sync on and changing the Zing password while it's on, against the real server (fake Google issuer).</summary>
 public sealed class SyncSetupTests : IDisposable
 {
-	/// <summary>A five-word passphrase the generator made (passwordStrength.vectors.json).</summary>
-	private const string Strong = "teaching-focused-onward-activist-steel";
-	private const string NextStrong = "labour-muzzle-medici-rushes-fiction";
+	/// <summary>A passphrase the generator made, five words and a digit (passwordStrength.vectors.json).</summary>
+	private const string Strong = "teaching-focused-onward-activist-steel4";
+	private const string NextStrong = "labour-muzzle-medici-rushes-fiction7";
 
 	private const string Origin = "https://bank.example.test";
 	private const string Username = "ada.lovelace";
@@ -65,25 +65,42 @@ public sealed class SyncSetupTests : IDisposable
 
 	private List<string> SyncCalls() => [.. _server.Wire.Log.Where(l => l is "PUT /keys" or "POST /changes" or "PUT /manifest")];
 
-	public static TheoryData<string, bool> StrengthVectors()
+	private const string StrengthVectorsPath = "src/shared/vault/passwordStrength.vectors.json";
+
+	public static TheoryData<string, string[]> StrengthVectors()
 	{
-		var data = new TheoryData<string, bool>();
-		foreach (var c in Vectors.Load("src/shared/vault/passwordStrength.vectors.json").GetProperty("cases").EnumerateArray())
-			data.Add(c.GetProperty("password").GetString()!, c.GetProperty("accepted").GetBoolean());
+		var data = new TheoryData<string, string[]>();
+		foreach (var c in Vectors.Load(StrengthVectorsPath).GetProperty("cases").EnumerateArray())
+			data.Add(c.GetProperty("password").GetString()!, [.. c.GetProperty("failed").EnumerateArray().Select(f => f.GetString()!)]);
 		return data;
 	}
 
+	private static string VectorName(SyncPasswordRule rule) => rule.ToString().ToLowerInvariant();
+
 	[Theory]
 	[MemberData(nameof(StrengthVectors))]
-	public void TheStrengthFloorGivesTheRenderersVerdict(string password, bool accepted) =>
-		Assert.Equal(accepted, SyncPasswordStrength.IsStrongEnough(password));
+	public void ThePasswordRulesFailAsTheRenderersDo(string password, string[] failed)
+	{
+		Assert.Equal(failed, SyncPasswordStrength.Failures(password).Select(VectorName));
+		if (failed.Length == 0)
+		{
+			SyncPasswordStrength.Require(password);
+			return;
+		}
+		var refused = Assert.Throws<SyncPasswordTooWeakException>(() => SyncPasswordStrength.Require(password));
+		Assert.Equal(failed, refused.Failed.Select(VectorName));
+		Assert.Equal(Vectors.Load(StrengthVectorsPath).GetProperty("sentences").GetProperty(failed[0]).GetString(), refused.Message);
+	}
 
 	[Fact]
-	public void TheFloorIsTheOneTheVectorsGiveTheRenderer()
+	public void TheRulesAreTheOnesTheVectorsGiveTheRenderer()
 	{
-		var vectors = Vectors.Load("src/shared/vault/passwordStrength.vectors.json");
+		var vectors = Vectors.Load(StrengthVectorsPath);
+		Assert.Equal(SyncPasswordStrength.MinimumLength, vectors.GetProperty("minimumLength").GetInt32());
 		Assert.Equal(SyncPasswordStrength.MinimumScore, vectors.GetProperty("minimumScore").GetInt32());
-		Assert.Equal(SyncPasswordStrength.MinimumGuessesLog10, vectors.GetProperty("minimumGuessesLog10").GetDouble());
+		Assert.Equal(vectors.GetProperty("rules").EnumerateArray().Select(r => r.GetString()), Enum.GetValues<SyncPasswordRule>().Select(VectorName));
+		foreach (var rule in Enum.GetValues<SyncPasswordRule>())
+			Assert.Equal(vectors.GetProperty("sentences").GetProperty(VectorName(rule)).GetString(), SyncPasswordStrength.Sentence(rule));
 	}
 
 	[Fact]
@@ -110,7 +127,7 @@ public sealed class SyncSetupTests : IDisposable
 	}
 
 	[Fact]
-	public async Task CorrectHorseIsTooWeakAndNothingIsUploaded()
+	public async Task CorrectHorseHasNoNumberAndNothingIsUploaded()
 	{
 		await SignInToSync();
 
@@ -518,7 +535,7 @@ public sealed class SyncSetupTests : IDisposable
 		Assert.Equal(1, _vault.SyncKeys!.Version);
 	}
 
-	private const string ThirdStrong = "velvet-orbit-candle-meadow-thistle";
+	private const string ThirdStrong = "velvet-orbit-candle-meadow-thistle2";
 
 	/// <summary>A change the server took (wrapped under <see cref="NextStrong"/>) whose PC stopped before its own password changed.</summary>
 	private async Task<VaultSyncKeys> CrashAfterTheServerTookAChange(AccountStore account)

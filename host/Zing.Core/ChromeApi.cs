@@ -184,7 +184,7 @@ public sealed class ChromeApi : IDisposable
 		_host = host;
 		_appVersion = appVersion;
 		_placement = OutputPlacement.ForSettings(app.Settings);
-		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text), PeekSettings, host.Scheduler);
+		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text), PeekSettings, host.Scheduler, () => Flag("blockTrackers"));
 		Saved = new SavedTabs(Tabs, app.Library);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
@@ -203,6 +203,7 @@ public sealed class ChromeApi : IDisposable
 			SignIn.Message(pageId, source, message);
 		};
 		Tabs.Closed += SignIn.PageClosed;
+		Tabs.Navigating += SignIn.UserNavigated;
 		Drops = new DropInbox(Grants);
 		bridge.UseDropInbox(Drops);
 		if (app.ViewerRoot is { } viewerRoot)
@@ -510,7 +511,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		AssertNavigable(url);
 		if (Tabs.Records is [var only] && (only.Url == TabStore.NewTabUrl || StartPage.IsStartPage(only.Url))) Navigate(only.Id, url);
-		else Tabs.Open(LinkCleaner.StripTrackers(url));
+		else Tabs.Open(Tabs.CleanLink(url));
 	}
 
 	/// <summary>A link tile: one new tab at the address, so there is no blank page behind it in Back and the keyboard stays with the page.</summary>
@@ -1044,12 +1045,12 @@ public sealed class ChromeApi : IDisposable
 		return CurrentSyncState();
 	}
 
-	/// <summary>The sign-in waiting on the browser, for Cancel; null when none is.</summary>
+	/// <summary>The sign-in waiting on Google's window, for Cancel; null when none is.</summary>
 	private CancellationTokenSource? _syncSigningIn;
 
 	/// <summary>
-	/// Google in the system browser, then the server's own session; the account is kept in the vault's sync.json, replacing one that
-	/// doesn't unseal. Cancel (or the window closing) ends it without an error. Keys and items sync later (Tasks 12 and 13).
+	/// Google in its sign-in window, then the server's own session; the account is kept in the vault's sync.json, replacing one that
+	/// doesn't unseal. Cancel (or either window closing) ends it without an error. Keys and items sync later (Tasks 12 and 13).
 	/// </summary>
 	private async Task<object?> SignInToSyncAsync()
 	{
@@ -1059,20 +1060,24 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	/// <summary>
-	/// Google in the system browser, then <paramref name="signIn"/> with its ID token, within 5 minutes. Cancel (or the window
-	/// closing) answers <paramref name="cancelled"/> without an error.
+	/// Google in its sign-in window, then <paramref name="signIn"/> with its ID token, within 5 minutes. Cancel, Zing's window
+	/// closing, the person closing the sign-in window, or another sign-in taking that window over answers <paramref name="cancelled"/>
+	/// without an error.
 	/// </summary>
 	private async Task<object?> WithGoogleSignInAsync(SyncSetup setup, Func<string, CancellationToken, Task<object?>> signIn, Func<object?> cancelled)
 	{
 		using var cancel = CancellationTokenSource.CreateLinkedTokenSource(_closing.Token);
 		using var signingIn = CancellationTokenSource.CreateLinkedTokenSource(cancel.Token);
 		signingIn.CancelAfter(SyncSignInTimeout);
-		Interlocked.Exchange(ref _syncSigningIn, cancel)?.Cancel();
+		var previous = Interlocked.Exchange(ref _syncSigningIn, cancel);
 		try
 		{
-			return await signIn(await setup.SignIn.SignInAsync(signingIn.Token), signingIn.Token);
+			// Started before the previous one is cancelled, so it takes over the sign-in window that one has open (GoogleSignIn).
+			var idToken = setup.SignIn.SignInAsync(signingIn.Token);
+			CancelReplaced(previous);
+			return await signIn(await idToken, signingIn.Token);
 		}
-		catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+		catch (OperationCanceledException error) when (cancel.IsCancellationRequested || error is SignInWindowClosedException or SignInTakenOverException)
 		{
 			return cancelled();
 		}
@@ -1087,6 +1092,19 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	private void CancelSyncSignIn() => _syncSigningIn?.Cancel();
+
+	/// <summary>Cancels the sign-in a newer one replaced; one that already finished has disposed its source, and needs nothing.</summary>
+	private static void CancelReplaced(CancellationTokenSource? replaced)
+	{
+		try
+		{
+			replaced?.Cancel();
+		}
+		catch (ObjectDisposedException)
+		{
+			// Finished between the exchange and here: there's nothing left to cancel.
+		}
+	}
 
 	/// <summary>
 	/// Revokes this sign-in on the server, then forgets it here (Ruling 49). An unreachable server still signs this PC out, and the

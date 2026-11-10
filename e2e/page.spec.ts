@@ -15,6 +15,7 @@ const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwA
 
 let server: Server
 let base = ''
+let framedZipServed = false
 
 test.beforeAll(async () => {
 	server = createServer((req, res) => {
@@ -23,7 +24,14 @@ test.beforeAll(async () => {
 			res.setHeader('content-disposition', 'attachment; filename="report.bin"')
 			return void res.end(Buffer.alloc(2048, 7))
 		}
+		// A type the engine can't show, with no Content-Disposition (DownloadPolicy, L12).
+		if (req.url === '/archive.zip' || req.url === '/inner.zip') {
+			if (req.url === '/inner.zip') framedZipServed = true
+			res.setHeader('content-type', 'application/zip')
+			return void res.end(Buffer.alloc(1024, 3))
+		}
 		res.setHeader('content-type', 'text/html')
+		if (req.url === '/framed') return void res.end('<!doctype html><title>Framed</title><iframe src="/inner.zip"></iframe>')
 		if (req.url === '/perm') return void res.end('<!doctype html><title>Permissions</title>')
 		if (req.url === '/article') return void res.end(`<!doctype html><title>Fixture Headline</title><nav><a href="/other">Site menu</a></nav><article><h1>Fixture Headline</h1><p>${PARAGRAPH}</p><p>${PARAGRAPH}</p></article><footer>Footer junk</footer>`)
 		if (req.url === '/short') return void res.end('<!doctype html><title>Short</title><p>Too little to read.</p>')
@@ -81,6 +89,38 @@ test('a download lands in the downloads folder, shows in the list and numbers on
 	// A navigation that became a download isn't a failed load: no "Couldn't load … (ConnectionAborted)".
 	const notice = pages(zing.browser).find((p) => p.url().endsWith('#overlay'))
 	if (notice) expect(await notice.locator('body').innerText()).not.toContain("Couldn't load")
+	await zing.close()
+})
+
+// L12: Krackn's DownloadPolicy saves a main-frame response it can't show, but not the same response in a frame, where an
+// ad's odd content type shouldn't drop a file in Downloads.
+test('a main-frame response the engine cannot show, with no Content-Disposition, downloads', async () => {
+	const zing = await launchZing()
+	const directory = join(zing.userDataDir, 'downloads')
+	await zing.chrome.evaluate(async (url) => {
+		const { activeId } = await window.zing.getTabs()
+		await window.zing.navigateTab(activeId!, url)
+	}, `${base}/archive.zip`)
+	await expect.poll(() => existsSync(join(directory, 'archive.zip')) && statSync(join(directory, 'archive.zip')).size).toBe(1024)
+	await zing.close()
+})
+
+test('the same response in a frame does not download', async () => {
+	// Known gap: the engine downloads it anyway, and nothing calls DownloadPolicy (host/Zing.Core/Downloads.cs) yet.
+	// This fails on purpose until the policy is wired into DownloadHost.Starting; then remove this line.
+	test.fail()
+	framedZipServed = false
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/framed` } })
+	const directory = join(zing.userDataDir, 'downloads')
+	await pageWhere(zing.browser, (p) => p.url() === `${base}/framed`)
+	await expect.poll(() => framedZipServed).toBe(true)
+	// A main-frame download after the frame's response: once it has landed, a download the frame started would have too.
+	await zing.chrome.evaluate(async (url) => {
+		const { activeId } = await window.zing.getTabs()
+		await window.zing.navigateTab(activeId!, url)
+	}, `${base}/archive.zip`)
+	await expect.poll(() => existsSync(join(directory, 'archive.zip')) && statSync(join(directory, 'archive.zip')).size).toBe(1024)
+	await expect.poll(() => readdirSync(directory)).toEqual(['archive.zip'])
 	await zing.close()
 })
 

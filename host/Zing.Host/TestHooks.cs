@@ -21,7 +21,7 @@ public static class TestHooks
 	/// <summary>Remote debugging port for Playwright; only honoured in e2e runs.</summary>
 	public static string? DebuggingPort => IsEndToEndRun ? Environment.GetEnvironmentVariable("ZING_CDP_PORT") : null;
 
-	/// <summary>Chromium switches for e2e runs: the debugging port, and with ZING_E2E_OFFLINE=1 a dead proxy so no test can reach a live site, and with ZING_E2E_NO_DNS=1 names that do not resolve.</summary>
+	/// <summary>Chromium switches for e2e runs: the debugging port, and with ZING_E2E_OFFLINE=1 a dead proxy so no test can reach a live site, with ZING_E2E_MAP_HOSTS names mapped to a local server, and with ZING_E2E_NO_DNS=1 names that do not resolve.</summary>
 	public static string BrowserArguments()
 	{
 		if (!IsEndToEndRun) return "";
@@ -35,8 +35,12 @@ public static class TestHooks
 		// out of the way never gets it, so a test's requestFullscreen failed whenever another app was in front. A person's click focuses the view.
 		if (KeepsOutOfTheWay) args.Add("--disable-features=SuppressFullscreenFromUnfocusedView");
 		if (Environment.GetEnvironmentVariable("ZING_E2E_OFFLINE") == "1") args.Add("--proxy-server=127.0.0.1:9 --proxy-bypass-list=<-loopback>");
+		var resolverRules = new List<string>();
+		// Names a test's local server stands for (e.g. "MAP *.doubleclick.net 127.0.0.1"), so a page can ask for a real tracker's address.
+		if (Environment.GetEnvironmentVariable("ZING_E2E_MAP_HOSTS") is { Length: > 0 } mapped) resolverRules.Add(mapped);
 		// Every name fails to resolve (HostNameNotResolved, as a DNS block gives), without asking any DNS server; this machine's own addresses still work.
-		if (Environment.GetEnvironmentVariable("ZING_E2E_NO_DNS") == "1") args.Add("--host-resolver-rules=\"MAP * ~NOTFOUND , EXCLUDE 127.0.0.1\"");
+		if (Environment.GetEnvironmentVariable("ZING_E2E_NO_DNS") == "1") resolverRules.Add("MAP * ~NOTFOUND , EXCLUDE 127.0.0.1");
+		if (resolverRules.Count > 0) args.Add($"--host-resolver-rules=\"{string.Join(" , ", resolverRules)}\"");
 		return string.Join(' ', args);
 	}
 
@@ -122,14 +126,30 @@ public static class TestHooks
 	/// <summary>
 	/// Sync in an e2e run, which never reaches Google or Railway: ZING_E2E_SYNC_SERVER is a local Zing.Server started with its fake
 	/// issuer, and ZING_E2E_SYNC_SUB the Google sub to sign in as. Without them an e2e run has no sync, whatever the build has.
+	/// With ZING_E2E_GOOGLE_AUTHORIZE and ZING_E2E_GOOGLE_TOKEN, a test's fake Google on this PC, the sign-in is the real one, in
+	/// its window (SignInPopup); without them it's the fake issuer's, with no window (FakeIssuerSignIn).
 	/// </summary>
-	public static Zing.Core.Sync.SyncSetup? Sync()
+	/// <param name="app">What the sign-in window opens over.</param>
+	public static Zing.Core.Sync.SyncSetup? Sync(ZingApp app)
 	{
 		if (!IsEndToEndRun) throw new InvalidOperationException("TestHooks.Sync is for e2e runs only");
 		if (Environment.GetEnvironmentVariable("ZING_E2E_SYNC_SERVER") is not { Length: > 0 } url) return null;
 		var sub = Environment.GetEnvironmentVariable("ZING_E2E_SYNC_SUB") ?? throw new InvalidOperationException("ZING_E2E_SYNC_SERVER needs ZING_E2E_SYNC_SUB, the sub to sign in as");
 		var server = new Uri(url);
-		return new Zing.Core.Sync.SyncSetup(server, new FakeIssuerSignIn(server, sub), Warn: Faults.Warning);
+		if (Environment.GetEnvironmentVariable("ZING_E2E_GOOGLE_AUTHORIZE") is not { Length: > 0 } authorize)
+			return new Zing.Core.Sync.SyncSetup(server, new FakeIssuerSignIn(server, sub), Warn: Faults.Warning);
+		var token = Environment.GetEnvironmentVariable("ZING_E2E_GOOGLE_TOKEN") ?? throw new InvalidOperationException("ZING_E2E_GOOGLE_AUTHORIZE needs ZING_E2E_GOOGLE_TOKEN, the fake token endpoint");
+		var endpoints = new Zing.Core.Sync.GoogleEndpoints(OnThisPc(authorize), OnThisPc(token));
+		return new Zing.Core.Sync.SyncSetup(server, new Zing.Core.Sync.GoogleSignIn("zing-e2e-client", "zing-e2e-secret", endpoints, address => SignInPopup.OpenOver(app, address), Faults.Warning), Warn: Faults.Warning);
+	}
+
+	/// <summary>A fake Google endpoint, which must be http on a loopback address (no name, which the hosts file could point elsewhere): an e2e run never reaches Google.</summary>
+	private static Uri OnThisPc(string address)
+	{
+		var uri = new Uri(address);
+		if (uri.Scheme != Uri.UriSchemeHttp || !System.Net.IPAddress.TryParse(uri.Host, out var ip) || !System.Net.IPAddress.IsLoopback(ip))
+			throw new InvalidOperationException($"An e2e run's Google endpoints must be http://127.0.0.1:<port>, not {uri.Scheme}://{uri.Host}");
+		return uri;
 	}
 
 	private static int? _closeNextAt;
@@ -149,6 +169,7 @@ public static class TestHooks
 	/// "page-messages" writes how many page messages were dropped to <c>file</c>;
 	/// "set-modifiers" with <c>shift</c>, <c>ctrl</c> and <c>middle</c> sets the keys the next new-window request is taken to have been made with, once;
 	/// "peek-state" writes the link preview's state to <c>file</c>; "click-scrim" sends the preview's scrim a left-button press, as a click on the dim would;
+	/// "sign-in-window" writes the Google sign-in window's state to <c>file</c>, and with <c>close</c> closes it as the person would;
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// "update-ready" with <c>version</c> makes the next update check find that version, and "update-restarts" writes how many restarts into an update were asked for to <c>file</c>.
@@ -294,6 +315,14 @@ public static class TestHooks
 		if (action == "update-restarts")
 		{
 			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { restarts = Updates.Restarts }));
+			return true;
+		}
+		if (action == "sign-in-window")
+		{
+			// The Google sign-in window: what it shows and where, written to file, then closed as the person would with close.
+			var popup = SignInPopup.Current;
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(popup is null ? new { open = false, ownedByThisWindow = false, address = "", width = 0.0, height = 0.0 } : new { open = true, ownedByThisWindow = popup.Owner == window.Hwnd, address = popup.Address, width = popup.Size.Width, height = popup.Size.Height }));
+			if (root.TryGetProperty("close", out var close) && close.GetBoolean()) (popup ?? throw new InvalidOperationException("sign-in-window close needs the window open")).CloseAsThePersonWould();
 			return true;
 		}
 		if (action == "close-at")

@@ -76,6 +76,24 @@ public sealed class TabServiceTests
 	}
 
 	[Fact]
+	public void With_blockTrackers_off_navigations_keep_their_parameters()
+	{
+		var block = false;
+		var tabs = new TabService(new TabStore(Deterministic.Clock(), Deterministic.Ids()), _host, "about:blank", () => { }, (_, _) => { }, blockTrackers: () => block);
+		var tab = tabs.Open("about:blank");
+		tabs.Navigate(tab.Id, "https://example.com/?utm_source=x&id=1");
+		Assert.Equal("https://example.com/?utm_source=x&id=1", tabs.Get(tab.Id).Url);
+		var events = ((FakePage)tabs.PageOf(tab.Id)!).Events;
+		Assert.Equal(NavigationDecision.Allow, events.Navigating("about:blank", "https://example.com/?fbclid=abc", NavigationCause.Other));
+		Assert.Equal("https://example.com/?gclid=1", tabs.CleanLink("https://example.com/?gclid=1"));
+
+		// Read at each navigation, so turning it back on applies to open tabs.
+		block = true;
+		Assert.Equal(new NavigationDecision.Redirect("https://example.com/"), events.Navigating("about:blank", "https://example.com/?fbclid=abc", NavigationCause.Other));
+		Assert.Equal("https://example.com/", tabs.CleanLink("https://example.com/?gclid=1"));
+	}
+
+	[Fact]
 	public void Page_events_update_the_record_and_a_blank_title_reads_New_Tab()
 	{
 		var tab = _tabs.Open("about:blank");
@@ -388,6 +406,18 @@ public sealed class TabPreviewServiceTests
 	}
 
 	private static PopupRequest Window(string url, Modifiers modifiers = default, bool features = false) => new(url, modifiers, features);
+
+	[Fact]
+	public void WithBlockTrackersOffAPreviewKeepsTheLinksParameters()
+	{
+		var tabs = new TabService(new TabStore(Deterministic.Clock(), Deterministic.Ids()), _host, "about:blank", () => { }, (_, _) => { }, peekSettings: () => _settings, scheduler: _scheduler, blockTrackers: () => false);
+		var tab = tabs.Open("https://a.example/");
+		var page = _host.PageFor(tabs, tab.Id);
+		Assert.Equal(NavigationDecision.Cancel, page.Events.Navigating("https://a.example/", "https://b.example/?utm_source=x&id=1", NavigationCause.AnchorClick));
+		var shown = (FakePage)tabs.Preview!.Top.Page;
+		Assert.Equal(["navigate https://b.example/?utm_source=x&id=1"], shown.Calls);
+		Assert.Equal(NavigationDecision.Allow, shown.Events.Navigating("https://b.example/", "https://b.example/next?fbclid=1", NavigationCause.AnchorClick));
+	}
 
 	[Fact]
 	public void CrossHostAnchorClickOpensAPreviewNotATab()

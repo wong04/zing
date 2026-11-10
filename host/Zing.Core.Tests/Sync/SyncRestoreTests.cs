@@ -9,7 +9,7 @@ namespace Zing.Core.Tests.Sync;
 public sealed class SyncRestoreTests : IDisposable
 {
 	private const string Strong = TwoPcs.Strong;
-	private const string NextStrong = "labour-muzzle-medici-rushes-fiction";
+	private const string NextStrong = "labour-muzzle-medici-rushes-fiction7";
 
 	private readonly TwoPcs _pcs = new();
 	private readonly string _bAccountDir = Directory.CreateTempSubdirectory("zing-syncrestore-account-").FullName;
@@ -257,7 +257,7 @@ public sealed class SyncRestoreTests : IDisposable
 		await Assert.ThrowsAsync<SyncRestoreKeysNotThisVaultsException>(() => Restore(_pcs.A, _pcs.Account).RestoreWithPasswordAsync(NextStrong, Ct));
 		var restore = Restore(_pcs.A, _pcs.Account);
 		await restore.RestoreWithRecoveryKeyAsync(recovery, Ct);
-		await Assert.ThrowsAsync<SyncRestoreKeysNotThisVaultsException>(() => restore.ChangePasswordAfterRecoveryAsync("violet-anchor-pebble-harbour", Ct));
+		await Assert.ThrowsAsync<SyncRestoreKeysNotThisVaultsException>(() => restore.ChangePasswordAfterRecoveryAsync("violet-anchor-pebble-harbour3", Ct));
 
 		_pcs.Account.CheckPassword(Strong);
 		Assert.Equal("ada", _pcs.Account.State().Profile!.Username);

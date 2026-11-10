@@ -333,12 +333,21 @@ public sealed class WebView2Page : IPage
 		else action(_core);
 	}
 
-	private async Task StartAsync(CoreWebView2Environment environment)
+	/// <summary>
+	/// The person's browsing profile, which tabs and the Google sign-in window (SignInPopup) use. Keeps nothing by default: an
+	/// in-memory profile, as Electron's non-persistent partition was; <paramref name="persistent"/> is the opt-in on-disk one.
+	/// </summary>
+	public static CoreWebView2ControllerOptions BrowsingProfile(CoreWebView2Environment environment, bool persistent)
 	{
 		var options = environment.CreateCoreWebView2ControllerOptions();
-		// Keeps nothing by default: an in-memory profile, as Electron's non-persistent partition was.
-		options.IsInPrivateModeEnabled = !_persistent;
-		options.ProfileName = _persistent ? "zing" : "zing-private";
+		options.IsInPrivateModeEnabled = !persistent;
+		options.ProfileName = persistent ? "zing" : "zing-private";
+		return options;
+	}
+
+	private async Task StartAsync(CoreWebView2Environment environment)
+	{
+		var options = BrowsingProfile(environment, _persistent);
 		// The window's scope tracks the view from the start, so a window that closes meanwhile closes it.
 		_view = await HostedView.CreateAsync(_window, _scope, environment, options, "page", overlay: false);
 		if (!IsOpen)
@@ -355,7 +364,7 @@ public sealed class WebView2Page : IPage
 		// (FollowAutofillAsync). chrome.webview itself stays on the page (the engine injects it) and postMessage still returns
 		// without error, as the relayed-page e2e observes.
 		_core.Settings.AreHostObjectsAllowed = false;
-		_core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Strict;
+		FollowTrackerBlocking();
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
 		// The file viewer's address belongs to Zing's own views; a page asking for it gets a 404, never a file (OnWebResourceRequested).
@@ -364,6 +373,13 @@ public sealed class WebView2Page : IPage
 		// A cancelled navigation has already sent its request by the time it is cancelled, so documents are held back here, before the network.
 		_core.AddWebResourceRequestedFilter("http://*", CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.All);
 		_core.AddWebResourceRequestedFilter("https://*", CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.All);
+		// Every request to a tracker domain, which OnWebResourceRequested refuses while blockTrackers is on. The patterns
+		// over-match (a port, a longer name); TrackerRules decides.
+		foreach (var domain in TrackerRules.Domains)
+		{
+			_core.AddWebResourceRequestedFilter($"http*://{domain}*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+			_core.AddWebResourceRequestedFilter($"http*://*.{domain}*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+		}
 		_core.WebResourceRequested += OnWebResourceRequested;
 		Wire(_core);
 		// A click into a split pane makes its tab the active one. The engine also moves the keyboard on its own (a page
@@ -383,6 +399,13 @@ public sealed class WebView2Page : IPage
 		for (var i = 0; i < _queued.Count; i++) _queued[i](_core);
 		_queued.Clear();
 		_drained = true;
+	}
+
+	/// <summary>Edge's tracking prevention is Strict while blockTrackers is on and off with it. The level is the profile's, so it applies to every page on it.</summary>
+	public void FollowTrackerBlocking()
+	{
+		if (!IsOpen || _core is not { } core) return;
+		core.Profile.PreferredTrackingPreventionLevel = _features.BlockTrackers ? CoreWebView2TrackingPreventionLevel.Strict : CoreWebView2TrackingPreventionLevel.None;
 	}
 
 	/// <summary>Whether the autofill channel is on for this page: web messages, the script, and OnPageMessage reading them.</summary>
@@ -710,6 +733,13 @@ public sealed class WebView2Page : IPage
 		}
 		if (e.Request.Uri.StartsWith("http", StringComparison.OrdinalIgnoreCase))
 		{
+			// The page's own document is never a third party; a tracker's iframe or subresource is (Krackn's third-party load type).
+			var topDocument = e.ResourceContext == CoreWebView2WebResourceContext.Document && e.Request.Uri == _approvedDocument;
+			if (!topDocument && _features.BlockTrackers && TrackerRules.Blocks(e.Request.Uri, TopOf(sender)))
+			{
+				e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
+				return;
+			}
 			var warned = ThreatGate.IsWithheld(_warnedDocument, e.Request.Uri, e.ResourceContext == CoreWebView2WebResourceContext.Document);
 			if (warned || !RelayedNavigation.MayRequestDocument(TopOf(sender), e.Request.Uri, _approvedDocument)) e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
 			return;
