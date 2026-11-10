@@ -11,7 +11,8 @@ namespace Zing.Host;
 /// </summary>
 public sealed class UpdatePillLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, Action<RendererView> created, OverlayHost overlays, UpdateState initial)
 {
-	private const double Margin = 16;
+	// The view's own 6 px padding (update.css, room for the shadow and focus ring) makes the visible gap 16 px.
+	private const double Margin = 10;
 
 	private Task<RendererView>? _ready;
 	private bool _shown = IsReady(initial);

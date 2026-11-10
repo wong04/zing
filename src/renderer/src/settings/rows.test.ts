@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, SETTING_KEYS, acceptsValue } from '@shared/settings'
 import { SETTINGS_CATEGORIES } from '@shared/shell/shellState'
-import { boundKeys, CATEGORIES, PANES, detailOf, isVisible, type SettingRow } from './rows'
+import { boundKeys, CATEGORIES, CHECK_FOR_UPDATES_ROW, PANES, detailOf, isVisible, type SettingRow } from './rows'
 
 describe('settings rows', () => {
 	it('binds every setting in the schema to a control', () => {
@@ -14,8 +14,9 @@ describe('settings rows', () => {
 	})
 
 	it('puts the update switch in About, saying what it sends', () => {
-		const row = PANES.about.find((i) => i.type === 'setting' && i.key === 'checkForUpdates')
-		if (row?.type !== 'setting') throw new Error('No checkForUpdates row in About')
+		const row = CHECK_FOR_UPDATES_ROW
+		expect(row.key).toBe('checkForUpdates')
+		expect(boundKeys().has('checkForUpdates')).toBe(true)
 		expect(row.control.kind).toBe('toggle')
 		expect(detailOf(row, DEFAULT_SETTINGS)).toBe('Asks GitHub for the latest version every few hours. Sends nothing about you.')
 	})

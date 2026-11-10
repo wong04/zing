@@ -16,8 +16,10 @@ import { useUpdateState } from '../update/useUpdateState'
 import { privacyStatus } from './privacy'
 import { VaultSection } from './VaultSection'
 import type { CustomId } from './rows'
+import { CHECK_FOR_UPDATES_ROW, detailOf } from './rows'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
+import { useSettings } from './useSettings'
 
 function AccentSwatch({ label, hex, selected, onSelect }: { label: string; hex: string; selected: boolean; onSelect: () => void }) {
 	return (
@@ -265,6 +267,18 @@ function UpdatesRow({ state }: { state: UpdateState | null }) {
 	)
 }
 
+/** The automatic-check switch, drawn under Check now. */
+function CheckForUpdatesRow() {
+	const handle = useSettings()
+	if (!handle) return null
+	const row = CHECK_FOR_UPDATES_ROW
+	return (
+		<SettingRowShell title={row.title} detail={detailOf(row, handle.settings)}>
+			<Toggle aria-label={row.title} checked={handle.settings.checkForUpdates} onChange={(on) => handle.set('checkForUpdates', on)} />
+		</SettingRowShell>
+	)
+}
+
 function About({ version }: { version: string }) {
 	const update = useUpdateState()
 	return (
@@ -279,6 +293,7 @@ function About({ version }: { version: string }) {
 				</div>
 			</div>
 			<UpdatesRow state={update} />
+			<CheckForUpdatesRow />
 			<SettingRowShell title="File formats">
 				<span className="row-value">{allInputs().size}</span>
 			</SettingRowShell>

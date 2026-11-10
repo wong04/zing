@@ -10,6 +10,7 @@ public sealed class UpdaterTests
 		public string? Newer { get; set; }
 		public Exception? FindError { get; set; }
 		public TaskCompletionSource<string?>? Gate { get; set; }
+		public TaskCompletionSource? DownloadGate { get; set; }
 		public int Finds { get; private set; }
 		public int Downloads { get; private set; }
 		public int Restarts { get; private set; }
@@ -27,7 +28,7 @@ public sealed class UpdaterTests
 		public Task DownloadAsync(CancellationToken cancel)
 		{
 			Downloads++;
-			return Task.CompletedTask;
+			return DownloadGate?.Task ?? Task.CompletedTask;
 		}
 
 		public void RestartIntoUpdate()
@@ -169,6 +170,22 @@ public sealed class UpdaterTests
 		var updater = Make();
 		updater.Relaunch();
 		Assert.Equal(0, _source.Restarts);
+	}
+
+	[Fact]
+	public async Task Relaunch_while_downloading_does_nothing()
+	{
+		_source.Newer = "0.9.1";
+		_source.DownloadGate = new TaskCompletionSource();
+		var updater = Make();
+		var check = updater.CheckNowAsync();
+		var before = updater.State;
+		Assert.Equal(UpdateStatus.Downloading, before.Status);
+		updater.Relaunch();
+		Assert.Equal(0, _source.Restarts);
+		Assert.Equal(before, updater.State);
+		_source.DownloadGate.SetResult();
+		await check;
 	}
 
 	[Fact]

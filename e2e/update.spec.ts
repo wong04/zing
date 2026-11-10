@@ -17,6 +17,17 @@ const isPill = (page: Page): boolean => page.url().endsWith('#update-pill')
 /** Whether this window really shows the pill's view (TestHooks "layers"); a view the host has hidden still has its page. */
 const pillShown = async (chrome: Page): Promise<boolean> => (await layers(chrome)).some((layer) => layer.url.endsWith('#update-pill') && layer.visible)
 
+/** The pill view sits at the content's bottom right: its edges 10 px in, which with the view's 6 px padding leaves a 16 px gap. */
+async function expectInCorner(chrome: Page): Promise<void> {
+	const shown = await layers(chrome)
+	const content = shown.find((layer) => layer.url.endsWith('#chrome'))!
+	const pill = shown.find((layer) => layer.url.endsWith('#update-pill'))!
+	expect(pill.width).toBeGreaterThan(0)
+	expect(pill.height).toBeGreaterThan(0)
+	expect(content.x + content.width - (pill.x + pill.width)).toBeCloseTo(10, 0)
+	expect(content.y + content.height - (pill.y + pill.height)).toBeCloseTo(10, 0)
+}
+
 async function restarts(chrome: Page): Promise<number> {
 	const file = join(scratchDir('zing-update-'), 'restarts.json')
 	await post(chrome, { kind: 'test', action: 'update-restarts', file })
@@ -41,12 +52,14 @@ test('Check now finds a ready update, every window shows the pill, and clicking 
 
 	await expect.poll(() => pillShown(zing.chrome)).toBe(true)
 	const first = await pageWhere(zing.browser, isPill)
+	await expectInCorner(zing.chrome)
 	await expect(first.getByRole('button', { name: 'Relaunch to update' })).toBeVisible()
 
 	await zing.chrome.evaluate(() => window.zing.runCommand('window.new'))
 	await expect.poll(() => pages(zing.browser).filter(isChrome).length).toBe(2)
 	const second = pages(zing.browser).find((p) => isChrome(p) && p !== zing.chrome)!
 	await expect.poll(() => pillShown(second)).toBe(true)
+	await expectInCorner(second)
 	await expect.poll(() => pages(zing.browser).filter(isPill).length).toBe(2)
 	for (const pill of pages(zing.browser).filter(isPill)) await expect(pill.getByRole('button', { name: 'Relaunch to update' })).toBeVisible()
 
