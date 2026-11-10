@@ -26,6 +26,8 @@ public sealed class SignInPopup : ISignInPopup
 	private readonly nint _address;
 	private readonly ZingApp _app;
 	private readonly MainWindow _owner;
+	/// <summary>Whether Zing was minimised when the window opened, so handing back never restores a window the person minimised.</summary>
+	private readonly bool _ownerWasMinimised;
 	private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 	private CoreWebView2Controller? _controller;
 	private nint _font;
@@ -36,6 +38,7 @@ public sealed class SignInPopup : ISignInPopup
 	{
 		_app = app;
 		_owner = owner;
+		_ownerWasMinimised = Native.IsIconic(owner.Hwnd);
 		if (!_registered)
 		{
 			Native.RegisterClass(ClassName, Proc, Native.LoadCursorW(0, 32512));
@@ -112,7 +115,21 @@ public sealed class SignInPopup : ISignInPopup
 	public void Close()
 	{
 		if (_closed.Task.IsCompleted) return;
+		HandBackToOwner();
 		if (!Native.DestroyWindow(_hwnd)) throw new NativeCallException("DestroyWindow sign-in");
+	}
+
+	/// <summary>
+	/// Brings Zing back to the front before this window goes. Destroying an active owned window lets Windows pick the next window
+	/// itself, which can be another app, so Zing looked minimised after a sign-in.
+	/// </summary>
+	private void HandBackToOwner()
+	{
+		if (TestHooks.KeepsOutOfTheWay) return;
+		if (Native.GetForegroundWindow() != _hwnd) return;
+		var owner = _owner.Hwnd;
+		if (!_ownerWasMinimised && Native.IsIconic(owner)) Native.ShowWindow(owner, Native.SW_RESTORE);
+		Native.SetForegroundWindow(owner);
 	}
 
 	/// <summary>As the person's click on the close button does (the e2e sign-in-window hook).</summary>
@@ -240,6 +257,9 @@ public sealed class SignInPopup : ISignInPopup
 				TestHooks.Guard(popup.UseFont, "sign-in window dpi changed");
 				TestHooks.Guard(popup.Layout, "sign-in window dpi changed");
 				return 0;
+			case Native.WM_CLOSE:
+				TestHooks.Guard(popup.HandBackToOwner, "sign-in window closing");
+				break;
 			case Native.WM_DESTROY:
 				Open.Remove(hwnd);
 				TestHooks.Guard(popup.Destroyed, "sign-in window closed");
