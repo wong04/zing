@@ -1,0 +1,13 @@
+{
+	"sidebar": {
+		"containers": [
+			{
+				"spaces": ["s1", { "id": "s1", "title": "Loop", "containerIDs": ["pinned", "p1"] }],
+				"items": [
+					"p1", { "id": "p1", "title": null, "childrenIds": ["f1"], "data": { "itemContainer": {} } },
+					"f1", { "id": "f1", "title": "Me again", "childrenIds": ["f1"], "data": { "list": {} } }
+				]
+			}
+		]
+	}
+}

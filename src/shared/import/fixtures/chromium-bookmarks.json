@@ -1,0 +1,36 @@
+{
+	"checksum": "0000",
+	"roots": {
+		"bookmark_bar": {
+			"type": "folder",
+			"name": "Bookmarks bar",
+			"children": [
+				{ "type": "url", "name": "GitHub", "url": "https://github.com/" },
+				{
+					"type": "folder",
+					"name": "Dev",
+					"children": [
+						{ "type": "url", "name": "MDN", "url": "https://developer.mozilla.org/" },
+						{ "type": "url", "name": "", "url": "https://untitled.example/page" }
+					]
+				},
+				{ "type": "url", "name": "Bookmarklet", "url": "javascript:alert(1)" },
+				{ "type": "url", "name": "", "url": "chrome://settings" }
+			]
+		},
+		"other": {
+			"type": "folder",
+			"name": "Other bookmarks",
+			"children": [
+				{ "type": "url", "name": "News", "url": "http://news.example/" },
+				{ "type": "folder", "name": "Empty", "children": [] }
+			]
+		},
+		"synced": {
+			"type": "folder",
+			"name": "Mobile bookmarks",
+			"children": [{ "type": "url", "name": "Phone", "url": "https://phone.example/" }]
+		}
+	},
+	"version": 1
+}

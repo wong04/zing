@@ -7,8 +7,10 @@ export class NetscapeBookmarksFormatError extends Error {
 // The NETSCAPE-Bookmark-file-1 format every browser exports (Chrome, Edge,
 // Firefox, Safari, Dia, Arc). It isn't well-formed HTML (<DT> and <p> are
 // never closed), so it's tokenised rather than handed to a DOM parser, which
-// also keeps this usable in the main process.
-const TOKEN = /<(\/?)(dl|h3|a)\b([^>]*)>|<\/(h3|a)>/gi
+// also keeps this usable in the main process. A tag's attributes never hold a
+// raw "<", so an unclosed tag fails at the next one instead of scanning the
+// rest of the file.
+const TOKEN = /<(\/?)(dl|h3|a)\b([^<>]*)>|<\/(h3|a)>/gi
 
 interface Frame {
 	folder: ImportedFolder
@@ -30,8 +32,7 @@ export function parseNetscapeBookmarks(html: string): BookmarkImport {
 		const [, closing, tag = '', attrs = ''] = match
 		const name = tag.toLowerCase()
 		if (name === 'h3' && !closing) {
-			const end = html.indexOf('</', TOKEN.lastIndex)
-			pendingFolder = { title: decodeEntities(html.slice(TOKEN.lastIndex, end).trim()), isBar: /PERSONAL_TOOLBAR_FOLDER\s*=\s*"true"/i.test(attrs) }
+			pendingFolder = { title: textUntilTag(html, TOKEN.lastIndex), isBar: /PERSONAL_TOOLBAR_FOLDER\s*=\s*"true"/i.test(attrs) }
 			continue
 		}
 		if (name === 'dl' && !closing) {
@@ -53,8 +54,7 @@ export function parseNetscapeBookmarks(html: string): BookmarkImport {
 			continue
 		}
 		if (name === 'a' && !closing) {
-			const end = html.indexOf('</', TOKEN.lastIndex)
-			const title = decodeEntities(html.slice(TOKEN.lastIndex, end).trim())
+			const title = textUntilTag(html, TOKEN.lastIndex)
 			const url = decodeEntities(/HREF\s*=\s*"([^"]*)"/i.exec(attrs)?.[1] ?? '')
 			if (!acceptsBookmarkUrl(url)) {
 				skipped.push(`${title || url}: only http(s) addresses can be bookmarks`)
@@ -65,6 +65,13 @@ export function parseNetscapeBookmarks(html: string): BookmarkImport {
 		}
 	}
 	return { bar: bar ?? [], other: unwrapSingleRoot(root.children), skipped }
+}
+
+// A title ends at the next tag, closing or not: exports write a "<" in a title
+// as &lt;, and some never close their <A> and <H3> tags.
+function textUntilTag(html: string, start: number): string {
+	const end = html.indexOf('<', start)
+	return decodeEntities(html.slice(start, end === -1 ? undefined : end).trim())
 }
 
 // Firefox and Safari wrap everything in one top-level folder ("Bookmarks

@@ -1,15 +1,15 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { emptyLibrary, favourites, isFolder, type BookmarkFolder } from '../library/library'
+import type { BrowserLibrary } from '../library/library'
 import { ArcSidebarFormatError, parseArcSidebar } from './arcSidebar'
 import { ChromiumBookmarksFormatError, parseChromiumBookmarks } from './chromiumBookmarks'
 import { CsvSyntaxError, parseCsv } from './csv'
-import { countLinks, importedLink, mergeImport } from './importResult'
+import { countLinks, importedLink, mergeImport, type BookmarkImport } from './importResult'
 import { decodeEntities, NetscapeBookmarksFormatError, parseNetscapeBookmarks } from './netscapeBookmarks'
 import { parsePasswordCsv, UnknownPasswordCsvError } from './passwords'
-import { findChromiumProfiles, profileNames } from './profiles.node'
+import mergeVectors from './merge.vectors.json'
+import parserVectors from './parsers.vectors.json'
 
 describe('csv', () => {
 	it('handles quoted commas, quotes and newlines', () => {
@@ -128,6 +128,15 @@ describe('Netscape bookmarks HTML (every browser, incl. Dia on Mac)', () => {
 	})
 	it('decodes hex and named entities', () => expect(decodeEntities('&#x41;&lt;&quot;&unknown;')).toBe('A<"&unknown;'))
 	it('rejects unrelated HTML', () => expect(() => parseNetscapeBookmarks('<html><body>hi</body></html>')).toThrow(NetscapeBookmarksFormatError))
+	it('stays linear on 10 MB of tags that never close', () => {
+		const head = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL>'
+		for (const tag of ['<A HREF="https://x/">', '<A HREF="https://x/"']) {
+			const html = head + tag.repeat(Math.floor((10 * 1024 * 1024) / tag.length))
+			const start = performance.now()
+			parseNetscapeBookmarks(html)
+			expect(performance.now() - start).toBeLessThan(3000)
+		}
+	})
 })
 
 const ARC = JSON.stringify({
@@ -167,37 +176,28 @@ describe('Arc StorableSidebar.json', () => {
 })
 
 describe('merging an import into the library', () => {
-	const result = parseChromiumBookmarks(CHROME_BOOKMARKS)
-	const once = mergeImport(emptyLibrary(), result, 'Chrome', 1)
-	it('adds bar items to Favourites', () => expect(favourites(once).map((n) => n.title)).toEqual(['GitHub', 'Dev']))
-	it('puts the rest in one Imported folder', () => {
-		const imported = once.bookmarks.find((n) => n.title === 'Imported from Chrome') as BookmarkFolder
-		expect(imported.children.map((n) => n.title)).toEqual(['News', 'Mobile bookmarks'])
-	})
-	it('a second import does not duplicate bar links or the folder', () => {
-		const twice = mergeImport(once, result, 'Chrome', 2)
-		expect(favourites(twice).filter((n) => !isFolder(n))).toHaveLength(1)
-		expect(twice.bookmarks.filter((n) => n.title === 'Imported from Chrome')).toHaveLength(1)
+	it.each(mergeVectors.merge)('$name', ({ library, result, source, now, expected }) => {
+		const before = structuredClone(library)
+		let counter = 0
+		const outcome = mergeImport(library as BrowserLibrary, result as BookmarkImport, source, now, () => `n${++counter}`)
+		expect(outcome).toEqual(expected)
+		expect(library).toEqual(before)
+		if (JSON.stringify(expected.library) === JSON.stringify(before)) expect(outcome.library).toBe(library)
 	})
 })
 
-describe('finding Chromium profiles on this PC', () => {
-	it('reads display names from Local State', () => {
-		const names = profileNames(JSON.stringify({ profile: { info_cache: { Default: { name: 'Personal' }, 'Profile 1': { name: 'Work' } } } }))
-		expect(names.get('Profile 1')).toBe('Work')
+// The same cases the C# parsers run (host/Zing.Core.Tests/Import/ParserTests.cs).
+const PARSERS = { chromium: parseChromiumBookmarks, netscape: parseNetscapeBookmarks, arc: parseArcSidebar }
+const REFUSALS = { 'invalid-json': SyntaxError, 'chromium-format': ChromiumBookmarksFormatError, 'netscape-format': NetscapeBookmarksFormatError, 'arc-format': ArcSidebarFormatError }
+const fixture = (name: string) => readFileSync(join(import.meta.dirname, 'fixtures', name), 'utf8')
+
+describe('parsers against the shared vectors', () => {
+	it.each(parserVectors.parse)('$name', ({ parser, fixture: file, expected }) => {
+		expect(PARSERS[parser as keyof typeof PARSERS](fixture(file))).toEqual(expected)
 	})
-	it('finds profiles that have a Bookmarks file', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'zing-import-'))
-		const chrome = join(root, 'Google', 'Chrome', 'User Data')
-		await mkdir(join(chrome, 'Default'), { recursive: true })
-		await mkdir(join(chrome, 'Profile 1'), { recursive: true })
-		await mkdir(join(chrome, 'System Profile'), { recursive: true })
-		await mkdir(join(chrome, 'Guest Profile'), { recursive: true })
-		await writeFile(join(chrome, 'Guest Profile', 'Bookmarks'), CHROME_BOOKMARKS)
-		await writeFile(join(chrome, 'Local State'), JSON.stringify({ profile: { info_cache: { Default: { name: 'Personal' }, 'Profile 1': { name: 'Work' } } } }))
-		await writeFile(join(chrome, 'Default', 'Bookmarks'), CHROME_BOOKMARKS)
-		await writeFile(join(chrome, 'Profile 1', 'Bookmarks'), CHROME_BOOKMARKS)
-		const profiles = await findChromiumProfiles(root)
-		expect(profiles.map((p) => `${p.browser}:${p.name}`).sort()).toEqual(['chrome:Personal', 'chrome:Work'])
+	it.each(parserVectors.refused)('refuses: $name', (vector) => {
+		const run = () => PARSERS[vector.parser as keyof typeof PARSERS](fixture(vector.fixture))
+		expect(run).toThrow(REFUSALS[vector.error as keyof typeof REFUSALS])
+		if ('message' in vector) expect(run).toThrow(expect.objectContaining({ message: vector.message }))
 	})
 })
