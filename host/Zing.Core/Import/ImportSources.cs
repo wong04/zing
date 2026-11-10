@@ -99,7 +99,16 @@ public static class ImportSources
 	{
 		var packages = System.IO.Path.Combine(localAppData, "Packages");
 		if (!Directory.Exists(packages)) return null;
-		foreach (var package in Directory.GetDirectories(packages, "TheBrowserCompany.Arc_*").Order(StringComparer.Ordinal))
+		string[] arcPackages;
+		try
+		{
+			arcPackages = Directory.GetDirectories(packages, "TheBrowserCompany.Arc_*");
+		}
+		catch (Exception error) when (IsReadFailure(error))
+		{
+			return new ImportSource("arc", ImportBrowser.Arc, null, "Arc", packages, null, Explain(error, "Arc's sidebar"), false);
+		}
+		foreach (var package in arcPackages.Order(StringComparer.Ordinal))
 		{
 			var sidebar = System.IO.Path.Combine(package, "LocalCache", "Local", "Arc", "StorableSidebar.json");
 			if (File.Exists(sidebar)) return Describe(new ImportSource("arc", ImportBrowser.Arc, null, "Arc", sidebar, null, null, false));

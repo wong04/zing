@@ -200,6 +200,65 @@ public sealed class ImportSourcesTests : IDisposable
 	}
 
 	[Fact]
+	[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+	public void APackagesFolderThatCannotBeListedIsAnArcRowWithAnErrorAndChromiumIsStillFound()
+	{
+		var chrome = ChromeUserData();
+		WriteLocalState(chrome, null, ("Default", "Personal"));
+		WriteProfile(chrome, "Default", Fixture("chromium-bookmarks.json"));
+		var packages = new DirectoryInfo(Path.Combine(root, "Packages"));
+		packages.Create();
+		var me = System.Security.Principal.WindowsIdentity.GetCurrent().User!;
+		var security = packages.GetAccessControl();
+		var deny = new System.Security.AccessControl.FileSystemAccessRule(me, System.Security.AccessControl.FileSystemRights.ListDirectory, System.Security.AccessControl.AccessControlType.Deny);
+		security.AddAccessRule(deny);
+		packages.SetAccessControl(security);
+		try
+		{
+			var found = ImportSources.Find(root);
+
+			Assert.Equal(["chrome:Default", "arc"], found.Select(s => s.Id));
+			var arc = found[1];
+			Assert.Equal(ImportBrowser.Arc, arc.Browser);
+			Assert.Null(arc.Bookmarks);
+			Assert.Equal("Zing couldn't read Arc's sidebar: access was denied", arc.Error);
+		}
+		finally
+		{
+			security.RemoveAccessRule(deny);
+			packages.SetAccessControl(security);
+		}
+	}
+
+	[Fact]
+	public void ABookmarksFileOverTheLimitIsARowWithTheSizeError()
+	{
+		var chrome = ChromeUserData();
+		WriteLocalState(chrome, null, ("Default", "Personal"));
+		WriteProfile(chrome, "Default");
+		using (var file = File.Create(Path.Combine(chrome, "Default", "Bookmarks"))) file.SetLength(ImportFile.MaxBytes + 1);
+
+		var source = Assert.Single(ImportSources.Find(root));
+
+		Assert.Null(source.Bookmarks);
+		Assert.Equal("This file is too large to be an import. Zing reads files of up to 10 MB, which is far more than any real export.", source.Error);
+	}
+
+	[Fact]
+	public void ANonUtf8BookmarksFileIsARowWithTheEncodingError()
+	{
+		var chrome = ChromeUserData();
+		WriteLocalState(chrome, null, ("Default", "Personal"));
+		WriteProfile(chrome, "Default");
+		File.WriteAllBytes(Path.Combine(chrome, "Default", "Bookmarks"), [.. "{\"roots\":{\"other\":{\"name\":\"Caf"u8.ToArray(), 0xE9, .. "\"}}}"u8.ToArray()]);
+
+		var source = Assert.Single(ImportSources.Find(root));
+
+		Assert.Null(source.Bookmarks);
+		Assert.Equal("The file isn't UTF-8 text, so it can't be an export Zing reads.", source.Error);
+	}
+
+	[Fact]
 	public void ErrorsNeverCarryAPath()
 	{
 		var path = Path.Combine(root, "secret", "Bookmarks");
