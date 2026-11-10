@@ -1,5 +1,7 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { formatNotices, type NoticePackage } from './notices'
+import { formatNotices, overrideFile, type NoticePackage } from './notices'
 
 const pkg = (name: string, version: string, over: Partial<NoticePackage> = {}): NoticePackage => ({
 	name,
@@ -46,9 +48,31 @@ describe('formatNotices', () => {
 		const section = text.slice(text.indexOf('\nInter\n'))
 		expect(section).toContain('SIL Open Font License 1.1')
 		expect(section).toContain('https://github.com/rsms/inter')
+		expect(section).toContain('Copyright (c) 2016 The Inter Project Authors')
+		expect(section).toContain('PERMISSION AND CONDITIONS')
+	})
+
+	it('labels the WebView2 link as more information, not licence terms', () => {
+		expect(formatNotices([])).toContain('More information: https://developer.microsoft.com/microsoft-edge/webview2/')
 	})
 
 	it('throws naming a package without a licence', () => {
 		expect(() => formatNotices([pkg('alpha', '1.0.0'), pkg('no-licence', '3.1.4', { licenseText: '  \n' })])).toThrow(/no-licence@3\.1\.4/)
+	})
+})
+
+describe('licence text for packages that ship none', () => {
+	const packages = ['onnxruntime-web', 'onnxruntime-common', 'guid-typescript', '@napi-rs/canvas-win32-x64-msvc', 'qrcode-generator']
+
+	it.each(packages)('%s has a committed, non-empty licence text with a copyright line', (name) => {
+		expect(existsSync(overrideFile(name))).toBe(true)
+		const text = readFileSync(overrideFile(name), 'utf8')
+		expect(text.trim()).not.toBe('')
+		expect(text).toMatch(/Copyright/)
+	})
+
+	it.each(packages)('%s ships no licence file in node_modules, so its override is used', (name) => {
+		const shipped = readdirSync(join(import.meta.dirname, '..', 'node_modules', name)).filter((file) => /^licen[cs]e([-.].*)?$/i.test(file))
+		expect(shipped).toEqual([])
 	})
 })

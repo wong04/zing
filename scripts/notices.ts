@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 // Formats the third-party notices Zing's About > Credits shows. Pure: gen-notices.ts collects the packages.
 export interface NoticePackage {
 	readonly name: string
@@ -10,6 +13,16 @@ export interface NoticePackage {
 interface FixedSection {
 	readonly title: string
 	readonly lines: readonly string[]
+	/** A file in scripts/licenses whose text follows the lines. */
+	readonly textFile?: string
+}
+
+// From the repo root, so it resolves the same under vitest (scripts/) and in the bundle gen-notices.ts runs from (out/).
+const LICENSES_DIR = join(import.meta.dirname, '..', 'scripts', 'licenses')
+
+/** Where the licence text of a package that ships none is committed: `/` is not valid in a file name. */
+export function overrideFile(packageName: string): string {
+	return join(LICENSES_DIR, `${packageName.replace('/', '__')}.txt`)
 }
 
 /** Bundled or relied on, but not a package a lister finds. */
@@ -27,14 +40,15 @@ const FIXED_SECTIONS: readonly FixedSection[] = [
 		lines: [
 			'The typeface the app is set in, bundled as Inter.ttf. Copyright The Inter Project Authors, https://github.com/rsms/inter',
 			'License: SIL Open Font License 1.1.',
-			'Licence text: https://github.com/rsms/inter/blob/master/LICENSE.txt',
+			'',
 		],
+		textFile: 'inter.txt',
 	},
 	{
 		title: 'Microsoft Edge WebView2 Runtime',
 		lines: [
 			'Zing shows web pages with the WebView2 Runtime installed on this PC. It is not part of Zing and is licensed by Microsoft.',
-			'Licence terms: https://developer.microsoft.com/microsoft-edge/webview2/',
+			'More information: https://developer.microsoft.com/microsoft-edge/webview2/',
 		],
 	},
 	{
@@ -62,7 +76,8 @@ function section(entry: NoticePackage): string {
 }
 
 function fixed(entry: FixedSection): string {
-	return [RULE, entry.title, ...entry.lines, ''].join('\n')
+	const text = entry.textFile ? [readFileSync(join(LICENSES_DIR, entry.textFile), 'utf8').trim()] : []
+	return [RULE, entry.title, ...entry.lines, ...text, ''].join('\n')
 }
 
 export function formatNotices(packages: readonly NoticePackage[]): string {

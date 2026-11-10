@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { formatNotices, type NoticePackage } from './notices'
+import { formatNotices, overrideFile, type NoticePackage } from './notices'
 
 const root = join(import.meta.dirname, '..')
 const output = join(root, 'host', 'Zing.Host', 'Assets', 'THIRD-PARTY-NOTICES.txt')
@@ -32,19 +32,13 @@ function licenseFiles(folder: string): string {
 		.join('\n\n')
 }
 
-/**
- * Packages whose tarball ships no licence file, checked by hand: each declares its SPDX licence and a repository. A package
- * not listed here still fails the run when it has no licence text.
- */
-const DECLARED_ONLY = new Set(['onnxruntime-web', 'onnxruntime-common', 'guid-typescript', '@napi-rs/canvas-win32-x64-msvc', 'qrcode-generator'])
-
-function npmLicenseText(name: string, node: NpmNode & { path: string }): string {
-	const text = licenseFiles(node.path)
-	if (text || !DECLARED_ONLY.has(name)) return text
-	const manifest = JSON.parse(readFileSync(join(node.path, 'package.json'), 'utf8')) as { repository?: string | { url?: string } }
-	const repository = typeof manifest.repository === 'string' ? manifest.repository : manifest.repository?.url
-	if (!repository) throw new Error(`${name} declares no repository to point its licence at`)
-	return `This package ships no licence file. It declares the ${node.license} licence; see ${repository.replace(/^git\+/, '')}`
+/** The package's own licence file, else the text committed in scripts/licenses for a package that ships none. */
+function npmLicenseText(name: string, path: string): string {
+	const text = licenseFiles(path)
+	if (text) return text
+	const override = overrideFile(name)
+	if (!existsSync(override)) throw new Error(`No licence found for ${name}: it ships none and ${override} does not exist`)
+	return readFileSync(override, 'utf8').trim()
 }
 
 interface NpmNode {
@@ -62,7 +56,7 @@ function npmPackages(): NoticePackage[] {
 		for (const [name, node] of Object.entries(dependencies ?? {})) {
 			// No path: an optional package for another platform, which this install doesn't have.
 			if (node.path && node.version) {
-				found.set(`${name}@${node.version}`, { name, version: node.version, license: node.license ?? 'see text', licenseText: npmLicenseText(name, { ...node, path: node.path }), source: 'npm' })
+				found.set(`${name}@${node.version}`, { name, version: node.version, license: node.license ?? 'see text', licenseText: npmLicenseText(name, node.path), source: 'npm' })
 			}
 			visit(node.dependencies)
 		}
