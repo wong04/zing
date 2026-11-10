@@ -74,3 +74,27 @@ test.describe('Phase 5 screenshots', () => {
 		})
 	}
 })
+
+// TH4: Windows contrast themes. Zing follows forced colours, so a dark contrast scheme (such as Night sky) and a light one
+// (such as Desert) each draw cards as plain outlined rows in the system's colours.
+test.describe('Contrast theme screenshots', () => {
+	test.skip(process.env.ZING_SCREENSHOTS !== '1', 'set ZING_SCREENSHOTS=1 to take the contrast theme pictures')
+
+	for (const mode of MODES) {
+		test(`the chrome under forced colours, ${mode} scheme`, async () => {
+			mkdirSync(OUT_DIR, { recursive: true })
+			const zing = await launchZing()
+			const chrome = zing.chrome
+			for (let i = 1; i <= 4; i++) await addFavourite(chrome, `Fav${i}`)
+			await openPage(chrome, 'Alpha')
+			await openPage(chrome, 'Beta')
+			await chrome.evaluate((theme) => window.zing.setSetting('theme', theme), mode)
+			await chrome.emulateMedia({ forcedColors: 'active', colorScheme: mode })
+			await expect.poll(() => chrome.evaluate(() => matchMedia('(forced-colors: active)').matches)).toBe(true)
+			await expect.poll(async () => (await viewAccent(chrome)).dark).toBe(mode === 'dark')
+			await chrome.waitForTimeout(400)
+			await chrome.screenshot({ path: join(OUT_DIR, `contrast-left-${mode}.png`) })
+			await zing.close()
+		})
+	}
+})
