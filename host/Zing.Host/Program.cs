@@ -95,6 +95,7 @@ public sealed class ZingApp
 		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => Primary?.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : [], _scheduler, e => TestHooks.Record("session write", e));
 		_onQuit.Add(_session.Flush);
 		_updates = OpenUpdates();
+		TestHooks.OfferDefaultBrowser = OfferDefaultBrowserForTest;
 		if (Flag("restoreTabs"))
 		{
 			var restored = Session.LoadOrRecover(AppPaths.Session);
@@ -120,8 +121,37 @@ public sealed class ZingApp
 		Updates.Start();
 		_links.Attach(OpenLink);
 		// A notice replaces the one before, so problems found at startup are told together.
-		if (_startupNotices.Count > 0) window.Notify(string.Join(" ", _startupNotices));
+		var noticeShown = _startupNotices.Count > 0;
+		if (noticeShown) window.Notify(string.Join(" ", _startupNotices));
 		_startupNotices.Clear();
+		OfferDefaultBrowserOnce(window, noticeShown);
+	}
+
+	// Phase 8: whether this launch was the profile's first, read once before launchedBefore is set; null until then.
+	private bool? _firstLaunch;
+
+	private void OfferDefaultBrowserOnce(MainWindow window, bool noticeShown)
+	{
+		if (_firstLaunch is not null) return;
+		_firstLaunch = !Flag("launchedBefore");
+		Services.Settings.Set("launchedBefore", true);
+		// The offer would replace the startup notice; it comes back next launch.
+		if (noticeShown || !DefaultBrowserOffer.Allowed(Flag("defaultBrowserDismissed"), launchedBefore: !_firstLaunch.Value)) return;
+		try
+		{
+			if (DefaultBrowserOffer.Wanted(window.DefaultBrowserState)) window.OfferDefaultBrowser();
+		}
+		catch (Exception error) when (error is System.Security.SecurityException or IOException or UnauthorizedAccessException)
+		{
+			Faults.Warning("default-browser check", error);
+		}
+	}
+
+	/// <summary>e2e "show-default-browser-offer": the launch offer without asking whether Zing is installed or the default.</summary>
+	private void OfferDefaultBrowserForTest()
+	{
+		if (_firstLaunch is not { } first) return;
+		if (DefaultBrowserOffer.Allowed(Flag("defaultBrowserDismissed"), launchedBefore: !first)) Primary?.OfferDefaultBrowser();
 	}
 
 	/// <summary>

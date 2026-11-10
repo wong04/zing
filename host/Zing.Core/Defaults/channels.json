@@ -81,6 +81,14 @@
 			"args": 2
 		},
 		{
+			"channel": "default-browser:dismiss",
+			"args": 0
+		},
+		{
+			"channel": "default-browser:get",
+			"args": 0
+		},
+		{
 			"channel": "default-browser:open-settings",
 			"args": 0
 		},

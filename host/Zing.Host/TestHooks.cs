@@ -154,6 +154,9 @@ public static class TestHooks
 
 	private static int? _closeNextAt;
 
+	/// <summary>Set by ZingApp at launch: "show-default-browser-offer".</summary>
+	public static Action? OfferDefaultBrowser { get; set; }
+
 	/// <summary>"exit-code-on-quit": the code Zing ends with once its last window is gone, as a crash during quit would; e2e/harness.spec.ts.</summary>
 	public static int? QuitExitCode { get; private set; }
 	private static WindowScope? _newest;
@@ -173,6 +176,7 @@ public static class TestHooks
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// "update-ready" with <c>version</c> makes the next update check find that version, and "update-restarts" writes how many restarts into an update were asked for to <c>file</c>.
+	/// "show-default-browser-offer" shows the default-browser offer as a launch would, skipping only whether Zing is installed and not the default.
 	/// </summary>
 	/// <summary>Written beside and moved into place: the test polls for the file and must never read half of it.</summary>
 	private static void WriteWhole(string path, string json)
@@ -310,6 +314,11 @@ public static class TestHooks
 		if (action == "update-ready")
 		{
 			Updates.Offer(root.GetProperty("version").GetString()!);
+			return true;
+		}
+		if (action == "show-default-browser-offer")
+		{
+			(OfferDefaultBrowser ?? throw new InvalidOperationException("show-default-browser-offer needs Zing started"))();
 			return true;
 		}
 		if (action == "update-restarts")

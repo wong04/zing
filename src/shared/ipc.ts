@@ -37,6 +37,12 @@ export interface UpdateState {
 	readonly readyVersion?: string
 }
 
+/** Zing.Core DefaultBrowserState: registered is an installed Zing (an unpackaged build isn't); isDefault is judged on https. */
+export interface DefaultBrowserState {
+	readonly registered: boolean
+	readonly isDefault: boolean
+}
+
 /** A tab as the chrome draws it: the record plus state that only exists while a renderer is attached. */
 export interface TabView extends TabRecord {
 	/** The memory-only favicon (a small data URL) once it has loaded. */
@@ -118,6 +124,8 @@ export interface Notice {
 	readonly text: string
 	/** Present for the offer after a page failed like a block: it stays until chosen or dismissed and carries the buttons. */
 	readonly offer?: { readonly address: string }
+	/** Present for the offer to make Zing the default browser: "Make default" and "Don't ask again". Left alone, it times out and comes back next launch. */
+	readonly defaultBrowser?: true
 }
 
 export interface TitleBarColors {
@@ -526,6 +534,9 @@ export interface InvokeContract {
 	'update:relaunch': { args: []; result: void }
 	/** The pill view measured what it shows, in CSS pixels. */
 	'update:pill-size': { args: [width: number, height: number]; result: void }
+	'default-browser:get': { args: []; result: DefaultBrowserState }
+	/** "Don't ask again": sets defaultBrowserDismissed and takes the offer down. */
+	'default-browser:dismiss': { args: []; result: void }
 }
 
 /** Host → renderer pushes. The host sends one per change, uncoalesced. */
@@ -739,4 +750,6 @@ export interface ZingApi {
 	relaunchToUpdate(): Promise<void>
 	setUpdatePillSize(width: number, height: number): Promise<void>
 	onUpdateState(listener: (state: UpdateState) => void): Unsubscribe
+	getDefaultBrowserState(): Promise<DefaultBrowserState>
+	dismissDefaultBrowserOffer(): Promise<void>
 }

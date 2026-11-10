@@ -180,5 +180,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		relaunchToUpdate: () => invoke('update:relaunch'),
 		setUpdatePillSize: (width, height) => invoke('update:pill-size', width, height),
 		onUpdateState: (listener) => listen('update:state', listener),
+		getDefaultBrowserState: () => invoke('default-browser:get'),
+		dismissDefaultBrowserOffer: () => invoke('default-browser:dismiss'),
 	}
 }

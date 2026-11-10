@@ -141,7 +141,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_updatePill.Start();
 		_bridge.Register("default-browser:open-settings", _ =>
 		{
-			Shell.OpenExternal("ms-settings:defaultapps");
+			if (TestHooks.IsEndToEndRun) TestHooks.RecordDialog("default-apps", DefaultBrowserOffer.SettingsUri);
+			else Shell.OpenExternal(DefaultBrowserOffer.SettingsUri);
 			return (object?)null;
 		});
 		// A Zing view's own error (RendererErrorReport): recorded like the host's, so an e2e run fails on it.
@@ -480,6 +481,15 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		if (_notices is null || _scope.IsClosed) return;
 		TestHooks.Background(_notices.ShowOfferAsync(address), "offer");
 	}
+
+	/// <summary>The default-browser offer (ZingApp decides when).</summary>
+	public void OfferDefaultBrowser()
+	{
+		if (_notices is null || _scope.IsClosed) return;
+		TestHooks.Background(_notices.ShowDefaultBrowserOfferAsync(), "default-browser offer");
+	}
+
+	public DefaultBrowserState DefaultBrowserState => new(Installation.IsInstalled, Installation.IsDefaultBrowser());
 
 	public void DismissOffer()
 	{

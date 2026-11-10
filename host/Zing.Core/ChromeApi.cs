@@ -76,6 +76,8 @@ public interface IWindowHost
 	Updater Updates { get; }
 	/// <summary>The update pill's view measured what it shows.</summary>
 	void SetUpdatePillSize(int width, int height);
+	/// <summary>Whether Zing is installed and the default browser, asked anew each time (the person may have changed it in Windows' Settings).</summary>
+	DefaultBrowserState DefaultBrowserState { get; }
 }
 
 /// <summary>What every window shares: one settings store, one library, one address rule.</summary>
@@ -441,6 +443,12 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("update:relaunch", _ => Do(host.Updates.Relaunch));
 		// CSS pixels, fractional on a scaled display; the view takes whole DIPs, rounded up.
 		bridge.Register("update:pill-size", args => Do(() => host.SetUpdatePillSize((int)Math.Ceiling(Number(args, 0)), (int)Math.Ceiling(Number(args, 1)))));
+		bridge.Register("default-browser:get", _ => host.DefaultBrowserState);
+		bridge.Register("default-browser:dismiss", _ => Do(() =>
+		{
+			app.Settings.Set("defaultBrowserDismissed", true);
+			DismissOffer();
+		}));
 		_watchedVault = app.Vaults.Current;
 		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;

@@ -60,6 +60,14 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 		return ShowAsync(new { id = _nextId++, text = "This page didn't load", offer = new { address } }, OfferHeight, OfferMs);
 	}
 
+	/// <summary>The offer to make Zing the default browser. Not the failed-load offer: it ends that one, and its own timeout is not a dismissal.</summary>
+	public Task ShowDefaultBrowserOfferAsync()
+	{
+		EndOffer();
+		_atTop = false;
+		return ShowAsync(new { id = _nextId++, text = DefaultBrowserOffer.Text, defaultBrowser = true }, OfferHeight, OfferMs);
+	}
+
 	private void EndOffer()
 	{
 		if (!_offerShowing) return;

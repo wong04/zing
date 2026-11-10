@@ -4,6 +4,7 @@ import { PANELS_FULL_MESSAGE } from '@shared/shell/shellState'
 import { zing } from '../api'
 import { StackDropdownView } from '../chrome/tabs/StackDropdownView'
 import { TabOverviewView } from '../overview/TabOverviewView'
+import { DefaultBrowserOffer } from './DefaultBrowserOffer'
 import { useAccentTheme } from '../settings/useAccentTheme'
 
 /** A page failed like a block would make it. Both buttons only open a tool with the address filled in; nothing is tried until a click there. */
@@ -45,6 +46,7 @@ function Notices() {
 	useEffect(() => zing.onNotice(setNotice), [])
 	if (!notice) return null
 	if (notice.offer) return <UnblockOffer key={notice.id} address={notice.offer.address} />
+	if (notice.defaultBrowser) return <DefaultBrowserOffer key={notice.id} />
 	return (
 		<div key={notice.id} className="notice" role="status">
 			{notice.text}

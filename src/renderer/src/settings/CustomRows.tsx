@@ -17,6 +17,7 @@ import { privacyStatus } from './privacy'
 import { VaultSection } from './VaultSection'
 import type { CustomId } from './rows'
 import { CHECK_FOR_UPDATES_ROW, detailOf } from './rows'
+import { DefaultBrowserRow } from './DefaultBrowserRow'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
 import { useSettings } from './useSettings'
@@ -78,16 +79,6 @@ function AccentPicker({ handle }: { handle: SettingsHandle }) {
 				<AccentSwatch label="Custom" hex={customColor} selected={accent === CUSTOM_ACCENT} onSelect={() => handle.set('accent', CUSTOM_ACCENT)} />
 			</div>
 			{accent === CUSTOM_ACCENT ? <CustomColourInput handle={handle} /> : null}
-		</SettingRowShell>
-	)
-}
-
-function DefaultBrowserRow() {
-	return (
-		<SettingRowShell title="Default browser" detail="Opens Windows' Default apps page, where you choose Zing for links.">
-			<PillButton variant="outlined" size="small" onClick={() => void zing.openDefaultAppsSettings()}>
-				Make Default
-			</PillButton>
 		</SettingRowShell>
 	)
 }

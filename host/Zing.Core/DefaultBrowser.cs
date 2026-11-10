@@ -65,17 +65,30 @@ public static class DefaultBrowser
 
 	/// <summary>
 	/// The ProgId Windows launches for https links, or null when the user never chose.
-	/// Under ZING_E2E=1 a ZING_DEFAULT_BROWSER value stands in, so e2e never reads the real registry.
+	/// Under ZING_E2E=1 the registry is never read: ZING_DEFAULT_BROWSER stands in, and unset (or empty) means no default browser.
 	/// </summary>
 	[SupportedOSPlatform("windows")]
 	public static string? CurrentHttpsProgId()
 	{
 		if (Environment.GetEnvironmentVariable("ZING_E2E") == "1")
-		{
-			var seam = Environment.GetEnvironmentVariable("ZING_DEFAULT_BROWSER");
-			if (seam is not null) return seam;
-		}
+			return Environment.GetEnvironmentVariable("ZING_DEFAULT_BROWSER") is { Length: > 0 } seam ? seam : null;
 		using var key = Registry.CurrentUser.OpenSubKey(HttpsUserChoiceKey);
 		return key?.GetValue("ProgId") as string;
 	}
+}
+
+/// <summary>What the Settings row shows: whether Zing is installed (and so registered as a browser), and whether it is the default for https.</summary>
+public sealed record DefaultBrowserState(bool Registered, bool IsDefault);
+
+/// <summary>The offer to make Zing the default browser, shown at launch.</summary>
+public static class DefaultBrowserOffer
+{
+	public const string Text = "Make Zing your default browser?";
+	public const string SettingsUri = "ms-settings:defaultapps?registeredAppUser=Zing";
+
+	/// <summary>The person's side of it: never on a profile's first launch (Phase 6c's import nudge has that one), never once they said don't ask again.</summary>
+	public static bool Allowed(bool dismissed, bool launchedBefore) => launchedBefore && !dismissed;
+
+	/// <summary>Zing's side: only an installed Zing can be chosen in Default apps, and a default needs no offer.</summary>
+	public static bool Wanted(DefaultBrowserState state) => state.Registered && !state.IsDefault;
 }

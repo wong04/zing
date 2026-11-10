@@ -88,41 +88,72 @@ public sealed class DefaultBrowserTests
 		Assert.Equal([url], LaunchArgs.Urls([url]));
 	}
 
+	/// <summary>Runs <paramref name="read"/> with ZING_E2E and ZING_DEFAULT_BROWSER set as given (null unsets), then puts both back.</summary>
+	[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+	private static string? WithEnvironment(string? e2e, string? seam, Func<string?> read)
+	{
+		var oldE2e = Environment.GetEnvironmentVariable("ZING_E2E");
+		var oldSeam = Environment.GetEnvironmentVariable("ZING_DEFAULT_BROWSER");
+		try
+		{
+			Environment.SetEnvironmentVariable("ZING_E2E", e2e);
+			Environment.SetEnvironmentVariable("ZING_DEFAULT_BROWSER", seam);
+			return read();
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("ZING_E2E", oldE2e);
+			Environment.SetEnvironmentVariable("ZING_DEFAULT_BROWSER", oldSeam);
+		}
+	}
+
 	[Fact]
 	[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 	public void Current_https_prog_id_comes_from_the_e2e_seam()
 	{
-		var e2e = Environment.GetEnvironmentVariable("ZING_E2E");
-		var seam = Environment.GetEnvironmentVariable("ZING_DEFAULT_BROWSER");
-		try
-		{
-			Environment.SetEnvironmentVariable("ZING_E2E", "1");
-			Environment.SetEnvironmentVariable("ZING_DEFAULT_BROWSER", "ChromeHTML");
-			Assert.Equal("ChromeHTML", DefaultBrowser.CurrentHttpsProgId());
-		}
-		finally
-		{
-			Environment.SetEnvironmentVariable("ZING_E2E", e2e);
-			Environment.SetEnvironmentVariable("ZING_DEFAULT_BROWSER", seam);
-		}
+		Assert.Equal("ChromeHTML", WithEnvironment("1", "ChromeHTML", DefaultBrowser.CurrentHttpsProgId));
+	}
+
+	[Theory]
+	[InlineData(null)]
+	[InlineData("")]
+	[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+	public void An_e2e_run_without_the_seam_has_no_default_browser_and_never_reads_the_registry(string? seam)
+	{
+		Assert.Null(WithEnvironment("1", seam, DefaultBrowser.CurrentHttpsProgId));
 	}
 
 	[Fact]
 	[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 	public void Seam_is_ignored_outside_e2e()
 	{
-		var e2e = Environment.GetEnvironmentVariable("ZING_E2E");
-		var seam = Environment.GetEnvironmentVariable("ZING_DEFAULT_BROWSER");
-		try
-		{
-			Environment.SetEnvironmentVariable("ZING_E2E", null);
-			Environment.SetEnvironmentVariable("ZING_DEFAULT_BROWSER", "FakeSeamValue");
-			Assert.NotEqual("FakeSeamValue", DefaultBrowser.CurrentHttpsProgId());
-		}
-		finally
-		{
-			Environment.SetEnvironmentVariable("ZING_E2E", e2e);
-			Environment.SetEnvironmentVariable("ZING_DEFAULT_BROWSER", seam);
-		}
+		Assert.NotEqual("FakeSeamValue", WithEnvironment(null, "FakeSeamValue", DefaultBrowser.CurrentHttpsProgId));
+	}
+
+	[Theory]
+	[InlineData(false, false, true)]
+	[InlineData(true, false, false)]
+	[InlineData(false, true, false)]
+	[InlineData(true, true, false)]
+	public void The_offer_waits_for_a_second_launch_and_stops_once_dismissed(bool dismissed, bool firstLaunch, bool allowed)
+	{
+		Assert.Equal(allowed, DefaultBrowserOffer.Allowed(dismissed, launchedBefore: !firstLaunch));
+	}
+
+	[Theory]
+	[InlineData(true, false, true)]
+	[InlineData(true, true, false)]
+	[InlineData(false, false, false)]
+	[InlineData(false, true, false)]
+	public void A_launch_offers_only_an_installed_zing_that_is_not_the_default(bool registered, bool isDefault, bool wanted)
+	{
+		Assert.Equal(wanted, DefaultBrowserOffer.Wanted(new DefaultBrowserState(registered, isDefault)));
+	}
+
+	[Fact]
+	public void The_offer_opens_windows_default_apps_at_zing()
+	{
+		Assert.Equal("ms-settings:defaultapps?registeredAppUser=Zing", DefaultBrowserOffer.SettingsUri);
+		Assert.Equal("Make Zing your default browser?", DefaultBrowserOffer.Text);
 	}
 }

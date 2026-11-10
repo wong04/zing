@@ -223,6 +223,8 @@ public sealed class FakeWindowHost : IWindowHost
 	public Updater Updates { get; set; } = new(null, new ManualScheduler(), () => true);
 	public List<(int Width, int Height)> UpdatePillSizes { get; } = [];
 	public void SetUpdatePillSize(int width, int height) => UpdatePillSizes.Add((width, height));
+	/// <summary>Not installed, so not the default, unless a test sets it.</summary>
+	public DefaultBrowserState DefaultBrowserState { get; set; } = new(false, false);
 }
 
 public sealed class FakeDownloads : IDownloadHost
