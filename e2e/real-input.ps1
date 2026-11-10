@@ -3,11 +3,16 @@
 # or a click at a point of the window's content in DIPs (-X, -Y) through SendInput, as a person would.
 # The click is the left button unless -Button middle, with -Hold shift (or ctrl) down around it.
 # -AsIs sends to whatever is in front now, such as a page's own dialog, instead of bringing Zing's window there.
+# With -ToX and -ToY as well, the left button is pressed at (-X, -Y), moved to (-ToX, -ToY) and released there: a drag.
+# -Where prints the window's top-left on the screen, in physical pixels, as "x y", and sends nothing.
 param(
 	[Parameter(Mandatory = $true)][int]$ProcessId,
 	[string]$Keys,
 	[double]$X = -1,
 	[double]$Y = -1,
+	[double]$ToX = -1,
+	[double]$ToY = -1,
+	[switch]$Where,
 	[ValidateSet('left', 'middle')][string]$Button = 'left',
 	[string]$Hold,
 	[switch]$AsIs
@@ -25,6 +30,7 @@ public static class ZingRealInput
 	private delegate bool EnumProc(IntPtr hwnd, IntPtr data);
 
 	[StructLayout(LayoutKind.Sequential)] private struct POINT { public int X; public int Y; }
+	[StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
 	[StructLayout(LayoutKind.Sequential)] private struct MOUSEINPUT { public int Dx; public int Dy; public uint MouseData; public uint Flags; public uint Time; public IntPtr ExtraInfo; }
 	[StructLayout(LayoutKind.Sequential)] private struct KEYBDINPUT { public ushort Vk; public ushort Scan; public uint Flags; public uint Time; public IntPtr ExtraInfo; }
 	[StructLayout(LayoutKind.Explicit)] private struct INPUTUNION { [FieldOffset(0)] public MOUSEINPUT Mouse; [FieldOffset(0)] public KEYBDINPUT Key; }
@@ -41,9 +47,12 @@ public static class ZingRealInput
 	[DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
 	[DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
 	[DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, INPUT[] inputs, int size);
+	[DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+	[DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
 
 	private static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = new IntPtr(-4);
-	private const uint INPUT_MOUSE = 0, INPUT_KEYBOARD = 1, KEYEVENTF_KEYUP = 2, MOUSEEVENTF_LEFTDOWN = 2, MOUSEEVENTF_LEFTUP = 4, MOUSEEVENTF_MIDDLEDOWN = 0x20, MOUSEEVENTF_MIDDLEUP = 0x40;
+	private const uint INPUT_MOUSE = 0, INPUT_KEYBOARD = 1, KEYEVENTF_KEYUP = 2, MOUSEEVENTF_MOVE = 1, MOUSEEVENTF_LEFTDOWN = 2, MOUSEEVENTF_LEFTUP = 4, MOUSEEVENTF_MIDDLEDOWN = 0x20, MOUSEEVENTF_MIDDLEUP = 0x40, MOUSEEVENTF_VIRTUALDESK = 0x4000, MOUSEEVENTF_ABSOLUTE = 0x8000;
+	private const int SM_XVIRTUALSCREEN = 76, SM_YVIRTUALSCREEN = 77, SM_CXVIRTUALSCREEN = 78, SM_CYVIRTUALSCREEN = 79;
 
 	/// <summary>Zing's main window (class ZingWindow) of this process.</summary>
 	public static IntPtr MainWindow(int processId)
@@ -96,13 +105,8 @@ public static class ZingRealInput
 	/// <summary>A click at a point of the window's content, in DIPs, with the held keys down around it.</summary>
 	public static void Click(IntPtr window, double x, double y, bool middle, ushort[] held)
 	{
-		// Windows PowerShell is DPI-unaware, so it sees screen points scaled to 96 DPI while GetDpiForWindow reports
-		// Zing's real DPI: per-monitor aware, every point here is a physical pixel.
-		if (SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) == IntPtr.Zero) throw new InvalidOperationException("SetThreadDpiAwarenessContext failed");
-		var scale = GetDpiForWindow(window) / 96.0;
-		var origin = new POINT();
-		ClientToScreen(window, ref origin);
-		if (!SetCursorPos(origin.X + (int)Math.Round(x * scale), origin.Y + (int)Math.Round(y * scale))) throw new InvalidOperationException("SetCursorPos failed");
+		var at = ToScreen(window, x, y);
+		if (!SetCursorPos(at.X, at.Y)) throw new InvalidOperationException("SetCursorPos failed");
 		Thread.Sleep(50);
 		foreach (var key in held) Send(new[] { Key(key, false) });
 		try
@@ -115,6 +119,69 @@ public static class ZingRealInput
 		{
 			foreach (var key in held) Send(new[] { Key(key, true) });
 		}
+	}
+
+	/// <summary>
+	/// The left button pressed at one point of the window's content, moved in steps to another and released there, in DIPs.
+	/// Both points are taken before the press, so a window the drag moves doesn't move the target with it.
+	/// </summary>
+	public static void Drag(IntPtr window, double x, double y, double toX, double toY)
+	{
+		var from = ToScreen(window, x, y);
+		var to = ToScreen(window, toX, toY);
+		if (!SetCursorPos(from.X, from.Y)) throw new InvalidOperationException("SetCursorPos failed");
+		Thread.Sleep(50);
+		Send(new[] { Mouse(MOUSEEVENTF_LEFTDOWN) });
+		try
+		{
+			Thread.Sleep(100);
+			const int steps = 20;
+			for (var i = 1; i <= steps; i++)
+			{
+				Send(new[] { MoveTo(from.X + (to.X - from.X) * i / steps, from.Y + (to.Y - from.Y) * i / steps) });
+				Thread.Sleep(15);
+			}
+			Thread.Sleep(100);
+		}
+		finally
+		{
+			Send(new[] { Mouse(MOUSEEVENTF_LEFTUP) });
+		}
+		Thread.Sleep(300);
+	}
+
+	/// <summary>The window's top-left on the screen, in physical pixels.</summary>
+	public static string Where(IntPtr window)
+	{
+		AwareOfDpi();
+		RECT rect;
+		if (!GetWindowRect(window, out rect)) throw new InvalidOperationException("GetWindowRect failed");
+		return rect.Left + " " + rect.Top;
+	}
+
+	// Windows PowerShell is DPI-unaware, so it sees screen points scaled to 96 DPI while GetDpiForWindow reports
+	// Zing's real DPI: per-monitor aware, every point here is a physical pixel.
+	private static void AwareOfDpi()
+	{
+		if (SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) == IntPtr.Zero) throw new InvalidOperationException("SetThreadDpiAwarenessContext failed");
+	}
+
+	private static POINT ToScreen(IntPtr window, double x, double y)
+	{
+		AwareOfDpi();
+		var scale = GetDpiForWindow(window) / 96.0;
+		var origin = new POINT();
+		ClientToScreen(window, ref origin);
+		return new POINT { X = origin.X + (int)Math.Round(x * scale), Y = origin.Y + (int)Math.Round(y * scale) };
+	}
+
+	/// <summary>A mouse move to a screen point, as SendInput wants it: 0–65535 across the whole virtual desktop.</summary>
+	private static INPUT MoveTo(int x, int y)
+	{
+		var input = Mouse(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK);
+		input.U.Mouse.Dx = (int)Math.Round((x - GetSystemMetrics(SM_XVIRTUALSCREEN)) * 65535.0 / (GetSystemMetrics(SM_CXVIRTUALSCREEN) - 1));
+		input.U.Mouse.Dy = (int)Math.Round((y - GetSystemMetrics(SM_YVIRTUALSCREEN)) * 65535.0 / (GetSystemMetrics(SM_CYVIRTUALSCREEN) - 1));
+		return input;
 	}
 
 	private static INPUT Key(ushort vk, bool up)
@@ -156,9 +223,16 @@ function Get-KeyCodes([string]$chord) {
 }
 
 $window = [ZingRealInput]::MainWindow($ProcessId)
+if ($Where) {
+	[ZingRealInput]::Where($window)
+	return
+}
 if (-not $AsIs) { [ZingRealInput]::Front($ProcessId, $window) }
 if ($Keys) {
 	[ZingRealInput]::Chord([uint16[]](Get-KeyCodes $Keys))
+}
+elseif ($X -ge 0 -and $Y -ge 0 -and $ToX -ge 0 -and $ToY -ge 0) {
+	[ZingRealInput]::Drag($window, $X, $Y, $ToX, $ToY)
 }
 elseif ($X -ge 0 -and $Y -ge 0) {
 	# Typed first: an empty array returned from an if would arrive as $null.

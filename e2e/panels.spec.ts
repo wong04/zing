@@ -1,6 +1,8 @@
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { expect, type Locator, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, pageWhere, test, type Launched } from './zing'
+import { launchZing, pageWhere, scratchDir, test, type Launched } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -89,4 +91,43 @@ test('a tool that throws while rendering shows its message, and the rest of the 
 	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels.map((p) => p.content)).toEqual(['tool:HMAC'])
 	// The user sees a message, but it is still a bug, so the host records it and an unplanned one fails the run.
 	await expect(zing.close()).rejects.toThrow(/renderer: .*Patched toISOString failure/)
+})
+
+test('three panels show at once, a fourth is refused, and one minimised to the sidebar comes back', async () => {
+	// The app sidebar, with its Minimized list, sits beside the page when the tabs are on top. Set before launch: changing
+	// it later rebuilds the views.
+	const profile = scratchDir('zing-host-data-')
+	writeFileSync(join(profile, 'settings.json'), JSON.stringify({ tabBarPosition: 'top' }))
+	const zing = await launchZing({ userDataDir: profile })
+	const open = (content: string, x: number) => zing.chrome.evaluate(([panel, at]) => window.zing.openPanel(panel!, { x: Number(at), y: 300 }), [content, String(x)])
+	const shown = async () => (await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels.filter((p) => !p.minimized).map((p) => p.content).sort()
+
+	await expect(zing.chrome.getByRole('navigation', { name: 'App sidebar' })).toBeVisible()
+	expect(await open('tool:Hashes', 500)).toEqual({ status: 'opened' })
+	const surface = await surfaceOf(zing)
+	const hashes = surface.getByRole('dialog', { name: 'Hashes' })
+	await expect(hashes).toBeVisible()
+	expect(await open('tool:HMAC', 900)).toEqual({ status: 'opened' })
+	expect(await open('tool:JSON', 1400)).toEqual({ status: 'opened' })
+	expect(await open('tool:UUID', 600)).toEqual({ status: 'full' })
+	expect(await shown()).toEqual(['tool:HMAC', 'tool:Hashes', 'tool:JSON'])
+
+	await hashes.getByRole('button', { name: 'Minimize Hashes to the sidebar' }).click()
+	await expect(hashes).toBeHidden()
+	const row = zing.chrome.getByTestId('minimized-row').filter({ hasText: 'Hashes' })
+	await expect(row).toBeVisible()
+
+	// Minimising freed a slot, so the fourth opens, and now the restore is refused instead.
+	expect(await open('tool:UUID', 600)).toEqual({ status: 'opened' })
+	const idOf = async (content: string) => (await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels.find((p) => p.content === content)!.id
+	expect(await zing.chrome.evaluate((panel) => window.zing.restorePanel(panel), await idOf('tool:Hashes'))).toEqual({ status: 'full' })
+	await expect(hashes).toBeHidden()
+
+	await zing.chrome.evaluate((panel) => window.zing.closePanel(panel), await idOf('tool:UUID'))
+	await expect(surface.getByRole('dialog', { name: 'UUID' })).toHaveCount(0)
+	await row.click()
+	await expect(hashes).toBeVisible()
+	await expect(row).toHaveCount(0)
+	expect(await shown()).toEqual(['tool:HMAC', 'tool:Hashes', 'tool:JSON'])
+	await zing.close()
 })
