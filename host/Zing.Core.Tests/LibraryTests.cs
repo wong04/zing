@@ -42,6 +42,21 @@ public sealed class LibraryTests
 	private static string Name(JsonElement c) => c.GetProperty("name").GetString()!;
 
 	[Fact]
+	public void Holds_imports_cases_from_the_shared_vectors()
+	{
+		foreach (var c in Cases("holdsImports"))
+			Assert.Equal(c.GetProperty("expected").GetBoolean(), Library.HoldsImports(Lib(c.GetProperty("library"))));
+	}
+
+	[Fact]
+	public void An_imported_link_keeps_its_source_and_a_plain_one_writes_no_field()
+	{
+		var imported = Nodes(JsonDocument.Parse("""[{"id":"l","title":"L","url":"u","updatedAt":1,"importedFrom":"Chrome"}]""").RootElement);
+		Assert.Equal("Chrome", Assert.IsType<BookmarkLink>(imported[0]).ImportedFrom);
+		Assert.DoesNotContain("importedFrom", JsonSerializer.Serialize(Library.Link("l", "L", "u", 1), ZingJson.Options));
+	}
+
+	[Fact]
 	public void A_fresh_library_has_a_favourites_folder()
 	{
 		var vector = V.GetProperty("emptyLibrary");

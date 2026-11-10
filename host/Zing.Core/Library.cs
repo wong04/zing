@@ -3,13 +3,13 @@ using System.Text.Json.Serialization;
 
 namespace Zing.Core;
 
-/// <summary>A bookmark or a folder (src/shared/library/library.ts BookmarkNode). On the wire a folder is the node with a `children` list.</summary>
+/// <summary>A bookmark or a folder (src/shared/library/library.ts BookmarkNode). On the wire a folder is the node with a `children` list. ImportedFrom names the browser an import came from; it is on the derived records because a positional member can't implement an abstract one.</summary>
 [JsonConverter(typeof(BookmarkNodeConverter))]
 public abstract record BookmarkNode(string Id, string Title, long UpdatedAt);
 
-public sealed record BookmarkLink(string Id, string Title, string Url, long UpdatedAt) : BookmarkNode(Id, Title, UpdatedAt);
+public sealed record BookmarkLink(string Id, string Title, string Url, long UpdatedAt, string? ImportedFrom = null) : BookmarkNode(Id, Title, UpdatedAt);
 
-public sealed record BookmarkFolder(string Id, string Title, IReadOnlyList<BookmarkNode> Children, long UpdatedAt) : BookmarkNode(Id, Title, UpdatedAt);
+public sealed record BookmarkFolder(string Id, string Title, IReadOnlyList<BookmarkNode> Children, long UpdatedAt, string? ImportedFrom = null) : BookmarkNode(Id, Title, UpdatedAt);
 
 public sealed record ReadingItem(string Id, string Title, string Url, long Added, bool IsRead, long UpdatedAt);
 
@@ -20,7 +20,7 @@ public sealed record VisibleRow(BookmarkNode Node, int Depth);
 
 public sealed record GroupResult(IReadOnlyList<BookmarkNode> Nodes, string? FolderId);
 
-/// <summary>Writes the TS shape field for field (id, title, url | children, updatedAt) and reads it back with the same strictness as parseNode.</summary>
+/// <summary>Writes the TS shape field for field (id, title, url | children, updatedAt, importedFrom when set) and reads it back with the same strictness as parseNode.</summary>
 public sealed class BookmarkNodeConverter : JsonConverter<BookmarkNode>
 {
 	public override BookmarkNode Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
@@ -48,6 +48,7 @@ public sealed class BookmarkNodeConverter : JsonConverter<BookmarkNode>
 				throw new NotSupportedException($"Unknown bookmark node {value.GetType().Name}");
 		}
 		writer.WriteNumber("updatedAt", value.UpdatedAt);
+		if (Library.ImportedFromOf(value) is { } source) writer.WriteString("importedFrom", source);
 		writer.WriteEndObject();
 	}
 }
@@ -224,14 +225,30 @@ public static class Library
 		var title = Str(raw, "title");
 		if (id is null || title is null || !TryLong(raw, "updatedAt", out var updatedAt))
 			throw new InvalidDataException($"{where} needs a string id and title and a numeric updatedAt");
+		string? importedFrom = null;
+		if (raw.TryGetProperty("importedFrom", out var source) && source.ValueKind != JsonValueKind.Null)
+			importedFrom = source.ValueKind == JsonValueKind.String ? source.GetString() : throw new InvalidDataException($"{where}.importedFrom is not a string");
 		if (raw.TryGetProperty("children", out var children))
 		{
 			if (children.ValueKind != JsonValueKind.Array) throw new InvalidDataException($"{where}.children is not a list");
 			var parsed = children.EnumerateArray().Select((c, i) => ParseNode(c, $"{where}.children[{i}]")).ToList();
-			return new BookmarkFolder(id, title, parsed, updatedAt);
+			return new BookmarkFolder(id, title, parsed, updatedAt, importedFrom);
 		}
-		return new BookmarkLink(id, title, Str(raw, "url") ?? throw new InvalidDataException($"{where} has no url"), updatedAt);
+		return new BookmarkLink(id, title, Str(raw, "url") ?? throw new InvalidDataException($"{where} has no url"), updatedAt, importedFrom);
 	}
+
+	public static string? ImportedFromOf(BookmarkNode node) => node switch
+	{
+		BookmarkLink link => link.ImportedFrom,
+		BookmarkFolder folder => folder.ImportedFrom,
+		_ => throw new NotSupportedException($"Unknown bookmark node {node.GetType().Name}"),
+	};
+
+	/// <summary>True if any node, at any depth, came from an import: the privacy banner's cue.</summary>
+	public static bool HoldsImports(BrowserLibrary library) => library.Bookmarks.Any(HoldsImports);
+
+	private static bool HoldsImports(BookmarkNode node) =>
+		ImportedFromOf(node) is not null || (node is BookmarkFolder folder && folder.Children.Any(HoldsImports));
 
 	public static ReadingItem ParseReading(JsonElement raw, string where)
 	{
