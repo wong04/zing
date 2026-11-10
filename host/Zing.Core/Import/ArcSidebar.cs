@@ -16,6 +16,14 @@ public static class ArcSidebar
 	// Real sidebars nest a handful of folders; a file that nests deeper, or loops, would otherwise recurse until the process dies.
 	private const int MaxDepth = 64;
 
+	// childrenIds may name one item from many parents, so a tiny file can expand to millions of visits (20 levels listing the next twice is 2^20).
+	private const int MaxItems = 50_000;
+
+	private sealed class Visits
+	{
+		public int Count;
+	}
+
 	/// <exception cref="JsonException">Malformed JSON.</exception>
 	/// <exception cref="ArcSidebarFormatException">Valid JSON that isn't the layout Zing knows.</exception>
 	public static BookmarkImport Parse(string json)
@@ -37,6 +45,7 @@ public static class ArcSidebar
 		foreach (var item in ObjectsOf(main.GetProperty("items"))) items[item.GetProperty("id").GetString()!] = item;
 		List<string> skipped = [];
 		List<ImportedNode> other = [];
+		Visits visits = new();
 		var index = 0;
 		foreach (var space in ObjectsOf(main.GetProperty("spaces")))
 		{
@@ -48,10 +57,10 @@ public static class ArcSidebar
 				skipped.Add($"Space \"{(space.TryGetProperty("title", out var raw) && raw.ValueKind != JsonValueKind.Null ? title : index.ToString())}\" has no pinned container");
 				continue;
 			}
-			var children = items.TryGetValue(pinnedId, out var pinned) ? ConvertAll(pinned, items, skipped, []) : [];
+			var children = items.TryGetValue(pinnedId, out var pinned) ? ConvertAll(pinned, items, skipped, [], visits) : [];
 			other.Add(new ImportedFolder(title != "" ? title : $"Space {index}", children));
 		}
-		return new BookmarkImport(TopApps(main, items, skipped), other, skipped);
+		return new BookmarkImport(TopApps(main, items, skipped, visits), other, skipped);
 	}
 
 	private static List<JsonElement> ObjectsOf(JsonElement list)
@@ -80,31 +89,32 @@ public static class ArcSidebar
 	}
 
 	/// <param name="path">The ids of the items this one sits inside.</param>
-	private static List<ImportedNode> ConvertAll(JsonElement container, Dictionary<string, JsonElement> items, List<string> skipped, HashSet<string> path)
+	private static List<ImportedNode> ConvertAll(JsonElement container, Dictionary<string, JsonElement> items, List<string> skipped, HashSet<string> path, Visits visits)
 	{
 		var id = TextOf(container, "id");
 		if (!path.Add(id)) throw new ArcSidebarFormatException($"Item {id} is its own ancestor");
 		if (path.Count > MaxDepth) throw new ArcSidebarFormatException("Arc's sidebar is nested too deeply");
-		List<ImportedNode> children = [.. ChildIds(container).SelectMany(child => Convert(child, items, skipped, path))];
+		List<ImportedNode> children = [.. ChildIds(container).SelectMany(child => Convert(child, items, skipped, path, visits))];
 		path.Remove(id);
 		return children;
 	}
 
 	// Arc's Favorites (the icon grid at the top of the sidebar) are the closest thing to a Favourites bar.
-	private static List<ImportedNode> TopApps(JsonElement main, Dictionary<string, JsonElement> items, List<string> skipped)
+	private static List<ImportedNode> TopApps(JsonElement main, Dictionary<string, JsonElement> items, List<string> skipped, Visits visits)
 	{
 		if (!main.TryGetProperty("topAppsContainerIDs", out var ids) || ids.ValueKind == JsonValueKind.Null) return [];
 		if (ids.ValueKind != JsonValueKind.Array) throw new ArcSidebarFormatException("topAppsContainerIDs isn't an array");
 		return [.. ids.EnumerateArray()
 			.Where(id => id.ValueKind == JsonValueKind.String)
-			.SelectMany(id => items.TryGetValue(id.GetString()!, out var container) ? ConvertAll(container, items, skipped, []) : [])];
+			.SelectMany(id => items.TryGetValue(id.GetString()!, out var container) ? ConvertAll(container, items, skipped, [], visits) : [])];
 	}
 
 	private static bool Present(JsonElement parent, string property, out JsonElement value) =>
 		parent.TryGetProperty(property, out value) && value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined);
 
-	private static List<ImportedNode> Convert(string id, Dictionary<string, JsonElement> items, List<string> skipped, HashSet<string> path)
+	private static List<ImportedNode> Convert(string id, Dictionary<string, JsonElement> items, List<string> skipped, HashSet<string> path, Visits visits)
 	{
+		if (++visits.Count > MaxItems) throw new ArcSidebarFormatException("Arc's sidebar has too many items");
 		if (!items.TryGetValue(id, out var item))
 		{
 			skipped.Add($"Missing item {id}");
@@ -123,7 +133,7 @@ public static class ArcSidebar
 			return [new ImportedLink(title, url)];
 		}
 		if ((data.ValueKind == JsonValueKind.Object && Present(data, "list", out _)) || Present(item, "childrenIds", out _))
-			return [new ImportedFolder(FirstNonEmpty(TextOf(item, "title"), "Folder"), ConvertAll(item, items, skipped, path))];
+			return [new ImportedFolder(FirstNonEmpty(TextOf(item, "title"), "Folder"), ConvertAll(item, items, skipped, path, visits))];
 		skipped.Add($"Item {id} is neither a tab nor a folder");
 		return [];
 	}

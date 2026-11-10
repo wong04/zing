@@ -1,5 +1,5 @@
 {
-	"note": "Fixtures are in ./fixtures, synthetic and hand-written, except arc-too-deep.json, a generated chain of 70 nested folders. parse: the fixture through the named parser gives exactly expected. refused: the fixture makes the named parser throw the named error (\"invalid-json\" is a SyntaxError in TS and a JsonException in C#). A file over 10 MB and a non-UTF-8 file are built at test time in the C# tests only, because the TS parsers take strings. A refusal with a message must also carry exactly that message.",
+	"note": "Fixtures are in ./fixtures, synthetic and hand-written, except arc-too-deep.json, a generated chain of 70 nested folders, and arc-wide.json, 20 folders that each list the next twice (2^20 visits). parse: the fixture through the named parser gives exactly expected. refused: the fixture makes the named parser throw the named error (\"invalid-json\" is a SyntaxError in TS and a JsonException in C#). A file over 10 MB and a non-UTF-8 file are built at test time in the C# tests only, because the TS parsers take strings. A refusal with a message must also carry exactly that message.",
 	"parse": [
 		{
 			"name": "chromium bookmarks file",
@@ -316,6 +316,13 @@
 			"fixture": "arc-too-deep.json",
 			"error": "arc-format",
 			"message": "Arc's sidebar is nested too deeply"
+		},
+		{
+			"name": "an arc sidebar that repeats its folders past the item cap",
+			"parser": "arc",
+			"fixture": "arc-wide.json",
+			"error": "arc-format",
+			"message": "Arc's sidebar has too many items"
 		}
 	]
 }

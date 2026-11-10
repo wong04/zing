@@ -186,6 +186,27 @@ describe('merging an import into the library', () => {
 	})
 })
 
+describe('Arc item cap', () => {
+	const sidebarOf = (tabs: number) =>
+		JSON.stringify({
+			sidebar: {
+				containers: [
+					{
+						spaces: ['s1', { id: 's1', title: 'Big', containerIDs: ['pinned', 'p'] }],
+						items: [
+							'p', { id: 'p', childrenIds: Array.from({ length: tabs }, (_, i) => `t${i}`), data: { itemContainer: {} } },
+							...Array.from({ length: tabs }, (_, i) => [`t${i}`, { id: `t${i}`, title: `T${i}`, data: { tab: { savedURL: 'https://example.com/' } } }]).flat(),
+						],
+					},
+				],
+			},
+		})
+	it('still parses a sidebar just under the cap', () => {
+		expect(countLinks(parseArcSidebar(sidebarOf(49_000)).other)).toBe(49_000)
+	})
+	it('refuses one just over it', () => expect(() => parseArcSidebar(sidebarOf(50_001))).toThrow("Arc's sidebar has too many items"))
+})
+
 // The same cases the C# parsers run (host/Zing.Core.Tests/Import/ParserTests.cs).
 const PARSERS = { chromium: parseChromiumBookmarks, netscape: parseNetscapeBookmarks, arc: parseArcSidebar }
 const REFUSALS = { 'invalid-json': SyntaxError, 'chromium-format': ChromiumBookmarksFormatError, 'netscape-format': NetscapeBookmarksFormatError, 'arc-format': ArcSidebarFormatError }

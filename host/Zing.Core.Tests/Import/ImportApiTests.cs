@@ -106,5 +106,31 @@ public sealed class ImportApiTests : IDisposable
 
 		Assert.False(result.GetProperty("ok").GetBoolean());
 		Assert.Equal("UnknownImportSourceException", result.GetProperty("error").GetProperty("name").GetString());
+		Assert.Contains("chrome:Nope", result.GetProperty("error").GetProperty("message").GetString());
+	}
+
+	[Fact]
+	public async Task AnUnissuedTokenThrows()
+	{
+		var result = await Invoke(_bridge, "import:bookmarks-file", "never-issued");
+
+		Assert.False(result.GetProperty("ok").GetBoolean());
+		Assert.Equal("UnknownFileGrantException", result.GetProperty("error").GetProperty("name").GetString());
+	}
+
+	[Fact]
+	public async Task APickedFileThatIsNotBookmarksThrowsWithoutItsDirectory()
+	{
+		var path = Path.Combine(_root, "notes.txt");
+		File.WriteAllText(path, "just some text");
+		_host.PickedPaths = [path];
+		var token = Value(await Invoke(_bridge, "files:pick", (object)new[] { "bookmarks" }))[0].GetProperty("token").GetString();
+
+		var result = await Invoke(_bridge, "import:bookmarks-file", token);
+
+		Assert.Equal("UnknownBookmarksFileException", result.GetProperty("error").GetProperty("name").GetString());
+		var message = result.GetProperty("error").GetProperty("message").GetString()!;
+		Assert.Contains("notes.txt", message);
+		Assert.DoesNotContain(_root, message);
 	}
 }
