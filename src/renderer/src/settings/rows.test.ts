@@ -6,10 +6,18 @@ import { boundKeys, CATEGORIES, PANES, detailOf, isVisible, type SettingRow } fr
 describe('settings rows', () => {
 	it('binds every setting in the schema to a control', () => {
 		const bound = boundKeys()
-		// The last three have no row until Phase 8 tasks 6 and 7 (launchedBefore never gets one).
 		// Kept so older settings files still load; WebView2 always presents Edge's own user agent.
-		const retired = new Set(['defaultUserAgent', 'launchedBefore', 'defaultBrowserDismissed', 'checkForUpdates'])
-		expect(SETTING_KEYS.filter((k) => !bound.has(k) && !retired.has(k))).toEqual([])
+		const retired = new Set(['defaultUserAgent'])
+		// Zing's own bookkeeping, set by the app rather than the person (defaultBrowserDismissed gets a row in Phase 8 task 7).
+		const internal = new Set(['launchedBefore', 'defaultBrowserDismissed'])
+		expect(SETTING_KEYS.filter((k) => !bound.has(k) && !retired.has(k) && !internal.has(k))).toEqual([])
+	})
+
+	it('puts the update switch in About, saying what it sends', () => {
+		const row = PANES.about.find((i) => i.type === 'setting' && i.key === 'checkForUpdates')
+		if (row?.type !== 'setting') throw new Error('No checkForUpdates row in About')
+		expect(row.control.kind).toBe('toggle')
+		expect(detailOf(row, DEFAULT_SETTINGS)).toBe('Asks GitHub for the latest version every few hours. Sends nothing about you.')
 	})
 
 	it('has a pane for every category and no extras', () => {

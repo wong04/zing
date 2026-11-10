@@ -303,7 +303,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 		toggle('acceleratedCanvas', 'Draw canvas on the GPU', { detail: 'Faster on canvas-heavy pages. Relaunch to apply.' }),
 	],
 	account: [{ type: 'custom', id: 'account', keys: [] }],
-	about: [{ type: 'custom', id: 'about', keys: [] }],
+	about: [{ type: 'custom', id: 'about', keys: [] }, toggle('checkForUpdates', 'Check for updates', { detail: 'Asks GitHub for the latest version every few hours. Sends nothing about you.' })],
 }
 
 /** Every setting key some control edits, hidden rows included. */

@@ -32,6 +32,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private NoticeLayer? _notices;
 	private PageUiLayer? _pageUi;
 	private PeekControlsLayer? _peekControls;
+	private UpdatePillLayer? _updatePill;
 	private CoveringLayer? _stacks;
 	private CoveringLayer? _overview;
 	private CoreWebView2Environment? _environment;
@@ -134,6 +135,10 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_overview = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-overview", _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays, OverlayLevel.Overview);
 		_pageUi = new PageUiLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays);
 		_peekControls = new PeekControlsLayer(_window, _scope, _environment, _bridge, PreviewButtons, _renderers.Add, _overlays);
+		_updatePill = new UpdatePillLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, _renderers.Add, _overlays, _app.Updates.State);
+		_app.Updates.Changed += OnUpdateChanged;
+		_scope.Track(() => _app.Updates.Changed -= OnUpdateChanged);
+		_updatePill.Start();
 		_bridge.Register("default-browser:open-settings", _ =>
 		{
 			Shell.OpenExternal("ms-settings:defaultapps");
@@ -502,6 +507,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_pageUi?.Layout();
 		_stacks?.Layout();
 		_overview?.Layout();
+		_updatePill?.Layout();
 		// The shell model works out where the surface goes and answers through SurfaceRegionChanged.
 		Api?.LayoutChanged();
 	}
@@ -675,6 +681,18 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public void SetPageUiHeight(int height) => _pageUi?.SetHeight(height);
 
 	public void FocusPageUi() => _pageUi?.Focus();
+
+	public Updater Updates => _app.Updates;
+
+	public void SetUpdatePillSize(int width, int height) => _updatePill?.SetSize(width, height);
+
+	/// <summary>Raised by the app's Updater, which must not see a throw: a closed window has nothing to show it on.</summary>
+	private void OnUpdateChanged(UpdateState state)
+	{
+		if (_scope.IsClosed) return;
+		Push("update:state", state);
+		_updatePill?.Changed(state);
+	}
 
 	public void AccountPickerChanged(Zing.Core.Vault.AccountPicker? picker) => _pageUi?.PickerChanged(picker);
 

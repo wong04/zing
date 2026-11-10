@@ -26,6 +26,17 @@ import type {
 /** The page's render process exited ('crashed') or stopped answering ('unresponsive'). Host: PageFault. */
 export type TabPageState = 'crashed' | 'unresponsive'
 
+/** Where updating stands (Zing.Core Updates.cs). 'unavailable' is a build that isn't installed: it never checks. */
+export type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'ready' | 'upToDate' | 'failed' | 'unavailable'
+
+export interface UpdateState {
+	readonly status: UpdateStatus
+	/** Empty in a build that isn't installed. */
+	readonly currentVersion: string
+	/** The downloaded version, while the status is 'ready'. */
+	readonly readyVersion?: string
+}
+
 /** A tab as the chrome draws it: the record plus state that only exists while a renderer is attached. */
 export interface TabView extends TabRecord {
 	/** The memory-only favicon (a small data URL) once it has loaded. */
@@ -508,6 +519,13 @@ export interface InvokeContract {
 	 */
 	'sync:restore-new-password': { args: [password: string]; result: AccountOutcome }
 	'overview:close': { args: []; result: void }
+	'update:get': { args: []; result: UpdateState }
+	/** Checks now, whatever the setting says, and answers with where that left things. */
+	'update:check': { args: []; result: UpdateState }
+	/** Restarts into the downloaded update; does nothing unless the status is 'ready', or once a restart is under way. */
+	'update:relaunch': { args: []; result: void }
+	/** The pill view measured what it shows, in CSS pixels. */
+	'update:pill-size': { args: [width: number, height: number]; result: void }
 }
 
 /** Host → renderer pushes. The host sends one per change, uncoalesced. */
@@ -532,6 +550,7 @@ export interface EventContract {
 	'engines:output': EngineOutput
 	'engines:exit': EngineExit
 	'relay:attempt': RelayAttemptEvent
+	'update:state': UpdateState
 }
 
 export type InvokeChannel = keyof InvokeContract
@@ -715,4 +734,9 @@ export interface ZingApi {
 	restoreWithPassword(password: string): Promise<AccountOutcome>
 	restoreWithRecoveryKey(key: string): Promise<void>
 	setPasswordAfterRecovery(password: string): Promise<AccountOutcome>
+	getUpdateState(): Promise<UpdateState>
+	checkForUpdates(): Promise<UpdateState>
+	relaunchToUpdate(): Promise<void>
+	setUpdatePillSize(width: number, height: number): Promise<void>
+	onUpdateState(listener: (state: UpdateState) => void): Unsubscribe
 }

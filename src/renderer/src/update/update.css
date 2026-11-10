@@ -1,0 +1,10 @@
+/* The #update-pill view is exactly this box: the padding leaves room for the shadow and the focus ring. Tokens only. */
+
+.update-pill {
+	display: inline-flex;
+	padding: 6px;
+}
+
+.update-pill .pill-button {
+	box-shadow: var(--elevation-strong);
+}

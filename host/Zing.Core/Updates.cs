@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace Zing.Core;
 
 /// <summary>The installer-backed side of updating; Zing.Host implements it over Velopack so Core stays free of it.</summary>
@@ -15,7 +18,10 @@ public interface IUpdateSource
 	void ApplyOnExit();
 }
 
+[JsonConverter(typeof(UpdateStatusConverter))]
 public enum UpdateStatus { Idle, Checking, Downloading, Ready, UpToDate, Failed, Unavailable }
+
+public sealed class UpdateStatusConverter() : JsonStringEnumConverter<UpdateStatus>(JsonNamingPolicy.CamelCase);
 
 public sealed record UpdateState(UpdateStatus Status, string CurrentVersion, string? ReadyVersion);
 

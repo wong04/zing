@@ -20,6 +20,8 @@ public enum OverlayLevel
 	Overview,
 	/// <summary>The account gate, revealed sidebar, tool panels and settings sheet (MainWindow's surface view).</summary>
 	Surface,
+	/// <summary>The "Relaunch to update" pill (UpdatePillLayer), over the settings sheet where Check now is.</summary>
+	UpdatePill,
 	/// <summary>Notices (NoticeLayer): the top layer, over everything else.</summary>
 	Notices,
 }

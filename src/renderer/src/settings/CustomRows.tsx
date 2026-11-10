@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { defaults as defaultShortcuts, limit as shortcutLimit, make as makeShortcut } from '@shared/browser/startShortcuts'
 import { allInputs } from '@shared/convert/formatCatalog'
+import type { UpdateState } from '@shared/ipc'
 import { MAX_SLEEP_MINUTES } from '@shared/session/sleepSettings'
 import { accentLabel, accentThemes, CUSTOM_ACCENT, swatchHex } from '@shared/theme/accent'
 import { allItems } from '@shared/toolbox/catalog'
@@ -10,6 +11,8 @@ import { zing } from '../api'
 import { InfoBanner, PillButton, PillField, PillSlider, Toggle } from '../components'
 import { ShieldAlertIcon, ShieldCheckIcon } from '../components/icons'
 import { AccountPane } from '../account/AccountPane'
+import { checkStatusText } from '../update/updateText'
+import { useUpdateState } from '../update/useUpdateState'
 import { privacyStatus } from './privacy'
 import { VaultSection } from './VaultSection'
 import type { CustomId } from './rows'
@@ -250,7 +253,20 @@ function RecentToolsRow({ handle }: { handle: SettingsHandle }) {
 	)
 }
 
+/** Check now, and what the last check found. A build that isn't installed never checks, so the button is off there. */
+function UpdatesRow({ state }: { state: UpdateState | null }) {
+	const idle = state !== null && ['idle', 'upToDate', 'failed'].includes(state.status)
+	return (
+		<SettingRowShell title="Updates" detail={state ? checkStatusText(state) : undefined}>
+			<PillButton variant="outlined" size="small" disabled={!idle} onClick={() => void zing.checkForUpdates()}>
+				Check now
+			</PillButton>
+		</SettingRowShell>
+	)
+}
+
 function About({ version }: { version: string }) {
+	const update = useUpdateState()
 	return (
 		<>
 			<div className="about-head">
@@ -259,9 +275,10 @@ function About({ version }: { version: string }) {
 				</div>
 				<div>
 					<div className="about-name">Zing</div>
-					<div className="about-version">Version {version}</div>
+					<div className="about-version">Version {update?.currentVersion || version}</div>
 				</div>
 			</div>
+			<UpdatesRow state={update} />
 			<SettingRowShell title="File formats">
 				<span className="row-value">{allInputs().size}</span>
 			</SettingRowShell>

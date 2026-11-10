@@ -72,6 +72,10 @@ public interface IWindowHost
 	/// <summary>Runs delayed work on the window's UI thread.</summary>
 	IScheduler Scheduler { get; }
 	IShellActions Shell { get; }
+	/// <summary>The app's one updater, shared by every window.</summary>
+	Updater Updates { get; }
+	/// <summary>The update pill's view measured what it shows.</summary>
+	void SetUpdatePillSize(int width, int height);
 }
 
 /// <summary>What every window shares: one settings store, one library, one address rule.</summary>
@@ -432,6 +436,11 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
 		bridge.Register("peek:get", _ => Peek());
+		bridge.Register("update:get", _ => host.Updates.State);
+		bridge.Register("update:check", async _ => await host.Updates.CheckNowAsync());
+		bridge.Register("update:relaunch", _ => Do(host.Updates.Relaunch));
+		// CSS pixels, fractional on a scaled display; the view takes whole DIPs, rounded up.
+		bridge.Register("update:pill-size", args => Do(() => host.SetUpdatePillSize((int)Math.Ceiling(Number(args, 0)), (int)Math.Ceiling(Number(args, 1)))));
 		_watchedVault = app.Vaults.Current;
 		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;
