@@ -85,6 +85,24 @@ public sealed class SignInWatchTests : IDisposable
 		Assert.Equal(SignInWatch.UsernameMax, limits.GetProperty("usernameMax").GetInt32());
 		Assert.Equal(SignInWatch.PasswordMax, limits.GetProperty("passwordMax").GetInt32());
 		Assert.Equal(limits.GetProperty("holdMs").GetInt32(), (int)SignInWatch.HoldFor.TotalMilliseconds);
+		Assert.Equal(limits.GetProperty("usernameStepMs").GetInt32(), (int)SignInWatch.UsernameStepFor.TotalMilliseconds);
+	}
+
+	public static TheoryData<string> SameSiteCases()
+	{
+		var data = new TheoryData<string>();
+		foreach (var v in Vectors.GetProperty("sameSite").EnumerateArray()) data.Add(v.GetProperty("name").GetString()!);
+		return data;
+	}
+
+	[Theory]
+	[MemberData(nameof(SameSiteCases))]
+	public void Same_site_follows_the_shared_vectors(string name)
+	{
+		var v = Vectors.GetProperty("sameSite").EnumerateArray().Single(c => c.GetProperty("name").GetString() == name);
+		var (a, b) = (v.GetProperty("a").GetString()!, v.GetProperty("b").GetString()!);
+		Assert.Equal(v.GetProperty("expected").GetBoolean(), SignInOutcomes.SameSite(a, b));
+		Assert.Equal(v.GetProperty("expected").GetBoolean(), SignInOutcomes.SameSite(b, a));
 	}
 
 	// -- prompting --
@@ -347,9 +365,11 @@ public sealed class SignInWatchTests : IDisposable
 	}
 
 	[Fact]
-	public void A_sign_in_with_no_username_is_dropped_before_it_is_held()
+	public void A_sign_in_with_no_username_anywhere_is_never_held()
 	{
-		Assert.Equal(PageMessageVerdict.Dropped, AutofillMessage.Read("""{"zingCredentialField":{"kind":"submit","username":"","password":"x"}}""", out _));
+		Assert.Equal(PageMessageVerdict.Autofill, AutofillMessage.Read("""{"zingCredentialField":{"kind":"submit","username":"","password":"x"}}""", out var message));
+		_watch.Message(Page, new Uri(Site), message!);
+		Assert.Equal(0, _watch.HeldCount);
 	}
 
 	[Fact]
@@ -537,6 +557,218 @@ public sealed class SignInWatchTests : IDisposable
 		Assert.Equal(SaveOutcomes.Gone, await _watch.AnswerAsync(Page, "save"));
 	}
 
+	// -- two-step sign-ins: the username on one page, the password on the next --
+
+	private const string IdPage = "https://id.example.com";
+	private const string AuthPage = "https://auth.example.com";
+
+	private async Task PasswordOnly(string password = "s3cret", string origin = Site, bool success = true)
+	{
+		_watch.Submitted(Page, origin, "", password);
+		_watch.Landed(Page, origin, hasVisiblePasswordBox: !success);
+		await Settle();
+	}
+
+	[Fact]
+	public async Task A_two_step_sign_in_prompts_save_with_the_remembered_username()
+	{
+		_watch.UsernameStep(Page, IdPage, "ada@example.test");
+		await PasswordOnly(origin: AuthPage);
+
+		Assert.Equal(new SaveLoginPrompt(Page, "save", AuthPage, "ada@example.test", null), Shown);
+		Assert.Equal(SaveOutcomes.Saved, await _watch.AnswerAsync(Page, SaveAnswers.Save));
+		Assert.Contains(Store.Summaries(), s => s.Origin == AuthPage && s.Username == "ada@example.test");
+	}
+
+	[Fact]
+	public async Task A_two_step_sign_in_with_a_saved_login_prompts_update()
+	{
+		await Save("ada@example.test", "old password");
+		_watch.UsernameStep(Page, Site, "ada@example.test");
+		await PasswordOnly();
+
+		Assert.Equal(new SaveLoginPrompt(Page, "update", Site, "ada@example.test", "ada@example.test"), Shown);
+	}
+
+	[Fact]
+	public async Task The_username_on_the_password_page_wins()
+	{
+		_watch.UsernameStep(Page, Site, "ada@example.test");
+		await SignIn("bob@example.test", "s3cret");
+
+		Assert.Equal("bob@example.test", Shown?.Username);
+	}
+
+	[Theory]
+	[InlineData("https://a.example", "https://b.example")]
+	[InlineData("https://alice.github.io", "https://bob.github.io")]
+	[InlineData("https://example.com", "http://example.com")]
+	public async Task A_username_step_on_another_site_is_not_used(string stepAt, string passwordAt)
+	{
+		_watch.UsernameStep(Page, stepAt, "ada@example.test");
+		_watch.Submitted(Page, passwordAt, "", "s3cret");
+
+		Assert.Equal(0, _watch.HeldCount);
+		await Settle();
+		Assert.Null(Shown);
+	}
+
+	[Fact]
+	public async Task A_username_step_is_forgotten_after_five_minutes()
+	{
+		_watch.UsernameStep(Page, Site, "ada@example.test");
+		_scheduler.Advance(SignInWatch.UsernameStepFor - TimeSpan.FromSeconds(1));
+		await PasswordOnly();
+		Assert.Equal("ada@example.test", Shown?.Username);
+		await _watch.AnswerAsync(Page, SaveAnswers.NotNow);
+
+		_watch.UsernameStep(Page, Site, "bob@example.test");
+		_scheduler.Advance(SignInWatch.UsernameStepFor);
+		await PasswordOnly();
+		Assert.Null(Shown);
+	}
+
+	[Fact]
+	public async Task A_wrong_password_keeps_the_username_for_the_next_try()
+	{
+		_watch.UsernameStep(Page, Site, "ada@example.test");
+		await PasswordOnly("wrong", success: false);
+		Assert.Null(Shown);
+
+		await PasswordOnly("s3cret");
+		Assert.Equal("ada@example.test", Shown?.Username);
+	}
+
+	[Fact]
+	public async Task A_successful_sign_in_forgets_the_username_step()
+	{
+		_watch.UsernameStep(Page, Site, "ada@example.test");
+		await PasswordOnly();
+		await _watch.AnswerAsync(Page, SaveAnswers.NotNow);
+
+		await PasswordOnly("another");
+		Assert.Null(Shown);
+	}
+
+	[Fact]
+	public async Task A_code_after_the_password_is_never_offered()
+	{
+		// The bank's code page has a password box, so the password's landing is a failure; the page script never reports a
+		// code-looking box, so nothing more is submitted before the dashboard loads.
+		_watch.UsernameStep(Page, Site, "ada@example.test");
+		await PasswordOnly("real password", success: false);
+		_watch.Landed(Page, Site, hasVisiblePasswordBox: false);
+		await Settle();
+
+		Assert.Null(Shown);
+		Assert.Equal(0, _watch.HeldCount);
+	}
+
+	[Theory]
+	[InlineData("navigated")]
+	[InlineData("closed")]
+	[InlineData("vault off")]
+	public async Task Navigating_the_tab_yourself_closing_it_or_turning_the_vault_off_forgets_the_step(string how)
+	{
+		_watch.UsernameStep(Page, Site, "ada@example.test");
+		if (how == "navigated") _watch.UserNavigated(Page);
+		else if (how == "closed") _watch.PageClosed(Page);
+		else _watch.Clear();
+
+		await PasswordOnly();
+		Assert.Null(Shown);
+	}
+
+	[Fact]
+	public async Task The_step_belongs_to_its_own_tab()
+	{
+		_watch.UsernameStep("tab-2", Site, "ada@example.test");
+		await PasswordOnly();
+		Assert.Null(Shown);
+	}
+
+	[Fact]
+	public async Task A_password_with_no_username_anywhere_prompts_nothing()
+	{
+		await PasswordOnly();
+		Assert.Null(Shown);
+		Assert.Equal(0, _watch.HeldCount);
+	}
+
+	[Fact]
+	public async Task A_new_step_replaces_the_old_one()
+	{
+		_watch.UsernameStep(Page, Site, "ada@example.test");
+		_watch.UsernameStep(Page, Site, "bob@example.test");
+		await PasswordOnly();
+		Assert.Equal("bob@example.test", Shown?.Username);
+	}
+
+	[Fact]
+	public async Task A_hidden_username_is_used_without_a_step_and_loses_to_one()
+	{
+		_watch.Submitted(Page, Site, "", "s3cret", hiddenUsername: "ada@example.test");
+		_watch.Landed(Page, Site, hasVisiblePasswordBox: false);
+		await Settle();
+		Assert.Equal("ada@example.test", Shown?.Username);
+		await _watch.AnswerAsync(Page, SaveAnswers.NotNow);
+
+		_watch.UsernameStep(Page, Site, "bob@example.test");
+		_watch.Submitted(Page, Site, "", "s3cret", hiddenUsername: "ada@example.test");
+		_watch.Landed(Page, Site, hasVisiblePasswordBox: false);
+		await Settle();
+		Assert.Equal("bob@example.test", Shown?.Username);
+	}
+
+	[Fact]
+	public async Task A_login_Zing_filled_then_submitted_on_a_two_step_page_prompts_nothing()
+	{
+		await Save("ada@example.test", "s3cret");
+		_watch.Filled(Page, Site, "ada@example.test", "s3cret");
+		_watch.UsernameStep(Page, Site, "ada@example.test");
+		await PasswordOnly();
+		Assert.Null(Shown);
+	}
+
+	[Fact]
+	public async Task A_username_step_on_a_never_save_site_is_not_remembered()
+	{
+		await Store.NeverSave(IdPage);
+		_watch.UsernameStep(Page, IdPage, "ada@example.test");
+		await PasswordOnly(origin: AuthPage);
+		Assert.Null(Shown);
+	}
+
+	[Fact]
+	public async Task A_username_step_message_is_routed_by_the_frames_source()
+	{
+		_watch.Message(Page, new Uri("zing://start/"), new AutofillMessage.UsernameStep("eve@example.test"));
+		await PasswordOnly(origin: AuthPage);
+		Assert.Null(Shown);
+
+		_watch.Message(Page, new Uri(IdPage + "/signin"), new AutofillMessage.UsernameStep("ada@example.test"));
+		await PasswordOnly(origin: AuthPage);
+		Assert.Equal("ada@example.test", Shown?.Username);
+	}
+
+	[Theory]
+	[InlineData(512, true)]
+	[InlineData(513, false)]
+	[InlineData(0, false)]
+	public void A_username_step_report_is_held_to_the_limits(int length, bool accepted)
+	{
+		var json = JsonSerializer.Serialize(new { zingCredentialField = new { kind = "username-step", username = new string('u', length) } });
+		Assert.Equal(accepted ? PageMessageVerdict.Autofill : PageMessageVerdict.Dropped, AutofillMessage.Read(json, out var message));
+		Assert.Equal(accepted, message is AutofillMessage.UsernameStep);
+	}
+
+	[Fact]
+	public void A_submit_report_carries_a_hidden_username()
+	{
+		Assert.Equal(PageMessageVerdict.Autofill, AutofillMessage.Read("""{"zingCredentialField":{"kind":"submit","username":"","password":"b","hiddenUsername":"ada"}}""", out var message));
+		Assert.Equal(new AutofillMessage.Submitted("", "b", "ada"), message);
+	}
+
 	// -- the page channel (Ruling 33) --
 
 	[Fact]
@@ -566,7 +798,7 @@ public sealed class SignInWatchTests : IDisposable
 	[InlineData(512, 1024, true)]
 	[InlineData(513, 10, false)]
 	[InlineData(10, 1025, false)]
-	[InlineData(0, 10, false)]
+	[InlineData(0, 10, true)]
 	[InlineData(10, 0, false)]
 	public void A_submit_report_is_held_to_the_limits(int usernameLength, int passwordLength, bool accepted)
 	{
@@ -582,6 +814,11 @@ public sealed class SignInWatchTests : IDisposable
 	[InlineData("""{"zingCredentialField":{"kind":"submit","username":{"x":{"y":1}},"password":"b"}}""")]
 	[InlineData("""{"zingCredentialField":{"kind":"landed"}}""")]
 	[InlineData("""{"zingCredentialField":{"kind":"landed","password":"yes"}}""")]
+	[InlineData("""{"zingCredentialField":{"kind":"submit","username":"","password":"b","hiddenUsername":1}}""")]
+	[InlineData("""{"zingCredentialField":{"kind":"submit","username":"","password":"b","hiddenUsername":""}}""")]
+	[InlineData("""{"zingCredentialField":{"kind":"username-step"}}""")]
+	[InlineData("""{"zingCredentialField":{"kind":"username-step","username":""}}""")]
+	[InlineData("""{"zingCredentialField":{"kind":"username-step","username":true}}""")]
 	public void A_malformed_submit_or_landing_is_dropped_never_thrown(string json)
 	{
 		Assert.Equal(PageMessageVerdict.Dropped, AutofillMessage.Read(json, out var message));

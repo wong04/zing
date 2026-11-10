@@ -203,6 +203,7 @@ public sealed class ChromeApi : IDisposable
 			SignIn.Message(pageId, source, message);
 		};
 		Tabs.Closed += SignIn.PageClosed;
+		Tabs.Navigating += SignIn.UserNavigated;
 		Drops = new DropInbox(Grants);
 		bridge.UseDropInbox(Drops);
 		if (app.ViewerRoot is { } viewerRoot)

@@ -66,8 +66,15 @@ public abstract record AutofillMessage
 	/// <summary>No sign-in field has focus any more, or the page started a new document.</summary>
 	public sealed record Left() : AutofillMessage;
 
-	/// <summary>A sign-in form was submitted. Whatever the page says is only what it says: SignInWatch holds it for its own origin.</summary>
-	public sealed record Submitted(string Username, string Password) : AutofillMessage;
+	/// <summary>
+	/// A sign-in form was submitted. Whatever the page says is only what it says: SignInWatch holds it for its own origin.
+	/// <paramref name="Username"/> is empty when the form showed none (a two-step sign-in's password page); a hidden
+	/// field marked as the username on that page comes as <paramref name="HiddenUsername"/>.
+	/// </summary>
+	public sealed record Submitted(string Username, string Password, string? HiddenUsername = null) : AutofillMessage;
+
+	/// <summary>The first page of a two-step sign-in: a username submitted with no password box.</summary>
+	public sealed record UsernameStep(string Username) : AutofillMessage;
 
 	/// <summary>The page now shows (or no longer shows) a visible password box.</summary>
 	public sealed record Landed(bool HasVisiblePasswordBox) : AutofillMessage;
@@ -111,7 +118,11 @@ public abstract record AutofillMessage
 			case "none":
 				return new Left();
 			case "submit":
-				return Text(body, "username", SignInWatch.UsernameMax) is { Length: > 0 } user && Text(body, "password", SignInWatch.PasswordMax) is { Length: > 0 } password ? new Submitted(user, password) : null;
+				if (Text(body, "username", SignInWatch.UsernameMax) is not { } user || Text(body, "password", SignInWatch.PasswordMax) is not { Length: > 0 } password) return null;
+				if (!body.TryGetProperty("hiddenUsername", out _)) return new Submitted(user, password);
+				return Text(body, "hiddenUsername", SignInWatch.UsernameMax) is { Length: > 0 } hidden ? new Submitted(user, password, hidden) : null;
+			case "username-step":
+				return Text(body, "username", SignInWatch.UsernameMax) is { Length: > 0 } stepped ? new UsernameStep(stepped) : null;
 			case "landed":
 				return body.TryGetProperty("password", out var box) && box.ValueKind is JsonValueKind.True or JsonValueKind.False ? new Landed(box.GetBoolean()) : null;
 			case "picker-enter":
