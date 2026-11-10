@@ -2,13 +2,14 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { emptyLibrary, favourites, isFolder, type BookmarkFolder } from '../library/library'
+import type { BrowserLibrary } from '../library/library'
 import { ArcSidebarFormatError, parseArcSidebar } from './arcSidebar'
 import { ChromiumBookmarksFormatError, parseChromiumBookmarks } from './chromiumBookmarks'
 import { CsvSyntaxError, parseCsv } from './csv'
-import { countLinks, importedLink, mergeImport } from './importResult'
+import { countLinks, importedLink, mergeImport, type BookmarkImport } from './importResult'
 import { decodeEntities, NetscapeBookmarksFormatError, parseNetscapeBookmarks } from './netscapeBookmarks'
 import { parsePasswordCsv, UnknownPasswordCsvError } from './passwords'
+import mergeVectors from './merge.vectors.json'
 import { findChromiumProfiles, profileNames } from './profiles.node'
 
 describe('csv', () => {
@@ -167,17 +168,10 @@ describe('Arc StorableSidebar.json', () => {
 })
 
 describe('merging an import into the library', () => {
-	const result = parseChromiumBookmarks(CHROME_BOOKMARKS)
-	const once = mergeImport(emptyLibrary(), result, 'Chrome', 1)
-	it('adds bar items to Favourites', () => expect(favourites(once).map((n) => n.title)).toEqual(['GitHub', 'Dev']))
-	it('puts the rest in one Imported folder', () => {
-		const imported = once.bookmarks.find((n) => n.title === 'Imported from Chrome') as BookmarkFolder
-		expect(imported.children.map((n) => n.title)).toEqual(['News', 'Mobile bookmarks'])
-	})
-	it('a second import does not duplicate bar links or the folder', () => {
-		const twice = mergeImport(once, result, 'Chrome', 2)
-		expect(favourites(twice).filter((n) => !isFolder(n))).toHaveLength(1)
-		expect(twice.bookmarks.filter((n) => n.title === 'Imported from Chrome')).toHaveLength(1)
+	it.each(mergeVectors.merge)('$name', ({ library, result, source, now, expected }) => {
+		let counter = 0
+		const outcome = mergeImport(library as BrowserLibrary, result as BookmarkImport, source, now, () => `n${++counter}`)
+		expect(outcome).toEqual(expected)
 	})
 })
 
