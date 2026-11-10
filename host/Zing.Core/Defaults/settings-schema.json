@@ -173,5 +173,14 @@
 	},
 	"toolLinks": {
 		"type": "linkList"
+	},
+	"checkForUpdates": {
+		"type": "flag"
+	},
+	"defaultBrowserDismissed": {
+		"type": "flag"
+	},
+	"launchedBefore": {
+		"type": "flag"
 	}
 }

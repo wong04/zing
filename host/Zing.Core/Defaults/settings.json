@@ -39,6 +39,9 @@
 		"afterMinutes": 30,
 		"sleepPinned": false
 	},
+	"checkForUpdates": true,
+	"defaultBrowserDismissed": false,
+	"launchedBefore": false,
 	"toolLinks": [
 		{
 			"title": "Desmos",

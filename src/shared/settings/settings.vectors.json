@@ -1,6 +1,6 @@
 {
 	"kracknKeys": ["theme", "accent", "homepage", "startShortcuts", "searchEngine", "blockTrackers", "confirmQuit", "defaultQuality", "preserveOriginals", "dohProvider", "tabOrganization", "autoCloseEnabled", "autoCloseRule", "autoCloseCustomHours", "autoCloseAtTimeEnabled", "autoCloseHour", "autoCloseMinute", "persistentProfile", "defaultUserAgent", "acceleratedCanvas", "restoreTabs", "securityRealtime", "securityDownloadScan", "securityDomainBlocking", "securitySignatureCheck", "sidebarPinned", "recentFeatures", "showFavouritesBar", "passwordAutofill", "tabDropdowns"],
-	"zingKeys": ["tabBarPosition", "tabColours", "customColor", "verticalTabWidth", "verticalTabsCollapsed", "sleepingTabs", "favouritesHint", "toolLinks", "linkPreviews", "linkPreviewsShiftClick", "linkPreviewsFromNewWindows"],
+	"zingKeys": ["tabBarPosition", "tabColours", "customColor", "verticalTabWidth", "verticalTabsCollapsed", "sleepingTabs", "favouritesHint", "toolLinks", "checkForUpdates", "defaultBrowserDismissed", "launchedBefore", "linkPreviews", "linkPreviewsShiftClick", "linkPreviewsFromNewWindows"],
 	"retiredKeys": ["confirmQuit", "securityDownloadScan", "securityDomainBlocking", "securitySignatureCheck"],
 	"defaultsSubset": {
 		"theme": "system", "accent": "yellow", "customColor": "#D9B872", "searchEngine": "google", "homepage": "", "startShortcuts": null,
