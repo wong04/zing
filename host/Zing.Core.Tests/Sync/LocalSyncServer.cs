@@ -102,6 +102,16 @@ internal sealed class LocalSyncServer(TimeProvider? clock = null) : WebApplicati
 		return (await response.Content.ReadFromJsonAsync<MintedToken>(SyncJson.Options))!.IdToken;
 	}
 
+	/// <summary>
+	/// Waits for every request still on the wire first, such as a replaced sign-in's background revoke: one still in the server holds
+	/// zing.db open, and deleting the folder under it fails. A request a test holds and never lets go fails here, not as a hang.
+	/// </summary>
+	public override async ValueTask DisposeAsync()
+	{
+		await Wire.Idle().WaitAsync(TimeSpan.FromSeconds(30));
+		await base.DisposeAsync();
+	}
+
 	protected override void Dispose(bool disposing)
 	{
 		base.Dispose(disposing);
@@ -164,7 +174,42 @@ internal sealed class Wire : DelegatingHandler
 		lock (_gate) Log.Add(line);
 	}
 
+	private int _sending;
+	private TaskCompletionSource _idle = Idled();
+
+	private static TaskCompletionSource Idled()
+	{
+		var idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		idle.SetResult();
+		return idle;
+	}
+
+	/// <summary>Completes once no request is on the wire: each one sent has had its answer, or failed.</summary>
+	public Task Idle()
+	{
+		lock (_gate) return _idle.Task;
+	}
+
 	protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+	{
+		lock (_gate)
+		{
+			if (_sending++ == 0) _idle = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		}
+		try
+		{
+			return await SendThroughAsync(request, cancellationToken);
+		}
+		finally
+		{
+			lock (_gate)
+			{
+				if (--_sending == 0) _idle.SetResult();
+			}
+		}
+	}
+
+	private async Task<HttpResponseMessage> SendThroughAsync(HttpRequestMessage request, CancellationToken cancellationToken)
 	{
 		var line = $"{request.Method} {request.RequestUri!.AbsolutePath}";
 		Note(line);
