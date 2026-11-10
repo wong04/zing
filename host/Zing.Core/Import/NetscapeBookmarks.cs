@@ -15,7 +15,8 @@ public static partial class NetscapeBookmarks
 	// ECMAScript keeps \s, \d and \b ASCII-only, as in the JavaScript original.
 	private const RegexOptions Options = RegexOptions.IgnoreCase | RegexOptions.ECMAScript;
 
-	[GeneratedRegex(@"<(\/?)(dl|h3|a)\b([^>]*)>|<\/(h3|a)>", Options)]
+	// A tag's attributes never hold a raw "<", so an unclosed tag fails at the next one instead of scanning the rest of the file.
+	[GeneratedRegex(@"<(\/?)(dl|h3|a)\b([^<>]*)>|<\/(h3|a)>", Options, matchTimeoutMilliseconds: 2000)]
 	private static partial Regex Token();
 
 	[GeneratedRegex(@"<!DOCTYPE\s+NETSCAPE-Bookmark-file-1>", Options)]
@@ -51,7 +52,7 @@ public static partial class NetscapeBookmarks
 			var after = match.Index + match.Length;
 			if (name == "h3" && closing == "")
 			{
-				pendingFolder = (DecodeEntities(TextUntilClose(html, after)), ToolbarMark().IsMatch(attrs));
+				pendingFolder = (DecodeEntities(TextUntilTag(html, after)), ToolbarMark().IsMatch(attrs));
 				continue;
 			}
 			if (name == "dl" && closing == "")
@@ -76,7 +77,7 @@ public static partial class NetscapeBookmarks
 			}
 			if (name == "a" && closing == "")
 			{
-				var title = DecodeEntities(TextUntilClose(html, after));
+				var title = DecodeEntities(TextUntilTag(html, after));
 				var url = DecodeEntities(Href().Match(attrs) is { Success: true } href ? href.Groups[1].Value : "");
 				if (!BookmarkImport.AcceptsBookmarkUrl(url))
 				{
@@ -89,9 +90,10 @@ public static partial class NetscapeBookmarks
 		return new BookmarkImport(bar ?? [], UnwrapSingleRoot(root), skipped);
 	}
 
-	private static string TextUntilClose(string html, int start)
+	// A title ends at the next tag, closing or not: exports write a "<" in a title as &lt;, and some never close their <A> and <H3> tags.
+	private static string TextUntilTag(string html, int start)
 	{
-		var end = html.IndexOf("</", start, StringComparison.Ordinal);
+		var end = html.IndexOf('<', start);
 		return (end == -1 ? html[start..] : html[start..end]).Trim();
 	}
 

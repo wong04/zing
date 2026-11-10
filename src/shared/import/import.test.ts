@@ -128,6 +128,15 @@ describe('Netscape bookmarks HTML (every browser, incl. Dia on Mac)', () => {
 	})
 	it('decodes hex and named entities', () => expect(decodeEntities('&#x41;&lt;&quot;&unknown;')).toBe('A<"&unknown;'))
 	it('rejects unrelated HTML', () => expect(() => parseNetscapeBookmarks('<html><body>hi</body></html>')).toThrow(NetscapeBookmarksFormatError))
+	it('stays linear on 10 MB of tags that never close', () => {
+		const head = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL>'
+		for (const tag of ['<A HREF="https://x/">', '<A HREF="https://x/"']) {
+			const html = head + tag.repeat(Math.floor((10 * 1024 * 1024) / tag.length))
+			const start = performance.now()
+			parseNetscapeBookmarks(html)
+			expect(performance.now() - start).toBeLessThan(2000)
+		}
+	})
 })
 
 const ARC = JSON.stringify({

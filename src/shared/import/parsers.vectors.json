@@ -226,6 +226,43 @@
 					"Space \"Lonely\" has no pinned container"
 				]
 			}
+		},
+		{
+			"name": "html export whose A and H3 tags are never closed",
+			"parser": "netscape",
+			"fixture": "netscape-unclosed.html",
+			"expected": {
+				"bar": [],
+				"other": [
+					{
+						"kind": "link",
+						"title": "One",
+						"url": "https://one.example/"
+					},
+					{
+						"kind": "link",
+						"title": "Two & more",
+						"url": "https://two.example/"
+					},
+					{
+						"kind": "folder",
+						"title": "Folder",
+						"children": [
+							{
+								"kind": "link",
+								"title": "Three",
+								"url": "https://three.example/"
+							}
+						]
+					},
+					{
+						"kind": "link",
+						"title": "https://four.example/",
+						"url": "https://four.example/"
+					}
+				],
+				"skipped": []
+			}
 		}
 	],
 	"refused": [
