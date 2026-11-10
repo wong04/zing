@@ -1,9 +1,24 @@
 {
-	"limits": { "usernameMax": 512, "passwordMax": 1024, "holdMs": 10000, "settleChecks": 5, "watchMs": 120000 },
+	"limits": { "usernameMax": 512, "passwordMax": 1024, "holdMs": 10000, "settleChecks": 5, "watchMs": 120000, "usernameStepMs": 300000 },
 	"withdrawals": [
 		{ "name": "the form back in the same origin withdraws the prompt", "promptOrigin": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": true, "expected": true },
 		{ "name": "no password box does not", "promptOrigin": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": false, "expected": false },
 		{ "name": "a form in another origin does not", "promptOrigin": "https://a.example", "landed": "https://b.example", "hasVisiblePasswordBox": true, "expected": false }
+	],
+	"sameSite": [
+		{ "name": "subdomains of one site pair", "a": "https://id.bank.com", "b": "https://auth.bank.com", "expected": true },
+		{ "name": "a sibling under a two-part suffix pairs", "a": "https://a.example.co.uk", "b": "https://b.example.co.uk", "expected": true },
+		{ "name": "different sites do not", "a": "https://login.live.com", "b": "https://login.microsoftonline.com", "expected": false },
+		{ "name": "two users of a shared host are two sites", "a": "https://alice.github.io", "b": "https://bob.github.io", "expected": false },
+		{ "name": "two universities under ac.za are two sites", "a": "https://uct.ac.za", "b": "https://wits.ac.za", "expected": false },
+		{ "name": "http and https do not pair", "a": "https://bank.com", "b": "http://bank.com", "expected": false },
+		{ "name": "another port does not pair", "a": "https://bank.com", "b": "https://bank.com:8443", "expected": false },
+		{ "name": "the same address pairs", "a": "http://127.0.0.1:3000", "b": "http://127.0.0.1:3000", "expected": true },
+		{ "name": "another address does not", "a": "http://127.0.0.1:3000", "b": "http://127.0.0.2:3000", "expected": false },
+		{ "name": "the same IPv6 address pairs", "a": "http://[::1]:3000", "b": "http://[::1]:3000", "expected": true },
+		{ "name": "localhost pairs with itself", "a": "http://localhost:3000", "b": "http://localhost:3000", "expected": true },
+		{ "name": "an intranet name pairs with itself", "a": "http://router", "b": "http://router", "expected": true },
+		{ "name": "a host that is itself a suffix pairs only with itself", "a": "https://github.io", "b": "https://alice.github.io", "expected": false }
 	],
 	"outcomes": [
 		{ "name": "the same origin with no password box any more is a success", "submitted": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": false, "expected": "success" },

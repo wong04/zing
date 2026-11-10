@@ -427,6 +427,28 @@ document.addEventListener('submit', (e) => {
 })
 </script>`
 
+// Two-step sign-ins: the username on one page, the password on the next, with no username field at all on the second.
+const USERNAME_STEP = `<form id="form" action="/two-step/password" method="post">
+	<label>Email <input id="user" name="username" autocomplete="username"></label>
+	<button>Next</button>
+</form>`
+const PASSWORD_STEP = `<form id="form" action="/login" method="post">
+	<label>Password <input id="pass" name="password" type="password"></label>
+	<button>Sign in</button>
+</form>`
+
+// The same in one document, as Google's sign-in does it: each step swaps the form without navigating.
+const SPA_TWO_STEP = `<!doctype html><title>App</title><div id="root">${USERNAME_STEP}</div>
+<template id="password">${PASSWORD_STEP}</template>
+<script>
+document.addEventListener('submit', (e) => {
+	e.preventDefault()
+	const root = document.querySelector('#root')
+	const next = document.querySelector('#user') ? document.querySelector('#password').innerHTML : '<h1>Dashboard</h1>'
+	setTimeout(() => (root.innerHTML = next), 300)
+})
+</script>`
+
 let signInSite: Server
 let signInBase = ''
 
@@ -449,6 +471,9 @@ test.beforeAll(async () => {
 			return
 		}
 		if (url === '/dashboard') return void res.end('<!doctype html><title>Dashboard</title><h1>Welcome back</h1>')
+		if (url === '/two-step') return void res.end(`<!doctype html><title>Sign in</title>${USERNAME_STEP}`)
+		if (url === '/two-step/password' || url === '/two-step/password?typed=1') return void res.end(`<!doctype html><title>Password</title>${PASSWORD_STEP}`)
+		if (url === '/spa-two-step') return void res.end(SPA_TWO_STEP)
 		if (url === '/spa') return void res.end(SPA)
 		if (url === '/spa-spinner') return void res.end(slowPage('spinner'))
 		if (url === '/spa-disabled') return void res.end(slowPage('disabled'))
@@ -692,6 +717,79 @@ test('a single-page sign-in that swaps the form for a dashboard prompts exactly 
 	await answer(zing, 'Not now')
 	await settle(page)
 	expect(await promptsOpened(zing)).toBe(1)
+	await zing.close()
+})
+
+/** The two pages of a two-step sign-in: the username, Next, then the password on the page after. */
+async function twoStep(page: Page, username: string, password: string): Promise<void> {
+	await page.fill('#user', username)
+	await page.click('button')
+	await page.waitForURL(`${signInBase}/two-step/password`)
+	await page.fill('#pass', password)
+	await page.click('button')
+}
+
+test('a two-page sign-in prompts Save with the username from the first page', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/two-step`)
+
+	await twoStep(page, USERNAME, PASSWORD)
+
+	await expect.poll(() => savePrompt(zing)).toMatchObject({ kind: 'save', origin: signInBase, username: USERNAME })
+	expect(JSON.stringify(await pageUiState(zing))).not.toContain(PASSWORD)
+	await answer(zing, 'Save')
+	await expect.poll(() => savePrompt(zing)).toBeNull()
+	const saved = await logins(zing)
+	expect(saved).toHaveLength(1)
+	expect(saved[0]).toMatchObject({ origin: signInBase, username: USERNAME })
+	expect(await zing.chrome.evaluate((id) => window.zing.revealPassword(id), saved[0]!.id)).toBe(PASSWORD)
+	await zing.close()
+})
+
+test('a two-page sign-in to a saved login prompts an update naming it', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	await save(zing, signInBase, USERNAME, 'old password')
+	const page = await open(zing, `${signInBase}/two-step`)
+
+	await twoStep(page, USERNAME, PASSWORD)
+
+	await expect.poll(() => savePrompt(zing)).toMatchObject({ kind: 'update', username: USERNAME, replaces: USERNAME })
+	await zing.close()
+})
+
+test('a single-page two-step sign-in prompts Save once with the right username', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const page = await open(zing, `${signInBase}/spa-two-step`)
+	await countPrompts(zing)
+
+	await page.fill('#user', USERNAME)
+	await page.click('button')
+	await page.fill('#pass', PASSWORD)
+	await page.click('button')
+	await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+
+	await expect.poll(() => savePrompt(zing)).toMatchObject({ kind: 'save', origin: signInBase, username: USERNAME })
+	await settle(page)
+	expect(await promptsOpened(zing)).toBe(1)
+	await zing.close()
+})
+
+test('typing an address after the username step forgets the username, so the password alone prompts nothing', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	const first = await open(zing, `${signInBase}/two-step`)
+	await first.fill('#user', USERNAME)
+	await first.click('button')
+	await first.waitForURL(`${signInBase}/two-step/password`)
+	await countPrompts(zing)
+
+	// The address bar's navigation, to a distinct address so the new document is the one waited for.
+	const page = await open(zing, `${signInBase}/two-step/password?typed=1`)
+	await page.fill('#pass', PASSWORD)
+	await page.click('button')
+	await page.waitForURL(`${signInBase}/dashboard`)
+	await settle(page)
+
+	expect(await promptsOpened(zing)).toBe(0)
 	await zing.close()
 })
 

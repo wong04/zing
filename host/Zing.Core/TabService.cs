@@ -163,6 +163,9 @@ public sealed class TabService
 	/// <summary>A tab closed for good.</summary>
 	public event Action<string>? Closed;
 
+	/// <summary>The user sent a tab to an address themselves (<see cref="Navigate"/>), not a link or a form in the page.</summary>
+	public event Action<string>? Navigating;
+
 	/// <summary>The link preview open over the active tab, or null.</summary>
 	public PeekSession? Preview { get; private set; }
 
@@ -431,6 +434,7 @@ public sealed class TabService
 	/// <summary>Loads a ready URL (the window has already resolved what was typed).</summary>
 	public void Navigate(string id, string url)
 	{
+		Navigating?.Invoke(id);
 		if (Preview?.SourceTabId == id) ClosePreview();
 		var clean = CleanLink(url);
 		_store.Update(id, new TabContentPatch(Url: clean));

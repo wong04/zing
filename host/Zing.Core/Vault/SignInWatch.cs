@@ -21,6 +21,19 @@ public static class SignInOutcomes
 	/// <summary>Ruling 37: the sign-in form came back in the origin a prompt is open for.</summary>
 	public static bool PromptWithdrawn(string promptOrigin, string landedOrigin, bool hasVisiblePasswordBox) =>
 		landedOrigin == promptOrigin && hasVisiblePasswordBox;
+
+	/// <summary>
+	/// Whether a username entered at one origin may be paired with a password entered at the other, as Chrome's
+	/// IsPublicSuffixDomainMatch decides: the same scheme and port, and the same registrable domain by the full Public Suffix List.
+	/// </summary>
+	public static bool SameSite(string a, string b)
+	{
+		if (!Uri.TryCreate(a, UriKind.Absolute, out var x) || !Uri.TryCreate(b, UriKind.Absolute, out var y)) return false;
+		if (x.Scheme != y.Scheme || x.Port != y.Port) return false;
+		// localhost, an intranet name or a host that is itself a suffix has no registrable domain, but is its own site.
+		if (x.IdnHost == y.IdnHost) return true;
+		return PublicSuffix.RegistrableDomain(x.IdnHost) is { } site && site == PublicSuffix.RegistrableDomain(y.IdnHost);
+	}
 }
 
 /// <summary>Pushed in the page-UI state. Names the origin and the username only: the password never leaves the host.</summary>
@@ -58,7 +71,8 @@ public sealed class SaveAnswerException(string answer) : ArgumentException($"Not
 /// The origin is always the frame's actual source as WebView2 reports it, so a page can prompt only for itself and
 /// with what it reported (Ruling 33). Credentials are never logged, persisted or sent to the renderer; they are dropped
 /// after <see cref="HoldFor"/> without a landing, once the prompt is answered or its time runs out, when the tab closes,
-/// and when the vault turns off.
+/// and when the vault turns off. For a two-step sign-in it also remembers each tab's latest username step, in memory, for
+/// <see cref="UsernameStepFor"/>, and pairs it with a password submitted on the same site with no username of its own.
 /// </summary>
 /// <param name="vault">The vault; null while it's off.</param>
 /// <param name="isShown">Whether a tab is on screen; a prompt is for the tab the user is looking at.</param>
@@ -78,6 +92,9 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 	/// followed by a sign-in would prompt an update.
 	/// </summary>
 	public static readonly TimeSpan FillFor = TimeSpan.FromMinutes(2);
+
+	/// <summary>How long a two-step sign-in's username is remembered: Chrome's kSingleUsernameTimeToLive.</summary>
+	public static readonly TimeSpan UsernameStepFor = TimeSpan.FromMinutes(5);
 
 	/// <summary>Ruling 33; signInLimits in signInOutcome.ts.</summary>
 	public const int UsernameMax = 512;
@@ -107,8 +124,11 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 
 	private sealed record Fill(string Origin, string Username, byte[] Digest, object Token, IDisposable Timer);
 
+	private sealed record Step(string Origin, string Username, IDisposable Timer);
+
 	private readonly Dictionary<string, Held> _held = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, Fill> _fills = new(StringComparer.Ordinal);
+	private readonly Dictionary<string, Step> _steps = new(StringComparer.Ordinal);
 	private readonly byte[] _digestKey = RandomNumberGenerator.GetBytes(32);
 	private Shown? _shown;
 
@@ -120,7 +140,7 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 	/// <summary>A message from a page's script; <paramref name="frameSource"/> is WebView2's Source for it.</summary>
 	public void Message(string pageId, Uri frameSource, AutofillMessage message)
 	{
-		if (message is not (AutofillMessage.Submitted or AutofillMessage.Landed or AutofillMessage.Left)) return;
+		if (message is not (AutofillMessage.Submitted or AutofillMessage.UsernameStep or AutofillMessage.Landed or AutofillMessage.Left)) return;
 		if (frameSource.Scheme != Uri.UriSchemeHttps && frameSource.Scheme != Uri.UriSchemeHttp) return;
 		var origin = VaultModel.OriginOf(frameSource.AbsoluteUri);
 		switch (message)
@@ -130,7 +150,10 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 				if (_shown is { } open && open.Prompt.PageId == pageId && open.Prompt.Origin != origin) CloseShown();
 				return;
 			case AutofillMessage.Submitted submitted:
-				Submitted(pageId, origin, submitted.Username, submitted.Password);
+				Submitted(pageId, origin, submitted.Username, submitted.Password, submitted.HiddenUsername);
+				return;
+			case AutofillMessage.UsernameStep step:
+				UsernameStep(pageId, origin, step.Username);
 				return;
 			case AutofillMessage.Landed landed:
 				Landed(pageId, origin, landed.HasVisiblePasswordBox);
@@ -138,10 +161,18 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		}
 	}
 
-	/// <summary>A form was submitted. The latest submit of a page replaces the one held, and a prompt for the old one closes.</summary>
-	public void Submitted(string pageId, string origin, string username, string password)
+	/// <summary>
+	/// A form was submitted. The latest submit of a page replaces the one held, and a prompt for the old one closes. With no
+	/// username of its own it takes the page's username step on the same site, else the page's hidden username field, else
+	/// nothing is held: a password alone is never offered.
+	/// </summary>
+	public void Submitted(string pageId, string origin, string username, string password, string? hiddenUsername = null)
 	{
 		if (vault() is not { } store) return;
+		if (username.Length == 0)
+			username = (_steps.TryGetValue(pageId, out var step) && SignInOutcomes.SameSite(step.Origin, origin) ? step.Username : hiddenUsername) ?? "";
+		// A password alone (a re-auth box, a code page) isn't a sign-in to offer, and leaves an open prompt be.
+		if (username.Length == 0) return;
 		Drop(pageId);
 		// Nothing will be offered for it, so don't hold its password at all.
 		if (store.IsNeverSave(origin)) return;
@@ -172,7 +203,31 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		}
 		held.Landed = true;
 		held.Timer?.Dispose();
+		// The sign-in worked, so the username step that may have led to it is done with (Chrome clears it too).
+		ForgetStep(pageId);
 		background(DecideAsync(pageId, held), "save prompt");
+	}
+
+	/// <summary>The first page of a two-step sign-in. The latest step of a page replaces the one remembered.</summary>
+	public void UsernameStep(string pageId, string origin, string username)
+	{
+		if (vault() is not { } store) return;
+		ForgetStep(pageId);
+		if (store.IsNeverSave(origin)) return;
+		Step? step = null;
+		step = new Step(origin, username, scheduler.Schedule(UsernameStepFor, () =>
+		{
+			if (_steps.TryGetValue(pageId, out var current) && ReferenceEquals(current, step)) ForgetStep(pageId);
+		}));
+		_steps[pageId] = step;
+	}
+
+	/// <summary>The user sent the tab somewhere themselves (the address bar, a bookmark, Home): a username step is left behind.</summary>
+	public void UserNavigated(string pageId) => ForgetStep(pageId);
+
+	private void ForgetStep(string pageId)
+	{
+		if (_steps.Remove(pageId, out var step)) step.Timer.Dispose();
 	}
 
 	/// <summary>Ruling 37: the sign-in page is back in the origin a prompt is open for, so that sign-in failed after all.</summary>
@@ -295,6 +350,7 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 	public void PageClosed(string pageId)
 	{
 		Drop(pageId);
+		ForgetStep(pageId);
 		if (_fills.Remove(pageId, out var fill)) Forget(fill);
 	}
 
@@ -317,6 +373,8 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		_held.Clear();
 		foreach (var fill in _fills.Values) Forget(fill);
 		_fills.Clear();
+		foreach (var step in _steps.Values) step.Timer.Dispose();
+		_steps.Clear();
 	}
 
 	private void Expire(string pageId, Held held)
