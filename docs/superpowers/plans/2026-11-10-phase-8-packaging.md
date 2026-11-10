@@ -17,6 +17,7 @@
 - First check about 30 s after startup, then every 4 h. Restart only on pill click or on quit.
 - Setting `checkForUpdates`, default `true`. Its detail text: "Asks GitHub for the latest version every few hours. Sends nothing about you."
 - Setting `defaultBrowserDismissed`, default `false`.
+- Setting `launchedBefore`, default `false`; set true after a profile's first launch. The default-browser offer waits for it (owner's decision: the import nudge owns the first launch).
 - Default-browser offer text: "Make Zing your default browser?" Its button opens `ms-settings:defaultapps?registeredAppUser=Zing`.
 - Pill text: "Relaunch to update".
 - Internal versions `0.9.x`; first public release `1.0.0`. SemVer from the tag (`v0.9.0` → `0.9.0`).
@@ -181,7 +182,8 @@
 **Files:**
 - Modify: `src/shared/ipc.ts`: `Notice` gains `defaultBrowser?: true`; new type `DefaultBrowserState { registered: boolean; isDefault: boolean }`; channels `'default-browser:get'`, `'default-browser:open-settings'` and `'default-browser:dismiss'` (sets `defaultBrowserDismissed`).
 - Modify: `host/Zing.Host/NoticeLayer.cs` (`ShowDefaultBrowserOfferAsync()`, using the existing offer height and its 20 s timeout), `host/Zing.Core/ChromeApi.cs`, `host/Zing.Host/Program.cs`.
-  - In `ZingApp.Ready`, after startup notices: show the offer when `Installation.IsInstalled`, Zing isn't the default, and `defaultBrowserDismissed` is false.
+  - In `ZingApp.Ready`, after startup notices: show the offer when `Installation.IsInstalled`, Zing isn't the default, `defaultBrowserDismissed` is false, and `launchedBefore` is true. After that check, set `launchedBefore` to true.
+  - **Owner's decision (2026-11-10):** Phase 6c's import nudge takes the first launch. The default-browser offer never shows on a fresh profile's first launch; it first appears on the second launch. This is judged only from Phase 8's own `launchedBefore` setting, never from 6c's nudge state.
   - In e2e, the test action `show-default-browser-offer` shows it.
 - Modify: the renderer overlay notice component, which shows the "Make default" and "Don't ask again" buttons for `defaultBrowser`. A timeout is not a dismissal, so the offer comes back next launch *(design call)*.
 - Modify: `src/renderer/src/settings/rows.ts` and `CustomRows.tsx`: a "Default browser" row. It shows "Zing is your default browser", or a "Make default" button that opens Settings, or "Install Zing to set it as default" when not registered.
@@ -196,6 +198,7 @@
   - After `show-default-browser-offer`, the offer shows the text from Global Constraints.
   - "Make default" records the ms-settings launch.
   - "Don't ask again" sets `defaultBrowserDismissed`, so a relaunch on the same profile, re-triggered by the test, still shows nothing.
+  - A fresh profile's first launch shows no offer, even with the test seam on, and the next launch on that profile does.
   - Light and dark screenshots.
 
   Write the vitest for the row. Run it. Expected: FAIL.
