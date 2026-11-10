@@ -144,12 +144,22 @@ public sealed class ParserTests : IDisposable
 	}
 
 	[Fact]
-	public void MalformedJsonIsReportedAsSuchRatherThanAsAnUnknownFile()
+	public void MalformedJsonIsReportedAsDamaged()
 	{
 		var path = Path.Combine(_dir, "truncated.json");
 		File.Copy(FixturePath("invalid.json"), path);
 
-		Assert.ThrowsAny<JsonException>(() => ImportFile.ParseBookmarks(path));
+		Assert.Throws<BookmarksFileDamagedException>(() => ImportFile.ParseBookmarks(path));
+	}
+
+	[Fact]
+	public void TruncatedJsonWithoutEitherKeyAndTooDeepJsonAreDamagedToo()
+	{
+		var broken = Write("broken.json", "{\"x\": "u8.ToArray());
+		var deep = Write("deep.json", System.Text.Encoding.UTF8.GetBytes("{\"roots\":" + new string('[', 200) + new string(']', 200) + "}"));
+
+		Assert.Throws<BookmarksFileDamagedException>(() => ImportFile.ParseBookmarks(broken));
+		Assert.Throws<BookmarksFileDamagedException>(() => ImportFile.ParseBookmarks(deep));
 	}
 
 	[Fact]
