@@ -11,6 +11,7 @@ public static class Program
 	[STAThread]
 	public static void Main()
 	{
+		Installation.Run();
 		TestHooks.RecordUnhandledErrors();
 		ComWrappersSupport.InitializeComWrappers();
 		if (SingleInstance.RedirectedToRunningZing()) return;
@@ -67,8 +68,11 @@ public sealed class ZingApp
 	private Task<CoreWebView2Environment>? _environment;
 	private EngineRebuild? _rebuild;
 	private bool _updateNoticeGiven;
+	private Updater? _updates;
 
 	public AppServices Services => _services ?? throw new InvalidOperationException("Zing has not started");
+
+	public Updater Updates => _updates ?? throw new InvalidOperationException("Zing has not started");
 
 	public Task<CoreWebView2Environment> Environment => _environment ?? throw new InvalidOperationException("Zing has not started");
 
@@ -90,6 +94,7 @@ public sealed class ZingApp
 		_environment = OpenEnvironmentAsync();
 		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => Primary?.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : [], _scheduler, e => TestHooks.Record("session write", e));
 		_onQuit.Add(_session.Flush);
+		_updates = OpenUpdates();
 		if (Flag("restoreTabs"))
 		{
 			var restored = Session.LoadOrRecover(AppPaths.Session);
@@ -112,6 +117,7 @@ public sealed class ZingApp
 	public void Ready(MainWindow window)
 	{
 		if (window != Primary) return;
+		Updates.Start();
 		_links.Attach(OpenLink);
 		// A notice replaces the one before, so problems found at startup are told together.
 		if (_startupNotices.Count > 0) window.Notify(string.Join(" ", _startupNotices));
@@ -200,7 +206,17 @@ public sealed class ZingApp
 			return;
 		}
 		foreach (var flush in _onQuit) flush();
+		Updates.Quitting();
 		Native.PostQuitMessage(0);
+	}
+
+	/// <summary>A failed check is a warning, never a fault: offline or rate-limited is expected, and the next interval tries again.</summary>
+	private Updater OpenUpdates()
+	{
+		var scheduler = _scheduler ?? throw new InvalidOperationException("Launch creates the scheduler first");
+		var updates = new Updater(Installation.UpdateSource(() => { foreach (var flush in _onQuit) flush(); }), scheduler, () => Flag("checkForUpdates"));
+		updates.Failed += error => Faults.Warning("update check", error);
+		return updates;
 	}
 
 	private AppServices OpenServices()

@@ -33,6 +33,8 @@
 	<ItemGroup>
 		<PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
 		<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+		<!-- Installer hooks and updates (Phase 8). The vpk tool that packs releases is pinned to the same version. -->
+		<PackageReference Include="Velopack" Version="1.2.161" />
 	</ItemGroup>
 	<ItemGroup>
 		<!-- Built from TypeScript by `npm run gen:reader` (part of `npm run build:host`). -->
