@@ -24,7 +24,7 @@ Keep every value in Railway's Variables tab. Never put them in a file in the rep
 
 ## Google OAuth client
 
-Zing signs in with Google through the system browser and sends the ID token to this server, which checks its signature and audience. Use a Cloud project of your own for this.
+Zing signs in with Google in a small Zing window and sends the ID token to this server, which checks its signature and audience. Use a Cloud project of your own for this.
 
 1. Open https://console.cloud.google.com and create a project (for example `zing-sync`).
 2. **APIs & Services > OAuth consent screen** (now under **Google Auth Platform**):

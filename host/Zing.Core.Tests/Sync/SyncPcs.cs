@@ -130,8 +130,8 @@ internal sealed class SyncPc : IDisposable
 /// <summary>Two PCs syncing one vault: A turned sync on, and B restored from sync with the Zing password (Task 14).</summary>
 internal sealed class TwoPcs : IDisposable
 {
-	/// <summary>A five-word passphrase the generator made (passwordStrength.vectors.json).</summary>
-	public const string Strong = "teaching-focused-onward-activist-steel";
+	/// <summary>A passphrase the generator made, five words and a digit (passwordStrength.vectors.json).</summary>
+	public const string Strong = "teaching-focused-onward-activist-steel4";
 
 	private readonly string _accountDir = Directory.CreateTempSubdirectory("zing-syncpcs-account-").FullName;
 	private readonly string _bAccountDir = Directory.CreateTempSubdirectory("zing-syncpcs-account-b-").FullName;
