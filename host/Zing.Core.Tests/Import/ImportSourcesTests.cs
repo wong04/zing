@@ -157,4 +157,56 @@ public sealed class ImportSourcesTests : IDisposable
 		Assert.True(source.Bookmarks > 0);
 		Assert.NotEmpty(ImportSources.Read(source).Bar);
 	}
+
+	[Fact]
+	public void AMalformedLocalStateIsABrowserRowWithAnErrorAndOtherBrowsersAreStillFound()
+	{
+		var chrome = ChromeUserData();
+		Directory.CreateDirectory(chrome);
+		File.WriteAllText(Path.Combine(chrome, "Local State"), "{ not json");
+		var edge = UserData("Microsoft", "Edge");
+		WriteLocalState(edge, null, ("Default", "Me"));
+		WriteProfile(edge, "Default", Fixture("chromium-bookmarks.json"));
+		var arc = Path.Combine(root, "Packages", "TheBrowserCompany.Arc_x", "LocalCache", "Local", "Arc");
+		Directory.CreateDirectory(arc);
+		File.WriteAllText(Path.Combine(arc, "StorableSidebar.json"), Fixture("arc-sidebar.json"));
+
+		var found = ImportSources.Find(root);
+
+		Assert.Equal(["chrome", "edge:Default", "arc"], found.Select(s => s.Id));
+		var row = found[0];
+		Assert.Equal(ImportBrowser.Chrome, row.Browser);
+		Assert.Null(row.Profile);
+		Assert.Equal("Chrome", row.Display);
+		Assert.Null(row.Bookmarks);
+		Assert.False(row.LastUsed);
+		Assert.Equal(Path.Combine(chrome, "Local State"), row.Path);
+		Assert.False(string.IsNullOrEmpty(row.Error));
+		Assert.DoesNotContain(root, row.Error);
+	}
+
+	[Fact]
+	public void AFileInUseIsARowWhoseErrorHasNoPath()
+	{
+		var chrome = ChromeUserData();
+		WriteLocalState(chrome, null, ("Default", "Personal"));
+		WriteProfile(chrome, "Default", Fixture("chromium-bookmarks.json"));
+		using var lockFile = new FileStream(Path.Combine(chrome, "Default", "Bookmarks"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+		var source = Assert.Single(ImportSources.Find(root));
+
+		Assert.Null(source.Bookmarks);
+		Assert.Equal("Zing couldn't read this profile's bookmarks: the file is in use or unreadable", source.Error);
+	}
+
+	[Fact]
+	public void ErrorsNeverCarryAPath()
+	{
+		var path = Path.Combine(root, "secret", "Bookmarks");
+		Assert.Equal("Zing couldn't read this profile's bookmarks: the file is missing", ImportSources.Explain(new FileNotFoundException($"Could not find {path}", path), "this profile's bookmarks"));
+		Assert.Equal("Zing couldn't read this profile's bookmarks: the file is missing", ImportSources.Explain(new DirectoryNotFoundException($"Could not find {path}"), "this profile's bookmarks"));
+		Assert.Equal("Zing couldn't read this profile's bookmarks: access was denied", ImportSources.Explain(new UnauthorizedAccessException($"Access to {path} is denied"), "this profile's bookmarks"));
+		Assert.Equal("Zing couldn't read this profile's bookmarks: the file is in use or unreadable", ImportSources.Explain(new IOException($"{path} is in use"), "this profile's bookmarks"));
+		Assert.Equal(new BookmarksFileDamagedException("Bookmarks").Message, ImportSources.Explain(new BookmarksFileDamagedException("Bookmarks"), "this profile's bookmarks"));
+	}
 }

@@ -29,15 +29,19 @@ public static class ImportSources
 	public static IReadOnlyDictionary<string, string> ProfileNames(string localStateJson)
 	{
 		using var document = JsonDocument.Parse(localStateJson);
+		return ProfileNames(document.RootElement);
+	}
+
+	private static Dictionary<string, string> ProfileNames(JsonElement localState)
+	{
 		Dictionary<string, string> names = [];
-		if (!TryProfileSection(document.RootElement, "info_cache", out var cache) || cache.ValueKind != JsonValueKind.Object) return names;
+		if (!TryProfileSection(localState, "info_cache", out var cache) || cache.ValueKind != JsonValueKind.Object) return names;
 		foreach (var entry in cache.EnumerateObject())
 			names[entry.Name] = entry.Value.ValueKind == JsonValueKind.Object && entry.Value.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String && name.GetString() is { Length: > 0 } text ? text : entry.Name;
 		return names;
 	}
 
-	/// <remarks>A file that can't be read or parsed is still a row, with <see cref="ImportSource.Error"/> set. A missing or malformed Local State is not caught.</remarks>
-	/// <exception cref="JsonException">A malformed Local State.</exception>
+	/// <remarks>A file that can't be read or parsed is still a row, with <see cref="ImportSource.Error"/> set, and so is a damaged Local State (one row for the browser). A missing Local State means no rows.</remarks>
 	public static IReadOnlyList<ImportSource> Find(string localAppData)
 	{
 		List<ImportSource> found = [];
@@ -67,17 +71,27 @@ public static class ImportSources
 		}
 	}
 
-	private static IEnumerable<ImportSource> FindChromium(ImportBrowser browser, string label, string userData)
+	private static List<ImportSource> FindChromium(ImportBrowser browser, string label, string userData)
 	{
 		var localStatePath = System.IO.Path.Combine(userData, "Local State");
-		if (!File.Exists(localStatePath)) yield break;
-		var localState = ImportFile.ReadText(localStatePath);
-		var lastUsed = LastUsedProfile(localState);
-		foreach (var (dir, name) in ProfileNames(localState))
+		if (!File.Exists(localStatePath)) return [];
+		const string what = "this browser's profile list";
+		try
 		{
-			var bookmarks = System.IO.Path.Combine(userData, dir, "Bookmarks");
-			if (NotUserProfiles.Contains(dir) || !File.Exists(bookmarks)) continue;
-			yield return Describe(new ImportSource($"{label.ToLowerInvariant()}:{dir}", browser, dir, $"{label} ({name})", bookmarks, null, null, dir == lastUsed));
+			using var document = JsonDocument.Parse(ImportFile.ReadText(localStatePath));
+			var lastUsed = TryProfileSection(document.RootElement, "last_used", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+			List<ImportSource> rows = [];
+			foreach (var (dir, name) in ProfileNames(document.RootElement))
+			{
+				var bookmarks = System.IO.Path.Combine(userData, dir, "Bookmarks");
+				if (NotUserProfiles.Contains(dir) || !File.Exists(bookmarks)) continue;
+				rows.Add(Describe(new ImportSource($"{label.ToLowerInvariant()}:{dir}", browser, dir, $"{label} ({name})", bookmarks, null, null, dir == lastUsed)));
+			}
+			return rows;
+		}
+		catch (Exception error) when (IsReadFailure(error))
+		{
+			return [new ImportSource(label.ToLowerInvariant(), browser, null, label, localStatePath, null, Explain(error, what), false)];
 		}
 	}
 
@@ -100,17 +114,24 @@ public static class ImportSources
 			var import = Read(source);
 			return source with { Bookmarks = BookmarkImport.CountLinks(import.Bar) + BookmarkImport.CountLinks(import.Other) };
 		}
-		catch (Exception error) when (error is BookmarksFileDamagedException or ChromiumBookmarksFormatException or ArcSidebarFormatException or ImportFileTooLargeException or ImportFileNotUtf8Exception or IOException or UnauthorizedAccessException)
+		catch (Exception error) when (IsReadFailure(error))
 		{
-			return source with { Error = error.Message };
+			return source with { Error = Explain(error, "this profile's bookmarks") };
 		}
 	}
 
-	private static string? LastUsedProfile(string localStateJson)
+	private static bool IsReadFailure(Exception error) =>
+		error is BookmarksFileDamagedException or ChromiumBookmarksFormatException or ArcSidebarFormatException or ImportFileTooLargeException or ImportFileNotUtf8Exception or JsonException or IOException or UnauthorizedAccessException;
+
+	/// <summary>Row errors reach the renderer, so they never carry the path that .NET puts in its IO messages.</summary>
+	internal static string Explain(Exception error, string what) => error switch
 	{
-		using var document = JsonDocument.Parse(localStateJson);
-		return TryProfileSection(document.RootElement, "last_used", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-	}
+		UnauthorizedAccessException => $"Zing couldn't read {what}: access was denied",
+		FileNotFoundException or DirectoryNotFoundException => $"Zing couldn't read {what}: the file is missing",
+		IOException => $"Zing couldn't read {what}: the file is in use or unreadable",
+		JsonException => $"Zing couldn't read {what}: the file is damaged",
+		_ => error.Message,
+	};
 
 	private static bool TryProfileSection(JsonElement root, string property, out JsonElement value)
 	{
