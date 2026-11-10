@@ -10,7 +10,7 @@
 		<InternalsVisibleTo Include="Zing.Server.Tests" />
 	</ItemGroup>
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.22" />
+		<PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.15" />
 		<PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.23.0" />
 		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
 	</ItemGroup>
