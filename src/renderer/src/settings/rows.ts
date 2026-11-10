@@ -3,6 +3,7 @@
 // Krackn's AppSettings exists to prevent, and rows.test.ts enforces it.
 import { VERTICAL_TABS } from '@shared/layout/chrome'
 import { tabOrganizationDetail, tabOrganizationLabel } from '@shared/browser/tabOrganizer'
+import { TRACKER_DOMAINS } from '@shared/browser/trackerRules'
 import {
 	AUTO_CLOSE_RULES,
 	DOH_PROVIDERS,
@@ -179,7 +180,9 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 		}),
 		toggle('linkPreviewsShiftClick', 'Shift-click previews any link', { disabled: (s) => !s.linkPreviews }),
 		toggle('linkPreviewsFromNewWindows', 'Links that open a new window preview too', { disabled: (s) => !s.linkPreviews }),
-		toggle('blockTrackers', 'Block trackers', { detail: 'Refuses tracking domains and strips tracking parameters.' }),
+		toggle('blockTrackers', 'Block trackers', {
+			detail: `Refuses ${TRACKER_DOMAINS.length} tracking domains and strips tracking parameters.`,
+		}),
 		toggle('restoreTabs', 'Reopen tabs from last time', {
 			detail: (s) => (s.restoreTabs ? 'Your open tabs are saved to a file on this PC. Relaunch to apply.' : undefined),
 			warning: (s) => s.restoreTabs,

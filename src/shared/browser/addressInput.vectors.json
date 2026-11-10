@@ -19,7 +19,7 @@
 	"resolve": [
 		{ "name": "goes to a real address and adds https", "input": "docs.google.com", "engine": "google", "expected": "https://docs.google.com" },
 		{ "name": "searches for node.js rather than visiting it", "input": "node.js", "engine": "duckduckgo", "expected": "https://duckduckgo.com/?q=node.js" },
-		{ "name": "strips tracking parameters from addresses", "input": "https://example.com/a?utm_source=x&id=1", "engine": "google", "expected": "https://example.com/a?id=1" },
+		{ "name": "leaves tracking parameters to the tab, which strips them while blockTrackers is on", "input": "https://example.com/a?utm_source=x&id=1", "engine": "google", "expected": "https://example.com/a?utm_source=x&id=1" },
 		{ "name": "blank input resolves to nothing", "input": "   ", "engine": "google", "expected": null },
 		{ "name": "search text is encoded like encodeURIComponent", "input": "what's (new)! a&b=c é", "engine": "google", "expected": "https://www.google.com/search?q=what's%20(new)!%20a%26b%3Dc%20%C3%A9" }
 	]

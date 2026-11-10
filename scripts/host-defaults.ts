@@ -8,6 +8,7 @@ import { shortcutLabel } from '../src/shared/commands/shortcut'
 import { emptyLibrary } from '../src/shared/library/library'
 import { nativeTypes, viewableLists } from '../src/shared/convert/viewable'
 import { tabOrganizationLabel, tabOrganizations } from '../src/shared/browser/tabOrganizer'
+import { TRACKER_DOMAINS } from '../src/shared/browser/trackerRules'
 import { CHROME_LAYOUT, LIBRARY_PANEL_WIDTH } from '../src/shared/ipc'
 import { VERTICAL_TABS } from '../src/shared/layout/chrome'
 import {
@@ -137,6 +138,7 @@ export function hostDefaults(): Record<string, unknown> {
 		'menu.json': MENU_LAYOUT,
 		'tab-organizations.json': tabOrganizations.map((id) => ({ id, label: tabOrganizationLabel[id] })),
 		'search-engines.json': SEARCH_URLS,
+		'tracker-domains.json': TRACKER_DOMAINS,
 		'viewable.json': { native: nativeTypes, ...viewableLists },
 		'autofill.json': { detectionScript, messageKey: autofillBridgeName, fillFunction: autofillFillFunction, pickerEnterFlag: autofillPickerEnterFlag },
 		'layout.json': { ...CHROME_LAYOUT, sidebarColumnWidth: SIDEBAR_COLUMN_WIDTH, libraryPanelWidth: LIBRARY_PANEL_WIDTH, verticalTabs: VERTICAL_TABS },

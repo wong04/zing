@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Zing.Core;
+using Zing.Core.LinkPreview;
 
 namespace Zing.Core.Tests;
 
@@ -229,6 +230,22 @@ public sealed class ChromeApiTests : IDisposable
 		_api.OpenLink("https://two.example/");
 		Assert.Equal(2, _api.Tabs.Records.Count);
 		Assert.Throws<UnsupportedUrlException>(() => _api.OpenLink("ms-settings:"));
+	}
+
+	[Fact]
+	public async Task With_blockTrackers_off_links_and_typed_addresses_keep_their_parameters()
+	{
+		_settings.Set("blockTrackers", System.Text.Json.Nodes.JsonValue.Create(false));
+		_api.OpenLink("https://example.com/?utm_source=x");
+		Assert.Equal("https://example.com/?utm_source=x", Assert.Single(_api.Tabs.Records).Url);
+		_api.OpenLink("https://two.example/?fbclid=1");
+		Assert.Equal("https://two.example/?fbclid=1", _api.Tabs.Records[^1].Url);
+		Value(await Invoke("tabs:navigate", ActiveId, "https://two.example/?utm_source=x&id=1"));
+		Assert.Equal("https://two.example/?utm_source=x&id=1", _api.Tabs.Get(ActiveId).Url);
+		Assert.Equal(NavigationDecision.Allow, ActivePage.Events.Navigating("https://two.example/", "https://three.example/?gclid=1", NavigationCause.Other));
+
+		_settings.Set("blockTrackers", System.Text.Json.Nodes.JsonValue.Create(true));
+		Assert.Equal(new NavigationDecision.Redirect("https://three.example/"), ActivePage.Events.Navigating("https://two.example/", "https://three.example/?gclid=1", NavigationCause.Other));
 	}
 
 	[Fact]

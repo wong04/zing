@@ -184,7 +184,7 @@ public sealed class ChromeApi : IDisposable
 		_host = host;
 		_appVersion = appVersion;
 		_placement = OutputPlacement.ForSettings(app.Settings);
-		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text), PeekSettings, host.Scheduler);
+		Tabs = new TabService(new TabStore(app.Now), host.Pages, BlankUrl, OnTabsChanged, LoadFailed, InterceptNavigation, app.SiteData, (_, text) => host.Notify(text), PeekSettings, host.Scheduler, () => Flag("blockTrackers"));
 		Saved = new SavedTabs(Tabs, app.Library);
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
@@ -510,7 +510,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		AssertNavigable(url);
 		if (Tabs.Records is [var only] && (only.Url == TabStore.NewTabUrl || StartPage.IsStartPage(only.Url))) Navigate(only.Id, url);
-		else Tabs.Open(LinkCleaner.StripTrackers(url));
+		else Tabs.Open(Tabs.CleanLink(url));
 	}
 
 	/// <summary>A link tile: one new tab at the address, so there is no blank page behind it in Back and the keyboard stays with the page.</summary>

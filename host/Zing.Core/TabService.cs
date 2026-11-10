@@ -134,6 +134,7 @@ public sealed class TabService
 	private readonly Action<TabRecord, string> _pageNotice;
 	private readonly Func<PeekSettings>? _peekSettings;
 	private readonly IScheduler? _scheduler;
+	private readonly Func<bool> _blockTrackers;
 	/// <summary>New windows held, hidden, until their first real document says whether they are a preview or a tab; each with its timer once the engine has the window.</summary>
 	private readonly Dictionary<PendingPopup, IDisposable?> _pending = [];
 	/// <summary>The icons of the open preview's pages, kept for the tab an expanded one becomes.</summary>
@@ -175,8 +176,10 @@ public sealed class TabService
 	/// <param name="intercept">The window's say over a navigation (the start page's search and settings links); null leaves it to tracker stripping.</param>
 	/// <param name="peekSettings">The link preview settings, read at each link; null means links never preview.</param>
 	/// <param name="scheduler">Makes held new windows that load no document tabs; null leaves them until their opener's tab closes.</param>
-	public TabService(TabStore store, IPageHost host, string blankUrl, Action changed, Action<TabRecord, string> loadFailed, Func<string, string, string, NavigationDecision?>? intercept = null, SiteDataKeeper? siteData = null, Action<TabRecord, string>? pageNotice = null, Func<PeekSettings>? peekSettings = null, IScheduler? scheduler = null)
+	/// <param name="blockTrackers">The blockTrackers setting, read at each navigation; null means tracking parameters are always stripped.</param>
+	public TabService(TabStore store, IPageHost host, string blankUrl, Action changed, Action<TabRecord, string> loadFailed, Func<string, string, string, NavigationDecision?>? intercept = null, SiteDataKeeper? siteData = null, Action<TabRecord, string>? pageNotice = null, Func<PeekSettings>? peekSettings = null, IScheduler? scheduler = null, Func<bool>? blockTrackers = null)
 	{
+		_blockTrackers = blockTrackers ?? (() => true);
 		_peekSettings = peekSettings;
 		_scheduler = scheduler;
 		_pageNotice = pageNotice ?? ((_, _) => { });
@@ -422,11 +425,14 @@ public sealed class TabService
 		if (_store.ActiveId != keep) Activate(keep);
 	}
 
+	/// <summary>The URL without its tracking parameters while blockTrackers is on (Krackn's BrowserTab.load), else as given.</summary>
+	public string CleanLink(string url) => _blockTrackers() ? LinkCleaner.StripTrackers(url) : url;
+
 	/// <summary>Loads a ready URL (the window has already resolved what was typed).</summary>
 	public void Navigate(string id, string url)
 	{
 		if (Preview?.SourceTabId == id) ClosePreview();
-		var clean = LinkCleaner.StripTrackers(url);
+		var clean = CleanLink(url);
 		_store.Update(id, new TabContentPatch(Url: clean));
 		if (_pages.TryGetValue(id, out var page)) page.Navigate(clean);
 		_changed();
@@ -807,7 +813,7 @@ public sealed class TabService
 				if (decision is NavigationDecision.Redirect redirect) service.Update(id, new TabContentPatch(Url: redirect.Url));
 				return decision;
 			}
-			var clean = LinkCleaner.StripTrackers(to);
+			var clean = service.CleanLink(to);
 			var link = new LinkRequest(from, to, LinkTrigger.Navigation, cause, default, HasPopupFeatures: false, FromPreview: false);
 			if (service.Verdict(id, link) == PeekVerdict.Preview)
 			{
@@ -905,7 +911,7 @@ public sealed class TabService
 			// Inspection is keyed by the source tab, so without it the link can't be inspected: refuse rather than fail open.
 			if (!service._store.Has(sourceId)) return NavigationDecision.Cancel;
 			if (service._intercept(sourceId, from, to) is { } decision) return decision;
-			var clean = LinkCleaner.StripTrackers(to);
+			var clean = service.CleanLink(to);
 			return clean == to ? NavigationDecision.Allow : new NavigationDecision.Redirect(clean);
 		}
 

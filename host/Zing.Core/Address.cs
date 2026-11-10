@@ -143,11 +143,11 @@ public sealed class Address(IReadOnlyDictionary<string, string> searchUrls)
 
 	public sealed class BlankAddressException() : ArgumentException("There is nothing to open: the address is blank");
 
-	/// <summary>The URL to load: a place to go (tracker-free) or a search on the chosen engine. Throws for blank input.</summary>
+	/// <summary>The URL to load: a place to go or a search on the chosen engine. Throws for blank input. The tab strips trackers (TabService.CleanLink).</summary>
 	public string Resolve(string input, string searchEngine)
 	{
 		var result = AddressInput.Classify(input) ?? throw new BlankAddressException();
-		if (result is AddressInputResult.Url url) return LinkCleaner.StripTrackers(url.Value);
+		if (result is AddressInputResult.Url url) return url.Value;
 		if (!searchUrls.TryGetValue(searchEngine, out var search)) throw new UnknownSearchEngineException(searchEngine);
 		return search + EncodeUriComponent(((AddressInputResult.Search)result).Text);
 	}
