@@ -52,6 +52,26 @@ public sealed class MergeTests
 	}
 
 	[Fact]
+	public void AnImportThatAddsNothingNeitherSavesNorNotifies()
+	{
+		var saved = new List<BrowserLibrary>();
+		var heard = new List<BrowserLibrary>();
+		var store = new LibraryStore(Library.EmptyLibrary(1), saved.Add, () => 7, Counter());
+		var result = new BookmarkImport([new ImportedLink("GitHub", "https://github.com/")], [new ImportedLink("News", "https://news.example/")], []);
+		store.Import(result, "Chrome");
+		var before = store.Snapshot;
+		saved.Clear();
+		store.Subscribe(heard.Add);
+
+		var outcome = store.Import(result, "Chrome");
+
+		Assert.Equal(0, outcome.AddedToBar + outcome.AddedToFolder);
+		Assert.Same(before, store.Snapshot);
+		Assert.Empty(saved);
+		Assert.Empty(heard);
+	}
+
+	[Fact]
 	public void ImportSavesAndNotifies()
 	{
 		var saved = new List<BrowserLibrary>();

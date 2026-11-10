@@ -124,6 +124,28 @@ public sealed class ParserTests : IDisposable
 	}
 
 	[Fact]
+	public void AnArcSidebarWithATabTitledRootsIsStillReadAsArc()
+	{
+		var text = Fixture("arc-sidebar.json").Replace("\"title\": \"Renamed\"", "\"title\": \"roots\"", StringComparison.Ordinal);
+		Assert.Contains("\"roots\"", text);
+		var path = Write("StorableSidebar.json", System.Text.Encoding.UTF8.GetBytes(text));
+
+		Assert.Equivalent(ArcSidebar.Parse(text), ImportFile.ParseBookmarks(path));
+	}
+
+	[Fact]
+	public void ReadsBookmarksNestedDeeperThanTheJsonDefaultLimit()
+	{
+		var folder = "{\"type\":\"url\",\"name\":\"Deep\",\"url\":\"https://deep.example/\"}";
+		for (var i = 0; i < 60; i++) folder = $"{{\"type\":\"folder\",\"name\":\"L{i}\",\"children\":[{folder}]}}";
+		var json = $"{{\"roots\":{{\"bookmark_bar\":{{\"type\":\"folder\",\"children\":[{folder}]}}}}}}";
+		var path = Write("Bookmarks", System.Text.Encoding.UTF8.GetBytes(json));
+
+		Assert.Equal(1, BookmarkImport.CountLinks(ChromiumBookmarks.Parse(json).Bar));
+		Assert.Equal(1, BookmarkImport.CountLinks(ImportFile.ParseBookmarks(path).Bar));
+	}
+
+	[Fact]
 	public void SniffingToleratesABomAndLeadingWhitespace()
 	{
 		var path = Write("bom.json", [0xEF, 0xBB, 0xBF, .. "\n  "u8.ToArray(), .. System.Text.Encoding.UTF8.GetBytes(Fixture("chromium-bookmarks.json"))]);
@@ -157,7 +179,7 @@ public sealed class ParserTests : IDisposable
 	public void TruncatedJsonWithoutEitherKeyAndTooDeepJsonAreDamagedToo()
 	{
 		var broken = Write("broken.json", "{\"x\": "u8.ToArray());
-		var deep = Write("deep.json", System.Text.Encoding.UTF8.GetBytes("{\"roots\":" + new string('[', 200) + new string(']', 200) + "}"));
+		var deep = Write("deep.json", System.Text.Encoding.UTF8.GetBytes("{\"roots\":" + new string('[', 300) + new string(']', 300) + "}"));
 
 		Assert.Throws<BookmarksFileDamagedException>(() => ImportFile.ParseBookmarks(broken));
 		Assert.Throws<BookmarksFileDamagedException>(() => ImportFile.ParseBookmarks(deep));

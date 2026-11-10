@@ -20,9 +20,15 @@ public static class ArcSidebar
 	/// <exception cref="ArcSidebarFormatException">Valid JSON that isn't the layout Zing knows.</exception>
 	public static BookmarkImport Parse(string json)
 	{
-		using var document = JsonDocument.Parse(json);
-		if (document.RootElement.ValueKind != JsonValueKind.Object
-			|| !document.RootElement.TryGetProperty("sidebar", out var sidebar) || sidebar.ValueKind != JsonValueKind.Object
+		using var document = JsonDocument.Parse(json, BookmarkImport.JsonOptions);
+		return Parse(document.RootElement);
+	}
+
+	/// <exception cref="ArcSidebarFormatException">Not the layout Zing knows.</exception>
+	public static BookmarkImport Parse(JsonElement root)
+	{
+		if (root.ValueKind != JsonValueKind.Object
+			|| !root.TryGetProperty("sidebar", out var sidebar) || sidebar.ValueKind != JsonValueKind.Object
 			|| !sidebar.TryGetProperty("containers", out var containers) || containers.ValueKind != JsonValueKind.Array)
 			throw new ArcSidebarFormatException("No sidebar.containers array");
 		var main = containers.EnumerateArray().FirstOrDefault(c => c.ValueKind == JsonValueKind.Object && c.TryGetProperty("spaces", out _) && c.TryGetProperty("items", out _));

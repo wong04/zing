@@ -55,9 +55,10 @@ public static partial class ImportFile
 			var fileName = Path.GetFileName(path);
 			try
 			{
-				JsonDocument.Parse(text).Dispose();
-				if (text.Contains("\"roots\"", StringComparison.Ordinal)) return ChromiumBookmarks.Parse(text);
-				if (text.Contains("\"sidebar\"", StringComparison.Ordinal)) return ArcSidebar.Parse(text);
+				using var document = JsonDocument.Parse(text, BookmarkImport.JsonOptions);
+				var root = document.RootElement;
+				if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("roots", out _)) return ChromiumBookmarks.Parse(root);
+				if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("sidebar", out _)) return ArcSidebar.Parse(root);
 			}
 			catch (JsonException)
 			{

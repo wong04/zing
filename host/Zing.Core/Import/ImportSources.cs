@@ -91,7 +91,7 @@ public static class ImportSources
 		}
 		catch (Exception error) when (IsReadFailure(error))
 		{
-			return [new ImportSource(label.ToLowerInvariant(), browser, null, label, localStatePath, null, Explain(error, what), false)];
+			return [new ImportSource(label.ToLowerInvariant(), browser, null, label, localStatePath, null, ImportErrors.Explain(error, what), false)];
 		}
 	}
 
@@ -106,7 +106,7 @@ public static class ImportSources
 		}
 		catch (Exception error) when (IsReadFailure(error))
 		{
-			return new ImportSource("arc", ImportBrowser.Arc, null, "Arc", packages, null, Explain(error, "Arc's sidebar"), false);
+			return new ImportSource("arc", ImportBrowser.Arc, null, "Arc", packages, null, ImportErrors.Explain(error, "Arc's sidebar"), false);
 		}
 		foreach (var package in arcPackages.Order(StringComparer.Ordinal))
 		{
@@ -125,22 +125,12 @@ public static class ImportSources
 		}
 		catch (Exception error) when (IsReadFailure(error))
 		{
-			return source with { Error = Explain(error, "this profile's bookmarks") };
+			return source with { Error = ImportErrors.Explain(error, "this profile's bookmarks") };
 		}
 	}
 
 	private static bool IsReadFailure(Exception error) =>
 		error is BookmarksFileDamagedException or ChromiumBookmarksFormatException or ArcSidebarFormatException or ImportFileTooLargeException or ImportFileNotUtf8Exception or JsonException or IOException or UnauthorizedAccessException;
-
-	/// <summary>Row errors reach the renderer, so they never carry the path that .NET puts in its IO messages.</summary>
-	internal static string Explain(Exception error, string what) => error switch
-	{
-		UnauthorizedAccessException => $"Zing couldn't read {what}: access was denied",
-		FileNotFoundException or DirectoryNotFoundException => $"Zing couldn't read {what}: the file is missing",
-		IOException => $"Zing couldn't read {what}: the file is in use or unreadable",
-		JsonException => $"Zing couldn't read {what}: the file is damaged",
-		_ => error.Message,
-	};
 
 	private static bool TryProfileSection(JsonElement root, string property, out JsonElement value)
 	{

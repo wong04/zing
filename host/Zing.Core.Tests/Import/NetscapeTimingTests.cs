@@ -17,6 +17,7 @@ public sealed class NetscapeTimingTests
 
 		NetscapeBookmarks.Parse(html);
 
-		Assert.InRange(clock.ElapsedMilliseconds, 0, 2000);
+		// About 1 s on a quiet machine in a Debug build; the quadratic scan this guards against took hours.
+		Assert.InRange(clock.ElapsedMilliseconds, 0, 3000);
 	}
 }

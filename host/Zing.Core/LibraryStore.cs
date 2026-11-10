@@ -154,7 +154,7 @@ public sealed class LibraryStore
 	public MergeOutcome Import(BookmarkImport result, string source)
 	{
 		var outcome = ImportMerge.Merge(Snapshot, result, source, _now(), _newId);
-		Set(outcome.Library);
+		if (!ReferenceEquals(outcome.Library, Snapshot)) Set(outcome.Library);
 		return outcome;
 	}
 

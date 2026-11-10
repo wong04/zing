@@ -14,8 +14,14 @@ public static class ChromiumBookmarks
 	/// <exception cref="ChromiumBookmarksFormatException">Valid JSON that isn't a Bookmarks file.</exception>
 	public static BookmarkImport Parse(string json)
 	{
-		using var document = JsonDocument.Parse(json);
-		if (document.RootElement.ValueKind != JsonValueKind.Object || !document.RootElement.TryGetProperty("roots", out var roots) || roots.ValueKind != JsonValueKind.Object)
+		using var document = JsonDocument.Parse(json, BookmarkImport.JsonOptions);
+		return Parse(document.RootElement);
+	}
+
+	/// <exception cref="ChromiumBookmarksFormatException">Not a Bookmarks file.</exception>
+	public static BookmarkImport Parse(JsonElement root)
+	{
+		if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("roots", out var roots) || roots.ValueKind != JsonValueKind.Object)
 			throw new ChromiumBookmarksFormatException("No \"roots\" object; this is not a Chromium Bookmarks file");
 		List<string> skipped = [];
 		var bar = ConvertChildren(Root(roots, "bookmark_bar"), skipped);

@@ -101,7 +101,8 @@ public static partial class NetscapeBookmarks
 	private static List<ImportedNode> UnwrapSingleRoot(List<ImportedNode> nodes) =>
 		nodes is [ImportedFolder { Title: "" } only] ? [.. only.Children] : nodes;
 
-	public static string DecodeEntities(string text) => Entity().Replace(text, match =>
+	// Most titles and addresses hold no entity; skipping the regex for them is most of the time a big export takes.
+	public static string DecodeEntities(string text) => !text.Contains('&') ? text : Entity().Replace(text, match =>
 	{
 		var body = match.Groups[1].Value;
 		if (body[0] == '#')

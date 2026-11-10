@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Zing.Core.Import;
@@ -19,6 +20,9 @@ public sealed record ImportedFolder(string Title, IReadOnlyList<ImportedNode> Ch
 public sealed record BookmarkImport(IReadOnlyList<ImportedNode> Bar, IReadOnlyList<ImportedNode> Other, IReadOnlyList<string> Skipped)
 {
 	internal const string NotHttpReason = "only http(s) addresses can be bookmarks";
+
+	/// <summary>JSON's default depth of 64 is only some 30 folders deep in a Bookmarks file; real ones can go further.</summary>
+	internal static readonly JsonDocumentOptions JsonOptions = new() { MaxDepth = 256 };
 
 	/// <summary>Only http(s) addresses become bookmarks: a javascript: bookmarklet would run in whatever page is open.</summary>
 	public static bool AcceptsBookmarkUrl(string url) =>

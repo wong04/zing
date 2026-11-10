@@ -262,10 +262,10 @@ public sealed class ImportSourcesTests : IDisposable
 	public void ErrorsNeverCarryAPath()
 	{
 		var path = Path.Combine(root, "secret", "Bookmarks");
-		Assert.Equal("Zing couldn't read this profile's bookmarks: the file is missing", ImportSources.Explain(new FileNotFoundException($"Could not find {path}", path), "this profile's bookmarks"));
-		Assert.Equal("Zing couldn't read this profile's bookmarks: the file is missing", ImportSources.Explain(new DirectoryNotFoundException($"Could not find {path}"), "this profile's bookmarks"));
-		Assert.Equal("Zing couldn't read this profile's bookmarks: access was denied", ImportSources.Explain(new UnauthorizedAccessException($"Access to {path} is denied"), "this profile's bookmarks"));
-		Assert.Equal("Zing couldn't read this profile's bookmarks: the file is in use or unreadable", ImportSources.Explain(new IOException($"{path} is in use"), "this profile's bookmarks"));
-		Assert.Equal(new BookmarksFileDamagedException("Bookmarks").Message, ImportSources.Explain(new BookmarksFileDamagedException("Bookmarks"), "this profile's bookmarks"));
+		Assert.Equal("Zing couldn't read this profile's bookmarks: the file is missing", ImportErrors.Explain(new FileNotFoundException($"Could not find {path}", path), "this profile's bookmarks"));
+		Assert.Equal("Zing couldn't read this profile's bookmarks: the file is missing", ImportErrors.Explain(new DirectoryNotFoundException($"Could not find {path}"), "this profile's bookmarks"));
+		Assert.Equal("Zing couldn't read this profile's bookmarks: access was denied", ImportErrors.Explain(new UnauthorizedAccessException($"Access to {path} is denied"), "this profile's bookmarks"));
+		Assert.Equal("Zing couldn't read this profile's bookmarks: the file is in use or unreadable", ImportErrors.Explain(new IOException($"{path} is in use"), "this profile's bookmarks"));
+		Assert.Equal(new BookmarksFileDamagedException("Bookmarks").Message, ImportErrors.Explain(new BookmarksFileDamagedException("Bookmarks"), "this profile's bookmarks"));
 	}
 }

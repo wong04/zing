@@ -10,18 +10,25 @@ public interface IDefaultBrowserReader
 /// <summary>Names the import source that belongs to the user's default browser.</summary>
 public static class DefaultBrowserSource
 {
+	// A side-by-side install (Beta, Dev, Canary, or one per user) registers the base ProgId plus "." and a suffix.
+	private static readonly (string ProgId, ImportBrowser Browser)[] ChromiumProgIds =
+	[
+		("ChromeHTML", ImportBrowser.Chrome),
+		("MSEdgeHTM", ImportBrowser.Edge),
+		("BraveHTML", ImportBrowser.Brave),
+	];
+
 	public static ImportBrowser? BrowserFor(string? progId)
 	{
 		if (string.IsNullOrEmpty(progId)) return null;
 		// Arc's ProgId isn't known yet: any "Arc..." matches. To verify in the owner's hand check (Task 16).
 		if (progId.StartsWith("Arc", StringComparison.OrdinalIgnoreCase)) return ImportBrowser.Arc;
-		return progId switch
+		foreach (var (known, browser) in ChromiumProgIds)
 		{
-			"ChromeHTML" => ImportBrowser.Chrome,
-			"MSEdgeHTM" => ImportBrowser.Edge,
-			"BraveHTML" => ImportBrowser.Brave,
-			_ => null,
-		};
+			if (progId.Equals(known, StringComparison.OrdinalIgnoreCase)) return browser;
+			if (progId.Length > known.Length + 1 && progId.StartsWith(known + ".", StringComparison.OrdinalIgnoreCase)) return browser;
+		}
+		return null;
 	}
 
 	public static ImportSource? Pick(string? progId, IReadOnlyList<ImportSource> sources)

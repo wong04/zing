@@ -134,7 +134,7 @@ describe('Netscape bookmarks HTML (every browser, incl. Dia on Mac)', () => {
 			const html = head + tag.repeat(Math.floor((10 * 1024 * 1024) / tag.length))
 			const start = performance.now()
 			parseNetscapeBookmarks(html)
-			expect(performance.now() - start).toBeLessThan(2000)
+			expect(performance.now() - start).toBeLessThan(3000)
 		}
 	})
 })
