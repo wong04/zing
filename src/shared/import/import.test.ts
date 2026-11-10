@@ -201,8 +201,8 @@ describe('Arc item cap', () => {
 				],
 			},
 		})
-	it('still parses a sidebar just under the cap', () => {
-		expect(countLinks(parseArcSidebar(sidebarOf(49_000)).other)).toBe(49_000)
+	it('still parses a sidebar exactly at the cap', () => {
+		expect(countLinks(parseArcSidebar(sidebarOf(50_000)).other)).toBe(50_000)
 	})
 	it('refuses one just over it', () => expect(() => parseArcSidebar(sidebarOf(50_001))).toThrow("Arc's sidebar has too many items"))
 })

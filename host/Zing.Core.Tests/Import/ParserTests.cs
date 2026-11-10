@@ -81,11 +81,11 @@ public sealed class ParserTests : IDisposable
 	}
 
 	[Fact]
-	public void AnArcSidebarJustUnderTheItemCapStillParses()
+	public void AnArcSidebarExactlyAtTheItemCapStillParses()
 	{
-		var result = ArcSidebar.Parse(SidebarOf(49_000));
+		var result = ArcSidebar.Parse(SidebarOf(50_000));
 
-		Assert.Equal(49_000, BookmarkImport.CountLinks(result.Other));
+		Assert.Equal(50_000, BookmarkImport.CountLinks(result.Other));
 	}
 
 	[Fact]
