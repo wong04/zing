@@ -26,7 +26,8 @@ public static partial class ImportFile
 	/// <exception cref="ImportFileNotUtf8Exception">Not UTF-8 text.</exception>
 	public static string ReadText(string path)
 	{
-		using var stream = File.OpenRead(path);
+		// A running browser holds its profile files open for writing; sharing like it does is what lets us read them.
+		using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 		if (stream.Length > MaxBytes) throw new ImportFileTooLargeException();
 		var bytes = new byte[stream.Length];
 		stream.ReadExactly(bytes);

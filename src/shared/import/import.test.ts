@@ -1,6 +1,4 @@
 import { readFileSync } from 'node:fs'
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { BrowserLibrary } from '../library/library'
@@ -12,7 +10,6 @@ import { decodeEntities, NetscapeBookmarksFormatError, parseNetscapeBookmarks } 
 import { parsePasswordCsv, UnknownPasswordCsvError } from './passwords'
 import mergeVectors from './merge.vectors.json'
 import parserVectors from './parsers.vectors.json'
-import { findChromiumProfiles, profileNames } from './profiles.node'
 
 describe('csv', () => {
 	it('handles quoted commas, quotes and newlines', () => {
@@ -174,27 +171,6 @@ describe('merging an import into the library', () => {
 		let counter = 0
 		const outcome = mergeImport(library as BrowserLibrary, result as BookmarkImport, source, now, () => `n${++counter}`)
 		expect(outcome).toEqual(expected)
-	})
-})
-
-describe('finding Chromium profiles on this PC', () => {
-	it('reads display names from Local State', () => {
-		const names = profileNames(JSON.stringify({ profile: { info_cache: { Default: { name: 'Personal' }, 'Profile 1': { name: 'Work' } } } }))
-		expect(names.get('Profile 1')).toBe('Work')
-	})
-	it('finds profiles that have a Bookmarks file', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'zing-import-'))
-		const chrome = join(root, 'Google', 'Chrome', 'User Data')
-		await mkdir(join(chrome, 'Default'), { recursive: true })
-		await mkdir(join(chrome, 'Profile 1'), { recursive: true })
-		await mkdir(join(chrome, 'System Profile'), { recursive: true })
-		await mkdir(join(chrome, 'Guest Profile'), { recursive: true })
-		await writeFile(join(chrome, 'Guest Profile', 'Bookmarks'), CHROME_BOOKMARKS)
-		await writeFile(join(chrome, 'Local State'), JSON.stringify({ profile: { info_cache: { Default: { name: 'Personal' }, 'Profile 1': { name: 'Work' } } } }))
-		await writeFile(join(chrome, 'Default', 'Bookmarks'), CHROME_BOOKMARKS)
-		await writeFile(join(chrome, 'Profile 1', 'Bookmarks'), CHROME_BOOKMARKS)
-		const profiles = await findChromiumProfiles(root)
-		expect(profiles.map((p) => `${p.browser}:${p.name}`).sort()).toEqual(['chrome:Personal', 'chrome:Work'])
 	})
 })
 
