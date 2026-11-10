@@ -14,7 +14,11 @@
 		{ "name": "http and https do not pair", "a": "https://bank.com", "b": "http://bank.com", "expected": false },
 		{ "name": "another port does not pair", "a": "https://bank.com", "b": "https://bank.com:8443", "expected": false },
 		{ "name": "the same address pairs", "a": "http://127.0.0.1:3000", "b": "http://127.0.0.1:3000", "expected": true },
-		{ "name": "another address does not", "a": "http://127.0.0.1:3000", "b": "http://127.0.0.2:3000", "expected": false }
+		{ "name": "another address does not", "a": "http://127.0.0.1:3000", "b": "http://127.0.0.2:3000", "expected": false },
+		{ "name": "the same IPv6 address pairs", "a": "http://[::1]:3000", "b": "http://[::1]:3000", "expected": true },
+		{ "name": "localhost pairs with itself", "a": "http://localhost:3000", "b": "http://localhost:3000", "expected": true },
+		{ "name": "an intranet name pairs with itself", "a": "http://router", "b": "http://router", "expected": true },
+		{ "name": "a host that is itself a suffix pairs only with itself", "a": "https://github.io", "b": "https://alice.github.io", "expected": false }
 	],
 	"outcomes": [
 		{ "name": "the same origin with no password box any more is a success", "submitted": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": false, "expected": "success" },

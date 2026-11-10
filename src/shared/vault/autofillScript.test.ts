@@ -509,6 +509,11 @@ describe('sign-in reports', () => {
 			expect(messages).toEqual([])
 		}
 	})
+	it('a sign-in form with a visible username still reports a box labelled PIN or passcode', () => {
+		install()
+		submit(formOf({ type: 'email', value: 'ada' }, { type: 'password', value: '1234', name: 'pin' }).form)
+		expect(messages).toEqual([{ kind: 'submit', username: 'ada', password: '1234' }])
+	})
 	it('Enter in a username box with no password box on the page reports that box\'s username step', () => {
 		install()
 		const owner = Object.assign(doc, { defaultView: win })

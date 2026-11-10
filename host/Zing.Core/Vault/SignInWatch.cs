@@ -30,6 +30,8 @@ public static class SignInOutcomes
 	{
 		if (!Uri.TryCreate(a, UriKind.Absolute, out var x) || !Uri.TryCreate(b, UriKind.Absolute, out var y)) return false;
 		if (x.Scheme != y.Scheme || x.Port != y.Port) return false;
+		// localhost, an intranet name or a host that is itself a suffix has no registrable domain, but is its own site.
+		if (x.IdnHost == y.IdnHost) return true;
 		return PublicSuffix.RegistrableDomain(x.IdnHost) is { } site && site == PublicSuffix.RegistrableDomain(y.IdnHost);
 	}
 }
@@ -167,14 +169,13 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 	public void Submitted(string pageId, string origin, string username, string password, string? hiddenUsername = null)
 	{
 		if (vault() is not { } store) return;
+		if (username.Length == 0)
+			username = (_steps.TryGetValue(pageId, out var step) && SignInOutcomes.SameSite(step.Origin, origin) ? step.Username : hiddenUsername) ?? "";
+		// A password alone (a re-auth box, a code page) isn't a sign-in to offer, and leaves an open prompt be.
+		if (username.Length == 0) return;
 		Drop(pageId);
 		// Nothing will be offered for it, so don't hold its password at all.
 		if (store.IsNeverSave(origin)) return;
-		if (username.Length == 0)
-		{
-			username = (_steps.TryGetValue(pageId, out var step) && SignInOutcomes.SameSite(step.Origin, origin) ? step.Username : hiddenUsername) ?? "";
-			if (username.Length == 0) return;
-		}
 		var held = new Held(origin, username, password, FilledByZing(pageId, origin, username, password));
 		held.Timer = scheduler.Schedule(HoldFor, () => Expire(pageId, held));
 		_held[pageId] = held;

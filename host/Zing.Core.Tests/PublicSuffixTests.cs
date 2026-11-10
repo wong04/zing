@@ -49,9 +49,16 @@ public sealed partial class PublicSuffixTests
 	[InlineData("login.microsoftonline.com", "microsoftonline.com")]
 	[InlineData("www.example.co.uk.", "example.co.uk")]
 	[InlineData("127.0.0.1", "127.0.0.1")]
-	[InlineData("[::1]", "[::1]")]
+	[InlineData("xn--a.attacker.example", "attacker.example")]
 	public void Shared_hosts_are_their_own_sites_and_addresses_are_themselves(string host, string? expected)
 	{
 		Assert.Equal(expected, PublicSuffix.RegistrableDomain(host));
+	}
+
+	[Fact]
+	public void An_IPv6_host_as_a_Uri_gives_it_is_itself()
+	{
+		var host = new Uri("http://[::1]:3000/").IdnHost;
+		Assert.Equal(host, PublicSuffix.RegistrableDomain(host));
 	}
 }

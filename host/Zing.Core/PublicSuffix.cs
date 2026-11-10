@@ -23,9 +23,11 @@ public static class PublicSuffix
 	{
 		var host = rawHost.ToLowerInvariant();
 		if (host.EndsWith('.')) host = host[..^1];
-		if (host.StartsWith('[') || Zing.Core.RegistrableDomain.IsRawIPv4(host)) return host;
+		// Uri.IdnHost gives an IPv6 address without its brackets.
+		if (host.Contains(':') || Zing.Core.RegistrableDomain.IsRawIPv4(host)) return host;
 		if (host.Length == 0 || host.StartsWith('.')) return null;
-		var labels = Idn.GetAscii(host).Split('.');
+		// A host from a Uri is already ASCII, and IdnMapping throws on a malformed xn-- label a page can choose.
+		var labels = (host.All(char.IsAscii) ? host : Idn.GetAscii(host)).Split('.');
 		if (labels.Any(l => l.Length == 0)) return null;
 		var suffixStart = SuffixStart(labels, List.Value);
 		return suffixStart == 0 ? null : string.Join('.', labels[(suffixStart - 1)..]);

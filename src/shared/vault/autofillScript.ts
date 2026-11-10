@@ -179,7 +179,7 @@ export const detectionScript = `(() => {
   // username, the username is empty (the host may have one from the page before) and a hidden field marked as the
   // username, which sites put on a password page for password managers, goes as hiddenUsername.
   const credentials = scope => {
-    const boxes = passwordBoxes(scope).filter(el => el.value && !looksLikeCode(el));
+    const boxes = passwordBoxes(scope).filter(el => el.value);
     if (boxes.length === 0) return null;
     // Sign-up forms repeat the password; a change-password form has two different ones.
     if (boxes.some(el => el.value !== boxes[0].value)) return null;
@@ -190,6 +190,9 @@ export const detectionScript = `(() => {
     const username = before.length ? before[before.length - 1].value : '';
     if (username.length > ${signInLimits.usernameMax}) return null;
     if (username) return { username, password, boxes };
+    // Only a password with no username is ever paired, so only there can a code pass for one; a sign-in form whose
+    // box is labelled "PIN" or "passcode" is still a sign-in.
+    if (looksLikeCode(boxes[0])) return null;
     const marked = inputs.filter(el => usernameLike(el) && !visible(el)
       && ((el.autocomplete || '').toLowerCase().includes('username') || (el.type || '').toLowerCase() === 'email'));
     return marked.length ? { username, password, boxes, hiddenUsername: marked[marked.length - 1].value } : { username, password, boxes };

@@ -696,6 +696,16 @@ public sealed class SignInWatchTests : IDisposable
 	}
 
 	[Fact]
+	public async Task A_password_alone_leaves_an_open_prompt_on_screen()
+	{
+		await SignIn("ada@example.test", "s3cret");
+		Assert.NotNull(Shown);
+
+		_watch.Submitted(Page, Site, "", "123456");
+		Assert.NotNull(Shown);
+	}
+
+	[Fact]
 	public async Task A_new_step_replaces_the_old_one()
 	{
 		_watch.UsernameStep(Page, Site, "ada@example.test");
