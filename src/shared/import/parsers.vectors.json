@@ -1,0 +1,263 @@
+{
+	"note": "Fixtures are in ./fixtures, synthetic and hand-written. parse: the fixture through the named parser gives exactly expected. refused: the fixture makes the named parser throw the named error (\"invalid-json\" is a SyntaxError in TS and a JsonException in C#). A file over 10 MB and a non-UTF-8 file are built at test time in the C# tests only, because the TS parsers take strings.",
+	"parse": [
+		{
+			"name": "chromium bookmarks file",
+			"parser": "chromium",
+			"fixture": "chromium-bookmarks.json",
+			"expected": {
+				"bar": [
+					{
+						"kind": "link",
+						"title": "GitHub",
+						"url": "https://github.com/"
+					},
+					{
+						"kind": "folder",
+						"title": "Dev",
+						"children": [
+							{
+								"kind": "link",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org/"
+							},
+							{
+								"kind": "link",
+								"title": "https://untitled.example/page",
+								"url": "https://untitled.example/page"
+							}
+						]
+					}
+				],
+				"other": [
+					{
+						"kind": "link",
+						"title": "News",
+						"url": "http://news.example/"
+					},
+					{
+						"kind": "folder",
+						"title": "Empty",
+						"children": []
+					},
+					{
+						"kind": "folder",
+						"title": "Mobile bookmarks",
+						"children": [
+							{
+								"kind": "link",
+								"title": "Phone",
+								"url": "https://phone.example/"
+							}
+						]
+					}
+				],
+				"skipped": [
+					"Bookmarklet: only http(s) addresses can be bookmarks",
+					"chrome://settings: only http(s) addresses can be bookmarks"
+				]
+			}
+		},
+		{
+			"name": "chrome html export",
+			"parser": "netscape",
+			"fixture": "netscape-chrome.html",
+			"expected": {
+				"bar": [
+					{
+						"kind": "link",
+						"title": "GitHub",
+						"url": "https://github.com/"
+					},
+					{
+						"kind": "folder",
+						"title": "Dev & Docs",
+						"children": [
+							{
+								"kind": "link",
+								"title": "MDN",
+								"url": "https://developer.mozilla.org/?a=1&b=2"
+							}
+						]
+					}
+				],
+				"other": [
+					{
+						"kind": "link",
+						"title": "Café news",
+						"url": "https://news.example/"
+					},
+					{
+						"kind": "folder",
+						"title": "Empty",
+						"children": []
+					}
+				],
+				"skipped": [
+					"Run: only http(s) addresses can be bookmarks"
+				]
+			}
+		},
+		{
+			"name": "safari html export, whose Favorites folder is not marked as the bar",
+			"parser": "netscape",
+			"fixture": "netscape-safari.html",
+			"expected": {
+				"bar": [],
+				"other": [
+					{
+						"kind": "folder",
+						"title": "Favorites",
+						"children": [
+							{
+								"kind": "link",
+								"title": "Favourite site",
+								"url": "https://fav.example/"
+							}
+						]
+					},
+					{
+						"kind": "folder",
+						"title": "Reading",
+						"children": [
+							{
+								"kind": "link",
+								"title": "An <article>",
+								"url": "https://read.example/article?x=1&y=2"
+							}
+						]
+					}
+				],
+				"skipped": [
+					"Local notes: only http(s) addresses can be bookmarks"
+				]
+			}
+		},
+		{
+			"name": "firefox html export",
+			"parser": "netscape",
+			"fixture": "netscape-firefox.html",
+			"expected": {
+				"bar": [
+					{
+						"kind": "link",
+						"title": "Toolbar link",
+						"url": "https://toolbar.example/"
+					}
+				],
+				"other": [
+					{
+						"kind": "folder",
+						"title": "Mozilla Firefox",
+						"children": [
+							{
+								"kind": "link",
+								"title": "Help & Tips",
+								"url": "https://support.example/"
+							}
+						]
+					},
+					{
+						"kind": "folder",
+						"title": "Other Bookmarks",
+						"children": [
+							{
+								"kind": "link",
+								"title": "Unfiled",
+								"url": "https://unfiled.example/"
+							}
+						]
+					}
+				],
+				"skipped": []
+			}
+		},
+		{
+			"name": "arc sidebar",
+			"parser": "arc",
+			"fixture": "arc-sidebar.json",
+			"expected": {
+				"bar": [
+					{
+						"kind": "link",
+						"title": "Gmail",
+						"url": "https://mail.google.com/"
+					}
+				],
+				"other": [
+					{
+						"kind": "folder",
+						"title": "Work",
+						"children": [
+							{
+								"kind": "link",
+								"title": "Linear",
+								"url": "https://linear.app/"
+							},
+							{
+								"kind": "folder",
+								"title": "Docs",
+								"children": [
+									{
+										"kind": "link",
+										"title": "Renamed",
+										"url": "https://notion.so/"
+									}
+								]
+							}
+						]
+					},
+					{
+						"kind": "folder",
+						"title": "Space 2",
+						"children": [
+							{
+								"kind": "link",
+								"title": "Saved only",
+								"url": "http://saved.example/"
+							}
+						]
+					}
+				],
+				"skipped": [
+					"Missing item gone",
+					"Settings: only http(s) addresses can be bookmarks",
+					"Item x1 is neither a tab nor a folder",
+					"Space \"Lonely\" has no pinned container"
+				]
+			}
+		}
+	],
+	"refused": [
+		{
+			"name": "truncated json is not chromium bookmarks",
+			"parser": "chromium",
+			"fixture": "invalid.json",
+			"error": "invalid-json"
+		},
+		{
+			"name": "json without roots is not chromium bookmarks",
+			"parser": "chromium",
+			"fixture": "not-chromium.json",
+			"error": "chromium-format"
+		},
+		{
+			"name": "truncated json is not an arc sidebar",
+			"parser": "arc",
+			"fixture": "invalid.json",
+			"error": "invalid-json"
+		},
+		{
+			"name": "arc container without spaces",
+			"parser": "arc",
+			"fixture": "arc-no-spaces.json",
+			"error": "arc-format"
+		},
+		{
+			"name": "plain text is not netscape bookmarks",
+			"parser": "netscape",
+			"fixture": "not-bookmarks.txt",
+			"error": "netscape-format"
+		}
+	]
+}

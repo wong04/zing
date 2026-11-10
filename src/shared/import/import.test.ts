@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,6 +11,7 @@ import { countLinks, importedLink, mergeImport, type BookmarkImport } from './im
 import { decodeEntities, NetscapeBookmarksFormatError, parseNetscapeBookmarks } from './netscapeBookmarks'
 import { parsePasswordCsv, UnknownPasswordCsvError } from './passwords'
 import mergeVectors from './merge.vectors.json'
+import parserVectors from './parsers.vectors.json'
 import { findChromiumProfiles, profileNames } from './profiles.node'
 
 describe('csv', () => {
@@ -193,5 +195,19 @@ describe('finding Chromium profiles on this PC', () => {
 		await writeFile(join(chrome, 'Profile 1', 'Bookmarks'), CHROME_BOOKMARKS)
 		const profiles = await findChromiumProfiles(root)
 		expect(profiles.map((p) => `${p.browser}:${p.name}`).sort()).toEqual(['chrome:Personal', 'chrome:Work'])
+	})
+})
+
+// The same cases the C# parsers run (host/Zing.Core.Tests/Import/ParserTests.cs).
+const PARSERS = { chromium: parseChromiumBookmarks, netscape: parseNetscapeBookmarks, arc: parseArcSidebar }
+const REFUSALS = { 'invalid-json': SyntaxError, 'chromium-format': ChromiumBookmarksFormatError, 'netscape-format': NetscapeBookmarksFormatError, 'arc-format': ArcSidebarFormatError }
+const fixture = (name: string) => readFileSync(join(import.meta.dirname, 'fixtures', name), 'utf8')
+
+describe('parsers against the shared vectors', () => {
+	it.each(parserVectors.parse)('$name', ({ parser, fixture: file, expected }) => {
+		expect(PARSERS[parser as keyof typeof PARSERS](fixture(file))).toEqual(expected)
+	})
+	it.each(parserVectors.refused)('refuses: $name', ({ parser, fixture: file, error }) => {
+		expect(() => PARSERS[parser as keyof typeof PARSERS](fixture(file))).toThrow(REFUSALS[error as keyof typeof REFUSALS])
 	})
 })

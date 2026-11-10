@@ -18,7 +18,7 @@ public static class Vectors
 		return File.ReadAllText(path);
 	}
 
-	private static string RepoRoot()
+	public static string RepoRoot()
 	{
 		for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
 			if (File.Exists(Path.Combine(dir.FullName, "package.json")) && Directory.Exists(Path.Combine(dir.FullName, "host"))) return dir.FullName;
