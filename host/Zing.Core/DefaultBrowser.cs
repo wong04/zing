@@ -15,6 +15,9 @@ public static class DefaultBrowserRegistration
 	private const string ClassKey = @"Software\Classes\" + ProgId;
 	private const string ClientKey = @"Software\Clients\StartMenuInternet\" + ClientName;
 	private const string CapabilitiesKey = ClientKey + @"\Capabilities";
+	private const string RegisteredApplicationsKey = @"Software\RegisteredApplications";
+
+	private static string OpenWithKey(string extension) => $@"Software\Classes\{extension}\OpenWithProgids";
 
 	public static IReadOnlyList<RegistryValue> Values(string exePath)
 	{
@@ -30,18 +33,30 @@ public static class DefaultBrowserRegistration
 			new(ClientKey + @"\shell\open\command", null, command),
 			new(CapabilitiesKey, "ApplicationName", ClientName),
 			new(CapabilitiesKey, "ApplicationDescription", "A private browser that keeps nothing by default."),
+			new(CapabilitiesKey, "ApplicationIcon", icon),
+			new(CapabilitiesKey + @"\Startmenu", "StartMenuInternet", ClientName),
 			new(CapabilitiesKey + @"\URLAssociations", "http", ProgId),
 			new(CapabilitiesKey + @"\URLAssociations", "https", ProgId),
 			new(CapabilitiesKey + @"\FileAssociations", ".htm", ProgId),
 			new(CapabilitiesKey + @"\FileAssociations", ".html", ProgId),
-			new(@"Software\RegisteredApplications", ClientName, CapabilitiesKey),
+			new(OpenWithKey(".htm"), ProgId, ""),
+			new(OpenWithKey(".html"), ProgId, ""),
+			new(RegisteredApplicationsKey, ClientName, CapabilitiesKey),
 		];
 	}
 
-	/// <summary>The keys Zing owns. The RegisteredApplications value is shared, so the host removes it by name.</summary>
+	/// <summary>The keys Zing owns. Values Zing wrote into keys it doesn't own are listed by <see cref="NamedValuesToDelete"/>; the host deletes those by name.</summary>
 	public static IReadOnlyList<string> KeysToDelete() => [ClassKey, ClientKey];
 
-	public static bool IsDefault(string? httpUserChoiceProgId) => httpUserChoiceProgId == ProgId;
+	/// <summary>Zing's values inside shared keys. Only Key and Name matter; Value is unused.</summary>
+	public static IReadOnlyList<RegistryValue> NamedValuesToDelete() =>
+	[
+		new(RegisteredApplicationsKey, ClientName, ""),
+		new(OpenWithKey(".htm"), ProgId, ""),
+		new(OpenWithKey(".html"), ProgId, ""),
+	];
+
+	public static bool IsDefault(string? httpsUserChoiceProgId) => httpsUserChoiceProgId == ProgId;
 }
 
 public static class DefaultBrowser

@@ -38,6 +38,32 @@ public sealed class DefaultBrowserTests
 		Assert.Equal(CapabilitiesKey, Get(@"Software\RegisteredApplications", "Zing"));
 	}
 
+	[Fact]
+	public void Capabilities_name_the_icon_and_the_start_menu_entry()
+	{
+		Assert.Equal(Exe + ",0", Get(CapabilitiesKey, "ApplicationIcon"));
+		Assert.Equal("Zing", Get(CapabilitiesKey + @"\Startmenu", "StartMenuInternet"));
+	}
+
+	[Theory]
+	[InlineData(".htm")]
+	[InlineData(".html")]
+	public void Open_with_lists_zing_for_html_extensions(string extension)
+	{
+		Assert.Equal("", Get($@"Software\Classes\{extension}\OpenWithProgids", "ZingHTML"));
+	}
+
+	[Fact]
+	public void Named_values_to_delete_are_exactly_the_shared_key_values_zing_writes()
+	{
+		var named = DefaultBrowserRegistration.NamedValuesToDelete();
+		Assert.Equal(3, named.Count);
+		var written = DefaultBrowserRegistration.Values(Exe);
+		Assert.All(named, n => Assert.Contains(written, w => w.Key == n.Key && w.Name == n.Name));
+		Assert.Contains(named, n => n.Key == @"Software\RegisteredApplications" && n.Name == "Zing");
+		Assert.DoesNotContain(named, n => n.Key.StartsWith(@"Software\Classes\ZingHTML") || n.Key.StartsWith(@"Software\Clients\StartMenuInternet\Zing"));
+	}
+
 	[Theory]
 	[InlineData(null, false)]
 	[InlineData("ChromeHTML", false)]
