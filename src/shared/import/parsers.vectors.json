@@ -1,5 +1,5 @@
 {
-	"note": "Fixtures are in ./fixtures, synthetic and hand-written. parse: the fixture through the named parser gives exactly expected. refused: the fixture makes the named parser throw the named error (\"invalid-json\" is a SyntaxError in TS and a JsonException in C#). A file over 10 MB and a non-UTF-8 file are built at test time in the C# tests only, because the TS parsers take strings.",
+	"note": "Fixtures are in ./fixtures, synthetic and hand-written, except arc-too-deep.json, a generated chain of 70 nested folders. parse: the fixture through the named parser gives exactly expected. refused: the fixture makes the named parser throw the named error (\"invalid-json\" is a SyntaxError in TS and a JsonException in C#). A file over 10 MB and a non-UTF-8 file are built at test time in the C# tests only, because the TS parsers take strings. A refusal with a message must also carry exactly that message.",
 	"parse": [
 		{
 			"name": "chromium bookmarks file",
@@ -258,6 +258,27 @@
 			"parser": "netscape",
 			"fixture": "not-bookmarks.txt",
 			"error": "netscape-format"
+		},
+		{
+			"name": "an arc folder that lists itself as a child",
+			"parser": "arc",
+			"fixture": "arc-self-cycle.json",
+			"error": "arc-format",
+			"message": "Item f1 is its own ancestor"
+		},
+		{
+			"name": "arc folders that list each other as children",
+			"parser": "arc",
+			"fixture": "arc-cycle.json",
+			"error": "arc-format",
+			"message": "Item a is its own ancestor"
+		},
+		{
+			"name": "arc folders nested past 64 levels",
+			"parser": "arc",
+			"fixture": "arc-too-deep.json",
+			"error": "arc-format",
+			"message": "Arc's sidebar is nested too deeply"
 		}
 	]
 }

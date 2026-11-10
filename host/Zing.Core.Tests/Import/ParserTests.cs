@@ -70,6 +70,7 @@ public sealed class ParserTests : IDisposable
 		var error = Record.Exception(() => Run(vector.GetProperty("parser").GetString()!, Fixture(vector.GetProperty("fixture").GetString()!)));
 
 		Assert.IsAssignableFrom(ErrorType(vector.GetProperty("error").GetString()!), error);
+		if (vector.TryGetProperty("message", out var message)) Assert.Equal(message.GetString(), error.Message);
 	}
 
 	[Fact]

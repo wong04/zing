@@ -183,7 +183,9 @@ describe('parsers against the shared vectors', () => {
 	it.each(parserVectors.parse)('$name', ({ parser, fixture: file, expected }) => {
 		expect(PARSERS[parser as keyof typeof PARSERS](fixture(file))).toEqual(expected)
 	})
-	it.each(parserVectors.refused)('refuses: $name', ({ parser, fixture: file, error }) => {
-		expect(() => PARSERS[parser as keyof typeof PARSERS](fixture(file))).toThrow(REFUSALS[error as keyof typeof REFUSALS])
+	it.each(parserVectors.refused)('refuses: $name', (vector) => {
+		const run = () => PARSERS[vector.parser as keyof typeof PARSERS](fixture(vector.fixture))
+		expect(run).toThrow(REFUSALS[vector.error as keyof typeof REFUSALS])
+		if ('message' in vector) expect(run).toThrow(expect.objectContaining({ message: vector.message }))
 	})
 })
