@@ -20,6 +20,39 @@ public static class DownloadPolicy
 	}
 }
 
+/// <summary>
+/// Which addresses a page's embedded frames are navigating to, so a download can be told apart from the main
+/// frame's: the engine's DownloadStarting doesn't say which frame a download came from. A frame navigation the
+/// engine turns into a download ends (aborted) before the download starts, so each address is kept for a while
+/// and given up once the frame shows it or a download claims it.
+/// </summary>
+public sealed class FrameNavigations(Func<DateTime> now)
+{
+	private static readonly TimeSpan Window = TimeSpan.FromSeconds(30);
+	private readonly Dictionary<string, DateTime> _started = new(StringComparer.Ordinal);
+
+	public void Started(string uri)
+	{
+		Prune();
+		_started[uri] = now();
+	}
+
+	public void Showed(string uri) => _started.Remove(uri);
+
+	/// <summary>Whether a download of this address is a frame's navigation; the navigation is claimed, so it answers once.</summary>
+	public bool ClaimDownload(string uri)
+	{
+		Prune();
+		return _started.Remove(uri);
+	}
+
+	private void Prune()
+	{
+		var cutoff = now() - Window;
+		foreach (var uri in _started.Where(entry => entry.Value < cutoff).Select(entry => entry.Key).ToList()) _started.Remove(uri);
+	}
+}
+
 /// <summary>Port of src/shared/browser/downloadName.ts (and the `safeFileBase` and `safeFileExtension` it uses from convert/commands.ts).</summary>
 public static partial class DownloadNames
 {

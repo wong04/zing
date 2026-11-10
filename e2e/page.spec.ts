@@ -16,6 +16,7 @@ const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwA
 let server: Server
 let base = ''
 let framedZipServed = false
+let framedFileServed = false
 
 test.beforeAll(async () => {
 	server = createServer((req, res) => {
@@ -30,7 +31,16 @@ test.beforeAll(async () => {
 			res.setHeader('content-type', 'application/zip')
 			return void res.end(Buffer.alloc(1024, 3))
 		}
+		// The server marking a frame's response as a file: Krackn saves it, frame or not.
+		if (req.url === '/inner-file.bin') {
+			framedFileServed = true
+			res.setHeader('content-type', 'application/zip')
+			res.setHeader('content-disposition', 'attachment; filename="framed.zip"')
+			return void res.end(Buffer.alloc(512, 5))
+		}
 		res.setHeader('content-type', 'text/html')
+		if (req.url === '/linked') return void res.end('<!doctype html><title>Linked</title><a href="/archive.zip">Get the archive</a>')
+		if (req.url === '/framed-file') return void res.end('<!doctype html><title>Framed file</title><iframe src="/inner-file.bin"></iframe>')
 		if (req.url === '/framed') return void res.end('<!doctype html><title>Framed</title><iframe src="/inner.zip"></iframe>')
 		if (req.url === '/perm') return void res.end('<!doctype html><title>Permissions</title>')
 		if (req.url === '/article') return void res.end(`<!doctype html><title>Fixture Headline</title><nav><a href="/other">Site menu</a></nav><article><h1>Fixture Headline</h1><p>${PARAGRAPH}</p><p>${PARAGRAPH}</p></article><footer>Footer junk</footer>`)
@@ -105,10 +115,26 @@ test('a main-frame response the engine cannot show, with no Content-Disposition,
 	await zing.close()
 })
 
+test('a top-level link to a response the engine cannot show downloads', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/linked` } })
+	const directory = join(zing.userDataDir, 'downloads')
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/linked`)
+	await page.getByRole('link', { name: 'Get the archive' }).click()
+	await expect.poll(() => existsSync(join(directory, 'archive.zip')) && statSync(join(directory, 'archive.zip')).size).toBe(1024)
+	await zing.close()
+})
+
+test('a frame response the server marks as a file downloads', async () => {
+	framedFileServed = false
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/framed-file` } })
+	const directory = join(zing.userDataDir, 'downloads')
+	await pageWhere(zing.browser, (p) => p.url() === `${base}/framed-file`)
+	await expect.poll(() => framedFileServed).toBe(true)
+	await expect.poll(() => existsSync(join(directory, 'framed.zip')) && statSync(join(directory, 'framed.zip')).size).toBe(512)
+	await zing.close()
+})
+
 test('the same response in a frame does not download', async () => {
-	// Known gap: the engine downloads it anyway, and nothing calls DownloadPolicy (host/Zing.Core/Downloads.cs) yet.
-	// This fails on purpose until the policy is wired into DownloadHost.Starting; then remove this line.
-	test.fail()
 	framedZipServed = false
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/framed` } })
 	const directory = join(zing.userDataDir, 'downloads')

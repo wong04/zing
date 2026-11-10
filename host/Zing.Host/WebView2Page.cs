@@ -50,6 +50,7 @@ public sealed class WebView2Page : IPage
 	/// <summary>The latest main-frame Page.frameRequestedNavigation: it arrives before NavigationStarting for the same address (spikes/link-preview, check C).</summary>
 	private (string Url, string Reason)? _lastReason;
 	private bool _dialogOpen;
+	private readonly FrameNavigations _frames = new(() => DateTime.UtcNow);
 
 	private static readonly Lazy<(string Script, string Css)> Reader = new(() =>
 	{
@@ -548,6 +549,8 @@ public sealed class WebView2Page : IPage
 			// NavigationStarting doesn't see an iframe: one onto the relay from a web page would be served as a fetch on its say.
 			if (!RelayedNavigation.FrameAllowed(TopOf(core), e.Uri)) e.Cancel = true;
 		};
+		// Every embedded frame, however deep: a download from one is judged as a frame's (FrameDownload).
+		core.FrameCreated += (_, e) => FollowFrame(e.Frame);
 		core.NavigationCompleted += (_, e) =>
 		{
 			IsLoading = false;
@@ -591,6 +594,24 @@ public sealed class WebView2Page : IPage
 		core.Find.MatchCountChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
 		core.Find.ActiveMatchIndexChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
 	}
+
+	private void FollowFrame(CoreWebView2Frame frame)
+	{
+		string? navigating = null;
+		frame.NavigationStarting += (_, e) =>
+		{
+			navigating = e.Uri;
+			_frames.Started(e.Uri);
+		};
+		frame.NavigationCompleted += (_, e) =>
+		{
+			if (e.IsSuccess && navigating is not null) _frames.Showed(navigating);
+		};
+		frame.FrameCreated += (_, e) => FollowFrame(e.Frame);
+	}
+
+	/// <summary>Whether a starting download is an embedded frame's navigation rather than the main frame's or a link's own `download`.</summary>
+	public bool IsFrameDownload(string uri) => _frames.ClaimDownload(uri);
 
 	/// <summary>Page.enable turns on the reason events; the frame tree says which frame is the main one, whose id stays for the page's life.</summary>
 	private async Task ReadNavigationReasonsAsync(CoreWebView2 core)
