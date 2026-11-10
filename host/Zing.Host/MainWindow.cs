@@ -168,6 +168,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		var themeSubscription = _app.Services.Settings.Subscribe((_, key) =>
 		{
 			if (key == "theme") _window.Theme = Theme();
+			if (key == "blockTrackers") FollowTrackerBlocking();
 		});
 		_scope.Track(themeSubscription.Dispose);
 		Api.Start(_app.TakePendingRestore(), System.Environment.GetEnvironmentVariable("ZING_START_URL"));
@@ -687,6 +688,16 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		if (Api is not { } api) return;
 		foreach (var page in api.Tabs.Records.Select(r => api.Tabs.PageOf(r.Id)).OfType<WebView2Page>().Where(p => p.IsOpen))
 			TestHooks.Background(page.FollowAutofillAsync(), "autofill setting");
+	}
+
+	public bool BlockTrackers => _app.Services.Settings.Get("blockTrackers")!.GetValue<bool>();
+
+	/// <summary>blockTrackers was turned on or off: open pages' tracking prevention follows it; their requests read it as they go.</summary>
+	private void FollowTrackerBlocking()
+	{
+		if (Api is not { } api) return;
+		foreach (var page in api.Tabs.Records.Select(r => api.Tabs.PageOf(r.Id)).OfType<WebView2Page>().Where(p => p.IsOpen))
+			page.FollowTrackerBlocking();
 	}
 
 	public void Report(string what, Exception error) => TestHooks.Record(what, error);

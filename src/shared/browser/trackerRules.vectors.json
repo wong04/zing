@@ -1,0 +1,23 @@
+{
+	"domainCount": 48,
+	"hosts": [
+		{ "name": "a listed domain", "host": "doubleclick.net", "tracker": true },
+		{ "name": "a subdomain of a listed domain", "host": "stats.g.doubleclick.net", "tracker": true },
+		{ "name": "hosts are compared without case", "host": "WWW.Google-Analytics.COM", "tracker": true },
+		{ "name": "a trailing dot is the same host", "host": "hotjar.com.", "tracker": true },
+		{ "name": "a longer name ending in a listed one is not under it", "host": "notdoubleclick.net", "tracker": false },
+		{ "name": "a listed name followed by more labels is not it", "host": "doubleclick.net.example.com", "tracker": false },
+		{ "name": "the rest of a listed site is not listed", "host": "www.google.com", "tracker": false },
+		{ "name": "an unlisted site", "host": "example.com", "tracker": false }
+	],
+	"requests": [
+		{ "name": "a tracker loaded by another site is blocked", "request": "https://www.google-analytics.com/analytics.js", "page": "https://news.example/story", "blocked": true },
+		{ "name": "a tracker's subdomain on a port is blocked", "request": "http://pixel.doubleclick.net:8443/p.gif", "page": "http://127.0.0.1:8443/", "blocked": true },
+		{ "name": "a site's own analytics still load", "request": "https://adservice.google.com/ddm/x", "page": "https://www.google.com/search?q=a", "blocked": false },
+		{ "name": "a tracker's own page loads its own scripts", "request": "https://static.hotjar.com/c.js", "page": "https://www.hotjar.com/", "blocked": false },
+		{ "name": "an unlisted third party loads", "request": "https://cdn.example.net/app.js", "page": "https://news.example/", "blocked": false },
+		{ "name": "a request from a page with no web address is third-party", "request": "https://connect.facebook.net/en_US/sdk.js", "page": "about:blank", "blocked": true },
+		{ "name": "only web requests are blocked", "request": "ws://doubleclick.net/socket", "page": "https://news.example/", "blocked": false },
+		{ "name": "an unparsable request is not blocked", "request": "not a url", "page": "https://news.example/", "blocked": false }
+	]
+}

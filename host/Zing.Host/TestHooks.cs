@@ -21,7 +21,7 @@ public static class TestHooks
 	/// <summary>Remote debugging port for Playwright; only honoured in e2e runs.</summary>
 	public static string? DebuggingPort => IsEndToEndRun ? Environment.GetEnvironmentVariable("ZING_CDP_PORT") : null;
 
-	/// <summary>Chromium switches for e2e runs: the debugging port, and with ZING_E2E_OFFLINE=1 a dead proxy so no test can reach a live site, and with ZING_E2E_NO_DNS=1 names that do not resolve.</summary>
+	/// <summary>Chromium switches for e2e runs: the debugging port, and with ZING_E2E_OFFLINE=1 a dead proxy so no test can reach a live site, with ZING_E2E_MAP_HOSTS names mapped to a local server, and with ZING_E2E_NO_DNS=1 names that do not resolve.</summary>
 	public static string BrowserArguments()
 	{
 		if (!IsEndToEndRun) return "";
@@ -35,8 +35,12 @@ public static class TestHooks
 		// out of the way never gets it, so a test's requestFullscreen failed whenever another app was in front. A person's click focuses the view.
 		if (KeepsOutOfTheWay) args.Add("--disable-features=SuppressFullscreenFromUnfocusedView");
 		if (Environment.GetEnvironmentVariable("ZING_E2E_OFFLINE") == "1") args.Add("--proxy-server=127.0.0.1:9 --proxy-bypass-list=<-loopback>");
+		var resolverRules = new List<string>();
+		// Names a test's local server stands for (e.g. "MAP *.doubleclick.net 127.0.0.1"), so a page can ask for a real tracker's address.
+		if (Environment.GetEnvironmentVariable("ZING_E2E_MAP_HOSTS") is { Length: > 0 } mapped) resolverRules.Add(mapped);
 		// Every name fails to resolve (HostNameNotResolved, as a DNS block gives), without asking any DNS server; this machine's own addresses still work.
-		if (Environment.GetEnvironmentVariable("ZING_E2E_NO_DNS") == "1") args.Add("--host-resolver-rules=\"MAP * ~NOTFOUND , EXCLUDE 127.0.0.1\"");
+		if (Environment.GetEnvironmentVariable("ZING_E2E_NO_DNS") == "1") resolverRules.Add("MAP * ~NOTFOUND , EXCLUDE 127.0.0.1");
+		if (resolverRules.Count > 0) args.Add($"--host-resolver-rules=\"{string.Join(" , ", resolverRules)}\"");
 		return string.Join(' ', args);
 	}
 
