@@ -61,7 +61,11 @@ export const autofillFillFunction = fill
  * It also reports sign-ins, for the save and update prompts (SignInWatch in the host):
  *   - `submit`: a form with a visible password box was submitted (or Enter was pressed in
  *     a form-less one, or its sign-in button clicked), with the username and password in
- *     it. A form with two different passwords (change password) reports nothing.
+ *     it. A form with two different passwords (change password) reports nothing, and a box that looks like a
+ *     one-time code is not a password. With no visible username the username is empty, and a hidden field marked
+ *     as the username goes as `hiddenUsername`.
+ *   - `username-step`: the first page of a two-step sign-in, a username submitted with no password box (the host
+ *     pairs it with the password page's submit). No landing is watched for it.
  *   - `landed`: whether the page now has a visible password box. Sent once for every new
  *     document, and, after a submit, for a page that swaps its form for something else
  *     without navigating (only when the submitted password field has left the document for five
@@ -165,19 +169,36 @@ export const detectionScript = `(() => {
     return docs;
   };
   const hasPasswordBox = () => documents().some(d => passwordBoxes(d).length > 0);
-  // The username and password typed into a form (or document), or null when it isn't a plain sign-in.
+  // Banks often ask for a one-time code in a password box after the password; paired with a remembered username,
+  // it would be offered as the password.
+  const looksLikeCode = el => (el.autocomplete || '').toLowerCase().includes('one-time-code')
+    || /otp|one.?time|code|pin|token|mfa|2fa|verif/i.test((el.name || '') + ' ' + (el.id || '') + ' ' + (el.getAttribute('aria-label') || ''));
+  const inputsOf = scope => Array.prototype.slice.call(scope.querySelectorAll('input'));
+  const usernameLike = el => kind(el) === 'username' && el.value && el.value.length <= ${signInLimits.usernameMax};
+  // The username and password typed into a form (or document), or null when it isn't a plain sign-in. With no visible
+  // username, the username is empty (the host may have one from the page before) and a hidden field marked as the
+  // username, which sites put on a password page for password managers, goes as hiddenUsername.
   const credentials = scope => {
-    const boxes = passwordBoxes(scope).filter(el => el.value);
+    const boxes = passwordBoxes(scope).filter(el => el.value && !looksLikeCode(el));
     if (boxes.length === 0) return null;
     // Sign-up forms repeat the password; a change-password form has two different ones.
     if (boxes.some(el => el.value !== boxes[0].value)) return null;
     const password = boxes[0].value;
     if (password.length > ${signInLimits.passwordMax}) return null;
-    const inputs = Array.prototype.slice.call(scope.querySelectorAll('input'));
+    const inputs = inputsOf(scope);
     const before = inputs.slice(0, inputs.indexOf(boxes[0])).filter(el => kind(el) === 'username' && el.value && visible(el));
     const username = before.length ? before[before.length - 1].value : '';
-    if (!username || username.length > ${signInLimits.usernameMax}) return null;
-    return { username, password, boxes };
+    if (username.length > ${signInLimits.usernameMax}) return null;
+    if (username) return { username, password, boxes };
+    const marked = inputs.filter(el => usernameLike(el) && !visible(el)
+      && ((el.autocomplete || '').toLowerCase().includes('username') || (el.type || '').toLowerCase() === 'email'));
+    return marked.length ? { username, password, boxes, hiddenUsername: marked[marked.length - 1].value } : { username, password, boxes };
+  };
+  // The first page of a two-step sign-in: a username and no password box.
+  const usernameStep = scope => {
+    if (passwordBoxes(scope).length > 0) return null;
+    const filled = inputsOf(scope).filter(el => usernameLike(el) && visible(el));
+    return filled.length ? filled[filled.length - 1].value : null;
   };
   // After a submit, a page that stays put (a single-page app) may swap the form for something else. A page that
   // navigates posts its own 'landed' when it loads. Five checks in a row (about 2 s) without the submitted field is a landing: a spinner that unmounts the form is not one.
@@ -204,21 +225,37 @@ export const detectionScript = `(() => {
     setTimeout(tick, 400);
   };
   let lastSubmit = '', lastSubmitAt = 0, submittedHere = false;
+  // A form fires several of these for one submit (the click, Enter, the submit event).
+  const repeated = key => {
+    const now = Date.now();
+    if (key === lastSubmit && now - lastSubmitAt < 1000) return true;
+    lastSubmit = key; lastSubmitAt = now;
+    return false;
+  };
+  const steppedUsername = username => {
+    if (username === null || repeated(JSON.stringify([username, null]))) return;
+    report({ kind: 'username-step', username });
+  };
   const submitted = scope => {
     const c = credentials(scope);
-    if (!c) return;
-    // A form fires several of these for one submit (the click, Enter, the submit event).
-    const key = JSON.stringify([c.username, c.password]);
-    const now = Date.now();
-    if (key === lastSubmit && now - lastSubmitAt < 1000) return;
-    lastSubmit = key; lastSubmitAt = now; submittedHere = true;
-    report({ kind: 'submit', username: c.username, password: c.password });
+    if (!c) {
+      steppedUsername(usernameStep(scope));
+      return;
+    }
+    if (repeated(JSON.stringify([c.username, c.password]))) return;
+    submittedHere = true;
+    const m = { kind: 'submit', username: c.username, password: c.password };
+    if (c.hiddenUsername) m.hiddenUsername = c.hiddenUsername;
+    report(m);
     watchLanding(c.boxes);
   };
   const onSubmit = e => { if (e.target && e.target.tagName === 'FORM') submitted(e.target); };
   const onEnter = e => {
     const el = e.target;
-    if (e.key === 'Enter' && el && el.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'password') submitted(el.form || el.ownerDocument);
+    if (e.key !== 'Enter' || !el || el.tagName !== 'INPUT') return;
+    if ((el.type || '').toLowerCase() === 'password') { submitted(el.form || el.ownerDocument); return; }
+    // Enter in the box just typed in: that box is the username, whatever else the page holds.
+    if (usernameLike(el) && visible(el) && passwordBoxes(el.form || el.ownerDocument).length === 0) steppedUsername(el.value);
   };
   const signInLabel = /sign.?in|log.?in|continue|submit|next/i;
   const onClick = e => {

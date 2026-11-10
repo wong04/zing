@@ -384,6 +384,22 @@ function filledForm(username: string, password: string): { form: { tagName: stri
 	return { form, inputs }
 }
 
+/** A form of the given inputs, each owned by the window, as a submit event's target. */
+function formOf(...init: Array<Partial<FakeEl>>): { form: { tagName: string; querySelectorAll: () => FakeEl[] }; inputs: FakeEl[] } {
+	const inputs: FakeEl[] = []
+	const form = { tagName: 'FORM', querySelectorAll: () => inputs }
+	const owner = { defaultView: win }
+	for (const i of init) inputs.push(new FakeEl({ ...i, form, ownerDocument: owner }))
+	return { form, inputs }
+}
+
+/** The first page of a two-step sign-in: a username box and no password box. */
+const usernameForm = (username: string) => formOf({ type: 'email', value: username })
+
+const hide = (hidden: FakeEl): void => {
+	win['getComputedStyle'] = (el: FakeEl) => ({ display: el === hidden ? 'none' : 'block', visibility: 'visible' })
+}
+
 const submit = (target: unknown): void => {
 	for (const fn of doc.listeners.get('submit') ?? []) (fn as (e: unknown) => void)({ target })
 }
@@ -418,23 +434,89 @@ describe('sign-in reports', () => {
 		submit(changing.form)
 		expect(messages).toEqual([])
 	})
-	it('reports nothing without a username or a password, or past the limits', () => {
+	it('reports nothing without a password, or past the limits; an empty username is sent empty', () => {
 		install()
-		submit(filledForm('', 'hunter2').form)
 		submit(filledForm('ada', '').form)
 		submit(filledForm('ada', 'p'.repeat(1025)).form)
 		submit(filledForm('u'.repeat(513), 'hunter2').form)
 		expect(messages).toEqual([])
 		submit(filledForm('u'.repeat(512), 'p'.repeat(1024)).form)
 		expect(messages).toHaveLength(1)
+		submit(filledForm('', 'hunter2').form)
+		expect(messages[1]).toEqual({ kind: 'submit', username: '', password: 'hunter2' })
 	})
-	it('ignores a hidden password box and anything that is not a form', () => {
+	it('a hidden password box is not the form\'s, so the form is a username step; anything not a form is ignored', () => {
 		install()
 		const { form, inputs } = filledForm('ada', 'hunter2')
-		win['getComputedStyle'] = (el: FakeEl) => ({ display: el === inputs[1] ? 'none' : 'block', visibility: 'visible' })
+		hide(inputs[1]!)
 		submit(form)
 		submit({ tagName: 'DIV' })
+		expect(messages).toEqual([{ kind: 'username-step', username: 'ada' }])
+	})
+	it('a username-only form reports a username step, and no landing after it', () => {
+		install()
+		submit(usernameForm('ada@example.test').form)
+		vi.advanceTimersByTime(5000)
+		expect(messages).toEqual([{ kind: 'username-step', username: 'ada@example.test' }])
+	})
+	it('a username step is reported once per second however many events fire', () => {
+		install()
+		const { form } = usernameForm('ada')
+		submit(form)
+		submit(form)
+		vi.advanceTimersByTime(1100)
+		submit(form)
+		expect(kindsOf('username-step')).toHaveLength(2)
+	})
+	it('an empty or over-long username step reports nothing', () => {
+		install()
+		submit(usernameForm('').form)
+		submit(usernameForm('u'.repeat(513)).form)
 		expect(messages).toEqual([])
+		submit(usernameForm('u'.repeat(512)).form)
+		expect(kindsOf('username-step')).toHaveLength(1)
+	})
+	it('a password-only form reports a submit with an empty username', () => {
+		install()
+		submit(formOf({ type: 'password', value: 'hunter2' }).form)
+		expect(messages).toEqual([{ kind: 'submit', username: '', password: 'hunter2' }])
+	})
+	it('a password form sends a hidden username or email field separately; another hidden text field is not one', () => {
+		install()
+		const marked = formOf({ type: 'password', value: 'hunter2' }, { type: 'email', value: 'ada@example.test' })
+		hide(marked.inputs[1]!)
+		submit(marked.form)
+		expect(messages).toEqual([{ kind: 'submit', username: '', password: 'hunter2', hiddenUsername: 'ada@example.test' }])
+
+		install()
+		const other = formOf({ type: 'text', name: 'user_id', value: '12345' }, { type: 'password', value: 'hunter2' })
+		hide(other.inputs[0]!)
+		submit(other.form)
+		expect(messages).toEqual([{ kind: 'submit', username: '', password: 'hunter2' }])
+	})
+	it('a box that looks like a one-time code is not a password', () => {
+		const codes: Array<Partial<FakeEl>> = [
+			{ autocomplete: 'one-time-code' },
+			{ name: 'otp' },
+			{ id: 'verificationCode' },
+			{ name: 'pin' },
+			{ aria: '2FA token' },
+			{ name: 'mfa' },
+		]
+		for (const code of codes) {
+			install()
+			submit(formOf({ type: 'password', value: '123456', ...code }).form)
+			expect(messages).toEqual([])
+		}
+	})
+	it('Enter in a username box with no password box on the page reports that box\'s username step', () => {
+		install()
+		const owner = Object.assign(doc, { defaultView: win })
+		const user = new FakeEl({ type: 'email', value: 'ada', ownerDocument: owner })
+		const other = new FakeEl({ type: 'email', value: 'newsletter@example.test', ownerDocument: owner })
+		doc.frames = [user, other]
+		for (const fn of doc.listeners.get('keydown') ?? []) (fn as (e: unknown) => void)({ key: 'Enter', target: user })
+		expect(messages).toEqual([{ kind: 'username-step', username: 'ada' }])
 	})
 	it('Enter in a form-less password box reports a submit; Enter in a text box does not', () => {
 		install()
