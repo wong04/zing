@@ -7,7 +7,7 @@ import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
 import type { BookmarkNode } from '../src/shared/library/library'
 import { viewAccent } from './theme-helpers'
-import { launchZing, pageWhere, scratchDir, test, type Launched } from './zing'
+import { launchZing, pages, pageWhere, scratchDir, test, type Launched } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -33,7 +33,7 @@ function localAppData(profiles: readonly (readonly [string, string, string])[], 
 	return root
 }
 
-const launch = (root: string): Promise<Launched> => launchZing({ env: { ZING_LOCALAPPDATA: root } })
+const launch = (root: string, env: Readonly<Record<string, string>> = {}): Promise<Launched> => launchZing({ env: { ZING_LOCALAPPDATA: root, ...env } })
 
 async function openImport(zing: Launched): Promise<Page> {
 	await zing.chrome.evaluate(() => window.zing.runCommand('app.settings'))
@@ -208,6 +208,79 @@ test('a passwords file chosen by hand imports and offers to recycle it', async (
 	await zing.close()
 })
 
+const CHROME_DEFAULT = { ZING_DEFAULT_BROWSER: 'ChromeHTML' }
+const isStartPage = (url: string): boolean => url === 'zing://home' || url === 'zing://home/'
+const startPage = (zing: Launched) => pageWhere(zing.browser, (p) => isStartPage(p.url()))
+const card = (start: Page) => start.locator('.nudge')
+const personalChrome = () => localAppData([['Default', 'Personal', fixture('chromium-bookmarks.json')]])
+
+test('the first New Tab offers the default browser and Import brings its bookmarks in', async () => {
+	const zing = await launch(personalChrome(), CHROME_DEFAULT)
+	const start = await startPage(zing)
+	await expect(card(start).getByRole('heading')).toHaveText('Bring your stuff from Chrome?')
+	await expect(card(start)).toContainText('and your favourites bar in "Personal".')
+	for (const name of ['Import from Chrome', 'Other browser…', 'Not now']) await expect(card(start).getByRole('link', { name })).toBeVisible()
+
+	await card(start).getByRole('link', { name: 'Import from Chrome' }).click()
+	await expect(card(start).getByRole('heading')).toHaveText(/^Imported \d+ bookmarks?\.$/)
+	await expect(card(start).getByRole('link', { name: 'Import passwords too' })).toBeVisible()
+	await expect(card(start).getByRole('link', { name: 'Done' })).toBeVisible()
+
+	const { bookmarks } = await library(zing)
+	const imported = topFolder(bookmarks, 'Imported from Chrome (Personal)')
+	expect(imported && 'children' in imported ? links(imported.children) : []).toContain('http://news.example/')
+
+	const sheet = await openImport(zing)
+	await sheet.getByRole('button', { name: 'Privacy', exact: true }).click()
+	await expect(sheet.locator('.privacy-banner')).toHaveAttribute('data-traceless', 'false')
+	await zing.close()
+})
+
+test('Not now hides the card on every later New Tab and after a restart', async () => {
+	const root = personalChrome()
+	const zing = await launch(root, CHROME_DEFAULT)
+	const start = await startPage(zing)
+	await card(start).getByRole('link', { name: 'Not now' }).click()
+	await expect(card(start)).toHaveCount(0)
+
+	await zing.chrome.evaluate(() => window.zing.runCommand('tab.new'))
+	await expect.poll(() => pages(zing.browser).filter((p) => isStartPage(p.url())).length).toBe(2)
+	for (const page of pages(zing.browser).filter((p) => isStartPage(p.url()))) await expect(page.locator('.tile').first()).toBeVisible()
+	for (const page of pages(zing.browser).filter((p) => isStartPage(p.url()))) await expect(card(page)).toHaveCount(0)
+	const userDataDir = zing.userDataDir
+	await zing.close()
+
+	const again = await launchZing({ userDataDir, env: { ZING_LOCALAPPDATA: root, ...CHROME_DEFAULT } })
+	const fresh = await startPage(again)
+	await expect(fresh.locator('.tile').first()).toBeVisible()
+	await expect(card(fresh)).toHaveCount(0)
+	await again.close()
+})
+
+test("Import passwords too opens Settings Import already waiting for Chrome's export", async () => {
+	const zing = await launchZing({ userDataDir: passwordProfile(true), env: { ZING_LOCALAPPDATA: personalChrome(), ...CHROME_DEFAULT } })
+	const start = await startPage(zing)
+	await card(start).getByRole('link', { name: 'Import from Chrome' }).click()
+	await expect(card(start).getByRole('heading')).toHaveText(/^Imported \d+ bookmarks?\.$/)
+	await card(start).getByRole('link', { name: 'Import passwords too' }).click()
+
+	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	await expect(passwordFlow(sheet)).toContainText('In Chrome, click Export passwords, confirm, and save. Zing will pick up the file.')
+	await expect.poll(() => zing.dialogs()).toContainEqual({ kind: 'launch:chrome', url: 'chrome://password-manager/settings' })
+	await zing.close()
+})
+
+test('with Zing as the default browser the card asks generically and Choose opens Settings Import', async () => {
+	const zing = await launch(personalChrome(), { ZING_DEFAULT_BROWSER: 'ZingURL' })
+	const start = await startPage(zing)
+	await expect(card(start).getByRole('heading')).toHaveText('Bring your bookmarks from another browser?')
+	await card(start).getByRole('link', { name: 'Choose…' }).click({ noWaitAfter: true })
+	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	await expect(section(sheet)).toBeVisible()
+	await expect(row(sheet, 'Chrome (Personal)')).toBeVisible()
+	await zing.close()
+})
+
 test.describe('Import screenshots', () => {
 	test.skip(process.env.ZING_SCREENSHOTS !== '1', 'set ZING_SCREENSHOTS=1 to take the import pictures')
 
@@ -233,6 +306,22 @@ test.describe('Import screenshots', () => {
 			await expect(row(sheet, 'Chrome (Personal)').getByRole('status')).toContainText('Added')
 			await sheet.waitForTimeout(400)
 			await sheet.getByRole('dialog', { name: 'Settings' }).screenshot({ path: join(SHOTS, `import-section-${mode}.png`) })
+			await zing.close()
+		})
+	}
+
+	for (const mode of ['light', 'dark'] as const) {
+		test(`the New Tab import nudge, ${mode}`, async () => {
+			test.setTimeout(180_000)
+			mkdirSync(SHOTS, { recursive: true })
+			const zing = await launch(personalChrome(), CHROME_DEFAULT)
+			await zing.chrome.evaluate((theme) => window.zing.setSetting('theme', theme), mode)
+			await expect.poll(async () => (await viewAccent(zing.chrome)).dark).toBe(mode === 'dark')
+			const start = await startPage(zing)
+			await start.emulateMedia({ colorScheme: mode })
+			await expect(card(start).getByRole('heading')).toHaveText('Bring your stuff from Chrome?')
+			await start.waitForTimeout(400)
+			await start.screenshot({ path: join(SHOTS, `import-nudge-${mode}.png`) })
 			await zing.close()
 		})
 	}
