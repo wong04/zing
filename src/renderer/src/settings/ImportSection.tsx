@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { BookmarkImportOutcome, ImportSourceView } from '@shared/ipc'
 import { zing } from '../api'
 import { InfoBanner, PillButton } from '../components'
-import { fileHelp, outcomeLine } from './importText'
+import { fileHelp, outcomeLine, PASSWORDS_FILE_VAULT_OFF } from './importText'
 import { messageOf, PasswordImportResult, usePasswordCsvImport } from './PasswordImport'
 import { SettingRowShell } from './SettingRowShell'
 import { useVault } from './useVaultData'
@@ -11,6 +11,7 @@ import { useVault } from './useVaultData'
 type RowId = string
 
 const FILE_ROW: RowId = 'bookmarks-file'
+const PASSWORDS_ROW: RowId = 'passwords-file'
 
 function sourceDetail(source: ImportSourceView): string {
 	if (source.error) return source.error
@@ -84,7 +85,7 @@ export function ImportSection() {
 			setResult({ row: FILE_ROW, outcome: await zing.importBookmarksFile(file.token) })
 		})
 
-	const importPasswordsFile = (): void => void run('passwords-file', passwords.pickAndImport)
+	const importPasswordsFile = (): void => void run(PASSWORDS_ROW, passwords.pickAndImport)
 
 	const rowOutcome = (row: RowId) => (
 		<>
@@ -134,10 +135,12 @@ export function ImportSection() {
 							</PillButton>
 						</div>
 					</SettingRowShell>
-					{error?.row === 'passwords-file' ? <InfoBanner kind="warning">{error.message}</InfoBanner> : null}
+					{error?.row === PASSWORDS_ROW ? <InfoBanner kind="warning">{error.message}</InfoBanner> : null}
 					<PasswordImportResult imported={passwords.imported} />
 				</>
-			) : null}
+			) : vault?.state.error === 'unreadable' ? null : (
+				<div className="vault-none">{PASSWORDS_FILE_VAULT_OFF}</div>
+			)}
 			<ul className="import-help" aria-label="Exporting a bookmarks file">
 				{fileHelp.map((help) => (
 					<li key={help.app}>

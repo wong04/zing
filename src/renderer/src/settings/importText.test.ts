@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileHelp, outcomeLine } from './importText'
+import { fileHelp, outcomeLine, PASSWORDS_FILE_VAULT_OFF } from './importText'
 
 const outcome = (patch: Partial<Parameters<typeof outcomeLine>[0]> = {}) => ({
 	folderTitle: 'Imported from Chrome (Personal)',
@@ -38,5 +38,11 @@ describe('fileHelp', () => {
 	it('covers Dia, Safari and Firefox', () => {
 		expect(fileHelp.map((h) => h.app)).toEqual(['Dia', 'Safari', 'Firefox'])
 		for (const h of fileHelp) expect(h.steps).not.toBe('')
+	})
+})
+
+describe('PASSWORDS_FILE_VAULT_OFF', () => {
+	it('says which setting to turn on', () => {
+		expect(PASSWORDS_FILE_VAULT_OFF).toBe('Turn on “Offer to fill saved passwords” in Passwords to import a passwords file.')
 	})
 })

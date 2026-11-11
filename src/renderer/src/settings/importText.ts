@@ -19,3 +19,6 @@ export const fileHelp: readonly { app: string; steps: string }[] = [
 	{ app: 'Safari', steps: 'Choose File > Export > Bookmarks. Safari saves an HTML file.' },
 	{ app: 'Firefox', steps: 'Open the Library (Ctrl+Shift+O), then Import and Backup > Export Bookmarks to HTML.' },
 ]
+
+/** Shown in place of the Passwords file button while the vault is off. */
+export const PASSWORDS_FILE_VAULT_OFF = 'Turn on “Offer to fill saved passwords” in Passwords to import a passwords file.'
