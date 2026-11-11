@@ -274,6 +274,7 @@ test('with Zing as the default browser the card asks generically and Choose open
 	const zing = await launch(personalChrome(), { ZING_DEFAULT_BROWSER: 'ZingURL' })
 	const start = await startPage(zing)
 	await expect(card(start).getByRole('heading')).toHaveText('Bring your bookmarks from another browser?')
+	// The host cancels this navigation and opens Settings without reloading the page, so no navigation commits for click to wait on.
 	await card(start).getByRole('link', { name: 'Choose…' }).click({ noWaitAfter: true })
 	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
 	await expect(section(sheet)).toBeVisible()
