@@ -151,4 +151,18 @@ public sealed class PasswordExportWatchTests : IDisposable
 		Assert.Throws<DownloadsFolderMissingException>(watch.Start);
 		Assert.Equal(0, _scheduler.PendingCount);
 	}
+
+	[Fact]
+	public void AFolderRemovedMidWatchEndsTheWatch()
+	{
+		var sub = Path.Combine(_dir, "downloads");
+		Directory.CreateDirectory(sub);
+		new PasswordExportWatch(_scheduler, sub, () => _clockStart + _elapsed, _found.Add, () => _timedOut++).Start();
+		Poll();
+		Directory.Delete(sub);
+		Poll();
+		Assert.Equal(1, _timedOut);
+		Assert.Empty(_found);
+		Assert.Equal(0, _scheduler.PendingCount);
+	}
 }

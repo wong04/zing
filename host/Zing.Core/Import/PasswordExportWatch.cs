@@ -43,7 +43,18 @@ public sealed class PasswordExportWatch(IScheduler scheduler, string downloadsDi
 	private void Poll()
 	{
 		if (_done) return;
-		if (FindExport() is { } path)
+		string? path;
+		try
+		{
+			path = FindExport();
+		}
+		catch (DirectoryNotFoundException)
+		{
+			Stop();
+			timedOut();
+			return;
+		}
+		if (path is not null)
 		{
 			Stop();
 			found(path);

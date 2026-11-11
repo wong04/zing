@@ -532,6 +532,16 @@ export interface InvokeContract {
 	'import:bookmarks': { args: [sourceId: string]; result: BookmarkImportOutcome }
 	/** The same for a bookmarks file picked with `pickFiles(['bookmarks'])` (token from `files:pick`); the file's name is the source. */
 	'import:bookmarks-file': { args: [token: string]; result: BookmarkImportOutcome }
+	/**
+	 * Opens the source browser's password export page in that browser and watches the downloads folder for the CSV; the file comes back as
+	 * `import:password-export`, or `import:watch-timed-out` after 10 minutes. A new watch ends the old. Rejects with UnknownImportSourceException,
+	 * NoPasswordExportException (Arc), BrowserNotInstalledException or DownloadsFolderMissingException.
+	 */
+	'import:watch-passwords': { args: [sourceId: string]; result: void }
+	/** Ends the watch; does nothing when none is running. */
+	'import:cancel-watch': { args: []; result: void }
+	/** Sends a found export (token from `import:password-export`) to the Recycle Bin. */
+	'import:recycle': { args: [token: string]; result: void }
 }
 
 /** Host → renderer pushes. The host sends one per change, uncoalesced. */
@@ -556,6 +566,9 @@ export interface EventContract {
 	'engines:output': EngineOutput
 	'engines:exit': EngineExit
 	'relay:attempt': RelayAttemptEvent
+	/** The watch started by `import:watch-passwords` found the export: a `files:pick`-style grant to import with `vault:import-csv`. */
+	'import:password-export': { token: string; name: string }
+	'import:watch-timed-out': Record<string, never>
 }
 
 export type InvokeChannel = keyof InvokeContract
@@ -742,4 +755,9 @@ export interface ZingApi {
 	importSources(): Promise<ImportSourceView[]>
 	importBookmarks(sourceId: string): Promise<BookmarkImportOutcome>
 	importBookmarksFile(token: string): Promise<BookmarkImportOutcome>
+	watchPasswords(sourceId: string): Promise<void>
+	cancelPasswordWatch(): Promise<void>
+	recycleFile(token: string): Promise<void>
+	onPasswordExport(listener: (file: { token: string; name: string }) => void): Unsubscribe
+	onPasswordWatchTimedOut(listener: () => void): Unsubscribe
 }

@@ -91,7 +91,9 @@ public interface IWindowHost
 /// <param name="Sync">The sync server and Google sign-in this build has; null when it was built without a Google client ID (Ruling 48).</param>
 /// <param name="SyncScheduler">Runs the open vault's sync engine (Task 13); null runs none.</param>
 /// <param name="LocalAppData">Where browser profiles live (the import channels read it when called); null where the host has none, and then those channels throw.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null)
+/// <param name="BrowserLauncher">Starts another browser at its password export page; null where the host can't, and then <c>import:watch-passwords</c> throws.</param>
+/// <param name="FileTrash">Sends a found export to the Recycle Bin; null where the host can't, and then <c>import:recycle</c> throws.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null)
 {
 	public long Now() => Clock.Now();
 
@@ -434,10 +436,14 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
 		bridge.Register("peek:get", _ => Peek());
-		var importApi = new ImportApi(app.Library, Grants, app.LocalAppData ?? (() => throw new InvalidOperationException("This host has no browser profile root to import from")));
+		var importApi = new ImportApi(app.Library, Grants, app.LocalAppData ?? (() => throw new InvalidOperationException("This host has no browser profile root to import from")), () => app.BrowserLauncher ?? throw new InvalidOperationException("This host can't start another browser"), () => app.FileTrash ?? throw new InvalidOperationException("This host can't use the Recycle Bin"), host.Scheduler, host.DownloadsDirectory, host.Push);
+		_importApi = importApi;
 		bridge.Register("import:sources", _ => importApi.Sources());
 		bridge.Register("import:bookmarks", args => importApi.ImportSource(Text(args, 0)));
 		bridge.Register("import:bookmarks-file", args => importApi.ImportPicked(Text(args, 0)));
+		bridge.Register("import:watch-passwords", args => Do(() => importApi.WatchPasswords(Text(args, 0))));
+		bridge.Register("import:cancel-watch", _ => Do(importApi.CancelWatch));
+		bridge.Register("import:recycle", args => Do(() => importApi.Recycle(Text(args, 0))));
 		_watchedVault = app.Vaults.Current;
 		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;
@@ -446,6 +452,8 @@ public sealed class ChromeApi : IDisposable
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
 		_unsubscribeLibrary = app.Library.Subscribe(_ => host.Push("library:state", LibraryState()));
 	}
+
+	private ImportApi? _importApi;
 
 	public bool SettingsOpen => Shell.SettingsOpen;
 
@@ -573,6 +581,7 @@ public sealed class ChromeApi : IDisposable
 		if (_app.SyncClients is { } syncClients) syncClients.EngineStatusChanged -= PushSyncState;
 		if (_watchedVault is { } vault) Unwatch(vault);
 		CancelSyncSignIn();
+		_importApi?.Dispose();
 		Interlocked.Exchange(ref _restore, null)?.Dispose();
 		Autofill.Dispose();
 		SignIn.Dispose();
