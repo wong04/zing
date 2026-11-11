@@ -1651,7 +1651,9 @@ public sealed class ChromeApi : IDisposable
 		{
 			case StartPageNavigation.Search search:
 				if (AddressInput.JsTrim(search.Query).Length == 0) return NavigationDecision.Cancel;
-				return new NavigationDecision.Redirect(_app.Address.Resolve(search.Query, Setting("searchEngine")));
+				// The address bar's own search already is this address; redirecting it to itself would restart it forever from the start page.
+				var resolved = _app.Address.Resolve(search.Query, Setting("searchEngine"));
+				return resolved == to ? null : new NavigationDecision.Redirect(resolved);
 			case StartPageNavigation.EditShortcuts:
 				Shell.OpenSettings();
 				return NavigationDecision.Cancel;
