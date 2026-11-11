@@ -163,4 +163,31 @@ public sealed class NudgeTests : IDisposable
 		Assert.Throws<ArgumentException>(() => _api.Act("explode", null));
 		Assert.Throws<ArgumentException>(() => _api.Act("bookmarks", null));
 	}
+
+	[Fact]
+	public void ASettingsImportEndsTheNudge()
+	{
+		_api.ImportSource("chrome:Profile 1");
+		Assert.True(_hooks.Done);
+		Assert.Equal(1, _hooks.Reloads);
+		Assert.Null(_api.Nudge());
+	}
+
+	[Fact]
+	public void ASecondImportClickKeepsTheFirstResult()
+	{
+		_api.Act("bookmarks", "chrome:Profile 1");
+		var first = _api.Nudge();
+		_api.Act("bookmarks", "chrome:Profile 1");
+		Assert.Same(first, _api.Nudge());
+		Assert.Equal(1, _hooks.Reloads);
+	}
+
+	[Fact]
+	public void ZingAsDefaultReadsNoProfiles()
+	{
+		_hooks.ProgId = "ZingHTML";
+		_rootUnreadable = true;
+		Assert.Equal(new ImportNudge.Generic(), _api.Nudge());
+	}
 }

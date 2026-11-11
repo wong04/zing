@@ -47,6 +47,13 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	/// <exception cref="ImportFileNotUtf8Exception"/>
 	public BookmarkImportOutcome ImportSource(string id)
 	{
+		var outcome = ImportSourceCore(id);
+		EndNudge();
+		return outcome;
+	}
+
+	private BookmarkImportOutcome ImportSourceCore(string id)
+	{
 		var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
 		return Merge(Guarded(() => ImportSources.Read(source), "this browser's bookmarks"), source.Display);
 	}
@@ -62,7 +69,18 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	public BookmarkImportOutcome ImportPicked(string token)
 	{
 		var path = grants.Resolve(token);
-		return Merge(Guarded(() => ImportFile.ParseBookmarks(path), "this file"), Path.GetFileName(path));
+		var outcome = Merge(Guarded(() => ImportFile.ParseBookmarks(path), "this file"), Path.GetFileName(path));
+		EndNudge();
+		return outcome;
+	}
+
+	/// <summary>An import from Settings answers the card too: it stays away from now on.</summary>
+	private void EndNudge()
+	{
+		if (nudgeHost is not { } host || host.IsDone()) return;
+		_cached = null;
+		host.MarkDone();
+		host.ReloadStartPages();
 	}
 
 	/// <summary>Opens the source browser's password export page and waits for the CSV to land in the downloads folder; a new watch ends the old.</summary>
@@ -115,6 +133,8 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 		switch (action)
 		{
 			case "bookmarks":
+				// A double click or a stale New Tab: the card already shows (or will show) the right state.
+				if (_result is not null || host.IsDone()) return;
 				ImportFromCard(host, sourceId ?? throw new ArgumentException("The bookmarks action needs a source"));
 				return;
 			case "settings":
@@ -165,8 +185,10 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 
 	private ImportNudge Offer(NudgeHost host)
 	{
-		var sources = ImportSources.Find(localAppData());
-		if (DefaultBrowserSource.Pick(host.HttpsProgId(), sources) is not { } source) return new ImportNudge.Generic();
+		var progId = host.HttpsProgId();
+		// Zing, Firefox or nothing as the default can't be a source, so no profile is worth parsing.
+		if (DefaultBrowserSource.BrowserFor(progId) is null) return new ImportNudge.Generic();
+		if (DefaultBrowserSource.Pick(progId, ImportSources.Find(localAppData())) is not { } source) return new ImportNudge.Generic();
 		return new ImportNudge.Offer(Label(source), ProfileOf(source), source.Bookmarks ?? 0, source.Id, source.Browser != ImportBrowser.Arc);
 	}
 
@@ -176,13 +198,13 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 		try
 		{
 			var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
-			var outcome = ImportSource(id);
+			var outcome = ImportSourceCore(id);
 			_result = new ImportNudge.Result(Label(source), outcome.AddedToBar + outcome.AddedToFolder, source.Id, source.Browser != ImportBrowser.Arc);
 			host.MarkDone();
 		}
 		catch (Exception error) when (error is UnknownImportSourceException or IOException or UnauthorizedAccessException or SecurityException or BookmarksFileDamagedException or ChromiumBookmarksFormatException or ArcSidebarFormatException or ImportFileTooLargeException or ImportFileNotUtf8Exception)
 		{
-			// The card shows why; the user can retry or choose another browser.
+			// The card shows why; the card then offers Choose… and Not now.
 			_cached = new ImportNudge.Generic(error.Message);
 		}
 		host.ReloadStartPages();
