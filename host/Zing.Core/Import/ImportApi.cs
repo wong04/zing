@@ -11,6 +11,8 @@ public sealed record PasswordExportFound(string Token, string Name);
 
 public sealed record WatchTimedOut();
 
+public sealed class NotAPasswordExportException() : InvalidOperationException("That file isn't a password export, so Zing won't delete it");
+
 public sealed class UnknownImportSourceException(string id) : ArgumentException($"{id} isn't an import source on this PC");
 
 /// <summary>A source or file that couldn't be read; the message never carries a path.</summary>
@@ -85,7 +87,13 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	}
 
 	/// <exception cref="UnknownFileGrantException"/>
-	public void Recycle(string token) => trash().Recycle(grants.Resolve(token));
+	/// <exception cref="NotAPasswordExportException">The file isn't a password export, so it isn't Zing's to delete.</exception>
+	public void Recycle(string token)
+	{
+		var path = grants.Resolve(token);
+		if (!PasswordExportWatch.IsPasswordExport(path)) throw new NotAPasswordExportException();
+		trash().Recycle(path);
+	}
 
 	private void Found(string path)
 	{

@@ -93,7 +93,7 @@ public sealed class PasswordExportWatch(IScheduler scheduler, string downloadsDi
 		return null;
 	}
 
-	private static bool IsPasswordExport(string path)
+	public static bool IsPasswordExport(string path)
 	{
 		try
 		{

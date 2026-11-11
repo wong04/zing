@@ -571,6 +571,7 @@ public sealed class ChromeApi : IDisposable
 	public void Dispose()
 	{
 		_disposed = true;
+		_importApi?.Dispose();
 		_app.Runner?.KillWindow(_windowId);
 		Viewer?.Dispose();
 		_closing.Cancel();
@@ -581,7 +582,6 @@ public sealed class ChromeApi : IDisposable
 		if (_app.SyncClients is { } syncClients) syncClients.EngineStatusChanged -= PushSyncState;
 		if (_watchedVault is { } vault) Unwatch(vault);
 		CancelSyncSignIn();
-		_importApi?.Dispose();
 		Interlocked.Exchange(ref _restore, null)?.Dispose();
 		Autofill.Dispose();
 		SignIn.Dispose();

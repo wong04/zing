@@ -12,7 +12,13 @@ public sealed class ImportPasswordWatchTests : IDisposable
 	private sealed class FakeLauncher : IBrowserLauncher
 	{
 		public List<(ImportBrowser Browser, string Url)> Opened { get; } = [];
-		public void Open(ImportBrowser browser, string url) => Opened.Add((browser, url));
+		public Exception? Fail { get; set; }
+
+		public void Open(ImportBrowser browser, string url)
+		{
+			if (Fail is not null) throw Fail;
+			Opened.Add((browser, url));
+		}
 	}
 
 	private sealed class FakeTrash : IFileTrash
@@ -155,5 +161,41 @@ public sealed class ImportPasswordWatchTests : IDisposable
 		Poll(1);
 
 		Assert.Single(Events("import:watch-timed-out"));
+	}
+
+	[Fact]
+	public async Task ALaunchFailureStopsTheWatch()
+	{
+		_launcher.Fail = new BrowserNotInstalledException(ImportBrowser.Chrome);
+
+		Assert.Equal("BrowserNotInstalledException", ErrorName(await Invoke("import:watch-passwords", "chrome:Default")));
+
+		Assert.Equal(0, _host.FakeScheduler.PendingCount);
+	}
+
+	[Fact]
+	public async Task RecyclingANonPasswordFileThrows()
+	{
+		var path = Path.Combine(_root, "bookmarks.html");
+		File.WriteAllText(path, "<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><DT><A HREF=\"https://example.com/\">x</A></DL>");
+		_host.PickedPaths = [path];
+		var token = (await Invoke("files:pick", (object)new[] { "bookmarks" })).GetProperty("value")[0].GetProperty("token").GetString();
+
+		Assert.Equal("NotAPasswordExportException", ErrorName(await Invoke("import:recycle", token)));
+
+		Assert.Empty(_trash.Recycled);
+	}
+
+	[Fact]
+	public async Task RecyclingAPickedPasswordsCsvWorks()
+	{
+		var path = Path.Combine(_root, "mine.csv");
+		File.WriteAllText(path, Csv);
+		_host.PickedPaths = [path];
+		var token = (await Invoke("files:pick", (object)new[] { "csv" })).GetProperty("value")[0].GetProperty("token").GetString();
+
+		AssertOk(await Invoke("import:recycle", token));
+
+		Assert.Equal([path], _trash.Recycled);
 	}
 }
