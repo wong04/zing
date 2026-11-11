@@ -124,6 +124,7 @@ test('a broken profile shows its error and the others still import', async () =>
 	const sheet = await openImport(zing)
 	await expect(row(sheet, 'Chrome (Work)').getByRole('button', { name: 'Import bookmarks' })).toBeDisabled()
 	await expect(row(sheet, 'Chrome (Work)')).not.toContainText(/\d+ bookmarks?/)
+	await expect(row(sheet, 'Chrome (Work)')).toContainText('damaged or incomplete')
 
 	await importFrom(sheet, 'Chrome (Personal)')
 	await expect(row(sheet, 'Chrome (Personal)').getByRole('status')).toContainText('Added')
