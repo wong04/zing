@@ -12,6 +12,7 @@ import { ShieldAlertIcon, ShieldCheckIcon } from '../components/icons'
 import { AccountPane } from '../account/AccountPane'
 import { privacyStatus } from './privacy'
 import { VaultSection } from './VaultSection'
+import { ImportSection } from './ImportSection'
 import type { CustomId } from './rows'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
@@ -298,5 +299,7 @@ export function CustomRow({ id, handle, version }: { id: CustomId; handle: Setti
 			return <AccountPane />
 		case 'about':
 			return <About version={version} />
+		case 'import':
+			return <ImportSection />
 	}
 }

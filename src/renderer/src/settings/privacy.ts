@@ -25,10 +25,19 @@ export function setVaultKeepsData(keeps: boolean): void {
 	vaultKeepsData = keeps
 }
 
+// Imported bookmarks live in the library file, which the Settings sheet watches: any node that came from an import keeps the banner a warning.
+let libraryHoldsImports = false
+
+/** Whether the library holds bookmarks that came from an import; see `holdsImports` in the library's shared rules. */
+export function setLibraryHoldsImports(holds: boolean): void {
+	libraryHoldsImports = holds
+}
+
 const conditions: StoresDataCondition[] = [
 	{ id: 'persistentProfile', active: (s) => s.persistentProfile, what: 'cookies and cache', plural: true },
 	{ id: 'restoreTabs', active: (s) => s.restoreTabs, what: 'your open tabs', plural: true },
 	{ id: 'vault', active: () => vaultKeepsData, what: 'saved passwords', plural: true },
+	{ id: 'imported', active: () => libraryHoldsImports, what: 'imported bookmarks', plural: true },
 ]
 
 export class DuplicateConditionError extends Error {

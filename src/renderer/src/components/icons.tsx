@@ -97,6 +97,12 @@ export const FolderIcon = (p: GlyphProps) => (
 	</Glyph>
 )
 
+export const ImportIcon = (p: GlyphProps) => (
+	<Glyph {...p}>
+		<path d="M8 2.5v7M5.2 6.9 8 9.7l2.8-2.8M2.5 10v2A1.5 1.5 0 0 0 4 13.5h8a1.5 1.5 0 0 0 1.5-1.5v-2" />
+	</Glyph>
+)
+
 export const HandIcon = (p: GlyphProps) => (
 	<Glyph {...p}>
 		<path d="M5.5 8V4a1 1 0 0 1 2 0v3.5M7.5 7V3a1 1 0 0 1 2 0v4M9.5 7V4a1 1 0 0 1 2 0v5.5a4 4 0 0 1-4 4h-.3A3.5 3.5 0 0 1 4 11l-1-2.2a1 1 0 0 1 1.7-1l.8 1.2" />

@@ -42,6 +42,15 @@ public sealed class WindowsDownloads : IDownloadHost
 		return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
 	}
 
+	/// <summary>The root browser profiles live under; ZING_LOCALAPPDATA in tests, so they never read the real profiles.</summary>
+	public static string LocalAppData()
+	{
+		var configured = Environment.GetEnvironmentVariable("ZING_LOCALAPPDATA");
+		if (!string.IsNullOrEmpty(configured)) return configured;
+		if (TestHooks.IsEndToEndRun) throw new InvalidOperationException("e2e runs must set ZING_LOCALAPPDATA so they never read the real browser profiles");
+		return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+	}
+
 	public void Track(int id, CoreWebView2DownloadOperation operation) => _operations[id] = operation;
 
 	public void Forget(int id) => _operations.Remove(id);

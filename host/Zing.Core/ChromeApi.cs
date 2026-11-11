@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Zing.Core.Engines;
+using Zing.Core.Import;
 using Zing.Core.LinkPreview;
 using Zing.Core.Viewer;
 using Zing.Core.Net;
@@ -89,7 +90,8 @@ public interface IWindowHost
 /// <param name="Switch">The password vault, shared by every window, open only while <c>passwordAutofill</c> is on.</param>
 /// <param name="Sync">The sync server and Google sign-in this build has; null when it was built without a Google client ID (Ruling 48).</param>
 /// <param name="SyncScheduler">Runs the open vault's sync engine (Task 13); null runs none.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null)
+/// <param name="LocalAppData">Where browser profiles live (the import channels read it when called); null where the host has none, and then those channels throw.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null)
 {
 	public long Now() => Clock.Now();
 
@@ -432,6 +434,10 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
 		bridge.Register("peek:get", _ => Peek());
+		var importApi = new ImportApi(app.Library, Grants, app.LocalAppData ?? (() => throw new InvalidOperationException("This host has no browser profile root to import from")));
+		bridge.Register("import:sources", _ => importApi.Sources());
+		bridge.Register("import:bookmarks", args => importApi.ImportSource(Text(args, 0)));
+		bridge.Register("import:bookmarks-file", args => importApi.ImportPicked(Text(args, 0)));
 		_watchedVault = app.Vaults.Current;
 		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;

@@ -19,6 +19,14 @@ export class ArcSidebarFormatError extends Error {
 // would otherwise recurse until the stack runs out.
 const MAX_DEPTH = 64
 
+// childrenIds may name one item from many parents, so a tiny file can expand to
+// millions of visits (20 levels listing the next twice is 2^20).
+const MAX_ITEMS = 50_000
+
+interface Visits {
+	count: number
+}
+
 interface ArcItem {
 	id: string
 	title?: string | null
@@ -51,6 +59,7 @@ export function parseArcSidebar(json: string): BookmarkImport {
 	const items = new Map(objectsOf<ArcItem>(main.items).map((item) => [item.id, item]))
 	const spaces = objectsOf<ArcSpace>(main.spaces)
 	const skipped: string[] = []
+	const visits: Visits = { count: 0 }
 	const other: ImportedNode[] = []
 	spaces.forEach((space, index) => {
 		const pinnedId = containerAfter(space, 'pinned')
@@ -59,10 +68,10 @@ export function parseArcSidebar(json: string): BookmarkImport {
 			return
 		}
 		const pinned = items.get(pinnedId)
-		const children = pinned ? convertAll(pinned, items, skipped, new Set()) : []
+		const children = pinned ? convertAll(pinned, items, skipped, new Set(), visits) : []
 		other.push(importedFolder(space.title || `Space ${index + 1}`, children))
 	})
-	const bar = topApps(main, items, skipped)
+	const bar = topApps(main, items, skipped, visits)
 	return { bar, other, skipped }
 }
 
@@ -80,25 +89,26 @@ function containerAfter(space: ArcSpace, label: string): string | undefined {
 
 // Arc's Favorites (the icon grid at the top of the sidebar) are the closest
 // thing to a Favourites bar.
-function topApps(main: ArcContainer, items: Map<string, ArcItem>, skipped: string[]): ImportedNode[] {
+function topApps(main: ArcContainer, items: Map<string, ArcItem>, skipped: string[], visits: Visits): ImportedNode[] {
 	const ids = (main.topAppsContainerIDs ?? []).filter((id): id is string => typeof id === 'string')
 	return ids.flatMap((containerId) => {
 		const container = items.get(containerId)
-		return container ? convertAll(container, items, skipped, new Set()) : []
+		return container ? convertAll(container, items, skipped, new Set(), visits) : []
 	})
 }
 
 // `path` holds the ids of the items this one sits inside.
-function convertAll(container: ArcItem, items: Map<string, ArcItem>, skipped: string[], path: Set<string>): ImportedNode[] {
+function convertAll(container: ArcItem, items: Map<string, ArcItem>, skipped: string[], path: Set<string>, visits: Visits): ImportedNode[] {
 	if (path.has(container.id)) throw new ArcSidebarFormatError(`Item ${container.id} is its own ancestor`)
 	path.add(container.id)
 	if (path.size > MAX_DEPTH) throw new ArcSidebarFormatError("Arc's sidebar is nested too deeply")
-	const children = (container.childrenIds ?? []).flatMap((id) => convert(id, items, skipped, path))
+	const children = (container.childrenIds ?? []).flatMap((id) => convert(id, items, skipped, path, visits))
 	path.delete(container.id)
 	return children
 }
 
-function convert(id: string, items: Map<string, ArcItem>, skipped: string[], path: Set<string>): ImportedNode[] {
+function convert(id: string, items: Map<string, ArcItem>, skipped: string[], path: Set<string>, visits: Visits): ImportedNode[] {
+	if (++visits.count > MAX_ITEMS) throw new ArcSidebarFormatError("Arc's sidebar has too many items")
 	const item = items.get(id)
 	if (!item) {
 		skipped.push(`Missing item ${id}`)
@@ -115,7 +125,7 @@ function convert(id: string, items: Map<string, ArcItem>, skipped: string[], pat
 		return [importedLink(title, url)]
 	}
 	if (item.data?.list || item.childrenIds) {
-		return [importedFolder(item.title || 'Folder', convertAll(item, items, skipped, path))]
+		return [importedFolder(item.title || 'Folder', convertAll(item, items, skipped, path, visits))]
 	}
 	skipped.push(`Item ${id} is neither a tab nor a folder`)
 	return []
