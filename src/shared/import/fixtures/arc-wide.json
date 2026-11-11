@@ -1,0 +1,33 @@
+{
+	"sidebar": {
+		"containers": [
+			{
+				"spaces": ["s1", { "id": "s1", "title": "Wide", "containerIDs": ["pinned", "p1"] }],
+				"items": [
+					"p1", { "id": "p1", "title": null, "childrenIds": ["c1"], "data": { "itemContainer": {} } },
+					"c1", { "id": "c1", "title": "C1", "childrenIds": ["c2", "c2"], "data": { "list": {} } },
+					"c2", { "id": "c2", "title": "C2", "childrenIds": ["c3", "c3"], "data": { "list": {} } },
+					"c3", { "id": "c3", "title": "C3", "childrenIds": ["c4", "c4"], "data": { "list": {} } },
+					"c4", { "id": "c4", "title": "C4", "childrenIds": ["c5", "c5"], "data": { "list": {} } },
+					"c5", { "id": "c5", "title": "C5", "childrenIds": ["c6", "c6"], "data": { "list": {} } },
+					"c6", { "id": "c6", "title": "C6", "childrenIds": ["c7", "c7"], "data": { "list": {} } },
+					"c7", { "id": "c7", "title": "C7", "childrenIds": ["c8", "c8"], "data": { "list": {} } },
+					"c8", { "id": "c8", "title": "C8", "childrenIds": ["c9", "c9"], "data": { "list": {} } },
+					"c9", { "id": "c9", "title": "C9", "childrenIds": ["c10", "c10"], "data": { "list": {} } },
+					"c10", { "id": "c10", "title": "C10", "childrenIds": ["c11", "c11"], "data": { "list": {} } },
+					"c11", { "id": "c11", "title": "C11", "childrenIds": ["c12", "c12"], "data": { "list": {} } },
+					"c12", { "id": "c12", "title": "C12", "childrenIds": ["c13", "c13"], "data": { "list": {} } },
+					"c13", { "id": "c13", "title": "C13", "childrenIds": ["c14", "c14"], "data": { "list": {} } },
+					"c14", { "id": "c14", "title": "C14", "childrenIds": ["c15", "c15"], "data": { "list": {} } },
+					"c15", { "id": "c15", "title": "C15", "childrenIds": ["c16", "c16"], "data": { "list": {} } },
+					"c16", { "id": "c16", "title": "C16", "childrenIds": ["c17", "c17"], "data": { "list": {} } },
+					"c17", { "id": "c17", "title": "C17", "childrenIds": ["c18", "c18"], "data": { "list": {} } },
+					"c18", { "id": "c18", "title": "C18", "childrenIds": ["c19", "c19"], "data": { "list": {} } },
+					"c19", { "id": "c19", "title": "C19", "childrenIds": ["c20", "c20"], "data": { "list": {} } },
+					"c20", { "id": "c20", "title": "C20", "childrenIds": ["t"], "data": { "list": {} } },
+					"t", { "id": "t", "title": "Tab", "data": { "tab": { "savedURL": "https://example.com/", "savedTitle": "Tab" } } }
+				]
+			}
+		]
+	}
+}

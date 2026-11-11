@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { generatePassword } from '@shared/devtools/password'
-import { recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type SyncNotice, type SyncState, type VaultImportResult } from '@shared/vault/vault'
+import { recentlyDeleted, type LoginSummary, type PasswordHistoryEntry, type SyncNotice, type SyncState } from '@shared/vault/vault'
 import { zing } from '../api'
 import { InfoBanner, PillButton, PillField } from '../components'
 import { SettingRowShell } from './SettingRowShell'
 import { RecoveryKeyScreen, ShowRecoveryKey, SyncSetup, useAction, useSyncState } from './SyncSetup'
 import { signInLabel, syncBanner, syncControls, syncDetail, TURN_OFF_SYNC_CONFIRM, UPLOAD_LOCAL_CONFIRM } from './syncBanner'
+import { messageOf, PasswordImportResult, usePasswordCsvImport } from './PasswordImport'
 import { useVault } from './useVaultData'
 import { earlierPasswords, loginsDetail } from './vaultText'
 
@@ -22,13 +23,6 @@ function matches(login: LoginSummary, query: string): boolean {
 	const needle = query.trim().toLowerCase()
 	if (needle === '') return true
 	return [login.origin, login.title, login.username, login.note].some((field) => field.toLowerCase().includes(needle))
-}
-
-/** What went wrong, for the person. A refused host call carries the host's own sentence. */
-function messageOf(error: unknown): string {
-	if (!(error instanceof Error)) throw error
-	// The bridge puts the channel in front ("vault:reveal: ..."); the person doesn't need it.
-	return error.message.replace(/^[a-z-]+:[a-z-]+: /, '')
 }
 
 interface Revealed {
@@ -364,7 +358,7 @@ export function VaultSection() {
 	const [editing, setEditing] = useState<string>()
 	const [error, setError] = useState<string>()
 	const [notice, setNotice] = useState<string>()
-	const [imported, setImported] = useState<VaultImportResult>()
+	const { imported, pickAndImport } = usePasswordCsvImport()
 	const [confirmingExport, setConfirmingExport] = useState(false)
 	const [busy, setBusy] = useState(false)
 	// When the page opened: Recently deleted drops a login 30 days after it was deleted.
@@ -431,13 +425,7 @@ export function VaultSection() {
 		}
 	}
 
-	const importCsv = (): void =>
-		void guarded(async () => {
-			setImported(undefined)
-			const [file] = await zing.pickFiles(['csv'])
-			if (!file) return
-			setImported(await zing.importPasswordsCsv(file.token))
-		})
+	const importCsv = (): void => void guarded(pickAndImport)
 
 	const exportCsv = (): void =>
 		void guarded(async () => {
@@ -490,22 +478,7 @@ export function VaultSection() {
 				</div>
 			) : null}
 
-			{imported ? (
-				<div className="vault-import" role="status">
-					<InfoBanner kind="info">
-						Added {imported.added}, merged {imported.merged} into logins you already had, skipped {imported.skipped.length}.
-					</InfoBanner>
-					{imported.skipped.length > 0 ? (
-						<ul className="vault-skipped" aria-label="Skipped rows">
-							{imported.skipped.map((row) => (
-								<li key={row.row}>
-									Row {row.row}: {row.reason}
-								</li>
-							))}
-						</ul>
-					) : null}
-				</div>
-			) : null}
+			<PasswordImportResult imported={imported} />
 
 			{logins.length === 0 ? (
 				<div className="vault-empty">

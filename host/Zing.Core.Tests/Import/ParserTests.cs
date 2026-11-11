@@ -73,6 +73,29 @@ public sealed class ParserTests : IDisposable
 		if (vector.TryGetProperty("message", out var message)) Assert.Equal(message.GetString(), error.Message);
 	}
 
+	private static string SidebarOf(int tabs)
+	{
+		var ids = string.Join(",", Enumerable.Range(0, tabs).Select(i => $"\"t{i}\""));
+		var items = string.Join(",", Enumerable.Range(0, tabs).Select(i => $"\"t{i}\",{{\"id\":\"t{i}\",\"title\":\"T{i}\",\"data\":{{\"tab\":{{\"savedURL\":\"https://example.com/\"}}}}}}"));
+		return $"{{\"sidebar\":{{\"containers\":[{{\"spaces\":[\"s1\",{{\"id\":\"s1\",\"title\":\"Big\",\"containerIDs\":[\"pinned\",\"p\"]}}],\"items\":[\"p\",{{\"id\":\"p\",\"childrenIds\":[{ids}],\"data\":{{\"itemContainer\":{{}}}}}},{items}]}}]}}}}";
+	}
+
+	[Fact]
+	public void AnArcSidebarExactlyAtTheItemCapStillParses()
+	{
+		var result = ArcSidebar.Parse(SidebarOf(50_000));
+
+		Assert.Equal(50_000, BookmarkImport.CountLinks(result.Other));
+	}
+
+	[Fact]
+	public void AnArcSidebarJustOverTheItemCapIsRefused()
+	{
+		var error = Assert.Throws<ArcSidebarFormatException>(() => ArcSidebar.Parse(SidebarOf(50_001)));
+
+		Assert.Equal("Arc's sidebar has too many items", error.Message);
+	}
+
 	[Fact]
 	public void SafarisFavoritesFolderIsNotTheBarBecauseItCarriesNoToolbarMark()
 	{

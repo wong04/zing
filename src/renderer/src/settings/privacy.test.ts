@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings'
-import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setVaultKeepsData } from './privacy'
+import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setLibraryHoldsImports, setVaultKeepsData } from './privacy'
 
 const withSettings = (patch: Partial<Settings>): Settings => ({ ...DEFAULT_SETTINGS, ...patch })
 
@@ -70,5 +70,14 @@ describe('the password vault', () => {
 	it('still warns once the setting is off, because the files stay on disk', () => {
 		setVaultKeepsData(true)
 		expect(privacyStatus(withSettings({ passwordAutofill: false }))).toMatchObject({ traceless: false, detail: 'Saved passwords are written to disk.' })
+	})
+})
+
+describe('imported bookmarks', () => {
+	it('imported bookmarks flip the banner and clearing them restores it', () => {
+		setLibraryHoldsImports(true)
+		expect(privacyStatus(DEFAULT_SETTINGS)).toMatchObject({ traceless: false, detail: 'Imported bookmarks are written to disk.' })
+		setLibraryHoldsImports(false)
+		expect(privacyStatus(DEFAULT_SETTINGS).traceless).toBe(true)
 	})
 })

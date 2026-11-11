@@ -535,3 +535,15 @@
 	background: var(--surface-2, rgba(127, 127, 127, 0.12));
 	letter-spacing: 0.04em;
 }
+
+.import-skipped {
+	color: var(--muted);
+	font-size: 11.5px;
+}
+
+.import-help {
+	margin: 0;
+	padding-left: 18px;
+	color: var(--muted);
+	font-size: 11.5px;
+}

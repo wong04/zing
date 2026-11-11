@@ -193,6 +193,18 @@
 			"args": 2
 		},
 		{
+			"channel": "import:bookmarks",
+			"args": 1
+		},
+		{
+			"channel": "import:bookmarks-file",
+			"args": 1
+		},
+		{
+			"channel": "import:sources",
+			"args": 0
+		},
+		{
 			"channel": "library:apply",
 			"args": 1
 		},

@@ -86,6 +86,7 @@ public static class FileKinds
 		["pdf"] = ["pdf"],
 		["picture"] = ["png", "jpg", "jpeg", "webp"],
 		["csv"] = ["csv"],
+		["bookmarks"] = ["html", "htm", "json"],
 		["any"] = [],
 	};
 

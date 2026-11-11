@@ -15,6 +15,7 @@ import { checkStatusText } from '../update/updateText'
 import { useUpdateState } from '../update/useUpdateState'
 import { privacyStatus } from './privacy'
 import { VaultSection } from './VaultSection'
+import { ImportSection } from './ImportSection'
 import type { CustomId } from './rows'
 import { CHECK_FOR_UPDATES_ROW, detailOf } from './rows'
 import { DefaultBrowserRow } from './DefaultBrowserRow'
@@ -323,5 +324,7 @@ export function CustomRow({ id, handle, version }: { id: CustomId; handle: Setti
 			return <AccountPane />
 		case 'about':
 			return <About version={version} />
+		case 'import':
+			return <ImportSection />
 	}
 }

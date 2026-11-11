@@ -211,6 +211,24 @@ export interface RendererErrorReport {
 	readonly view?: string
 }
 
+export interface ImportSourceView {
+	id: string
+	browser: 'chrome' | 'edge' | 'brave' | 'arc'
+	display: string
+	bookmarks?: number
+	error?: string
+	/** Whether Zing can also import this browser's passwords (Chrome, Edge and Brave). */
+	passwords: boolean
+}
+
+export interface BookmarkImportOutcome {
+	folderTitle: string
+	addedToBar: number
+	addedToFolder: number
+	/** Why each item that couldn't be imported was left out. */
+	skipped: string[]
+}
+
 /**
  * Renderer → host requests, answered with a promise. The C# host registers a
  * handler for each by name (ChromeApi, plus a few in MainWindow); the list is
@@ -539,6 +557,12 @@ export interface InvokeContract {
 	'default-browser:dismiss': { args: []; result: void }
 	/** The third-party notices the build generated (THIRD-PARTY-NOTICES.txt). Rejects if the file is missing. */
 	'about:credits': { args: []; result: string }
+	/** The browsers on this PC whose bookmarks can be imported, one row per profile. A broken profile is a row with `error`, not a rejection. No paths. */
+	'import:sources': { args: []; result: ImportSourceView[] }
+	/** Merges a source's bookmarks into the library (it only adds). Rejects with UnknownImportSourceException, or with a path-free message when the file can't be read or is damaged. */
+	'import:bookmarks': { args: [sourceId: string]; result: BookmarkImportOutcome }
+	/** The same for a bookmarks file picked with `pickFiles(['bookmarks'])` (token from `files:pick`); the file's name is the source. */
+	'import:bookmarks-file': { args: [token: string]; result: BookmarkImportOutcome }
 }
 
 /** Host → renderer pushes. The host sends one per change, uncoalesced. */
@@ -755,4 +779,7 @@ export interface ZingApi {
 	getDefaultBrowserState(): Promise<DefaultBrowserState>
 	dismissDefaultBrowserOffer(): Promise<void>
 	getCredits(): Promise<string>
+	importSources(): Promise<ImportSourceView[]>
+	importBookmarks(sourceId: string): Promise<BookmarkImportOutcome>
+	importBookmarksFile(token: string): Promise<BookmarkImportOutcome>
 }
