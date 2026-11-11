@@ -213,6 +213,10 @@
 			"args": 0
 		},
 		{
+			"channel": "import:take-pending",
+			"args": 0
+		},
+		{
 			"channel": "import:watch-passwords",
 			"args": 1
 		},

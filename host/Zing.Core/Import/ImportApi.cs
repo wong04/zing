@@ -18,10 +18,20 @@ public sealed class UnknownImportSourceException(string id) : ArgumentException(
 /// <summary>A source or file that couldn't be read; the message never carries a path.</summary>
 public sealed class ImportReadException(string message, Exception inner) : IOException(message, inner);
 
+/// <summary>What the New Tab card needs from the host: the setting, the default browser, Settings and the open start pages.</summary>
+public sealed record NudgeHost(Func<bool> IsDone, Action MarkDone, Func<string?> HttpsProgId, Action<string> OpenSettings, Action ReloadStartPages);
+
+/// <summary>The password import the New Tab card asked Settings to start.</summary>
+public sealed record PendingImport(string Action, string SourceId);
+
 /// <summary>The import:* channels: the browsers Zing can import from, and the merge of one of their bookmark sets (or a picked file) into the library.</summary>
-public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<string> localAppData, Func<IBrowserLauncher> launcher, Func<IFileTrash> trash, IScheduler scheduler, string downloadsDir, Action<string, object?> push) : IDisposable
+public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<string> localAppData, Func<IBrowserLauncher> launcher, Func<IFileTrash> trash, IScheduler scheduler, string downloadsDir, Action<string, object?> push, NudgeHost? nudgeHost = null) : IDisposable
 {
 	private PasswordExportWatch? _watch;
+	// The card state lives here, in memory: Settings opens in the same window, and nothing about it may reach the disk.
+	private ImportNudge? _cached;
+	private ImportNudge.Result? _result;
+	private PendingImport? _pending;
 
 	public void Dispose() => CancelWatch();
 
@@ -79,6 +89,51 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 		}
 	}
 
+	/// <summary>The card for the start page: a result while one is held, nothing once answered, else an offer from the default browser or the generic ask. Cached per launch, so New Tab doesn't scan the disk.</summary>
+	public ImportNudge? Nudge()
+	{
+		if (_result is not null) return _result;
+		var host = RequireNudgeHost();
+		if (host.IsDone()) return null;
+		return _cached ??= Offer(host);
+	}
+
+	/// <summary>Runs a button of the card. Navigation to the card's links never loads a page.</summary>
+	public void Act(string action, string? sourceId)
+	{
+		var host = RequireNudgeHost();
+		switch (action)
+		{
+			case "bookmarks":
+				ImportFromCard(host, sourceId ?? throw new ArgumentException("The bookmarks action needs a source"));
+				return;
+			case "settings":
+				host.OpenSettings("import");
+				return;
+			case "passwords":
+				_pending = new PendingImport("passwords", sourceId ?? throw new ArgumentException("The passwords action needs a source"));
+				_result = null;
+				host.OpenSettings("import");
+				return;
+			case "dismiss":
+				_result = null;
+				_cached = null;
+				host.MarkDone();
+				host.ReloadStartPages();
+				return;
+			default:
+				throw new ArgumentException($"{action} isn't an import action");
+		}
+	}
+
+	/// <summary>The password import waiting for Settings, once.</summary>
+	public PendingImport? TakePending()
+	{
+		var pending = _pending;
+		_pending = null;
+		return pending;
+	}
+
 	/// <summary>Cancelling when nothing is watched does nothing.</summary>
 	public void CancelWatch()
 	{
@@ -93,6 +148,42 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 		var path = grants.Resolve(token);
 		if (!PasswordExportWatch.IsPasswordExport(path)) throw new NotAPasswordExportException();
 		trash().Recycle(path);
+	}
+
+	private NudgeHost RequireNudgeHost() => nudgeHost ?? throw new InvalidOperationException("This host has no New Tab import card");
+
+	private ImportNudge Offer(NudgeHost host)
+	{
+		var sources = ImportSources.Find(localAppData());
+		if (DefaultBrowserSource.Pick(host.HttpsProgId(), sources) is not { } source) return new ImportNudge.Generic();
+		return new ImportNudge.Offer(Label(source), ProfileOf(source), source.Bookmarks ?? 0, source.Id, source.Browser != ImportBrowser.Arc);
+	}
+
+	private void ImportFromCard(NudgeHost host, string id)
+	{
+		var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
+		_cached = null;
+		try
+		{
+			var outcome = ImportSource(id);
+			_result = new ImportNudge.Result(Label(source), outcome.AddedToBar + outcome.AddedToFolder, source.Id, source.Browser != ImportBrowser.Arc);
+			host.MarkDone();
+		}
+		catch (Exception error) when (error is ImportReadException or BookmarksFileDamagedException or ChromiumBookmarksFormatException or ArcSidebarFormatException or ImportFileTooLargeException or ImportFileNotUtf8Exception)
+		{
+			// The card shows why; the user can retry or choose another browser.
+			_cached = new ImportNudge.Generic(error.Message);
+		}
+		host.ReloadStartPages();
+	}
+
+	// Display is "Chrome (Personal)" or "Arc".
+	private static string Label(ImportSource source) => source.Display.Split(" (")[0];
+
+	private static string? ProfileOf(ImportSource source)
+	{
+		var open = source.Display.IndexOf(" (", StringComparison.Ordinal);
+		return open < 0 || !source.Display.EndsWith(')') ? null : source.Display[(open + 2)..^1];
 	}
 
 	private void Found(string path)

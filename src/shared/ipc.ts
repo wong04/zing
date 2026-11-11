@@ -573,6 +573,8 @@ export interface InvokeContract {
 	'import:cancel-watch': { args: []; result: void }
 	/** Sends a found export (token from `import:password-export`) to the Recycle Bin. */
 	'import:recycle': { args: [token: string]; result: void }
+	/** The password import the New Tab card asked Settings to start, once; null when none is waiting. */
+	'import:take-pending': { args: []; result: { action: 'passwords'; sourceId: string } | null }
 }
 
 /** Host → renderer pushes. The host sends one per change, uncoalesced. */
@@ -798,6 +800,7 @@ export interface ZingApi {
 	watchPasswords(sourceId: string): Promise<void>
 	cancelPasswordWatch(): Promise<void>
 	recycleFile(token: string): Promise<void>
+	takePendingImport(): Promise<{ action: 'passwords'; sourceId: string } | null>
 	onPasswordExport(listener: (file: { token: string; name: string }) => void): Unsubscribe
 	onPasswordWatchTimedOut(listener: () => void): Unsubscribe
 }

@@ -64,6 +64,22 @@ export function ImportSection() {
 		}
 	}, [])
 
+	// The New Tab card's "Import passwords too" lands here with the flow already chosen.
+	useEffect(() => {
+		let current = true
+		zing.takePendingImport().then(
+			(pending) => {
+				if (current && pending?.action === 'passwords') setFlowSource(pending.sourceId)
+			},
+			(failure: unknown) => {
+				if (current) setListError(messageOf(failure))
+			},
+		)
+		return () => {
+			current = false
+		}
+	}, [])
+
 	const run = async (row: RowId, work: () => Promise<void>): Promise<void> => {
 		setBusy(true)
 		setError(undefined)

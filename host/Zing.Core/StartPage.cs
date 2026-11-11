@@ -231,10 +231,11 @@ public static class StartPage
 		Setting(settings, key) is JsonValue value && value.TryGetValue<string>(out var text) ? text : throw new InvalidSettingException(key, Setting(settings, key));
 
 	/// <summary>The page for the current settings: search engine, shortcuts and accent.</summary>
-	public static string Html(JsonObject settings) => Html(new StartPageInput(
+	public static string Html(JsonObject settings, ImportNudge? nudge = null) => Html(new StartPageInput(
 		SearchFormAction(TextSetting(settings, "searchEngine")),
 		StartShortcuts.FromSetting(Setting(settings, "startShortcuts")),
-		ThemeFor(settings)));
+		ThemeFor(settings),
+		nudge));
 
 	/// <summary>The colours of the current accent, for any page Zing serves itself.</summary>
 	public static StartPageTheme ThemeFor(JsonObject settings) => Theme(TextSetting(settings, "accent"), TextSetting(settings, "customColor"));
@@ -256,10 +257,10 @@ public static class StartPage
 	public static bool IsStartPage(string url) => ZingHost(url) == "home";
 
 	/// <summary>Serves the zing: scheme. Throws <see cref="StartPageSchemeException"/> for any page it doesn't serve.</summary>
-	public static StartPageResponse Handle(string url, JsonObject settings)
+	public static StartPageResponse Handle(string url, JsonObject settings, ImportNudge? nudge = null)
 	{
 		if (!IsStartPage(url)) throw new StartPageSchemeException(url);
-		return new StartPageResponse(200, "text/html; charset=utf-8", "no-store", Html(settings));
+		return new StartPageResponse(200, "text/html; charset=utf-8", "no-store", Html(settings, nudge));
 	}
 
 	/// <summary>
