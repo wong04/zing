@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileHelp, InvalidPasswordImportEventError, outcomeLine, PASSWORDS_FILE_VAULT_OFF, passwordImportStep, type PasswordImportEvent, type PasswordImportState } from './importText'
+import { fileHelp, InvalidPasswordImportEventError, outcomeLine, PASSWORDS_FILE_VAULT_OFF, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, type PasswordImportEvent, type PasswordImportState } from './importText'
 
 const outcome = (patch: Partial<Parameters<typeof outcomeLine>[0]> = {}) => ({
 	folderTitle: 'Imported from Chrome (Personal)',
@@ -95,5 +95,27 @@ describe('passwordImportStep', () => {
 	it('throws on an event the step cannot take', () => {
 		expect(() => passwordImportStep({ step: 'idle' }, { type: 'file-arrived' })).toThrow(InvalidPasswordImportEventError)
 		expect(() => passwordImportStep({ step: 'done' }, { type: 'recycled' })).toThrow(InvalidPasswordImportEventError)
+	})
+})
+
+describe('late events', () => {
+	it('an export arriving while the picker is open is dropped once the picked file is taken, and the reverse', () => {
+		const importing = passwordImportStep({ step: 'waiting' }, { type: 'choose-file' }).state
+		expect(passwordImportAccepts(importing, { type: 'file-arrived' })).toBe(false)
+		expect(passwordImportAccepts(importing, { type: 'choose-file' })).toBe(false)
+		expect(passwordImportAccepts({ step: 'waiting' }, { type: 'choose-file' })).toBe(true)
+		expect(passwordImportAccepts({ step: 'timed-out' }, { type: 'choose-file' })).toBe(true)
+		expect(passwordImportAccepts({ step: 'importing' }, { type: 'choose-file' })).toBe(false)
+	})
+
+	it('a second click on Move it to the Recycle Bin finds the step already done', () => {
+		const done = passwordImportStep({ step: 'offer-recycle' }, { type: 'recycled' }).state
+		expect(passwordImportAccepts(done, { type: 'recycled' })).toBe(false)
+		expect(passwordImportAccepts({ step: 'offer-recycle' }, { type: 'recycled' })).toBe(true)
+	})
+
+	it('a failure applies only to the step that was waiting on it', () => {
+		expect(passwordImportFailureApplies({ step: 'importing' }, 'importing')).toBe(true)
+		expect(passwordImportFailureApplies({ step: 'idle' }, 'importing')).toBe(false)
 	})
 })

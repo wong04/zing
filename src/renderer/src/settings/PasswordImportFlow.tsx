@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ImportSourceView } from '@shared/ipc'
 import { zing } from '../api'
 import { InfoBanner, PillButton } from '../components'
-import { CONFIRM_VAULT_COPY, passwordImportStep, RECYCLE_COPY, type PasswordImportEvent, type PasswordImportState } from './importText'
+import { CONFIRM_VAULT_COPY, EXPORT_COPY, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, RECYCLE_COPY, type PasswordImportEvent, type PasswordImportState } from './importText'
 import { messageOf, PasswordImportResult, usePasswordCsvImport } from './PasswordImport'
 
 interface PasswordImportFlowProps {
@@ -10,6 +10,15 @@ interface PasswordImportFlowProps {
 	vaultOn: boolean
 	/** The flow is over (cancelled, or finished and acknowledged). */
 	onClose: () => void
+}
+
+/** A refused cancel can't be shown (the flow is closing), so it is thrown out of the call stack for the app's error reporting to record. */
+function cancelWatch(): void {
+	zing.cancelPasswordWatch().catch((failure: unknown) => {
+		queueMicrotask(() => {
+			throw failure
+		})
+	})
 }
 
 const browserName = (source: ImportSourceView): string => source.browser[0]!.toUpperCase() + source.browser.slice(1)
@@ -21,24 +30,38 @@ export function PasswordImportFlow({ source, vaultOn, onClose }: PasswordImportF
 	const csv = usePasswordCsvImport()
 	// The latest step, for handlers that outlive a render (host events, awaited calls).
 	const stateRef = useRef(state)
+	// A click that is still awaiting the host; a second click must not start another.
+	const busy = useRef(false)
+	const [pending, setPending] = useState(false)
 
 	const dispatch = (event: PasswordImportEvent): void => {
 		const next = passwordImportStep(stateRef.current, event)
 		stateRef.current = next.state
 		setState(next.state)
-		if (next.cancelWatch) void zing.cancelPasswordWatch()
+		if (next.cancelWatch) cancelWatch()
 	}
-	const fail = (failure: unknown): void => dispatch({ type: 'failed', message: messageOf(failure) })
+	/** Dispatches unless the step has moved on since the caller started waiting. */
+	const dispatchIfAble = (event: PasswordImportEvent): boolean => {
+		if (!passwordImportAccepts(stateRef.current, event)) return false
+		dispatch(event)
+		return true
+	}
+	const failDuring = (during: PasswordImportState['step']) => (failure: unknown): void => {
+		if (passwordImportFailureApplies(stateRef.current, during)) dispatch({ type: 'failed', message: messageOf(failure) })
+	}
 
 	const waiting = state.step === 'waiting'
 	useEffect(() => {
 		if (!waiting) return
 		const stopFile = zing.onPasswordExport((found) => {
+			if (stateRef.current.step !== 'waiting') return
 			setFile(found)
 			dispatch({ type: 'file-arrived' })
 		})
-		const stopTimeout = zing.onPasswordWatchTimedOut(() => dispatch({ type: 'timed-out' }))
-		zing.watchPasswords(source.id).catch(fail)
+		const stopTimeout = zing.onPasswordWatchTimedOut(() => {
+			if (stateRef.current.step === 'waiting') dispatch({ type: 'timed-out' })
+		})
+		zing.watchPasswords(source.id).catch(failDuring('waiting'))
 		return () => {
 			stopFile()
 			stopTimeout()
@@ -47,7 +70,7 @@ export function PasswordImportFlow({ source, vaultOn, onClose }: PasswordImportF
 	}, [waiting, source.id])
 
 	// Leaving Settings ends the watch.
-	useEffect(() => () => void zing.cancelPasswordWatch(), [])
+	useEffect(() => cancelWatch, [])
 
 	// Strict mode runs an effect twice; a second import would report everything as merged.
 	const imported = useRef<string | undefined>(undefined)
@@ -55,40 +78,55 @@ export function PasswordImportFlow({ source, vaultOn, onClose }: PasswordImportF
 	useEffect(() => {
 		if (importingToken === undefined || imported.current === importingToken) return
 		imported.current = importingToken
-		csv.importToken(importingToken).then(() => {
-			dispatch({ type: 'imported' })
-			dispatch({ type: 'continue' })
-		}, fail)
+		csv
+			.importToken(importingToken)
+			.then(() => {
+				if (!dispatchIfAble({ type: 'imported' })) return
+				dispatch({ type: 'continue' })
+			})
+			.catch(failDuring('importing'))
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- one import per chosen file
 	}, [importingToken])
 
 	const chooseMyself = async (): Promise<void> => {
 		try {
 			const [picked] = await zing.pickFiles(['csv'])
-			if (!picked) return
+			// The export may have landed while the picker was open; then that file stands.
+			if (!picked || !passwordImportAccepts(stateRef.current, { type: 'choose-file' })) return
 			setFile(picked)
 			dispatch({ type: 'choose-file' })
 		} catch (failure) {
-			fail(failure)
+			failDuring(stateRef.current.step)(failure)
 		}
 	}
 
 	const turnOnVault = async (): Promise<void> => {
+		if (busy.current) return
+		busy.current = true
+		setPending(true)
 		try {
 			await zing.setSetting('passwordAutofill', true)
-			dispatch({ type: 'confirm-vault' })
+			dispatchIfAble({ type: 'confirm-vault' })
 		} catch (failure) {
-			fail(failure)
+			failDuring('confirm-vault')(failure)
+		} finally {
+			busy.current = false
+			setPending(false)
 		}
 	}
 
 	const recycle = async (): Promise<void> => {
-		if (!file) return
+		if (!file || busy.current) return
+		busy.current = true
+		setPending(true)
 		try {
 			await zing.recycleFile(file.token)
-			dispatch({ type: 'recycled' })
+			dispatchIfAble({ type: 'recycled' })
 		} catch (failure) {
-			fail(failure)
+			failDuring('offer-recycle')(failure)
+		} finally {
+			busy.current = false
+			setPending(false)
 		}
 	}
 
@@ -115,7 +153,7 @@ export function PasswordImportFlow({ source, vaultOn, onClose }: PasswordImportF
 				<>
 					<InfoBanner kind="warning">{CONFIRM_VAULT_COPY}</InfoBanner>
 					<div className="vault-actions">
-						<PillButton size="small" onClick={() => void turnOnVault()}>
+						<PillButton size="small" disabled={pending} onClick={() => void turnOnVault()}>
 							Turn on and continue
 						</PillButton>
 						{cancelRow}
@@ -125,7 +163,7 @@ export function PasswordImportFlow({ source, vaultOn, onClose }: PasswordImportF
 			{state.step === 'waiting' ? (
 				<>
 					<InfoBanner kind="info">
-						In {browserName(source)}, click <strong>Export passwords</strong>, confirm, and save. Zing will pick up the file.
+						In {browserName(source)}, {EXPORT_COPY}
 					</InfoBanner>
 					<div className="vault-actions">
 						{chooseButton}
@@ -148,7 +186,7 @@ export function PasswordImportFlow({ source, vaultOn, onClose }: PasswordImportF
 				<>
 					<InfoBanner kind="warning">{RECYCLE_COPY}</InfoBanner>
 					<div className="vault-actions">
-						<PillButton size="small" onClick={() => void recycle()}>
+						<PillButton size="small" disabled={pending} onClick={() => void recycle()}>
 							Move it to the Recycle Bin
 						</PillButton>
 						<PillButton variant="outlined" size="small" onClick={() => dispatch({ type: 'kept' })}>

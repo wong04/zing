@@ -90,6 +90,22 @@ export function passwordImportStep(state: PasswordImportState, event: PasswordIm
 	return moved
 }
 
+/** Whether the step can take the event. Late host events and finished awaits check this instead of tripping the strict reducer. */
+export function passwordImportAccepts(state: PasswordImportState, event: PasswordImportEvent): boolean {
+	try {
+		passwordImportStep(state, event)
+		return true
+	} catch (failure) {
+		if (failure instanceof InvalidPasswordImportEventError) return false
+		throw failure
+	}
+}
+
+/** A failure only matters while the step that was waiting on it is still current. */
+export function passwordImportFailureApplies(state: PasswordImportState, during: PasswordImportState['step']): boolean {
+	return state.step === during
+}
+
 export const CONFIRM_VAULT_COPY = 'Importing passwords turns on Zing’s password vault, which keeps them on this PC.'
 export const EXPORT_COPY = 'click Export passwords, confirm, and save. Zing will pick up the file.'
 export const RECYCLE_COPY = 'The exported file has every password in plain text.'
