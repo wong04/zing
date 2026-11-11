@@ -172,11 +172,19 @@ describe('the import nudge', () => {
 		expect(arc).toContain('214 bookmarks and your favourites bar.</p>')
 	})
 	it('import links are decided as the vectors say', () => {
-		for (const v of vectors.navigation.filter((n) => n.to.startsWith('zing://import'))) {
+		for (const v of vectors.navigation.filter((n) => n.to.toLowerCase().startsWith('zing://import'))) {
 			const { result } = v
+			if (result.kind === 'allow') {
+				expect(classifyImportNavigation(v.from, v.to), v.to).toBeUndefined()
+				continue
+			}
 			const expected = result.kind === 'block' ? { kind: 'block' } : { kind: 'import', action: result.action, ...(result.source === undefined ? {} : { sourceId: result.source }) }
 			expect(classifyImportNavigation(v.from, v.to), `${v.from} -> ${v.to}`).toEqual(expected)
 		}
+	})
+	it('a count of one is singular', () => {
+		const html = startPageHTML({ searchURL, shortcuts: [], theme, nudge: { kind: 'result', browser: 'Arc', added: 1, sourceId: 'arc', passwords: false } })
+		expect(html).toContain('<h2>Imported 1 bookmark.</h2>')
 	})
 	it('other addresses are not its business', () => {
 		expect(classifyImportNavigation('zing://home', 'zing://edit-shortcuts')).toBeUndefined()

@@ -287,6 +287,7 @@ public static class StartPage
 	private static StartPageNavigation ClassifyImport(string toUrl)
 	{
 		var path = toUrl["zing://".Length..].Split('?', '#')[0];
+		if (path.Split('/')[0] != ImportHost) return new StartPageNavigation.Block();
 		var slash = path.IndexOf('/');
 		var action = slash < 0 ? "" : path[(slash + 1)..];
 		if (!ImportActions.Contains(action)) return new StartPageNavigation.Block();
@@ -422,6 +423,8 @@ public static class StartPage
 
 	// MARK: - Import nudge
 
+	private static string BookmarkCount(int n) => n == 1 ? "1 bookmark" : $"{n} bookmarks";
+
 	// encodeURIComponent leaves !'()* alone; EscapeDataString does not.
 	private static string ImportUrl(string action, string? sourceId = null)
 	{
@@ -429,6 +432,7 @@ public static class StartPage
 		return StartShortcuts.EscapeHtml(sourceId is null ? url : $"{url}?source={Uri.EscapeDataString(sourceId)}");
 	}
 
+	// The label must already be escaped.
 	private static string Button(string href, string label, bool primary) =>
 		$"<a class=\"{(primary ? "primary" : "secondary")}\" href=\"{href}\">{label}</a>";
 
@@ -447,7 +451,7 @@ public static class StartPage
 				var passwords = offer.Passwords ? " Passwords need a quick export, and Zing walks you through it." : "";
 				return (
 					$"Bring your stuff from {browser}?",
-					$"{NL}    <p>{offer.Bookmarks} bookmarks and your favourites bar{profile}.{passwords}</p>",
+					$"{NL}    <p>{BookmarkCount(offer.Bookmarks)} and your favourites bar{profile}.{passwords}</p>",
 					[
 						Button(ImportUrl("bookmarks", offer.SourceId), $"Import from {browser}", true),
 						Button(ImportUrl("settings"), "Other browser…", false),
@@ -456,7 +460,7 @@ public static class StartPage
 			case ImportNudge.Result result:
 				var done = Button(ImportUrl("dismiss"), "Done", !result.Passwords);
 				return (
-					$"Imported {result.Added} bookmarks.",
+					$"Imported {BookmarkCount(result.Added)}.",
 					"",
 					result.Passwords ? [Button(ImportUrl("passwords", result.SourceId), "Import passwords too", true), done] : [done]);
 			default:

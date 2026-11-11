@@ -251,6 +251,7 @@ export function classifyImportNavigation(fromURL: string, toURL: string): Import
 	const to = zingURL(toURL)
 	if (to?.hostname !== importHost) return undefined
 	if (zingURL(fromURL)?.hostname !== 'home') return { kind: 'block' }
+	if (to.port !== '' || to.username !== '' || to.password !== '') return { kind: 'block' }
 	const action = to.pathname.slice(1)
 	if (!(importActions as readonly string[]).includes(action)) return { kind: 'block' }
 	const sourceId = to.searchParams.get('source') ?? undefined
@@ -263,11 +264,16 @@ function encodeSource(sourceId: string): string {
 	return encodeURIComponent(sourceId).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
 }
 
+function bookmarkCount(n: number): string {
+	return n === 1 ? '1 bookmark' : `${n} bookmarks`
+}
+
 function importURL(action: ImportAction, sourceId?: string): string {
 	const base = `${startPageScheme}://${importHost}/${action}`
 	return escape(sourceId === undefined ? base : `${base}?source=${encodeSource(sourceId)}`)
 }
 
+// The label must already be escaped.
 function buttonHTML(href: string, label: string, primary: boolean): string {
 	return `<a class="${primary ? 'primary' : 'secondary'}" href="${href}">${label}</a>`
 }
@@ -287,7 +293,7 @@ function nudgeContentHTML(nudge: ImportNudge): { heading: string; body: string; 
 		const passwords = nudge.passwords ? ' Passwords need a quick export, and Zing walks you through it.' : ''
 		return {
 			heading: `Bring your stuff from ${browser}?`,
-			body: `\n    <p>${nudge.bookmarks} bookmarks and your favourites bar${profile}.${passwords}</p>`,
+			body: `\n    <p>${bookmarkCount(nudge.bookmarks)} and your favourites bar${profile}.${passwords}</p>`,
 			buttons: [
 				buttonHTML(importURL('bookmarks', nudge.sourceId), `Import from ${browser}`, true),
 				buttonHTML(importURL('settings'), 'Other browser…', false),
@@ -296,7 +302,7 @@ function nudgeContentHTML(nudge: ImportNudge): { heading: string; body: string; 
 		}
 	}
 	return {
-		heading: `Imported ${nudge.added} bookmarks.`,
+		heading: `Imported ${bookmarkCount(nudge.added)}.`,
 		body: '',
 		buttons: [
 			...(nudge.passwords ? [buttonHTML(importURL('passwords', nudge.sourceId), 'Import passwords too', true)] : []),
