@@ -43,6 +43,6 @@ describe('fileHelp', () => {
 
 describe('PASSWORDS_FILE_VAULT_OFF', () => {
 	it('says which setting to turn on', () => {
-		expect(PASSWORDS_FILE_VAULT_OFF).toBe('Turn on ìOffer to fill saved passwordsî in Passwords to import a passwords file.')
+		expect(PASSWORDS_FILE_VAULT_OFF).toBe('Turn on ‚ÄúOffer to fill saved passwords‚Äù in Passwords to import a passwords file.')
 	})
 })

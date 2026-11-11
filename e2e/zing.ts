@@ -204,6 +204,7 @@ function hostEnvironment(port: string, errors: string, userData: string): NodeJS
 		ZING_RENDERER_DIR: BUILT_RENDERER,
 		ZING_USER_DATA: userData,
 		ZING_DOWNLOADS_DIR: join(userData, 'downloads'),
+		ZING_LOCALAPPDATA: join(userData, 'localappdata'),
 		ZING_SKIP_ACCOUNT_GATE: '1',
 	}
 }

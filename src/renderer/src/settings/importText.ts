@@ -21,4 +21,4 @@ export const fileHelp: readonly { app: string; steps: string }[] = [
 ]
 
 /** Shown in place of the Passwords file button while the vault is off. */
-export const PASSWORDS_FILE_VAULT_OFF = 'Turn on ìOffer to fill saved passwordsî in Passwords to import a passwords file.'
+export const PASSWORDS_FILE_VAULT_OFF = 'Turn on ‚ÄúOffer to fill saved passwords‚Äù in Passwords to import a passwords file.'
