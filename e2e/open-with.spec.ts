@@ -1,6 +1,6 @@
 // Phase 8: files Windows' Open with hands Zing (ZingPDF, ZingHTML). A PDF opens in the Files viewer, an HTML file in a tab at its
 // file: address, whether Zing was closed (the path is a launch argument) or already running (a second launch hands it over).
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -14,7 +14,8 @@ const PDF_BYTES = '%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj
 
 function files(): { pdf: string; html: string } {
 	// A space in the folder, as in a real Documents path: the command line quotes it.
-	const work = mkdtempSync(join(tmpdir(), 'zing open with-'))
+	// The long form of the temp folder: CI's is an 8.3 name (RUNNER~1), whose ~ Node's file URLs escape and Chromium's don't.
+	const work = realpathSync.native(mkdtempSync(join(tmpdir(), 'zing open with-')))
 	const pdf = join(work, 'report.pdf')
 	const html = join(work, 'page.html')
 	writeFileSync(pdf, PDF_BYTES)
