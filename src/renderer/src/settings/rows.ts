@@ -53,6 +53,7 @@ export type CustomId =
 	| 'recent-tools'
 	| 'account'
 	| 'about'
+	| 'import'
 
 export interface CustomRow {
 	readonly type: 'custom'
@@ -80,6 +81,7 @@ export const CATEGORIES: readonly Category[] = [
 	{ id: 'advanced', title: 'Advanced' },
 	{ id: 'account', title: 'Account' },
 	{ id: 'about', title: 'About' },
+	{ id: 'import', title: 'Import' },
 ]
 
 const ENGINE_LABELS: Readonly<Record<(typeof SEARCH_ENGINES)[number], string>> = {
@@ -304,6 +306,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 	],
 	account: [{ type: 'custom', id: 'account', keys: [] }],
 	about: [{ type: 'custom', id: 'about', keys: [] }],
+	import: [{ type: 'custom', id: 'import', keys: [] }],
 }
 
 /** Every setting key some control edits, hidden rows included. */

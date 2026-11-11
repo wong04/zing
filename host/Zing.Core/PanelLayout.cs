@@ -201,7 +201,7 @@ public static class ShellConstants
 	public const int MaxVisiblePanels = 3;
 
 	public static readonly IReadOnlyList<string> SettingsCategories =
-		["general", "browsing", "newTab", "tabs", "files", "privacy", "security", "advanced", "account", "about"];
+		["general", "browsing", "newTab", "tabs", "files", "privacy", "security", "advanced", "account", "about", "import"];
 
 	public const string DefaultCategory = "general";
 

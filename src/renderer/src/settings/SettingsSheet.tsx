@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { Settings, SettingKey } from '@shared/settings'
 import type { SettingsCategoryId } from '@shared/shell/shellState'
+import { holdsImports } from '@shared/library/library'
 import { zing } from '../api'
+import { followHostState } from '../hostState'
 import { FadingScroll, IconButton, PillField, PillMenu, PillSlider, SegmentedControl, Toggle } from '../components'
 import {
 	CloseGlyph,
@@ -10,6 +12,7 @@ import {
 	GlobeIcon,
 	GridIcon,
 	HandIcon,
+	ImportIcon,
 	InfoIcon,
 	PersonIcon,
 	ShieldIcon,
@@ -20,6 +23,7 @@ import { CustomRow } from './CustomRows'
 import { CATEGORIES, PANES, detailOf, isVisible, type SettingRow } from './rows'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
+import { setLibraryHoldsImports } from './privacy'
 import { useVaultData, VaultDataProvider } from './useVaultData'
 import './settings.css'
 
@@ -34,6 +38,7 @@ const ICONS: Readonly<Record<SettingsCategoryId, () => React.JSX.Element>> = {
 	advanced: () => <SlidersIcon size={15} />,
 	account: () => <PersonIcon size={15} />,
 	about: () => <InfoIcon size={15} />,
+	import: () => <ImportIcon size={15} />,
 }
 
 function control(row: SettingRow, settings: Settings, set: SettingsHandle['set']) {
@@ -118,6 +123,18 @@ export function SettingsSheet({ handle, initialCategory, version }: SettingsShee
 	const sheet = useRef<HTMLDivElement>(null)
 	const vault = useVaultData()
 	const current = CATEGORIES.find((c) => c.id === category)
+	// Only to redraw the privacy banner: the flag itself lives in privacy.ts, set before the render that reads it.
+	const [, setHoldsImports] = useState(false)
+
+	useEffect(
+		() =>
+			followHostState(zing.onLibraryState, zing.getLibrary, (state) => {
+				const holds = holdsImports(state.library)
+				setLibraryHoldsImports(holds)
+				setHoldsImports(holds)
+			}),
+		[],
+	)
 
 	useEffect(() => {
 		const frame = requestAnimationFrame(() => setShown(true))

@@ -30,6 +30,7 @@ export const SETTINGS_CATEGORIES = [
 	'advanced',
 	'account',
 	'about',
+	'import',
 ] as const
 export type SettingsCategoryId = (typeof SETTINGS_CATEGORIES)[number]
 
