@@ -11,7 +11,9 @@ namespace Zing.Core.Net;
 /// </summary>
 /// <param name="V4">The IPv4 servers set by hand; empty when they come from the network (DHCP).</param>
 /// <param name="V6">The same for IPv6; null when the adapter has IPv6 switched off, which is different from empty (automatic).</param>
-public sealed record DnsAdapter(string Name, IReadOnlyList<string> V4, IReadOnlyList<string>? V6);
+/// <param name="V6Internet">The adapter has an IPv6 default route. Without one (IPv6 on, but only local addresses) the provider's IPv6
+/// servers can't be reached. Only Apply needs it, so the Undo file doesn't keep it.</param>
+public sealed record DnsAdapter(string Name, IReadOnlyList<string> V4, IReadOnlyList<string>? V6, [property: System.Text.Json.Serialization.JsonIgnore] bool V6Internet = true);
 
 /// <summary>A server Windows is told to ask over HTTPS (Get-DnsClientDohServerAddress).</summary>
 public sealed record DohEntry(string Address, string Template, bool AllowFallbackToUdp, bool AutoUpgrade);
@@ -45,14 +47,15 @@ public sealed record DnsSnapshot(IReadOnlyList<DnsAdapter> Adapters, IReadOnlyLi
 		return new DnsAdapter(
 			item.GetProperty("name").GetString() ?? throw new JsonException("an adapter has no name"),
 			Servers(item.GetProperty("v4"), AddressFamily.InterNetwork),
-			v6Enabled ? Servers(item.GetProperty("v6"), AddressFamily.InterNetworkV6) : null);
+			v6Enabled ? Servers(item.GetProperty("v6"), AddressFamily.InterNetworkV6) : null,
+			item.GetProperty("v6route").GetBoolean());
 	}
 
-	/// <summary>The registry keeps a family's servers as one string separated by commas or spaces; none set is null or empty.</summary>
+	/// <summary>The registry keeps a family's servers as one string separated by commas or spaces, sometimes padded with NULs; none set is null or empty.</summary>
 	private static List<string> Servers(JsonElement value, AddressFamily family) =>
 		value.ValueKind == JsonValueKind.Null
 			? []
-			: [.. (value.GetString() ?? "").Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(a => DnsAddresses.Normalize(a, family))];
+			: [.. (value.GetString() ?? "").Split([',', ' ', ';', '\0'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(a => DnsAddresses.Normalize(a, family))];
 
 	private static bool IsProvidersServer(JsonElement item) =>
 		item.TryGetProperty("address", out var address) && address.ValueKind == JsonValueKind.String && DnsProviders.IsKnownServer(address.GetString()!);
