@@ -50,6 +50,38 @@ public sealed class DnsScriptTests
 	}
 
 	[Fact]
+	public void Apply_leaves_ipv6_servers_off_an_adapter_whose_network_has_no_ipv6_internet()
+	{
+		// A network with only local IPv6 (an fd00::/8 address, no default route) can't reach the provider's IPv6 servers.
+		var script = DnsScript.Apply("cloudflare", [new DnsAdapter("Wi-Fi", [], [], V6Internet: false)]);
+		Assert.Contains("-ServerAddresses '1.1.1.1', '1.0.0.1'\n", script);
+		Assert.DoesNotContain("'2606:4700:4700::1111'", script.Split("Set-DnsClientServerAddress", 2)[1]);
+	}
+
+	[Fact]
+	public void The_undo_file_does_not_keep_whether_an_adapter_had_ipv6_internet()
+	{
+		var path = Path.Combine(Path.GetTempPath(), $"zing-dns-{Guid.NewGuid():N}.json");
+		try
+		{
+			DnsBackup.Save(path, new DnsBackupFile("cloudflare", DateTimeOffset.UnixEpoch, [new DnsAdapter("Wi-Fi", [], [], V6Internet: false)], NoDoh));
+			Assert.DoesNotContain("internet", File.ReadAllText(path), StringComparison.OrdinalIgnoreCase);
+			Assert.Equal("Wi-Fi", DnsBackup.Load(path).Adapters[0].Name);
+		}
+		finally
+		{
+			File.Delete(path);
+		}
+	}
+
+	[Fact]
+	public void The_listing_script_asks_whether_each_adapter_has_an_ipv6_default_route()
+	{
+		Assert.Contains("-DestinationPrefix '::/0'", DnsScript.List);
+		Assert.Contains("v6route = ", DnsScript.List);
+	}
+
+	[Fact]
 	public void Apply_stops_with_a_code_of_its_own_when_this_windows_has_no_encrypted_dns()
 	{
 		var script = DnsScript.Apply("cloudflare", [Dhcp("Ethernet")]);
@@ -290,15 +322,29 @@ public sealed class DnsScriptTests
 	public void The_adapter_list_reads_what_the_listing_script_prints()
 	{
 		const string json = """
-			{"adapters":[{"name":"Ethernet","v4":"10.0.0.1,10.0.0.2","v6enabled":true,"v6":""},{"name":"Wi-Fi","v4":null,"v6enabled":false,"v6":null}],"dohSupported":true,
+			{"adapters":[{"name":"Ethernet","v4":"10.0.0.1,10.0.0.2","v6enabled":true,"v6":"","v6route":true},{"name":"Wi-Fi","v4":null,"v6enabled":true,"v6":"","v6route":false},{"name":"Old","v4":null,"v6enabled":false,"v6":null,"v6route":false}],"dohSupported":true,
 			 "doh":[{"address":"1.1.1.1","template":"https://cloudflare-dns.com/dns-query","allowFallbackToUdp":false,"autoUpgrade":false}]}
 			""";
 		var snapshot = DnsSnapshot.Parse(json);
 		Assert.Equal(["10.0.0.1", "10.0.0.2"], snapshot.Adapters[0].V4);
 		Assert.Empty(snapshot.Adapters[0].V6!);
+		Assert.True(snapshot.Adapters[0].V6Internet);
 		Assert.Empty(snapshot.Adapters[1].V4);
-		Assert.Null(snapshot.Adapters[1].V6);
+		Assert.False(snapshot.Adapters[1].V6Internet);
+		Assert.Null(snapshot.Adapters[2].V6);
 		Assert.Equal(new DohEntry("1.1.1.1", "https://cloudflare-dns.com/dns-query", false, false), snapshot.Doh[0]);
+	}
+
+	[Fact]
+	public void The_adapter_list_reads_servers_windows_padded_with_nul_characters()
+	{
+		// Seen on Windows 11 after Set-DnsClientServerAddress: the registry value keeps NULs after the last server.
+		const string json = """
+			{"adapters":[{"name":"Wi-Fi","v4":"1.1.1.1,1.0.0.1\u0000\u0000\u0000","v6enabled":true,"v6":"2606:4700:4700::1111,2606:4700:4700::1001\u0000\u0000","v6route":false}],"dohSupported":true,"doh":[]}
+			""";
+		var adapter = DnsSnapshot.Parse(json).Adapters[0];
+		Assert.Equal(["1.1.1.1", "1.0.0.1"], adapter.V4);
+		Assert.Equal(["2606:4700:4700::1111", "2606:4700:4700::1001"], adapter.V6!);
 	}
 
 	[Theory]
@@ -306,7 +352,8 @@ public sealed class DnsScriptTests
 	[InlineData("not json")]
 	[InlineData("{}")]
 	[InlineData("""{"adapters":[],"doh":[]}""")]
-	[InlineData("""{"adapters":[{"name":"E","v4":"not an ip","v6enabled":false,"v6":null}],"dohSupported":true,"doh":[]}""")]
+	[InlineData("""{"adapters":[{"name":"E","v4":"not an ip","v6enabled":false,"v6":null,"v6route":false}],"dohSupported":true,"doh":[]}""")]
+	[InlineData("""{"adapters":[{"name":"E","v4":null,"v6enabled":true,"v6":""}],"dohSupported":true,"doh":[]}""")]
 	[InlineData("""{"adapters":[{"name":"E","v4":null,"v6enabled":false,"v6":null}],"dohSupported":true}""")]
 	public void A_listing_that_is_not_what_the_script_prints_is_an_error(string json)
 	{
@@ -364,7 +411,7 @@ public sealed class DnsScriptTests
 	{
 		var shape = ParseWithPowerShell(DnsScript.List);
 		Assert.Empty(shape.Errors);
-		Assert.All(shape.Commands, command => Assert.Contains(command, new[] { "Get-NetAdapter", "Where-Object", "Get-NetAdapterBinding", "Get-ItemProperty", "Get-Command", "Get-DnsClientDohServerAddress", "ForEach-Object", "ConvertTo-Json" }));
+		Assert.All(shape.Commands, command => Assert.Contains(command, new[] { "Get-NetAdapter", "Where-Object", "Get-NetAdapterBinding", "Get-ItemProperty", "Get-NetRoute", "Get-Command", "Get-DnsClientDohServerAddress", "ForEach-Object", "ConvertTo-Json" }));
 	}
 
 	private static int CountOf(string text, string needle)

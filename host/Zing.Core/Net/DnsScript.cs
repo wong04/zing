@@ -34,6 +34,7 @@ public static class DnsScript
 				v4 = (Get-ItemProperty -LiteralPath "$v4Key\$($adapter.InterfaceGuid)" -Name NameServer -ErrorAction SilentlyContinue).NameServer
 				v6enabled = [bool](Get-NetAdapterBinding -Name ([WildcardPattern]::Escape($adapter.Name)) -ComponentID ms_tcpip6).Enabled
 				v6 = (Get-ItemProperty -LiteralPath "$v6Key\$($adapter.InterfaceGuid)" -Name NameServer -ErrorAction SilentlyContinue).NameServer
+				v6route = [bool](Get-NetRoute -InterfaceIndex $adapter.ifIndex -AddressFamily IPv6 -DestinationPrefix '::/0' -ErrorAction SilentlyContinue)
 			}
 		})
 		$doh = @()
@@ -67,8 +68,9 @@ public static class DnsScript
 		script.Line("}", 1);
 		foreach (var adapter in adapters)
 		{
-			// IPv6 servers only where the adapter has IPv6; a family it lacks would fail the whole call.
-			var servers = adapter.V6 is null ? chosen.V4 : chosen.V4.Concat(chosen.V6).ToList();
+			// IPv6 servers only where the adapter can reach them: a family it lacks would fail the whole call, and servers on a network
+			// with only local IPv6 are never answered.
+			var servers = adapter.V6 is null || !adapter.V6Internet ? chosen.V4 : chosen.V4.Concat(chosen.V6).ToList();
 			FindAdapter(script, adapter.Name, 1);
 			script.Line("if (-not $adapter) { throw 'An adapter that was shown is gone' }", 1);
 			script.Line($"Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses {QuotedList(servers)}", 1);

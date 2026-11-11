@@ -1089,7 +1089,7 @@ test('adapters that changed after the script was shown give a new script to read
 	const zing = await launchZing()
 	const { panel } = await openNetwork(zing)
 	const shown = await dnsScript(panel).inputValue()
-	const adapters = { adapters: [{ name: 'Docking station', v4: '', v6enabled: false, v6: null }], doh: [], dohSupported: true }
+	const adapters = { adapters: [{ name: 'Docking station', v4: '', v6enabled: false, v6: null, v6route: false }], doh: [], dohSupported: true }
 	await hook(zing, { action: 'dns-stub', adapters: JSON.stringify(adapters) })
 	await panel.getByRole('button', { name: 'Apply', exact: true }).click()
 	await expect(panel.getByTestId('dns-notice')).toContainText('The script changed since it was shown')
@@ -1130,7 +1130,7 @@ test('the VPN guide and the table of what beats what are on the page', async () 
 
 test('a Windows without encrypted DNS says so before any button and offers no Apply', async () => {
 	const zing = await launchZing()
-	await hook(zing, { action: 'dns-stub', adapters: JSON.stringify({ adapters: [{ name: 'Ethernet', v4: '', v6enabled: false, v6: null }], doh: [], dohSupported: false }) })
+	await hook(zing, { action: 'dns-stub', adapters: JSON.stringify({ adapters: [{ name: 'Ethernet', v4: '', v6enabled: false, v6: null, v6route: false }], doh: [], dohSupported: false }) })
 	const { panel } = await openNetwork(zing)
 	await expect(panel.getByTestId('dns-unsupported')).toContainText('needs Windows 11')
 	await expect(panel.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0)
@@ -1157,7 +1157,7 @@ test('Undo lists what it will set above the script, and the page does not claim 
 })
 
 test('a name with hidden characters is spelled out on the page', async () => {
-	const adapters = { adapters: [{ name: 'Eth‮ernet', v4: '', v6enabled: false, v6: null }], doh: [], dohSupported: true }
+	const adapters = { adapters: [{ name: 'Eth‮ernet', v4: '', v6enabled: false, v6: null, v6route: false }], doh: [], dohSupported: true }
 	const zing = await launchZing()
 	await hook(zing, { action: 'dns-stub', adapters: JSON.stringify(adapters) })
 	const { panel } = await openNetwork(zing)
