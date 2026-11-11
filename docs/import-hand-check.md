@@ -17,7 +17,8 @@ Phase 6c is tested only against synthetic profiles and files. This check covers 
    - **Expect:** your favourites bar holds that browser's bar items.
    - **Expect:** a folder "Imported from {browser} ({profile})" holds the rest.
    - **Expect:** Settings → Privacy now warns that imported bookmarks are written to disk.
-3. **Done.**
+3. Click **Import passwords too** (Chrome, Edge or Brave only). If your browser is Arc, click **Done** instead.
+   - **Expect:** Settings → Import opens, already waiting for that browser's export. Cancel it there.
    - **Expect:** the card is gone from every New Tab.
    - **Expect:** after restarting Zing on the same scratch profile, the card is still gone.
 
@@ -25,21 +26,22 @@ Phase 6c is tested only against synthetic profiles and files. This check covers 
 
 1. Open Settings → Import.
    - **Expect:** every browser you have is listed, one row per profile, with a bookmark count.
-   - **Expect:** a profile with no bookmarks file says so on its row. No row should crash the section.
+   - **Expect:** a profile with no bookmarks file isn't listed, and a damaged one shows its error on its row while the others still work.
 2. With Chrome **running**, import a Chrome profile.
    - **Expect:** it imports. A running Chrome doesn't block the read.
 3. Import the same profile again.
    - **Expect:** "Nothing new to import".
 4. **Arc, if installed.**
    - **Expect:** the row shows Arc's Spaces as folders after import.
-   - If Arc isn't listed, note your Arc package folder under `%LOCALAPPDATA%\Packages\` (only its name) and Arc's https ProgId from Settings → Apps → Default apps. Task 5 assumes `TheBrowserCompany.Arc_ttt1ap7aakyb4`.
+   - If Arc isn't listed, check that `%LOCALAPPDATA%\Packages\TheBrowserCompany.Arc_*\LocalCache\Local\Arc\StorableSidebar.json` exists, and note the actual path if it doesn't.
+   - If Arc is your default browser, check that the New Tab card offers Arc. If it doesn't, note Arc's https ProgId: in PowerShell, `Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice'` shows it. Zing expects it to start with `Arc`.
 
 ## 3. Passwords from a browser
 
 1. On a Chrome row, click **Import passwords**.
    - If the vault is off, **expect** "Importing passwords turns on Zing's password vault…". Choose **Turn on and continue**.
    - **Expect:** Chrome opens on `chrome://password-manager/settings`.
-   - **Record:** did the page open directly, or did Chrome show a new tab or a blocked page? This is the open question from Task 11.
+   - **Record:** did the page open directly, or did Chrome show a new tab or a blocked page? This was decided from reading only, without launching a browser.
 2. In Chrome, click **Export passwords**, confirm with Windows, and save to Downloads.
    - **Expect:** Zing picks the file up within a few seconds and imports it into the vault.
    - **Expect:** Zing then asks "The exported file has every password in plain text." → **Move it to the Recycle Bin**.
@@ -67,4 +69,4 @@ Phase 6c is tested only against synthetic profiles and files. This check covers 
 
 - Fix anything found, with a failing test first.
 - Then set I1–I4 to Done in `PARITY.md`, drop their "awaiting" markers, and close #98–#101.
-- If a browser didn't open its password page in step 3, `ExportPages.Url` returns null for it, and the renderer shows that browser's menu path instead (Task 11 note).
+- If a browser didn't open its password page in step 3, change `ExportPages.Url` to return null for it, and have the renderer show that browser's menu path instead.
