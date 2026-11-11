@@ -14,10 +14,10 @@ These are macOS-only and have a Windows replacement tracked above:
 |---|---|
 | Keychain AutoFill bridge | Built-in vault with encrypted sync (V1–V5) |
 | `.mobileconfig` DNS profile | PowerShell DoH script (X5) |
-| `sips`, `textutil`, PDFKit | sharp, mammoth/pandoc, printToPDF (X6, X7) |
+| `sips`, `textutil`, PDFKit | ImageMagick, pandoc, WebView2 PDF printing (X6, X7) |
 | AVKit, QuickLook | `<video>`, metadata fallback (X15; SceneKit and 3D models dropped) |
 | Vision background removal | ONNX Runtime (X16) |
-| Traffic-light placement | Frameless window + titleBarOverlay (S2) |
+| Traffic-light placement | WinUI title bar with Windows' own caption buttons (S2) |
 | `brew install` | Engines downloaded on first use (X10) |
 
 ## Dropped
@@ -68,7 +68,7 @@ Also dropped:
 | L9 | Port ToolboxSearch + keyword table | port-logic | App/ToolboxSearch.swift; Tests/toolbox | [#20](https://github.com/wong04/zing/issues/20) | Done |
 | L10 | Port StartShortcuts | port-logic | Features/Browser/StartShortcuts.swift; Tests/unit | [#21](https://github.com/wong04/zing/issues/21) | Done |
 | L11 | Port FaviconChoice | port-logic | Features/Browser/FaviconChoice.swift | [#22](https://github.com/wong04/zing/issues/22) | Partial |
-| L12 | Port DownloadPolicy | port-logic | Features/Browser/DownloadPolicy.swift; Tests/download | [#23](https://github.com/wong04/zing/issues/23) | Partial |
+| L12 | Port DownloadPolicy | port-logic | Features/Browser/DownloadPolicy.swift; Tests/download | [#23](https://github.com/wong04/zing/issues/23) | Done: the host consults `DownloadPolicy` for frame downloads ([#175](https://github.com/wong04/zing/pull/175)); host `DownloadsTests`; e2e in `e2e/page.spec.ts` (main-frame response it can't show downloads, a frame marked as a file downloads, the same response in a frame doesn't) |
 | L13 | Port DevTools pure logic | port-logic | Features/Utilities/DevTools.swift, UtilityTools.swift | [#24](https://github.com/wong04/zing/issues/24) | Done |
 | L14 | Port accent generator + WCAG AA test | port-logic | App/Accent.swift; Tests/theme | [#25](https://github.com/wong04/zing/issues/25) | Done |
 | L15 | Port DropRouter | port-logic | App/DropRouter.swift; Tests/drop | [#26](https://github.com/wong04/zing/issues/26) | Done |
@@ -107,7 +107,7 @@ Also dropped:
 | B22 | Memory-only favicons | parity | Features/Browser/FaviconStore.swift | [#49](https://github.com/wong04/zing/issues/49) | Done |
 | B23 | Camera, mic and permission prompts | parity | Features/Browser/BrowserTab.swift | [#50](https://github.com/wong04/zing/issues/50) | Done |
 | B24 | Multiple windows | parity | App/KracknApp.swift (WindowSession) | [#51](https://github.com/wong04/zing/issues/51) | Done |
-| B25 | Default browser + links from other apps | parity | App/KracknApp.swift (AppGate, LinkInbox) | [#52](https://github.com/wong04/zing/issues/52) | Partial: built and tested, awaiting the owner's hand check ([docs/release.md](docs/release.md#hand-check)); host tests `DefaultBrowserTests`, `ChromeApiDefaultBrowserTests`; e2e in `e2e/default-browser.spec.ts` |
+| B25 | Default browser + links from other apps | parity | App/KracknApp.swift (AppGate, LinkInbox) | [#52](https://github.com/wong04/zing/issues/52) | Done: owner's hand check passed 2026-11-11 (Default apps, links from other apps, [docs/release.md](docs/release.md#hand-check)); host tests `DefaultBrowserTests`, `ChromeApiDefaultBrowserTests`; e2e in `e2e/default-browser.spec.ts` and `e2e/open-with.spec.ts`. Open with for .pdf/.htm/.html came after that check ([#188](https://github.com/wong04/zing/pull/188)) and still needs a hand re-check |
 | B26 | Confirm before quit | parity | App/AppSettings.swift (confirmQuit) | [#53](https://github.com/wong04/zing/issues/53) | Dropped |
 | B27 | Clean user agent | parity | Features/Browser/UserAgent.swift | [#54](https://github.com/wong04/zing/issues/54) | Dropped |
 | B28 | App sidebar with edge reveal | parity | App/Sidebar.swift | [#55](https://github.com/wong04/zing/issues/55) | Done |
@@ -116,7 +116,7 @@ Also dropped:
 | B31 | Account gate | parity | Features/Account/AccountStore.swift, AuthView.swift | [#58](https://github.com/wong04/zing/issues/58) | Done |
 | B32 | Sleeping tabs | new | - | [#59](https://github.com/wong04/zing/issues/59) | Done |
 | B33 | Lazy session restore | new | - | [#60](https://github.com/wong04/zing/issues/60) | Done |
-| B34 | Shared UI components | parity | App/Components.swift, FileComponents.swift, ScrollFade.swift | [#61](https://github.com/wong04/zing/issues/61) | Partial |
+| B34 | Shared UI components | parity | App/Components.swift, FileComponents.swift, ScrollFade.swift | [#61](https://github.com/wong04/zing/issues/61) | Done: components in `src/renderer/src/components/` with `scrollEdges.test.ts`, `sliderMath.test.ts`, `toolDrag.test.ts`, `filePath.test.ts`; light + dark screenshots in `docs/screenshots/phase-6/` and `docs/screenshots/b30-settings-{light,dark}.png` |
 | B35 | Link previews (Arc Peek) | new | - | [#160](https://github.com/wong04/zing/pull/160) | Done: e2e in `e2e/link-preview.spec.ts`; hand checks H1-H9 passed (2026-11-08 and 2026-11-09, real-input tier 8/8), recorded in [the design](docs/superpowers/specs/2026-11-08-link-preview-design.md); screenshots in `docs/screenshots/link-preview/` |
 
 **B rows, 2026-11-01:** re-verified on the WebView2 host. Evidence for each Done row is in its issue, and every cited test passed on Windows CI ([run 41289375469](https://github.com/wong04/zing/actions/runs/41289375469), the whole e2e suite plus vitest and xUnit). Partial rows, still open:
@@ -231,13 +231,13 @@ Evidence (e2e/vault.spec.ts unless noted; screenshots in [docs/screenshots/phase
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| P1 | Velopack installer | infra | bundle.sh | [#105](https://github.com/wong04/zing/issues/105) | Partial: built and tested, awaiting the owner's hand check ([docs/release.md](docs/release.md#hand-check)); `scripts/pack.ps1`, `.github/workflows/release.yml` |
-| P2 | Auto-update from GitHub Releases | infra | - | [#106](https://github.com/wong04/zing/issues/106) | Partial: built and tested, awaiting the owner's hand check ([docs/release.md](docs/release.md#hand-check)); host tests `UpdaterTests`, `ChromeApiUpdatesTests`; e2e in `e2e/update.spec.ts` |
+| P1 | Velopack installer | infra | bundle.sh | [#105](https://github.com/wong04/zing/issues/105) | Done: owner's hand check passed 2026-11-11 (install, uninstall keeps `%APPDATA%\Zing`, [docs/release.md](docs/release.md#hand-check)); `scripts/pack.ps1`, `.github/workflows/release.yml` |
+| P2 | Auto-update from GitHub Releases | infra | - | [#106](https://github.com/wong04/zing/issues/106) | Done: owner's hand check passed 2026-11-11 (0.9.0 to 0.9.1 with data intact, [docs/release.md](docs/release.md#hand-check)); host tests `UpdaterTests`, `ChromeApiUpdatesTests`; e2e in `e2e/update.spec.ts` |
 | P3 | Code signing | infra | - | [#107](https://github.com/wong04/zing/issues/107) | Open: decided to sign later, with Azure Trusted Signing (about $10/month, identity check) or SignPath Foundation (free for open source); `release.yml` has a placeholder sign step that turns on with an `AZURE_SIGNING_ACCOUNT` secret ([docs/release.md](docs/release.md#signing)) |
 | P4 | winget manifest | infra | - | [#108](https://github.com/wong04/zing/issues/108) | Partial: `winget/manifests/` passes `winget validate`; submission is turned on at 1.0 ([docs/release.md](docs/release.md#winget-at-10)) |
 | P5 | Credits and third-party notices | infra | - | [#109](https://github.com/wong04/zing/issues/109) | Done: `scripts/notices.test.ts`, host tests `ChromeApiCreditsTests`, and the Credits assertion in `e2e/update.spec.ts` |
 | P6 | Web-compat smoke tests in CI | infra | - | [#110](https://github.com/wong04/zing/issues/110) | Open |
-| P7 | Dependency updates (Windows App SDK, .NET, npm); Chromium security fixes now come with the Evergreen WebView2 runtime | infra | - | [#111](https://github.com/wong04/zing/issues/111) | Open |
+| P7 | Dependency updates (Windows App SDK, .NET, npm); Chromium security fixes now come with the Evergreen WebView2 runtime | infra | - | [#111](https://github.com/wong04/zing/issues/111) | Done: `.github/dependabot.yml` (weekly npm, NuGet and GitHub Actions); Chromium security fixes arrive with the Evergreen WebView2 runtime |
 
 **Phase 8, 2026-11-11:** the installer, updater, default-browser registration and credits are built and tested; the release guide is [docs/release.md](docs/release.md).
 - P1: `npm run pack` built 0.9.0 and 0.9.1 into one local feed (`artifacts/releases`); the `release` workflow packs on every PR that touches packaging and drafts a release on a `v*` tag.
