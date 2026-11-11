@@ -138,7 +138,7 @@ export function ImportSection() {
 					{error?.row === PASSWORDS_ROW ? <InfoBanner kind="warning">{error.message}</InfoBanner> : null}
 					<PasswordImportResult imported={passwords.imported} />
 				</>
-			) : vault?.state.error === 'unreadable' ? null : (
+			) : vault === undefined || vault.state.error === 'unreadable' ? null : (
 				<div className="vault-none">{PASSWORDS_FILE_VAULT_OFF}</div>
 			)}
 			<ul className="import-help" aria-label="Exporting a bookmarks file">
