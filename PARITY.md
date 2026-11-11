@@ -107,7 +107,7 @@ Also dropped:
 | B22 | Memory-only favicons | parity | Features/Browser/FaviconStore.swift | [#49](https://github.com/wong04/zing/issues/49) | Done |
 | B23 | Camera, mic and permission prompts | parity | Features/Browser/BrowserTab.swift | [#50](https://github.com/wong04/zing/issues/50) | Done |
 | B24 | Multiple windows | parity | App/KracknApp.swift (WindowSession) | [#51](https://github.com/wong04/zing/issues/51) | Done |
-| B25 | Default browser + links from other apps | parity | App/KracknApp.swift (AppGate, LinkInbox) | [#52](https://github.com/wong04/zing/issues/52) | Partial |
+| B25 | Default browser + links from other apps | parity | App/KracknApp.swift (AppGate, LinkInbox) | [#52](https://github.com/wong04/zing/issues/52) | Partial: built and tested, awaiting the owner's hand check ([docs/release.md](docs/release.md#hand-check)); host tests `DefaultBrowserTests`, `ChromeApiDefaultBrowserTests`; e2e in `e2e/default-browser.spec.ts` |
 | B26 | Confirm before quit | parity | App/AppSettings.swift (confirmQuit) | [#53](https://github.com/wong04/zing/issues/53) | Dropped |
 | B27 | Clean user agent | parity | Features/Browser/UserAgent.swift | [#54](https://github.com/wong04/zing/issues/54) | Dropped |
 | B28 | App sidebar with edge reveal | parity | App/Sidebar.swift | [#55](https://github.com/wong04/zing/issues/55) | Done |
@@ -121,7 +121,7 @@ Also dropped:
 
 **B rows, 2026-11-01:** re-verified on the WebView2 host. Evidence for each Done row is in its issue, and every cited test passed on Windows CI ([run 41289375469](https://github.com/wong04/zing/actions/runs/41289375469), the whole e2e suite plus vitest and xUnit). Partial rows, still open:
 - B11: domain blocking is Edge Strict, untested; full blocking waits on uBO Lite
-- B25: default-browser registration waits on the installer (Phase 8)
+- B25: the installer registers Zing as a browser and Settings offers to make it the default (Phase 8); a real install, Default apps and a link from another app wait on the owner's hand check in [docs/release.md](docs/release.md#hand-check)
 - B29: no e2e; the toolbox isn’t there yet
 - B34: mostly visual; needs light + dark screenshots
 
@@ -231,13 +231,22 @@ Evidence (e2e/vault.spec.ts unless noted; screenshots in [docs/screenshots/phase
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| P1 | NSIS installer | infra | bundle.sh | [#105](https://github.com/wong04/zing/issues/105) | Open |
-| P2 | Auto-update from GitHub Releases | infra | - | [#106](https://github.com/wong04/zing/issues/106) | Open |
-| P3 | Code signing | infra | - | [#107](https://github.com/wong04/zing/issues/107) | Open |
-| P4 | winget manifest | infra | - | [#108](https://github.com/wong04/zing/issues/108) | Open |
-| P5 | Credits and third-party notices | infra | - | [#109](https://github.com/wong04/zing/issues/109) | Open |
+| P1 | Velopack installer | infra | bundle.sh | [#105](https://github.com/wong04/zing/issues/105) | Partial: built and tested, awaiting the owner's hand check ([docs/release.md](docs/release.md#hand-check)); `scripts/pack.ps1`, `.github/workflows/release.yml` |
+| P2 | Auto-update from GitHub Releases | infra | - | [#106](https://github.com/wong04/zing/issues/106) | Partial: built and tested, awaiting the owner's hand check ([docs/release.md](docs/release.md#hand-check)); host tests `UpdaterTests`, `ChromeApiUpdatesTests`; e2e in `e2e/update.spec.ts` |
+| P3 | Code signing | infra | - | [#107](https://github.com/wong04/zing/issues/107) | Open: decided to sign later, with Azure Trusted Signing (about $10/month, identity check) or SignPath Foundation (free for open source); `release.yml` has a placeholder sign step that turns on with an `AZURE_SIGNING_ACCOUNT` secret ([docs/release.md](docs/release.md#signing)) |
+| P4 | winget manifest | infra | - | [#108](https://github.com/wong04/zing/issues/108) | Partial: `winget/manifests/` passes `winget validate`; submission is turned on at 1.0 ([docs/release.md](docs/release.md#winget-at-10)) |
+| P5 | Credits and third-party notices | infra | - | [#109](https://github.com/wong04/zing/issues/109) | Done: `scripts/notices.test.ts`, host tests `ChromeApiCreditsTests`, and the Credits assertion in `e2e/update.spec.ts` |
 | P6 | Web-compat smoke tests in CI | infra | - | [#110](https://github.com/wong04/zing/issues/110) | Open |
 | P7 | Dependency updates (Windows App SDK, .NET, npm); Chromium security fixes now come with the Evergreen WebView2 runtime | infra | - | [#111](https://github.com/wong04/zing/issues/111) | Open |
+
+**Phase 8, 2026-11-11:** the installer, updater, default-browser registration and credits are built and tested; the release guide is [docs/release.md](docs/release.md).
+- P1: `npm run pack` built 0.9.0 and 0.9.1 into one local feed (`artifacts/releases`); the `release` workflow packs on every PR that touches packaging and drafts a release on a `v*` tag.
+- P2: host tests `UpdaterTests` and `ChromeApiUpdatesTests`; e2e `e2e/update.spec.ts` (Check now finds a ready update, every window shows the pill, clicking it restarts once). e2e runs use a fake update source and never contact GitHub.
+- B25: host tests `DefaultBrowserTests` and `ChromeApiDefaultBrowserTests`; e2e `e2e/default-browser.spec.ts` (the offer waits for a second launch, opens Default apps, and stops after Don't ask again; the Settings row by install state).
+- B25, files from Open with: the installer also registers `ZingPDF` for `.pdf` (as Edge and Chrome do) beside `ZingHTML`, and Zing opens a `.pdf`, `.htm` or `.html` path it is handed: a PDF in the Files viewer, an HTML file in a tab, cold or into a running Zing. Host tests `LaunchFilesTests` and `DefaultBrowserTests`; e2e `e2e/open-with.spec.ts`. The owner's first hand check (2026-11-11) passed install, update, Default apps, a link from another app and uninstall; it found `.pdf` missing from Open with, so Open with on a `.pdf` and an `.html` is re-checked.
+- P5: `scripts/notices.test.ts`, `ChromeApiCreditsTests`, and the Credits region in `e2e/update.spec.ts`.
+- Screenshots, light and dark, in `docs/screenshots/phase-8/`: About, the update pill (alone and in a window), the default-browser offer and the Settings row.
+- P1, P2 and B25 stay Partial until the owner runs the hand check in [docs/release.md](docs/release.md#hand-check) (install 0.9.0, make Zing the default, update to 0.9.1 from the local feed, uninstall and keep the data).
 
 ## M9 Parity audit
 

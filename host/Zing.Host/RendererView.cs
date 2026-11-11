@@ -271,10 +271,11 @@ public sealed class RendererView
 		}
 	}
 
-	/// <summary>The built React renderer: ZING_RENDERER_DIR, else the checkout's out/renderer that Zing.Host.csproj writes into the app.</summary>
+	/// <summary>The built React renderer: ZING_RENDERER_DIR, else the folder Zing.Host.csproj writes into the app: the checkout's out/renderer, or `renderer` beside the exe in a release.</summary>
 	private static string RendererFolder() => RendererLocation.Resolve(
 		Environment.GetEnvironmentVariable("ZING_RENDERER_DIR"),
-		typeof(RendererView).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(a => a.Key == "RendererFolder")?.Value);
+		typeof(RendererView).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(a => a.Key == "RendererFolder")?.Value,
+		AppContext.BaseDirectory);
 }
 
 /// <summary>A Zing view's window closed before the view finished starting.</summary>

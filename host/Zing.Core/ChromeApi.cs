@@ -73,6 +73,14 @@ public interface IWindowHost
 	/// <summary>Runs delayed work on the window's UI thread.</summary>
 	IScheduler Scheduler { get; }
 	IShellActions Shell { get; }
+	/// <summary>The app's one updater, shared by every window.</summary>
+	Updater Updates { get; }
+	/// <summary>The update pill's view measured what it shows.</summary>
+	void SetUpdatePillSize(int width, int height);
+	/// <summary>Whether Zing is installed and the default browser, asked anew each time (the person may have changed it in Windows' Settings).</summary>
+	DefaultBrowserState DefaultBrowserState { get; }
+	/// <summary>The generated third-party notices file, shown by About's Credits.</summary>
+	string ThirdPartyNoticesPath { get; }
 }
 
 /// <summary>What every window shares: one settings store, one library, one address rule.</summary>
@@ -436,6 +444,18 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
 		bridge.Register("peek:get", _ => Peek());
+		bridge.Register("update:get", _ => host.Updates.State);
+		bridge.Register("update:check", async _ => await host.Updates.CheckNowAsync());
+		bridge.Register("update:relaunch", _ => Do(host.Updates.Relaunch));
+		// CSS pixels, fractional on a scaled display; the view takes whole DIPs, rounded up.
+		bridge.Register("update:pill-size", args => Do(() => host.SetUpdatePillSize((int)Math.Ceiling(Number(args, 0)), (int)Math.Ceiling(Number(args, 1)))));
+		bridge.Register("default-browser:get", _ => host.DefaultBrowserState);
+		bridge.Register("about:credits", _ => File.ReadAllText(host.ThirdPartyNoticesPath));
+		bridge.Register("default-browser:dismiss", _ => Do(() =>
+		{
+			app.Settings.Set("defaultBrowserDismissed", true);
+			DismissOffer();
+		}));
 		var importApi = new ImportApi(app.Library, Grants, app.LocalAppData ?? (() => throw new InvalidOperationException("This host has no browser profile root to import from")), () => app.BrowserLauncher ?? throw new InvalidOperationException("This host can't start another browser"), () => app.FileTrash ?? throw new InvalidOperationException("This host can't use the Recycle Bin"), host.Scheduler, host.DownloadsDirectory, host.Push);
 		_importApi = importApi;
 		bridge.Register("import:sources", _ => importApi.Sources());
@@ -526,6 +546,22 @@ public sealed class ChromeApi : IDisposable
 		AssertNavigable(url);
 		if (Tabs.Records is [var only] && (only.Url == TabStore.NewTabUrl || StartPage.IsStartPage(only.Url))) Navigate(only.Id, url);
 		else Tabs.Open(Tabs.CleanLink(url));
+	}
+
+	/// <summary>
+	/// A file from Windows' Open with (LaunchArgs.Files checked it): an HTML file opens like a link at its file: address, and a
+	/// PDF in the Files viewer, which the window grants it to as if it had been dropped there.
+	/// </summary>
+	public void OpenFile(string path)
+	{
+		var file = LaunchArgs.Files([path], File.Exists).SingleOrDefault() ?? throw new UnsupportedLaunchFileException(path);
+		if (file.Kind == LaunchFileKind.Html)
+		{
+			OpenLink(file.Address);
+			return;
+		}
+		var grant = Grants.Issue(file.Path);
+		Shell.OpenPanelWithInputOrSay($"section:{PanelSection.Viewer}", JsonSerializer.Serialize(new { token = grant.Token, name = grant.Name }, ZingJson.Options));
 	}
 
 	/// <summary>A link tile: one new tab at the address, so there is no blank page behind it in Back and the keyboard stays with the page.</summary>

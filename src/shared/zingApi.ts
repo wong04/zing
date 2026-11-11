@@ -183,5 +183,13 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		onPageUiState: (listener) => listen('pageui:state', listener),
 		onLibraryState: (listener) => listen('library:state', listener),
 		onOverview: (listener) => listen('overlay:overview', listener),
+		getUpdateState: () => invoke('update:get'),
+		checkForUpdates: () => invoke('update:check'),
+		relaunchToUpdate: () => invoke('update:relaunch'),
+		setUpdatePillSize: (width, height) => invoke('update:pill-size', width, height),
+		onUpdateState: (listener) => listen('update:state', listener),
+		getDefaultBrowserState: () => invoke('default-browser:get'),
+		dismissDefaultBrowserOffer: () => invoke('default-browser:dismiss'),
+		getCredits: () => invoke('about:credits'),
 	}
 }

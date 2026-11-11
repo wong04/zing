@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { defaults as defaultShortcuts, limit as shortcutLimit, make as makeShortcut } from '@shared/browser/startShortcuts'
 import { allInputs } from '@shared/convert/formatCatalog'
+import type { UpdateState } from '@shared/ipc'
 import { MAX_SLEEP_MINUTES } from '@shared/session/sleepSettings'
 import { accentLabel, accentThemes, CUSTOM_ACCENT, swatchHex } from '@shared/theme/accent'
 import { allItems } from '@shared/toolbox/catalog'
@@ -10,12 +11,18 @@ import { zing } from '../api'
 import { InfoBanner, PillButton, PillField, PillSlider, Toggle } from '../components'
 import { ShieldAlertIcon, ShieldCheckIcon } from '../components/icons'
 import { AccountPane } from '../account/AccountPane'
+import { checkStatusText } from '../update/updateText'
+import { useUpdateState } from '../update/useUpdateState'
 import { privacyStatus } from './privacy'
 import { VaultSection } from './VaultSection'
 import { ImportSection } from './ImportSection'
 import type { CustomId } from './rows'
+import { CHECK_FOR_UPDATES_ROW, detailOf } from './rows'
+import { DefaultBrowserRow } from './DefaultBrowserRow'
+import { CreditsRow } from './CreditsRow'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
+import { useSettings } from './useSettings'
 
 function AccentSwatch({ label, hex, selected, onSelect }: { label: string; hex: string; selected: boolean; onSelect: () => void }) {
 	return (
@@ -74,16 +81,6 @@ function AccentPicker({ handle }: { handle: SettingsHandle }) {
 				<AccentSwatch label="Custom" hex={customColor} selected={accent === CUSTOM_ACCENT} onSelect={() => handle.set('accent', CUSTOM_ACCENT)} />
 			</div>
 			{accent === CUSTOM_ACCENT ? <CustomColourInput handle={handle} /> : null}
-		</SettingRowShell>
-	)
-}
-
-function DefaultBrowserRow() {
-	return (
-		<SettingRowShell title="Default browser" detail="Opens Windows' Default apps page, where you choose Zing for links.">
-			<PillButton variant="outlined" size="small" onClick={() => void zing.openDefaultAppsSettings()}>
-				Make Default
-			</PillButton>
 		</SettingRowShell>
 	)
 }
@@ -251,7 +248,32 @@ function RecentToolsRow({ handle }: { handle: SettingsHandle }) {
 	)
 }
 
+/** Check now, and what the last check found. A build that isn't installed never checks, so the button is off there. */
+function UpdatesRow({ state }: { state: UpdateState | null }) {
+	const idle = state !== null && ['idle', 'upToDate', 'failed'].includes(state.status)
+	return (
+		<SettingRowShell title="Updates" detail={state ? checkStatusText(state) : undefined}>
+			<PillButton variant="outlined" size="small" disabled={!idle} onClick={() => void zing.checkForUpdates()}>
+				Check now
+			</PillButton>
+		</SettingRowShell>
+	)
+}
+
+/** The automatic-check switch, drawn under Check now. */
+function CheckForUpdatesRow() {
+	const handle = useSettings()
+	if (!handle) return null
+	const row = CHECK_FOR_UPDATES_ROW
+	return (
+		<SettingRowShell title={row.title} detail={detailOf(row, handle.settings)}>
+			<Toggle aria-label={row.title} checked={handle.settings.checkForUpdates} onChange={(on) => handle.set('checkForUpdates', on)} />
+		</SettingRowShell>
+	)
+}
+
 function About({ version }: { version: string }) {
+	const update = useUpdateState()
 	return (
 		<>
 			<div className="about-head">
@@ -260,15 +282,18 @@ function About({ version }: { version: string }) {
 				</div>
 				<div>
 					<div className="about-name">Zing</div>
-					<div className="about-version">Version {version}</div>
+					<div className="about-version">Version {update?.currentVersion || version}</div>
 				</div>
 			</div>
+			<UpdatesRow state={update} />
+			<CheckForUpdatesRow />
 			<SettingRowShell title="File formats">
 				<span className="row-value">{allInputs().size}</span>
 			</SettingRowShell>
 			<SettingRowShell title="Tools">
 				<span className="row-value">{allItems().length}</span>
 			</SettingRowShell>
+			<CreditsRow />
 		</>
 	)
 }

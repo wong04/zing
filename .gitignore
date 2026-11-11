@@ -15,7 +15,9 @@ spikes/**/bin/
 spikes/**/obj/
 host/**/bin/
 host/**/obj/
+host/**/TestResults/
 host/Zing.Host/Assets/
 .mono/
 server/**/bin/
 server/**/obj/
+artifacts/

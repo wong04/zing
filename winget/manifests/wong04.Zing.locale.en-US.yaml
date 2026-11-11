@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: wong04.Zing
+PackageVersion: 1.0.0
+PackageLocale: en-US
+Publisher: Aaden Wong
+PublisherUrl: https://github.com/wong04
+PackageName: Zing
+PackageUrl: https://github.com/wong04/zing
+License: MIT
+LicenseUrl: https://github.com/wong04/zing/blob/main/LICENSE
+ShortDescription: A private web browser for Windows that keeps nothing by default.
+Tags:
+  - browser
+  - privacy
+  - webview2
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

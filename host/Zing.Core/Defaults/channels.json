@@ -1,6 +1,10 @@
 {
 	"invoke": [
 		{
+			"channel": "about:credits",
+			"args": 0
+		},
+		{
 			"channel": "account:change-password",
 			"args": 2
 		},
@@ -79,6 +83,14 @@
 		{
 			"channel": "convert:html-to-pdf",
 			"args": 2
+		},
+		{
+			"channel": "default-browser:dismiss",
+			"args": 0
+		},
+		{
+			"channel": "default-browser:get",
+			"args": 0
 		},
 		{
 			"channel": "default-browser:open-settings",
@@ -534,6 +546,22 @@
 			"args": 1
 		},
 		{
+			"channel": "update:check",
+			"args": 0
+		},
+		{
+			"channel": "update:get",
+			"args": 0
+		},
+		{
+			"channel": "update:pill-size",
+			"args": 2
+		},
+		{
+			"channel": "update:relaunch",
+			"args": 0
+		},
+		{
 			"channel": "vault:answer-save",
 			"args": 2
 		},
@@ -627,6 +655,7 @@
 		"sync:state",
 		"tabs:state",
 		"toolpanel:state",
+		"update:state",
 		"vault:state"
 	]
 }

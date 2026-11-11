@@ -128,6 +128,11 @@ const toggle = (key: SettingKey, title: string, extra: Partial<Omit<SettingRow, 
 	...extra,
 })
 
+// Phase 8: About draws this beside Check now (CustomRows), so it is bound here rather than as a pane entry.
+export const CHECK_FOR_UPDATES_ROW: SettingRow = toggle('checkForUpdates', 'Check for updates', {
+	detail: 'Asks GitHub for the latest version every few hours. Sends nothing about you.',
+})
+
 export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = {
 	general: [
 		{
@@ -312,6 +317,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 /** Every setting key some control edits, hidden rows included. */
 export function boundKeys(): Set<SettingKey> {
 	const keys = new Set<SettingKey>()
+	keys.add(CHECK_FOR_UPDATES_ROW.key)
 	for (const items of Object.values(PANES)) {
 		for (const item of items) {
 			if (item.type === 'setting') keys.add(item.key)

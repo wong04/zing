@@ -11,6 +11,7 @@ public static class Program
 	[STAThread]
 	public static void Main()
 	{
+		Installation.Run();
 		TestHooks.RecordUnhandledErrors();
 		ComWrappersSupport.InitializeComWrappers();
 		if (SingleInstance.RedirectedToRunningZing()) return;
@@ -56,6 +57,8 @@ public sealed class ZingApp
 	private readonly List<MainWindow> _windows = [];
 	private readonly List<Action> _onQuit = [];
 	private readonly LinkInbox _links = new();
+	// Files from Windows' Open with, as paths; they wait for a window the same way links do.
+	private readonly LinkInbox _files = new();
 	private TaskbarIcon? _taskbar;
 	private MainWindow? _mostRecent;
 	private AppServices? _services;
@@ -67,8 +70,11 @@ public sealed class ZingApp
 	private Task<CoreWebView2Environment>? _environment;
 	private EngineRebuild? _rebuild;
 	private bool _updateNoticeGiven;
+	private Updater? _updates;
 
 	public AppServices Services => _services ?? throw new InvalidOperationException("Zing has not started");
+
+	public Updater Updates => _updates ?? throw new InvalidOperationException("Zing has not started");
 
 	public Task<CoreWebView2Environment> Environment => _environment ?? throw new InvalidOperationException("Zing has not started");
 
@@ -90,6 +96,8 @@ public sealed class ZingApp
 		_environment = OpenEnvironmentAsync();
 		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => Primary?.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : [], _scheduler, e => TestHooks.Record("session write", e));
 		_onQuit.Add(_session.Flush);
+		_updates = OpenUpdates();
+		TestHooks.OfferDefaultBrowser = OfferDefaultBrowserForTest;
 		if (Flag("restoreTabs"))
 		{
 			var restored = Session.LoadOrRecover(AppPaths.Session);
@@ -97,7 +105,9 @@ public sealed class ZingApp
 			if (restored.Problem is { } problem) StartupProblem("session", "your saved tabs", "without them", problem);
 		}
 		else DiscardSession();
-		foreach (var url in LaunchArgs.Urls(System.Environment.GetCommandLineArgs().Skip(1))) _links.Push(url);
+		var argv = System.Environment.GetCommandLineArgs().Skip(1).ToList();
+		foreach (var url in LaunchArgs.Urls(argv)) _links.Push(url);
+		foreach (var file in LaunchArgs.Files(argv, File.Exists)) _files.Push(file.Path);
 		SingleInstance.Listen(OnSecondLaunch);
 		_taskbar = new TaskbarIcon(dispatcher);
 		NewWindow();
@@ -112,10 +122,41 @@ public sealed class ZingApp
 	public void Ready(MainWindow window)
 	{
 		if (window != Primary) return;
+		Updates.Start();
 		_links.Attach(OpenLink);
+		_files.Attach(OpenFile);
 		// A notice replaces the one before, so problems found at startup are told together.
-		if (_startupNotices.Count > 0) window.Notify(string.Join(" ", _startupNotices));
+		var noticeShown = _startupNotices.Count > 0;
+		if (noticeShown) window.Notify(string.Join(" ", _startupNotices));
 		_startupNotices.Clear();
+		OfferDefaultBrowserOnce(window, noticeShown);
+	}
+
+	// Phase 8: whether this launch was the profile's first, read once before launchedBefore is set; null until then.
+	private bool? _firstLaunch;
+
+	private void OfferDefaultBrowserOnce(MainWindow window, bool noticeShown)
+	{
+		if (_firstLaunch is not null) return;
+		_firstLaunch = !Flag("launchedBefore");
+		Services.Settings.Set("launchedBefore", true);
+		// The offer would replace the startup notice; it comes back next launch.
+		if (noticeShown || !DefaultBrowserOffer.Allowed(Flag("defaultBrowserDismissed"), launchedBefore: !_firstLaunch.Value)) return;
+		try
+		{
+			if (DefaultBrowserOffer.Wanted(window.DefaultBrowserState)) window.OfferDefaultBrowser();
+		}
+		catch (Exception error) when (error is System.Security.SecurityException or IOException or UnauthorizedAccessException)
+		{
+			Faults.Warning("default-browser check", error);
+		}
+	}
+
+	/// <summary>e2e "show-default-browser-offer": the launch offer without asking whether Zing is installed or the default.</summary>
+	private void OfferDefaultBrowserForTest()
+	{
+		if (_firstLaunch is not { } first) return;
+		if (DefaultBrowserOffer.Allowed(Flag("defaultBrowserDismissed"), launchedBefore: !first)) Primary?.OfferDefaultBrowser();
 	}
 
 	/// <summary>
@@ -151,12 +192,21 @@ public sealed class ZingApp
 		target.Reveal();
 	}
 
-	/// <summary>Another launch handed over its command line: open its links, or just bring Zing forward.</summary>
+	private void OpenFile(string path)
+	{
+		var target = MostRecent ?? NewWindow();
+		target.OpenFile(path);
+		target.Reveal();
+	}
+
+	/// <summary>Another launch handed over its command line: open its links and files, or just bring Zing forward.</summary>
 	private void OnSecondLaunch(IReadOnlyList<string> argv)
 	{
 		var urls = LaunchArgs.Urls(argv);
+		var files = LaunchArgs.Files(argv, File.Exists);
 		foreach (var url in urls) _links.Push(url);
-		if (urls.Count == 0) MostRecent?.Reveal();
+		foreach (var file in files) _files.Push(file.Path);
+		if (urls.Count == 0 && files.Count == 0) MostRecent?.Reveal();
 	}
 
 	public MainWindow NewWindow()
@@ -200,7 +250,37 @@ public sealed class ZingApp
 			return;
 		}
 		foreach (var flush in _onQuit) flush();
+		Updates.Quitting();
 		Native.PostQuitMessage(0);
+	}
+
+	/// <summary>A failed check, relaunch or apply is a warning, never a fault: offline or rate-limited is expected, and the next interval or quit tries again.</summary>
+	private Updater OpenUpdates()
+	{
+		var scheduler = _scheduler ?? throw new InvalidOperationException("Launch creates the scheduler first");
+		var updates = new Updater(UpdateSource(), scheduler, () => Flag("checkForUpdates"));
+		updates.Failed += error => Faults.Warning("update", error);
+		return updates;
+	}
+
+	/// <summary>Updates are optional, so a Velopack setup that throws leaves Zing without them (Unavailable) rather than failing startup.</summary>
+	private IUpdateSource? UpdateSource()
+	{
+		try
+		{
+			return Installation.UpdateSource(QuitAll);
+		}
+		catch (Exception error)
+		{
+			Faults.Warning("update", error);
+			return null;
+		}
+	}
+
+	/// <summary>Closes every window, the oldest last, so the session saved on quit is still the oldest window's.</summary>
+	private void QuitAll()
+	{
+		foreach (var window in Enumerable.Reverse(_windows.ToList())) window.CloseWindow();
 	}
 
 	private AppServices OpenServices()

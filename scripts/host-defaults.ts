@@ -84,6 +84,9 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	verticalTabsCollapsed: flag,
 	sleepingTabs: { type: 'sleep', min: MIN_SLEEP_MINUTES, max: MAX_SLEEP_MINUTES },
 	toolLinks: { type: 'linkList' },
+	checkForUpdates: flag,
+	defaultBrowserDismissed: flag,
+	launchedBefore: flag,
 }
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)

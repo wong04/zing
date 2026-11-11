@@ -1,0 +1,107 @@
+using System.Runtime.Versioning;
+using Microsoft.Win32;
+
+namespace Zing.Core;
+
+/// <summary>One registry value under HKCU. A null <paramref name="Name"/> is the key's default value.</summary>
+public sealed record RegistryValue(string Key, string? Name, string Value);
+
+/// <summary>What makes Zing appear in Windows' default-apps list. The host writes these from the install hooks.</summary>
+public static class DefaultBrowserRegistration
+{
+	public const string ProgId = "ZingHTML";
+	/// <summary>PDFs get their own ProgId, as Edge (MSEdgePDF) and Chrome (ChromePDF) do, so Windows can show them as PDF documents.</summary>
+	public const string PdfProgId = "ZingPDF";
+	public const string ClientName = "Zing";
+
+	private const string ClassKey = @"Software\Classes\" + ProgId;
+	private const string PdfClassKey = @"Software\Classes\" + PdfProgId;
+	private const string ClientKey = @"Software\Clients\StartMenuInternet\" + ClientName;
+	private const string CapabilitiesKey = ClientKey + @"\Capabilities";
+	private const string RegisteredApplicationsKey = @"Software\RegisteredApplications";
+
+	private static string OpenWithKey(string extension) => $@"Software\Classes\{extension}\OpenWithProgids";
+
+	public static IReadOnlyList<RegistryValue> Values(string exePath)
+	{
+		var command = $"\"{exePath}\" \"%1\"";
+		var icon = exePath + ",0";
+		return
+		[
+			new(ClassKey, null, "Zing HTML Document"),
+			new(ClassKey + @"\DefaultIcon", null, icon),
+			new(ClassKey + @"\shell\open\command", null, command),
+			new(ClassKey + @"\Application", "ApplicationName", ClientName),
+			new(ClassKey + @"\Application", "ApplicationIcon", icon),
+			new(PdfClassKey, null, "Zing PDF Document"),
+			new(PdfClassKey + @"\DefaultIcon", null, icon),
+			new(PdfClassKey + @"\shell\open\command", null, command),
+			new(PdfClassKey + @"\Application", "ApplicationName", ClientName),
+			new(PdfClassKey + @"\Application", "ApplicationIcon", icon),
+			new(ClientKey, null, ClientName),
+			new(ClientKey + @"\DefaultIcon", null, icon),
+			new(ClientKey + @"\shell\open\command", null, command),
+			new(CapabilitiesKey, "ApplicationName", ClientName),
+			new(CapabilitiesKey, "ApplicationDescription", "A private browser that keeps nothing by default."),
+			new(CapabilitiesKey, "ApplicationIcon", icon),
+			new(CapabilitiesKey + @"\Startmenu", "StartMenuInternet", ClientName),
+			new(CapabilitiesKey + @"\URLAssociations", "http", ProgId),
+			new(CapabilitiesKey + @"\URLAssociations", "https", ProgId),
+			new(CapabilitiesKey + @"\FileAssociations", ".htm", ProgId),
+			new(CapabilitiesKey + @"\FileAssociations", ".html", ProgId),
+			new(CapabilitiesKey + @"\FileAssociations", ".pdf", PdfProgId),
+			new(OpenWithKey(".htm"), ProgId, ""),
+			new(OpenWithKey(".html"), ProgId, ""),
+			new(OpenWithKey(".pdf"), PdfProgId, ""),
+			new(RegisteredApplicationsKey, ClientName, CapabilitiesKey),
+		];
+	}
+
+	/// <summary>The keys Zing owns. Values Zing wrote into keys it doesn't own are listed by <see cref="NamedValuesToDelete"/>; the host deletes those by name.</summary>
+	public static IReadOnlyList<string> KeysToDelete() => [ClassKey, PdfClassKey, ClientKey];
+
+	/// <summary>Zing's values inside shared keys. Only Key and Name matter; Value is unused.</summary>
+	public static IReadOnlyList<RegistryValue> NamedValuesToDelete() =>
+	[
+		new(RegisteredApplicationsKey, ClientName, ""),
+		new(OpenWithKey(".htm"), ProgId, ""),
+		new(OpenWithKey(".html"), ProgId, ""),
+		new(OpenWithKey(".pdf"), PdfProgId, ""),
+	];
+
+	public static bool IsDefault(string? httpsUserChoiceProgId) => httpsUserChoiceProgId == ProgId;
+}
+
+public static class DefaultBrowser
+{
+	private const string HttpsUserChoiceKey = @"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice";
+
+	/// <summary>
+	/// The ProgId Windows launches for https links, or null when the user never chose.
+	/// Under ZING_E2E=1 the registry is never read: ZING_DEFAULT_BROWSER stands in, and unset (or empty) means no default browser.
+	/// </summary>
+	[SupportedOSPlatform("windows")]
+	public static string? CurrentHttpsProgId()
+	{
+		if (Environment.GetEnvironmentVariable("ZING_E2E") == "1")
+			return Environment.GetEnvironmentVariable("ZING_DEFAULT_BROWSER") is { Length: > 0 } seam ? seam : null;
+		using var key = Registry.CurrentUser.OpenSubKey(HttpsUserChoiceKey);
+		return key?.GetValue("ProgId") as string;
+	}
+}
+
+/// <summary>What the Settings row shows: whether Zing is installed (and so registered as a browser), and whether it is the default for https.</summary>
+public sealed record DefaultBrowserState(bool Registered, bool IsDefault);
+
+/// <summary>The offer to make Zing the default browser, shown at launch.</summary>
+public static class DefaultBrowserOffer
+{
+	public const string Text = "Make Zing your default browser?";
+	public const string SettingsUri = "ms-settings:defaultapps?registeredAppUser=Zing";
+
+	/// <summary>The person's side of it: never on a profile's first launch (Phase 6c's import nudge has that one), never once they said don't ask again.</summary>
+	public static bool Allowed(bool dismissed, bool launchedBefore) => launchedBefore && !dismissed;
+
+	/// <summary>Zing's side: only an installed Zing can be chosen in Default apps, and a default needs no offer.</summary>
+	public static bool Wanted(DefaultBrowserState state) => state.Registered && !state.IsDefault;
+}

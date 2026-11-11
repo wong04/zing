@@ -33,6 +33,8 @@
 	<ItemGroup>
 		<PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
 		<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+		<!-- Installer hooks and updates (Phase 8). The vpk tool that packs releases is pinned to the same version. -->
+		<PackageReference Include="Velopack" Version="1.2.161" />
 	</ItemGroup>
 	<ItemGroup>
 		<!-- Built from TypeScript by `npm run gen:reader` (part of `npm run build:host`). -->
@@ -59,10 +61,11 @@
 		</AssemblyAttribute>
 	</ItemGroup>
 	<ItemGroup>
-		<!-- Where `npm run build` puts the renderer in this checkout. The app loads it from here and never searches (RendererLocation). -->
+		<!-- Where `npm run build` puts the renderer in this checkout, or ZingRendererFolder (release builds pass `renderer`, beside the exe). The app loads it from here and never searches (RendererLocation). -->
 		<AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
 			<_Parameter1>RendererFolder</_Parameter1>
-			<_Parameter2>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\out\renderer'))</_Parameter2>
+			<_Parameter2 Condition="'$(ZingRendererFolder)' != ''">$(ZingRendererFolder)</_Parameter2>
+			<_Parameter2 Condition="'$(ZingRendererFolder)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\out\renderer'))</_Parameter2>
 		</AssemblyAttribute>
 	</ItemGroup>
 </Project>

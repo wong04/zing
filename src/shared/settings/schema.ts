@@ -136,6 +136,12 @@ export const SETTINGS_SCHEMA = {
 	verticalTabsCollapsed: flag(false),
 	/** Zing: discard idle tabs' renderers to save memory; the record and URL stay. */
 	sleepingTabs: { default: DEFAULT_SLEEPING_TABS, accepts: isSleepSettings },
+	/** Zing: asks GitHub for the latest release every few hours; sends nothing about the person. */
+	checkForUpdates: flag(true),
+	/** Zing: set once the "Make Zing your default browser?" offer is dismissed or accepted. */
+	defaultBrowserDismissed: flag(false),
+	/** Zing: set true after a profile's first launch; the default-browser offer waits for it. */
+	launchedBefore: flag(false),
 	/** Zing: the tiles on the Toolbox's Links page, kept like other settings since the user chose to edit them. */
 	toolLinks: { default: DEFAULT_TOOL_LINKS, accepts: isToolLinkList },
 } as const

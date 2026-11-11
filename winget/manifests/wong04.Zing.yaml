@@ -1,0 +1,7 @@
+# Version manifest for winget-pkgs (manifests/w/wong04/Zing/<version>/). The release workflow's winget job bumps it at 1.0.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.6.0.schema.json
+PackageIdentifier: wong04.Zing
+PackageVersion: 1.0.0
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0

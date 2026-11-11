@@ -32,6 +32,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private NoticeLayer? _notices;
 	private PageUiLayer? _pageUi;
 	private PeekControlsLayer? _peekControls;
+	private UpdatePillLayer? _updatePill;
 	private CoveringLayer? _stacks;
 	private CoveringLayer? _overview;
 	private CoreWebView2Environment? _environment;
@@ -134,9 +135,14 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_overview = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-overview", _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays, OverlayLevel.Overview);
 		_pageUi = new PageUiLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays);
 		_peekControls = new PeekControlsLayer(_window, _scope, _environment, _bridge, PreviewButtons, _renderers.Add, _overlays);
+		_updatePill = new UpdatePillLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, _renderers.Add, _overlays, _app.Updates.State);
+		_app.Updates.Changed += OnUpdateChanged;
+		_scope.Track(() => _app.Updates.Changed -= OnUpdateChanged);
+		_updatePill.Start();
 		_bridge.Register("default-browser:open-settings", _ =>
 		{
-			Shell.OpenExternal("ms-settings:defaultapps");
+			if (TestHooks.IsEndToEndRun) TestHooks.RecordDialog("default-apps", DefaultBrowserOffer.SettingsUri);
+			else Shell.OpenExternal(DefaultBrowserOffer.SettingsUri);
 			return (object?)null;
 		});
 		// A Zing view's own error (RendererErrorReport): recorded like the host's, so an e2e run fails on it.
@@ -476,6 +482,15 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		TestHooks.Background(_notices.ShowOfferAsync(address), "offer");
 	}
 
+	/// <summary>The default-browser offer (ZingApp decides when).</summary>
+	public void OfferDefaultBrowser()
+	{
+		if (_notices is null || _scope.IsClosed) return;
+		TestHooks.Background(_notices.ShowDefaultBrowserOfferAsync(), "default-browser offer");
+	}
+
+	public DefaultBrowserState DefaultBrowserState => new(Installation.IsInstalled, Installation.IsDefaultBrowser());
+
 	public void DismissOffer()
 	{
 		if (!_dispatcher.HasThreadAccess)
@@ -502,6 +517,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_pageUi?.Layout();
 		_stacks?.Layout();
 		_overview?.Layout();
+		_updatePill?.Layout();
 		// The shell model works out where the surface goes and answers through SurfaceRegionChanged.
 		Api?.LayoutChanged();
 	}
@@ -544,6 +560,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	/// <summary>A link from another app (windows.ts openLink).</summary>
 	public void OpenLink(string url) => (Api ?? throw new InvalidOperationException("The window has not started")).OpenLink(url);
+
+	public void OpenFile(string path) => (Api ?? throw new InvalidOperationException("The window has not started")).OpenFile(path);
 
 	/// <summary>Brings the window forward; test runs never take focus (AGENTS.md).</summary>
 	public void Reveal()
@@ -675,6 +693,20 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public void SetPageUiHeight(int height) => _pageUi?.SetHeight(height);
 
 	public void FocusPageUi() => _pageUi?.Focus();
+
+	public Updater Updates => _app.Updates;
+
+	public string ThirdPartyNoticesPath => Path.Combine(AppContext.BaseDirectory, "Assets", "THIRD-PARTY-NOTICES.txt");
+
+	public void SetUpdatePillSize(int width, int height) => _updatePill?.SetSize(width, height);
+
+	/// <summary>Raised by the app's Updater, which must not see a throw: a closed window has nothing to show it on.</summary>
+	private void OnUpdateChanged(UpdateState state)
+	{
+		if (_scope.IsClosed) return;
+		Push("update:state", state);
+		_updatePill?.Changed(state);
+	}
 
 	public void AccountPickerChanged(Zing.Core.Vault.AccountPicker? picker) => _pageUi?.PickerChanged(picker);
 

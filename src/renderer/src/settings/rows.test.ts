@@ -1,14 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, SETTING_KEYS, acceptsValue } from '@shared/settings'
 import { SETTINGS_CATEGORIES } from '@shared/shell/shellState'
-import { boundKeys, CATEGORIES, PANES, detailOf, isVisible, type SettingRow } from './rows'
+import { boundKeys, CATEGORIES, CHECK_FOR_UPDATES_ROW, PANES, detailOf, isVisible, type SettingRow } from './rows'
 
 describe('settings rows', () => {
 	it('binds every setting in the schema to a control', () => {
 		const bound = boundKeys()
 		// Kept so older settings files still load; WebView2 always presents Edge's own user agent.
 		const retired = new Set(['defaultUserAgent'])
-		expect(SETTING_KEYS.filter((k) => !bound.has(k) && !retired.has(k))).toEqual([])
+		// Zing's own bookkeeping, set by the app rather than the person ; neither ever gets a row.
+		const internal = new Set(['launchedBefore', 'defaultBrowserDismissed'])
+		expect(SETTING_KEYS.filter((k) => !bound.has(k) && !retired.has(k) && !internal.has(k))).toEqual([])
+	})
+
+	it('puts the update switch in About, saying what it sends', () => {
+		const row = CHECK_FOR_UPDATES_ROW
+		expect(row.key).toBe('checkForUpdates')
+		expect(boundKeys().has('checkForUpdates')).toBe(true)
+		expect(row.control.kind).toBe('toggle')
+		expect(detailOf(row, DEFAULT_SETTINGS)).toBe('Asks GitHub for the latest version every few hours. Sends nothing about you.')
 	})
 
 	it('has a pane for every category and no extras', () => {

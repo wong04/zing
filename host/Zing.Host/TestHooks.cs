@@ -118,6 +118,11 @@ public static class TestHooks
 	/// <summary>What the vault asks for Windows Hello in an e2e run: a fake that never prompts, answering as "vault-hello" set it (FakeHelloSealer). Null outside one, so a real launch gets the real HelloSealer.</summary>
 	public static FakeHelloSealer? HelloSealer() => IsEndToEndRun ? Hello : null;
 
+	private static readonly FakeUpdateSource Updates = new();
+
+	/// <summary>What the Updater checks in an e2e run: a fake that never contacts GitHub or restarts (FakeUpdateSource). Null outside one.</summary>
+	public static FakeUpdateSource? UpdateSource() => IsEndToEndRun ? Updates : null;
+
 	/// <summary>
 	/// Sync in an e2e run, which never reaches Google or Railway: ZING_E2E_SYNC_SERVER is a local Zing.Server started with its fake
 	/// issuer, and ZING_E2E_SYNC_SUB the Google sub to sign in as. Without them an e2e run has no sync, whatever the build has.
@@ -149,6 +154,9 @@ public static class TestHooks
 
 	private static int? _closeNextAt;
 
+	/// <summary>Set by ZingApp at launch: "show-default-browser-offer".</summary>
+	public static Action? OfferDefaultBrowser { get; set; }
+
 	/// <summary>"exit-code-on-quit": the code Zing ends with once its last window is gone, as a crash during quit would; e2e/harness.spec.ts.</summary>
 	public static int? QuitExitCode { get; private set; }
 	private static WindowScope? _newest;
@@ -167,6 +175,8 @@ public static class TestHooks
 	/// "sign-in-window" writes the Google sign-in window's state to <c>file</c>, and with <c>close</c> closes it as the person would;
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption" and "live-counts" write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
+	/// "update-ready" with <c>version</c> makes the next update check find that version, and "update-restarts" writes how many restarts into an update were asked for to <c>file</c>.
+	/// "show-default-browser-offer" shows the default-browser offer as a launch would, skipping only whether Zing is installed and not the default.
 	/// </summary>
 	/// <summary>Written beside and moved into place: the test polls for the file and must never read half of it.</summary>
 	private static void WriteWhole(string path, string json)
@@ -299,6 +309,21 @@ public static class TestHooks
 		if (action == "exit-code-on-quit")
 		{
 			QuitExitCode = root.GetProperty("code").GetInt32();
+			return true;
+		}
+		if (action == "update-ready")
+		{
+			Updates.Offer(root.GetProperty("version").GetString()!);
+			return true;
+		}
+		if (action == "show-default-browser-offer")
+		{
+			(OfferDefaultBrowser ?? throw new InvalidOperationException("show-default-browser-offer needs Zing started"))();
+			return true;
+		}
+		if (action == "update-restarts")
+		{
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { restarts = Updates.Restarts }));
 			return true;
 		}
 		if (action == "sign-in-window")

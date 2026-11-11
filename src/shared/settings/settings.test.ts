@@ -18,6 +18,13 @@ describe('settings schema', () => {
 		expect(new SettingsStore().get('passwordAutofill')).toBe(false)
 	})
 
+	it('checks for updates by default, and has not yet dismissed the default-browser offer', () => {
+		expect(DEFAULT_SETTINGS.checkForUpdates).toBe(true)
+		expect(DEFAULT_SETTINGS.defaultBrowserDismissed).toBe(false)
+		expect(DEFAULT_SETTINGS.launchedBefore).toBe(false)
+		for (const key of ['checkForUpdates', 'defaultBrowserDismissed', 'launchedBefore'] as const) expect(acceptsValue(key, 'yes'), key).toBe(false)
+	})
+
 	it('previews links to other sites by default, and rejects non-boolean values', () => {
 		for (const key of ['linkPreviews', 'linkPreviewsShiftClick', 'linkPreviewsFromNewWindows'] as const) {
 			expect(DEFAULT_SETTINGS[key], key).toBe(true)
