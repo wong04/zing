@@ -65,7 +65,8 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 	{
 		EndOffer();
 		_atTop = false;
-		return ShowAsync(new { id = _nextId++, text = DefaultBrowserOffer.Text, defaultBrowser = true }, OfferHeight, OfferMs);
+		// One line, so a plain notice's height: the failed-load offer's height is for its three.
+		return ShowAsync(new { id = _nextId++, text = DefaultBrowserOffer.Text, defaultBrowser = true }, NoticeHeight, OfferMs);
 	}
 
 	private void EndOffer()

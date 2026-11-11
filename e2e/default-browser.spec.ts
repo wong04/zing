@@ -53,6 +53,11 @@ test('the default-browser offer waits for a second launch, opens Default apps, a
 	const second = await launched(first.userDataDir)
 	expect(await noticeShown(second.chrome)).toBe(false)
 	let overlay = await showOffer(second)
+	// One line of question and buttons: a plain notice's height (56), not the three-line failed-load offer's (132).
+	const layer = (await layers(second.chrome)).find((l) => l.url.endsWith('#overlay') && l.visible)
+	expect(layer?.height).toBe(56)
+	const card = await overlay.getByTestId('default-browser-offer').boundingBox()
+	expect(card?.height).toBe(56)
 	await overlay.getByRole('button', { name: 'Make default' }).click()
 	await expect.poll(() => second.dialogs()).toEqual([{ kind: 'default-apps', url: SETTINGS_URI }])
 	await expect.poll(() => noticeShown(second.chrome)).toBe(false)
