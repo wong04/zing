@@ -116,6 +116,35 @@ public sealed class PasswordExportWatchTests : IDisposable
 	}
 
 	[Fact]
+	public void ALockedExportIsRetriedUntilReadable()
+	{
+		var path = Write("a.csv", Csv, TimeSpan.Zero);
+		NewWatch().Start();
+		Poll();
+		using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+		{
+			Poll(3);
+			Assert.Empty(_found);
+			Assert.Equal(1, _scheduler.PendingCount);
+		}
+		Poll();
+		Assert.Equal([path], _found);
+	}
+
+	[Fact]
+	public void AFileFoundAtTheTimeoutPollIsStillTaken()
+	{
+		NewWatch().Start();
+		Poll(598);
+		var path = Write("a.csv", Csv, TimeSpan.FromSeconds(598));
+		Poll();
+		Assert.Empty(_found);
+		Poll();
+		Assert.Equal([path], _found);
+		Assert.Equal(0, _timedOut);
+	}
+
+	[Fact]
 	public void AMissingDownloadsFolderIsAnError()
 	{
 		var watch = new PasswordExportWatch(_scheduler, Path.Combine(_dir, "nope"), () => _clockStart, _found.Add, () => _timedOut++);

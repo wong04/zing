@@ -43,16 +43,16 @@ public sealed class PasswordExportWatch(IScheduler scheduler, string downloadsDi
 	private void Poll()
 	{
 		if (_done) return;
-		if (now() - _start >= Timeout)
-		{
-			Stop();
-			timedOut();
-			return;
-		}
 		if (FindExport() is { } path)
 		{
 			Stop();
 			found(path);
+			return;
+		}
+		if (now() - _start >= Timeout)
+		{
+			Stop();
+			timedOut();
 			return;
 		}
 		_timer = scheduler.Schedule(PollInterval, Poll);
@@ -64,10 +64,18 @@ public sealed class PasswordExportWatch(IScheduler scheduler, string downloadsDi
 		foreach (var file in new DirectoryInfo(downloadsDir).EnumerateFiles("*.csv", SearchOption.TopDirectoryOnly).OrderBy(f => f.Name, StringComparer.Ordinal))
 		{
 			if (_ignored.Contains(file.FullName) || file.LastWriteTimeUtc < _start.UtcDateTime) continue;
-			seen[file.FullName] = file.Length;
-			if (!_lastLength.TryGetValue(file.FullName, out var previous) || previous != file.Length) continue;
-			if (IsPasswordExport(file.FullName)) return file.FullName;
-			_ignored.Add(file.FullName);
+			try
+			{
+				var length = file.Length;
+				seen[file.FullName] = length;
+				if (!_lastLength.TryGetValue(file.FullName, out var previous) || previous != length) continue;
+				if (IsPasswordExport(file.FullName)) return file.FullName;
+				_ignored.Add(file.FullName);
+			}
+			catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+			{
+				// The browser may still hold the file, or have just renamed or removed it; the next poll tries again.
+			}
 		}
 		_lastLength.Clear();
 		foreach (var (path, length) in seen) _lastLength[path] = length;
