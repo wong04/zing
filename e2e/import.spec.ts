@@ -1,7 +1,7 @@
 // Settings, Import: browser profiles found under a fake LocalAppData (ZING_LOCALAPPDATA, built from the synthetic
 // fixtures in src/shared/import/fixtures), imported into the library, and a bookmarks file picked through the pick-files
 // test message. With ZING_SCREENSHOTS=1 it also takes the section's pictures, light and dark, into docs/screenshots.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
@@ -129,6 +129,82 @@ test('a broken profile shows its error and the others still import', async () =>
 	await importFrom(sheet, 'Chrome (Personal)')
 	await expect(row(sheet, 'Chrome (Personal)').getByRole('status')).toContainText('Added')
 	expect(topFolder((await library(zing)).bookmarks, 'Imported from Chrome (Personal)')).toBeDefined()
+	await zing.close()
+})
+
+const PASSWORDS_CSV = 'name,url,username,password,note\nExample,https://example.test/login,ada,first password,\nOther,https://other.test,bob,second password,\n'
+
+/** A profile with the vault on or off (passwordAutofill is read at launch) and a downloads folder, for the password flow. */
+function passwordProfile(vaultOn: boolean): string {
+	const dir = scratchDir('zing-host-data-')
+	mkdirSync(join(dir, 'downloads'), { recursive: true })
+	writeFileSync(join(dir, 'settings.json'), JSON.stringify({ passwordAutofill: vaultOn }))
+	return dir
+}
+
+const launchWithPasswords = (vaultOn: boolean): Promise<Launched> =>
+	launchZing({ userDataDir: passwordProfile(vaultOn), env: { ZING_LOCALAPPDATA: localAppData([['Default', 'Personal', fixture('chromium-bookmarks.json')]]) } })
+
+const passwordFlow = (sheet: Page) => row(sheet, 'Chrome (Personal)').getByRole('group', { name: 'Import Chrome passwords' })
+const summaries = (zing: Launched) => zing.chrome.evaluate(() => window.zing.vaultSummaries())
+
+test("Import passwords opens Chrome's export page, imports the CSV that lands in Downloads, and recycles it on request", async () => {
+	const zing = await launchWithPasswords(true)
+	const sheet = await openImport(zing)
+	await row(sheet, 'Chrome (Personal)').getByRole('button', { name: 'Import passwords' }).click()
+	await expect(passwordFlow(sheet)).toContainText('In Chrome, click Export passwords, confirm, and save. Zing will pick up the file.')
+	expect(zing.dialogs()).toContainEqual({ kind: 'launch:chrome', url: 'chrome://password-manager/settings' })
+
+	// The watch only takes a file written after it started, once its length has held for two polls.
+	const file = join(zing.userDataDir, 'downloads', 'Chrome Passwords.csv')
+	writeFileSync(file, PASSWORDS_CSV)
+	await expect(passwordFlow(sheet).getByRole('status')).toContainText('Added 2, merged 0 into logins you already had, skipped 0', { timeout: 15_000 })
+	await expect(passwordFlow(sheet)).toContainText('The exported file has every password in plain text.')
+	expect((await summaries(zing)).map((l) => [l.origin, l.username]).sort()).toEqual([
+		['https://example.test', 'ada'],
+		['https://other.test', 'bob'],
+	])
+	expect(existsSync(file)).toBe(true)
+
+	await passwordFlow(sheet).getByRole('button', { name: 'Move it to the Recycle Bin' }).click()
+	await expect(passwordFlow(sheet).getByRole('button', { name: 'Done' })).toBeVisible()
+	expect(existsSync(file)).toBe(false)
+	expect(zing.dialogs()).toContainEqual({ kind: 'recycle', url: 'Chrome Passwords.csv' })
+	await zing.close()
+})
+
+test('with the vault off, Import passwords asks first and turns it on', async () => {
+	const zing = await launchWithPasswords(false)
+	const sheet = await openImport(zing)
+	expect((await zing.chrome.evaluate(() => window.zing.getVaultState())).enabled).toBe(false)
+	await row(sheet, 'Chrome (Personal)').getByRole('button', { name: 'Import passwords' }).click()
+	await expect(passwordFlow(sheet)).toContainText('Importing passwords turns on Zing’s password vault, which keeps them on this PC.')
+	expect(zing.dialogs().some((d) => d.kind === 'launch:chrome')).toBe(false)
+	expect((await zing.chrome.evaluate(() => window.zing.getVaultState())).enabled).toBe(false)
+
+	await passwordFlow(sheet).getByRole('button', { name: 'Turn on and continue' }).click()
+	await expect(passwordFlow(sheet)).toContainText('In Chrome, click Export passwords')
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getVaultState())).enabled).toBe(true)
+	expect(zing.dialogs()).toContainEqual({ kind: 'launch:chrome', url: 'chrome://password-manager/settings' })
+	await zing.close()
+})
+
+test('a passwords file chosen by hand imports and offers to recycle it', async () => {
+	const zing = await launchWithPasswords(true)
+	const sheet = await openImport(zing)
+	const file = join(scratchDir('zing-passwords-file-'), 'my-export.csv')
+	writeFileSync(file, PASSWORDS_CSV)
+	await row(sheet, 'Chrome (Personal)').getByRole('button', { name: 'Import passwords' }).click()
+	await expect(passwordFlow(sheet)).toContainText('Zing will pick up the file.')
+	await zing.chrome.evaluate((f) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'pick-files', files: [f] }), file)
+
+	await passwordFlow(sheet).getByRole('button', { name: 'Choose the file myself…' }).click()
+	await expect(passwordFlow(sheet).getByRole('status')).toContainText('Added 2, merged 0')
+	await expect(passwordFlow(sheet)).toContainText('The exported file has every password in plain text.')
+	await passwordFlow(sheet).getByRole('button', { name: 'Move it to the Recycle Bin' }).click()
+	await expect(passwordFlow(sheet).getByRole('button', { name: 'Done' })).toBeVisible()
+	expect(existsSync(file)).toBe(false)
+	expect(zing.dialogs()).toContainEqual({ kind: 'recycle', url: 'my-export.csv' })
 	await zing.close()
 })
 

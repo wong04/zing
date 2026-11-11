@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileHelp, outcomeLine, PASSWORDS_FILE_VAULT_OFF } from './importText'
+import { fileHelp, InvalidPasswordImportEventError, outcomeLine, PASSWORDS_FILE_VAULT_OFF, passwordImportStep, type PasswordImportEvent, type PasswordImportState } from './importText'
 
 const outcome = (patch: Partial<Parameters<typeof outcomeLine>[0]> = {}) => ({
 	folderTitle: 'Imported from Chrome (Personal)',
@@ -44,5 +44,56 @@ describe('fileHelp', () => {
 describe('PASSWORDS_FILE_VAULT_OFF', () => {
 	it('says which setting to turn on', () => {
 		expect(PASSWORDS_FILE_VAULT_OFF).toBe('Turn on “Offer to fill saved passwords” in Passwords to import a passwords file.')
+	})
+})
+
+describe('passwordImportStep', () => {
+	const run = (events: PasswordImportEvent[], from: PasswordImportState = { step: 'idle' }): PasswordImportState =>
+		events.reduce((state, event) => passwordImportStep(state, event).state, from)
+
+	it('goes idle, waiting, importing, imported, offer-recycle, done when the vault is on', () => {
+		const steps: PasswordImportState['step'][] = []
+		let state: PasswordImportState = { step: 'idle' }
+		for (const event of [{ type: 'begin', vaultOn: true }, { type: 'file-arrived' }, { type: 'imported' }, { type: 'continue' }, { type: 'recycled' }] as const) {
+			state = passwordImportStep(state, event).state
+			steps.push(state.step)
+		}
+		expect(steps).toEqual(['waiting', 'importing', 'imported', 'offer-recycle', 'done'])
+	})
+
+	it('asks first when the vault is off', () => {
+		expect(run([{ type: 'begin', vaultOn: false }])).toEqual({ step: 'confirm-vault' })
+		expect(run([{ type: 'begin', vaultOn: false }, { type: 'confirm-vault' }])).toEqual({ step: 'waiting' })
+		expect(run([{ type: 'begin', vaultOn: false }, { type: 'cancel' }])).toEqual({ step: 'idle' })
+	})
+
+	it('keeping the file also ends at done', () => {
+		expect(run([{ type: 'kept' }], { step: 'offer-recycle' })).toEqual({ step: 'done' })
+	})
+
+	it('cancelling from waiting ends the watch; cancelling elsewhere has none to end', () => {
+		expect(passwordImportStep({ step: 'waiting' }, { type: 'cancel' })).toEqual({ state: { step: 'idle' }, cancelWatch: true })
+		expect(passwordImportStep({ step: 'confirm-vault' }, { type: 'cancel' }).cancelWatch).toBe(false)
+		expect(passwordImportStep({ step: 'timed-out' }, { type: 'cancel' }).cancelWatch).toBe(false)
+	})
+
+	it('a timed-out watch offers the file picker, which enters at importing', () => {
+		expect(run([{ type: 'timed-out' }], { step: 'waiting' })).toEqual({ step: 'timed-out' })
+		expect(passwordImportStep({ step: 'timed-out' }, { type: 'choose-file' })).toEqual({ state: { step: 'importing' }, cancelWatch: false })
+	})
+
+	it('choosing the file by hand while waiting ends the watch', () => {
+		expect(passwordImportStep({ step: 'waiting' }, { type: 'choose-file' })).toEqual({ state: { step: 'importing' }, cancelWatch: true })
+	})
+
+	it('a failure from any step is an error with the message; from waiting it ends the watch', () => {
+		expect(passwordImportStep({ step: 'importing' }, { type: 'failed', message: 'nope' })).toEqual({ state: { step: 'error', message: 'nope' }, cancelWatch: false })
+		expect(passwordImportStep({ step: 'waiting' }, { type: 'failed', message: 'Arc has no export' }).cancelWatch).toBe(true)
+		expect(run([{ type: 'cancel' }], { step: 'error', message: 'x' })).toEqual({ step: 'idle' })
+	})
+
+	it('throws on an event the step cannot take', () => {
+		expect(() => passwordImportStep({ step: 'idle' }, { type: 'file-arrived' })).toThrow(InvalidPasswordImportEventError)
+		expect(() => passwordImportStep({ step: 'done' }, { type: 'recycled' })).toThrow(InvalidPasswordImportEventError)
 	})
 })

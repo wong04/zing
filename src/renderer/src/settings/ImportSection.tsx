@@ -4,6 +4,7 @@ import { zing } from '../api'
 import { InfoBanner, PillButton } from '../components'
 import { fileHelp, outcomeLine, PASSWORDS_FILE_VAULT_OFF } from './importText'
 import { messageOf, PasswordImportResult, usePasswordCsvImport } from './PasswordImport'
+import { PasswordImportFlow } from './PasswordImportFlow'
 import { SettingRowShell } from './SettingRowShell'
 import { useVault } from './useVaultData'
 
@@ -45,6 +46,7 @@ export function ImportSection() {
 	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState<{ row: RowId; message: string }>()
 	const [result, setResult] = useState<{ row: RowId; outcome: BookmarkImportOutcome }>()
+	const [flowSource, setFlowSource] = useState<string>()
 	const passwords = usePasswordCsvImport()
 
 	useEffect(() => {
@@ -108,9 +110,15 @@ export function ImportSection() {
 							<PillButton variant="outlined" size="small" disabled={busy || source.error !== undefined} onClick={() => importFrom(source)}>
 								Import bookmarks
 							</PillButton>
+							{source.passwords && vault !== undefined && vault.state.error !== 'unreadable' ? (
+								<PillButton variant="outlined" size="small" disabled={busy || source.error !== undefined || flowSource !== undefined} onClick={() => setFlowSource(source.id)}>
+									Import passwords
+								</PillButton>
+							) : null}
 						</div>
 					</SettingRowShell>
 					{rowOutcome(source.id)}
+					{flowSource === source.id ? <PasswordImportFlow source={source} vaultOn={vaultOn} onClose={() => setFlowSource(undefined)} /> : null}
 				</div>
 			))}
 
