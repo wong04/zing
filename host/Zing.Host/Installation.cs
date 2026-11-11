@@ -50,7 +50,7 @@ public static class Installation
 		return new VelopackUpdateSource(Manager, quit);
 	}
 
-	private static UpdateManager Manager => _manager ??= System.Environment.GetEnvironmentVariable("ZING_UPDATE_FEED") is { Length: > 0 } feed
+	private static UpdateManager Manager => _manager ??= System.Environment.GetEnvironmentVariable("ZING_UPDATE_FEED") is { } feed && !string.IsNullOrWhiteSpace(feed)
 		? new UpdateManager(feed)
 		: new UpdateManager(new GithubSource(Repository, null, false));
 

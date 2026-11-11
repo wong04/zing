@@ -17,6 +17,10 @@ on:
       - .config/dotnet-tools.json
       - winget/**
       - host/Zing.Host/Zing.Host.csproj
+      - host/Zing.Core/RendererLocation.cs
+      - scripts/gen-notices.ts
+      - scripts/notices.ts
+      - package.json
 
 permissions:
   contents: read
@@ -27,15 +31,15 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 9.0.x
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('host/**/*.csproj', 'global.json') }}
@@ -54,15 +58,15 @@ jobs:
       # Step `if:` can't read secrets, so the sign step tests this instead.
       AZURE_SIGNING_ACCOUNT: ${{ github.event_name != 'pull_request' && secrets.AZURE_SIGNING_ACCOUNT || '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 9.0.x
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('host/**/*.csproj', 'global.json') }}
@@ -101,7 +105,7 @@ jobs:
           ZingGoogleClientId: ${{ github.event_name != 'pull_request' && secrets.ZING_GOOGLE_CLIENT_ID || '' }}
           ZingGoogleClientSecret: ${{ github.event_name != 'pull_request' && secrets.ZING_GOOGLE_CLIENT_SECRET || '' }}
         run: npm run pack -- -Version $env:VERSION
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zing-${{ steps.version.outputs.version }}
           path: artifacts/releases/
@@ -117,8 +121,8 @@ jobs:
     env:
       VERSION: ${{ needs.pack.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 9.0.x
       - run: dotnet tool restore

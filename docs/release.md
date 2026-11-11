@@ -70,7 +70,7 @@ Uninstall removes the app and its browser registration, and **keeps** `%APPDATA%
 
 ## Keeping Velopack in step
 
-The `Velopack` NuGet package (`host/Zing.Host/Zing.Host.csproj`) and the `vpk` tool (`.config/dotnet-tools.json`) must be the same version (both `1.2.161` now). Dependabot updates the NuGet package but not the tool, so when it bumps Velopack, bump `vpk` in the same PR, then run `npm run pack` once to check.
+The `Velopack` NuGet package (`host/Zing.Host/Zing.Host.csproj`) and the `vpk` tool (`.config/dotnet-tools.json`) must be the same version (both `1.2.161` now). Dependabot's `velopack` group bumps both in one PR; check that PR has both, then run `npm run pack` once.
 
 ## Hand check
 

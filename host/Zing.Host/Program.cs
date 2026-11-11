@@ -244,9 +244,23 @@ public sealed class ZingApp
 	private Updater OpenUpdates()
 	{
 		var scheduler = _scheduler ?? throw new InvalidOperationException("Launch creates the scheduler first");
-		var updates = new Updater(Installation.UpdateSource(QuitAll), scheduler, () => Flag("checkForUpdates"));
+		var updates = new Updater(UpdateSource(), scheduler, () => Flag("checkForUpdates"));
 		updates.Failed += error => Faults.Warning("update", error);
 		return updates;
+	}
+
+	/// <summary>Updates are optional, so a Velopack setup that throws leaves Zing without them (Unavailable) rather than failing startup.</summary>
+	private IUpdateSource? UpdateSource()
+	{
+		try
+		{
+			return Installation.UpdateSource(QuitAll);
+		}
+		catch (Exception error)
+		{
+			Faults.Warning("update", error);
+			return null;
+		}
 	}
 
 	/// <summary>Closes every window, the oldest last, so the session saved on quit is still the oldest window's.</summary>
