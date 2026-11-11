@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ImportSourceView } from '@shared/ipc'
 import { zing } from '../api'
 import { InfoBanner, PillButton } from '../components'
-import { CONFIRM_VAULT_COPY, EXPORT_COPY, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, RECYCLE_COPY, type PasswordImportEvent, type PasswordImportState } from './importText'
+import { CONFIRM_VAULT_COPY, EXPORT_BUTTON, EXPORT_COPY_AFTER, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, RECYCLE_COPY, type PasswordImportEvent, type PasswordImportState } from './importText'
 import { messageOf, PasswordImportResult, usePasswordCsvImport } from './PasswordImport'
 
 interface PasswordImportFlowProps {
@@ -89,6 +89,7 @@ export function PasswordImportFlow({ source, vaultOn, onClose }: PasswordImportF
 	}, [importingToken])
 
 	const chooseMyself = async (): Promise<void> => {
+		const fail = failDuring(stateRef.current.step)
 		try {
 			const [picked] = await zing.pickFiles(['csv'])
 			// The export may have landed while the picker was open; then that file stands.
@@ -96,7 +97,7 @@ export function PasswordImportFlow({ source, vaultOn, onClose }: PasswordImportF
 			setFile(picked)
 			dispatch({ type: 'choose-file' })
 		} catch (failure) {
-			failDuring(stateRef.current.step)(failure)
+			fail(failure)
 		}
 	}
 
@@ -163,7 +164,8 @@ export function PasswordImportFlow({ source, vaultOn, onClose }: PasswordImportF
 			{state.step === 'waiting' ? (
 				<>
 					<InfoBanner kind="info">
-						In {browserName(source)}, {EXPORT_COPY}
+						In {browserName(source)}, click <strong>{EXPORT_BUTTON}</strong>
+						{EXPORT_COPY_AFTER}
 					</InfoBanner>
 					<div className="vault-actions">
 						{chooseButton}
