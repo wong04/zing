@@ -7,14 +7,24 @@ public sealed record ImportSourceView(string Id, string Browser, string Display,
 
 public sealed record BookmarkImportOutcome(string FolderTitle, int AddedToBar, int AddedToFolder, IReadOnlyList<string> Skipped);
 
+public sealed record PasswordExportFound(string Token, string Name);
+
+public sealed record WatchTimedOut();
+
+public sealed class NotAPasswordExportException() : InvalidOperationException("That file isn't a password export, so Zing won't delete it");
+
 public sealed class UnknownImportSourceException(string id) : ArgumentException($"{id} isn't an import source on this PC");
 
 /// <summary>A source or file that couldn't be read; the message never carries a path.</summary>
 public sealed class ImportReadException(string message, Exception inner) : IOException(message, inner);
 
 /// <summary>The import:* channels: the browsers Zing can import from, and the merge of one of their bookmark sets (or a picked file) into the library.</summary>
-public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<string> localAppData)
+public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<string> localAppData, Func<IBrowserLauncher> launcher, Func<IFileTrash> trash, IScheduler scheduler, string downloadsDir, Action<string, object?> push) : IDisposable
 {
+	private PasswordExportWatch? _watch;
+
+	public void Dispose() => CancelWatch();
+
 	public IReadOnlyList<ImportSourceView> Sources() => [.. ImportSources.Find(localAppData()).Select(View)];
 
 	/// <exception cref="UnknownImportSourceException"/>
@@ -42,6 +52,60 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	{
 		var path = grants.Resolve(token);
 		return Merge(Guarded(() => ImportFile.ParseBookmarks(path), "this file"), Path.GetFileName(path));
+	}
+
+	/// <summary>Opens the source browser's password export page and waits for the CSV to land in the downloads folder; a new watch ends the old.</summary>
+	/// <exception cref="UnknownImportSourceException"/>
+	/// <exception cref="NoPasswordExportException"/>
+	/// <exception cref="DownloadsFolderMissingException"/>
+	/// <exception cref="BrowserNotInstalledException"/>
+	public void WatchPasswords(string id)
+	{
+		var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
+		var url = ExportPages.Url(source.Browser);
+		var openLauncher = launcher();
+		CancelWatch();
+		var watch = new PasswordExportWatch(scheduler, downloadsDir, () => DateTimeOffset.UtcNow, Found, TimedOut);
+		watch.Start();
+		_watch = watch;
+		try
+		{
+			openLauncher.Open(source.Browser, url);
+		}
+		catch
+		{
+			CancelWatch();
+			throw;
+		}
+	}
+
+	/// <summary>Cancelling when nothing is watched does nothing.</summary>
+	public void CancelWatch()
+	{
+		_watch?.Stop();
+		_watch = null;
+	}
+
+	/// <exception cref="UnknownFileGrantException"/>
+	/// <exception cref="NotAPasswordExportException">The file isn't a password export, so it isn't Zing's to delete.</exception>
+	public void Recycle(string token)
+	{
+		var path = grants.Resolve(token);
+		if (!PasswordExportWatch.IsPasswordExport(path)) throw new NotAPasswordExportException();
+		trash().Recycle(path);
+	}
+
+	private void Found(string path)
+	{
+		_watch = null;
+		var grant = grants.Issue(path);
+		push("import:password-export", new PasswordExportFound(grant.Token, grant.Name));
+	}
+
+	private void TimedOut()
+	{
+		_watch = null;
+		push("import:watch-timed-out", new WatchTimedOut());
 	}
 
 	private BookmarkImportOutcome Merge(BookmarkImport import, string source)

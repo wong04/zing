@@ -10,16 +10,24 @@ export function messageOf(error: unknown): string {
 	return error.message.replace(/^[a-z-]+:[a-z-]+: /, '')
 }
 
-/** Picks a password CSV and imports it into the vault. Rejects with what the host refuses with; the caller shows it. */
-export function usePasswordCsvImport(): { imported: VaultImportResult | undefined; pickAndImport: () => Promise<void> } {
+/** Imports a password CSV into the vault, picked or already chosen. Rejects with what the host refuses with; the caller shows it. */
+export function usePasswordCsvImport(): {
+	imported: VaultImportResult | undefined
+	pickAndImport: () => Promise<void>
+	importToken: (token: string) => Promise<void>
+} {
 	const [imported, setImported] = useState<VaultImportResult>()
+	const importToken = async (token: string): Promise<void> => {
+		setImported(undefined)
+		setImported(await zing.importPasswordsCsv(token))
+	}
 	const pickAndImport = async (): Promise<void> => {
 		setImported(undefined)
 		const [file] = await zing.pickFiles(['csv'])
 		if (!file) return
-		setImported(await zing.importPasswordsCsv(file.token))
+		await importToken(file.token)
 	}
-	return { imported, pickAndImport }
+	return { imported, pickAndImport, importToken }
 }
 
 export function PasswordImportResult({ imported }: { imported: VaultImportResult | undefined }) {
