@@ -305,6 +305,14 @@ public sealed class ShellModel : IDisposable
 		return AfterOpen(contentId, outcome);
 	}
 
+	/// <summary>A file opened from another app: like <see cref="OpenPanelWithInput"/>, but with no offer on screen to say so, a full set of panels is a notice.</summary>
+	public OpenPanelOutcome OpenPanelWithInputOrSay(string contentId, string input)
+	{
+		var outcome = OpenPanelWithInput(contentId, input);
+		if (outcome == OpenPanelOutcome.Full) NoticeRaised?.Invoke(FullNotice);
+		return outcome;
+	}
+
 	/// <summary>The failed address of the offer on screen. While it is set, Open a Link and Diagnose open with it filled in, however they were opened.</summary>
 	public string? OfferedAddress { get; set; }
 

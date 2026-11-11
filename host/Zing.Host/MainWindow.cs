@@ -561,6 +561,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	/// <summary>A link from another app (windows.ts openLink).</summary>
 	public void OpenLink(string url) => (Api ?? throw new InvalidOperationException("The window has not started")).OpenLink(url);
 
+	public void OpenFile(string path) => (Api ?? throw new InvalidOperationException("The window has not started")).OpenFile(path);
+
 	/// <summary>Brings the window forward; test runs never take focus (AGENTS.md).</summary>
 	public void Reveal()
 	{

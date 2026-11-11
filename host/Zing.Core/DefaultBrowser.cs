@@ -10,9 +10,12 @@ public sealed record RegistryValue(string Key, string? Name, string Value);
 public static class DefaultBrowserRegistration
 {
 	public const string ProgId = "ZingHTML";
+	/// <summary>PDFs get their own ProgId, as Edge (MSEdgePDF) and Chrome (ChromePDF) do, so Windows can show them as PDF documents.</summary>
+	public const string PdfProgId = "ZingPDF";
 	public const string ClientName = "Zing";
 
 	private const string ClassKey = @"Software\Classes\" + ProgId;
+	private const string PdfClassKey = @"Software\Classes\" + PdfProgId;
 	private const string ClientKey = @"Software\Clients\StartMenuInternet\" + ClientName;
 	private const string CapabilitiesKey = ClientKey + @"\Capabilities";
 	private const string RegisteredApplicationsKey = @"Software\RegisteredApplications";
@@ -28,6 +31,13 @@ public static class DefaultBrowserRegistration
 			new(ClassKey, null, "Zing HTML Document"),
 			new(ClassKey + @"\DefaultIcon", null, icon),
 			new(ClassKey + @"\shell\open\command", null, command),
+			new(ClassKey + @"\Application", "ApplicationName", ClientName),
+			new(ClassKey + @"\Application", "ApplicationIcon", icon),
+			new(PdfClassKey, null, "Zing PDF Document"),
+			new(PdfClassKey + @"\DefaultIcon", null, icon),
+			new(PdfClassKey + @"\shell\open\command", null, command),
+			new(PdfClassKey + @"\Application", "ApplicationName", ClientName),
+			new(PdfClassKey + @"\Application", "ApplicationIcon", icon),
 			new(ClientKey, null, ClientName),
 			new(ClientKey + @"\DefaultIcon", null, icon),
 			new(ClientKey + @"\shell\open\command", null, command),
@@ -39,14 +49,16 @@ public static class DefaultBrowserRegistration
 			new(CapabilitiesKey + @"\URLAssociations", "https", ProgId),
 			new(CapabilitiesKey + @"\FileAssociations", ".htm", ProgId),
 			new(CapabilitiesKey + @"\FileAssociations", ".html", ProgId),
+			new(CapabilitiesKey + @"\FileAssociations", ".pdf", PdfProgId),
 			new(OpenWithKey(".htm"), ProgId, ""),
 			new(OpenWithKey(".html"), ProgId, ""),
+			new(OpenWithKey(".pdf"), PdfProgId, ""),
 			new(RegisteredApplicationsKey, ClientName, CapabilitiesKey),
 		];
 	}
 
 	/// <summary>The keys Zing owns. Values Zing wrote into keys it doesn't own are listed by <see cref="NamedValuesToDelete"/>; the host deletes those by name.</summary>
-	public static IReadOnlyList<string> KeysToDelete() => [ClassKey, ClientKey];
+	public static IReadOnlyList<string> KeysToDelete() => [ClassKey, PdfClassKey, ClientKey];
 
 	/// <summary>Zing's values inside shared keys. Only Key and Name matter; Value is unused.</summary>
 	public static IReadOnlyList<RegistryValue> NamedValuesToDelete() =>
@@ -54,6 +66,7 @@ public static class DefaultBrowserRegistration
 		new(RegisteredApplicationsKey, ClientName, ""),
 		new(OpenWithKey(".htm"), ProgId, ""),
 		new(OpenWithKey(".html"), ProgId, ""),
+		new(OpenWithKey(".pdf"), PdfProgId, ""),
 	];
 
 	public static bool IsDefault(string? httpsUserChoiceProgId) => httpsUserChoiceProgId == ProgId;

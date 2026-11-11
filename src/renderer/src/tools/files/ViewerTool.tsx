@@ -8,6 +8,8 @@ import { panelId, Section, section } from '@shared/toolbox/panelContent'
 import { zing } from '../../api'
 import { FileDropZone, InfoBanner, PillButton, ToolEmptyState } from '../../components'
 import { usePanelId } from '../panelId'
+import { usePanelInput } from '../panelInput'
+import { handedFile } from './handedFile'
 import { PanelIcon } from '../../panels/panelIcon'
 import { describeFailure } from '../dev/parts'
 import './files.css'
@@ -169,6 +171,15 @@ export function ViewerTool() {
 		},
 		[open],
 	)
+
+	// A file opened from another app: shown as if it had been dropped here, once per handoff.
+	const handoff = usePanelInput()
+	const seenHandoff = useRef<number | undefined>(undefined)
+	useEffect(() => {
+		if (!handoff || handoff.serial === seenHandoff.current) return
+		seenHandoff.current = handoff.serial
+		openChecked(handedFile(handoff.value))
+	}, [handoff, openChecked])
 
 	const choose = (): void => {
 		zing.pickFiles(['any']).then(

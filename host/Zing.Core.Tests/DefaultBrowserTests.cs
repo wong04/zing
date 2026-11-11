@@ -6,6 +6,7 @@ public sealed class DefaultBrowserTests
 {
 	private const string Exe = @"C:\Users\A B\AppData\Local\ZingBrowser\current\Zing.exe";
 	private const string ClassKey = @"Software\Classes\ZingHTML";
+	private const string PdfClassKey = @"Software\Classes\ZingPDF";
 	private const string ClientKey = @"Software\Clients\StartMenuInternet\Zing";
 	private const string CapabilitiesKey = ClientKey + @"\Capabilities";
 
@@ -18,6 +19,21 @@ public sealed class DefaultBrowserTests
 		const string expected = $"\"{Exe}\" \"%1\"";
 		Assert.Equal(expected, Get(ClassKey + @"\shell\open\command", null));
 		Assert.Equal(expected, Get(ClientKey + @"\shell\open\command", null));
+		Assert.Equal(expected, Get(PdfClassKey + @"\shell\open\command", null));
+	}
+
+	[Fact]
+	public void Pdfs_have_their_own_prog_id_like_edge_and_chrome()
+	{
+		Assert.Equal("ZingPDF", Get(CapabilitiesKey + @"\FileAssociations", ".pdf"));
+		Assert.Equal("", Get(@"Software\Classes\.pdf\OpenWithProgids", "ZingPDF"));
+		Assert.Equal("Zing PDF Document", Get(PdfClassKey, null));
+		Assert.Equal(Exe + ",0", Get(PdfClassKey + @"\DefaultIcon", null));
+		foreach (var key in new[] { ClassKey, PdfClassKey })
+		{
+			Assert.Equal("Zing", Get(key + @"\Application", "ApplicationName"));
+			Assert.Equal(Exe + ",0", Get(key + @"\Application", "ApplicationIcon"));
+		}
 	}
 
 	[Fact]
@@ -57,11 +73,21 @@ public sealed class DefaultBrowserTests
 	public void Named_values_to_delete_are_exactly_the_shared_key_values_zing_writes()
 	{
 		var named = DefaultBrowserRegistration.NamedValuesToDelete();
-		Assert.Equal(3, named.Count);
+		Assert.Equal(4, named.Count);
+		Assert.Contains(named, n => n.Key == @"Software\Classes\.pdf\OpenWithProgids" && n.Name == "ZingPDF");
 		var written = DefaultBrowserRegistration.Values(Exe);
 		Assert.All(named, n => Assert.Contains(written, w => w.Key == n.Key && w.Name == n.Name));
 		Assert.Contains(named, n => n.Key == @"Software\RegisteredApplications" && n.Name == "Zing");
-		Assert.DoesNotContain(named, n => n.Key.StartsWith(@"Software\Classes\ZingHTML") || n.Key.StartsWith(@"Software\Clients\StartMenuInternet\Zing"));
+		Assert.DoesNotContain(named, n => n.Key.StartsWith(@"Software\Classes\ZingHTML") || n.Key.StartsWith(PdfClassKey) || n.Key.StartsWith(@"Software\Clients\StartMenuInternet\Zing"));
+	}
+
+	[Fact]
+	public void Every_value_zing_writes_is_removed_on_uninstall()
+	{
+		var keys = DefaultBrowserRegistration.KeysToDelete();
+		var named = DefaultBrowserRegistration.NamedValuesToDelete();
+		Assert.All(DefaultBrowserRegistration.Values(Exe), v =>
+			Assert.True(keys.Any(k => v.Key == k || v.Key.StartsWith(k + @"\")) || named.Any(n => n.Key == v.Key && n.Name == v.Name), $"{v.Key} {v.Name} stays after uninstall"));
 	}
 
 	[Theory]
@@ -77,8 +103,7 @@ public sealed class DefaultBrowserTests
 	public void Keys_to_delete_are_only_zings()
 	{
 		var keys = DefaultBrowserRegistration.KeysToDelete();
-		Assert.Equal(2, keys.Count);
-		Assert.All(keys, k => Assert.True(k == ClassKey || k == ClientKey));
+		Assert.Equal([ClassKey, PdfClassKey, ClientKey], keys);
 	}
 
 	[Fact]

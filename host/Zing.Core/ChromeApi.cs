@@ -540,6 +540,22 @@ public sealed class ChromeApi : IDisposable
 		else Tabs.Open(Tabs.CleanLink(url));
 	}
 
+	/// <summary>
+	/// A file from Windows' Open with (LaunchArgs.Files checked it): an HTML file opens like a link at its file: address, and a
+	/// PDF in the Files viewer, which the window grants it to as if it had been dropped there.
+	/// </summary>
+	public void OpenFile(string path)
+	{
+		var file = LaunchArgs.Files([path], File.Exists).SingleOrDefault() ?? throw new UnsupportedLaunchFileException(path);
+		if (file.Kind == LaunchFileKind.Html)
+		{
+			OpenLink(file.Address);
+			return;
+		}
+		var grant = Grants.Issue(file.Path);
+		Shell.OpenPanelWithInputOrSay($"section:{PanelSection.Viewer}", JsonSerializer.Serialize(new { token = grant.Token, name = grant.Name }, ZingJson.Options));
+	}
+
 	/// <summary>A link tile: one new tab at the address, so there is no blank page behind it in Back and the keyboard stays with the page.</summary>
 	private void OpenLinkInNewTab(string url)
 	{

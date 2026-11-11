@@ -57,6 +57,8 @@ public sealed class ZingApp
 	private readonly List<MainWindow> _windows = [];
 	private readonly List<Action> _onQuit = [];
 	private readonly LinkInbox _links = new();
+	// Files from Windows' Open with, as paths; they wait for a window the same way links do.
+	private readonly LinkInbox _files = new();
 	private TaskbarIcon? _taskbar;
 	private MainWindow? _mostRecent;
 	private AppServices? _services;
@@ -103,7 +105,9 @@ public sealed class ZingApp
 			if (restored.Problem is { } problem) StartupProblem("session", "your saved tabs", "without them", problem);
 		}
 		else DiscardSession();
-		foreach (var url in LaunchArgs.Urls(System.Environment.GetCommandLineArgs().Skip(1))) _links.Push(url);
+		var argv = System.Environment.GetCommandLineArgs().Skip(1).ToList();
+		foreach (var url in LaunchArgs.Urls(argv)) _links.Push(url);
+		foreach (var file in LaunchArgs.Files(argv, File.Exists)) _files.Push(file.Path);
 		SingleInstance.Listen(OnSecondLaunch);
 		_taskbar = new TaskbarIcon(dispatcher);
 		NewWindow();
@@ -120,6 +124,7 @@ public sealed class ZingApp
 		if (window != Primary) return;
 		Updates.Start();
 		_links.Attach(OpenLink);
+		_files.Attach(OpenFile);
 		// A notice replaces the one before, so problems found at startup are told together.
 		var noticeShown = _startupNotices.Count > 0;
 		if (noticeShown) window.Notify(string.Join(" ", _startupNotices));
@@ -187,12 +192,21 @@ public sealed class ZingApp
 		target.Reveal();
 	}
 
-	/// <summary>Another launch handed over its command line: open its links, or just bring Zing forward.</summary>
+	private void OpenFile(string path)
+	{
+		var target = MostRecent ?? NewWindow();
+		target.OpenFile(path);
+		target.Reveal();
+	}
+
+	/// <summary>Another launch handed over its command line: open its links and files, or just bring Zing forward.</summary>
 	private void OnSecondLaunch(IReadOnlyList<string> argv)
 	{
 		var urls = LaunchArgs.Urls(argv);
+		var files = LaunchArgs.Files(argv, File.Exists);
 		foreach (var url in urls) _links.Push(url);
-		if (urls.Count == 0) MostRecent?.Reveal();
+		foreach (var file in files) _files.Push(file.Path);
+		if (urls.Count == 0 && files.Count == 0) MostRecent?.Reveal();
 	}
 
 	public MainWindow NewWindow()

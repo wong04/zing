@@ -1,7 +1,9 @@
+using System.Text.RegularExpressions;
+
 namespace Zing.Core;
 
 /// <summary>Links in a process's command line (src/main/launch-args.ts).</summary>
-public static class LaunchArgs
+public static partial class LaunchArgs
 {
 	/// <summary>
 	/// The web addresses in a command line, in order. Switches, the executable
@@ -9,6 +11,27 @@ public static class LaunchArgs
 	/// custom-scheme argument can't be smuggled in through a link click.
 	/// </summary>
 	public static List<string> Urls(IEnumerable<string> argv) => argv.Select(OpenableUrl).OfType<string>().ToList();
+
+	/// <summary>
+	/// The files in a command line that Windows' Open with hands Zing: an existing .pdf, .htm or .html file at an absolute
+	/// path on a drive. Not a file: address, a share, or a relative path, so only the shell's own file associations reach here.
+	/// </summary>
+	public static List<LaunchFile> Files(IEnumerable<string> argv, Func<string, bool> exists) =>
+		argv.Select(token => OpenableFile(token, exists)).OfType<LaunchFile>().ToList();
+
+	private static LaunchFile? OpenableFile(string token, Func<string, bool> exists)
+	{
+		var path = Unquote(token);
+		if (!DrivePath().IsMatch(path)) return null;
+		var kind = Path.GetExtension(path).ToLowerInvariant() switch
+		{
+			".pdf" => LaunchFileKind.Pdf,
+			".htm" or ".html" => LaunchFileKind.Html,
+			_ => (LaunchFileKind?)null,
+		};
+		if (kind is null || !exists(path)) return null;
+		return new LaunchFile(path, kind.Value);
+	}
 
 	private static string? OpenableUrl(string token)
 	{
@@ -25,6 +48,21 @@ public static class LaunchArgs
 		// A trailing backslash before a closing quote can leave one stray quote on either end.
 		return trimmed.Trim('"', '\'').Trim();
 	}
+
+	[GeneratedRegex(@"^[A-Za-z]:\\[^\\]")]
+	private static partial Regex DrivePath();
+}
+
+public enum LaunchFileKind
+{
+	Pdf,
+	Html,
+}
+
+/// <summary>A file Windows asked Zing to open. A PDF opens in the Files viewer; an HTML file in a tab at its file: address.</summary>
+public sealed record LaunchFile(string Path, LaunchFileKind Kind)
+{
+	public string Address => new Uri(Path).AbsoluteUri;
 }
 
 /// <summary>Links that arrive before any window can take them wait here, as in Krackn's LinkInbox.</summary>
@@ -50,3 +88,6 @@ public sealed class LinkInbox
 		foreach (var url in queued) sink(url);
 	}
 }
+
+/// <summary>A path handed to a window to open that isn't an existing .pdf, .htm or .html file on a drive.</summary>
+public sealed class UnsupportedLaunchFileException(string path) : Exception($"Zing doesn't open {path}");

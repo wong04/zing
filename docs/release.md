@@ -82,7 +82,7 @@ The installer can only be checked by hand, on a real install. Run it on a PC whe
 To build them: `npm run pack -- -Version 0.9.0`, copy `artifacts\releases\ZingBrowser-win-Setup.exe` to `artifacts\setup-0.9.0\`, then `npm run pack -- -Version 0.9.1`. The second pack overwrites the Setup.exe in `artifacts\releases`, which is why the 0.9.0 one is copied out first.
 
 1. **Install 0.9.0.** Run the 0.9.0 installer above. Expect no admin prompt, and Zing to open when it finishes. Settings → About shows 0.9.0. Then change a setting you will recognise (a theme, say), so there is data to check in step 7. Zing keeps no tabs by default, so tabs are not the check.
-2. **Check Default apps and Open with.** Windows Settings → Apps → Default apps lists Zing. In File Explorer, right-click any `.html` file → Open with: Zing is in the list.
+2. **Check Default apps and Open with.** Windows Settings → Apps → Default apps lists Zing. In File Explorer, right-click a `.pdf` → Open with → Zing: the PDF opens in Zing's Files viewer. Then right-click an `.html` file → Open with → Zing: it opens in a tab. Do each once more with Zing already open: it opens in that Zing, not a second one.
 3. **Make Zing the default.** In Default apps → Zing, set it as the default (or at least for HTTPS and HTTP).
 4. **Open a link from another app.** Click a link in Mail, a PDF or a chat app. It opens in Zing.
 5. **Quit Zing and set `ZING_UPDATE_FEED`.** Close every Zing window. Then Start → "Edit environment variables for your account" → under "User variables", New → name `ZING_UPDATE_FEED`, value the update feed path above → OK → OK. Or in PowerShell: `[Environment]::SetEnvironmentVariable('ZING_UPDATE_FEED', '<feed path>', 'User')`.
@@ -91,7 +91,7 @@ To build them: `npm run pack -- -Version 0.9.0`, copy `artifacts\releases\ZingBr
 8. **Uninstall, and check what stays and what goes.** Settings → Apps → Installed apps → Zing → Uninstall. Then:
 	- `%APPDATA%\Zing` and `%LOCALAPPDATA%\Zing` are still there.
 	- `%LOCALAPPDATA%\ZingBrowser` is gone, and Zing is gone from Default apps.
-	- In `regedit`, under `HKEY_CURRENT_USER`, these are gone: the keys `Software\Classes\ZingHTML` and `Software\Clients\StartMenuInternet\Zing`, the `Zing` value in `Software\RegisteredApplications`, and the `ZingHTML` value in `Software\Classes\.htm\OpenWithProgids` and `Software\Classes\.html\OpenWithProgids`.
+	- In `regedit`, under `HKEY_CURRENT_USER`, these are gone: the keys `Software\Classes\ZingHTML`, `Software\Classes\ZingPDF` and `Software\Clients\StartMenuInternet\Zing`, the `Zing` value in `Software\RegisteredApplications`, the `ZingHTML` value in `Software\Classes\.htm\OpenWithProgids` and `Software\Classes\.html\OpenWithProgids`, and the `ZingPDF` value in `Software\Classes\.pdf\OpenWithProgids`.
 9. **Clear `ZING_UPDATE_FEED`.** The same dialog as step 5 → select it → Delete → OK. Or `[Environment]::SetEnvironmentVariable('ZING_UPDATE_FEED', $null, 'User')`.
 
 Record the result (date, and any step that failed) in PARITY.md's Phase 8 note, then mark P1, P2 and B25 Done.
