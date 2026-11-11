@@ -12,6 +12,10 @@ export const startPageURL = 'zing://home'
  */
 export const editShortcutsHost = 'edit-shortcuts'
 export const editShortcutsURL = `${startPageScheme}://${editShortcutsHost}`
+/** The import card's links. Never loaded: the host catches them, from the start page only. */
+export const importHost = 'import'
+export const importActions = ['bookmarks', 'passwords', 'settings', 'dismiss'] as const
+export type ImportAction = (typeof importActions)[number]
 /** The `<style>` holding the palette, swapped in place on a theme change. */
 export const themeStyleId = 'zing-theme'
 
@@ -36,11 +40,18 @@ export interface StartPageTheme {
 	dark: StartPageTokens
 }
 
+/** The import card on the page: an offer from a browser found on this PC, the generic ask, or the result of an import. */
+export type ImportNudge =
+	| { kind: 'offer'; browser: string; profile?: string; bookmarks: number; sourceId: string; passwords: boolean }
+	| { kind: 'generic'; error?: string }
+	| { kind: 'result'; browser: string; added: number; sourceId: string; passwords: boolean }
+
 export interface StartPageInput {
 	/** Search endpoint the form submits to, e.g. `https://www.google.com/search`. */
 	searchURL: string
 	shortcuts: readonly StartShortcut[]
 	theme: StartPageTheme
+	nudge?: ImportNudge
 }
 
 export class ThemeTokenError extends Error {
@@ -220,6 +231,111 @@ const pageCSS = `  * { box-sizing: border-box; }
   .tiles:hover + .edit, .edit:hover, .edit:focus { opacity: 1; }
   .edit:hover { background: var(--well); color: var(--text); }`
 
+/** What a navigation starting on the start page, or heading for the import address, should do. */
+export type ImportNavigation = { kind: 'import'; action: ImportAction; sourceId?: string } | { kind: 'block' }
+
+function zingURL(url: string): URL | undefined {
+	if (!/^zing:\/\//i.test(url)) return undefined
+	try {
+		return new URL(url)
+	} catch {
+		return undefined
+	}
+}
+
+/**
+ * The import card's links, from the start page only: no website can start an import by linking here.
+ * Undefined when the address is not the import address at all.
+ */
+export function classifyImportNavigation(fromURL: string, toURL: string): ImportNavigation | undefined {
+	const to = zingURL(toURL)
+	if (to?.hostname !== importHost) return undefined
+	if (zingURL(fromURL)?.hostname !== 'home') return { kind: 'block' }
+	const action = to.pathname.slice(1)
+	if (!(importActions as readonly string[]).includes(action)) return { kind: 'block' }
+	const sourceId = to.searchParams.get('source') ?? undefined
+	if ((action === 'bookmarks' || action === 'passwords') && (sourceId === undefined || sourceId === '')) return { kind: 'block' }
+	return sourceId === undefined ? { kind: 'import', action: action as ImportAction } : { kind: 'import', action: action as ImportAction, sourceId }
+}
+
+// encodeURIComponent leaves !'()* alone; the host's encoder does not.
+function encodeSource(sourceId: string): string {
+	return encodeURIComponent(sourceId).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+}
+
+function importURL(action: ImportAction, sourceId?: string): string {
+	const base = `${startPageScheme}://${importHost}/${action}`
+	return escape(sourceId === undefined ? base : `${base}?source=${encodeSource(sourceId)}`)
+}
+
+function buttonHTML(href: string, label: string, primary: boolean): string {
+	return `<a class="${primary ? 'primary' : 'secondary'}" href="${href}">${label}</a>`
+}
+
+function nudgeContentHTML(nudge: ImportNudge): { heading: string; body: string; buttons: string[] } {
+	const notNow = buttonHTML(importURL('dismiss'), 'Not now', false)
+	if (nudge.kind === 'generic') {
+		return {
+			heading: 'Bring your bookmarks from another browser?',
+			body: nudge.error === undefined ? '' : `\n    <p class="error">${escape(nudge.error)}</p>`,
+			buttons: [buttonHTML(importURL('settings'), 'Choose…', true), notNow],
+		}
+	}
+	const browser = escape(nudge.browser)
+	if (nudge.kind === 'offer') {
+		const profile = nudge.profile === undefined ? '' : ` in "${escape(nudge.profile)}"`
+		const passwords = nudge.passwords ? ' Passwords need a quick export, and Zing walks you through it.' : ''
+		return {
+			heading: `Bring your stuff from ${browser}?`,
+			body: `\n    <p>${nudge.bookmarks} bookmarks and your favourites bar${profile}.${passwords}</p>`,
+			buttons: [
+				buttonHTML(importURL('bookmarks', nudge.sourceId), `Import from ${browser}`, true),
+				buttonHTML(importURL('settings'), 'Other browser…', false),
+				notNow,
+			],
+		}
+	}
+	return {
+		heading: `Imported ${nudge.added} bookmarks.`,
+		body: '',
+		buttons: [
+			...(nudge.passwords ? [buttonHTML(importURL('passwords', nudge.sourceId), 'Import passwords too', true)] : []),
+			buttonHTML(importURL('dismiss'), 'Done', !nudge.passwords),
+		],
+	}
+}
+
+// Appended to the page's CSS only when the card is present, and scoped to it.
+const nudgeCSS = `
+  .nudge {
+    width: 100%; max-width: 560px; padding: 16px 18px; border-radius: 12px;
+    background: var(--surface); border: 1px solid var(--separator);
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .nudge h2 { margin: 0; font-size: 14px; font-weight: 600; }
+  .nudge p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  .nudge p.error { color: var(--text); }
+  .nudge .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .nudge .actions a {
+    padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500;
+    text-decoration: none; color: var(--text); background: var(--control);
+    border: 1px solid var(--separator);
+  }
+  .nudge .actions a:hover { background: var(--raised); }
+  .nudge .actions a.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }`
+
+function nudgeHTML(nudge: ImportNudge): string {
+	const { heading, body, buttons } = nudgeContentHTML(nudge)
+	return `
+
+  <section class="nudge">
+    <h2>${heading}</h2>${body}
+    <div class="actions">
+      ${buttons.join('\n      ')}
+    </div>
+  </section>`
+}
+
 const pageScript = `(function () {
   var hh = document.getElementById('hh'), mm = document.getElementById('mm'),
       ss = document.getElementById('ss'), ap = document.getElementById('ap'),
@@ -277,7 +393,7 @@ const pageScript = `(function () {
 })();`
 
 /** Builds the zing://home page. */
-export function startPageHTML({ searchURL, shortcuts, theme }: StartPageInput): string {
+export function startPageHTML({ searchURL, shortcuts, theme, nudge }: StartPageInput): string {
 	// Warm DNS, TCP and TLS for the search engine while the page is just
 	// sitting there. By the time a query is submitted the connection is
 	// already open, which removes the handshake from the critical path —
@@ -297,7 +413,7 @@ ${tiles.map(prefetchHTML).join('\n')}
 ${themeCSS(theme)}
 </style>
 <style>
-${pageCSS}
+${pageCSS}${nudge === undefined ? '' : nudgeCSS}
 </style>
 </head>
 <body>
@@ -321,7 +437,7 @@ ${pageCSS}
   <div class="tiles">
 ${tiles.map(tileHTML).join('\n')}
   </div>
-  <a class="edit" href="${editShortcutsURL}">Edit shortcuts</a>
+  <a class="edit" href="${editShortcutsURL}">Edit shortcuts</a>${nudge === undefined ? '' : nudgeHTML(nudge)}
 
 <script>
 ${pageScript}

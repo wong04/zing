@@ -34,7 +34,17 @@ public sealed class StartPageTests
 	private static List<StartShortcut> ShortcutList(JsonElement e) => [.. Items(e).Select(Shortcut)];
 
 	private static StartPageInput Input(JsonElement e) =>
-		new(Str(e, "searchURL"), ShortcutList(e.GetProperty("shortcuts")), Theme(e.GetProperty("theme")));
+		new(Str(e, "searchURL"), ShortcutList(e.GetProperty("shortcuts")), Theme(e.GetProperty("theme")),
+			e.TryGetProperty("nudge", out var nudge) ? Nudge(nudge) : null);
+
+	private static string? OptStr(JsonElement e, string name) => e.TryGetProperty(name, out var v) ? v.GetString() : null;
+
+	private static ImportNudge Nudge(JsonElement e) => Str(e, "kind") switch {
+		"offer" => new ImportNudge.Offer(Str(e, "browser"), OptStr(e, "profile"), e.GetProperty("bookmarks").GetInt32(), Str(e, "sourceId"), e.GetProperty("passwords").GetBoolean()),
+		"generic" => new ImportNudge.Generic(OptStr(e, "error")),
+		"result" => new ImportNudge.Result(Str(e, "browser"), e.GetProperty("added").GetInt32(), Str(e, "sourceId"), e.GetProperty("passwords").GetBoolean()),
+		var other => throw new InvalidDataException($"unknown nudge kind {other}"),
+	};
 
 	private static void AssertSame(IReadOnlyList<StartShortcut> expected, IReadOnlyList<StartShortcut> actual) => Assert.Equal(expected, actual);
 
@@ -377,6 +387,22 @@ public sealed class StartPageTests
 	}
 
 	[Fact]
+	public void WithoutANudgeThePageHasNoCard()
+	{
+		var html = StartPage.Html(Input(Items(Section("pages")).First().GetProperty("input")));
+		Assert.DoesNotContain("nudge", html);
+		Assert.DoesNotContain("zing://import", html);
+	}
+
+	[Theory]
+	[InlineData("zing://import/bookmarks?source=chrome")]
+	[InlineData("zing://import/passwords?source=chrome")]
+	[InlineData("zing://import/settings")]
+	[InlineData("zing://import/dismiss")]
+	public void OnlyTheStartPageCanRunAnImportLink(string link) =>
+		Assert.IsType<StartPageNavigation.Block>(StartPage.ClassifyNavigation("https://evil.example", link, "google"));
+
+	[Fact]
 	public void TheEditLinkMatches() => Assert.Equal(StartPage.EditShortcutsUrl, Str(Root.Value, "editShortcutsURL"));
 
 	[Fact]
@@ -404,6 +430,7 @@ public sealed class StartPageTests
 			StartPageNavigation expected = Str(result, "kind") switch {
 				"search" => new StartPageNavigation.Search(Str(result, "query")),
 				"edit-shortcuts" => new StartPageNavigation.EditShortcuts(),
+				"import" => new StartPageNavigation.Import(Str(result, "action"), OptStr(result, "source")),
 				"block" => new StartPageNavigation.Block(),
 				"allow" => new StartPageNavigation.Allow(),
 				var other => throw new InvalidDataException($"unknown navigation kind {other}"),

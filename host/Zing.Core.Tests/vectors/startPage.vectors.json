@@ -3108,6 +3108,316 @@
 				}
 			},
 			"html": "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<link rel=\"preconnect\" href=\"https://www.google.com\" crossorigin>\n<link rel=\"preconnect\" href=\"https://www.google.com\">\n<link rel=\"dns-prefetch\" href=\"https://github.com\">\n<link rel=\"dns-prefetch\" href=\"https://stackoverflow.com\">\n<link rel=\"dns-prefetch\" href=\"https://arxiv.org\">\n<link rel=\"dns-prefetch\" href=\"https://developer.mozilla.org\">\n<link rel=\"dns-prefetch\" href=\"https://wikipedia.org\">\n<link rel=\"dns-prefetch\" href=\"https://www.wolframalpha.com\">\n<link rel=\"dns-prefetch\" href=\"https://www.desmos.com\">\n<link rel=\"dns-prefetch\" href=\"https://news.ycombinator.com\">\n<style id=\"zing-theme\">\n  :root {\n    --bg: #F0F0EF;      --surface: #FCFBFB;\n    --tint: #E3E3E2;          --well: #DEDDDC;\n    --outline: #252525;    --accent: #A9A6A2;\n    --on-accent: #212121; --text: #1F1F1E;\n    --muted: #626161;\n    --control: #ECEBEA;   --raised: #FCFBFB;\n    --accent-ink: #4F4E4C;\n    --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n  }\n  @media (prefers-color-scheme: dark) {\n    :root {\n      --bg: #171717;      --surface: #1F1F1F;\n      --tint: #1B1B1B;          --well: #252524;\n      --outline: #BAB9B9;    --accent: #979490;\n      --on-accent: #151515; --text: #E4E4E4;\n      --muted: #969594;\n      --control: #252524;   --raised: #3E3E3D;\n      --accent-ink: #9F9C98;\n      --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n    }\n  }\n</style>\n<style>\n  * { box-sizing: border-box; }\n  html, body { height: 100%; margin: 0; }\n  body {\n    background: var(--bg);\n    color: var(--text);\n    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;\n    display: flex; flex-direction: column;\n    align-items: center; justify-content: center;\n    gap: 34px; padding: 40px 24px;\n    -webkit-font-smoothing: antialiased;\n  }\n  /* Clock: tabular figures so the digits never shift width as the seconds\n     tick over. */\n  .clock { text-align: center; user-select: none; }\n  .clock .time {\n    font-size: 72px; font-weight: 600; line-height: 1;\n    letter-spacing: -0.04em;\n    font-variant-numeric: tabular-nums;\n    font-feature-settings: \"tnum\" 1;\n    display: flex; align-items: baseline; justify-content: center; gap: 2px;\n  }\n  .clock .seconds {\n    font-size: 28px; font-weight: 500;\n    color: var(--muted); letter-spacing: -0.01em;\n    font-variant-numeric: tabular-nums;\n  }\n  .clock .meridiem {\n    font-size: 22px; font-weight: 500; color: var(--muted);\n    margin-left: 6px; letter-spacing: 0;\n  }\n  .clock .date {\n    margin-top: 10px; font-size: 14px; font-weight: 500;\n    color: var(--muted);\n  }\n  /* The colon blinks on the half-second, as the system clock does. */\n  .colon { transition: opacity .18s ease; }\n\n  /* Same field treatment as the native app: a recessed control with a\n     hairline, and a soft focus ring outside it rather than a recoloured\n     border. */\n  form { width: 100%; max-width: 560px; }\n  .search {\n    display: flex; align-items: center; gap: 10px;\n    background: var(--control);\n    border: 1px solid var(--separator);\n    border-radius: 12px;\n    padding: 12px 16px;\n    transition: box-shadow .15s ease, background .15s ease;\n  }\n  .search:focus-within {\n    background: var(--raised);\n    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);\n  }\n  .search svg { flex: none; opacity: .5; }\n  input[type=text] {\n    flex: 1; border: 0; outline: 0; background: transparent;\n    color: var(--text); font-size: 15px; font-family: inherit;\n  }\n  input::placeholder { color: var(--muted); }\n\n  .tiles {\n    display: grid; gap: 10px; width: 100%; max-width: 560px;\n    grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));\n  }\n  .tile {\n    display: flex; align-items: center; gap: 9px;\n    padding: 10px 12px; border-radius: 12px;\n    background: var(--surface);\n    border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n    color: var(--text); text-decoration: none;\n    font-size: 12.5px; font-weight: 500;\n    transition: box-shadow .15s ease;\n  }\n  .tile:hover { box-shadow: 0 3px 10px rgba(0,0,0,.09); }\n  .tile .glyph {\n    width: 26px; height: 26px; flex: none; border-radius: 7px;\n    background: color-mix(in srgb, var(--accent) 18%, transparent);\n    color: var(--accent-ink);\n    display: grid; place-items: center; font-size: 13px;\n  }\n  .tile .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n  .hint { color: var(--muted); font-size: 11.5px; }\n  /* Quiet until you're near the tiles: it's for now and then. */\n  .edit {\n    margin-top: -22px; color: var(--muted); font-size: 11.5px;\n    text-decoration: none; opacity: 0; transition: opacity .2s ease;\n    padding: 4px 8px; border-radius: 6px;\n  }\n  .tiles:hover + .edit, .edit:hover, .edit:focus { opacity: 1; }\n  .edit:hover { background: var(--well); color: var(--text); }\n</style>\n</head>\n<body>\n  <div class=\"clock\">\n    <div class=\"time\">\n      <span id=\"hh\">--</span><span class=\"colon\" id=\"c1\">:</span><span id=\"mm\">--</span><span class=\"seconds\" id=\"ss\"></span><span class=\"meridiem\" id=\"ap\"></span>\n    </div>\n    <div class=\"date\" id=\"date\"></div>\n  </div>\n\n  <form action=\"https://www.google.com/search\" method=\"GET\" autocomplete=\"off\">\n    <div class=\"search\">\n      <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\"\n           stroke=\"currentColor\" stroke-width=\"1.8\">\n        <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/>\n      </svg>\n      <input type=\"text\" name=\"q\" placeholder=\"Search the web…\" autofocus>\n    </div>\n  </form>\n\n  <div class=\"tiles\">\n    <a class=\"tile\" href=\"https://github.com\" title=\"GitHub\">\n      <span class=\"glyph\">◱</span>\n      <span class=\"label\">GitHub</span>\n    </a>\n    <a class=\"tile\" href=\"https://stackoverflow.com\" title=\"Stack Overflow\">\n      <span class=\"glyph\">◲</span>\n      <span class=\"label\">Stack Overflow</span>\n    </a>\n    <a class=\"tile\" href=\"https://arxiv.org\" title=\"arXiv\">\n      <span class=\"glyph\">✦</span>\n      <span class=\"label\">arXiv</span>\n    </a>\n    <a class=\"tile\" href=\"https://developer.mozilla.org\" title=\"MDN\">\n      <span class=\"glyph\">◳</span>\n      <span class=\"label\">MDN</span>\n    </a>\n    <a class=\"tile\" href=\"https://wikipedia.org\" title=\"Wikipedia\">\n      <span class=\"glyph\">◈</span>\n      <span class=\"label\">Wikipedia</span>\n    </a>\n    <a class=\"tile\" href=\"https://www.wolframalpha.com\" title=\"Wolfram Alpha\">\n      <span class=\"glyph\">∑</span>\n      <span class=\"label\">Wolfram Alpha</span>\n    </a>\n    <a class=\"tile\" href=\"https://www.desmos.com/calculator\" title=\"Desmos\">\n      <span class=\"glyph\">∿</span>\n      <span class=\"label\">Desmos</span>\n    </a>\n    <a class=\"tile\" href=\"https://news.ycombinator.com\" title=\"Hacker News\">\n      <span class=\"glyph\">▲</span>\n      <span class=\"label\">Hacker News</span>\n    </a>\n  </div>\n  <a class=\"edit\" href=\"zing://edit-shortcuts\">Edit shortcuts</a>\n\n<script>\n(function () {\n  var hh = document.getElementById('hh'), mm = document.getElementById('mm'),\n      ss = document.getElementById('ss'), ap = document.getElementById('ap'),\n      c1 = document.getElementById('c1'), dateEl = document.getElementById('date'),\n      input = document.querySelector('input[name=q]');\n\n  // Whether the system is on a 12-hour clock, taken from the locale\n  // rather than assumed.\n  var uses12 = new Intl.DateTimeFormat([], { hour: 'numeric' })\n      .resolvedOptions().hour12;\n  var dateFmt = new Intl.DateTimeFormat([], {\n    weekday: 'long', month: 'long', day: 'numeric'\n  });\n\n  function pad(n) { return n < 10 ? '0' + n : '' + n; }\n\n  function tick() {\n    var now = new Date();\n    var h = now.getHours();\n    if (uses12) {\n      ap.textContent = h < 12 ? 'AM' : 'PM';\n      h = h % 12; if (h === 0) h = 12;\n      hh.textContent = h;\n    } else {\n      ap.textContent = '';\n      hh.textContent = pad(h);\n    }\n    mm.textContent = pad(now.getMinutes());\n    ss.textContent = pad(now.getSeconds());\n    // Blink in step with the seconds hand.\n    c1.style.opacity = now.getMilliseconds() < 500 ? '1' : '0.35';\n    dateEl.textContent = dateFmt.format(now);\n  }\n\n  tick();\n  // 100ms keeps the colon blink smooth without a per-frame timer.\n  setInterval(tick, 100);\n\n  // Type-to-search: any printable key anywhere on the page focuses the\n  // box and starts the query, so a new tab needs no click first.\n  function focusSearch() { if (input) { input.focus(); } }\n  focusSearch();\n  window.addEventListener('focus', focusSearch);\n  document.addEventListener('click', function (e) {\n    if (!e.target.closest('a')) focusSearch();\n  });\n  document.addEventListener('keydown', function (e) {\n    if (e.metaKey || e.ctrlKey || e.altKey) return;\n    if (document.activeElement === input) return;\n    // Single printable character, or a correction key.\n    if (e.key.length === 1 || e.key === 'Backspace') {\n      input.focus();\n    }\n  });\n})();\n</script>\n</body>\n</html>\n"
+		},
+		{
+			"name": "nudge offer with a profile",
+			"input": {
+				"searchURL": "https://www.google.com/search",
+				"shortcuts": [],
+				"theme": {
+					"light": {
+						"background": "#F7F2E9",
+						"surface": "#FFFDF8",
+						"tint": "#EFE6D6",
+						"well": "#EBE1CF",
+						"outline": "#2A2420",
+						"accent": "#D9B872",
+						"onAccent": "#2A2118",
+						"text": "#241F19",
+						"textSecondary": "#6E6355",
+						"control": "#F4EEE1",
+						"raised": "#FFFDF8",
+						"accentInk": "#635538"
+					},
+					"dark": {
+						"background": "#1A1714",
+						"surface": "#241F1A",
+						"tint": "#201B16",
+						"well": "#2C251E",
+						"outline": "#CDBFA6",
+						"accent": "#C9A45E",
+						"onAccent": "#1A1410",
+						"text": "#F0E7D8",
+						"textSecondary": "#A69884",
+						"control": "#2C251E",
+						"raised": "#453E36",
+						"accentInk": "#C9A45E"
+					}
+				},
+				"nudge": {
+					"kind": "offer",
+					"browser": "Chrome",
+					"profile": "Work",
+					"bookmarks": 214,
+					"sourceId": "chrome",
+					"passwords": true
+				}
+			},
+			"html": "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<link rel=\"preconnect\" href=\"https://www.google.com\" crossorigin>\n<link rel=\"preconnect\" href=\"https://www.google.com\">\n\n<style id=\"zing-theme\">\n  :root {\n    --bg: #F7F2E9;      --surface: #FFFDF8;\n    --tint: #EFE6D6;          --well: #EBE1CF;\n    --outline: #2A2420;    --accent: #D9B872;\n    --on-accent: #2A2118; --text: #241F19;\n    --muted: #6E6355;\n    --control: #F4EEE1;   --raised: #FFFDF8;\n    --accent-ink: #635538;\n    --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n  }\n  @media (prefers-color-scheme: dark) {\n    :root {\n      --bg: #1A1714;      --surface: #241F1A;\n      --tint: #201B16;          --well: #2C251E;\n      --outline: #CDBFA6;    --accent: #C9A45E;\n      --on-accent: #1A1410; --text: #F0E7D8;\n      --muted: #A69884;\n      --control: #2C251E;   --raised: #453E36;\n      --accent-ink: #C9A45E;\n      --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n    }\n  }\n</style>\n<style>\n  * { box-sizing: border-box; }\n  html, body { height: 100%; margin: 0; }\n  body {\n    background: var(--bg);\n    color: var(--text);\n    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;\n    display: flex; flex-direction: column;\n    align-items: center; justify-content: center;\n    gap: 34px; padding: 40px 24px;\n    -webkit-font-smoothing: antialiased;\n  }\n  /* Clock: tabular figures so the digits never shift width as the seconds\n     tick over. */\n  .clock { text-align: center; user-select: none; }\n  .clock .time {\n    font-size: 72px; font-weight: 600; line-height: 1;\n    letter-spacing: -0.04em;\n    font-variant-numeric: tabular-nums;\n    font-feature-settings: \"tnum\" 1;\n    display: flex; align-items: baseline; justify-content: center; gap: 2px;\n  }\n  .clock .seconds {\n    font-size: 28px; font-weight: 500;\n    color: var(--muted); letter-spacing: -0.01em;\n    font-variant-numeric: tabular-nums;\n  }\n  .clock .meridiem {\n    font-size: 22px; font-weight: 500; color: var(--muted);\n    margin-left: 6px; letter-spacing: 0;\n  }\n  .clock .date {\n    margin-top: 10px; font-size: 14px; font-weight: 500;\n    color: var(--muted);\n  }\n  /* The colon blinks on the half-second, as the system clock does. */\n  .colon { transition: opacity .18s ease; }\n\n  /* Same field treatment as the native app: a recessed control with a\n     hairline, and a soft focus ring outside it rather than a recoloured\n     border. */\n  form { width: 100%; max-width: 560px; }\n  .search {\n    display: flex; align-items: center; gap: 10px;\n    background: var(--control);\n    border: 1px solid var(--separator);\n    border-radius: 12px;\n    padding: 12px 16px;\n    transition: box-shadow .15s ease, background .15s ease;\n  }\n  .search:focus-within {\n    background: var(--raised);\n    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);\n  }\n  .search svg { flex: none; opacity: .5; }\n  input[type=text] {\n    flex: 1; border: 0; outline: 0; background: transparent;\n    color: var(--text); font-size: 15px; font-family: inherit;\n  }\n  input::placeholder { color: var(--muted); }\n\n  .tiles {\n    display: grid; gap: 10px; width: 100%; max-width: 560px;\n    grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));\n  }\n  .tile {\n    display: flex; align-items: center; gap: 9px;\n    padding: 10px 12px; border-radius: 12px;\n    background: var(--surface);\n    border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n    color: var(--text); text-decoration: none;\n    font-size: 12.5px; font-weight: 500;\n    transition: box-shadow .15s ease;\n  }\n  .tile:hover { box-shadow: 0 3px 10px rgba(0,0,0,.09); }\n  .tile .glyph {\n    width: 26px; height: 26px; flex: none; border-radius: 7px;\n    background: color-mix(in srgb, var(--accent) 18%, transparent);\n    color: var(--accent-ink);\n    display: grid; place-items: center; font-size: 13px;\n  }\n  .tile .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n  .hint { color: var(--muted); font-size: 11.5px; }\n  /* Quiet until you're near the tiles: it's for now and then. */\n  .edit {\n    margin-top: -22px; color: var(--muted); font-size: 11.5px;\n    text-decoration: none; opacity: 0; transition: opacity .2s ease;\n    padding: 4px 8px; border-radius: 6px;\n  }\n  .tiles:hover + .edit, .edit:hover, .edit:focus { opacity: 1; }\n  .edit:hover { background: var(--well); color: var(--text); }\n  .nudge {\n    width: 100%; max-width: 560px; padding: 16px 18px; border-radius: 12px;\n    background: var(--surface); border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n  }\n  .nudge h2 { margin: 0; font-size: 14px; font-weight: 600; }\n  .nudge p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }\n  .nudge p.error { color: var(--text); }\n  .nudge .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }\n  .nudge .actions a {\n    padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500;\n    text-decoration: none; color: var(--text); background: var(--control);\n    border: 1px solid var(--separator);\n  }\n  .nudge .actions a:hover { background: var(--raised); }\n  .nudge .actions a.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }\n</style>\n</head>\n<body>\n  <div class=\"clock\">\n    <div class=\"time\">\n      <span id=\"hh\">--</span><span class=\"colon\" id=\"c1\">:</span><span id=\"mm\">--</span><span class=\"seconds\" id=\"ss\"></span><span class=\"meridiem\" id=\"ap\"></span>\n    </div>\n    <div class=\"date\" id=\"date\"></div>\n  </div>\n\n  <form action=\"https://www.google.com/search\" method=\"GET\" autocomplete=\"off\">\n    <div class=\"search\">\n      <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\"\n           stroke=\"currentColor\" stroke-width=\"1.8\">\n        <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/>\n      </svg>\n      <input type=\"text\" name=\"q\" placeholder=\"Search the web…\" autofocus>\n    </div>\n  </form>\n\n  <div class=\"tiles\">\n\n  </div>\n  <a class=\"edit\" href=\"zing://edit-shortcuts\">Edit shortcuts</a>\n\n  <section class=\"nudge\">\n    <h2>Bring your stuff from Chrome?</h2>\n    <p>214 bookmarks and your favourites bar in \"Work\". Passwords need a quick export, and Zing walks you through it.</p>\n    <div class=\"actions\">\n      <a class=\"primary\" href=\"zing://import/bookmarks?source=chrome\">Import from Chrome</a>\n      <a class=\"secondary\" href=\"zing://import/settings\">Other browser…</a>\n      <a class=\"secondary\" href=\"zing://import/dismiss\">Not now</a>\n    </div>\n  </section>\n\n<script>\n(function () {\n  var hh = document.getElementById('hh'), mm = document.getElementById('mm'),\n      ss = document.getElementById('ss'), ap = document.getElementById('ap'),\n      c1 = document.getElementById('c1'), dateEl = document.getElementById('date'),\n      input = document.querySelector('input[name=q]');\n\n  // Whether the system is on a 12-hour clock, taken from the locale\n  // rather than assumed.\n  var uses12 = new Intl.DateTimeFormat([], { hour: 'numeric' })\n      .resolvedOptions().hour12;\n  var dateFmt = new Intl.DateTimeFormat([], {\n    weekday: 'long', month: 'long', day: 'numeric'\n  });\n\n  function pad(n) { return n < 10 ? '0' + n : '' + n; }\n\n  function tick() {\n    var now = new Date();\n    var h = now.getHours();\n    if (uses12) {\n      ap.textContent = h < 12 ? 'AM' : 'PM';\n      h = h % 12; if (h === 0) h = 12;\n      hh.textContent = h;\n    } else {\n      ap.textContent = '';\n      hh.textContent = pad(h);\n    }\n    mm.textContent = pad(now.getMinutes());\n    ss.textContent = pad(now.getSeconds());\n    // Blink in step with the seconds hand.\n    c1.style.opacity = now.getMilliseconds() < 500 ? '1' : '0.35';\n    dateEl.textContent = dateFmt.format(now);\n  }\n\n  tick();\n  // 100ms keeps the colon blink smooth without a per-frame timer.\n  setInterval(tick, 100);\n\n  // Type-to-search: any printable key anywhere on the page focuses the\n  // box and starts the query, so a new tab needs no click first.\n  function focusSearch() { if (input) { input.focus(); } }\n  focusSearch();\n  window.addEventListener('focus', focusSearch);\n  document.addEventListener('click', function (e) {\n    if (!e.target.closest('a')) focusSearch();\n  });\n  document.addEventListener('keydown', function (e) {\n    if (e.metaKey || e.ctrlKey || e.altKey) return;\n    if (document.activeElement === input) return;\n    // Single printable character, or a correction key.\n    if (e.key.length === 1 || e.key === 'Backspace') {\n      input.focus();\n    }\n  });\n})();\n</script>\n</body>\n</html>\n"
+		},
+		{
+			"name": "nudge offer without passwords",
+			"input": {
+				"searchURL": "https://www.google.com/search",
+				"shortcuts": [],
+				"theme": {
+					"light": {
+						"background": "#F7F2E9",
+						"surface": "#FFFDF8",
+						"tint": "#EFE6D6",
+						"well": "#EBE1CF",
+						"outline": "#2A2420",
+						"accent": "#D9B872",
+						"onAccent": "#2A2118",
+						"text": "#241F19",
+						"textSecondary": "#6E6355",
+						"control": "#F4EEE1",
+						"raised": "#FFFDF8",
+						"accentInk": "#635538"
+					},
+					"dark": {
+						"background": "#1A1714",
+						"surface": "#241F1A",
+						"tint": "#201B16",
+						"well": "#2C251E",
+						"outline": "#CDBFA6",
+						"accent": "#C9A45E",
+						"onAccent": "#1A1410",
+						"text": "#F0E7D8",
+						"textSecondary": "#A69884",
+						"control": "#2C251E",
+						"raised": "#453E36",
+						"accentInk": "#C9A45E"
+					}
+				},
+				"nudge": {
+					"kind": "offer",
+					"browser": "Arc",
+					"bookmarks": 37,
+					"sourceId": "arc",
+					"passwords": false
+				}
+			},
+			"html": "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<link rel=\"preconnect\" href=\"https://www.google.com\" crossorigin>\n<link rel=\"preconnect\" href=\"https://www.google.com\">\n\n<style id=\"zing-theme\">\n  :root {\n    --bg: #F7F2E9;      --surface: #FFFDF8;\n    --tint: #EFE6D6;          --well: #EBE1CF;\n    --outline: #2A2420;    --accent: #D9B872;\n    --on-accent: #2A2118; --text: #241F19;\n    --muted: #6E6355;\n    --control: #F4EEE1;   --raised: #FFFDF8;\n    --accent-ink: #635538;\n    --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n  }\n  @media (prefers-color-scheme: dark) {\n    :root {\n      --bg: #1A1714;      --surface: #241F1A;\n      --tint: #201B16;          --well: #2C251E;\n      --outline: #CDBFA6;    --accent: #C9A45E;\n      --on-accent: #1A1410; --text: #F0E7D8;\n      --muted: #A69884;\n      --control: #2C251E;   --raised: #453E36;\n      --accent-ink: #C9A45E;\n      --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n    }\n  }\n</style>\n<style>\n  * { box-sizing: border-box; }\n  html, body { height: 100%; margin: 0; }\n  body {\n    background: var(--bg);\n    color: var(--text);\n    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;\n    display: flex; flex-direction: column;\n    align-items: center; justify-content: center;\n    gap: 34px; padding: 40px 24px;\n    -webkit-font-smoothing: antialiased;\n  }\n  /* Clock: tabular figures so the digits never shift width as the seconds\n     tick over. */\n  .clock { text-align: center; user-select: none; }\n  .clock .time {\n    font-size: 72px; font-weight: 600; line-height: 1;\n    letter-spacing: -0.04em;\n    font-variant-numeric: tabular-nums;\n    font-feature-settings: \"tnum\" 1;\n    display: flex; align-items: baseline; justify-content: center; gap: 2px;\n  }\n  .clock .seconds {\n    font-size: 28px; font-weight: 500;\n    color: var(--muted); letter-spacing: -0.01em;\n    font-variant-numeric: tabular-nums;\n  }\n  .clock .meridiem {\n    font-size: 22px; font-weight: 500; color: var(--muted);\n    margin-left: 6px; letter-spacing: 0;\n  }\n  .clock .date {\n    margin-top: 10px; font-size: 14px; font-weight: 500;\n    color: var(--muted);\n  }\n  /* The colon blinks on the half-second, as the system clock does. */\n  .colon { transition: opacity .18s ease; }\n\n  /* Same field treatment as the native app: a recessed control with a\n     hairline, and a soft focus ring outside it rather than a recoloured\n     border. */\n  form { width: 100%; max-width: 560px; }\n  .search {\n    display: flex; align-items: center; gap: 10px;\n    background: var(--control);\n    border: 1px solid var(--separator);\n    border-radius: 12px;\n    padding: 12px 16px;\n    transition: box-shadow .15s ease, background .15s ease;\n  }\n  .search:focus-within {\n    background: var(--raised);\n    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);\n  }\n  .search svg { flex: none; opacity: .5; }\n  input[type=text] {\n    flex: 1; border: 0; outline: 0; background: transparent;\n    color: var(--text); font-size: 15px; font-family: inherit;\n  }\n  input::placeholder { color: var(--muted); }\n\n  .tiles {\n    display: grid; gap: 10px; width: 100%; max-width: 560px;\n    grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));\n  }\n  .tile {\n    display: flex; align-items: center; gap: 9px;\n    padding: 10px 12px; border-radius: 12px;\n    background: var(--surface);\n    border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n    color: var(--text); text-decoration: none;\n    font-size: 12.5px; font-weight: 500;\n    transition: box-shadow .15s ease;\n  }\n  .tile:hover { box-shadow: 0 3px 10px rgba(0,0,0,.09); }\n  .tile .glyph {\n    width: 26px; height: 26px; flex: none; border-radius: 7px;\n    background: color-mix(in srgb, var(--accent) 18%, transparent);\n    color: var(--accent-ink);\n    display: grid; place-items: center; font-size: 13px;\n  }\n  .tile .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n  .hint { color: var(--muted); font-size: 11.5px; }\n  /* Quiet until you're near the tiles: it's for now and then. */\n  .edit {\n    margin-top: -22px; color: var(--muted); font-size: 11.5px;\n    text-decoration: none; opacity: 0; transition: opacity .2s ease;\n    padding: 4px 8px; border-radius: 6px;\n  }\n  .tiles:hover + .edit, .edit:hover, .edit:focus { opacity: 1; }\n  .edit:hover { background: var(--well); color: var(--text); }\n  .nudge {\n    width: 100%; max-width: 560px; padding: 16px 18px; border-radius: 12px;\n    background: var(--surface); border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n  }\n  .nudge h2 { margin: 0; font-size: 14px; font-weight: 600; }\n  .nudge p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }\n  .nudge p.error { color: var(--text); }\n  .nudge .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }\n  .nudge .actions a {\n    padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500;\n    text-decoration: none; color: var(--text); background: var(--control);\n    border: 1px solid var(--separator);\n  }\n  .nudge .actions a:hover { background: var(--raised); }\n  .nudge .actions a.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }\n</style>\n</head>\n<body>\n  <div class=\"clock\">\n    <div class=\"time\">\n      <span id=\"hh\">--</span><span class=\"colon\" id=\"c1\">:</span><span id=\"mm\">--</span><span class=\"seconds\" id=\"ss\"></span><span class=\"meridiem\" id=\"ap\"></span>\n    </div>\n    <div class=\"date\" id=\"date\"></div>\n  </div>\n\n  <form action=\"https://www.google.com/search\" method=\"GET\" autocomplete=\"off\">\n    <div class=\"search\">\n      <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\"\n           stroke=\"currentColor\" stroke-width=\"1.8\">\n        <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/>\n      </svg>\n      <input type=\"text\" name=\"q\" placeholder=\"Search the web…\" autofocus>\n    </div>\n  </form>\n\n  <div class=\"tiles\">\n\n  </div>\n  <a class=\"edit\" href=\"zing://edit-shortcuts\">Edit shortcuts</a>\n\n  <section class=\"nudge\">\n    <h2>Bring your stuff from Arc?</h2>\n    <p>37 bookmarks and your favourites bar.</p>\n    <div class=\"actions\">\n      <a class=\"primary\" href=\"zing://import/bookmarks?source=arc\">Import from Arc</a>\n      <a class=\"secondary\" href=\"zing://import/settings\">Other browser…</a>\n      <a class=\"secondary\" href=\"zing://import/dismiss\">Not now</a>\n    </div>\n  </section>\n\n<script>\n(function () {\n  var hh = document.getElementById('hh'), mm = document.getElementById('mm'),\n      ss = document.getElementById('ss'), ap = document.getElementById('ap'),\n      c1 = document.getElementById('c1'), dateEl = document.getElementById('date'),\n      input = document.querySelector('input[name=q]');\n\n  // Whether the system is on a 12-hour clock, taken from the locale\n  // rather than assumed.\n  var uses12 = new Intl.DateTimeFormat([], { hour: 'numeric' })\n      .resolvedOptions().hour12;\n  var dateFmt = new Intl.DateTimeFormat([], {\n    weekday: 'long', month: 'long', day: 'numeric'\n  });\n\n  function pad(n) { return n < 10 ? '0' + n : '' + n; }\n\n  function tick() {\n    var now = new Date();\n    var h = now.getHours();\n    if (uses12) {\n      ap.textContent = h < 12 ? 'AM' : 'PM';\n      h = h % 12; if (h === 0) h = 12;\n      hh.textContent = h;\n    } else {\n      ap.textContent = '';\n      hh.textContent = pad(h);\n    }\n    mm.textContent = pad(now.getMinutes());\n    ss.textContent = pad(now.getSeconds());\n    // Blink in step with the seconds hand.\n    c1.style.opacity = now.getMilliseconds() < 500 ? '1' : '0.35';\n    dateEl.textContent = dateFmt.format(now);\n  }\n\n  tick();\n  // 100ms keeps the colon blink smooth without a per-frame timer.\n  setInterval(tick, 100);\n\n  // Type-to-search: any printable key anywhere on the page focuses the\n  // box and starts the query, so a new tab needs no click first.\n  function focusSearch() { if (input) { input.focus(); } }\n  focusSearch();\n  window.addEventListener('focus', focusSearch);\n  document.addEventListener('click', function (e) {\n    if (!e.target.closest('a')) focusSearch();\n  });\n  document.addEventListener('keydown', function (e) {\n    if (e.metaKey || e.ctrlKey || e.altKey) return;\n    if (document.activeElement === input) return;\n    // Single printable character, or a correction key.\n    if (e.key.length === 1 || e.key === 'Backspace') {\n      input.focus();\n    }\n  });\n})();\n</script>\n</body>\n</html>\n"
+		},
+		{
+			"name": "nudge offer hostile",
+			"input": {
+				"searchURL": "https://www.google.com/search",
+				"shortcuts": [],
+				"theme": {
+					"light": {
+						"background": "#F7F2E9",
+						"surface": "#FFFDF8",
+						"tint": "#EFE6D6",
+						"well": "#EBE1CF",
+						"outline": "#2A2420",
+						"accent": "#D9B872",
+						"onAccent": "#2A2118",
+						"text": "#241F19",
+						"textSecondary": "#6E6355",
+						"control": "#F4EEE1",
+						"raised": "#FFFDF8",
+						"accentInk": "#635538"
+					},
+					"dark": {
+						"background": "#1A1714",
+						"surface": "#241F1A",
+						"tint": "#201B16",
+						"well": "#2C251E",
+						"outline": "#CDBFA6",
+						"accent": "#C9A45E",
+						"onAccent": "#1A1410",
+						"text": "#F0E7D8",
+						"textSecondary": "#A69884",
+						"control": "#2C251E",
+						"raised": "#453E36",
+						"accentInk": "#C9A45E"
+					}
+				},
+				"nudge": {
+					"kind": "offer",
+					"browser": "<b>Fox</b>",
+					"profile": "\"x\" & <y>",
+					"bookmarks": 1,
+					"sourceId": "a b&c/<d>'(*)!",
+					"passwords": true
+				}
+			},
+			"html": "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<link rel=\"preconnect\" href=\"https://www.google.com\" crossorigin>\n<link rel=\"preconnect\" href=\"https://www.google.com\">\n\n<style id=\"zing-theme\">\n  :root {\n    --bg: #F7F2E9;      --surface: #FFFDF8;\n    --tint: #EFE6D6;          --well: #EBE1CF;\n    --outline: #2A2420;    --accent: #D9B872;\n    --on-accent: #2A2118; --text: #241F19;\n    --muted: #6E6355;\n    --control: #F4EEE1;   --raised: #FFFDF8;\n    --accent-ink: #635538;\n    --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n  }\n  @media (prefers-color-scheme: dark) {\n    :root {\n      --bg: #1A1714;      --surface: #241F1A;\n      --tint: #201B16;          --well: #2C251E;\n      --outline: #CDBFA6;    --accent: #C9A45E;\n      --on-accent: #1A1410; --text: #F0E7D8;\n      --muted: #A69884;\n      --control: #2C251E;   --raised: #453E36;\n      --accent-ink: #C9A45E;\n      --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n    }\n  }\n</style>\n<style>\n  * { box-sizing: border-box; }\n  html, body { height: 100%; margin: 0; }\n  body {\n    background: var(--bg);\n    color: var(--text);\n    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;\n    display: flex; flex-direction: column;\n    align-items: center; justify-content: center;\n    gap: 34px; padding: 40px 24px;\n    -webkit-font-smoothing: antialiased;\n  }\n  /* Clock: tabular figures so the digits never shift width as the seconds\n     tick over. */\n  .clock { text-align: center; user-select: none; }\n  .clock .time {\n    font-size: 72px; font-weight: 600; line-height: 1;\n    letter-spacing: -0.04em;\n    font-variant-numeric: tabular-nums;\n    font-feature-settings: \"tnum\" 1;\n    display: flex; align-items: baseline; justify-content: center; gap: 2px;\n  }\n  .clock .seconds {\n    font-size: 28px; font-weight: 500;\n    color: var(--muted); letter-spacing: -0.01em;\n    font-variant-numeric: tabular-nums;\n  }\n  .clock .meridiem {\n    font-size: 22px; font-weight: 500; color: var(--muted);\n    margin-left: 6px; letter-spacing: 0;\n  }\n  .clock .date {\n    margin-top: 10px; font-size: 14px; font-weight: 500;\n    color: var(--muted);\n  }\n  /* The colon blinks on the half-second, as the system clock does. */\n  .colon { transition: opacity .18s ease; }\n\n  /* Same field treatment as the native app: a recessed control with a\n     hairline, and a soft focus ring outside it rather than a recoloured\n     border. */\n  form { width: 100%; max-width: 560px; }\n  .search {\n    display: flex; align-items: center; gap: 10px;\n    background: var(--control);\n    border: 1px solid var(--separator);\n    border-radius: 12px;\n    padding: 12px 16px;\n    transition: box-shadow .15s ease, background .15s ease;\n  }\n  .search:focus-within {\n    background: var(--raised);\n    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);\n  }\n  .search svg { flex: none; opacity: .5; }\n  input[type=text] {\n    flex: 1; border: 0; outline: 0; background: transparent;\n    color: var(--text); font-size: 15px; font-family: inherit;\n  }\n  input::placeholder { color: var(--muted); }\n\n  .tiles {\n    display: grid; gap: 10px; width: 100%; max-width: 560px;\n    grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));\n  }\n  .tile {\n    display: flex; align-items: center; gap: 9px;\n    padding: 10px 12px; border-radius: 12px;\n    background: var(--surface);\n    border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n    color: var(--text); text-decoration: none;\n    font-size: 12.5px; font-weight: 500;\n    transition: box-shadow .15s ease;\n  }\n  .tile:hover { box-shadow: 0 3px 10px rgba(0,0,0,.09); }\n  .tile .glyph {\n    width: 26px; height: 26px; flex: none; border-radius: 7px;\n    background: color-mix(in srgb, var(--accent) 18%, transparent);\n    color: var(--accent-ink);\n    display: grid; place-items: center; font-size: 13px;\n  }\n  .tile .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n  .hint { color: var(--muted); font-size: 11.5px; }\n  /* Quiet until you're near the tiles: it's for now and then. */\n  .edit {\n    margin-top: -22px; color: var(--muted); font-size: 11.5px;\n    text-decoration: none; opacity: 0; transition: opacity .2s ease;\n    padding: 4px 8px; border-radius: 6px;\n  }\n  .tiles:hover + .edit, .edit:hover, .edit:focus { opacity: 1; }\n  .edit:hover { background: var(--well); color: var(--text); }\n  .nudge {\n    width: 100%; max-width: 560px; padding: 16px 18px; border-radius: 12px;\n    background: var(--surface); border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n  }\n  .nudge h2 { margin: 0; font-size: 14px; font-weight: 600; }\n  .nudge p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }\n  .nudge p.error { color: var(--text); }\n  .nudge .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }\n  .nudge .actions a {\n    padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500;\n    text-decoration: none; color: var(--text); background: var(--control);\n    border: 1px solid var(--separator);\n  }\n  .nudge .actions a:hover { background: var(--raised); }\n  .nudge .actions a.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }\n</style>\n</head>\n<body>\n  <div class=\"clock\">\n    <div class=\"time\">\n      <span id=\"hh\">--</span><span class=\"colon\" id=\"c1\">:</span><span id=\"mm\">--</span><span class=\"seconds\" id=\"ss\"></span><span class=\"meridiem\" id=\"ap\"></span>\n    </div>\n    <div class=\"date\" id=\"date\"></div>\n  </div>\n\n  <form action=\"https://www.google.com/search\" method=\"GET\" autocomplete=\"off\">\n    <div class=\"search\">\n      <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\"\n           stroke=\"currentColor\" stroke-width=\"1.8\">\n        <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/>\n      </svg>\n      <input type=\"text\" name=\"q\" placeholder=\"Search the web…\" autofocus>\n    </div>\n  </form>\n\n  <div class=\"tiles\">\n\n  </div>\n  <a class=\"edit\" href=\"zing://edit-shortcuts\">Edit shortcuts</a>\n\n  <section class=\"nudge\">\n    <h2>Bring your stuff from &lt;b&gt;Fox&lt;/b&gt;?</h2>\n    <p>1 bookmarks and your favourites bar in \"&quot;x&quot; &amp; &lt;y&gt;\". Passwords need a quick export, and Zing walks you through it.</p>\n    <div class=\"actions\">\n      <a class=\"primary\" href=\"zing://import/bookmarks?source=a%20b%26c%2F%3Cd%3E%27%28%2A%29%21\">Import from &lt;b&gt;Fox&lt;/b&gt;</a>\n      <a class=\"secondary\" href=\"zing://import/settings\">Other browser…</a>\n      <a class=\"secondary\" href=\"zing://import/dismiss\">Not now</a>\n    </div>\n  </section>\n\n<script>\n(function () {\n  var hh = document.getElementById('hh'), mm = document.getElementById('mm'),\n      ss = document.getElementById('ss'), ap = document.getElementById('ap'),\n      c1 = document.getElementById('c1'), dateEl = document.getElementById('date'),\n      input = document.querySelector('input[name=q]');\n\n  // Whether the system is on a 12-hour clock, taken from the locale\n  // rather than assumed.\n  var uses12 = new Intl.DateTimeFormat([], { hour: 'numeric' })\n      .resolvedOptions().hour12;\n  var dateFmt = new Intl.DateTimeFormat([], {\n    weekday: 'long', month: 'long', day: 'numeric'\n  });\n\n  function pad(n) { return n < 10 ? '0' + n : '' + n; }\n\n  function tick() {\n    var now = new Date();\n    var h = now.getHours();\n    if (uses12) {\n      ap.textContent = h < 12 ? 'AM' : 'PM';\n      h = h % 12; if (h === 0) h = 12;\n      hh.textContent = h;\n    } else {\n      ap.textContent = '';\n      hh.textContent = pad(h);\n    }\n    mm.textContent = pad(now.getMinutes());\n    ss.textContent = pad(now.getSeconds());\n    // Blink in step with the seconds hand.\n    c1.style.opacity = now.getMilliseconds() < 500 ? '1' : '0.35';\n    dateEl.textContent = dateFmt.format(now);\n  }\n\n  tick();\n  // 100ms keeps the colon blink smooth without a per-frame timer.\n  setInterval(tick, 100);\n\n  // Type-to-search: any printable key anywhere on the page focuses the\n  // box and starts the query, so a new tab needs no click first.\n  function focusSearch() { if (input) { input.focus(); } }\n  focusSearch();\n  window.addEventListener('focus', focusSearch);\n  document.addEventListener('click', function (e) {\n    if (!e.target.closest('a')) focusSearch();\n  });\n  document.addEventListener('keydown', function (e) {\n    if (e.metaKey || e.ctrlKey || e.altKey) return;\n    if (document.activeElement === input) return;\n    // Single printable character, or a correction key.\n    if (e.key.length === 1 || e.key === 'Backspace') {\n      input.focus();\n    }\n  });\n})();\n</script>\n</body>\n</html>\n"
+		},
+		{
+			"name": "nudge generic",
+			"input": {
+				"searchURL": "https://www.google.com/search",
+				"shortcuts": [],
+				"theme": {
+					"light": {
+						"background": "#F7F2E9",
+						"surface": "#FFFDF8",
+						"tint": "#EFE6D6",
+						"well": "#EBE1CF",
+						"outline": "#2A2420",
+						"accent": "#D9B872",
+						"onAccent": "#2A2118",
+						"text": "#241F19",
+						"textSecondary": "#6E6355",
+						"control": "#F4EEE1",
+						"raised": "#FFFDF8",
+						"accentInk": "#635538"
+					},
+					"dark": {
+						"background": "#1A1714",
+						"surface": "#241F1A",
+						"tint": "#201B16",
+						"well": "#2C251E",
+						"outline": "#CDBFA6",
+						"accent": "#C9A45E",
+						"onAccent": "#1A1410",
+						"text": "#F0E7D8",
+						"textSecondary": "#A69884",
+						"control": "#2C251E",
+						"raised": "#453E36",
+						"accentInk": "#C9A45E"
+					}
+				},
+				"nudge": {
+					"kind": "generic"
+				}
+			},
+			"html": "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<link rel=\"preconnect\" href=\"https://www.google.com\" crossorigin>\n<link rel=\"preconnect\" href=\"https://www.google.com\">\n\n<style id=\"zing-theme\">\n  :root {\n    --bg: #F7F2E9;      --surface: #FFFDF8;\n    --tint: #EFE6D6;          --well: #EBE1CF;\n    --outline: #2A2420;    --accent: #D9B872;\n    --on-accent: #2A2118; --text: #241F19;\n    --muted: #6E6355;\n    --control: #F4EEE1;   --raised: #FFFDF8;\n    --accent-ink: #635538;\n    --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n  }\n  @media (prefers-color-scheme: dark) {\n    :root {\n      --bg: #1A1714;      --surface: #241F1A;\n      --tint: #201B16;          --well: #2C251E;\n      --outline: #CDBFA6;    --accent: #C9A45E;\n      --on-accent: #1A1410; --text: #F0E7D8;\n      --muted: #A69884;\n      --control: #2C251E;   --raised: #453E36;\n      --accent-ink: #C9A45E;\n      --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n    }\n  }\n</style>\n<style>\n  * { box-sizing: border-box; }\n  html, body { height: 100%; margin: 0; }\n  body {\n    background: var(--bg);\n    color: var(--text);\n    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;\n    display: flex; flex-direction: column;\n    align-items: center; justify-content: center;\n    gap: 34px; padding: 40px 24px;\n    -webkit-font-smoothing: antialiased;\n  }\n  /* Clock: tabular figures so the digits never shift width as the seconds\n     tick over. */\n  .clock { text-align: center; user-select: none; }\n  .clock .time {\n    font-size: 72px; font-weight: 600; line-height: 1;\n    letter-spacing: -0.04em;\n    font-variant-numeric: tabular-nums;\n    font-feature-settings: \"tnum\" 1;\n    display: flex; align-items: baseline; justify-content: center; gap: 2px;\n  }\n  .clock .seconds {\n    font-size: 28px; font-weight: 500;\n    color: var(--muted); letter-spacing: -0.01em;\n    font-variant-numeric: tabular-nums;\n  }\n  .clock .meridiem {\n    font-size: 22px; font-weight: 500; color: var(--muted);\n    margin-left: 6px; letter-spacing: 0;\n  }\n  .clock .date {\n    margin-top: 10px; font-size: 14px; font-weight: 500;\n    color: var(--muted);\n  }\n  /* The colon blinks on the half-second, as the system clock does. */\n  .colon { transition: opacity .18s ease; }\n\n  /* Same field treatment as the native app: a recessed control with a\n     hairline, and a soft focus ring outside it rather than a recoloured\n     border. */\n  form { width: 100%; max-width: 560px; }\n  .search {\n    display: flex; align-items: center; gap: 10px;\n    background: var(--control);\n    border: 1px solid var(--separator);\n    border-radius: 12px;\n    padding: 12px 16px;\n    transition: box-shadow .15s ease, background .15s ease;\n  }\n  .search:focus-within {\n    background: var(--raised);\n    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);\n  }\n  .search svg { flex: none; opacity: .5; }\n  input[type=text] {\n    flex: 1; border: 0; outline: 0; background: transparent;\n    color: var(--text); font-size: 15px; font-family: inherit;\n  }\n  input::placeholder { color: var(--muted); }\n\n  .tiles {\n    display: grid; gap: 10px; width: 100%; max-width: 560px;\n    grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));\n  }\n  .tile {\n    display: flex; align-items: center; gap: 9px;\n    padding: 10px 12px; border-radius: 12px;\n    background: var(--surface);\n    border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n    color: var(--text); text-decoration: none;\n    font-size: 12.5px; font-weight: 500;\n    transition: box-shadow .15s ease;\n  }\n  .tile:hover { box-shadow: 0 3px 10px rgba(0,0,0,.09); }\n  .tile .glyph {\n    width: 26px; height: 26px; flex: none; border-radius: 7px;\n    background: color-mix(in srgb, var(--accent) 18%, transparent);\n    color: var(--accent-ink);\n    display: grid; place-items: center; font-size: 13px;\n  }\n  .tile .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n  .hint { color: var(--muted); font-size: 11.5px; }\n  /* Quiet until you're near the tiles: it's for now and then. */\n  .edit {\n    margin-top: -22px; color: var(--muted); font-size: 11.5px;\n    text-decoration: none; opacity: 0; transition: opacity .2s ease;\n    padding: 4px 8px; border-radius: 6px;\n  }\n  .tiles:hover + .edit, .edit:hover, .edit:focus { opacity: 1; }\n  .edit:hover { background: var(--well); color: var(--text); }\n  .nudge {\n    width: 100%; max-width: 560px; padding: 16px 18px; border-radius: 12px;\n    background: var(--surface); border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n  }\n  .nudge h2 { margin: 0; font-size: 14px; font-weight: 600; }\n  .nudge p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }\n  .nudge p.error { color: var(--text); }\n  .nudge .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }\n  .nudge .actions a {\n    padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500;\n    text-decoration: none; color: var(--text); background: var(--control);\n    border: 1px solid var(--separator);\n  }\n  .nudge .actions a:hover { background: var(--raised); }\n  .nudge .actions a.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }\n</style>\n</head>\n<body>\n  <div class=\"clock\">\n    <div class=\"time\">\n      <span id=\"hh\">--</span><span class=\"colon\" id=\"c1\">:</span><span id=\"mm\">--</span><span class=\"seconds\" id=\"ss\"></span><span class=\"meridiem\" id=\"ap\"></span>\n    </div>\n    <div class=\"date\" id=\"date\"></div>\n  </div>\n\n  <form action=\"https://www.google.com/search\" method=\"GET\" autocomplete=\"off\">\n    <div class=\"search\">\n      <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\"\n           stroke=\"currentColor\" stroke-width=\"1.8\">\n        <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/>\n      </svg>\n      <input type=\"text\" name=\"q\" placeholder=\"Search the web…\" autofocus>\n    </div>\n  </form>\n\n  <div class=\"tiles\">\n\n  </div>\n  <a class=\"edit\" href=\"zing://edit-shortcuts\">Edit shortcuts</a>\n\n  <section class=\"nudge\">\n    <h2>Bring your bookmarks from another browser?</h2>\n    <div class=\"actions\">\n      <a class=\"primary\" href=\"zing://import/settings\">Choose…</a>\n      <a class=\"secondary\" href=\"zing://import/dismiss\">Not now</a>\n    </div>\n  </section>\n\n<script>\n(function () {\n  var hh = document.getElementById('hh'), mm = document.getElementById('mm'),\n      ss = document.getElementById('ss'), ap = document.getElementById('ap'),\n      c1 = document.getElementById('c1'), dateEl = document.getElementById('date'),\n      input = document.querySelector('input[name=q]');\n\n  // Whether the system is on a 12-hour clock, taken from the locale\n  // rather than assumed.\n  var uses12 = new Intl.DateTimeFormat([], { hour: 'numeric' })\n      .resolvedOptions().hour12;\n  var dateFmt = new Intl.DateTimeFormat([], {\n    weekday: 'long', month: 'long', day: 'numeric'\n  });\n\n  function pad(n) { return n < 10 ? '0' + n : '' + n; }\n\n  function tick() {\n    var now = new Date();\n    var h = now.getHours();\n    if (uses12) {\n      ap.textContent = h < 12 ? 'AM' : 'PM';\n      h = h % 12; if (h === 0) h = 12;\n      hh.textContent = h;\n    } else {\n      ap.textContent = '';\n      hh.textContent = pad(h);\n    }\n    mm.textContent = pad(now.getMinutes());\n    ss.textContent = pad(now.getSeconds());\n    // Blink in step with the seconds hand.\n    c1.style.opacity = now.getMilliseconds() < 500 ? '1' : '0.35';\n    dateEl.textContent = dateFmt.format(now);\n  }\n\n  tick();\n  // 100ms keeps the colon blink smooth without a per-frame timer.\n  setInterval(tick, 100);\n\n  // Type-to-search: any printable key anywhere on the page focuses the\n  // box and starts the query, so a new tab needs no click first.\n  function focusSearch() { if (input) { input.focus(); } }\n  focusSearch();\n  window.addEventListener('focus', focusSearch);\n  document.addEventListener('click', function (e) {\n    if (!e.target.closest('a')) focusSearch();\n  });\n  document.addEventListener('keydown', function (e) {\n    if (e.metaKey || e.ctrlKey || e.altKey) return;\n    if (document.activeElement === input) return;\n    // Single printable character, or a correction key.\n    if (e.key.length === 1 || e.key === 'Backspace') {\n      input.focus();\n    }\n  });\n})();\n</script>\n</body>\n</html>\n"
+		},
+		{
+			"name": "nudge generic with error",
+			"input": {
+				"searchURL": "https://www.google.com/search",
+				"shortcuts": [],
+				"theme": {
+					"light": {
+						"background": "#F7F2E9",
+						"surface": "#FFFDF8",
+						"tint": "#EFE6D6",
+						"well": "#EBE1CF",
+						"outline": "#2A2420",
+						"accent": "#D9B872",
+						"onAccent": "#2A2118",
+						"text": "#241F19",
+						"textSecondary": "#6E6355",
+						"control": "#F4EEE1",
+						"raised": "#FFFDF8",
+						"accentInk": "#635538"
+					},
+					"dark": {
+						"background": "#1A1714",
+						"surface": "#241F1A",
+						"tint": "#201B16",
+						"well": "#2C251E",
+						"outline": "#CDBFA6",
+						"accent": "#C9A45E",
+						"onAccent": "#1A1410",
+						"text": "#F0E7D8",
+						"textSecondary": "#A69884",
+						"control": "#2C251E",
+						"raised": "#453E36",
+						"accentInk": "#C9A45E"
+					}
+				},
+				"nudge": {
+					"kind": "generic",
+					"error": "Couldn't read <Chrome> \"Bookmarks\" & more"
+				}
+			},
+			"html": "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<link rel=\"preconnect\" href=\"https://www.google.com\" crossorigin>\n<link rel=\"preconnect\" href=\"https://www.google.com\">\n\n<style id=\"zing-theme\">\n  :root {\n    --bg: #F7F2E9;      --surface: #FFFDF8;\n    --tint: #EFE6D6;          --well: #EBE1CF;\n    --outline: #2A2420;    --accent: #D9B872;\n    --on-accent: #2A2118; --text: #241F19;\n    --muted: #6E6355;\n    --control: #F4EEE1;   --raised: #FFFDF8;\n    --accent-ink: #635538;\n    --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n  }\n  @media (prefers-color-scheme: dark) {\n    :root {\n      --bg: #1A1714;      --surface: #241F1A;\n      --tint: #201B16;          --well: #2C251E;\n      --outline: #CDBFA6;    --accent: #C9A45E;\n      --on-accent: #1A1410; --text: #F0E7D8;\n      --muted: #A69884;\n      --control: #2C251E;   --raised: #453E36;\n      --accent-ink: #C9A45E;\n      --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n    }\n  }\n</style>\n<style>\n  * { box-sizing: border-box; }\n  html, body { height: 100%; margin: 0; }\n  body {\n    background: var(--bg);\n    color: var(--text);\n    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;\n    display: flex; flex-direction: column;\n    align-items: center; justify-content: center;\n    gap: 34px; padding: 40px 24px;\n    -webkit-font-smoothing: antialiased;\n  }\n  /* Clock: tabular figures so the digits never shift width as the seconds\n     tick over. */\n  .clock { text-align: center; user-select: none; }\n  .clock .time {\n    font-size: 72px; font-weight: 600; line-height: 1;\n    letter-spacing: -0.04em;\n    font-variant-numeric: tabular-nums;\n    font-feature-settings: \"tnum\" 1;\n    display: flex; align-items: baseline; justify-content: center; gap: 2px;\n  }\n  .clock .seconds {\n    font-size: 28px; font-weight: 500;\n    color: var(--muted); letter-spacing: -0.01em;\n    font-variant-numeric: tabular-nums;\n  }\n  .clock .meridiem {\n    font-size: 22px; font-weight: 500; color: var(--muted);\n    margin-left: 6px; letter-spacing: 0;\n  }\n  .clock .date {\n    margin-top: 10px; font-size: 14px; font-weight: 500;\n    color: var(--muted);\n  }\n  /* The colon blinks on the half-second, as the system clock does. */\n  .colon { transition: opacity .18s ease; }\n\n  /* Same field treatment as the native app: a recessed control with a\n     hairline, and a soft focus ring outside it rather than a recoloured\n     border. */\n  form { width: 100%; max-width: 560px; }\n  .search {\n    display: flex; align-items: center; gap: 10px;\n    background: var(--control);\n    border: 1px solid var(--separator);\n    border-radius: 12px;\n    padding: 12px 16px;\n    transition: box-shadow .15s ease, background .15s ease;\n  }\n  .search:focus-within {\n    background: var(--raised);\n    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);\n  }\n  .search svg { flex: none; opacity: .5; }\n  input[type=text] {\n    flex: 1; border: 0; outline: 0; background: transparent;\n    color: var(--text); font-size: 15px; font-family: inherit;\n  }\n  input::placeholder { color: var(--muted); }\n\n  .tiles {\n    display: grid; gap: 10px; width: 100%; max-width: 560px;\n    grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));\n  }\n  .tile {\n    display: flex; align-items: center; gap: 9px;\n    padding: 10px 12px; border-radius: 12px;\n    background: var(--surface);\n    border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n    color: var(--text); text-decoration: none;\n    font-size: 12.5px; font-weight: 500;\n    transition: box-shadow .15s ease;\n  }\n  .tile:hover { box-shadow: 0 3px 10px rgba(0,0,0,.09); }\n  .tile .glyph {\n    width: 26px; height: 26px; flex: none; border-radius: 7px;\n    background: color-mix(in srgb, var(--accent) 18%, transparent);\n    color: var(--accent-ink);\n    display: grid; place-items: center; font-size: 13px;\n  }\n  .tile .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n  .hint { color: var(--muted); font-size: 11.5px; }\n  /* Quiet until you're near the tiles: it's for now and then. */\n  .edit {\n    margin-top: -22px; color: var(--muted); font-size: 11.5px;\n    text-decoration: none; opacity: 0; transition: opacity .2s ease;\n    padding: 4px 8px; border-radius: 6px;\n  }\n  .tiles:hover + .edit, .edit:hover, .edit:focus { opacity: 1; }\n  .edit:hover { background: var(--well); color: var(--text); }\n  .nudge {\n    width: 100%; max-width: 560px; padding: 16px 18px; border-radius: 12px;\n    background: var(--surface); border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n  }\n  .nudge h2 { margin: 0; font-size: 14px; font-weight: 600; }\n  .nudge p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }\n  .nudge p.error { color: var(--text); }\n  .nudge .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }\n  .nudge .actions a {\n    padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500;\n    text-decoration: none; color: var(--text); background: var(--control);\n    border: 1px solid var(--separator);\n  }\n  .nudge .actions a:hover { background: var(--raised); }\n  .nudge .actions a.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }\n</style>\n</head>\n<body>\n  <div class=\"clock\">\n    <div class=\"time\">\n      <span id=\"hh\">--</span><span class=\"colon\" id=\"c1\">:</span><span id=\"mm\">--</span><span class=\"seconds\" id=\"ss\"></span><span class=\"meridiem\" id=\"ap\"></span>\n    </div>\n    <div class=\"date\" id=\"date\"></div>\n  </div>\n\n  <form action=\"https://www.google.com/search\" method=\"GET\" autocomplete=\"off\">\n    <div class=\"search\">\n      <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\"\n           stroke=\"currentColor\" stroke-width=\"1.8\">\n        <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/>\n      </svg>\n      <input type=\"text\" name=\"q\" placeholder=\"Search the web…\" autofocus>\n    </div>\n  </form>\n\n  <div class=\"tiles\">\n\n  </div>\n  <a class=\"edit\" href=\"zing://edit-shortcuts\">Edit shortcuts</a>\n\n  <section class=\"nudge\">\n    <h2>Bring your bookmarks from another browser?</h2>\n    <p class=\"error\">Couldn&#39;t read &lt;Chrome&gt; &quot;Bookmarks&quot; &amp; more</p>\n    <div class=\"actions\">\n      <a class=\"primary\" href=\"zing://import/settings\">Choose…</a>\n      <a class=\"secondary\" href=\"zing://import/dismiss\">Not now</a>\n    </div>\n  </section>\n\n<script>\n(function () {\n  var hh = document.getElementById('hh'), mm = document.getElementById('mm'),\n      ss = document.getElementById('ss'), ap = document.getElementById('ap'),\n      c1 = document.getElementById('c1'), dateEl = document.getElementById('date'),\n      input = document.querySelector('input[name=q]');\n\n  // Whether the system is on a 12-hour clock, taken from the locale\n  // rather than assumed.\n  var uses12 = new Intl.DateTimeFormat([], { hour: 'numeric' })\n      .resolvedOptions().hour12;\n  var dateFmt = new Intl.DateTimeFormat([], {\n    weekday: 'long', month: 'long', day: 'numeric'\n  });\n\n  function pad(n) { return n < 10 ? '0' + n : '' + n; }\n\n  function tick() {\n    var now = new Date();\n    var h = now.getHours();\n    if (uses12) {\n      ap.textContent = h < 12 ? 'AM' : 'PM';\n      h = h % 12; if (h === 0) h = 12;\n      hh.textContent = h;\n    } else {\n      ap.textContent = '';\n      hh.textContent = pad(h);\n    }\n    mm.textContent = pad(now.getMinutes());\n    ss.textContent = pad(now.getSeconds());\n    // Blink in step with the seconds hand.\n    c1.style.opacity = now.getMilliseconds() < 500 ? '1' : '0.35';\n    dateEl.textContent = dateFmt.format(now);\n  }\n\n  tick();\n  // 100ms keeps the colon blink smooth without a per-frame timer.\n  setInterval(tick, 100);\n\n  // Type-to-search: any printable key anywhere on the page focuses the\n  // box and starts the query, so a new tab needs no click first.\n  function focusSearch() { if (input) { input.focus(); } }\n  focusSearch();\n  window.addEventListener('focus', focusSearch);\n  document.addEventListener('click', function (e) {\n    if (!e.target.closest('a')) focusSearch();\n  });\n  document.addEventListener('keydown', function (e) {\n    if (e.metaKey || e.ctrlKey || e.altKey) return;\n    if (document.activeElement === input) return;\n    // Single printable character, or a correction key.\n    if (e.key.length === 1 || e.key === 'Backspace') {\n      input.focus();\n    }\n  });\n})();\n</script>\n</body>\n</html>\n"
+		},
+		{
+			"name": "nudge result with passwords",
+			"input": {
+				"searchURL": "https://www.google.com/search",
+				"shortcuts": [],
+				"theme": {
+					"light": {
+						"background": "#F7F2E9",
+						"surface": "#FFFDF8",
+						"tint": "#EFE6D6",
+						"well": "#EBE1CF",
+						"outline": "#2A2420",
+						"accent": "#D9B872",
+						"onAccent": "#2A2118",
+						"text": "#241F19",
+						"textSecondary": "#6E6355",
+						"control": "#F4EEE1",
+						"raised": "#FFFDF8",
+						"accentInk": "#635538"
+					},
+					"dark": {
+						"background": "#1A1714",
+						"surface": "#241F1A",
+						"tint": "#201B16",
+						"well": "#2C251E",
+						"outline": "#CDBFA6",
+						"accent": "#C9A45E",
+						"onAccent": "#1A1410",
+						"text": "#F0E7D8",
+						"textSecondary": "#A69884",
+						"control": "#2C251E",
+						"raised": "#453E36",
+						"accentInk": "#C9A45E"
+					}
+				},
+				"nudge": {
+					"kind": "result",
+					"browser": "Chrome",
+					"added": 214,
+					"sourceId": "chrome",
+					"passwords": true
+				}
+			},
+			"html": "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<link rel=\"preconnect\" href=\"https://www.google.com\" crossorigin>\n<link rel=\"preconnect\" href=\"https://www.google.com\">\n\n<style id=\"zing-theme\">\n  :root {\n    --bg: #F7F2E9;      --surface: #FFFDF8;\n    --tint: #EFE6D6;          --well: #EBE1CF;\n    --outline: #2A2420;    --accent: #D9B872;\n    --on-accent: #2A2118; --text: #241F19;\n    --muted: #6E6355;\n    --control: #F4EEE1;   --raised: #FFFDF8;\n    --accent-ink: #635538;\n    --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n  }\n  @media (prefers-color-scheme: dark) {\n    :root {\n      --bg: #1A1714;      --surface: #241F1A;\n      --tint: #201B16;          --well: #2C251E;\n      --outline: #CDBFA6;    --accent: #C9A45E;\n      --on-accent: #1A1410; --text: #F0E7D8;\n      --muted: #A69884;\n      --control: #2C251E;   --raised: #453E36;\n      --accent-ink: #C9A45E;\n      --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n    }\n  }\n</style>\n<style>\n  * { box-sizing: border-box; }\n  html, body { height: 100%; margin: 0; }\n  body {\n    background: var(--bg);\n    color: var(--text);\n    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;\n    display: flex; flex-direction: column;\n    align-items: center; justify-content: center;\n    gap: 34px; padding: 40px 24px;\n    -webkit-font-smoothing: antialiased;\n  }\n  /* Clock: tabular figures so the digits never shift width as the seconds\n     tick over. */\n  .clock { text-align: center; user-select: none; }\n  .clock .time {\n    font-size: 72px; font-weight: 600; line-height: 1;\n    letter-spacing: -0.04em;\n    font-variant-numeric: tabular-nums;\n    font-feature-settings: \"tnum\" 1;\n    display: flex; align-items: baseline; justify-content: center; gap: 2px;\n  }\n  .clock .seconds {\n    font-size: 28px; font-weight: 500;\n    color: var(--muted); letter-spacing: -0.01em;\n    font-variant-numeric: tabular-nums;\n  }\n  .clock .meridiem {\n    font-size: 22px; font-weight: 500; color: var(--muted);\n    margin-left: 6px; letter-spacing: 0;\n  }\n  .clock .date {\n    margin-top: 10px; font-size: 14px; font-weight: 500;\n    color: var(--muted);\n  }\n  /* The colon blinks on the half-second, as the system clock does. */\n  .colon { transition: opacity .18s ease; }\n\n  /* Same field treatment as the native app: a recessed control with a\n     hairline, and a soft focus ring outside it rather than a recoloured\n     border. */\n  form { width: 100%; max-width: 560px; }\n  .search {\n    display: flex; align-items: center; gap: 10px;\n    background: var(--control);\n    border: 1px solid var(--separator);\n    border-radius: 12px;\n    padding: 12px 16px;\n    transition: box-shadow .15s ease, background .15s ease;\n  }\n  .search:focus-within {\n    background: var(--raised);\n    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);\n  }\n  .search svg { flex: none; opacity: .5; }\n  input[type=text] {\n    flex: 1; border: 0; outline: 0; background: transparent;\n    color: var(--text); font-size: 15px; font-family: inherit;\n  }\n  input::placeholder { color: var(--muted); }\n\n  .tiles {\n    display: grid; gap: 10px; width: 100%; max-width: 560px;\n    grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));\n  }\n  .tile {\n    display: flex; align-items: center; gap: 9px;\n    padding: 10px 12px; border-radius: 12px;\n    background: var(--surface);\n    border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n    color: var(--text); text-decoration: none;\n    font-size: 12.5px; font-weight: 500;\n    transition: box-shadow .15s ease;\n  }\n  .tile:hover { box-shadow: 0 3px 10px rgba(0,0,0,.09); }\n  .tile .glyph {\n    width: 26px; height: 26px; flex: none; border-radius: 7px;\n    background: color-mix(in srgb, var(--accent) 18%, transparent);\n    color: var(--accent-ink);\n    display: grid; place-items: center; font-size: 13px;\n  }\n  .tile .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n  .hint { color: var(--muted); font-size: 11.5px; }\n  /* Quiet until you're near the tiles: it's for now and then. */\n  .edit {\n    margin-top: -22px; color: var(--muted); font-size: 11.5px;\n    text-decoration: none; opacity: 0; transition: opacity .2s ease;\n    padding: 4px 8px; border-radius: 6px;\n  }\n  .tiles:hover + .edit, .edit:hover, .edit:focus { opacity: 1; }\n  .edit:hover { background: var(--well); color: var(--text); }\n  .nudge {\n    width: 100%; max-width: 560px; padding: 16px 18px; border-radius: 12px;\n    background: var(--surface); border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n  }\n  .nudge h2 { margin: 0; font-size: 14px; font-weight: 600; }\n  .nudge p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }\n  .nudge p.error { color: var(--text); }\n  .nudge .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }\n  .nudge .actions a {\n    padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500;\n    text-decoration: none; color: var(--text); background: var(--control);\n    border: 1px solid var(--separator);\n  }\n  .nudge .actions a:hover { background: var(--raised); }\n  .nudge .actions a.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }\n</style>\n</head>\n<body>\n  <div class=\"clock\">\n    <div class=\"time\">\n      <span id=\"hh\">--</span><span class=\"colon\" id=\"c1\">:</span><span id=\"mm\">--</span><span class=\"seconds\" id=\"ss\"></span><span class=\"meridiem\" id=\"ap\"></span>\n    </div>\n    <div class=\"date\" id=\"date\"></div>\n  </div>\n\n  <form action=\"https://www.google.com/search\" method=\"GET\" autocomplete=\"off\">\n    <div class=\"search\">\n      <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\"\n           stroke=\"currentColor\" stroke-width=\"1.8\">\n        <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/>\n      </svg>\n      <input type=\"text\" name=\"q\" placeholder=\"Search the web…\" autofocus>\n    </div>\n  </form>\n\n  <div class=\"tiles\">\n\n  </div>\n  <a class=\"edit\" href=\"zing://edit-shortcuts\">Edit shortcuts</a>\n\n  <section class=\"nudge\">\n    <h2>Imported 214 bookmarks.</h2>\n    <div class=\"actions\">\n      <a class=\"primary\" href=\"zing://import/passwords?source=chrome\">Import passwords too</a>\n      <a class=\"secondary\" href=\"zing://import/dismiss\">Done</a>\n    </div>\n  </section>\n\n<script>\n(function () {\n  var hh = document.getElementById('hh'), mm = document.getElementById('mm'),\n      ss = document.getElementById('ss'), ap = document.getElementById('ap'),\n      c1 = document.getElementById('c1'), dateEl = document.getElementById('date'),\n      input = document.querySelector('input[name=q]');\n\n  // Whether the system is on a 12-hour clock, taken from the locale\n  // rather than assumed.\n  var uses12 = new Intl.DateTimeFormat([], { hour: 'numeric' })\n      .resolvedOptions().hour12;\n  var dateFmt = new Intl.DateTimeFormat([], {\n    weekday: 'long', month: 'long', day: 'numeric'\n  });\n\n  function pad(n) { return n < 10 ? '0' + n : '' + n; }\n\n  function tick() {\n    var now = new Date();\n    var h = now.getHours();\n    if (uses12) {\n      ap.textContent = h < 12 ? 'AM' : 'PM';\n      h = h % 12; if (h === 0) h = 12;\n      hh.textContent = h;\n    } else {\n      ap.textContent = '';\n      hh.textContent = pad(h);\n    }\n    mm.textContent = pad(now.getMinutes());\n    ss.textContent = pad(now.getSeconds());\n    // Blink in step with the seconds hand.\n    c1.style.opacity = now.getMilliseconds() < 500 ? '1' : '0.35';\n    dateEl.textContent = dateFmt.format(now);\n  }\n\n  tick();\n  // 100ms keeps the colon blink smooth without a per-frame timer.\n  setInterval(tick, 100);\n\n  // Type-to-search: any printable key anywhere on the page focuses the\n  // box and starts the query, so a new tab needs no click first.\n  function focusSearch() { if (input) { input.focus(); } }\n  focusSearch();\n  window.addEventListener('focus', focusSearch);\n  document.addEventListener('click', function (e) {\n    if (!e.target.closest('a')) focusSearch();\n  });\n  document.addEventListener('keydown', function (e) {\n    if (e.metaKey || e.ctrlKey || e.altKey) return;\n    if (document.activeElement === input) return;\n    // Single printable character, or a correction key.\n    if (e.key.length === 1 || e.key === 'Backspace') {\n      input.focus();\n    }\n  });\n})();\n</script>\n</body>\n</html>\n"
+		},
+		{
+			"name": "nudge result without passwords",
+			"input": {
+				"searchURL": "https://www.google.com/search",
+				"shortcuts": [],
+				"theme": {
+					"light": {
+						"background": "#F7F2E9",
+						"surface": "#FFFDF8",
+						"tint": "#EFE6D6",
+						"well": "#EBE1CF",
+						"outline": "#2A2420",
+						"accent": "#D9B872",
+						"onAccent": "#2A2118",
+						"text": "#241F19",
+						"textSecondary": "#6E6355",
+						"control": "#F4EEE1",
+						"raised": "#FFFDF8",
+						"accentInk": "#635538"
+					},
+					"dark": {
+						"background": "#1A1714",
+						"surface": "#241F1A",
+						"tint": "#201B16",
+						"well": "#2C251E",
+						"outline": "#CDBFA6",
+						"accent": "#C9A45E",
+						"onAccent": "#1A1410",
+						"text": "#F0E7D8",
+						"textSecondary": "#A69884",
+						"control": "#2C251E",
+						"raised": "#453E36",
+						"accentInk": "#C9A45E"
+					}
+				},
+				"nudge": {
+					"kind": "result",
+					"browser": "Arc",
+					"added": 37,
+					"sourceId": "arc",
+					"passwords": false
+				}
+			},
+			"html": "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<link rel=\"preconnect\" href=\"https://www.google.com\" crossorigin>\n<link rel=\"preconnect\" href=\"https://www.google.com\">\n\n<style id=\"zing-theme\">\n  :root {\n    --bg: #F7F2E9;      --surface: #FFFDF8;\n    --tint: #EFE6D6;          --well: #EBE1CF;\n    --outline: #2A2420;    --accent: #D9B872;\n    --on-accent: #2A2118; --text: #241F19;\n    --muted: #6E6355;\n    --control: #F4EEE1;   --raised: #FFFDF8;\n    --accent-ink: #635538;\n    --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n  }\n  @media (prefers-color-scheme: dark) {\n    :root {\n      --bg: #1A1714;      --surface: #241F1A;\n      --tint: #201B16;          --well: #2C251E;\n      --outline: #CDBFA6;    --accent: #C9A45E;\n      --on-accent: #1A1410; --text: #F0E7D8;\n      --muted: #A69884;\n      --control: #2C251E;   --raised: #453E36;\n      --accent-ink: #C9A45E;\n      --separator: color-mix(in srgb, var(--outline) 13%, transparent);\n    }\n  }\n</style>\n<style>\n  * { box-sizing: border-box; }\n  html, body { height: 100%; margin: 0; }\n  body {\n    background: var(--bg);\n    color: var(--text);\n    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;\n    display: flex; flex-direction: column;\n    align-items: center; justify-content: center;\n    gap: 34px; padding: 40px 24px;\n    -webkit-font-smoothing: antialiased;\n  }\n  /* Clock: tabular figures so the digits never shift width as the seconds\n     tick over. */\n  .clock { text-align: center; user-select: none; }\n  .clock .time {\n    font-size: 72px; font-weight: 600; line-height: 1;\n    letter-spacing: -0.04em;\n    font-variant-numeric: tabular-nums;\n    font-feature-settings: \"tnum\" 1;\n    display: flex; align-items: baseline; justify-content: center; gap: 2px;\n  }\n  .clock .seconds {\n    font-size: 28px; font-weight: 500;\n    color: var(--muted); letter-spacing: -0.01em;\n    font-variant-numeric: tabular-nums;\n  }\n  .clock .meridiem {\n    font-size: 22px; font-weight: 500; color: var(--muted);\n    margin-left: 6px; letter-spacing: 0;\n  }\n  .clock .date {\n    margin-top: 10px; font-size: 14px; font-weight: 500;\n    color: var(--muted);\n  }\n  /* The colon blinks on the half-second, as the system clock does. */\n  .colon { transition: opacity .18s ease; }\n\n  /* Same field treatment as the native app: a recessed control with a\n     hairline, and a soft focus ring outside it rather than a recoloured\n     border. */\n  form { width: 100%; max-width: 560px; }\n  .search {\n    display: flex; align-items: center; gap: 10px;\n    background: var(--control);\n    border: 1px solid var(--separator);\n    border-radius: 12px;\n    padding: 12px 16px;\n    transition: box-shadow .15s ease, background .15s ease;\n  }\n  .search:focus-within {\n    background: var(--raised);\n    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);\n  }\n  .search svg { flex: none; opacity: .5; }\n  input[type=text] {\n    flex: 1; border: 0; outline: 0; background: transparent;\n    color: var(--text); font-size: 15px; font-family: inherit;\n  }\n  input::placeholder { color: var(--muted); }\n\n  .tiles {\n    display: grid; gap: 10px; width: 100%; max-width: 560px;\n    grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));\n  }\n  .tile {\n    display: flex; align-items: center; gap: 9px;\n    padding: 10px 12px; border-radius: 12px;\n    background: var(--surface);\n    border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n    color: var(--text); text-decoration: none;\n    font-size: 12.5px; font-weight: 500;\n    transition: box-shadow .15s ease;\n  }\n  .tile:hover { box-shadow: 0 3px 10px rgba(0,0,0,.09); }\n  .tile .glyph {\n    width: 26px; height: 26px; flex: none; border-radius: 7px;\n    background: color-mix(in srgb, var(--accent) 18%, transparent);\n    color: var(--accent-ink);\n    display: grid; place-items: center; font-size: 13px;\n  }\n  .tile .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n  .hint { color: var(--muted); font-size: 11.5px; }\n  /* Quiet until you're near the tiles: it's for now and then. */\n  .edit {\n    margin-top: -22px; color: var(--muted); font-size: 11.5px;\n    text-decoration: none; opacity: 0; transition: opacity .2s ease;\n    padding: 4px 8px; border-radius: 6px;\n  }\n  .tiles:hover + .edit, .edit:hover, .edit:focus { opacity: 1; }\n  .edit:hover { background: var(--well); color: var(--text); }\n  .nudge {\n    width: 100%; max-width: 560px; padding: 16px 18px; border-radius: 12px;\n    background: var(--surface); border: 1px solid var(--separator);\n    box-shadow: 0 1px 3px rgba(0,0,0,.04);\n  }\n  .nudge h2 { margin: 0; font-size: 14px; font-weight: 600; }\n  .nudge p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }\n  .nudge p.error { color: var(--text); }\n  .nudge .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }\n  .nudge .actions a {\n    padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500;\n    text-decoration: none; color: var(--text); background: var(--control);\n    border: 1px solid var(--separator);\n  }\n  .nudge .actions a:hover { background: var(--raised); }\n  .nudge .actions a.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }\n</style>\n</head>\n<body>\n  <div class=\"clock\">\n    <div class=\"time\">\n      <span id=\"hh\">--</span><span class=\"colon\" id=\"c1\">:</span><span id=\"mm\">--</span><span class=\"seconds\" id=\"ss\"></span><span class=\"meridiem\" id=\"ap\"></span>\n    </div>\n    <div class=\"date\" id=\"date\"></div>\n  </div>\n\n  <form action=\"https://www.google.com/search\" method=\"GET\" autocomplete=\"off\">\n    <div class=\"search\">\n      <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\"\n           stroke=\"currentColor\" stroke-width=\"1.8\">\n        <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/>\n      </svg>\n      <input type=\"text\" name=\"q\" placeholder=\"Search the web…\" autofocus>\n    </div>\n  </form>\n\n  <div class=\"tiles\">\n\n  </div>\n  <a class=\"edit\" href=\"zing://edit-shortcuts\">Edit shortcuts</a>\n\n  <section class=\"nudge\">\n    <h2>Imported 37 bookmarks.</h2>\n    <div class=\"actions\">\n      <a class=\"primary\" href=\"zing://import/dismiss\">Done</a>\n    </div>\n  </section>\n\n<script>\n(function () {\n  var hh = document.getElementById('hh'), mm = document.getElementById('mm'),\n      ss = document.getElementById('ss'), ap = document.getElementById('ap'),\n      c1 = document.getElementById('c1'), dateEl = document.getElementById('date'),\n      input = document.querySelector('input[name=q]');\n\n  // Whether the system is on a 12-hour clock, taken from the locale\n  // rather than assumed.\n  var uses12 = new Intl.DateTimeFormat([], { hour: 'numeric' })\n      .resolvedOptions().hour12;\n  var dateFmt = new Intl.DateTimeFormat([], {\n    weekday: 'long', month: 'long', day: 'numeric'\n  });\n\n  function pad(n) { return n < 10 ? '0' + n : '' + n; }\n\n  function tick() {\n    var now = new Date();\n    var h = now.getHours();\n    if (uses12) {\n      ap.textContent = h < 12 ? 'AM' : 'PM';\n      h = h % 12; if (h === 0) h = 12;\n      hh.textContent = h;\n    } else {\n      ap.textContent = '';\n      hh.textContent = pad(h);\n    }\n    mm.textContent = pad(now.getMinutes());\n    ss.textContent = pad(now.getSeconds());\n    // Blink in step with the seconds hand.\n    c1.style.opacity = now.getMilliseconds() < 500 ? '1' : '0.35';\n    dateEl.textContent = dateFmt.format(now);\n  }\n\n  tick();\n  // 100ms keeps the colon blink smooth without a per-frame timer.\n  setInterval(tick, 100);\n\n  // Type-to-search: any printable key anywhere on the page focuses the\n  // box and starts the query, so a new tab needs no click first.\n  function focusSearch() { if (input) { input.focus(); } }\n  focusSearch();\n  window.addEventListener('focus', focusSearch);\n  document.addEventListener('click', function (e) {\n    if (!e.target.closest('a')) focusSearch();\n  });\n  document.addEventListener('keydown', function (e) {\n    if (e.metaKey || e.ctrlKey || e.altKey) return;\n    if (document.activeElement === input) return;\n    // Single printable character, or a correction key.\n    if (e.key.length === 1 || e.key === 'Backspace') {\n      input.focus();\n    }\n  });\n})();\n</script>\n</body>\n</html>\n"
 		}
 	],
 	"pageErrors": [
@@ -4523,6 +4833,144 @@
 			"result": {
 				"kind": "search",
 				"query": "hi"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/bookmarks?source=chrome",
+			"engine": "google",
+			"result": {
+				"kind": "import",
+				"action": "bookmarks",
+				"source": "chrome"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/passwords?source=edge",
+			"engine": "google",
+			"result": {
+				"kind": "import",
+				"action": "passwords",
+				"source": "edge"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/settings",
+			"engine": "google",
+			"result": {
+				"kind": "import",
+				"action": "settings"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/dismiss",
+			"engine": "google",
+			"result": {
+				"kind": "import",
+				"action": "dismiss"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/settings?source=chrome",
+			"engine": "google",
+			"result": {
+				"kind": "import",
+				"action": "settings",
+				"source": "chrome"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/bookmarks?source=a%20b%26c",
+			"engine": "google",
+			"result": {
+				"kind": "import",
+				"action": "bookmarks",
+				"source": "a b&c"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/bookmarks",
+			"engine": "google",
+			"result": {
+				"kind": "block"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/passwords",
+			"engine": "google",
+			"result": {
+				"kind": "block"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/bookmarks?source=",
+			"engine": "google",
+			"result": {
+				"kind": "block"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/delete?source=chrome",
+			"engine": "google",
+			"result": {
+				"kind": "block"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/",
+			"engine": "google",
+			"result": {
+				"kind": "block"
+			}
+		},
+		{
+			"from": "zing://home",
+			"to": "zing://import/Bookmarks?source=chrome",
+			"engine": "google",
+			"result": {
+				"kind": "block"
+			}
+		},
+		{
+			"from": "https://evil.example",
+			"to": "zing://import/bookmarks?source=chrome",
+			"engine": "google",
+			"result": {
+				"kind": "block"
+			}
+		},
+		{
+			"from": "https://evil.example",
+			"to": "zing://import/dismiss",
+			"engine": "google",
+			"result": {
+				"kind": "block"
+			}
+		},
+		{
+			"from": "https://evil.example",
+			"to": "zing://import/settings",
+			"engine": "google",
+			"result": {
+				"kind": "block"
+			}
+		},
+		{
+			"from": "zing://settings",
+			"to": "zing://import/passwords?source=chrome",
+			"engine": "google",
+			"result": {
+				"kind": "block"
 			}
 		}
 	],

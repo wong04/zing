@@ -20,8 +20,20 @@ public sealed record StartPageTokens(
 
 public sealed record StartPageTheme(StartPageTokens Light, StartPageTokens Dark);
 
+/// <summary>The import card on the page: an offer from a browser found on this PC, the generic ask, or the result of an import.</summary>
+public abstract record ImportNudge
+{
+	public sealed record Offer(string Browser, string? Profile, int Bookmarks, string SourceId, bool Passwords) : ImportNudge;
+
+	/// <param name="Error">Why an import from the card failed; shown under the heading.</param>
+	public sealed record Generic(string? Error = null) : ImportNudge;
+
+	public sealed record Result(string Browser, int Added, string SourceId, bool Passwords) : ImportNudge;
+}
+
 /// <param name="SearchUrl">Search endpoint the form submits to, e.g. <c>https://www.google.com/search</c>.</param>
-public sealed record StartPageInput(string SearchUrl, IReadOnlyList<StartShortcut> Shortcuts, StartPageTheme Theme);
+/// <param name="Nudge">The import card; null leaves the page exactly as it is without one.</param>
+public sealed record StartPageInput(string SearchUrl, IReadOnlyList<StartShortcut> Shortcuts, StartPageTheme Theme, ImportNudge? Nudge = null);
 
 /// <summary>A theme token that is not a plain CSS value (src/shared/browser/startPage.ts ThemeTokenError).</summary>
 public sealed class ThemeTokenException(string name, string value)
@@ -46,7 +58,10 @@ public abstract record StartPageNavigation
 	/// <summary>The "Edit shortcuts" link, from the start page: cancel the navigation and open Settings, New Tab.</summary>
 	public sealed record EditShortcuts : StartPageNavigation;
 
-	/// <summary>A link to the edit-shortcuts address from anywhere but the start page: cancel it and do nothing.</summary>
+	/// <summary>One of the import card's links, from the start page: cancel the navigation and run <see cref="Action"/> (bookmarks, passwords, settings or dismiss).</summary>
+	public sealed record Import(string Action, string? SourceId) : StartPageNavigation;
+
+	/// <summary>A link to the edit-shortcuts or import address from anywhere but the start page, or an import link that makes no sense: cancel it and do nothing.</summary>
 	public sealed record Block : StartPageNavigation;
 
 	public sealed record Allow : StartPageNavigation;
@@ -64,6 +79,9 @@ public static class StartPage
 	public const string Url = "zing://home";
 	public const string EditShortcutsHost = "edit-shortcuts";
 	public const string EditShortcutsUrl = "zing://edit-shortcuts";
+	/// <summary>The import card's links. Never loaded: the host catches them, from the start page only.</summary>
+	public const string ImportHost = "import";
+	private static readonly string[] ImportActions = ["bookmarks", "passwords", "settings", "dismiss"];
 	/// <summary>The <c>&lt;style&gt;</c> holding the palette, swapped in place on a theme change.</summary>
 	public const string ThemeStyleId = "zing-theme";
 
@@ -147,6 +165,8 @@ public static class StartPage
 		var prefetch = string.Join('\n', tiles.Select(PrefetchHtml));
 		var tileHtml = string.Join('\n', tiles.Select(TileHtml));
 		var themeCss = ThemeCss(input.Theme);
+		var nudgeCss = input.Nudge is null ? "" : NudgeCss;
+		var nudgeHtml = input.Nudge is null ? "" : NudgeHtml(input.Nudge);
 		return $$"""
 		<!doctype html>
 		<html>
@@ -160,7 +180,7 @@ public static class StartPage
 		{{themeCss}}
 		</style>
 		<style>
-		{{PageCss}}
+		{{PageCss}}{{nudgeCss}}
 		</style>
 		</head>
 		<body>
@@ -184,7 +204,7 @@ public static class StartPage
 		  <div class="tiles">
 		{{tileHtml}}
 		  </div>
-		  <a class="edit" href="{{EditShortcutsUrl}}">Edit shortcuts</a>
+		  <a class="edit" href="{{EditShortcutsUrl}}">Edit shortcuts</a>{{nudgeHtml}}
 
 		<script>
 		{{PageScript}}
@@ -254,6 +274,7 @@ public static class StartPage
 		if (ZingHost(toUrl) == EditShortcutsHost) {
 			return fromStartPage ? new StartPageNavigation.EditShortcuts() : new StartPageNavigation.Block();
 		}
+		if (ZingHost(toUrl) == ImportHost) return fromStartPage ? ClassifyImport(toUrl) : new StartPageNavigation.Block();
 		if (!fromStartPage) return new StartPageNavigation.Allow();
 		var action = new Uri(SearchFormAction(engine));
 		var query = QueryParam(toUrl, "q");
@@ -261,6 +282,17 @@ public static class StartPage
 			return new StartPageNavigation.Allow();
 		}
 		return new StartPageNavigation.Search(query);
+	}
+
+	private static StartPageNavigation ClassifyImport(string toUrl)
+	{
+		var path = toUrl["zing://".Length..].Split('?', '#')[0];
+		var slash = path.IndexOf('/');
+		var action = slash < 0 ? "" : path[(slash + 1)..];
+		if (!ImportActions.Contains(action)) return new StartPageNavigation.Block();
+		var source = QueryParam(toUrl, "source");
+		if (action is "bookmarks" or "passwords" && string.IsNullOrEmpty(source)) return new StartPageNavigation.Block();
+		return new StartPageNavigation.Import(action, source);
 	}
 
 	/// <summary>URLSearchParams.get: the first value for <paramref name="name"/>, form-decoded, or null.</summary>
@@ -387,6 +419,79 @@ public static class StartPage
   .tiles:hover + .edit, .edit:hover, .edit:focus { opacity: 1; }
   .edit:hover { background: var(--well); color: var(--text); }
 """;
+
+	// MARK: - Import nudge
+
+	// encodeURIComponent leaves !'()* alone; EscapeDataString does not.
+	private static string ImportUrl(string action, string? sourceId = null)
+	{
+		var url = $"{Scheme}://{ImportHost}/{action}";
+		return StartShortcuts.EscapeHtml(sourceId is null ? url : $"{url}?source={Uri.EscapeDataString(sourceId)}");
+	}
+
+	private static string Button(string href, string label, bool primary) =>
+		$"<a class=\"{(primary ? "primary" : "secondary")}\" href=\"{href}\">{label}</a>";
+
+	private static (string Heading, string Body, string[] Buttons) NudgeContent(ImportNudge nudge)
+	{
+		var notNow = Button(ImportUrl("dismiss"), "Not now", false);
+		switch (nudge) {
+			case ImportNudge.Generic generic:
+				return (
+					"Bring your bookmarks from another browser?",
+					generic.Error is null ? "" : $"{NL}    <p class=\"error\">{StartShortcuts.EscapeHtml(generic.Error)}</p>",
+					[Button(ImportUrl("settings"), "Choose…", true), notNow]);
+			case ImportNudge.Offer offer:
+				var browser = StartShortcuts.EscapeHtml(offer.Browser);
+				var profile = offer.Profile is null ? "" : $" in \"{StartShortcuts.EscapeHtml(offer.Profile)}\"";
+				var passwords = offer.Passwords ? " Passwords need a quick export, and Zing walks you through it." : "";
+				return (
+					$"Bring your stuff from {browser}?",
+					$"{NL}    <p>{offer.Bookmarks} bookmarks and your favourites bar{profile}.{passwords}</p>",
+					[
+						Button(ImportUrl("bookmarks", offer.SourceId), $"Import from {browser}", true),
+						Button(ImportUrl("settings"), "Other browser…", false),
+						notNow,
+					]);
+			case ImportNudge.Result result:
+				var done = Button(ImportUrl("dismiss"), "Done", !result.Passwords);
+				return (
+					$"Imported {result.Added} bookmarks.",
+					"",
+					result.Passwords ? [Button(ImportUrl("passwords", result.SourceId), "Import passwords too", true), done] : [done]);
+			default:
+				throw new InvalidOperationException($"unknown import nudge {nudge}");
+		}
+	}
+
+	private static string NudgeHtml(ImportNudge nudge)
+	{
+		var (heading, body, buttons) = NudgeContent(nudge);
+		return $"{NL}{NL}  <section class=\"nudge\">{NL}    <h2>{heading}</h2>{body}{NL}    <div class=\"actions\">{NL}      {string.Join($"{NL}      ", buttons)}{NL}    </div>{NL}  </section>";
+	}
+
+	// Appended to the page's CSS only when the card is present, and scoped to it.
+	private const string NudgeCss = """
+
+  .nudge {
+    width: 100%; max-width: 560px; padding: 16px 18px; border-radius: 12px;
+    background: var(--surface); border: 1px solid var(--separator);
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .nudge h2 { margin: 0; font-size: 14px; font-weight: 600; }
+  .nudge p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  .nudge p.error { color: var(--text); }
+  .nudge .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .nudge .actions a {
+    padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500;
+    text-decoration: none; color: var(--text); background: var(--control);
+    border: 1px solid var(--separator);
+  }
+  .nudge .actions a:hover { background: var(--raised); }
+  .nudge .actions a.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+""";
+
+	private const string NL = "\n";
 
 	private const string PageScript = """
 (function () {
