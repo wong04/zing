@@ -20,6 +20,11 @@ function sourceDetail(source: ImportSourceView): string {
 	return `${count} ${count === 1 ? 'bookmark' : 'bookmarks'}`
 }
 
+/** The row's Import passwords button shows only when this holds. */
+function canImportPasswords(source: ImportSourceView, vaultError: string | undefined): boolean {
+	return source.passwords && source.error === undefined && vaultError !== 'unreadable'
+}
+
 function Outcome({ outcome }: { outcome: BookmarkImportOutcome }) {
 	return (
 		<div className="vault-import" role="status">
@@ -64,12 +69,14 @@ export function ImportSection() {
 		}
 	}, [])
 
+	const [pending, setPending] = useState<string>()
+
 	// The New Tab card's "Import passwords too" lands here with the flow already chosen.
 	useEffect(() => {
 		let current = true
 		zing.takePendingImport().then(
-			(pending) => {
-				if (current && pending?.action === 'passwords') setFlowSource(pending.sourceId)
+			(taken) => {
+				if (current && taken?.action === 'passwords') setPending(taken.sourceId)
 			},
 			(failure: unknown) => {
 				if (current) setListError(messageOf(failure))
@@ -79,6 +86,15 @@ export function ImportSection() {
 			current = false
 		}
 	}, [])
+
+	// Waits for the sources and the vault state, then applies the same gates as the row's button.
+	const pendingSource = pending === undefined ? undefined : sources?.find((s) => s.id === pending)
+	const pendingKnown = pending !== undefined && sources !== undefined && vault !== undefined
+	const pendingProblem =
+		!pendingKnown || (pendingSource && canImportPasswords(pendingSource, vault.state.error))
+			? undefined
+			: `Passwords can’t be imported from ${pendingSource?.display ?? 'that browser'} right now.`
+	const activeFlow = flowSource ?? (pendingKnown && pendingProblem === undefined ? pending : undefined)
 
 	const run = async (row: RowId, work: () => Promise<void>): Promise<void> => {
 		setBusy(true)
@@ -118,6 +134,7 @@ export function ImportSection() {
 		<div className="vault" role="group" aria-label="Import">
 			<div className="vault-subtitle">On this PC</div>
 			{listError ? <InfoBanner kind="warning">{listError}</InfoBanner> : null}
+			{pendingProblem ? <InfoBanner kind="warning">{pendingProblem}</InfoBanner> : null}
 			{sources?.length === 0 ? <div className="vault-none">Zing found no supported browser on this PC.</div> : null}
 			{sources?.map((source) => (
 				<div key={source.id} className="vault" role="group" aria-label={source.display}>
@@ -126,15 +143,24 @@ export function ImportSection() {
 							<PillButton variant="outlined" size="small" disabled={busy || source.error !== undefined} onClick={() => importFrom(source)}>
 								Import bookmarks
 							</PillButton>
-							{source.passwords && vault !== undefined && vault.state.error !== 'unreadable' ? (
-								<PillButton variant="outlined" size="small" disabled={busy || source.error !== undefined || flowSource !== undefined} onClick={() => setFlowSource(source.id)}>
+							{vault !== undefined && canImportPasswords(source, vault.state.error) ? (
+								<PillButton variant="outlined" size="small" disabled={busy || activeFlow !== undefined} onClick={() => setFlowSource(source.id)}>
 									Import passwords
 								</PillButton>
 							) : null}
 						</div>
 					</SettingRowShell>
 					{rowOutcome(source.id)}
-					{flowSource === source.id ? <PasswordImportFlow source={source} vaultOn={vaultOn} onClose={() => setFlowSource(undefined)} /> : null}
+					{activeFlow === source.id ? (
+						<PasswordImportFlow
+							source={source}
+							vaultOn={vaultOn}
+							onClose={() => {
+								setFlowSource(undefined)
+								setPending(undefined)
+							}}
+						/>
+					) : null}
 				</div>
 			))}
 

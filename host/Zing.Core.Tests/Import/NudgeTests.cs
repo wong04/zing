@@ -22,10 +22,11 @@ public sealed class NudgeTests : IDisposable
 	private readonly Hooks _hooks = new() { ProgId = "ChromeHTML" };
 	private readonly LibraryStore _library = new(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
 	private readonly ImportApi _api;
+	private bool _rootUnreadable;
 
 	public NudgeTests()
 	{
-		_api = new ImportApi(_library, new FileGrants(), () => _root, () => throw new InvalidOperationException("no launcher"), () => throw new InvalidOperationException("no trash"), new ManualScheduler(), _root, (_, _) => { }, _hooks.Host);
+		_api = new ImportApi(_library, new FileGrants(), () => _rootUnreadable ? throw new UnauthorizedAccessException("denied") : _root, () => throw new InvalidOperationException("no launcher"), () => throw new InvalidOperationException("no trash"), new ManualScheduler(), _root, (_, _) => { }, _hooks.Host);
 		WriteChrome("Default", "Personal", "chromium-bookmarks.json");
 		WriteChrome("Profile 1", "Work", "chromium-bookmarks.json", lastUsed: "Profile 1");
 	}
@@ -110,6 +111,7 @@ public sealed class NudgeTests : IDisposable
 		_api.Act("passwords", "chrome:Profile 1");
 		Assert.Equal(["import"], _hooks.Opened);
 		Assert.Null(_api.Nudge());
+		Assert.Equal(2, _hooks.Reloads);
 		Assert.Equal(new PendingImport("passwords", "chrome:Profile 1"), _api.TakePending());
 		Assert.Null(_api.TakePending());
 	}
@@ -132,5 +134,33 @@ public sealed class NudgeTests : IDisposable
 		Assert.DoesNotContain(_root, card.Error);
 		Assert.False(_hooks.Done);
 		Assert.Equal(1, _hooks.Reloads);
+	}
+
+	[Fact]
+	public void AnUnreadableProfileRootGivesTheGenericCardWithItsError()
+	{
+		_rootUnreadable = true;
+		var card = Assert.IsType<ImportNudge.Generic>(_api.Nudge());
+		Assert.False(string.IsNullOrEmpty(card.Error));
+		_rootUnreadable = false;
+		Assert.IsType<ImportNudge.Offer>(_api.Nudge());
+	}
+
+	[Fact]
+	public void ImportingASourceThatVanishedGivesTheGenericCardWithItsError()
+	{
+		Directory.Delete(Path.Combine(_root, "Google"), recursive: true);
+		_api.Act("bookmarks", "chrome:Profile 1");
+		var card = Assert.IsType<ImportNudge.Generic>(_api.Nudge());
+		Assert.False(string.IsNullOrEmpty(card.Error));
+		Assert.False(_hooks.Done);
+		Assert.Equal(1, _hooks.Reloads);
+	}
+
+	[Fact]
+	public void AnUnknownActionThrows()
+	{
+		Assert.Throws<ArgumentException>(() => _api.Act("explode", null));
+		Assert.Throws<ArgumentException>(() => _api.Act("bookmarks", null));
 	}
 }

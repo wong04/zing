@@ -1,3 +1,4 @@
+using System.Security;
 using Zing.Core.Engines;
 
 namespace Zing.Core.Import;
@@ -95,7 +96,16 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 		if (_result is not null) return _result;
 		var host = RequireNudgeHost();
 		if (host.IsDone()) return null;
-		return _cached ??= Offer(host);
+		if (_cached is not null) return _cached;
+		try
+		{
+			return _cached = Offer(host);
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException or SecurityException)
+		{
+			// Not cached, so the next New Tab tries again; the page itself must still load.
+			return new ImportNudge.Generic(ImportErrors.Explain(error, "the browsers on this PC"));
+		}
 	}
 
 	/// <summary>Runs a button of the card. Navigation to the card's links never loads a page.</summary>
@@ -113,6 +123,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 			case "passwords":
 				_pending = new PendingImport("passwords", sourceId ?? throw new ArgumentException("The passwords action needs a source"));
 				_result = null;
+				host.ReloadStartPages();
 				host.OpenSettings("import");
 				return;
 			case "dismiss":
@@ -161,15 +172,15 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 
 	private void ImportFromCard(NudgeHost host, string id)
 	{
-		var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
 		_cached = null;
 		try
 		{
+			var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
 			var outcome = ImportSource(id);
 			_result = new ImportNudge.Result(Label(source), outcome.AddedToBar + outcome.AddedToFolder, source.Id, source.Browser != ImportBrowser.Arc);
 			host.MarkDone();
 		}
-		catch (Exception error) when (error is ImportReadException or BookmarksFileDamagedException or ChromiumBookmarksFormatException or ArcSidebarFormatException or ImportFileTooLargeException or ImportFileNotUtf8Exception)
+		catch (Exception error) when (error is UnknownImportSourceException or IOException or UnauthorizedAccessException or SecurityException or BookmarksFileDamagedException or ChromiumBookmarksFormatException or ArcSidebarFormatException or ImportFileTooLargeException or ImportFileNotUtf8Exception)
 		{
 			// The card shows why; the user can retry or choose another browser.
 			_cached = new ImportNudge.Generic(error.Message);
