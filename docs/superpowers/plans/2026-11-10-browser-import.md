@@ -319,6 +319,7 @@ Layout:
 ```
 - The renderer imports the found file through the existing `vault:import-csv` (token). One watch at a time: a new `watch-passwords` stops the old one.
 - **Verify first** (Step 0): on the owner's go-ahead in Task 16, or by reading Chromium's docs now, check whether each browser opens an internal URL passed on its command line. If one doesn't, `ExportPages.Url` returns null for it, and the renderer shows that browser's menu path instead (copy in `importText.ts`). Record the finding in this plan's Task 11 as a note when done.
+  - **Note (2026-11-11, from reading only, no launch):** I found no source saying Chromium refuses a `chrome://`-style URL given as a plain argument to its exe. The failures reported go through ShellExecute/`start` or the registered protocol handler. Windows has no handler for `chrome://` and can drop the colon. So `BrowserLauncher` starts the exe directly with the URL as its argument, and every browser keeps its URL. The owner's hand check (Task 16) confirms this per browser.
 
 - [ ] **Step 1:** Write xUnit tests for `ExportPages` and for `ImportApi` with fake launcher, trash and scheduler:
   - `WatchOpensTheExportPageAndReportsTheFoundFileAsAToken`

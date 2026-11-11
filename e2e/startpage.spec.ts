@@ -26,6 +26,18 @@ test('the start page search goes through the address rule and the search engine'
 	await zing.close()
 })
 
+test('a search typed in the address bar on the start page leaves the start page for the search', async () => {
+	// Names don't resolve, so the search fails to load, but the page must still go: before, the start page's search rule sent it back to itself forever.
+	const zing = await launchZing({ env: { ZING_E2E_NO_DNS: '1' } })
+	await startPage(zing.browser)
+	const address = zing.chrome.getByRole('textbox', { name: 'Address and search bar' })
+	await address.click()
+	await address.fill('hello world')
+	await address.press('Enter')
+	await expect.poll(() => pages(zing.browser).some((p) => isStartPage(p.url())), { timeout: 20_000 }).toBe(false)
+	await zing.close()
+})
+
 test('a changed accent restyles the open start page without reloading it', async () => {
 	const zing = await launchZing({ env: { ZING_E2E_OFFLINE: '1' } })
 	const start = await startPage(zing.browser)
