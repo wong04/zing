@@ -144,7 +144,7 @@ export function ImportSection() {
 			<ul className="import-help" aria-label="Exporting a bookmarks file">
 				{fileHelp.map((help) => (
 					<li key={help.app}>
-						<strong>{help.app}</strong> {help.steps}
+						<strong>{help.app}:</strong> {help.steps}
 					</li>
 				))}
 			</ul>
