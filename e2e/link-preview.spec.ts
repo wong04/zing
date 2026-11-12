@@ -470,10 +470,14 @@ test('a click on the dim closes the preview', async () => {
 	await zing.close()
 })
 
-test('the buttons are made, hidden, before the first preview', async () => {
-	const { zing } = await start()
-	// A cold renderer load would otherwise hold the first preview's buttons back.
-	await expect.poll(async () => (await layers(zing.chrome)).filter((l) => l.url.endsWith('#peek')).map((l) => l.visible)).toEqual([false])
+test('the buttons view is made by the first preview, not at start-up', async () => {
+	const { zing, source } = await start()
+	// An idle window carries no renderer for the buttons.
+	expect((await layers(zing.chrome)).filter((l) => l.url.endsWith('#peek'))).toEqual([])
+	await source.click('#cross')
+	const { peek } = await previewShown(zing.chrome, `${own}/a`, `${other}/b`)
+	expect(peek.visible).toBe(true)
+	expect((await layers(zing.chrome)).filter((l) => l.url.endsWith('#peek'))).toHaveLength(1)
 	await zing.close()
 })
 

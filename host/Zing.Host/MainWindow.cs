@@ -188,26 +188,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		ReserveCaptionButtons();
 		// A reloaded chrome (its renderer crashed) refetches its state, but the caption inset is a script the host sets.
 		_chrome.Crashed += view => view.View.Core.NavigationCompleted += CaptionsAfterReload;
-		await PreparePreviewButtonsAsync();
 		TestHooks.Started(_scope);
-	}
-
-	/// <summary>
-	/// The preview's buttons, made hidden with the window while previews are on, so the first preview has them at once.
-	/// Optional: a failure is recorded and startup goes on (the next preview tries again); a window closing meanwhile is gone.
-	/// </summary>
-	private async Task PreparePreviewButtonsAsync()
-	{
-		if (_peekControls is null || !_app.Services.Settings.Get("linkPreviews")!.GetValue<bool>()) return;
-		try
-		{
-			await _peekControls.PrepareAsync();
-		}
-		catch (Exception error) when (error is not ViewGoneException)
-		{
-			TestHooks.Record("preview buttons", error);
-		}
-		_scope.Checkpoint("startup");
 	}
 
 	/// <summary>
