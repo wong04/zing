@@ -456,7 +456,7 @@ public sealed class ChromeApi : IDisposable
 			app.Settings.Set("defaultBrowserDismissed", true);
 			DismissOffer();
 		}));
-		var importApi = new ImportApi(app.Library, Grants, app.LocalAppData ?? (() => throw new InvalidOperationException("This host has no browser profile root to import from")), () => app.BrowserLauncher ?? throw new InvalidOperationException("This host can't start another browser"), () => app.FileTrash ?? throw new InvalidOperationException("This host can't use the Recycle Bin"), host.Scheduler, host.DownloadsDirectory, host.Push, new NudgeHost(() => Flag("importNudgeDone"), () => _app.Settings.Set("importNudgeDone", JsonValue.Create(true)), () => app.DefaultBrowser?.HttpsProgId(), category => Shell.OpenSettings(category), () => ForEachStartPage(page => page.Reload())));
+		var importApi = new ImportApi(app.Library, Grants, app.LocalAppData ?? (() => throw new InvalidOperationException("This host has no browser profile root to import from")), () => app.BrowserLauncher ?? throw new InvalidOperationException("This host can't start another browser"), () => app.FileTrash ?? throw new InvalidOperationException("This host can't use the Recycle Bin"), host.Scheduler, host.DownloadsDirectory, host.Push, new NudgeHost(() => Flag("importNudgeDone"), () => _app.Settings.Set("importNudgeDone", JsonValue.Create(true)), () => app.DefaultBrowser?.HttpsProgId(), category => Shell.OpenSettings(category), () => ForEachStartPage(ReloadWhenLoaded), host.Background));
 		_importApi = importApi;
 		bridge.Register("import:sources", _ => importApi.Sources());
 		bridge.Register("import:bookmarks", args => importApi.ImportSource(Text(args, 0)));
@@ -1675,6 +1675,13 @@ public sealed class ChromeApi : IDisposable
 	{
 		var urls = _app.Library.UrlsOf(id).Select(RelayedContent.RefuseRelayAddress).ToList();
 		foreach (var url in urls) Tabs.Open(url);
+	}
+
+	/// <summary>A reload that lands on a start page still loading (the nudge scan can end before the page does) would cancel that navigation, leaving a blank tab.</summary>
+	private static void ReloadWhenLoaded(IPage page)
+	{
+		if (page.IsLoading) page.RunWhenLoaded("location.reload()");
+		else page.Reload();
 	}
 
 	private void ForEachStartPage(Action<IPage> act)

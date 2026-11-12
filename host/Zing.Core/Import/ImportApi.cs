@@ -19,8 +19,8 @@ public sealed class UnknownImportSourceException(string id) : ArgumentException(
 /// <summary>A source or file that couldn't be read; the message never carries a path.</summary>
 public sealed class ImportReadException(string message, Exception inner) : IOException(message, inner);
 
-/// <summary>What the New Tab card needs from the host: the setting, the default browser, Settings and the open start pages.</summary>
-public sealed record NudgeHost(Func<bool> IsDone, Action MarkDone, Func<string?> HttpsProgId, Action<string> OpenSettings, Action ReloadStartPages);
+/// <summary>What the New Tab card needs from the host: the setting, the default browser, Settings and the open start pages, and a place to report a scan nobody awaits (null in tests, which await the scan).</summary>
+public sealed record NudgeHost(Func<bool> IsDone, Action MarkDone, Func<string?> HttpsProgId, Action<string> OpenSettings, Action ReloadStartPages, Action<Task, string>? Background = null);
 
 /// <summary>The password import the New Tab card asked Settings to start.</summary>
 public sealed record PendingImport(string Action, string SourceId);
@@ -32,6 +32,9 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	// The card state lives here, in memory: Settings opens in the same window, and nothing about it may reach the disk.
 	private ImportNudge? _cached;
 	private ImportNudge.Result? _result;
+	// The profile scan behind the card, off the UI thread. An answer to the card meanwhile moves the epoch on, so a late scan drops its card.
+	private Task? _scan;
+	private int _epoch;
 	private PendingImport? _pending;
 
 	public void Dispose() => CancelWatch();
@@ -78,6 +81,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	private void EndNudge()
 	{
 		if (nudgeHost is not { } host || host.IsDone()) return;
+		_epoch++;
 		_cached = null;
 		host.MarkDone();
 		host.ReloadStartPages();
@@ -108,22 +112,46 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 		}
 	}
 
-	/// <summary>The card for the start page: a result while one is held, nothing once answered, else an offer from the default browser or the generic ask. Cached per launch, so New Tab doesn't scan the disk.</summary>
+	/// <summary>
+	/// The card for the start page: a result while one is held, nothing once answered, else an offer from the default browser or the generic ask.
+	/// The disk scan for an offer runs off the UI thread, so until it ends this is null and the page is served without a card; the start pages reload when the card is ready.
+	/// Cached per launch, so New Tab doesn't scan the disk; a failed scan is cached too (as the generic card with its error), or the reload would start another.
+	/// </summary>
 	public ImportNudge? Nudge()
 	{
 		if (_result is not null) return _result;
 		var host = RequireNudgeHost();
 		if (host.IsDone()) return null;
 		if (_cached is not null) return _cached;
+		if (_scan is { IsCompleted: false }) return null;
+		var progId = host.HttpsProgId();
+		// Zing, Firefox or nothing as the default can't be a source, so no profile is worth parsing.
+		if (DefaultBrowserSource.BrowserFor(progId) is null) return _cached = new ImportNudge.Generic();
+		_scan = ScanAsync(host, progId);
+		host.Background?.Invoke(_scan, "import nudge scan");
+		return null;
+	}
+
+	/// <summary>Ends when the card for the current scan, if any, has been set and the start pages told. Tests await it.</summary>
+	public Task Scanned => _scan ?? Task.CompletedTask;
+
+	// Resumes on the UI thread (the caller's context), where the card state lives.
+	private async Task ScanAsync(NudgeHost host, string? progId)
+	{
+		var epoch = _epoch;
+		ImportNudge card;
 		try
 		{
-			return _cached = Offer(host);
+			card = await Task.Run(() => Offer(progId));
 		}
 		catch (Exception error) when (error is IOException or UnauthorizedAccessException or SecurityException)
 		{
-			// Not cached, so the next New Tab tries again; the page itself must still load.
-			return new ImportNudge.Generic(ImportErrors.Explain(error, "the browsers on this PC"));
+			card = new ImportNudge.Generic(ImportErrors.Explain(error, "the browsers on this PC"));
 		}
+		// Answered, or imported from Settings, while the scan ran: its card is stale.
+		if (epoch != _epoch || host.IsDone() || _result is not null) return;
+		_cached = card;
+		host.ReloadStartPages();
 	}
 
 	/// <summary>Runs a button of the card. Navigation to the card's links never loads a page.</summary>
@@ -147,6 +175,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 				host.OpenSettings("import");
 				return;
 			case "dismiss":
+				_epoch++;
 				_result = null;
 				_cached = null;
 				host.MarkDone();
@@ -183,17 +212,16 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 
 	private NudgeHost RequireNudgeHost() => nudgeHost ?? throw new InvalidOperationException("This host has no New Tab import card");
 
-	private ImportNudge Offer(NudgeHost host)
+	// Runs off the UI thread: it reads other browsers' profiles.
+	private ImportNudge Offer(string? progId)
 	{
-		var progId = host.HttpsProgId();
-		// Zing, Firefox or nothing as the default can't be a source, so no profile is worth parsing.
-		if (DefaultBrowserSource.BrowserFor(progId) is null) return new ImportNudge.Generic();
 		if (DefaultBrowserSource.Pick(progId, ImportSources.Find(localAppData())) is not { } source) return new ImportNudge.Generic();
 		return new ImportNudge.Offer(Label(source), ProfileOf(source), source.Bookmarks ?? 0, source.Id, source.Browser != ImportBrowser.Arc);
 	}
 
 	private void ImportFromCard(NudgeHost host, string id)
 	{
+		_epoch++;
 		_cached = null;
 		try
 		{

@@ -46,6 +46,8 @@ public sealed class WindowsDownloads : IDownloadHost
 	public static string LocalAppData()
 	{
 		var configured = Environment.GetEnvironmentVariable("ZING_LOCALAPPDATA");
+		// Test seam: a big Chrome or Edge profile makes the New Tab import scan slow; the delay stands in for it.
+		if (TestHooks.IsEndToEndRun && int.TryParse(Environment.GetEnvironmentVariable("ZING_LOCALAPPDATA_DELAY_MS"), out var delay)) Thread.Sleep(delay);
 		if (!string.IsNullOrEmpty(configured)) return configured;
 		if (TestHooks.IsEndToEndRun) throw new InvalidOperationException("e2e runs must set ZING_LOCALAPPDATA so they never read the real browser profiles");
 		return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);

@@ -48,10 +48,54 @@ public sealed class NudgeTests : IDisposable
 		File.WriteAllText(Path.Combine(userData, profile, "Bookmarks"), File.ReadAllText(Path.Combine(Vectors.RepoRoot(), "src/shared/import/fixtures", fixture)));
 	}
 
-	[Fact]
-	public void OfferNamesTheDefaultBrowsersLastUsedProfile()
+	/// <summary>What the first start page gets is no card; the scan ends, the start pages reload, and the next page has it.</summary>
+	private async Task<ImportNudge?> NudgeAfterScan()
 	{
-		var offer = Assert.IsType<ImportNudge.Offer>(_api.Nudge());
+		var first = _api.Nudge();
+		await _api.Scanned;
+		return first is null ? _api.Nudge() : first;
+	}
+
+	[Fact]
+	public async Task TheFirstStartPageIsServedWithoutWaitingForTheScan()
+	{
+		var release = new ManualResetEventSlim();
+		var slow = new ImportApi(_library, new FileGrants(), () => { release.Wait(TestContext.Current.CancellationToken); return _root; }, () => throw new InvalidOperationException("no launcher"), () => throw new InvalidOperationException("no trash"), new ManualScheduler(), _root, (_, _) => { }, _hooks.Host);
+		try
+		{
+			Assert.Null(slow.Nudge());
+			Assert.Null(slow.Nudge());
+			Assert.Equal(0, _hooks.Reloads);
+			Assert.False(slow.Scanned.IsCompleted);
+		}
+		finally
+		{
+			release.Set();
+		}
+		await slow.Scanned;
+		Assert.Equal(1, _hooks.Reloads);
+		Assert.IsType<ImportNudge.Offer>(slow.Nudge());
+		slow.Dispose();
+	}
+
+	[Fact]
+	public async Task ADismissWhileScanningDropsTheLateCard()
+	{
+		var release = new ManualResetEventSlim();
+		var slow = new ImportApi(_library, new FileGrants(), () => { release.Wait(TestContext.Current.CancellationToken); return _root; }, () => throw new InvalidOperationException("no launcher"), () => throw new InvalidOperationException("no trash"), new ManualScheduler(), _root, (_, _) => { }, _hooks.Host);
+		Assert.Null(slow.Nudge());
+		slow.Act("dismiss", null);
+		release.Set();
+		await slow.Scanned;
+		Assert.Equal(1, _hooks.Reloads);
+		Assert.Null(slow.Nudge());
+		slow.Dispose();
+	}
+
+	[Fact]
+	public async Task OfferNamesTheDefaultBrowsersLastUsedProfile()
+	{
+		var offer = Assert.IsType<ImportNudge.Offer>(await NudgeAfterScan());
 		Assert.Equal("Chrome", offer.Browser);
 		Assert.Equal("Work", offer.Profile);
 		Assert.Equal("chrome:Profile 1", offer.SourceId);
@@ -69,9 +113,9 @@ public sealed class NudgeTests : IDisposable
 	}
 
 	[Fact]
-	public void TheOfferIsReadOnceAndThenKept()
+	public async Task TheOfferIsReadOnceAndThenKept()
 	{
-		_api.Nudge();
+		await NudgeAfterScan();
 		_api.Nudge();
 		Assert.Equal(1, _hooks.ProgIdReads);
 	}
@@ -137,13 +181,11 @@ public sealed class NudgeTests : IDisposable
 	}
 
 	[Fact]
-	public void AnUnreadableProfileRootGivesTheGenericCardWithItsError()
+	public async Task AnUnreadableProfileRootGivesTheGenericCardWithItsError()
 	{
 		_rootUnreadable = true;
-		var card = Assert.IsType<ImportNudge.Generic>(_api.Nudge());
+		var card = Assert.IsType<ImportNudge.Generic>(await NudgeAfterScan());
 		Assert.False(string.IsNullOrEmpty(card.Error));
-		_rootUnreadable = false;
-		Assert.IsType<ImportNudge.Offer>(_api.Nudge());
 	}
 
 	[Fact]
