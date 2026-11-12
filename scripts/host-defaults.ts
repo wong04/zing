@@ -87,6 +87,7 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	checkForUpdates: flag,
 	defaultBrowserDismissed: flag,
 	launchedBefore: flag,
+	importNudgeDone: flag,
 }
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)

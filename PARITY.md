@@ -210,10 +210,18 @@ Evidence (e2e/vault.spec.ts unless noted; screenshots in [docs/screenshots/phase
 
 | ID | Item | Type | Krackn source | Issue | Status |
 |---|---|---|---|---|---|
-| I1 | Import from Chrome, Edge, Brave | new | - | [#98](https://github.com/wong04/zing/issues/98) | Open |
-| I2 | Import from Dia | new | - | [#99](https://github.com/wong04/zing/issues/99) | Open |
-| I3 | Import from Arc | new | - | [#100](https://github.com/wong04/zing/issues/100) | Open |
-| I4 | Generic bookmark and password import | new | - | [#101](https://github.com/wong04/zing/issues/101) | Open |
+| I1 | Import from Chrome, Edge, Brave | new | - | [#98](https://github.com/wong04/zing/issues/98) | Partial: awaiting the owner's hand check |
+| I2 | Import from Dia | new | - | [#99](https://github.com/wong04/zing/issues/99) | Partial: awaiting the owner's hand check |
+| I3 | Import from Arc | new | - | [#100](https://github.com/wong04/zing/issues/100) | Partial: awaiting the owner's hand check |
+| I4 | Generic bookmark and password import | new | - | [#101](https://github.com/wong04/zing/issues/101) | Partial: awaiting the owner's hand check |
+
+Evidence (e2e/import.spec.ts unless noted; screenshots in [docs/screenshots](docs/screenshots)). The parsers and merge are held to the TypeScript twins by `src/shared/import/*.vectors.json`, read by `src/shared/import/import.test.ts`, `passwords.test.ts` and the host tests.
+
+- I1: host tests `ImportSourcesTests` (`FindsEachChromiumProfileWithItsDisplayName`, `MarksTheLastUsedProfile`, `ReadsAFileAnotherProcessHoldsOpenForWriting`, `ACorruptBookmarksFileIsARowWithAnError`, `ErrorsNeverCarryAPath`), `ParserTests.ReadsWhatTheTypeScriptParsersRead`, `MergeTests.Merge_matches_the_shared_vectors`, `DefaultBrowserSourceTests`, `PasswordExportWatchTests`, `ImportPasswordWatchTests`, `ExportPagesTests`, `NudgeTests`; e2e `Settings Import lists Chrome profiles and Arc found on this PC, and importing one adds its bar and an Imported folder`, `importing the same profile twice adds nothing the second time`, `a broken profile shows its error and the others still import`, `Import passwords opens Chrome's export page, imports the CSV that lands in Downloads, and recycles it on request`, `with the vault off, Import passwords asks first and turns it on`, `the first New Tab offers the default browser and Import brings its bookmarks in`, `Not now hides the card on every later New Tab and after a restart`, `Import passwords too opens Settings Import already waiting for Chrome's export`. Screenshots: `import-section-light.png`, `import-section-dark.png`, `import-nudge-light.png`, `import-nudge-dark.png`.
+- I2: Dia's bookmarks read as Chromium JSON or Netscape HTML (vitest `Chromium Bookmarks JSON (Chrome, Edge, Brave, Dia)`, `Netscape bookmarks HTML (every browser, incl. Dia on Mac)`), and its passwords CSV by a pinned vector in `passwords.vectors.json`; e2e `a passwords file chosen by hand imports and offers to recycle it`.
+- I3: host tests `ImportSourcesTests.FindsArcUnderItsPackageFolder`, `APackagesFolderThatCannotBeListedIsAnArcRowWithAnErrorAndChromiumIsStillFound`, `ParserTests.AnArcSidebarExactlyAtTheItemCapStillParses`, `AnArcSidebarJustOverTheItemCapIsRefused`, `AnArcSidebarWithATabTitledRootsIsStillReadAsArc`, `ExportPagesTests.ArcHasNoExportPage`; e2e `Settings Import lists Chrome profiles and Arc found on this PC, and importing one adds its bar and an Imported folder` (the Arc row).
+- I4: host tests `ParserTests` (`SniffsTheFormatFromTheContentNotTheExtension`, `AWindows1252FileIsRefusedAsNotUtf8`, `AFileOverTheLimitIsRefusedBeforeItIsRead`, `SafarisFavoritesFolderIsNotTheBarBecauseItCarriesNoToolbarMark`), `ImportApiTests.ImportingAPickedFileUsesItsNameAsTheSource`; e2e `a bookmarks file from Safari imports into a folder named after the file`, `a passwords file chosen by hand imports and offers to recycle it`, `with Zing as the default browser the card asks generically and Choose opens Settings Import`.
+- The rows stay marked pending until the owner has run [docs/import-hand-check.md](docs/import-hand-check.md): real Chrome, Edge, Brave and Arc profiles, each browser's password export page opened from Zing, and Dia and Safari exports from the Mac. Then set them to Done and close #98–#101.
 
 ## M7 Logo + branding
 

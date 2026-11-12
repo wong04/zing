@@ -1,15 +1,19 @@
 // Krackn has no StartPage checks of its own; its StartShortcuts checks cover the escaping
 // rule ("names are escaped for the page"), and these pin how the page applies it.
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { defaults, type StartShortcut } from './startShortcuts'
 import {
 	SearchURLError,
 	ThemeTokenError,
+	classifyImportNavigation,
 	editShortcutsURL,
 	restyleScript,
 	startPageHTML,
 	themeCSS,
 	themeStyleId,
+	type ImportNudge,
+	type StartPageInput,
 	type StartPageTheme,
 	type StartPageTokens,
 } from './startPage'
@@ -139,5 +143,51 @@ describe('theme tokens and swapping', () => {
 	})
 	it('the page and the restyle script carry the same CSS', () => {
 		expect(page()).toContain(`<style id="${themeStyleId}">\n${themeCSS(theme)}\n</style>`)
+	})
+})
+
+// The C# page is held to these through the same file (StartPageTests.cs).
+interface Vectors {
+	pages: { name: string; input: StartPageInput; html: string }[]
+	navigation: { from: string; to: string; result: { kind: string; action?: string; source?: string } }[]
+}
+const vectors = JSON.parse(readFileSync('host/Zing.Core.Tests/vectors/startPage.vectors.json', 'utf8')) as Vectors
+
+describe('the import nudge', () => {
+	it('every page vector matches, so a page without a nudge is unchanged', () => {
+		for (const v of vectors.pages) expect(startPageHTML(v.input), v.name).toBe(v.html)
+	})
+	it('without a nudge there is no card and no card CSS', () => {
+		const html = page()
+		expect(html).not.toContain('nudge')
+		expect(html).not.toContain('zing://import')
+	})
+	it('the card shows only what it was given', () => {
+		const offer: ImportNudge = { kind: 'offer', browser: 'Chrome', profile: 'Work', bookmarks: 214, sourceId: 'chrome', passwords: true }
+		const html = startPageHTML({ searchURL, shortcuts: [], theme, nudge: offer })
+		expect(html).toContain('<h2>Bring your stuff from Chrome?</h2>')
+		expect(html).toContain('214 bookmarks and your favourites bar in "Work". Passwords need a quick export')
+		expect(html).toContain('href="zing://import/bookmarks?source=chrome"')
+		const arc = startPageHTML({ searchURL, shortcuts: [], theme, nudge: { ...offer, profile: undefined, passwords: false } })
+		expect(arc).toContain('214 bookmarks and your favourites bar.</p>')
+	})
+	it('import links are decided as the vectors say', () => {
+		for (const v of vectors.navigation.filter((n) => n.to.toLowerCase().startsWith('zing://import'))) {
+			const { result } = v
+			if (result.kind === 'allow') {
+				expect(classifyImportNavigation(v.from, v.to), v.to).toBeUndefined()
+				continue
+			}
+			const expected = result.kind === 'block' ? { kind: 'block' } : { kind: 'import', action: result.action, ...(result.source === undefined ? {} : { sourceId: result.source }) }
+			expect(classifyImportNavigation(v.from, v.to), `${v.from} -> ${v.to}`).toEqual(expected)
+		}
+	})
+	it('a count of one is singular', () => {
+		const html = startPageHTML({ searchURL, shortcuts: [], theme, nudge: { kind: 'result', browser: 'Arc', added: 1, sourceId: 'arc', passwords: false } })
+		expect(html).toContain('<h2>Imported 1 bookmark.</h2>')
+	})
+	it('other addresses are not its business', () => {
+		expect(classifyImportNavigation('zing://home', 'zing://edit-shortcuts')).toBeUndefined()
+		expect(classifyImportNavigation('zing://home', 'https://import/bookmarks')).toBeUndefined()
 	})
 })

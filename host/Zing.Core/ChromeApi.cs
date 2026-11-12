@@ -101,7 +101,7 @@ public interface IWindowHost
 /// <param name="LocalAppData">Where browser profiles live (the import channels read it when called); null where the host has none, and then those channels throw.</param>
 /// <param name="BrowserLauncher">Starts another browser at its password export page; null where the host can't, and then <c>import:watch-passwords</c> throws.</param>
 /// <param name="FileTrash">Sends a found export to the Recycle Bin; null where the host can't, and then <c>import:recycle</c> throws.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null)
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null)
 {
 	public long Now() => Clock.Now();
 
@@ -456,7 +456,7 @@ public sealed class ChromeApi : IDisposable
 			app.Settings.Set("defaultBrowserDismissed", true);
 			DismissOffer();
 		}));
-		var importApi = new ImportApi(app.Library, Grants, app.LocalAppData ?? (() => throw new InvalidOperationException("This host has no browser profile root to import from")), () => app.BrowserLauncher ?? throw new InvalidOperationException("This host can't start another browser"), () => app.FileTrash ?? throw new InvalidOperationException("This host can't use the Recycle Bin"), host.Scheduler, host.DownloadsDirectory, host.Push);
+		var importApi = new ImportApi(app.Library, Grants, app.LocalAppData ?? (() => throw new InvalidOperationException("This host has no browser profile root to import from")), () => app.BrowserLauncher ?? throw new InvalidOperationException("This host can't start another browser"), () => app.FileTrash ?? throw new InvalidOperationException("This host can't use the Recycle Bin"), host.Scheduler, host.DownloadsDirectory, host.Push, new NudgeHost(() => Flag("importNudgeDone"), () => _app.Settings.Set("importNudgeDone", JsonValue.Create(true)), () => app.DefaultBrowser?.HttpsProgId(), category => Shell.OpenSettings(category), () => ForEachStartPage(page => page.Reload())));
 		_importApi = importApi;
 		bridge.Register("import:sources", _ => importApi.Sources());
 		bridge.Register("import:bookmarks", args => importApi.ImportSource(Text(args, 0)));
@@ -464,6 +464,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("import:watch-passwords", args => Do(() => importApi.WatchPasswords(Text(args, 0))));
 		bridge.Register("import:cancel-watch", _ => Do(importApi.CancelWatch));
 		bridge.Register("import:recycle", args => Do(() => importApi.Recycle(Text(args, 0))));
+		bridge.Register("import:take-pending", _ => importApi.TakePending());
 		_watchedVault = app.Vaults.Current;
 		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;
@@ -474,6 +475,9 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	private ImportApi? _importApi;
+
+	/// <summary>The card the start page shows; null when there is none to show.</summary>
+	public ImportNudge? StartPageNudge() => _importApi?.Nudge();
 
 	public bool SettingsOpen => Shell.SettingsOpen;
 
@@ -1692,6 +1696,9 @@ public sealed class ChromeApi : IDisposable
 				return resolved == to ? null : new NavigationDecision.Redirect(resolved);
 			case StartPageNavigation.EditShortcuts:
 				Shell.OpenSettings();
+				return NavigationDecision.Cancel;
+			case StartPageNavigation.Import import:
+				_importApi?.Act(import.Action, import.SourceId);
 				return NavigationDecision.Cancel;
 			case StartPageNavigation.Block:
 				return NavigationDecision.Cancel;

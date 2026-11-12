@@ -182,5 +182,8 @@
 	},
 	"launchedBefore": {
 		"type": "flag"
+	},
+	"importNudgeDone": {
+		"type": "flag"
 	}
 }

@@ -174,6 +174,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		watchPasswords: (sourceId) => invoke('import:watch-passwords', sourceId),
 		cancelPasswordWatch: () => invoke('import:cancel-watch'),
 		recycleFile: (token) => invoke('import:recycle', token),
+		takePendingImport: () => invoke('import:take-pending'),
 		onPasswordExport: (listener) => listen('import:password-export', listener),
 		onPasswordWatchTimedOut: (listener) => listen('import:watch-timed-out', () => listener()),
 		onTabsState: (listener) => listen('tabs:state', listener),

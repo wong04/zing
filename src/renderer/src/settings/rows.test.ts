@@ -8,8 +8,8 @@ describe('settings rows', () => {
 		const bound = boundKeys()
 		// Kept so older settings files still load; WebView2 always presents Edge's own user agent.
 		const retired = new Set(['defaultUserAgent'])
-		// Zing's own bookkeeping, set by the app rather than the person ; neither ever gets a row.
-		const internal = new Set(['launchedBefore', 'defaultBrowserDismissed'])
+		// Zing's own bookkeeping, set by the app rather than the person; none of these ever gets a row.
+		const internal = new Set(['launchedBefore', 'defaultBrowserDismissed', 'importNudgeDone'])
 		expect(SETTING_KEYS.filter((k) => !bound.has(k) && !retired.has(k) && !internal.has(k))).toEqual([])
 	})
 

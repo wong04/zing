@@ -144,6 +144,8 @@ export const SETTINGS_SCHEMA = {
 	launchedBefore: flag(false),
 	/** Zing: the tiles on the Toolbox's Links page, kept like other settings since the user chose to edit them. */
 	toolLinks: { default: DEFAULT_TOOL_LINKS, accepts: isToolLinkList },
+	/** Zing: the New Tab import card was answered (imported or dismissed), so it stays away. */
+	importNudgeDone: flag(false),
 } as const
 
 type Schema = typeof SETTINGS_SCHEMA
