@@ -23,7 +23,7 @@ import { CustomRow } from './CustomRows'
 import { CATEGORIES, PANES, detailOf, isVisible, type SettingRow } from './rows'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
-import { setLibraryHoldsImports } from './privacy'
+import { setLibraryHoldsImports, setLibraryKeepsIcons } from './privacy'
 import { useVaultData, VaultDataProvider } from './useVaultData'
 import './settings.css'
 
@@ -125,6 +125,7 @@ export function SettingsSheet({ handle, initialCategory, version }: SettingsShee
 	const current = CATEGORIES.find((c) => c.id === category)
 	// Only to redraw the privacy banner: the flag itself lives in privacy.ts, set before the render that reads it.
 	const [, setHoldsImports] = useState(false)
+	const [, setKeepsIcons] = useState(false)
 
 	useEffect(
 		() =>
@@ -132,6 +133,9 @@ export function SettingsSheet({ handle, initialCategory, version }: SettingsShee
 				const holds = holdsImports(state.library)
 				setLibraryHoldsImports(holds)
 				setHoldsImports(holds)
+				const keeps = Object.keys(state.icons).length > 0
+				setLibraryKeepsIcons(keeps)
+				setKeepsIcons(keeps)
 			}),
 		[],
 	)

@@ -50,7 +50,7 @@ export function FavouriteRibbons({ nodes, frame, innerWidth }: { nodes: readonly
 				}
 				return (
 					<div key={node.id} data-item-id={node.id} {...place} {...savedItemProps(frame, node, 'rail-ribbon', () => activate(node.id))}>
-						<ItemIcon link={node} tab={frame.tabsByItem.get(node.id)} />
+						<ItemIcon link={node} tab={frame.tabsByItem.get(node.id)} icon={frame.icons[node.id]} />
 					</div>
 				)
 			})}
@@ -206,7 +206,7 @@ function ItemRow({ link, depth, renaming, place, frame, onRename }: RowProps & {
 			onContextMenu={itemMenu(link.id)}
 		>
 			<span className="rail-row-icon">
-				<ItemIcon link={link} tab={tab} />
+				<ItemIcon link={link} tab={tab} icon={frame.icons[link.id]} />
 			</span>
 			<Title id={link.id} title={link.title} renaming={renaming} onRename={onRename} />
 			{tab ? (

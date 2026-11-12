@@ -72,7 +72,7 @@ As built: `SavedTabs` (host/Zing.Core) ties tabs to items; Pin, Unpin and Ctrl+D
   - A tab dropped on Pinned, or into one of its folders, becomes a pinned item.
   - An item dropped among today's tabs is unpinned.
   - Items reorder within their sections.
-- **Icons.** Favicons stay in memory only (B22). An unloaded item shows a letter tile until its page has loaded once in this run.
+- **Icons.** Tab favicons stay in memory only (B22). An item whose page was visited keeps that icon on disk (`BookmarkIcons`, see B22 in `PARITY.md`); one never visited shows a letter tile.
 - **Tests:** unit tests for binding (one tab per item, closing keeps the item, reset, update) and the library moves. e2e tests for pinning, a relaunch keeping the items but no pages, clicking a tile twice switching instead of opening a second tab, and the drag between sections.
 
 ### C. Split view (T5), PR 3: done

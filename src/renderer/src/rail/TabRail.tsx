@@ -45,7 +45,8 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 	const loose = useMemo(() => buildSlots(today.map((t) => snapshotOf(t, t.id === activeId)), organization, dropdowns), [today, activeId, organization, dropdowns])
 	const byId = useMemo(() => new Map<string, TabView>(tabs.map((t) => [t.id, t])), [tabs])
 	const tabsByItem = useMemo(() => new Map<string, TabView>(tabs.flatMap((t) => (t.itemId === undefined ? [] : [[t.itemId, t] as const]))), [tabs])
-	const library = useLibraryState()?.library
+	const libraryState = useLibraryState()
+	const library = libraryState?.library
 	const splitOf = useMemo(() => new Map((state?.splits ?? []).flatMap((s) => s.tabIds.map((id) => [id, s] as const))), [state?.splits])
 	const pinnedCount = tabs.filter((t) => t.pinned).length
 	const panes = dropPanes(state)
@@ -82,7 +83,7 @@ export function TabRail({ state, variant, side }: { state: TabsState | undefined
 		(key, at) => showZone(edgeDrop(key, at)),
 	)
 	const itemDrag = useItemDrag((id, target) => void dropItem(id, target, tabsByItem))
-	const saved: SavedFrame = { tabsByItem, activeId, drag: itemDrag.handlersFor, endsDrag: itemDrag.consumeClick }
+	const saved: SavedFrame = { tabsByItem, icons: libraryState?.icons ?? {}, activeId, drag: itemDrag.handlersFor, endsDrag: itemDrag.consumeClick }
 	const sidebarPinned = handle?.settings.sidebarPinned ?? true
 	const hideLabel = sidebarPinned ? 'Hide sidebar (Ctrl+S)' : 'Keep sidebar open (Ctrl+S)'
 	// Collapsed, the rail in the chrome is a column of icons; the one that slides out over the page is always full.

@@ -101,7 +101,8 @@ public interface IWindowHost
 /// <param name="LocalAppData">Where browser profiles live (the import channels read it when called); null where the host has none, and then those channels throw.</param>
 /// <param name="BrowserLauncher">Starts another browser at its password export page; null where the host can't, and then <c>import:watch-passwords</c> throws.</param>
 /// <param name="FileTrash">Sends a found export to the Recycle Bin; null where the host can't, and then <c>import:recycle</c> throws.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null)
+/// <param name="BookmarkIcons">The icons kept for bookmarked sites once visited; null where the host keeps none, and bookmarks show their letter.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null)
 {
 	public long Now() => Clock.Now();
 
@@ -136,6 +137,7 @@ public sealed class ChromeApi : IDisposable
 	private readonly OutputPlacement _placement;
 	private readonly List<IDisposable> _subscriptions = [];
 	private readonly Action _unsubscribeLibrary;
+	private readonly Action _unsubscribeIcons;
 	private string? _libraryPanel;
 	// Cancelled when the window closes, so a download it started doesn't outlive it.
 	private readonly CancellationTokenSource _closing = new();
@@ -273,6 +275,7 @@ public sealed class ChromeApi : IDisposable
 			if (Lifecycle.Woke(id) is { } y) page.RunWhenLoaded($"window.scrollTo(0, {y.ToString(System.Globalization.CultureInfo.InvariantCulture)})");
 		};
 		Tabs.FindResult += (page, matches, active) => Find.OnResult(page, matches, active);
+		Tabs.IconLoaded += (url, icon) => app.BookmarkIcons?.Visited(app.Library.Snapshot, url, icon);
 		PageUi.Changed += state =>
 		{
 			host.Push("pageui:state", state);
@@ -472,6 +475,7 @@ public sealed class ChromeApi : IDisposable
 
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
 		_unsubscribeLibrary = app.Library.Subscribe(_ => host.Push("library:state", LibraryState()));
+		_unsubscribeIcons = app.BookmarkIcons?.Subscribe(() => host.Push("library:state", LibraryState())) ?? (() => { });
 	}
 
 	private ImportApi? _importApi;
@@ -630,6 +634,7 @@ public sealed class ChromeApi : IDisposable
 		Ordering.Dispose();
 		Lifecycle.Dispose();
 		_unsubscribeLibrary();
+		_unsubscribeIcons();
 		Saved.Dispose();
 		Tabs.Destroy();
 	}
@@ -1629,6 +1634,7 @@ public sealed class ChromeApi : IDisposable
 	private object LibraryState() => new
 	{
 		library = _app.Library.Snapshot,
+		icons = _app.BookmarkIcons?.ForLibrary(_app.Library.Snapshot) ?? new Dictionary<string, string>(),
 		panel = _libraryPanel,
 		favouritesBar = FavouritesBarShown(),
 		offset = Shell.PinnedWidth,

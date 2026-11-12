@@ -10,8 +10,8 @@ export function LibraryChrome({ position }: { readonly position: TabBarPosition 
 	if (!state) return null
 	return (
 		<>
-			{state.favouritesBar ? <FavouritesBar library={state.library} /> : null}
-			{state.panel ? <LibraryPanel library={state.library} panel={state.panel} favouritesBar={state.favouritesBar} offset={state.offset} position={position} /> : null}
+			{state.favouritesBar ? <FavouritesBar library={state.library} icons={state.icons} /> : null}
+			{state.panel ? <LibraryPanel library={state.library} icons={state.icons} panel={state.panel} favouritesBar={state.favouritesBar} offset={state.offset} position={position} /> : null}
 		</>
 	)
 }

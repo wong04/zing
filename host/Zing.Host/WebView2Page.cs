@@ -649,12 +649,13 @@ public sealed class WebView2Page : IPage
 	{
 		if (string.IsNullOrEmpty(core.FaviconUri))
 		{
-			_events.IconChanged(null);
+			_events.IconChanged(null, core.Source);
 			return;
 		}
+		var source = core.Source;
 		var icon = await IconDataUrlAsync(core);
-		// The tab may have closed while the icon was read.
-		if (IsOpen) _events.IconChanged(icon);
+		// The tab may have closed while the icon was read, or gone on to another address whose icon this may not be.
+		if (IsOpen) _events.IconChanged(icon, core.Source == source ? source : null);
 	}
 
 	/// <summary>
