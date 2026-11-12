@@ -236,6 +236,19 @@ test('the first New Tab offers the default browser and Import brings its bookmar
 	await zing.close()
 })
 
+test('a slow scan of the other browsers does not delay the start page, and the card arrives when it ends', async () => {
+	// The seam stands in for a big Chrome profile: the scan sleeps 6 s before it reads the root.
+	const zing = await launch(personalChrome(), { ...CHROME_DEFAULT, ZING_LOCALAPPDATA_DELAY_MS: '6000' })
+	const start = await startPage(zing)
+	const painted = Date.now()
+	await expect(start.locator('.tile').first()).toBeVisible({ timeout: 4000 })
+	await expect(card(start)).toHaveCount(0)
+	await expect(card(start).getByRole('heading')).toHaveText('Bring your stuff from Chrome?', { timeout: 30_000 })
+	expect(Date.now() - painted).toBeGreaterThan(1000)
+	await expect(card(start)).toHaveCount(1)
+	await zing.close()
+})
+
 test('Not now hides the card on every later New Tab and after a restart', async () => {
 	const root = personalChrome()
 	const zing = await launch(root, CHROME_DEFAULT)
