@@ -425,6 +425,8 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("sync:cancel-sign-in", _ => Do(CancelSyncSignIn));
 		bridge.Register("sync:turn-off", async _ => await TurnOffSyncAsync());
 		bridge.Register("sync:turn-on", async args => new { recoveryKey = await TurnOnSyncAsync(Text(args, 0)) });
+		bridge.Register("sync:server-has-keys", async _ => await SyncServerHasKeysAsync());
+		bridge.Register("sync:join", async args => await JoinSyncAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("sync:confirm-recovery-saved", _ =>
 		{
 			Vault().ConfirmRecoverySaved();
@@ -1202,6 +1204,22 @@ public sealed class ChromeApi : IDisposable
 	{
 		var vault = Vault();
 		return await new SyncKeys(_app.Account, vault, SyncClient(vault)).TurnOnAsync(password, _closing.Token);
+	}
+
+	/// <summary>Whether the signed-in Google account already syncs a vault, so Turn on sync joins it rather than asking for a new password.</summary>
+	private async Task<bool> SyncServerHasKeysAsync()
+	{
+		var vault = Vault();
+		var signedIn = vault.SyncAccount() ?? throw new NotSignedInToSyncException();
+		return await SyncClient(vault).GetKeysAsync(_closing.Token, asUser: signedIn.UserId) is not null;
+	}
+
+	/// <summary>Joins the signed-in Google account's sync from Settings (SyncRestore.JoinWithPasswordAsync), with its own sign-in and client.</summary>
+	private async Task<SyncState> JoinSyncAsync(string current, string password)
+	{
+		var vault = Vault();
+		await new SyncRestore(_app.Account, () => vault, SyncClient(vault), vault).JoinWithPasswordAsync(current, password, _closing.Token);
+		return CurrentSyncState();
 	}
 
 	/// <summary>

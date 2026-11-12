@@ -508,6 +508,15 @@ export interface InvokeContract {
 	 * (sync was turned off here; restoring from sync turns it on again), or SyncAlreadySetUpElsewhereException when it syncs another.
 	 */
 	'sync:turn-on': { args: [password: string]; result: RecoveryKeyShown }
+	/** Whether the signed-in Google account already syncs a vault: Turn on sync then joins it (sync:join) instead. */
+	'sync:server-has-keys': { args: []; result: boolean }
+	/**
+	 * Turn on sync for a Google account that already syncs another PC: this PC joins it with the sync password, as Restore from sync
+	 * does. With an account here, its own password (`current`) is checked first and then replaced by the sync one; with none, the
+	 * account is made from the synced profile. Rejects with AccountException (this PC's password is wrong or missing),
+	 * SyncJoinWrongPasswordException, SyncRestoreWouldReplaceLoginsException or SyncRestoreWhileSyncingAnotherAccountException.
+	 */
+	'sync:join': { args: [current: string, password: string]; result: SyncState }
 	/** The person confirmed they saved or printed the recovery key, so Settings stops showing it. */
 	'sync:confirm-recovery-saved': { args: []; result: SyncState }
 	/** The recovery key again, after Windows Hello (unless it was passed in the last 5 minutes). A cancelled Hello rejects and reveals nothing. */
@@ -778,6 +787,8 @@ export interface ZingApi {
 	turnOffSync(): Promise<SyncState>
 	cancelSyncSignIn(): Promise<void>
 	turnOnSync(password: string): Promise<RecoveryKeyShown>
+	syncServerHasKeys(): Promise<boolean>
+	joinSync(current: string, password: string): Promise<SyncState>
 	confirmRecoverySaved(): Promise<SyncState>
 	showRecoveryKey(): Promise<RecoveryKeyShown>
 	uploadLocalCopy(): Promise<SyncState>

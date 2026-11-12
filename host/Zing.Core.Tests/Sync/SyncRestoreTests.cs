@@ -318,6 +318,54 @@ public sealed class SyncRestoreTests : IDisposable
 	}
 
 	[Fact]
+	public async Task JoiningFromSettingsWithNoAccountMakesItFromTheSyncedProfileAndBringsTheLogins()
+	{
+		var id = await _pcs.SaveOnAAsync(password: "bank-secret");
+		await _pcs.TurnOnAAsync();
+		await _b.SignInAsync();
+
+		await Assert.ThrowsAsync<SyncJoinWrongPasswordException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync("", NextStrong, Ct));
+		Assert.False(_bAccount.State().HasAccount);
+		Assert.Null(_b.Vault.SyncKeys);
+
+		await Restore(_b, _bAccount).JoinWithPasswordAsync("", Strong, Ct);
+		await _b.SyncAsync();
+
+		Assert.Equal(new AccountProfile("ada", "Ada Lovelace", "ada.profile@example.test"), _bAccount.State().Profile);
+		Assert.True(_bAccount.State().SignedIn);
+		_bAccount.CheckPassword(Strong);
+		Assert.Equal(_pcs.A.Vault.VaultId, _b.Vault.VaultId);
+		Assert.Equal("bank-secret", await _b.Vault.PasswordAsync(id));
+	}
+
+	[Fact]
+	public async Task JoiningFromSettingsOverThisPcsOwnAccountNeedsItsPasswordAndThenGivesItTheSyncOne()
+	{
+		const string madeUp = "made-up-1";
+		_bAccount.SignUp("bea", "Bea", "", madeUp);
+		using (await _b.Vault.KeyMaterialAsync()) { }
+		var ownVault = _b.Vault.VaultId;
+		await _pcs.SaveOnAAsync(password: "bank-secret");
+		await _pcs.TurnOnAAsync();
+		await _b.SignInAsync();
+
+		Assert.Equal(AccountErrorCode.EmptyField, (await Assert.ThrowsAsync<AccountException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync("", Strong, Ct))).Code);
+		Assert.Equal(AccountErrorCode.WrongPassword, (await Assert.ThrowsAsync<AccountException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync("not-it-at-all", Strong, Ct))).Code);
+		await Assert.ThrowsAsync<SyncJoinWrongPasswordException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync(madeUp, NextStrong, Ct));
+		_bAccount.CheckPassword(madeUp);
+		Assert.Equal(ownVault, _b.Vault.VaultId);
+		Assert.Null(_b.Vault.SyncKeys);
+
+		await Restore(_b, _bAccount).JoinWithPasswordAsync(madeUp, Strong, Ct);
+
+		_bAccount.CheckPassword(Strong);
+		Assert.Throws<AccountException>(() => _bAccount.CheckPassword(madeUp));
+		Assert.Equal("bea", _bAccount.State().Profile!.Username);
+		Assert.Equal(_pcs.A.Vault.VaultId, _b.Vault.VaultId);
+		Assert.NotNull(_b.Vault.SyncKeys);
+	}
+
+	[Fact]
 	public async Task APasswordRestoreOnThePcThatTurnedSyncOnKeepsItsRecoveryKeyAndWhetherItWasSaved()
 	{
 		var recovery = await TurnOnAWithALoginAsync();
