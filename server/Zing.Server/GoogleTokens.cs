@@ -8,7 +8,8 @@ namespace Zing.Server;
 
 public sealed class InvalidIdTokenException(string message, Exception? inner = null) : Exception(message, inner);
 
-public sealed record GoogleIdentity(string Sub);
+/// <param name="IssuedAt">When Google issued the token: how recently the person signed in.</param>
+public sealed record GoogleIdentity(string Sub, DateTimeOffset IssuedAt);
 
 public interface IGoogleTokenValidator
 {
@@ -180,7 +181,7 @@ public sealed class GoogleTokenValidator(ISigningKeySource keys, string clientId
 		{
 			throw new InvalidIdTokenException("ID token email is not verified.");
 		}
-		return new GoogleIdentity(token.Subject);
+		return new GoogleIdentity(token.Subject, new DateTimeOffset(DateTime.SpecifyKind(token.IssuedAt, DateTimeKind.Utc)));
 	}
 
 	private bool WithinLifetime(DateTime? notBefore, DateTime? expires, SecurityToken token, TokenValidationParameters parameters)

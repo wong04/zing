@@ -41,6 +41,18 @@
 			"args": 4
 		},
 		{
+			"channel": "account:start-over",
+			"args": 0
+		},
+		{
+			"channel": "account:start-over-deleting-sync",
+			"args": 0
+		},
+		{
+			"channel": "account:start-over-plan",
+			"args": 0
+		},
+		{
 			"channel": "account:update-profile",
 			"args": 2
 		},

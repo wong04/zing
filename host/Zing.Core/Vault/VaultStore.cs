@@ -626,6 +626,34 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 		SyncChanged?.Invoke();
 	}
 
+	/// <summary>
+	/// Start over, for a forgotten Zing password (no Hello, nothing is read): every login and never-save mark, the keys and the sync
+	/// files are deleted, and the store stays open as a new, empty vault with no keys. Sync must be turned off first
+	/// (SyncKeys.TurnOffAsync), so nothing is left signed in. vault.zing goes first and keys.bin last.
+	/// </summary>
+	public void Erase()
+	{
+		lock (_gate)
+		{
+			RequireOpen();
+			if (_keys is { Sync: not null } or { PendingSync: not null } || _syncAccount is not null) throw new InvalidOperationException("Turn off sync before erasing the vault");
+			WipeHeldKey();
+			File.Delete(VaultFile);
+			File.Delete(SyncFile);
+			File.Delete(KeysFile);
+			_records.Clear();
+			_bases.Clear();
+			_basesUser = null;
+			_queued.Clear();
+			_syncSignedOut = false;
+			_progress = null;
+			_summaries.Clear();
+			_keys = null;
+		}
+		Changed?.Invoke();
+		SyncChanged?.Invoke();
+	}
+
 	/// <summary>What turning on sync stored in keys.bin; null before. No Hello.</summary>
 	public VaultSyncKeys? SyncKeys
 	{

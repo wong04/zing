@@ -20,6 +20,7 @@ import type {
 	SettingsCategoryId,
 	ShellMenuKind,
 	ShellState,
+	StartOverPlan,
 	ToolPanelsState,
 } from './shell/shellState'
 
@@ -443,6 +444,20 @@ export interface InvokeContract {
 	 * change nothing.
 	 */
 	'account:change-password': { args: [current: string, next: string]; result: AccountOutcome }
+	/** What Start over can offer: `syncs` when this PC turned sync on or is signed in to it, so the sync account can be deleted too. */
+	'account:start-over-plan': { args: []; result: StartOverPlan }
+	/**
+	 * "Forgot your password? Start over" at the gate: turns sync off here (signed out, keys forgotten), deletes every password saved
+	 * in the vault and this PC's account. The server's copy stays. Rejects with StartOverVaultUnreadableException, deleting nothing.
+	 */
+	'account:start-over': { args: []; result: AccountOutcome }
+	/**
+	 * Start over, deleting the sync account too: Google's sign-in, made for this, proves the account is the person's; the server then
+	 * deletes its keys, items and sign-ins, and this PC is erased as account:start-over does. null when the sign-in was cancelled, and
+	 * nothing was deleted. Rejects with SyncDeleteWithAnotherGoogleAccountException (signed in as another Google account),
+	 * StartOverNoSyncAccountException or SyncNotSetUpException.
+	 */
+	'account:start-over-deleting-sync': { args: []; result: AccountOutcome | null }
 	/** Whether the vault is on, whether Windows Hello is set up, and how many logins it holds. Asks nothing. */
 	'vault:get': { args: []; result: VaultState }
 	/** Every login without its password, those in Recently deleted included. Never asks Windows Hello. Rejects (VaultOffException) while the vault is off. */
@@ -739,6 +754,9 @@ export interface ZingApi {
 	setRequirePassword(required: boolean): Promise<AccountOutcome>
 	deleteAccount(): Promise<AccountOutcome>
 	changePassword(current: string, next: string): Promise<AccountOutcome>
+	startOverPlan(): Promise<StartOverPlan>
+	startOver(): Promise<AccountOutcome>
+	startOverDeletingSync(): Promise<AccountOutcome | null>
 	listEngines(): Promise<EngineInfo[]>
 	ensureEngine(id: string): Promise<EnsureOutcome>
 	cancelEngine(id: string): Promise<void>

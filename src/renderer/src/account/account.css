@@ -80,8 +80,16 @@
 
 .auth-links {
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: center;
-	gap: 14px;
+	gap: 6px 14px;
+}
+
+.auth-start-over-sync {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	font-size: 12px;
 }
 
 .auth-fine {

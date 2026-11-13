@@ -388,6 +388,9 @@ public sealed class ChromeApi : IDisposable
 			return app.Account.Run(app.Account.DeleteAccount);
 		});
 		bridge.Register("account:change-password", async args => await ChangeAccountPasswordAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("account:start-over-plan", _ => new { syncs = StartOverSyncs() });
+		bridge.Register("account:start-over", async _ => await StartOverAsync());
+		bridge.Register("account:start-over-deleting-sync", async _ => await StartOverDeletingSyncAsync());
 		bridge.Register("chrome:app-menu", args => Do(() => Menu(Menus.App(id => Run(id)), args, 0)));
 		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Saved, Text(args, 0), host.Shell), args, 1)));
 		bridge.Register("library:folder-menu", args => Do(() => Menu(Menus.LibraryFolder(app.Library, Text(args, 0), id => OpenLibraryItem(id, "current"), OpenAll), args, 1)));
@@ -1255,6 +1258,56 @@ public sealed class ChromeApi : IDisposable
 		if (_app.Vaults.Unreadable) throw new SyncIsOnWithTheVaultUnreadableException();
 		if (_app.Vaults.Current is null) throw new SyncIsOnWithTheVaultOffException();
 		throw new SyncIsOnException();
+	}
+
+	/// <summary>Whether Start over can offer to delete the sync account: this PC turned sync on, or is signed in to it.</summary>
+	private bool StartOverSyncs() => _app.Vaults.Current is { } vault ? StartOver.SyncedUser(vault) is not null : _app.Vaults.SyncOnDisk;
+
+	/// <summary>
+	/// Start over erases the vault through its store, so one that's off is turned on for it and off again after, whatever happens.
+	/// One that can't be read is left as it is (it may hold the only copy), and so nothing is deleted.
+	/// </summary>
+	private async Task<T> WithVaultToEraseAsync<T>(Func<VaultStore, Task<T>> work)
+	{
+		if (_app.Vaults.Unreadable) throw new StartOverVaultUnreadableException();
+		if (_app.Vaults.Current is { } open) return await work(open);
+		_app.Settings.Set("passwordAutofill", true);
+		try
+		{
+			if (_app.Vaults.Unreadable) throw new StartOverVaultUnreadableException();
+			return await work(Vault());
+		}
+		finally
+		{
+			_app.Settings.Set("passwordAutofill", false);
+		}
+	}
+
+	/// <summary>"Forgot your password? Start over" at the gate: this PC's account and vault go (StartOver); the server's copy stays.</summary>
+	private Task<AccountOutcome> StartOverAsync() => WithVaultToEraseAsync(async vault =>
+	{
+		await StartOver.EraseThisPcAsync(_app.Account, vault, _app.SyncClients?.For(vault), _closing.Token);
+		return AccountOutcome.Ok(_app.Account.State());
+	});
+
+	/// <summary>
+	/// Start over, deleting the sync account too: Google's sign-in, made for this, proves the account is the person's, and the server
+	/// deletes everything it syncs before anything here goes. A cancelled sign-in answers null and deletes nothing.
+	/// </summary>
+	private async Task<object?> StartOverDeletingSyncAsync()
+	{
+		var setup = _app.Sync ?? throw new SyncNotSetUpException();
+		return await WithVaultToEraseAsync(async vault =>
+		{
+			var user = StartOver.SyncedUser(vault) ?? throw new StartOverNoSyncAccountException();
+			var client = SyncClient(vault);
+			return await WithGoogleSignInAsync(setup, async (idToken, cancellation) =>
+			{
+				await client.DeleteServerAccountAsync(idToken, user, cancellation);
+				await StartOver.EraseThisPcAsync(_app.Account, vault, client, cancellation);
+				return AccountOutcome.Ok(_app.Account.State());
+			}, () => null);
+		});
 	}
 
 	/// <summary>

@@ -5,6 +5,7 @@ import { InfoBanner, PillButton, PillField } from '../components'
 import { LockIcon, MailIcon, PersonIcon, TextIcon } from '../components/icons'
 import { SyncRestore, type RestoreWith } from '../settings/SyncRestore'
 import { messageOf, useSyncState } from '../settings/SyncSetup'
+import { StartOver } from './StartOver'
 import { initials } from './useAccount'
 import './account.css'
 
@@ -17,6 +18,7 @@ type Mode = 'signIn' | 'signUp'
 export function AuthView({ account }: { account: AccountState }) {
 	const { sync } = useSyncState()
 	const [restoring, setRestoring] = useState<RestoreWith>()
+	const [startingOver, setStartingOver] = useState(false)
 	const [mode, setMode] = useState<Mode>(account.hasAccount ? 'signIn' : 'signUp')
 	const [username, setUsername] = useState('')
 	const [displayName, setDisplayName] = useState('')
@@ -64,6 +66,13 @@ export function AuthView({ account }: { account: AccountState }) {
 	}
 
 	if (restoring) return <SyncRestore start={restoring} onBack={() => setRestoring(undefined)} />
+	if (startingOver) return <StartOver onBack={() => setStartingOver(false)} />
+
+	const startOverLink = (
+		<PillButton variant="ghost" size="small" onClick={() => setStartingOver(true)}>
+			Forgot your password? Start over
+		</PillButton>
+	)
 
 	if (resetting && syncOn) {
 		return (
@@ -83,6 +92,7 @@ export function AuthView({ account }: { account: AccountState }) {
 					<PillButton size="large" onClick={() => setRestoring('recoveryKey')}>
 						Use recovery key
 					</PillButton>
+					<div className="auth-links">{startOverLink}</div>
 				</div>
 			</div>
 		)
@@ -155,6 +165,7 @@ export function AuthView({ account }: { account: AccountState }) {
 							Forgot password?
 						</PillButton>
 					) : null}
+					{account.hasAccount && mode === 'signIn' ? startOverLink : null}
 					<PillButton variant="ghost" size="small" onClick={() => setRestoring('password')}>
 						Restore from sync
 					</PillButton>
