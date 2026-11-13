@@ -232,6 +232,18 @@ public sealed class ZingApp
 		if (window == Primary) _session?.Changed();
 	}
 
+	/// <summary>
+	/// Called as a window starts closing, before its pages go. When it is the last one and Zing is quitting (not rebuilding
+	/// its engine), what must reach disk is written now and the profile is given up: a launch from here on starts a new
+	/// Zing, which reads what was just written, instead of being handed to this one as it closes.
+	/// </summary>
+	public void Quitting(MainWindow window)
+	{
+		if (_rebuild is not null || _windows.Count != 1 || _windows[0] != window) return;
+		foreach (var flush in _onQuit) flush();
+		SingleInstance.Release();
+	}
+
 	public void Closed(MainWindow window)
 	{
 		var wasPrimary = window == Primary;
@@ -249,7 +261,6 @@ public sealed class ZingApp
 			if (rebuild.Exited) Rebuild();
 			return;
 		}
-		foreach (var flush in _onQuit) flush();
 		Updates.Quitting();
 		Native.PostQuitMessage(0);
 	}
@@ -321,7 +332,7 @@ public sealed class ZingApp
 		if (openedAccount.Problem is { } accountProblem) StartupProblem("account", "your Zing account", "without it", accountProblem);
 		var account = openedAccount.Value;
 		var engines = OpenEngines();
-		// Reached only by the Zing that owns this profile (the single-instance check came first), so what is in the folder is a dead Zing's.
+		// Reached only by the Zing that owns this profile (the single-instance check came first), so what is in the folder is a dead Zing's, or a quitting one's, which gave the profile up first (Quitting); the pid check keeps the latter's.
 		Zing.Core.Viewer.ViewerFiles.SweepLeftovers(AppPaths.ViewerCopies, Zing.Core.Viewer.ViewerFiles.IsZingRunning, (what, error) => TestHooks.Record(what, error));
 		// HTML to PDF needs no engine, so its print folders are swept whether or not the engines folder opened.
 		HtmlPdfPrinter.SweepLeftovers();
@@ -466,6 +477,8 @@ public sealed class ZingApp
 		options.CustomSchemeRegistrations = new List<CoreWebView2CustomSchemeRegistration> { new(StartPage.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true }, new(Zing.Core.Net.RelayedContent.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true } };
 		// The engine's own data; an e2e run keeps it in its scratch profile, so a relaunch finds it and nothing is left in AppData.
 		var userData = TestHooks.IsEndToEndRun ? Path.Combine(AppPaths.UserData, "WebView2") : Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Zing", "WebView2");
+		// A Zing that is still quitting gave up the profile before its engine went.
+		await EngineFolder.WaitUntilFreeAsync(userData, EngineFolder.Patience);
 		return await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, options);
 	}
 }

@@ -16,6 +16,12 @@ public sealed class ProfileOwner
 	// Held, not read: closing the mutex would give up the profile.
 	private readonly Mutex _mutex;
 
+	// The listener's pipe while it waits, so Release can close it from the owning thread; 1 once released.
+	private NamedPipeServerStream? _pipe;
+	private int _released;
+
+	private bool Released => Volatile.Read(ref _released) == 1;
+
 	private ProfileOwner(string key, Mutex mutex)
 	{
 		_key = key;
@@ -39,22 +45,54 @@ public sealed class ProfileOwner
 		return null;
 	}
 
-	/// <summary>Calls <paramref name="onLaunch"/> with each later launch's command line until cancelled.</summary>
+	/// <summary>Calls <paramref name="onLaunch"/> with each later launch's command line until cancelled, or until the profile is released.</summary>
 	public async Task ListenAsync(Action<IReadOnlyList<string>> onLaunch, Action<Exception> onBrokenMessage, CancellationToken cancel = default)
 	{
-		while (true)
+		while (!Released)
 		{
-			await using var pipe = new NamedPipeServerStream(PipeName(_key), PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-			await pipe.WaitForConnectionAsync(cancel);
+			NamedPipeServerStream pipe;
 			try
 			{
-				onLaunch(await JsonSerializer.DeserializeAsync<string[]>(pipe, cancellationToken: cancel) ?? throw new JsonException("The message was null."));
+				pipe = new NamedPipeServerStream(PipeName(_key), PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 			}
-			catch (JsonException broken)
+			// The next owner already has the pipe's name.
+			catch (IOException) when (Released)
 			{
-				onBrokenMessage(broken);
+				return;
+			}
+			await using (pipe)
+			{
+				Interlocked.Exchange(ref _pipe, pipe);
+				// Release may have run before the pipe was published, and so not closed it.
+				if (Released) return;
+				try
+				{
+					await pipe.WaitForConnectionAsync(cancel);
+					onLaunch(await JsonSerializer.DeserializeAsync<string[]>(pipe, cancellationToken: cancel) ?? throw new JsonException("The message was null."));
+				}
+				catch (JsonException broken)
+				{
+					onBrokenMessage(broken);
+				}
+				catch (Exception closed) when (closed is ObjectDisposedException or IOException && Released)
+				{
+					return;
+				}
 			}
 		}
+	}
+
+	/// <summary>
+	/// Gives up the profile while this process goes on (quitting), so a launch from now on becomes the owner instead of
+	/// being handed to a Zing that is closing. The listener stops first, so a launch that has already found this owner
+	/// busy waits in HandOver for the next one's pipe. Call it on the thread that claimed the profile, which owns the mutex.
+	/// </summary>
+	public void Release()
+	{
+		if (Interlocked.Exchange(ref _released, 1) == 1) return;
+		Interlocked.Exchange(ref _pipe, null)?.Dispose();
+		_mutex.ReleaseMutex();
+		_mutex.Dispose();
 	}
 
 	/// <summary>Gives this launch's command line to the owner, waiting for it to reach ListenAsync. Throws TimeoutException if it never does.</summary>

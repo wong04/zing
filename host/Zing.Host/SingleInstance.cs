@@ -29,6 +29,9 @@ public static class SingleInstance
 		return true;
 	}
 
+	/// <summary>Zing is quitting: a launch from now on starts a new Zing. On the UI thread, which claimed the profile.</summary>
+	public static void Release() => (_owner ?? throw new InvalidOperationException("Release needs RedirectedToRunningZing to have claimed the profile.")).Release();
+
 	/// <summary>Calls back on the UI thread with each later launch's command line.</summary>
 	public static void Listen(Action<IReadOnlyList<string>> onSecondLaunch)
 	{
