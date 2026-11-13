@@ -11,20 +11,24 @@ public static class Program
 	[STAThread]
 	public static void Main()
 	{
+		StartupMarks.Mark("main");
 		Installation.Run();
 		TestHooks.RecordUnhandledErrors();
 		ComWrappersSupport.InitializeComWrappers();
 		if (SingleInstance.RedirectedToRunningZing()) return;
+		StartupMarks.Mark("profile claimed");
 		// Without Edge's WebView2 runtime there is nothing to draw with, not even a notice.
 		if (!EngineRuntime.IsInstalled())
 		{
 			EngineRuntime.ReportMissing();
 			return;
 		}
+		StartupMarks.Mark("runtime found");
 		// The UI thread's dispatcher; without its context every await on the UI thread resumes on the
 		// thread pool, where WebView2 calls fail (RPC_E_WRONG_THREAD).
 		var dispatcher = Microsoft.UI.Dispatching.DispatcherQueueController.CreateOnCurrentThread();
 		SynchronizationContext.SetSynchronizationContext(new Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext(dispatcher.DispatcherQueue));
+		StartupMarks.Mark("dispatcher");
 		try
 		{
 			new ZingApp().Launch();
@@ -90,10 +94,16 @@ public sealed class ZingApp
 		_dispatcher = dispatcher;
 		// Debounced saves run on the UI thread, where the stores they read are edited; none of them lock.
 		_scheduler = new DispatcherScheduler(dispatcher);
-		_services = OpenServices();
+		var settings = OpenSettings();
+		StartupMarks.Mark("settings read");
 		// Any view can be the first to learn the engine's browser process died; the rebuild runs after its event returns.
 		EngineFailures.BrowserLost += () => Faults.Enqueue(dispatcher, LoseEngine, "engine rebuild");
-		_environment = OpenEnvironmentAsync();
+		// The engine needs only a setting, so its browser process starts now and the rest of the services open while it does.
+		// Its continuation runs after Launch returns, by which time the services exist.
+		_environment = OpenEnvironmentAsync(Flag(settings, "acceleratedCanvas"));
+		StartupMarks.Mark("engine requested");
+		_services = OpenServices(settings);
+		StartupMarks.Mark("services open");
 		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => Primary?.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : [], _scheduler, e => TestHooks.Record("session write", e));
 		_onQuit.Add(_session.Flush);
 		_updates = OpenUpdates();
@@ -111,6 +121,7 @@ public sealed class ZingApp
 		SingleInstance.Listen(OnSecondLaunch);
 		_taskbar = new TaskbarIcon(dispatcher);
 		NewWindow();
+		StartupMarks.Mark("window created");
 	}
 
 	/// <summary>The window used last; links from other apps open there.</summary>
@@ -294,24 +305,29 @@ public sealed class ZingApp
 		foreach (var window in Enumerable.Reverse(_windows.ToList())) window.CloseWindow();
 	}
 
-	private AppServices OpenServices()
+	/// <summary>Names a quarantined file; the e2e clock keeps it deterministic.</summary>
+	private static DateTime Stamp() => DateTimeOffset.FromUnixTimeMilliseconds(TestHooks.Clock.Now()).LocalDateTime;
+
+	private SettingsStore OpenSettings()
+	{
+		var scheduler = _scheduler ?? throw new InvalidOperationException("Launch creates the scheduler first");
+		var loadedSettings = JsonFiles.LoadSettingsOrRecover(AppPaths.Settings, Stamp());
+		if (loadedSettings.Problem is { } settingsProblem) StartupProblem("settings", "your settings", "with the defaults", settingsProblem);
+		var settings = new SettingsStore(loadedSettings.Value);
+		// A file that couldn't be read is still there and may be fine, so this launch's changes don't overwrite it.
+		if (loadedSettings.Problem is { OriginalInPlace: true }) return settings;
+		var settingsWriter = new DebouncedJsonWriter(AppPaths.Settings, TimeSpan.FromMilliseconds(500), scheduler, e => TestHooks.Record("settings write", e));
+		settings.Subscribe((s, _) => settingsWriter.Write(Settings.Changed(s)));
+		_onQuit.Add(settingsWriter.Flush);
+		return settings;
+	}
+
+	private AppServices OpenServices(SettingsStore settings)
 	{
 		var clock = TestHooks.Clock;
 		long Now() => clock.Now();
 		var scheduler = _scheduler ?? throw new InvalidOperationException("Launch creates the scheduler first");
-		// Names a quarantined file; the e2e clock keeps it deterministic.
-		var stamp = DateTimeOffset.FromUnixTimeMilliseconds(Now()).LocalDateTime;
-		var loadedSettings = JsonFiles.LoadSettingsOrRecover(AppPaths.Settings, stamp);
-		if (loadedSettings.Problem is { } settingsProblem) StartupProblem("settings", "your settings", "with the defaults", settingsProblem);
-		var settings = new SettingsStore(loadedSettings.Value);
-		// A file that couldn't be read is still there and may be fine, so this launch's changes don't overwrite it.
-		if (loadedSettings.Problem is not { OriginalInPlace: true })
-		{
-			var settingsWriter = new DebouncedJsonWriter(AppPaths.Settings, TimeSpan.FromMilliseconds(500), scheduler, e => TestHooks.Record("settings write", e));
-			settings.Subscribe((s, _) => settingsWriter.Write(Settings.Changed(s)));
-			_onQuit.Add(settingsWriter.Flush);
-		}
-
+		var stamp = Stamp();
 		DebouncedJsonWriter? libraryWriter = null;
 		string? libraryPath = null;
 		var openedLibrary = LibraryStore.Open(AppPaths.Library, path =>
@@ -427,9 +443,10 @@ public sealed class ZingApp
 	}
 
 	/// <summary>Opens the engine and listens to it: a browser process that dies, and a runtime update waiting for the next launch.</summary>
-	private async Task<CoreWebView2Environment> OpenEnvironmentAsync()
+	private async Task<CoreWebView2Environment> OpenEnvironmentAsync(bool acceleratedCanvas)
 	{
-		var environment = await CreateEnvironmentAsync(Flag("acceleratedCanvas"));
+		var environment = await CreateEnvironmentAsync(acceleratedCanvas);
+		StartupMarks.Mark("engine ready");
 		environment.BrowserProcessExited += OnBrowserProcessExited;
 		environment.NewBrowserVersionAvailable += OnNewBrowserVersionAvailable;
 		return environment;
@@ -487,14 +504,16 @@ public sealed class ZingApp
 		_rebuild = null;
 		rebuild.Deadline?.Dispose();
 		_pendingRestore = rebuild.Tabs;
-		_environment = OpenEnvironmentAsync();
+		_environment = OpenEnvironmentAsync(Flag("acceleratedCanvas"));
 		_startupNotices.Add("Zing's web engine stopped unexpectedly, so Zing restarted it.");
 		NewWindow();
 	}
 
 	private CoreWebView2? AnyLivePage() => _windows.Select(w => w.AnyLivePage()).FirstOrDefault(core => core is not null);
 
-	private bool Flag(string key) => Services.Settings.Get(key)?.GetValue<bool>() ?? throw new InvalidDataException($"Setting {key} is missing");
+	private bool Flag(string key) => Flag(Services.Settings, key);
+
+	private static bool Flag(SettingsStore settings, string key) => settings.Get(key)?.GetValue<bool>() ?? throw new InvalidDataException($"Setting {key} is missing");
 
 	/// <param name="acceleratedCanvas">The acceleratedCanvas setting; like Electron's, it applies from the next launch.</param>
 	private static async Task<CoreWebView2Environment> CreateEnvironmentAsync(bool acceleratedCanvas)

@@ -27,8 +27,10 @@ Invoke-Step 'npm run gen:notices' { npm run gen:notices }
 if (Test-Path $publish) {
 	Remove-Item -Recurse -Force $publish
 }
+# ReadyToRun: the host's code (and the WinRT projections, which aren't precompiled) ships compiled, so start-up doesn't JIT
+# it on the way to the first paint. About 300 ms off a relaunch's first paint, for about 54 MB more installed (15 MB in the package).
 Invoke-Step 'dotnet publish' {
-	dotnet publish host/Zing.Host -c Release -r win-x64 --self-contained "-p:Version=$Version" -p:ZingRendererFolder=renderer -o $publish
+	dotnet publish host/Zing.Host -c Release -r win-x64 --self-contained -p:PublishReadyToRun=true "-p:Version=$Version" -p:ZingRendererFolder=renderer -o $publish
 }
 Copy-Item -Recurse out/renderer "$publish/renderer"
 
