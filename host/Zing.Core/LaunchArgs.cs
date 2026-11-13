@@ -59,7 +59,7 @@ public enum LaunchFileKind
 	Html,
 }
 
-/// <summary>A file Windows asked Zing to open. A PDF opens in the Files viewer; an HTML file in a tab at its file: address.</summary>
+/// <summary>A file Windows asked Zing to open, in a tab at its file: address.</summary>
 public sealed record LaunchFile(string Path, LaunchFileKind Kind)
 {
 	public string Address => new Uri(Path).AbsoluteUri;
