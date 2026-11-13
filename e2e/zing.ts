@@ -9,7 +9,7 @@ import { test as base, chromium, expect, type Browser, type Page, type TestInfo 
 const ROOT = join(import.meta.dirname, '..')
 export const HOST_EXE = join(ROOT, 'host', 'Zing.Host', 'bin', 'Release', 'net9.0-windows10.0.26100.0', 'win-x64', 'Zing.exe')
 export const BUILT_RENDERER = join(ROOT, 'out', 'renderer')
-const CHROME_URL = 'https://app.zing/index.html#chrome'
+export const CHROME_URL = 'https://app.zing/index.html#chrome'
 
 export class HostProcessError extends Error {
 	override name = 'HostProcessError'
@@ -334,6 +334,8 @@ ${hostLogs(errors, userData)}`)
 }
 
 export interface BareZing {
+	/** Zing.exe's process id, to read its process tree's memory. */
+	readonly pid: number
 	/** The URLs of every view, in no order. */
 	urls(): Promise<string[]>
 	/** Evaluates an expression in every view whose URL matches, in no order. */
@@ -346,10 +348,12 @@ export interface BareZing {
  * scheme on every view it attaches to, and clearing that also clears the host's own override, so what a
  * view gets from the host when it starts can only be seen without it.
  */
-export async function launchBare(userDataDir: string): Promise<BareZing> {
+export async function launchBare(userDataDir: string, env: Readonly<Record<string, string>> = {}): Promise<BareZing> {
+	const overridden = Object.keys(env).filter((key) => PROTECTED.includes(key.toUpperCase()))
+	if (overridden.length > 0) throw new HostProcessError(`launchBare sets ${overridden.join(', ')} itself; a test can't override it`)
 	const port = await freePort()
 	const errors = join(scratchDir('zing-host-e2e-'), 'errors.log')
-	const host = spawn(HOST_EXE, [], { env: hostEnvironment(port, errors, userDataDir), stdio: 'ignore' })
+	const host = spawn(HOST_EXE, [], { env: { ...hostEnvironment(port, errors, userDataDir), ...env }, stdio: 'ignore' })
 	const self: Running = { host, exit: exitOf(host), errors, userData: userDataDir }
 	running.add(self)
 	const targets = async () => {
@@ -358,6 +362,7 @@ export async function launchBare(userDataDir: string): Promise<BareZing> {
 		return all.filter((target) => target.type === 'page')
 	}
 	const bare: BareZing = {
+		pid: host.pid!,
 		urls: async () => (await targets()).map((target) => target.url),
 		evaluate: async (match, expression) => Promise.all((await targets()).filter((target) => match(target.url)).map((target) => evaluateOver(target.webSocketDebuggerUrl, expression))),
 		close: async () => {
@@ -369,6 +374,10 @@ export async function launchBare(userDataDir: string): Promise<BareZing> {
 	}
 	await expect
 		.poll(async () => (await targets().catch(() => [])).some((target) => target.url === CHROME_URL), { timeout: LAUNCH_TIMEOUT })
+		.toBe(true)
+	// The chrome's address comes before its bridge: a test's first call would find no zing.
+	await expect
+		.poll(async () => (await bare.evaluate((url) => url === CHROME_URL, 'typeof zing').catch((): unknown[] => [])).includes('object'), { timeout: LAUNCH_TIMEOUT })
 		.toBe(true)
 	return bare
 }
@@ -459,6 +468,10 @@ export interface Layer {
 	readonly depth: number
 	/** Whether the window's keyboard focus is in this view (Win32 focus on the window's thread, which an off-screen window keeps too). */
 	readonly keyboard: boolean
+	/** Whether the engine has frozen the view's renderer (TrySuspendAsync). */
+	readonly suspended: boolean
+	/** Whether the view's memory target is Low, as for a hidden tab. */
+	readonly lowMemory: boolean
 }
 
 /** What the window really shows, bottom to top (TestHooks "layers"); page-side visibility doesn't follow a hidden view. */

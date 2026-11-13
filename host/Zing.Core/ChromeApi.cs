@@ -1885,6 +1885,8 @@ internal sealed class LifecycleTabs(TabService tabs, TabOverview overview) : ILi
 	public Task<string?> CaptureThumbnailAsync(string id) => Task.FromResult(overview.Thumbnail(id));
 
 	public void Sleep(string id) => tabs.Sleep(id);
+	public bool IsSuspended(string id) => tabs.PageOf(id)?.IsSuspended ?? false;
+	public Task<bool> SuspendAsync(string id) => tabs.PageOf(id)?.TrySuspendAsync() ?? Task.FromResult(false);
 	public void Close(string id) => tabs.Close(id);
 }
 

@@ -88,8 +88,28 @@ public static class SleepRules
 		return waiting.Min(t => t.LastActiveAt + IdleMs(settings));
 	}
 
+	/// <summary>
+	/// When a sweep should next run: now if a tab not <paramref name="held"/> is due, the soonest tab to become due, or a
+	/// retry for tabs held awake by audio, unsaved input or a refusal, which have no event that says "now safe".
+	/// </summary>
+	public static SweepTarget SweepTarget(IReadOnlyList<SleepCandidate> candidates, long now, SleepSettings settings, IReadOnlySet<string> held, long? retryAt)
+	{
+		var blocked = held.Count > 0 || candidates.Any(c => KeepAwake(c, now, settings) == KeepAwakeReason.PlayingAudio);
+		long? retry = blocked ? retryAt ?? now + TabSleeper.RetryMs : null;
+		// NextSleepCheck only looks ahead; a tab already past its idle time (the clock jumped, or the
+		// machine slept) is due now.
+		var due = TabsToSleep(candidates, now, settings).Any(id => !held.Contains(id));
+		var targets = new[] { due ? now : (long?)null, NextSleepCheck(candidates, now, settings), retry }
+			.OfType<long>()
+			.ToList();
+		return new SweepTarget(targets.Count == 0 ? null : targets.Min(), retry);
+	}
+
 	private static long IdleMs(SleepSettings settings) => (long)(settings.AfterMinutes * MinuteMs);
 }
+
+/// <summary>When a sweep is next due (null: never), and the retry time for held tabs it carries forward.</summary>
+public readonly record struct SweepTarget(long? At, long? RetryAt);
 
 /// <summary>What the page reports just before it sleeps (src/shared/session/pageProbe.ts).</summary>
 public sealed record PageProbe(double ScrollY, bool Dirty)
@@ -290,32 +310,24 @@ public sealed class TabSleeper
 	private List<SleepCandidate> Candidates() =>
 		_tabs.Records
 			.Where(t => _tabs.HasPage(t.Id))
-			.Select(t => new SleepCandidate(
-				t.Id,
-				t.LastActiveAt,
-				t.Pinned,
-				t.Id == _tabs.ActiveId,
-				VisibleInSplit: t.Id != _tabs.ActiveId && _tabs.IsShown(t.Id),
-				_tabs.IsAudible(t.Id),
-				HasUnsavedForm: false,
-				Asleep: false))
+			.Select(t => CandidateOf(_tabs, t))
 			.ToList();
+
+	internal static SleepCandidate CandidateOf(ILifecycleTabs tabs, TabRecord t) => new(
+		t.Id,
+		t.LastActiveAt,
+		t.Pinned,
+		t.Id == tabs.ActiveId,
+		VisibleInSplit: t.Id != tabs.ActiveId && tabs.IsShown(t.Id),
+		tabs.IsAudible(t.Id),
+		HasUnsavedForm: false,
+		Asleep: false);
 
 	private long? NextTarget()
 	{
-		var settings = _settings();
-		var now = _clock.Now();
-		var candidates = Candidates();
-		var blocked = _held.Count > 0 || candidates.Any(c => SleepRules.KeepAwake(c, now, settings) == KeepAwakeReason.PlayingAudio);
-		if (!blocked) _retryAt = null;
-		else _retryAt ??= now + RetryMs;
-		// NextSleepCheck only looks ahead; a tab already past its idle time (the clock jumped, or the
-		// machine slept) is due now.
-		var due = SleepRules.TabsToSleep(candidates, now, settings).Any(id => !_held.Contains(id));
-		var targets = new[] { due ? now : (long?)null, SleepRules.NextSleepCheck(candidates, now, settings), _retryAt }
-			.OfType<long>()
-			.ToList();
-		return targets.Count == 0 ? null : targets.Min();
+		var target = SleepRules.SweepTarget(Candidates(), _clock.Now(), _settings(), _held, _retryAt);
+		_retryAt = target.RetryAt;
+		return target.At;
 	}
 
 	private void Prune()
@@ -326,4 +338,128 @@ public sealed class TabSleeper
 		foreach (var id in _thumbnails.Keys.Where(id => !open.Contains(id)).ToList()) _thumbnails.Remove(id);
 		_held.RemoveWhere(id => !open.Contains(id));
 	}
+}
+
+/// <summary>
+/// Suspends the renderer of a tab left hidden for a few minutes (WebView2's TrySuspendAsync), long before it sleeps:
+/// the page stays, so it comes back at once when shown. The tabs sleep spares are spared here too, and with sleeping
+/// off nothing is suspended.
+/// </summary>
+public sealed class TabSuspender
+{
+	public const double AfterMinutes = 5;
+
+	private readonly ILifecycleTabs _tabs;
+	private readonly Func<SleepSettings> _settings;
+	private readonly IClock _clock;
+	private readonly OneShotTimer _timer;
+	private readonly Action<Exception> _onError;
+	/// <summary>Tabs held awake last sweep by unsaved input, a page that couldn't be inspected, or the engine's refusal.</summary>
+	private readonly HashSet<string> _held = [];
+	private long? _retryAt;
+	private bool _sweeping;
+
+	public TabSuspender(ILifecycleTabs tabs, Func<SleepSettings> settings, IClock clock, IScheduler scheduler, Action<Exception> onError)
+	{
+		_tabs = tabs;
+		_settings = settings;
+		_clock = clock;
+		_onError = onError;
+		_timer = new OneShotTimer(clock, scheduler, OnTimer);
+	}
+
+	/// <summary>Recomputes the single wake-up. Cheap enough to call on every tab change.</summary>
+	public void Reschedule()
+	{
+		_held.RemoveWhere(id => !_tabs.HasPage(id));
+		if (_sweeping) return;
+		var target = SleepRules.SweepTarget(Candidates(), _clock.Now(), Settings(), _held, _retryAt);
+		_retryAt = target.RetryAt;
+		_timer.ArmAt(target.At);
+	}
+
+	public void Rearm()
+	{
+		_timer.Cancel();
+		Reschedule();
+	}
+
+	public void Cancel() => _timer.Cancel();
+
+	/// <summary>The sleep rules with the shorter wait. With sleep as soon or sooner nothing is suspended: the tab sleeps instead.</summary>
+	private SleepSettings Settings()
+	{
+		var settings = _settings();
+		if (settings.AfterMinutes <= AfterMinutes) return settings with { Enabled = false };
+		return settings with { AfterMinutes = AfterMinutes };
+	}
+
+	private void OnTimer() => _ = RunSweep();
+
+	private async Task RunSweep()
+	{
+		try
+		{
+			await Sweep();
+		}
+		catch (Exception error)
+		{
+			_onError(error);
+		}
+	}
+
+	private async Task Sweep()
+	{
+		_sweeping = true;
+		try
+		{
+			_retryAt = null;
+			_held.Clear();
+			foreach (var id in SleepRules.TabsToSleep(Candidates(), _clock.Now(), Settings()))
+			{
+				if (!await TrySuspend(id)) _held.Add(id);
+			}
+		}
+		finally
+		{
+			_sweeping = false;
+			Reschedule();
+		}
+	}
+
+	/// <summary>False when the tab stays running for a reason no event will clear, so it is looked at again after a while.</summary>
+	private async Task<bool> TrySuspend(string id)
+	{
+		var before = Find(id);
+		if (before is null || !_tabs.HasPage(id)) return true;
+		PageProbe probe;
+		try
+		{
+			probe = await _tabs.ProbeAsync(id);
+		}
+		catch (PageUnavailableException) when (Find(id) is null || !_tabs.HasPage(id))
+		{
+			return true;
+		}
+		catch (PageUnavailableException error)
+		{
+			_onError(error);
+			return false;
+		}
+		if (probe.Dirty) return false;
+		// The await let the person come back to the tab, or the page go; the reschedule after the sweep looks again.
+		var after = Find(id);
+		if (after is null || after.LastActiveAt != before.LastActiveAt) return true;
+		if (_tabs.IsShown(id) || !_tabs.HasPage(id) || _tabs.IsAudible(id)) return true;
+		return await _tabs.SuspendAsync(id);
+	}
+
+	private TabRecord? Find(string id) => _tabs.Records.FirstOrDefault(t => t.Id == id);
+
+	/// <summary>Tabs whose renderer runs: a suspended one is done, and one without a page is asleep or never loaded.</summary>
+	private List<SleepCandidate> Candidates() =>
+		_tabs.Records
+			.Where(t => _tabs.HasPage(t.Id) && !_tabs.IsSuspended(t.Id))
+			.Select(t => TabSleeper.CandidateOf(_tabs, t))
+			.ToList();
 }
