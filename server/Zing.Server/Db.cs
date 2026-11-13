@@ -102,6 +102,37 @@ public sealed class Db
 		return (string)(select.ExecuteScalar() ?? throw new InvalidOperationException("User row missing right after insert."));
 	}
 
+	public bool UserExists(string userId)
+	{
+		using var connection = Open();
+		using var select = Command(connection, "SELECT 1 FROM users WHERE user_id = $userId");
+		select.Parameters.AddWithValue("$userId", userId);
+		return select.ExecuteScalar() is not null;
+	}
+
+	/// <summary>
+	/// Everything the server holds for <paramref name="userId"/>: its keys, manifest and items, and every sign-in, in one transaction.
+	/// Only when that user is <paramref name="sub"/>'s; a user that's gone has nothing left to delete. A later sign-in with the same
+	/// Google account starts a new user.
+	/// </summary>
+	public DeleteOutcome DeleteUser(string sub, string userId)
+	{
+		using var connection = Open();
+		using var transaction = connection.BeginTransaction(deferred: false);
+		using var select = Command(connection, "SELECT sub FROM users WHERE user_id = $userId", transaction);
+		select.Parameters.AddWithValue("$userId", userId);
+		if (select.ExecuteScalar() is not string owner) return DeleteOutcome.NoSuchUser;
+		if (owner != sub) return DeleteOutcome.OtherUser;
+		foreach (var sql in new[] { "DELETE FROM items WHERE user_id = $userId", "DELETE FROM refresh_tokens WHERE user_id = $userId", "DELETE FROM users WHERE user_id = $userId" })
+		{
+			using var delete = Command(connection, sql, transaction);
+			delete.Parameters.AddWithValue("$userId", userId);
+			delete.ExecuteNonQuery();
+		}
+		transaction.Commit();
+		return DeleteOutcome.Deleted;
+	}
+
 	/// <summary>A sign-in's first refresh token, starting a new family: the chain of tokens that rotating it makes.</summary>
 	public void StoreRefresh(string hash, string userId)
 	{
@@ -231,6 +262,13 @@ public sealed class Db
 		using var command = Command(connection, sql, transaction);
 		command.ExecuteNonQuery();
 	}
+}
+
+public enum DeleteOutcome
+{
+	Deleted,
+	NoSuchUser,
+	OtherUser,
 }
 
 public static class Tokens

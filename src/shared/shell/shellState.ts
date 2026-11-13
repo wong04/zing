@@ -112,6 +112,12 @@ export type AccountErrorCode = (typeof ACCOUNT_ERROR_CODES)[number]
 
 export const MIN_PASSWORD_LENGTH = 8
 
+/** What Start over can offer at the gate (account:start-over-plan). */
+export interface StartOverPlan {
+	/** This PC turned sync on, or is signed in to it: the sync account can be deleted too. */
+	readonly syncs: boolean
+}
+
 export type AccountOutcome =
 	| { readonly status: 'ok'; readonly state: AccountState }
 	| { readonly status: 'rejected'; readonly code: AccountErrorCode; readonly message: string }

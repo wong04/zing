@@ -30,6 +30,8 @@ const RESTORE_SUBS = ['sub-e2e-restore', 'sub-e2e-recovery', 'sub-e2e-changed', 
 const TURN_OFF_SUB = 'sub-e2e-turn-off'
 // The Google sign-in window: Google's page in a small Zing window, and its redirect.
 const POPUP_SUB = 'sub-e2e-popup'
+// Start over, deleting the sync account too.
+const START_OVER_SUB = 'sub-e2e-start-over'
 
 let server: ChildProcess | undefined
 let serverUrl = ''
@@ -48,7 +50,7 @@ function serverEnvironment(): NodeJS.ProcessEnv {
 		ASPNETCORE_ENVIRONMENT: 'Staging',
 		ZING_SERVER_FAKE_GOOGLE: '1',
 		ZING_SESSION_KEY: randomBytes(32).toString('base64'),
-		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB, POPUP_SUB].join(','),
+		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB, POPUP_SUB, START_OVER_SUB].join(','),
 		ZING_DB_PATH: join(serverDir, 'zing.db'),
 		// Every PC of the run is 127.0.0.1, so one per-IP budget: the default 60 a minute is a production limit (its own tests cover it).
 		ZING_RATE_IP_PER_MINUTE: '1000',
@@ -638,4 +640,79 @@ test('an edit made on each PC while one was offline merges field by field, and a
 	await expect.poll(async () => (await summaryOf(again, bank))?.deletedAt != null, { timeout: 30_000, message: "B's sync didn't bring A's delete" }).toBe(true)
 	expect(await summaryOf(again, bank)).toMatchObject({ title: 'Edited on B', note: 'Note from A' })
 	await again.close()
+})
+
+// "Forgot your password? Start over." at the gate, for someone with no Zing password and no recovery key.
+
+const startOverForm = (gate: Page) => gate.getByRole('form', { name: 'Start over' })
+
+/** The gate's Start over, from the sign-in screen. */
+async function openStartOver(zing: Launched): Promise<Locator> {
+	expect((await zing.chrome.evaluate(() => window.zing.signOut())).status).toBe('ok')
+	const gate = await surfaceOf(zing)
+	await gate.getByRole('button', { name: 'Forgot your password? Start over' }).click()
+	return startOverForm(gate)
+}
+
+test('starting over without sync asks for the typed confirmation, then deletes the account and saved passwords, and a new account can be made', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(), env: syncEnv() })
+	await signUp(zing, 'forgotten-1')
+	await zing.chrome.evaluate(() => window.zing.saveLogin({ origin: 'https://bank.example.test', username: 'ada', password: 'bank-password', title: 'Bank', note: '' }))
+
+	const form = await openStartOver(zing)
+	await expect(form).toContainText('This deletes your Zing account on this PC and every password saved in Zing on this PC.')
+	await expect(form.getByRole('checkbox')).toHaveCount(0)
+	const start = form.getByRole('button', { name: 'Start over', exact: true })
+	await expect(start).toBeDisabled()
+	await form.getByLabel('Type START OVER to confirm').fill('start over')
+	await expect(start).toBeDisabled()
+	await form.getByLabel('Type START OVER to confirm').fill('START OVER')
+	await start.click()
+
+	const gate = await surfaceOf(zing)
+	await expect(gate.getByRole('heading', { name: 'Create your account' })).toBeVisible()
+	expect(await zing.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: false, signedIn: false })
+	expect(await titles(zing)).toEqual([])
+	expect(existsSync(keysFile(zing))).toBe(false)
+
+	await gate.getByLabel('Username').fill('ada2')
+	await gate.getByLabel('Password', { exact: true }).fill('remembered-1')
+	await gate.getByLabel('Confirm').fill('remembered-1')
+	await gate.getByRole('button', { name: 'Create Account' }).click()
+	await expect.poll(() => isGated(zing)).toBe(false)
+	expect(await zing.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: true, profile: { username: 'ada2' } })
+	await zing.close()
+})
+
+test('starting over can delete the sync account after a Google sign-in, and the same Google account then turns sync on from scratch', async () => {
+	test.setTimeout(240_000)
+	const sub = START_OVER_SUB
+	const { zing } = await turnOnWithLogins(sub)
+
+	const form = await openStartOver(zing)
+	await form.getByRole('checkbox').check()
+	await form.getByLabel('Type START OVER to confirm').fill('START OVER')
+	await form.getByRole('button', { name: 'Sign in with Google and start over' }).click()
+
+	const gate = await surfaceOf(zing)
+	await expect(gate.getByRole('heading', { name: 'Create your account' })).toBeVisible()
+	expect(await zing.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: false })
+	expect(existsSync(keysFile(zing))).toBe(false)
+	expect(await titles(zing)).toEqual([])
+	expect(await zing.chrome.evaluate(() => window.zing.getSyncState())).toMatchObject({ signedIn: false, on: false, keysHere: false })
+
+	await gate.getByLabel('Username').fill('ada')
+	await gate.getByLabel('Password', { exact: true }).fill(NEXT_STRONG)
+	await gate.getByLabel('Confirm').fill(NEXT_STRONG)
+	await gate.getByRole('button', { name: 'Create Account' }).click()
+	await expect.poll(() => isGated(zing)).toBe(false)
+
+	// The server kept nothing: Turn on sync uploads new keys over none, and shows a new recovery key.
+	const sheet = await openSync(zing)
+	await syncGroup(sheet).getByRole('button', { name: 'Turn on sync' }).click()
+	await expect(syncGroup(sheet)).toContainText(`Signed in as ${sub}@example.test.`)
+	await syncGroup(sheet).getByLabel('Zing password').fill(NEXT_STRONG)
+	await syncGroup(sheet).getByRole('form', { name: 'Turn on sync' }).getByRole('button', { name: 'Turn on sync' }).click()
+	await expect(recoveryScreen(sheet).getByLabel('Recovery key', { exact: true })).toHaveText(RECOVERY_KEY)
+	await zing.close()
 })

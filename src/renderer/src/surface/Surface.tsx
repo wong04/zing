@@ -23,7 +23,8 @@ export function Surface() {
 	const settings = useSettings()
 	const tabs = useTabsState()
 	if (!shell || !account) return null
-	if (shell.gated) return <AuthView account={account} />
+	// Keyed: an account made or deleted behind the gate (Start over) starts the gate afresh, in the mode that fits it.
+	if (shell.gated) return <AuthView key={String(account.hasAccount)} account={account} />
 	return (
 		<>
 			{shell.sidebarRevealed ? (

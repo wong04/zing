@@ -23,6 +23,10 @@ public sealed class SyncConflictException(VersionedBlob? current)
 /// <summary>A sync call with no account to call as: sign in first.</summary>
 public sealed class NotSignedInToSyncException() : Exception("Zing isn't signed in to sync on this PC. Sign in with Google first.");
 
+/// <summary>Deleting the sync account with a Google sign-in for another Google account than the one this PC syncs with: nothing was deleted.</summary>
+public sealed class SyncDeleteWithAnotherGoogleAccountException()
+	: Exception("That Google account isn't the one this PC syncs with, so nothing was deleted. Sign in with the Google account you turned sync on with.");
+
 /// <summary>A replaced sign-in's refresh token couldn't be revoked: it stays unused until it expires.</summary>
 public sealed class SyncRevokeFailedException(string message) : Exception(message);
 
@@ -171,6 +175,20 @@ public sealed class SyncClient : IDisposable
 		}
 		RevokeReplaced(replaced, account);
 		return account;
+	}
+
+	/// <summary>
+	/// Start over: the server deletes everything <paramref name="userId"/> syncs, its keys, items and sign-ins, proven by a Google sign-in
+	/// made just now (<paramref name="idToken"/>), not by a session this PC kept. Only the server's 204 counts: a server without the
+	/// endpoint answers 404, and then nothing was deleted.
+	/// </summary>
+	/// <exception cref="SyncDeleteWithAnotherGoogleAccountException">The sign-in was another Google account's.</exception>
+	public async Task DeleteServerAccountAsync(string idToken, string userId, CancellationToken cancellation = default)
+	{
+		using var timeout = Limit(cancellation, RequestTimeout);
+		using var response = await _http.PostAsJsonAsync("account/delete", new { idToken, userId }, SyncJson.Options, timeout.Token);
+		if (response.StatusCode == System.Net.HttpStatusCode.Conflict) throw new SyncDeleteWithAnotherGoogleAccountException();
+		await EnsureSuccess(response, "account/delete", cancellation);
 	}
 
 	/// <summary>

@@ -76,6 +76,8 @@ public static class SyncEndpoints
 		var context = invocation.HttpContext;
 		var sessions = context.RequestServices.GetRequiredService<SessionTokens>();
 		if (!sessions.TryValidate(context, out var userId)) return Results.Unauthorized();
+		// A session outlives a deleted account by up to its lifetime: it must not write rows for a user that's gone.
+		if (!context.RequestServices.GetRequiredService<Db>().UserExists(userId)) return Results.Unauthorized();
 		context.Items[UserKey] = userId;
 
 		try
