@@ -1,4 +1,4 @@
-import type { BookmarkImportOutcome } from '@shared/ipc'
+import type { BookmarkImportOutcome, ImportSourceView } from '@shared/ipc'
 
 const bookmarks = (n: number): string => `${n} ${n === 1 ? 'bookmark' : 'bookmarks'}`
 
@@ -13,12 +13,42 @@ export function outcomeLine(o: BookmarkImportOutcome): string {
 	return `${parts.join(', ')}${skipped > 0 ? `; skipped ${skipped}` : ''}.`
 }
 
-/** How to get a bookmarks file out of the browsers Zing can't read from this PC. */
+/** How to get a bookmarks file out of a browser Zing can't read from this PC and that has no row of its own. */
 export const fileHelp: readonly { app: string; steps: string }[] = [
-	{ app: 'Dia', steps: 'Open the Bookmarks menu and choose Export Bookmarks. Dia saves an HTML file.' },
-	{ app: 'Safari', steps: 'Choose File > Export > Bookmarks. Safari saves an HTML file.' },
 	{ app: 'Firefox', steps: 'Open the Library (Ctrl+Shift+O), then Import and Backup > Export Bookmarks to HTML.' },
 ]
+
+/** Browsers that run only on a Mac: their files have to be exported there and copied over. */
+export const macBrowsers: readonly { app: string; bookmarks: string; passwords: string }[] = [
+	{
+		app: 'Dia',
+		bookmarks: 'Open the Bookmarks menu and choose Export Bookmarks. Dia saves an HTML file.',
+		passwords: 'If Dia saves them to the Mac’s Passwords app, open that app and choose File > Export All Passwords to File.',
+	},
+	{
+		app: 'Safari',
+		bookmarks: 'Choose File > Export > Bookmarks. Safari saves an HTML file.',
+		passwords: 'Choose File > Export > Passwords. Safari saves a CSV file.',
+	},
+	{
+		app: 'Arc',
+		bookmarks: 'In Finder, choose Go > Go to Folder, enter ~/Library/Application Support/Arc, and copy StorableSidebar.json.',
+		passwords: 'Arc keeps them in the Mac’s Passwords app. Open that app and choose File > Export All Passwords to File.',
+	},
+]
+
+export const MAC_INTRO = 'Export on the Mac, copy the file to this PC with a USB stick or a cloud drive, then choose it here.'
+
+/**
+ * Where the export page is, for when the browser opens a plain new tab: Chromium ignores a chrome:// address
+ * given on its command line, so Zing can open the right profile but maybe not the page.
+ */
+export const exportMenuPath: Readonly<Record<ImportSourceView['browser'], string | undefined>> = {
+	chrome: '⋮ menu > Passwords and autofill > Google Password Manager > Settings',
+	edge: '… menu > Settings > Profiles > Passwords',
+	brave: '≡ menu > Passwords and autofill > Password Manager > Settings',
+	arc: undefined,
+}
 
 /** Shown in place of the Passwords file button while the vault is off. */
 export const PASSWORDS_FILE_VAULT_OFF = 'Turn on “Offer to fill saved passwords” in Passwords to import a passwords file.'

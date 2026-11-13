@@ -92,10 +92,12 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	/// <exception cref="NoPasswordExportException"/>
 	/// <exception cref="DownloadsFolderMissingException"/>
 	/// <exception cref="BrowserNotInstalledException"/>
+	/// <exception cref="NoProfileToOpenException"/>
 	public void WatchPasswords(string id)
 	{
 		var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
 		var url = ExportPages.Url(source.Browser);
+		var profile = source.Profile ?? throw new NoProfileToOpenException(source.Browser);
 		var openLauncher = launcher();
 		CancelWatch();
 		var watch = new PasswordExportWatch(scheduler, downloadsDir, () => DateTimeOffset.UtcNow, Found, TimedOut);
@@ -103,7 +105,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 		_watch = watch;
 		try
 		{
-			openLauncher.Open(source.Browser, url);
+			openLauncher.Open(source.Browser, profile, url);
 		}
 		catch
 		{

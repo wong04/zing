@@ -485,6 +485,14 @@ public static class TestHooks
 		File.AppendAllText(file, System.Text.Json.JsonSerializer.Serialize(new { kind, url }) + "\n");
 	}
 
+	/// <summary>Another browser Zing would have started, recorded like a dialog with the arguments it would have been given.</summary>
+	public static void RecordLaunch(string kind, string url, IReadOnlyList<string> args)
+	{
+		var file = Environment.GetEnvironmentVariable("ZING_DIALOGS_FILE");
+		if (string.IsNullOrEmpty(file)) throw new InvalidOperationException("e2e runs need ZING_DIALOGS_FILE to record dialogs");
+		File.AppendAllText(file, System.Text.Json.JsonSerializer.Serialize(new { kind, url, args }) + "\n");
+	}
+
 	/// <summary>
 	/// Work nobody awaits: its failures are recorded, except a view that went with its closing window.
 	/// This is also the host's error boundary for event handlers: a handler that awaits is a plain

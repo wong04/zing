@@ -24,8 +24,8 @@ export interface Launched {
 	readonly pid: number
 	/** The menus the host opened, oldest first, as their labels (a separator is null); test runs never show them. */
 	menus(): (string | null)[][]
-	/** The dialogs the host would have opened (Edge's print preview), oldest first; test runs never show them. */
-	dialogs(): { readonly kind: string; readonly url: string }[]
+	/** The dialogs the host would have opened (Edge's print preview), oldest first; test runs never show them. A browser launch also has the arguments it would have been given. */
+	dialogs(): { readonly kind: string; readonly url: string; readonly args?: readonly string[] }[]
 	/** Starts Zing again on the same profile, as a link click from another app would, and resolves with its exit code. */
 	launchAgain(args: readonly string[]): Promise<number | null>
 	close(): Promise<void>

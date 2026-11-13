@@ -11,13 +11,13 @@ public sealed class ImportPasswordWatchTests : IDisposable
 
 	private sealed class FakeLauncher : IBrowserLauncher
 	{
-		public List<(ImportBrowser Browser, string Url)> Opened { get; } = [];
+		public List<(ImportBrowser Browser, string Profile, string Url)> Opened { get; } = [];
 		public Exception? Fail { get; set; }
 
-		public void Open(ImportBrowser browser, string url)
+		public void Open(ImportBrowser browser, string profile, string url)
 		{
 			if (Fail is not null) throw Fail;
-			Opened.Add((browser, url));
+			Opened.Add((browser, profile, url));
 		}
 	}
 
@@ -44,8 +44,10 @@ public sealed class ImportPasswordWatchTests : IDisposable
 		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), LocalAppData: () => _root, BrowserLauncher: _launcher, FileTrash: _trash), _host, "test");
 		var userData = Path.Combine(_root, "Google", "Chrome", "User Data");
 		Directory.CreateDirectory(Path.Combine(userData, "Default"));
-		File.WriteAllText(Path.Combine(userData, "Local State"), JsonSerializer.Serialize(new { profile = new { info_cache = new Dictionary<string, object> { ["Default"] = new { name = "Personal" } } } }));
+		Directory.CreateDirectory(Path.Combine(userData, "Profile 1"));
+		File.WriteAllText(Path.Combine(userData, "Local State"), JsonSerializer.Serialize(new { profile = new { info_cache = new Dictionary<string, object> { ["Default"] = new { name = "Personal" }, ["Profile 1"] = new { name = "Work" } } } }));
 		File.WriteAllText(Path.Combine(userData, "Default", "Bookmarks"), "{}");
+		File.WriteAllText(Path.Combine(userData, "Profile 1", "Bookmarks"), "{}");
 		var arc = Path.Combine(_root, "Packages", "TheBrowserCompany.Arc_abc", "LocalCache", "Local", "Arc");
 		Directory.CreateDirectory(arc);
 		File.WriteAllText(Path.Combine(arc, "StorableSidebar.json"), "{}");
@@ -86,7 +88,7 @@ public sealed class ImportPasswordWatchTests : IDisposable
 	public async Task WatchOpensTheExportPageAndReportsTheFoundFileAsAToken()
 	{
 		AssertOk(await Invoke("import:watch-passwords", "chrome:Default"));
-		Assert.Equal([(ImportBrowser.Chrome, "chrome://password-manager/settings")], _launcher.Opened);
+		Assert.Equal([(ImportBrowser.Chrome, "Default", "chrome://password-manager/settings")], _launcher.Opened);
 
 		WriteExport("Chrome Passwords.csv");
 		Poll(1);
@@ -101,6 +103,24 @@ public sealed class ImportPasswordWatchTests : IDisposable
 
 		AssertOk(await Invoke("import:recycle", json.GetProperty("token").GetString()));
 		Assert.Equal([Path.Combine(_downloads, "Chrome Passwords.csv")], _trash.Recycled);
+	}
+
+	[Fact]
+	public async Task WatchOpensTheRowsOwnProfile()
+	{
+		AssertOk(await Invoke("import:watch-passwords", "chrome:Profile 1"));
+
+		Assert.Equal([(ImportBrowser.Chrome, "Profile 1", "chrome://password-manager/settings")], _launcher.Opened);
+	}
+
+	[Fact]
+	public async Task ASourceFromADamagedProfileListHasNoProfileToOpen()
+	{
+		File.WriteAllText(Path.Combine(_root, "Google", "Chrome", "User Data", "Local State"), "{ not json");
+
+		Assert.Equal("NoProfileToOpenException", ErrorName(await Invoke("import:watch-passwords", "chrome")));
+		Assert.Empty(_launcher.Opened);
+		Assert.Equal(0, _host.FakeScheduler.PendingCount);
 	}
 
 	[Fact]
