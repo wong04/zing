@@ -835,6 +835,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		// the window started: renderer views, those still loading included, and the theme subscription.
 		_destroyed = true;
 		_app.Services.Vaults.Changed -= FollowAutofill;
+		_app.Quitting(this);
 		Api?.Dispose();
 		_scope.Close();
 		_notices?.Destroy();
