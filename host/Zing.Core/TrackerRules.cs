@@ -8,12 +8,23 @@ public static class TrackerRules
 {
 	public static IReadOnlyList<string> Domains { get; } = [.. ZingJson.LoadDefaults("tracker-domains.json").AsArray().Select(d => d!.GetValue<string>())];
 
-	/// <summary>The host is a listed domain or under one.</summary>
+	private static readonly HashSet<string>.AlternateLookup<ReadOnlySpan<char>> Listed = new HashSet<string>(Domains, StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
+
+	/// <summary>
+	/// The host is a listed domain or under one. Every request a page makes is asked, on the UI thread, so it is a lookup per
+	/// label of the host, without allocating, and never a walk of the list.
+	/// </summary>
 	public static bool IsTrackerHost(string rawHost)
 	{
-		var host = rawHost.ToLowerInvariant();
+		var host = rawHost.AsSpan();
 		if (host.EndsWith('.')) host = host[..^1];
-		return Domains.Any(domain => host == domain || host.EndsWith("." + domain, StringComparison.Ordinal));
+		for (;;)
+		{
+			if (Listed.Contains(host)) return true;
+			var dot = host.IndexOf('.');
+			if (dot < 0) return false;
+			host = host[(dot + 1)..];
+		}
 	}
 
 	/// <summary>An http(s) request to a listed domain from a page on another site; a page with no web address counts as another site.</summary>
