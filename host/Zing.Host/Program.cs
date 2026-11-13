@@ -302,14 +302,17 @@ public sealed class ZingApp
 		}
 
 		DebouncedJsonWriter? libraryWriter = null;
+		string? libraryPath = null;
 		var openedLibrary = LibraryStore.Open(AppPaths.Library, path =>
 		{
+			libraryPath = path;
 			libraryWriter = new DebouncedJsonWriter(path, TimeSpan.FromMilliseconds(500), scheduler, e => TestHooks.Record("library write", e));
 			return snapshot => libraryWriter.Write(snapshot);
 		}, Now, () => Guid.NewGuid().ToString(), stamp);
 		if (openedLibrary.Problem is { } libraryProblem) StartupProblem("library", "your bookmarks and reading list", "with an empty library", libraryProblem);
 		var library = openedLibrary.Value;
 		_onQuit.Add(() => libraryWriter?.Flush());
+		var bookmarkIcons = OpenBookmarkIcons(library, openedLibrary.Problem is null ? libraryPath : null);
 		// A persistent profile exists so sign-ins survive closing a tab and quitting; purging would undo exactly that.
 		PersistentProfile = settings.Get("persistentProfile")?.GetValue<bool>() ?? throw new InvalidDataException("Setting persistentProfile is missing");
 		// One purger for both jobs: a site's data when its last tab closes, and Settings' Clear session (all of it).
@@ -330,7 +333,32 @@ public sealed class ZingApp
 		Zing.Core.Sync.SyncRestore.AskIfPasswordChangedElsewhere(account, vaults.Current);
 		// Zing closing wipes the secret key the vault holds (Ruling 44).
 		_onQuit.Add(vaults.Dispose);
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults, Sync: TestHooks.IsEndToEndRun ? TestHooks.Sync(this) : SyncBuild.Setup(this), SyncScheduler: _scheduler, LocalAppData: WindowsDownloads.LocalAppData, BrowserLauncher: new BrowserLauncher(), FileTrash: new FileTrash(), DefaultBrowser: new DefaultBrowserReader());
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults, Sync: TestHooks.IsEndToEndRun ? TestHooks.Sync(this) : SyncBuild.Setup(this), SyncScheduler: _scheduler, LocalAppData: WindowsDownloads.LocalAppData, BrowserLauncher: new BrowserLauncher(), FileTrash: new FileTrash(), DefaultBrowser: new DefaultBrowserReader(), BookmarkIcons: bookmarkIcons);
+	}
+
+	/// <summary>
+	/// Bookmarks' icons, in bookmark-icons beside library.json, pruned as bookmarks go. None for a launch whose library didn't load
+	/// cleanly: its library is a stand-in, and pruning against it would delete the icons of bookmarks that may come back.
+	/// </summary>
+	private static BookmarkIcons? OpenBookmarkIcons(LibraryStore library, string? libraryPath)
+	{
+		if (libraryPath is null) return null;
+		var icons = new BookmarkIcons(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(libraryPath))!, "bookmark-icons"));
+		void Prune(BrowserLibrary snapshot)
+		{
+			try
+			{
+				icons.Prune(snapshot);
+			}
+			catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+			{
+				// A file left behind is tried again on the next change; the library edit itself went through.
+				TestHooks.Record("pruning bookmark icons", error);
+			}
+		}
+		Prune(library.Snapshot);
+		library.Subscribe(Prune);
+		return icons;
 	}
 
 	/// <summary>

@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings'
-import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setLibraryHoldsImports, setVaultKeepsData } from './privacy'
+import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setLibraryHoldsImports, setLibraryKeepsIcons, setVaultKeepsData } from './privacy'
 
 const withSettings = (patch: Partial<Settings>): Settings => ({ ...DEFAULT_SETTINGS, ...patch })
 
 describe('privacyStatus', () => {
 	it('is green with the defaults: Zing keeps nothing', () => {
 		expect(privacyStatus(DEFAULT_SETTINGS)).toMatchObject({ traceless: true })
+	})
+
+	it('says while green that a bookmark keeps its icon only once its page is visited', () => {
+		expect(privacyStatus(DEFAULT_SETTINGS).detail).toContain("A bookmark's site icon is saved only once you visit that page.")
 	})
 
 	it('flips to a warning for restoreTabs and names what is kept', () => {
@@ -78,6 +82,17 @@ describe('imported bookmarks', () => {
 		setLibraryHoldsImports(true)
 		expect(privacyStatus(DEFAULT_SETTINGS)).toMatchObject({ traceless: false, detail: 'Imported bookmarks are written to disk.' })
 		setLibraryHoldsImports(false)
+		expect(privacyStatus(DEFAULT_SETTINGS).traceless).toBe(true)
+	})
+})
+
+describe('bookmark icons', () => {
+	afterEach(() => setLibraryKeepsIcons(false))
+
+	it('a saved bookmark icon flips the banner and names it, and none left restores it', () => {
+		setLibraryKeepsIcons(true)
+		expect(privacyStatus(DEFAULT_SETTINGS)).toMatchObject({ traceless: false, detail: 'Icons of bookmarked sites you visited are written to disk.' })
+		setLibraryKeepsIcons(false)
 		expect(privacyStatus(DEFAULT_SETTINGS).traceless).toBe(true)
 	})
 })

@@ -169,6 +169,8 @@ export const LIBRARY_PANEL_WIDTH = 320
 
 export interface LibraryViewState {
 	readonly library: BrowserLibrary
+	/** Bookmark id to its site's icon (a PNG data URL), kept once the person visited that page; bookmarks never visited have none. */
+	readonly icons: Readonly<Record<string, string>>
 	readonly panel: LibraryPanel | undefined
 	readonly favouritesBar: boolean
 	/** Where the panel starts: the width of the pinned sidebar beside it. */

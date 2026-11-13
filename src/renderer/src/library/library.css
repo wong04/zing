@@ -217,7 +217,13 @@
 	outline-offset: -1px;
 }
 
-.library-row.read .library-title {
+.library-row.read .library-favicon {
+	width: 14px;
+	height: 14px;
+	vertical-align: middle;
+}
+
+.library-title {
 	color: var(--muted);
 }
 
@@ -226,6 +232,12 @@
 	width: 14px;
 	text-align: center;
 	color: var(--muted);
+}
+
+.library-favicon {
+	width: 14px;
+	height: 14px;
+	vertical-align: middle;
 }
 
 .library-title {

@@ -8,6 +8,8 @@ import type { ItemDragHandlers } from './useItemDrag'
 /** What the saved sections need from the rail: the tabs that belong to items, and the item drag. */
 export interface SavedFrame {
 	readonly tabsByItem: ReadonlyMap<string, TabView>
+	/** Each item's stored site icon, kept once its page was visited (LibraryViewState.icons). */
+	readonly icons: Readonly<Record<string, string>>
 	readonly activeId: string | undefined
 	readonly drag: (id: string) => ItemDragHandlers
 	readonly endsDrag: () => boolean
@@ -25,9 +27,17 @@ export function open(frame: SavedFrame, id: string): void {
 	void zing.openSavedTab(id)
 }
 
-/** A saved item's icon: its tab's (favicons live in memory only), or its first letter until the tab has loaded. */
-export function ItemIcon({ link, tab }: { link: BookmarkLink; tab: TabView | undefined }) {
-	if (tab) return <TabIconView tab={tab} />
+/** A saved item's icon: its tab's live one, else the icon kept from the last visit, else its first letter. */
+export function ItemIcon({ link, tab, icon }: { link: BookmarkLink; tab: TabView | undefined; icon: string | undefined }) {
+	// A tab loading, faulted or with an icon of its own shows that; one still without an icon falls back to the kept one.
+	if (tab && (tab.icon || tab.loading || tab.pageState || !icon)) return <TabIconView tab={tab} />
+	if (icon) {
+		return (
+			<span className="tab-icon" aria-hidden="true">
+				<img className="tab-favicon" src={icon} alt="" />
+			</span>
+		)
+	}
 	const letter = (link.title.trim()[0] ?? '?').toUpperCase()
 	return (
 		<span className="tab-icon rail-letter" aria-hidden="true">

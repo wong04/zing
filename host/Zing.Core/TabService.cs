@@ -68,8 +68,11 @@ public interface IPageEvents
 	NavigationDecision Navigating(string from, string to, NavigationCause cause);
 	void Navigated(string url);
 	void TitleChanged(string title);
-	/// <summary>The page's icon as a data URL, kept in memory only; null when it has none.</summary>
-	void IconChanged(string? dataUrl);
+	/// <summary>
+	/// The page's icon as a data URL, kept in memory only; null when it has none. <paramref name="pageUrl"/> is the address the
+	/// icon was read for, or null when the page moved on while it was read, so the icon can't be told to belong to any address.
+	/// </summary>
+	void IconChanged(string? dataUrl, string? pageUrl);
 	/// <summary>Loading or history changed.</summary>
 	void StateChanged();
 	void LoadFailed(string description);
@@ -148,6 +151,9 @@ public sealed class TabService
 
 	/// <summary>A tab's autofill script reported a sign-in field (Vault.Autofill decides what it gets).</summary>
 	public event Action<string, Uri, Vault.AutofillMessage>? AutofillMessage;
+
+	/// <summary>A tab's page showed an icon for the address it is at (the page's address, the icon's data URL): what a bookmark's icon is kept from.</summary>
+	public event Action<string, string>? IconLoaded;
 	private readonly Dictionary<string, IPage> _pages = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, string> _openers = new(StringComparer.Ordinal);
 	private readonly HashSet<string> _sleeping = new(StringComparer.Ordinal);
@@ -856,12 +862,14 @@ public sealed class TabService
 
 		public void StateChanged() => service._changed();
 
-		public void IconChanged(string? dataUrl)
+		public void IconChanged(string? dataUrl, string? pageUrl)
 		{
 			if (!service._store.Has(id)) return;
 			if (dataUrl is null) service._icons.Remove(id);
 			else service._icons[id] = dataUrl;
 			service._changed();
+			// Only an icon read for the address the tab is at now: one read while the page moved on may be the last page's.
+			if (dataUrl is not null && pageUrl is not null && pageUrl == service._store.Get(id).Url) service.IconLoaded?.Invoke(pageUrl, dataUrl);
 		}
 
 		public void FindResult(int matches, int activeOrdinal)
@@ -922,7 +930,7 @@ public sealed class TabService
 		public void Navigated(string url) => service.PreviewChanged?.Invoke();
 		public void TitleChanged(string title) => service.PreviewChanged?.Invoke();
 		/// <summary>Kept for the tab the preview may become (Expand).</summary>
-		public void IconChanged(string? dataUrl)
+		public void IconChanged(string? dataUrl, string? pageUrl)
 		{
 			if (service.LayerOf(Own) is null) return;
 			if (dataUrl is null) service._previewIcons.Remove(Own);
@@ -976,7 +984,7 @@ public sealed class TabService
 
 		public void Navigated(string url) { }
 		public void TitleChanged(string title) { }
-		public void IconChanged(string? dataUrl) { }
+		public void IconChanged(string? dataUrl, string? pageUrl) { }
 		public void StateChanged() { }
 		public void LoadFailed(string description) { }
 		public void FindResult(int matches, int activeOrdinal) { }
