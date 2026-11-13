@@ -215,11 +215,11 @@ export interface RendererErrorReport {
 
 export interface ImportSourceView {
 	id: string
-	browser: 'chrome' | 'edge' | 'brave' | 'arc'
+	browser: 'chrome' | 'edge' | 'brave' | 'dia' | 'arc'
 	display: string
 	bookmarks?: number
 	error?: string
-	/** Whether Zing can also import this browser's passwords (Chrome, Edge and Brave). */
+	/** Whether Zing can open this browser's password export page (Chrome, Edge and Brave). */
 	passwords: boolean
 }
 
@@ -577,7 +577,7 @@ export interface InvokeContract {
 	/**
 	 * Opens the source browser's password export page in that browser and watches the downloads folder for the CSV; the file comes back as
 	 * `import:password-export`, or `import:watch-timed-out` after 10 minutes. A new watch ends the old. Rejects with UnknownImportSourceException,
-	 * NoPasswordExportException (Arc), BrowserNotInstalledException or DownloadsFolderMissingException.
+	 * NoPasswordExportException (Dia, Arc), BrowserNotInstalledException or DownloadsFolderMissingException.
 	 */
 	'import:watch-passwords': { args: [sourceId: string]; result: void }
 	/** Ends the watch; does nothing when none is running. */

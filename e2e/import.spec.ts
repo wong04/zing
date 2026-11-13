@@ -160,6 +160,22 @@ test("Arc's sidebar file from a Mac imports", async () => {
 	await zing.close()
 })
 
+test('Dia installed on this PC is listed per profile from its package folder and imports, without Import passwords', async () => {
+	const root = localAppData([])
+	const userData = join(root, 'Packages', 'TheBrowserCompany.Dia_ttt1ap7aakyb4', 'LocalCache', 'Local', 'Dia', 'User Data')
+	write(join(userData, 'Local State'), JSON.stringify({ profile: { info_cache: { Default: { name: 'Personal' } } } }))
+	write(join(userData, 'Default', 'Bookmarks'), fixture('chromium-bookmarks.json'))
+	const zing = await launchZing({ userDataDir: passwordProfile(true), env: { ZING_LOCALAPPDATA: root } })
+	const sheet = await openImport(zing)
+	await expect(row(sheet, 'Dia (Personal)')).toContainText(/\d+ bookmarks?/)
+	await expect(row(sheet, 'Dia (Personal)').getByRole('button', { name: 'Import passwords' })).toHaveCount(0)
+
+	await importFrom(sheet, 'Dia (Personal)')
+	await expect(row(sheet, 'Dia (Personal)').getByRole('status')).toContainText('Imported from Dia (Personal)')
+	expect(topFolder((await library(zing)).bookmarks, 'Imported from Dia (Personal)')).toBeDefined()
+	await zing.close()
+})
+
 const PASSWORDS_CSV = 'name,url,username,password,note\nExample,https://example.test/login,ada,first password,\nOther,https://other.test,bob,second password,\n'
 
 /** A profile with the vault on or off (passwordAutofill is read at launch) and a downloads folder, for the password flow. */

@@ -30,7 +30,7 @@ public sealed class BrowserLauncher : IBrowserLauncher
 			ImportBrowser.Chrome => "chrome.exe",
 			ImportBrowser.Edge => "msedge.exe",
 			ImportBrowser.Brave => "brave.exe",
-			_ => throw new NoPasswordExportException(),
+			_ => throw new NoPasswordExportException(browser),
 		};
 		foreach (var hive in new[] { Registry.LocalMachine, Registry.CurrentUser })
 		{

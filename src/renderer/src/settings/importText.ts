@@ -47,6 +47,7 @@ export const exportMenuPath: Readonly<Record<ImportSourceView['browser'], string
 	chrome: '⋮ menu > Passwords and autofill > Google Password Manager > Settings',
 	edge: '… menu > Settings > Profiles > Passwords',
 	brave: '≡ menu > Passwords and autofill > Password Manager > Settings',
+	dia: undefined,
 	arc: undefined,
 }
 

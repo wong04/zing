@@ -132,6 +132,23 @@ public sealed class ImportPasswordWatchTests : IDisposable
 	}
 
 	[Fact]
+	public async Task DiaRowsOfferNoPasswordsAndItsWatchThrows()
+	{
+		var dia = Path.Combine(_root, "Packages", "TheBrowserCompany.Dia_x", "LocalCache", "Local", "Dia", "User Data");
+		Directory.CreateDirectory(Path.Combine(dia, "Default"));
+		File.WriteAllText(Path.Combine(dia, "Local State"), JsonSerializer.Serialize(new { profile = new { info_cache = new Dictionary<string, object> { ["Default"] = new { name = "Personal" } } } }));
+		File.WriteAllText(Path.Combine(dia, "Default", "Bookmarks"), "{}");
+
+		var sources = await Invoke("import:sources");
+		var row = sources.GetProperty("value").EnumerateArray().Single(r => r.GetProperty("id").GetString() == "dia:Default");
+		Assert.Equal("dia", row.GetProperty("browser").GetString());
+		Assert.False(row.GetProperty("passwords").GetBoolean());
+
+		Assert.Equal("NoPasswordExportException", ErrorName(await Invoke("import:watch-passwords", "dia:Default")));
+		Assert.Empty(_launcher.Opened);
+	}
+
+	[Fact]
 	public async Task AnUnknownSourceThrows()
 	{
 		Assert.Equal("UnknownImportSourceException", ErrorName(await Invoke("import:watch-passwords", "chrome:Nope")));

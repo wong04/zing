@@ -31,7 +31,11 @@ Phase 6c is tested only against synthetic profiles and files. This check covers 
    - **Expect:** it imports. A running Chrome doesn't block the read.
 3. Import the same profile again.
    - **Expect:** "Nothing new to import".
-4. **Arc, if installed.**
+4. **Dia for Windows, if installed.**
+   - **Expect:** one "Dia (profile)" row per profile, found in `%LOCALAPPDATA%\Packages\TheBrowserCompany.Dia_*\LocalCache\Local\Dia\User Data`, with no Import passwords button.
+   - **Expect:** importing it adds an "Imported from Dia (…)" folder.
+   - **Record:** whether Dia has a password export, and its menu path, so a later change can offer it.
+5. **Arc, if installed.**
    - **Expect:** the row shows Arc's Spaces as folders after import.
    - If Arc isn't listed, check that `%LOCALAPPDATA%\Packages\TheBrowserCompany.Arc_*\LocalCache\Local\Arc\StorableSidebar.json` exists, and note the actual path if it doesn't.
    - If Arc is your default browser, check that the New Tab card offers Arc. If it doesn't, note Arc's https ProgId: in PowerShell, `Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice'` shows it. Zing expects it to start with `Arc`.
