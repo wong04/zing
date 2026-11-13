@@ -1745,7 +1745,7 @@ public sealed class ChromeApi : IDisposable
 	private void OpenAll(string id)
 	{
 		var urls = _app.Library.UrlsOf(id).Select(RelayedContent.RefuseRelayAddress).ToList();
-		foreach (var url in urls) Tabs.Open(url);
+		Tabs.OpenAll(urls);
 	}
 
 	/// <summary>A reload that lands on a start page still loading (the nudge scan can end before the page does) would cancel that navigation, leaving a blank tab.</summary>

@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { expect, type Locator, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
 import { favourites, FAVOURITES_ID } from '../src/shared/library/library'
-import { launchZing, test, layers, pageWhere } from './zing'
+import { launchZing, test, layers, liveCounts, pageWhere } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -315,5 +315,34 @@ test('contrast themes outline the tabs and ribbons instead of filling them', asy
 	const ribbon = zing.chrome.getByRole('toolbar', { name: 'Favourites' }).getByRole('button', { name: 'Zebra', exact: true })
 	await expect(ribbon).toHaveCSS('clip-path', 'none')
 	await expect(ribbon).toHaveCSS('border-top-width', '1px')
+	await zing.close()
+})
+
+test('Open All shows the last tab and starts the others when they are first activated', async () => {
+	const zing = await launchZing()
+	const tabsNow = async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs
+	const addTabs = (prefix: string) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'add-tabs', count: 3, url: prefix })
+	await zing.chrome.evaluate(addTabs, `http://127.0.0.1:${port}/All-`)
+	await expect.poll(async () => (await tabsNow()).length).toBe(4)
+	const saved = (await tabsNow()).slice(1)
+	const folder = await zing.chrome.evaluate(async (ids) => {
+		const made = await window.zing.applyLibrary({ type: 'newFolder', ids: [] })
+		for (const [at, id] of ids.entries()) await window.zing.saveTab(id, made!, at)
+		return made!
+	}, saved.map((t) => t.id))
+	const views = (await liveCounts(zing.chrome)).views
+
+	await zing.chrome.evaluate((id) => window.zing.openAllInFolder(id), folder)
+	await expect.poll(async () => (await tabsNow()).length).toBe(7)
+	const opened = (await tabsNow()).slice(4)
+	const [first, , last] = opened.map((t) => t.id)
+	expect(opened.map((t) => t.url)).toEqual(saved.map((t) => t.url))
+	await expect.poll(async () => (await tabsNow()).find((t) => t.id === last)?.title).toBe('All-2')
+	expect((await zing.chrome.evaluate(() => window.zing.getTabs())).activeId).toBe(last)
+	// One page for the tab in front; the engine starting all of them at once held up the UI thread for seconds.
+	expect((await liveCounts(zing.chrome)).views).toBe(views + 1)
+
+	await zing.chrome.evaluate((id) => window.zing.activateTab(id!), first)
+	await expect.poll(async () => (await tabsNow()).find((t) => t.id === first)?.title).toBe('All-0')
 	await zing.close()
 })

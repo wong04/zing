@@ -54,6 +54,24 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
+	public async Task Open_All_starts_a_page_only_for_the_tab_it_leaves_in_front()
+	{
+		string[] urls = ["https://a.example/", "https://b.example/", "https://c.example/"];
+		for (var i = 0; i < urls.Length; i++) _library.AddLink(Library.FavouritesId, i, $"Link {i}", urls[i]);
+		var before = _api.Tabs.Records.Count;
+		var pagesBefore = _host.FakePages.Created.Count;
+		Value(await Invoke("library:open-all", Library.FavouritesId));
+		var opened = _api.Tabs.Records.Skip(before).ToList();
+		Assert.Equal(urls, opened.Select(r => r.Url));
+		Assert.Equal(opened[^1].Id, ActiveId);
+		// Each page the engine starts at once holds up the UI thread, so the tabs behind wait to be shown, as restored tabs do.
+		Assert.Equal(pagesBefore + 1, _host.FakePages.Created.Count);
+		Assert.Equal([false, false, true], opened.Select(r => _api.Tabs.HasPage(r.Id)));
+		Value(await Invoke("tabs:activate", opened[0].Id));
+		Assert.Equal(["navigate https://a.example/"], ActivePage.Calls);
+	}
+
+	[Fact]
 	public async Task Clear_session_clears_the_profile_and_says_so_and_keeps_the_tabs()
 	{
 		Value(await Invoke("tabs:navigate", ActiveId, "https://example.com"));

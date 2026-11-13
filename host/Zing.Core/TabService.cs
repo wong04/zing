@@ -266,6 +266,17 @@ public sealed class TabService
 	}
 
 	/// <summary>
+	/// Several tabs at once (Open All): the last is shown, and the others get their pages when first activated, as restored
+	/// tabs do. Pages the engine starts together hold up the UI thread for seconds, however little each start asks of it.
+	/// </summary>
+	public void OpenAll(IReadOnlyList<string> urls)
+	{
+		if (urls.Count == 0) return;
+		var records = urls.Select(_store.Add).ToList();
+		Activate(records[^1].Id);
+	}
+
+	/// <summary>
 	/// A new tab on a page fetched through the relay (Open a Link): it loads on the relay scheme, so its address bar says so.
 	/// The tab's navigation is one Zing starts, which is the only kind the relay scheme accepts.
 	/// </summary>
