@@ -2,9 +2,9 @@ using System.Text.Json;
 
 namespace Zing.Core.Import;
 
-public enum ImportBrowser { Chrome, Edge, Brave, Arc }
+public enum ImportBrowser { Chrome, Edge, Brave, Dia, Arc }
 
-/// <param name="Id">"chrome:Default", "edge:Profile 1", "arc".</param>
+/// <param name="Id">"chrome:Default", "edge:Profile 1", "dia:Default", "arc".</param>
 /// <param name="Profile">The profile folder name; null for Arc.</param>
 /// <param name="Display">"Chrome (Personal)", "Arc"; also the merge source key.</param>
 /// <param name="Path">The Bookmarks file or StorableSidebar.json. Host-only: never sent to the renderer.</param>
@@ -47,6 +47,7 @@ public static class ImportSources
 		List<ImportSource> found = [];
 		foreach (var (browser, label, userDataParts) in ChromiumBrowsers)
 			found.AddRange(FindChromium(browser, label, System.IO.Path.Combine([localAppData, .. userDataParts])));
+		found.AddRange(FindDia(localAppData));
 		if (FindArc(localAppData) is { } arc) found.Add(arc);
 		return found;
 	}
@@ -93,6 +94,29 @@ public static class ImportSources
 		{
 			return [new ImportSource(label.ToLowerInvariant(), browser, null, label, localStatePath, null, ImportErrors.Explain(error, what), false)];
 		}
+	}
+
+	/// <summary>Dia installs as a package, and Windows keeps its Chromium user data inside the package folder.</summary>
+	private static List<ImportSource> FindDia(string localAppData)
+	{
+		var packages = System.IO.Path.Combine(localAppData, "Packages");
+		if (!Directory.Exists(packages)) return [];
+		string[] diaPackages;
+		try
+		{
+			diaPackages = Directory.GetDirectories(packages, "TheBrowserCompany.Dia_*");
+		}
+		catch (Exception error) when (IsReadFailure(error))
+		{
+			// The Arc row already says the Packages folder can't be read; a Dia row would claim Dia is installed when that isn't known.
+			return [];
+		}
+		foreach (var package in diaPackages.Order(StringComparer.Ordinal))
+		{
+			var userData = System.IO.Path.Combine(package, "LocalCache", "Local", "Dia", "User Data");
+			if (File.Exists(System.IO.Path.Combine(userData, "Local State"))) return FindChromium(ImportBrowser.Dia, "Dia", userData);
+		}
+		return [];
 	}
 
 	private static ImportSource? FindArc(string localAppData)

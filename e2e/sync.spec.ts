@@ -32,6 +32,8 @@ const TURN_OFF_SUB = 'sub-e2e-turn-off'
 const POPUP_SUB = 'sub-e2e-popup'
 // Start over, deleting the sync account too.
 const START_OVER_SUB = 'sub-e2e-start-over'
+// Turn on sync on a second PC, for a Google account that already syncs the first: with no Zing account there, and with one.
+const JOIN_SUBS = ['sub-e2e-join', 'sub-e2e-join-account'] as const
 
 let server: ChildProcess | undefined
 let serverUrl = ''
@@ -50,7 +52,7 @@ function serverEnvironment(): NodeJS.ProcessEnv {
 		ASPNETCORE_ENVIRONMENT: 'Staging',
 		ZING_SERVER_FAKE_GOOGLE: '1',
 		ZING_SESSION_KEY: randomBytes(32).toString('base64'),
-		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB, POPUP_SUB, START_OVER_SUB].join(','),
+		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB, POPUP_SUB, START_OVER_SUB, ...JOIN_SUBS].join(','),
 		ZING_DB_PATH: join(serverDir, 'zing.db'),
 		// Every PC of the run is 127.0.0.1, so one per-IP budget: the default 60 a minute is a production limit (its own tests cover it).
 		ZING_RATE_IP_PER_MINUTE: '1000',
@@ -715,4 +717,73 @@ test('starting over can delete the sync account after a Google sign-in, and the 
 	await syncGroup(sheet).getByRole('form', { name: 'Turn on sync' }).getByRole('button', { name: 'Turn on sync' }).click()
 	await expect(recoveryScreen(sheet).getByLabel('Recovery key', { exact: true })).toHaveText(RECOVERY_KEY)
 	await zing.close()
+})
+
+// A second PC turning on sync from Settings for a Google account that already syncs the first. Asking it for a new Zing password
+// first made a second account and vault there, which the server then refused, with advice (sign out, Restore from sync) that a PC
+// with an account can't follow: the person was left at the gate with a password made up a moment before.
+
+const joinForm = (sheet: Page) => syncGroup(sheet).getByRole('form', { name: 'Join sync' })
+
+test('turning on sync on a second PC with no Zing account joins the first with its password and makes the account from it', async () => {
+	test.setTimeout(240_000)
+	const sub = JOIN_SUBS[0]
+	const { zing: a } = await turnOnWithLogins(sub)
+	await a.close()
+
+	// Started as a guest with no account, as Skip for now at a real first start leaves it.
+	const b = await launchZing({ userDataDir: vaultProfile(), env: syncEnv(sub) })
+	const sheet = await openSync(b)
+	await syncGroup(sheet).getByRole('button', { name: 'Turn on sync' }).click()
+	await expect(syncGroup(sheet)).toContainText(`Signed in as ${sub}@example.test.`)
+
+	const join = joinForm(sheet)
+	await expect(join).toContainText('This Google account already syncs passwords from another PC.')
+	await expect(join.getByLabel('Zing password on this PC')).toHaveCount(0)
+	await join.getByLabel('Sync password').fill(NEXT_STRONG)
+	await join.getByRole('button', { name: 'Join sync' }).click()
+	await expect(join).toContainText("That isn't the Zing password this Google account syncs with.")
+	expect(await b.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: false })
+
+	await join.getByLabel('Sync password').fill(STRONG)
+	await join.getByRole('button', { name: 'Join sync' }).click()
+
+	await expect(syncGroup(sheet)).toContainText(`Sync is on. Signed in as ${sub}@example.test.`)
+	expect(await b.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: true, signedIn: true, profile: { username: 'ada' } })
+	await expect.poll(() => titles(b), { timeout: 30_000, message: "B's sync didn't bring A's logins" }).toEqual(['Bank', 'Mail'])
+	expect((await b.chrome.evaluate(() => window.zing.signOut())).status).toBe('ok')
+	expect((await b.chrome.evaluate((p) => window.zing.signIn(p), STRONG)).status).toBe('ok')
+	await b.close()
+})
+
+test('a second PC with a Zing account of its own joins with that password too, never changes it to a passphrase first, and then signs in with the sync one', async () => {
+	test.setTimeout(240_000)
+	const sub = JOIN_SUBS[1]
+	const { zing: a } = await turnOnWithLogins(sub)
+	await a.close()
+
+	const b = await launchZing({ userDataDir: vaultProfile(), env: syncEnv(sub) })
+	// Too weak for sync: the old flow changed it to a suggested passphrase before the server turned the PC away.
+	await signUp(b, 'made-up-1')
+	const sheet = await openSync(b)
+	await syncGroup(sheet).getByRole('button', { name: 'Turn on sync' }).click()
+
+	const join = joinForm(sheet)
+	await expect(join).toContainText('It becomes your Zing password on this PC too.')
+	await expect(syncGroup(sheet).getByRole('form', { name: 'Choose a stronger password' })).toHaveCount(0)
+	await join.getByLabel('Zing password on this PC').fill('not-it-at-all')
+	await join.getByLabel('Sync password').fill(STRONG)
+	await join.getByRole('button', { name: 'Join sync' }).click()
+	await expect(join).toContainText(WRONG_PASSWORD)
+	expect((await b.chrome.evaluate(() => window.zing.signIn('made-up-1'))).status).toBe('ok')
+
+	await join.getByLabel('Zing password on this PC').fill('made-up-1')
+	await join.getByRole('button', { name: 'Join sync' }).click()
+
+	await expect(syncGroup(sheet)).toContainText(`Sync is on. Signed in as ${sub}@example.test.`)
+	await expect.poll(() => titles(b), { timeout: 30_000, message: "B's sync didn't bring A's logins" }).toEqual(['Bank', 'Mail'])
+	expect((await b.chrome.evaluate(() => window.zing.signOut())).status).toBe('ok')
+	expect((await b.chrome.evaluate(() => window.zing.signIn('made-up-1'))).status).toBe('rejected')
+	expect((await b.chrome.evaluate((p) => window.zing.signIn(p), STRONG)).status).toBe('ok')
+	await b.close()
 })

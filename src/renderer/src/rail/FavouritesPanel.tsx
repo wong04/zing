@@ -66,7 +66,7 @@ function PanelRow({ node, index, frame, onClose }: RowProps) {
 	return (
 		<div data-item-id={node.id} {...place} {...savedItemProps(frame, node, 'rail-row rail-item rail-panel-row', openItem)}>
 			<span className="rail-row-icon">
-				<ItemIcon link={node} tab={frame.tabsByItem.get(node.id)} />
+				<ItemIcon link={node} tab={frame.tabsByItem.get(node.id)} icon={frame.icons[node.id]} />
 			</span>
 			<span className="rail-row-title">{node.title}</span>
 		</div>

@@ -33,11 +33,21 @@ export function setLibraryHoldsImports(holds: boolean): void {
 	libraryHoldsImports = holds
 }
 
+// A bookmark's site icon is saved beside the library once the person visits that page (BookmarkIcons in the host); the Settings sheet
+// watches the library state, whose icons list what is on disk.
+let libraryKeepsIcons = false
+
+/** Whether any bookmark's site icon is saved on disk. */
+export function setLibraryKeepsIcons(keeps: boolean): void {
+	libraryKeepsIcons = keeps
+}
+
 const conditions: StoresDataCondition[] = [
 	{ id: 'persistentProfile', active: (s) => s.persistentProfile, what: 'cookies and cache', plural: true },
 	{ id: 'restoreTabs', active: (s) => s.restoreTabs, what: 'your open tabs', plural: true },
 	{ id: 'vault', active: () => vaultKeepsData, what: 'saved passwords', plural: true },
 	{ id: 'imported', active: () => libraryHoldsImports, what: 'imported bookmarks', plural: true },
+	{ id: 'bookmarkIcons', active: () => libraryKeepsIcons, what: 'icons of bookmarked sites you visited', plural: true },
 ]
 
 export class DuplicateConditionError extends Error {
@@ -83,7 +93,7 @@ export function privacyStatus(settings: Settings): PrivacyStatus {
 		return {
 			traceless: true,
 			headline: 'Browsing leaves nothing on this PC',
-			detail: 'Cookies, cache and history live in memory and vanish on quit.',
+			detail: "Cookies, cache and history live in memory and vanish on quit. A bookmark's site icon is saved only once you visit that page.",
 		}
 	}
 	return {

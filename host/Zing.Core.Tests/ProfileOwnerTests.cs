@@ -12,7 +12,9 @@ public sealed class ProfileOwnerTests
 	private sealed class Claimant : IDisposable
 	{
 		private readonly TaskCompletionSource<ProfileOwner?> _claimed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		private readonly ManualResetEventSlim _exit = new();
+		private readonly ManualResetEventSlim _release = new();
 		private readonly Thread _thread;
 
 		public Claimant(string key)
@@ -21,18 +23,31 @@ public sealed class ProfileOwnerTests
 			{
 				try
 				{
-					_claimed.SetResult(ProfileOwner.TryClaim(key));
+					var owner = ProfileOwner.TryClaim(key);
+					_claimed.SetResult(owner);
+					WaitHandle.WaitAny([_exit.WaitHandle, _release.WaitHandle]);
+					if (!_release.IsSet) return;
+					owner!.Release();
+					_released.SetResult();
 					_exit.Wait();
 				}
 				catch (Exception e)
 				{
 					_claimed.TrySetException(e);
+					_released.TrySetException(e);
 				}
 			});
 			_thread.Start();
 		}
 
 		public Task<ProfileOwner?> Claimed => _claimed.Task;
+
+		/// <summary>The owner gives the profile up on its own thread, as a quitting Zing does on its UI thread, and the thread goes on.</summary>
+		public Task Release()
+		{
+			_release.Set();
+			return _released.Task;
+		}
 
 		/// <summary>The thread ends still holding the mutex, as a killed process does.</summary>
 		public void Dispose()
@@ -136,6 +151,49 @@ public sealed class ProfileOwnerTests
 
 		ProfileOwner.HandOver(key, ["https://a.test/"], Patience);
 		Assert.Equal(["https://a.test/"], await received.Task.WaitAsync(Patience, Cancel));
+		await stop.CancelAsync();
+	}
+
+	[Fact]
+	public async Task AReleasedProfileGoesToTheNextLaunchWhileTheOldOwnerRuns()
+	{
+		var key = NewKey();
+		using var quitting = new Claimant(key);
+		var old = (await quitting.Claimed)!;
+		var oldListener = old.ListenAsync(_ => Assert.Fail("The released owner was handed a launch"), _ => { }, Cancel);
+
+		await quitting.Release().WaitAsync(Patience, Cancel);
+		await oldListener.WaitAsync(Patience, Cancel);
+
+		using var next = new Claimant(key);
+		var owner = await next.Claimed;
+		Assert.NotNull(owner);
+		var received = new TaskCompletionSource<IReadOnlyList<string>>(TaskCreationOptions.RunContinuationsAsynchronously);
+		using var stop = new CancellationTokenSource();
+		_ = owner.ListenAsync(argv => received.TrySetResult(argv), _ => { }, stop.Token);
+		ProfileOwner.HandOver(key, ["https://a.test/"], Patience);
+		Assert.Equal(["https://a.test/"], await received.Task.WaitAsync(Patience, Cancel));
+		await stop.CancelAsync();
+	}
+
+	[Fact]
+	public async Task ALaunchThatFoundTheOwnerBusyIsHandedToTheNextOwner()
+	{
+		var key = NewKey();
+		using var quitting = new Claimant(key);
+		var old = (await quitting.Claimed)!;
+		_ = old.ListenAsync(_ => { }, _ => { }, Cancel);
+		await quitting.Release().WaitAsync(Patience, Cancel);
+		// A launch that lost the race for the mutex to the next owner, which is still starting.
+		using var next = new Claimant(key);
+		var owner = (await next.Claimed)!;
+		var handOver = Task.Run(() => ProfileOwner.HandOver(key, ["https://b.test/"], Patience), Cancel);
+
+		var received = new TaskCompletionSource<IReadOnlyList<string>>(TaskCreationOptions.RunContinuationsAsynchronously);
+		using var stop = new CancellationTokenSource();
+		_ = owner.ListenAsync(argv => received.TrySetResult(argv), _ => { }, stop.Token);
+		await handOver.WaitAsync(Patience, Cancel);
+		Assert.Equal(["https://b.test/"], await received.Task.WaitAsync(Patience, Cancel));
 		await stop.CancelAsync();
 	}
 }

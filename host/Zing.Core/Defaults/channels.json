@@ -422,6 +422,10 @@
 			"args": 0
 		},
 		{
+			"channel": "sync:join",
+			"args": 2
+		},
+		{
 			"channel": "sync:restore-new-password",
 			"args": 1
 		},
@@ -435,6 +439,10 @@
 		},
 		{
 			"channel": "sync:restore-sign-in",
+			"args": 0
+		},
+		{
+			"channel": "sync:server-has-keys",
 			"args": 0
 		},
 		{

@@ -170,6 +170,8 @@ export const LIBRARY_PANEL_WIDTH = 320
 
 export interface LibraryViewState {
 	readonly library: BrowserLibrary
+	/** Bookmark id to its site's icon (a PNG data URL), kept once the person visited that page; bookmarks never visited have none. */
+	readonly icons: Readonly<Record<string, string>>
 	readonly panel: LibraryPanel | undefined
 	readonly favouritesBar: boolean
 	/** Where the panel starts: the width of the pinned sidebar beside it. */
@@ -214,11 +216,11 @@ export interface RendererErrorReport {
 
 export interface ImportSourceView {
 	id: string
-	browser: 'chrome' | 'edge' | 'brave' | 'arc'
+	browser: 'chrome' | 'edge' | 'brave' | 'dia' | 'arc'
 	display: string
 	bookmarks?: number
 	error?: string
-	/** Whether Zing can also import this browser's passwords (Chrome, Edge and Brave). */
+	/** Whether Zing can open this browser's password export page (Chrome, Edge and Brave). */
 	passwords: boolean
 }
 
@@ -523,6 +525,15 @@ export interface InvokeContract {
 	 * (sync was turned off here; restoring from sync turns it on again), or SyncAlreadySetUpElsewhereException when it syncs another.
 	 */
 	'sync:turn-on': { args: [password: string]; result: RecoveryKeyShown }
+	/** Whether the signed-in Google account already syncs a vault: Turn on sync then joins it (sync:join) instead. */
+	'sync:server-has-keys': { args: []; result: boolean }
+	/**
+	 * Turn on sync for a Google account that already syncs another PC: this PC joins it with the sync password, as Restore from sync
+	 * does. With an account here, its own password (`current`) is checked first and then replaced by the sync one; with none, the
+	 * account is made from the synced profile. Rejects with AccountException (this PC's password is wrong or missing),
+	 * SyncJoinWrongPasswordException, SyncRestoreWouldReplaceLoginsException or SyncRestoreWhileSyncingAnotherAccountException.
+	 */
+	'sync:join': { args: [current: string, password: string]; result: SyncState }
 	/** The person confirmed they saved or printed the recovery key, so Settings stops showing it. */
 	'sync:confirm-recovery-saved': { args: []; result: SyncState }
 	/** The recovery key again, after Windows Hello (unless it was passed in the last 5 minutes). A cancelled Hello rejects and reveals nothing. */
@@ -581,7 +592,7 @@ export interface InvokeContract {
 	/**
 	 * Opens the source browser's password export page in that browser and watches the downloads folder for the CSV; the file comes back as
 	 * `import:password-export`, or `import:watch-timed-out` after 10 minutes. A new watch ends the old. Rejects with UnknownImportSourceException,
-	 * NoPasswordExportException (Arc), BrowserNotInstalledException or DownloadsFolderMissingException.
+	 * NoPasswordExportException (Dia, Arc), BrowserNotInstalledException or DownloadsFolderMissingException.
 	 */
 	'import:watch-passwords': { args: [sourceId: string]; result: void }
 	/** Ends the watch; does nothing when none is running. */
@@ -796,6 +807,8 @@ export interface ZingApi {
 	turnOffSync(): Promise<SyncState>
 	cancelSyncSignIn(): Promise<void>
 	turnOnSync(password: string): Promise<RecoveryKeyShown>
+	syncServerHasKeys(): Promise<boolean>
+	joinSync(current: string, password: string): Promise<SyncState>
 	confirmRecoverySaved(): Promise<SyncState>
 	showRecoveryKey(): Promise<RecoveryKeyShown>
 	uploadLocalCopy(): Promise<SyncState>

@@ -101,7 +101,8 @@ public interface IWindowHost
 /// <param name="LocalAppData">Where browser profiles live (the import channels read it when called); null where the host has none, and then those channels throw.</param>
 /// <param name="BrowserLauncher">Starts another browser at its password export page; null where the host can't, and then <c>import:watch-passwords</c> throws.</param>
 /// <param name="FileTrash">Sends a found export to the Recycle Bin; null where the host can't, and then <c>import:recycle</c> throws.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null)
+/// <param name="BookmarkIcons">The icons kept for bookmarked sites once visited; null where the host keeps none, and bookmarks show their letter.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null)
 {
 	public long Now() => Clock.Now();
 
@@ -136,6 +137,7 @@ public sealed class ChromeApi : IDisposable
 	private readonly OutputPlacement _placement;
 	private readonly List<IDisposable> _subscriptions = [];
 	private readonly Action _unsubscribeLibrary;
+	private readonly Action _unsubscribeIcons;
 	private string? _libraryPanel;
 	// Cancelled when the window closes, so a download it started doesn't outlive it.
 	private readonly CancellationTokenSource _closing = new();
@@ -273,6 +275,7 @@ public sealed class ChromeApi : IDisposable
 			if (Lifecycle.Woke(id) is { } y) page.RunWhenLoaded($"window.scrollTo(0, {y.ToString(System.Globalization.CultureInfo.InvariantCulture)})");
 		};
 		Tabs.FindResult += (page, matches, active) => Find.OnResult(page, matches, active);
+		Tabs.IconLoaded += (url, icon) => app.BookmarkIcons?.Visited(app.Library.Snapshot, url, icon);
 		PageUi.Changed += state =>
 		{
 			host.Push("pageui:state", state);
@@ -428,6 +431,8 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("sync:cancel-sign-in", _ => Do(CancelSyncSignIn));
 		bridge.Register("sync:turn-off", async _ => await TurnOffSyncAsync());
 		bridge.Register("sync:turn-on", async args => new { recoveryKey = await TurnOnSyncAsync(Text(args, 0)) });
+		bridge.Register("sync:server-has-keys", async _ => await SyncServerHasKeysAsync());
+		bridge.Register("sync:join", async args => await JoinSyncAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("sync:confirm-recovery-saved", _ =>
 		{
 			Vault().ConfirmRecoverySaved();
@@ -475,6 +480,7 @@ public sealed class ChromeApi : IDisposable
 
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
 		_unsubscribeLibrary = app.Library.Subscribe(_ => host.Push("library:state", LibraryState()));
+		_unsubscribeIcons = app.BookmarkIcons?.Subscribe(() => host.Push("library:state", LibraryState())) ?? (() => { });
 	}
 
 	private ImportApi? _importApi;
@@ -556,19 +562,13 @@ public sealed class ChromeApi : IDisposable
 	}
 
 	/// <summary>
-	/// A file from Windows' Open with (LaunchArgs.Files checked it): an HTML file opens like a link at its file: address, and a
-	/// PDF in the Files viewer, which the window grants it to as if it had been dropped there.
+	/// A file from Windows' Open with (LaunchArgs.Files checked it) opens like a link at its file: address. A PDF gets the
+	/// engine's own viewer in a page tab, with the whole window, fullscreen, find and print; the Files viewer is for dropped files.
 	/// </summary>
 	public void OpenFile(string path)
 	{
 		var file = LaunchArgs.Files([path], File.Exists).SingleOrDefault() ?? throw new UnsupportedLaunchFileException(path);
-		if (file.Kind == LaunchFileKind.Html)
-		{
-			OpenLink(file.Address);
-			return;
-		}
-		var grant = Grants.Issue(file.Path);
-		Shell.OpenPanelWithInputOrSay($"section:{PanelSection.Viewer}", JsonSerializer.Serialize(new { token = grant.Token, name = grant.Name }, ZingJson.Options));
+		OpenLink(file.Address);
 	}
 
 	/// <summary>A link tile: one new tab at the address, so there is no blank page behind it in Back and the keyboard stays with the page.</summary>
@@ -633,6 +633,7 @@ public sealed class ChromeApi : IDisposable
 		Ordering.Dispose();
 		Lifecycle.Dispose();
 		_unsubscribeLibrary();
+		_unsubscribeIcons();
 		Saved.Dispose();
 		Tabs.Destroy();
 	}
@@ -1207,6 +1208,22 @@ public sealed class ChromeApi : IDisposable
 		return await new SyncKeys(_app.Account, vault, SyncClient(vault)).TurnOnAsync(password, _closing.Token);
 	}
 
+	/// <summary>Whether the signed-in Google account already syncs a vault, so Turn on sync joins it rather than asking for a new password.</summary>
+	private async Task<bool> SyncServerHasKeysAsync()
+	{
+		var vault = Vault();
+		var signedIn = vault.SyncAccount() ?? throw new NotSignedInToSyncException();
+		return await SyncClient(vault).GetKeysAsync(_closing.Token, asUser: signedIn.UserId) is not null;
+	}
+
+	/// <summary>Joins the signed-in Google account's sync from Settings (SyncRestore.JoinWithPasswordAsync), with its own sign-in and client.</summary>
+	private async Task<SyncState> JoinSyncAsync(string current, string password)
+	{
+		var vault = Vault();
+		await new SyncRestore(_app.Account, () => vault, SyncClient(vault), vault).JoinWithPasswordAsync(current, password, _closing.Token);
+		return CurrentSyncState();
+	}
+
 	/// <summary>
 	/// A broken account rule is a 'rejected' outcome, as the other account channels give. With sync on (keys.bin says so), the keys
 	/// are re-wrapped and uploaded first, and a weak password or keys changed on another PC raise. With the vault open, every change
@@ -1682,6 +1699,7 @@ public sealed class ChromeApi : IDisposable
 	private object LibraryState() => new
 	{
 		library = _app.Library.Snapshot,
+		icons = _app.BookmarkIcons?.ForLibrary(_app.Library.Snapshot) ?? new Dictionary<string, string>(),
 		panel = _libraryPanel,
 		favouritesBar = FavouritesBarShown(),
 		offset = Shell.PinnedWidth,

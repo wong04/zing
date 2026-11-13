@@ -241,7 +241,7 @@ public sealed class TabSleepServiceTests
 	{
 		var background = _tabs.Open("https://a.example/");
 		_tabs.Open("https://b.example/");
-		((FakePage)_tabs.PageOf(background.Id)!).Events.IconChanged("data:image/png;base64,AA==");
+		((FakePage)_tabs.PageOf(background.Id)!).Events.IconChanged("data:image/png;base64,AA==", null);
 		_tabs.Sleep(background.Id);
 		Assert.Equal("data:image/png;base64,AA==", _tabs.State("manual", false).Tabs.Single(t => t.Id == background.Id).Icon);
 	}
@@ -837,7 +837,7 @@ public sealed class TabPreviewServiceTests
 	{
 		var (_, page) = OpenSource();
 		var preview = Peek(page);
-		preview.Events.IconChanged("data:image/png;base64,AA==");
+		preview.Events.IconChanged("data:image/png;base64,AA==", null);
 		var expanded = _tabs.ExpandPreview();
 		Assert.Equal("data:image/png;base64,AA==", _tabs.State("manual", false).Tabs.Single(t => t.Id == expanded.Id).Icon);
 	}

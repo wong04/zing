@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ImportSourceView } from '@shared/ipc'
 import { zing } from '../api'
 import { InfoBanner, PillButton } from '../components'
-import { CONFIRM_VAULT_COPY, EXPORT_BUTTON, EXPORT_COPY_AFTER, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, RECYCLE_COPY, type PasswordImportEvent, type PasswordImportState } from './importText'
+import { CONFIRM_VAULT_COPY, EXPORT_BUTTON, EXPORT_COPY_AFTER, exportMenuPath, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, RECYCLE_COPY, type PasswordImportEvent, type PasswordImportState } from './importText'
 import { messageOf, PasswordImportResult, usePasswordCsvImport } from './PasswordImport'
 
 interface PasswordImportFlowProps {
@@ -167,6 +167,11 @@ export function PasswordImportFlow({ source, vaultOn, onClose }: PasswordImportF
 						In {browserName(source)}, click <strong>{EXPORT_BUTTON}</strong>
 						{EXPORT_COPY_AFTER}
 					</InfoBanner>
+					{exportMenuPath[source.browser] ? (
+						<div className="import-menu-path">
+							If {browserName(source)} shows a new tab instead, open {exportMenuPath[source.browser]}.
+						</div>
+					) : null}
 					<div className="vault-actions">
 						{chooseButton}
 						{cancelRow}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileHelp, InvalidPasswordImportEventError, outcomeLine, PASSWORDS_FILE_VAULT_OFF, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, type PasswordImportEvent, type PasswordImportState } from './importText'
+import { exportMenuPath, fileHelp, InvalidPasswordImportEventError, macBrowsers, outcomeLine, PASSWORDS_FILE_VAULT_OFF, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, type PasswordImportEvent, type PasswordImportState } from './importText'
 
 const outcome = (patch: Partial<Parameters<typeof outcomeLine>[0]> = {}) => ({
 	folderTitle: 'Imported from Chrome (Personal)',
@@ -35,9 +35,28 @@ describe('outcomeLine', () => {
 })
 
 describe('fileHelp', () => {
-	it('covers Dia, Safari and Firefox', () => {
-		expect(fileHelp.map((h) => h.app)).toEqual(['Dia', 'Safari', 'Firefox'])
+	it('covers Firefox, which has no row of its own', () => {
+		expect(fileHelp.map((h) => h.app)).toEqual(['Firefox'])
 		for (const h of fileHelp) expect(h.steps).not.toBe('')
+	})
+})
+
+describe('macBrowsers', () => {
+	it('covers Dia, Safari and Arc with both exports', () => {
+		expect(macBrowsers.map((m) => m.app)).toEqual(['Dia', 'Safari', 'Arc'])
+		for (const m of macBrowsers) {
+			expect(m.bookmarks).not.toBe('')
+			expect(m.passwords).not.toBe('')
+		}
+	})
+})
+
+describe('exportMenuPath', () => {
+	it('has a menu path for every browser with an export page, and none for Arc', () => {
+		expect(exportMenuPath.chrome).toContain('Google Password Manager')
+		expect(exportMenuPath.edge).toContain('Passwords')
+		expect(exportMenuPath.brave).toContain('Password Manager')
+		expect(exportMenuPath.arc).toBeUndefined()
 	})
 })
 

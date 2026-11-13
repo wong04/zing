@@ -110,6 +110,68 @@ public sealed class ImportSourcesTests : IDisposable
 		Assert.Equal(LinkCount(ArcSidebar.Parse(Fixture("arc-sidebar.json"))), source.Bookmarks);
 	}
 
+	private string DiaUserData(string package = "TheBrowserCompany.Dia_ttt1ap7aakyb4") => Path.Combine(root, "Packages", package, "LocalCache", "Local", "Dia", "User Data");
+
+	[Fact]
+	public void FindsDiaProfilesInsideItsPackageFolder()
+	{
+		var dia = DiaUserData();
+		WriteLocalState(dia, "Default", ("Default", "Personal"), ("Profile 1", "Work"));
+		WriteProfile(dia, "Default", Fixture("chromium-bookmarks.json"));
+		WriteProfile(dia, "Profile 1", Fixture("chromium-bookmarks.json"));
+
+		var found = ImportSources.Find(root);
+
+		Assert.Equal(["dia:Default", "dia:Profile 1"], found.Select(s => s.Id));
+		var personal = found[0];
+		Assert.Equal(ImportBrowser.Dia, personal.Browser);
+		Assert.Equal("Default", personal.Profile);
+		Assert.Equal("Dia (Personal)", personal.Display);
+		Assert.Equal(Path.Combine(dia, "Default", "Bookmarks"), personal.Path);
+		Assert.Equal(LinkCount(ChromiumBookmarks.Parse(Fixture("chromium-bookmarks.json"))), personal.Bookmarks);
+		Assert.True(personal.LastUsed);
+	}
+
+	[Fact]
+	public void DiaSitsBetweenTheChromiumBrowsersAndArc()
+	{
+		var chrome = ChromeUserData();
+		WriteLocalState(chrome, null, ("Default", "Personal"));
+		WriteProfile(chrome, "Default", Fixture("chromium-bookmarks.json"));
+		var dia = DiaUserData();
+		WriteLocalState(dia, null, ("Default", "Personal"));
+		WriteProfile(dia, "Default", Fixture("chromium-bookmarks.json"));
+		var arc = Path.Combine(root, "Packages", "TheBrowserCompany.Arc_ttt1ap7aakyb4", "LocalCache", "Local", "Arc");
+		Directory.CreateDirectory(arc);
+		File.WriteAllText(Path.Combine(arc, "StorableSidebar.json"), Fixture("arc-sidebar.json"));
+
+		Assert.Equal(["chrome:Default", "dia:Default", "arc"], ImportSources.Find(root).Select(s => s.Id));
+	}
+
+	[Fact]
+	public void ADiaPackageWithoutAProfileListIsNotARow()
+	{
+		Directory.CreateDirectory(Path.Combine(root, "Packages", "TheBrowserCompany.Dia_ttt1ap7aakyb4", "LocalCache", "Local"));
+
+		Assert.Empty(ImportSources.Find(root));
+	}
+
+	[Fact]
+	public void ADamagedDiaProfileListIsOneDiaRowWithAnError()
+	{
+		var dia = DiaUserData();
+		Directory.CreateDirectory(dia);
+		File.WriteAllText(Path.Combine(dia, "Local State"), "{ not json");
+
+		var row = Assert.Single(ImportSources.Find(root));
+
+		Assert.Equal("dia", row.Id);
+		Assert.Equal(ImportBrowser.Dia, row.Browser);
+		Assert.Null(row.Profile);
+		Assert.False(string.IsNullOrEmpty(row.Error));
+		Assert.DoesNotContain(root, row.Error);
+	}
+
 	[Fact]
 	public void ACorruptBookmarksFileIsARowWithAnError()
 	{

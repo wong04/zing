@@ -24,10 +24,12 @@ export interface Launched {
 	readonly pid: number
 	/** The menus the host opened, oldest first, as their labels (a separator is null); test runs never show them. */
 	menus(): (string | null)[][]
-	/** The dialogs the host would have opened (Edge's print preview), oldest first; test runs never show them. */
-	dialogs(): { readonly kind: string; readonly url: string }[]
+	/** The dialogs the host would have opened (Edge's print preview), oldest first; test runs never show them. A browser launch also has the arguments it would have been given. */
+	dialogs(): { readonly kind: string; readonly url: string; readonly args?: readonly string[] }[]
 	/** Starts Zing again on the same profile, as a link click from another app would, and resolves with its exit code. */
 	launchAgain(args: readonly string[]): Promise<number | null>
+	/** Quits as close() does, but resolves once the host has exited cleanly, without waiting for the engine to release the profile: for a test that relaunches straight away. */
+	quit(): Promise<void>
 	close(): Promise<void>
 }
 
@@ -81,18 +83,43 @@ const QUIT_TIMEOUT = 15_000
  * are read first, so a lock the engine keeps can't hide them.
  */
 async function quitCleanly(self: Running): Promise<void> {
-	const code = await Promise.race([self.exit, new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), QUIT_TIMEOUT))])
-	if (code === 'timeout') self.host.kill()
+	const code = await hostExit(self)
 	const recorded = existsSync(self.errors) ? readFileSync(self.errors, 'utf8') : undefined
 	// Released before any error is thrown: a test that expects close() to reject still has its profile deleted after it.
 	const release = await engineReleased(self.userData).then(
 		() => undefined,
 		(error: unknown) => error,
 	)
-	if (recorded !== undefined) throw new HostProcessError(`The host recorded errors during this test:\n\n${recorded}\n${hostLogs(undefined, self.userData)}${release ? `\n${String(release)}` : ''}`)
+	if (recorded !== undefined) throw new HostProcessError(`The host recorded errors during this test:
+
+${recorded}
+${hostLogs(undefined, self.userData)}${release ? `
+${String(release)}` : ''}`)
 	if (release) throw release
+	exitedCleanly(self, code)
+}
+
+/** The host's exit code once it has gone, or 'timeout' after killing a host that never quit. */
+async function hostExit(self: Running): Promise<number | null | 'timeout'> {
+	const code = await Promise.race([self.exit, new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), QUIT_TIMEOUT))])
+	if (code === 'timeout') self.host.kill()
+	return code
+}
+
+function exitedCleanly(self: Running, code: number | null | 'timeout'): void {
 	if (code === 'timeout') throw new HostProcessError(`Zing did not quit within ${QUIT_TIMEOUT / 1000} s of its last window closing`)
-	if (code !== 0) throw new HostProcessError(`Zing quit with ${describeExit(code)}\n${hostLogs(undefined, self.userData)}`)
+	if (code !== 0) throw new HostProcessError(`Zing quit with ${describeExit(code)}
+${hostLogs(undefined, self.userData)}`)
+}
+
+/** quitCleanly without the wait for the engine: another Zing may already be using the profile. */
+async function hostQuitCleanly(self: Running): Promise<void> {
+	const code = await hostExit(self)
+	if (existsSync(self.errors)) throw new HostProcessError(`The host recorded errors during this test:
+
+${readFileSync(self.errors, 'utf8')}
+${hostLogs(undefined, self.userData)}`)
+	exitedCleanly(self, code)
 }
 
 const running = new Set<Running>()
@@ -224,14 +251,37 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 	const host: ChildProcess = spawn(HOST_EXE, [...args], { env: hostEnv, stdio: 'ignore' })
 	const exit = exitOf(host)
 	let closing = false
+	const quitWindows = async () => {
+		closing = true
+		running.delete(self)
+		// Quit as a person would, by closing every window, so pending writes are flushed.
+		const exited = exit.then(() => undefined)
+		const chromes = pages(browser).filter((p) => p.url() === CHROME_URL)
+		// One window at a time, as a person closes them. A window that closes takes its renderer
+		// with it, so the evaluate may never answer; the page's close event is the answer.
+		for (const page of chromes) {
+			const gone = new Promise<void>((resolve) => page.once('close', () => resolve()))
+			void page.evaluate(() => (globalThis as unknown as { zing: { runCommand(id: string): Promise<unknown> } }).zing.runCommand('window.close')).catch(() => undefined)
+			await Promise.race([gone, exited, new Promise((resolve) => setTimeout(resolve, 5_000))])
+		}
+		await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, QUIT_TIMEOUT))])
+		// An exited host has already dropped the DevTools connection; closing it again crashed the
+		// Playwright worker (0xC0000409) about once per full run.
+		if (browser.isConnected()) await browser.close()
+	}
 	// A host that goes before close() leaves the test only "target closed"; say how it went and what it logged.
 	void exit.then((code) => {
 		if (closing) return
 		process.stderr.write(`Zing exited before close(), with ${describeExit(code)}.\n${hostLogs(errors, userData)}\n`)
 	})
-	await expect
-		.poll(async () => (await fetch(`http://127.0.0.1:${port}/json/version`).catch(() => undefined))?.ok ?? false, { timeout: LAUNCH_TIMEOUT })
-		.toBe(true)
+	// A host that exits first (a launch handed to another Zing on the profile) fails the launch now, not at the timeout.
+	await Promise.race([
+		expect.poll(async () => (await fetch(`http://127.0.0.1:${port}/json/version`).catch(() => undefined))?.ok ?? false, { timeout: LAUNCH_TIMEOUT }).toBe(true),
+		exit.then((code) => {
+			throw new HostProcessError(`Zing exited with ${describeExit(code)} before its DevTools endpoint was up
+${hostLogs(errors, userData)}`)
+		}),
+	])
 	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
 	const self: Running = { host, exit, browser, errors, userData }
 	running.add(self)
@@ -272,23 +322,12 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 				second.once('error', reject)
 				second.once('exit', (code) => resolve(code))
 			}),
+		quit: async () => {
+			await quitWindows()
+			await hostQuitCleanly(self)
+		},
 		close: async () => {
-			closing = true
-			running.delete(self)
-			// Quit as a person would, by closing every window, so pending writes are flushed.
-			const exited = exit.then(() => undefined)
-			const chromes = pages(browser).filter((p) => p.url() === CHROME_URL)
-			// One window at a time, as a person closes them. A window that closes takes its renderer
-			// with it, so the evaluate may never answer; the page's close event is the answer.
-			for (const page of chromes) {
-				const gone = new Promise<void>((resolve) => page.once('close', () => resolve()))
-				void page.evaluate(() => (globalThis as unknown as { zing: { runCommand(id: string): Promise<unknown> } }).zing.runCommand('window.close')).catch(() => undefined)
-				await Promise.race([gone, exited, new Promise((resolve) => setTimeout(resolve, 5_000))])
-			}
-			await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, QUIT_TIMEOUT))])
-			// An exited host has already dropped the DevTools connection; closing it again crashed the
-			// Playwright worker (0xC0000409) about once per full run.
-			if (browser.isConnected()) await browser.close()
+			await quitWindows()
 			await quitCleanly(self)
 		},
 	}

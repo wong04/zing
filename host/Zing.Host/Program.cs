@@ -232,6 +232,18 @@ public sealed class ZingApp
 		if (window == Primary) _session?.Changed();
 	}
 
+	/// <summary>
+	/// Called as a window starts closing, before its pages go. When it is the last one and Zing is quitting (not rebuilding
+	/// its engine), what must reach disk is written now and the profile is given up: a launch from here on starts a new
+	/// Zing, which reads what was just written, instead of being handed to this one as it closes.
+	/// </summary>
+	public void Quitting(MainWindow window)
+	{
+		if (_rebuild is not null || _windows.Count != 1 || _windows[0] != window) return;
+		foreach (var flush in _onQuit) flush();
+		SingleInstance.Release();
+	}
+
 	public void Closed(MainWindow window)
 	{
 		var wasPrimary = window == Primary;
@@ -249,7 +261,6 @@ public sealed class ZingApp
 			if (rebuild.Exited) Rebuild();
 			return;
 		}
-		foreach (var flush in _onQuit) flush();
 		Updates.Quitting();
 		Native.PostQuitMessage(0);
 	}
@@ -302,14 +313,17 @@ public sealed class ZingApp
 		}
 
 		DebouncedJsonWriter? libraryWriter = null;
+		string? libraryPath = null;
 		var openedLibrary = LibraryStore.Open(AppPaths.Library, path =>
 		{
+			libraryPath = path;
 			libraryWriter = new DebouncedJsonWriter(path, TimeSpan.FromMilliseconds(500), scheduler, e => TestHooks.Record("library write", e));
 			return snapshot => libraryWriter.Write(snapshot);
 		}, Now, () => Guid.NewGuid().ToString(), stamp);
 		if (openedLibrary.Problem is { } libraryProblem) StartupProblem("library", "your bookmarks and reading list", "with an empty library", libraryProblem);
 		var library = openedLibrary.Value;
 		_onQuit.Add(() => libraryWriter?.Flush());
+		var bookmarkIcons = OpenBookmarkIcons(library, openedLibrary.Problem is null ? libraryPath : null);
 		// A persistent profile exists so sign-ins survive closing a tab and quitting; purging would undo exactly that.
 		PersistentProfile = settings.Get("persistentProfile")?.GetValue<bool>() ?? throw new InvalidDataException("Setting persistentProfile is missing");
 		// One purger for both jobs: a site's data when its last tab closes, and Settings' Clear session (all of it).
@@ -321,7 +335,7 @@ public sealed class ZingApp
 		if (openedAccount.Problem is { } accountProblem) StartupProblem("account", "your Zing account", "without it", accountProblem);
 		var account = openedAccount.Value;
 		var engines = OpenEngines();
-		// Reached only by the Zing that owns this profile (the single-instance check came first), so what is in the folder is a dead Zing's.
+		// Reached only by the Zing that owns this profile (the single-instance check came first), so what is in the folder is a dead Zing's, or a quitting one's, which gave the profile up first (Quitting); the pid check keeps the latter's.
 		Zing.Core.Viewer.ViewerFiles.SweepLeftovers(AppPaths.ViewerCopies, Zing.Core.Viewer.ViewerFiles.IsZingRunning, (what, error) => TestHooks.Record(what, error));
 		// HTML to PDF needs no engine, so its print folders are swept whether or not the engines folder opened.
 		HtmlPdfPrinter.SweepLeftovers();
@@ -330,7 +344,32 @@ public sealed class ZingApp
 		Zing.Core.Sync.SyncRestore.AskIfPasswordChangedElsewhere(account, vaults.Current);
 		// Zing closing wipes the secret key the vault holds (Ruling 44).
 		_onQuit.Add(vaults.Dispose);
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults, Sync: TestHooks.IsEndToEndRun ? TestHooks.Sync(this) : SyncBuild.Setup(this), SyncScheduler: _scheduler, LocalAppData: WindowsDownloads.LocalAppData, BrowserLauncher: new BrowserLauncher(), FileTrash: new FileTrash(), DefaultBrowser: new DefaultBrowserReader());
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults, Sync: TestHooks.IsEndToEndRun ? TestHooks.Sync(this) : SyncBuild.Setup(this), SyncScheduler: _scheduler, LocalAppData: WindowsDownloads.LocalAppData, BrowserLauncher: new BrowserLauncher(), FileTrash: new FileTrash(), DefaultBrowser: new DefaultBrowserReader(), BookmarkIcons: bookmarkIcons);
+	}
+
+	/// <summary>
+	/// Bookmarks' icons, in bookmark-icons beside library.json, pruned as bookmarks go. None for a launch whose library didn't load
+	/// cleanly: its library is a stand-in, and pruning against it would delete the icons of bookmarks that may come back.
+	/// </summary>
+	private static BookmarkIcons? OpenBookmarkIcons(LibraryStore library, string? libraryPath)
+	{
+		if (libraryPath is null) return null;
+		var icons = new BookmarkIcons(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(libraryPath))!, "bookmark-icons"));
+		void Prune(BrowserLibrary snapshot)
+		{
+			try
+			{
+				icons.Prune(snapshot);
+			}
+			catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+			{
+				// A file left behind is tried again on the next change; the library edit itself went through.
+				TestHooks.Record("pruning bookmark icons", error);
+			}
+		}
+		Prune(library.Snapshot);
+		library.Subscribe(Prune);
+		return icons;
 	}
 
 	/// <summary>
@@ -466,6 +505,8 @@ public sealed class ZingApp
 		options.CustomSchemeRegistrations = new List<CoreWebView2CustomSchemeRegistration> { new(StartPage.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true }, new(Zing.Core.Net.RelayedContent.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true } };
 		// The engine's own data; an e2e run keeps it in its scratch profile, so a relaunch finds it and nothing is left in AppData.
 		var userData = TestHooks.IsEndToEndRun ? Path.Combine(AppPaths.UserData, "WebView2") : Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Zing", "WebView2");
+		// A Zing that is still quitting gave up the profile before its engine went.
+		await EngineFolder.WaitUntilFreeAsync(userData, EngineFolder.Patience);
 		return await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, options);
 	}
 }

@@ -92,10 +92,12 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	/// <exception cref="NoPasswordExportException"/>
 	/// <exception cref="DownloadsFolderMissingException"/>
 	/// <exception cref="BrowserNotInstalledException"/>
+	/// <exception cref="NoProfileToOpenException"/>
 	public void WatchPasswords(string id)
 	{
 		var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
 		var url = ExportPages.Url(source.Browser);
+		var profile = source.Profile ?? throw new NoProfileToOpenException(source.Browser);
 		var openLauncher = launcher();
 		CancelWatch();
 		var watch = new PasswordExportWatch(scheduler, downloadsDir, () => DateTimeOffset.UtcNow, Found, TimedOut);
@@ -103,7 +105,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 		_watch = watch;
 		try
 		{
-			openLauncher.Open(source.Browser, url);
+			openLauncher.Open(source.Browser, profile, url);
 		}
 		catch
 		{
@@ -216,7 +218,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	private ImportNudge Offer(string? progId)
 	{
 		if (DefaultBrowserSource.Pick(progId, ImportSources.Find(localAppData())) is not { } source) return new ImportNudge.Generic();
-		return new ImportNudge.Offer(Label(source), ProfileOf(source), source.Bookmarks ?? 0, source.Id, source.Browser != ImportBrowser.Arc);
+		return new ImportNudge.Offer(Label(source), ProfileOf(source), source.Bookmarks ?? 0, source.Id, ExportPages.Has(source.Browser));
 	}
 
 	private void ImportFromCard(NudgeHost host, string id)
@@ -227,7 +229,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 		{
 			var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
 			var outcome = ImportSourceCore(id);
-			_result = new ImportNudge.Result(Label(source), outcome.AddedToBar + outcome.AddedToFolder, source.Id, source.Browser != ImportBrowser.Arc);
+			_result = new ImportNudge.Result(Label(source), outcome.AddedToBar + outcome.AddedToFolder, source.Id, ExportPages.Has(source.Browser));
 			host.MarkDone();
 		}
 		catch (Exception error) when (error is UnknownImportSourceException or IOException or UnauthorizedAccessException or SecurityException or BookmarksFileDamagedException or ChromiumBookmarksFormatException or ArcSidebarFormatException or ImportFileTooLargeException or ImportFileNotUtf8Exception)
@@ -279,5 +281,5 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	}
 
 	private static ImportSourceView View(ImportSource source) =>
-		new(source.Id, source.Browser.ToString().ToLowerInvariant(), source.Display, source.Bookmarks, source.Error, source.Browser != ImportBrowser.Arc);
+		new(source.Id, source.Browser.ToString().ToLowerInvariant(), source.Display, source.Bookmarks, source.Error, ExportPages.Has(source.Browser));
 }

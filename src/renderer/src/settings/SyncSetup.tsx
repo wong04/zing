@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { SyncState } from '@shared/vault/vault'
 import { zing } from '../api'
+import { useAccount } from '../account/useAccount'
 import { InfoBanner, PillButton, PillField } from '../components'
 
 export type Strength = typeof import('@shared/vault/passwordStrength')
@@ -83,12 +84,102 @@ export function StrengthMeter({ strength, password }: { strength: Strength | und
 	)
 }
 
+/** Turn on sync's refusal when the Google account already syncs another PC's vault: this PC joins it instead. */
+const SYNCS_ELSEWHERE = 'SyncAlreadySetUpElsewhereException'
+
+/** Whether the signed-in Google account already syncs a vault; undefined while the host asks the server. */
+function useServerHasKeys(): { hasKeys: boolean | undefined; setHasKeys: (has: boolean) => void; error: string | undefined; retry: () => void } {
+	const [hasKeys, setHasKeys] = useState<boolean>()
+	const [error, setError] = useState<string>()
+	const [attempt, setAttempt] = useState(0)
+	useEffect(() => {
+		let current = true
+		zing.syncServerHasKeys().then(
+			(has) => {
+				if (current) setHasKeys(has)
+			},
+			(failure: unknown) => {
+				if (current) setError(messageOf(failure))
+			},
+		)
+		return () => {
+			current = false
+		}
+	}, [attempt])
+	const retry = (): void => {
+		setError(undefined)
+		setAttempt(attempt + 1)
+	}
+	return { hasKeys, setHasKeys, error, retry }
+}
+
 /**
- * Turning on sync once signed in with Google: the Zing password, which becomes the sync password on every PC. One the host turns
- * down (at least 12 characters, a number, a symbol, and not common) is changed first, in the same flow, with a generated
- * passphrase on offer. The host's sentence for the first rule it failed says why.
+ * Turning on sync once signed in with Google. A Google account that already syncs another PC is joined with the password used
+ * there (JoinSync): asking for a new one first would make a second account and vault the server then refuses. Otherwise the Zing
+ * password, which becomes the sync password on every PC.
  */
-export function SyncSetup({ turnOn }: { turnOn: (password: string) => Promise<void> }) {
+export function SyncSetup({ turnOn, onJoined }: { turnOn: (password: string) => Promise<void>; onJoined: (state: SyncState) => void }) {
+	const { hasKeys, setHasKeys, error, retry } = useServerHasKeys()
+	if (error) {
+		return (
+			<div className="sync-setup" role="form" aria-label="Turn on sync">
+				<InfoBanner kind="warning">{error}</InfoBanner>
+				<div className="vault-edit-actions">
+					<PillButton size="small" onClick={retry}>
+						Try again
+					</PillButton>
+				</div>
+			</div>
+		)
+	}
+	if (hasKeys === undefined) {
+		return (
+			<div className="sync-setup" role="status" aria-live="polite">
+				Checking whether this Google account already syncs passwords…
+			</div>
+		)
+	}
+	if (hasKeys) return <JoinSync onJoined={onJoined} />
+	return <TurnOnSync turnOn={turnOn} syncsElsewhere={() => setHasKeys(true)} />
+}
+
+/**
+ * This PC joins the sync of another PC with the Zing password used there, as Restore from sync does. With an account here, its own
+ * password is asked for too, and becomes the sync one.
+ */
+function JoinSync({ onJoined }: { onJoined: (state: SyncState) => void }) {
+	const account = useAccount()
+	const [current, setCurrent] = useState('')
+	const [password, setPassword] = useState('')
+	const { busy, error, run } = useAction()
+	if (!account) return null
+	const join = (): void => run(async () => onJoined(await zing.joinSync(current, password)))
+	return (
+		<div className="sync-setup" role="form" aria-label="Join sync">
+			<InfoBanner kind="info">
+				This Google account already syncs passwords from another PC. Enter the Zing password you use there to bring them to this PC.
+				{account.hasAccount ? ' It becomes your Zing password on this PC too.' : ' Your Zing account here is made from that one.'}
+			</InfoBanner>
+			{account.hasAccount ? (
+				<PillField type="password" label="Zing password on this PC" autoComplete="current-password" value={current} onChange={setCurrent} />
+			) : null}
+			<PillField type="password" label="Sync password" autoComplete="off" value={password} onChange={setPassword} onSubmit={join} />
+			<div className="vault-edit-actions">
+				<PillButton size="small" disabled={busy || password === '' || (account.hasAccount && current === '')} onClick={join}>
+					Join sync
+				</PillButton>
+			</div>
+			{error ? <InfoBanner kind="warning">{error}</InfoBanner> : null}
+		</div>
+	)
+}
+
+/**
+ * The Zing password, which becomes the sync password on every PC. One the host turns down (at least 12 characters, a number, a
+ * symbol, and not common) is changed first, in the same flow, with a generated passphrase on offer. The host's sentence for the
+ * first rule it failed says why.
+ */
+function TurnOnSync({ turnOn, syncsElsewhere }: { turnOn: (password: string) => Promise<void>; syncsElsewhere: () => void }) {
 	const strength = useStrength()
 	const [stronger, setStronger] = useState(false)
 	const [current, setCurrent] = useState('')
@@ -106,6 +197,10 @@ export function SyncSetup({ turnOn }: { turnOn: (password: string) => Promise<vo
 				if (failure instanceof Error && failure.name === 'SyncPasswordTooWeakException') {
 					setRefusal(messageOf(failure))
 					setStronger(true)
+					return
+				}
+				if (failure instanceof Error && failure.name === SYNCS_ELSEWHERE) {
+					syncsElsewhere()
 					return
 				}
 				throw failure

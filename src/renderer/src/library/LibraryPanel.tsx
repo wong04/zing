@@ -46,13 +46,14 @@ function positionOf(library: BrowserLibrary, panel: PanelKind, id: string): { in
 
 interface LibraryPanelProps {
 	readonly library: BrowserLibrary
+	readonly icons: Readonly<Record<string, string>>
 	readonly panel: PanelKind
 	readonly favouritesBar: boolean
 	readonly offset: number
 	readonly position: TabBarPosition
 }
 
-export function LibraryPanel({ library, panel, favouritesBar, offset, position }: LibraryPanelProps) {
+export function LibraryPanel({ library, icons, panel, favouritesBar, offset, position }: LibraryPanelProps) {
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set([FAVOURITES_ID]))
 	const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
 	const [focused, setFocused] = useState<string | undefined>()
@@ -185,7 +186,15 @@ export function LibraryPanel({ library, panel, favouritesBar, offset, position }
 						onDoubleClick={() => open(row)}
 					>
 						<span className="library-glyph" aria-hidden="true">
-							{row.folder ? (expanded.has(row.id) ? '▾' : '▸') : panel === 'readingList' && !row.read ? '●' : '·'}
+							{row.folder ? (
+								expanded.has(row.id) ? '▾' : '▸'
+							) : panel === 'readingList' ? (
+								row.read ? '·' : '●'
+							) : icons[row.id] ? (
+								<img className="tab-favicon library-favicon" src={icons[row.id]} alt="" />
+							) : (
+								'·'
+							)}
 						</span>
 						{renaming === row.id ? (
 							<input

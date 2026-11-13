@@ -163,6 +163,8 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		turnOffSync: () => invoke('sync:turn-off'),
 		cancelSyncSignIn: () => invoke('sync:cancel-sign-in'),
 		turnOnSync: (password) => invoke('sync:turn-on', password),
+		syncServerHasKeys: () => invoke('sync:server-has-keys'),
+		joinSync: (current, password) => invoke('sync:join', current, password),
 		confirmRecoverySaved: () => invoke('sync:confirm-recovery-saved'),
 		showRecoveryKey: () => invoke('sync:show-recovery'),
 		uploadLocalCopy: () => invoke('sync:upload-local'),

@@ -8,8 +8,20 @@ import { useSettings } from '../settings/useSettings'
 const MIDDLE_BUTTON = 1
 const BAR_RIBBON: Ribbon = { width: 30, gap: 5 }
 
-function Chip({ node, onDragOver, onDrop, dropSide }: {
+/** What a chip shows: a folder's icon, the site's icon kept from a visit, or the title's first letter. */
+function ChipFace({ node, icon }: { node: BookmarkNode; icon: string | undefined }) {
+	if (isFolder(node)) return <FolderIcon size={14} />
+	if (icon) return <img className="tab-favicon" src={icon} alt="" />
+	return (
+		<span className="fav-glyph" aria-hidden="true">
+			{node.title.slice(0, 1).toUpperCase()}
+		</span>
+	)
+}
+
+function Chip({ node, icon, onDragOver, onDrop, dropSide }: {
 	node: BookmarkNode
+	icon: string | undefined
 	onDragOver: (e: DragEvent<HTMLElement>) => void
 	onDrop: (e: DragEvent<HTMLElement>) => void
 	dropSide: 'before' | 'after' | undefined
@@ -50,12 +62,12 @@ function Chip({ node, onDragOver, onDrop, dropSide }: {
 			onAuxClick={onAuxClick}
 			onContextMenu={onContextMenu}
 		>
-			{folder ? <FolderIcon size={14} /> : <span className="fav-glyph" aria-hidden="true">{node.title.slice(0, 1).toUpperCase()}</span>}
+			<ChipFace node={node} icon={icon} />
 		</button>
 	)
 }
 
-export function FavouritesBar({ library }: { library: BrowserLibrary }) {
+export function FavouritesBar({ library, icons }: { library: BrowserLibrary; icons: Readonly<Record<string, string>> }) {
 	const items = favourites(library)
 	const showHint = useSettings()?.settings.favouritesHint ?? false
 	const [over, setOver] = useState<{ id: string; side: 'before' | 'after' } | undefined>()
@@ -109,6 +121,7 @@ export function FavouritesBar({ library }: { library: BrowserLibrary }) {
 				<Chip
 					key={node.id}
 					node={node}
+					icon={icons[node.id]}
 					dropSide={over?.id === node.id ? over.side : undefined}
 					onDragOver={(e) => {
 						e.preventDefault()

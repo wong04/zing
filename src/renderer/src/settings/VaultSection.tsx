@@ -294,7 +294,7 @@ function SyncRow({ sync, setSync, turnOn }: { sync: SyncState; setSync: (state: 
 			<div className="setting-row-detail" role="status" aria-live="polite">
 				{syncDetail(sync, acting)}
 			</div>
-			{sync.signedIn && !sync.on ? <SyncSetup turnOn={turnOn} /> : null}
+			{sync.signedIn && !sync.on ? <SyncSetup turnOn={turnOn} onJoined={setSync} /> : null}
 			{sync.signedIn && sync.passwordChangedElsewhere ? (
 				<InfoBanner kind="info">Your Zing password was changed on another PC. Zing asks for the new one the next time it starts.</InfoBanner>
 			) : null}
