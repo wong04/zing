@@ -6,7 +6,7 @@ namespace Zing.Host;
 /// <summary>
 /// A link preview's buttons (#peek): a transparent view in the margin at the top right of the preview's top layer
 /// (PeekLayout's Buttons), shown only while a preview is open. The dim and the border around the preview are the
-/// scrim's. Made, hidden, once the chrome has loaded (Prepare), so the first preview doesn't wait on a cold renderer; its
+/// scrim's. Made by the first preview, not at start-up: an idle window has no #peek renderer. Its
 /// view closes with the window's scope, even one still loading. It never takes the keyboard on showing: the preview's page has it.
 /// </summary>
 public sealed class PeekControlsLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, Func<Rect?> buttons, Action<RendererView> created, OverlayHost overlays)
@@ -21,9 +21,6 @@ public sealed class PeekControlsLayer(HostWindow window, WindowScope scope, Core
 		if (_ready is null && !open) return;
 		TestHooks.Background(ShowAsync(), "preview buttons");
 	}
-
-	/// <summary>Makes the view ahead of the first preview. It is optional: the caller records a failure, and the next preview tries again.</summary>
-	public Task PrepareAsync() => ShowAsync();
 
 	public void Layout()
 	{
