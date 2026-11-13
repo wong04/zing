@@ -45,6 +45,10 @@ public sealed class SyncRestoreOverAnotherAccountException()
 public sealed class SyncServerBehindException()
 	: Exception("The sync server holds older keys than this PC, so Zing didn't restore from it. Sign in with your current Zing password, or restore with your recovery key.");
 
+/// <summary>Joining a Google account's sync with a password that doesn't open its keys: this PC's own password was right.</summary>
+public sealed class SyncJoinWrongPasswordException()
+	: Exception("That isn't the Zing password this Google account syncs with. Use the one from the PC where you turned sync on.");
+
 /// <summary>A restore step started while another one in the same window is still running.</summary>
 public sealed class SyncRestoreBusyException()
 	: Exception("Zing is still working on the last restore step. Wait for it to finish, then try again.");
@@ -111,6 +115,51 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 		await RequireServerNotBehindAsync(store, signedIn.UserId, keys.VaultId, server, password, cancellation);
 		await store.RestoreKeysAsync(keys, KeptWith(store, signedIn.UserId, keys.VaultId, server));
 		MakeAccount(profile, password);
+	}
+
+	/// <summary>
+	/// Turn on sync in Settings for a Google account that already syncs another PC's vault: this PC joins it, as a restore with the
+	/// sync password does. With no account here it's made from the synced profile. With one, its own password must be given first, so
+	/// only its owner can take the synced keys over it; then it becomes the sync password and the profile stays. The vault is
+	/// replaced only when it holds no logins of its own (<see cref="SyncRestoreWouldReplaceLoginsException"/>).
+	/// </summary>
+	/// <exception cref="AccountException">WrongPassword when <paramref name="current"/> isn't this PC's password; EmptyField when it's needed and missing.</exception>
+	/// <exception cref="SyncJoinWrongPasswordException">The sync password doesn't open the synced keys.</exception>
+	/// <exception cref="SyncRestoreWhileSyncingAnotherAccountException">This PC syncs as another Google account.</exception>
+	public async Task JoinWithPasswordAsync(string current, string password, CancellationToken cancellation = default)
+	{
+		_recovered = null;
+		if (account.State().HasAccount)
+		{
+			if (current == "") throw new AccountException(AccountErrorCode.EmptyField);
+			account.CheckPassword(current);
+		}
+		var signedIn = signIn.SyncAccount() ?? throw new NotSignedInToSyncException();
+		account.CheckNewPassword(password);
+		var server = await ServerKeysAsync(signedIn, cancellation);
+		var blob = SyncKeysBlob.Parse(server.Blob, server.Version);
+		using var keys = await UnwrapForJoinAsync(blob, password, cancellation);
+		var profile = blob.OpenProfile(keys.IndexKey);
+
+		var store = vault();
+		using var gate = await SyncKeys.EnterGateAsync(store, cancellation);
+		if (SyncsAsAnother(store.SyncKeys?.UserId, signedIn.UserId) || SyncsAsAnother(store.PendingSyncKeys?.UserId, signedIn.UserId)) throw new SyncRestoreWhileSyncingAnotherAccountException();
+		await SyncKeys.SettlePendingAsync(store, client, signedIn, cancellation);
+		await RequireServerNotBehindAsync(store, signedIn.UserId, keys.VaultId, server, password, cancellation);
+		await store.RestoreKeysAsync(keys, KeptWith(store, signedIn.UserId, keys.VaultId, server));
+		MakeAccount(profile, password);
+	}
+
+	private static async Task<VaultKeyMaterial> UnwrapForJoinAsync(SyncKeysBlob blob, string password, CancellationToken cancellation)
+	{
+		try
+		{
+			return await UnwrapAsync(blob, password, cancellation);
+		}
+		catch (AccountException error) when (error.Code == AccountErrorCode.WrongPassword)
+		{
+			throw new SyncJoinWrongPasswordException();
+		}
 	}
 
 	/// <summary>Checks the key and keeps what it opened for <see cref="ChangePasswordAfterRecoveryAsync"/>; nothing on this PC changes.</summary>

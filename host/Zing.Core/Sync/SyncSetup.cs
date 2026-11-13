@@ -146,7 +146,7 @@ public sealed class SyncKeysChangedElsewhereException()
 
 /// <summary>The Google account already has a vault's keys on the server, so turning on sync here would replace another PC's.</summary>
 public sealed class SyncAlreadySetUpElsewhereException()
-	: Exception("This Google account already syncs a vault. To use it here, sign out of Zing, then choose Restore from sync on the sign-in screen.");
+	: Exception("This Google account already syncs passwords from another PC. Join it with the Zing password you use there.");
 
 /// <summary>
 /// The server's keys are this vault's, kept from before Turn off sync on this PC: restoring from sync turns it on again over this PC's
