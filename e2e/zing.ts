@@ -563,22 +563,37 @@ export interface LiveCounts {
 }
 
 /** What is still alive in the host (TestHooks "live-counts"), for teardown tests. */
-export async function liveCounts(chrome: Page): Promise<LiveCounts> {
-	const file = join(scratchDir('zing-live-'), 'live.json')
-	await chrome.evaluate((path) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'live-counts', file: path }), file)
-	let counts: LiveCounts | undefined
+export function liveCounts(chrome: Page): Promise<LiveCounts> {
+	return askHost<LiveCounts>(chrome, 'live-counts')
+}
+
+/** When the host reached each step of start-up (TestHooks "startup-marks"), as ms since 1970, beside the process's own start. */
+export interface StartupMarks {
+	readonly processStart: number
+	readonly marks: readonly { readonly name: string; readonly at: number }[]
+}
+
+export function startupMarks(chrome: Page): Promise<StartupMarks> {
+	return askHost<StartupMarks>(chrome, 'startup-marks')
+}
+
+/** A test message whose answer the host writes as JSON to a file. */
+async function askHost<T>(chrome: Page, action: string): Promise<T> {
+	const file = join(scratchDir('zing-ask-'), 'answer.json')
+	await chrome.evaluate(([kind, path]) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: kind, file: path }), [action, file] as const)
+	let answer: T | undefined
 	// Read until whole: the host may still be writing the file when it first appears.
 	await expect
 		.poll(() => {
 			try {
-				counts = JSON.parse(readFileSync(file, 'utf8')) as LiveCounts
+				answer = JSON.parse(readFileSync(file, 'utf8')) as T
 				return true
 			} catch {
 				return false
 			}
 		})
 		.toBe(true)
-	return counts!
+	return answer!
 }
 
 export function pages(browser: Browser): Page[] {
