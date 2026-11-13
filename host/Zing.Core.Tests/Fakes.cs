@@ -40,6 +40,12 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public void Find(string query, FindDirection direction, FindMode mode) => Calls.Add($"find {query} {direction} {mode}");
 	public void StopFind() => Calls.Add("stop find");
 	public bool IsAudible { get; set; }
+	public bool IsSuspended { get; set; }
+	public Task<bool> TrySuspendAsync()
+	{
+		IsSuspended = !Shown;
+		return Task.FromResult(IsSuspended);
+	}
 	public System.Text.Json.JsonElement ProbeResult { get; set; } = System.Text.Json.JsonDocument.Parse("{\"scrollY\":0,\"dirty\":false}").RootElement;
 	/// <summary>When set, answers <see cref="EvaluateAsync"/> instead of <see cref="ProbeResult"/>, so a test can navigate, hang or fail mid-script.</summary>
 	public Func<Task<System.Text.Json.JsonElement>>? Evaluating { get; set; }

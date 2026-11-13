@@ -54,6 +54,9 @@ public sealed class TestTime(long start)
 public sealed class PageSim
 {
 	public bool Audible { get; set; }
+	public bool Suspended { get; set; }
+	/// <summary>The engine refuses to suspend the page (a WebRTC call, say).</summary>
+	public bool RefusesSuspend { get; set; }
 	public bool Dirty { get; set; }
 	public double ScrollY { get; set; }
 	public bool ProbeFails { get; set; }
@@ -69,6 +72,7 @@ public sealed class FakeLifecycleTabs : ILifecycleTabs
 	public IReadOnlyList<TabRecord> Records => _records;
 	public Dictionary<string, PageSim> Pages { get; } = [];
 	public List<string> Slept { get; } = [];
+	public List<string> Suspended { get; } = [];
 	public List<string> Closed { get; } = [];
 	/// <summary>What the real host does after a tab changes: tell the lifecycle.</summary>
 	public Action Changed { get; set; } = () => { };
@@ -104,6 +108,17 @@ public sealed class FakeLifecycleTabs : ILifecycleTabs
 		Slept.Add(id);
 		Pages.Remove(id);
 		Changed();
+	}
+
+	public bool IsSuspended(string id) => Pages[id].Suspended;
+
+	public Task<bool> SuspendAsync(string id)
+	{
+		var page = Pages[id];
+		if (page.RefusesSuspend) return Task.FromResult(false);
+		page.Suspended = true;
+		Suspended.Add(id);
+		return Task.FromResult(true);
 	}
 
 	public void Close(string id)
@@ -543,9 +558,10 @@ public class TabLifecycleTests
 	public void TabLifecycleArmsSleepOnlyUntilAutoCloseIsSwitchedOn()
 	{
 		var w = new Wired();
-		Assert.Equal(1, w.Time.Scheduler.PendingCount);
-		w.Settings.Set("autoCloseEnabled", true);
+		// Sleep and suspension.
 		Assert.Equal(2, w.Time.Scheduler.PendingCount);
+		w.Settings.Set("autoCloseEnabled", true);
+		Assert.Equal(3, w.Time.Scheduler.PendingCount);
 		w.Settings.Set("sleepingTabs", JsonNode.Parse("""{"enabled":false,"afterMinutes":30,"sleepPinned":false}"""));
 		Assert.Equal(1, w.Time.Scheduler.PendingCount);
 	}
@@ -610,5 +626,125 @@ public class TabLifecycleTests
 		Assert.Null(w.Lifecycle.Thumbnail("b"));
 		Assert.Equal(250, w.Lifecycle.Woke("b"));
 		Assert.Null(w.Lifecycle.Woke("b"));
+	}
+
+	// ---- suspension ----
+
+	private sealed class Suspending
+	{
+		public TestTime Time { get; } = new(ScenarioStart);
+		public FakeLifecycleTabs Tabs { get; } = new() { ActiveId = "active" };
+		public List<Exception> Errors { get; } = [];
+		public SleepSettings Settings { get; set; } = SleepSettings.Default;
+		public TabSuspender Suspender { get; }
+
+		public Suspending(params (string Id, PageSim Page, bool Pinned)[] hidden)
+		{
+			Tabs.Add("active", ScenarioStart, page: new PageSim());
+			foreach (var (id, page, pinned) in hidden) Tabs.Add(id, ScenarioStart, pinned, page);
+			Suspender = new TabSuspender(Tabs, () => Settings, Time.Clock, Time.Scheduler, Errors.Add);
+			Tabs.Changed = Suspender.Reschedule;
+			Suspender.Reschedule();
+		}
+	}
+
+	[Fact]
+	public void A_hidden_tab_is_suspended_after_five_minutes_and_not_before()
+	{
+		var s = new Suspending(("hidden", new PageSim(), false));
+		s.Time.Advance(4 * Minute);
+		Assert.Empty(s.Tabs.Suspended);
+		s.Time.Advance(2 * Minute);
+		Assert.Equal(["hidden"], s.Tabs.Suspended);
+		Assert.Empty(s.Tabs.Slept);
+		// Done: nothing left to wake up for.
+		Assert.Equal(0, s.Time.Scheduler.PendingCount);
+		Assert.Empty(s.Errors);
+	}
+
+	[Fact]
+	public void Suspension_spares_the_tabs_sleep_spares()
+	{
+		var s = new Suspending(
+			("audible", new PageSim { Audible = true }, false),
+			("dirty", new PageSim { Dirty = true }, false),
+			("pinned", new PageSim(), true),
+			("plain", new PageSim(), false));
+		s.Time.Advance(6 * Minute);
+		Assert.Equal(["plain"], s.Tabs.Suspended);
+		Assert.False(s.Tabs.Pages["active"].Suspended);
+		Assert.Empty(s.Errors);
+	}
+
+	[Fact]
+	public void A_pinned_tab_is_suspended_when_pinned_tabs_may_sleep()
+	{
+		var s = new Suspending(("pinned", new PageSim(), true)) { Settings = SleepSettings.Default with { SleepPinned = true } };
+		s.Suspender.Reschedule();
+		s.Time.Advance(6 * Minute);
+		Assert.Equal(["pinned"], s.Tabs.Suspended);
+	}
+
+	[Fact]
+	public void Nothing_is_suspended_while_sleeping_tabs_are_off()
+	{
+		var s = new Suspending(("hidden", new PageSim(), false)) { Settings = SleepSettings.Default with { Enabled = false } };
+		s.Suspender.Reschedule();
+		s.Time.Advance(60 * Minute);
+		Assert.Empty(s.Tabs.Suspended);
+		Assert.Equal(0, s.Time.Scheduler.PendingCount);
+	}
+
+	[Fact]
+	public void Nothing_is_suspended_when_tabs_sleep_as_soon_so_the_two_never_race()
+	{
+		var s = new Suspending(("hidden", new PageSim(), false)) { Settings = SleepSettings.Default with { AfterMinutes = 1 } };
+		s.Suspender.Reschedule();
+		s.Time.Advance(60 * Minute);
+		Assert.Empty(s.Tabs.Suspended);
+		Assert.Equal(0, s.Time.Scheduler.PendingCount);
+	}
+
+	[Fact]
+	public void A_tab_the_engine_would_not_suspend_is_tried_again_later_not_in_a_loop()
+	{
+		var page = new PageSim { RefusesSuspend = true };
+		var probes = 0;
+		page.OnProbe = () => probes++;
+		var s = new Suspending(("call", page, false));
+		s.Time.Advance(6 * Minute);
+		Assert.Equal(1, probes);
+		page.RefusesSuspend = false;
+		s.Time.Advance(TabSleeper.RetryMs);
+		Assert.Equal(2, probes);
+		Assert.Equal(["call"], s.Tabs.Suspended);
+	}
+
+	[Fact]
+	public void A_tab_the_person_comes_back_to_during_the_check_is_not_suspended()
+	{
+		var s = new Suspending(("back", new PageSim(), false));
+		s.Tabs.Pages["back"].OnProbe = () =>
+		{
+			// As the tab service does: the tab left is touched as it goes, the one shown as it comes.
+			s.Tabs.Touch("active", s.Time.Clock.Now());
+			s.Tabs.ActiveId = "back";
+			s.Tabs.Touch("back", s.Time.Clock.Now());
+		};
+		s.Time.Advance(6 * Minute);
+		Assert.DoesNotContain("back", s.Tabs.Suspended);
+		Assert.Empty(s.Tabs.Suspended);
+	}
+
+	[Fact]
+	public void A_suspended_tab_still_sleeps_at_the_sleep_time()
+	{
+		var w = new Wired();
+		w.Time.Advance(6 * Minute);
+		Assert.Equal(["b"], w.Tabs.Suspended);
+		Assert.Empty(w.Tabs.Slept);
+		w.Time.Advance(25 * Minute);
+		Assert.Equal(["b"], w.Tabs.Slept);
+		Assert.Empty(w.Errors);
 	}
 }

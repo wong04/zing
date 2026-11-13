@@ -28,6 +28,10 @@ public interface IPage
 	void Find(string query, FindDirection direction, FindMode mode);
 	/// <summary>Whether the page is playing sound; a playing tab never sleeps.</summary>
 	bool IsAudible { get; }
+	/// <summary>Whether the engine has frozen the page's renderer (<see cref="TrySuspendAsync"/>); showing the page resumes it.</summary>
+	bool IsSuspended { get; }
+	/// <summary>Freezes a hidden page's renderer but keeps the page; false when the page is on screen or the engine refused.</summary>
+	Task<bool> TrySuspendAsync();
 	/// <summary>Runs a script and hands back its JSON result.</summary>
 	Task<System.Text.Json.JsonElement> EvaluateAsync(string script);
 	/// <summary>Runs a script once the current navigation has loaded, e.g. to put back a woken tab's scroll.</summary>

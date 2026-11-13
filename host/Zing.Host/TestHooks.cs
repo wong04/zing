@@ -364,6 +364,8 @@ public static class TestHooks
 			height = v.Bounds.Height,
 			depth = v.Depth,
 			keyboard = v.HasKeyboard,
+			suspended = v.Core.IsSuspended,
+			lowMemory = v.Core.MemoryUsageTargetLevel == Microsoft.Web.WebView2.Core.CoreWebView2MemoryUsageTargetLevel.Low,
 		})];
 		if (!Scrims.TryGetValue(window, out var scrimOf) || scrimOf() is not { } scrim) return layers;
 		var scale = window.Scale;

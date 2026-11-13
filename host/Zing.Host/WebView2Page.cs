@@ -94,7 +94,62 @@ public sealed class WebView2Page : IPage
 		set
 		{
 			_visible = value;
-			if (_view is not null) _view.Visible = value;
+			if (_view is null) return;
+			// Showing the view resumes a suspended page (TrySuspendAsync).
+			_view.Visible = value;
+			if (_core is { } core) FollowMemoryTarget(core);
+		}
+	}
+
+	/// <summary>
+	/// A page off screen asks the engine to trim its memory, and gets it back when shown: the engine never raises the level by
+	/// itself. A page whose video is in picture-in-picture, or that plays sound, is still in use, so it keeps its memory.
+	/// </summary>
+	private void FollowMemoryTarget(CoreWebView2 core)
+	{
+		if (_visible)
+		{
+			core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+			return;
+		}
+		Background(LowerMemoryTargetAsync(core), "memory target");
+	}
+
+	private async Task LowerMemoryTargetAsync(CoreWebView2 core)
+	{
+		// A page that has shown no document yet (a tab opened in the background) has nothing in picture-in-picture.
+		if (core.IsDocumentPlayingAudio || _showedDocument && await InPictureInPictureAsync(core)) return;
+		// Shown again, or closed, while the page answered.
+		if (!IsOpen || _visible) return;
+		core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+	}
+
+	/// <summary>Whether the page's video plays in a picture-in-picture window, which stays on screen while the tab is hidden.</summary>
+	private async Task<bool> InPictureInPictureAsync(CoreWebView2 core) =>
+		await WhileOpenAsync(core.ExecuteScriptAsync("document.pictureInPictureElement !== null").AsTask()) == "true";
+
+	public bool IsSuspended => IsOpen && _core?.IsSuspended == true;
+
+	/// <summary>
+	/// Freezes the hidden page's renderer, which keeps the page but frees its CPU and lets Windows reuse its memory; showing
+	/// the view resumes it. Refused for a page on screen, in picture-in-picture, playing sound, or still being pictured.
+	/// </summary>
+	public async Task<bool> TrySuspendAsync()
+	{
+		if (!IsOpen || _core is not { } core || _visible || core.IsSuspended) return false;
+		// A hidden page never finishes a capture, and its renderer must not go while one is pending (CapturesInFlight).
+		if (PendingCapture is { IsCompleted: false } || core.IsDocumentPlayingAudio) return false;
+		try
+		{
+			if (await InPictureInPictureAsync(core)) return false;
+			// The engine throws for a visible view: shown again while the page answered.
+			if (!IsOpen || _visible) return false;
+			return await WhileOpenAsync(core.TrySuspendAsync().AsTask());
+		}
+		catch (ViewGoneException)
+		{
+			// The tab slept or closed while the engine answered: no page left to suspend.
+			return false;
 		}
 	}
 
@@ -296,6 +351,8 @@ public sealed class WebView2Page : IPage
 	public async Task<System.Text.Json.JsonElement> EvaluateAsync(string script)
 	{
 		if (!IsOpen || _core is null) throw new InvalidOperationException("The page is not running");
+		// A suspended renderer would answer only once shown; the caller (the sleep probe) needs the answer now.
+		if (_core.IsSuspended) _core.Resume();
 		// A tab that closes meanwhile has no result (ViewGoneException).
 		var json = await WhileOpenAsync(_core.ExecuteScriptAsync(script).AsTask());
 		return System.Text.Json.JsonDocument.Parse(json).RootElement;
@@ -360,6 +417,7 @@ public sealed class WebView2Page : IPage
 		_view.Place(_bounds);
 		_features.ViewStarted(this);
 		_core = _view.Core;
+		FollowMemoryTarget(_core);
 		// A page is not Zing's UI. No host object is added, and the only page messages anything listens for are the autofill
 		// script's (OnPageMessage), and only while the vault is on: with it off, web messages stay off as belt and braces
 		// (FollowAutofillAsync). chrome.webview itself stays on the page (the engine injects it) and postMessage still returns

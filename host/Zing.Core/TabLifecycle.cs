@@ -304,6 +304,12 @@ public interface ILifecycleTabs
 	/// <summary>Drops the tab's page but keeps its record.</summary>
 	void Sleep(string id);
 
+	/// <summary>Whether the tab's page is suspended: it keeps its page, but its renderer is frozen until it is shown.</summary>
+	bool IsSuspended(string id);
+
+	/// <summary>Suspends a hidden tab's page; false when the page or the engine refused.</summary>
+	Task<bool> SuspendAsync(string id);
+
 	void Close(string id);
 }
 
@@ -370,7 +376,7 @@ public sealed class TabAutoCloser
 		_tabs.Records.Select(t => new AutoCloseTab(t.Id, t.LastActiveAt, t.Pinned, _tabs.IsShown(t.Id))).ToList();
 }
 
-/// <summary>A window's auto-close and sleeping-tab timers, kept in step with its tabs and settings.</summary>
+/// <summary>A window's auto-close, sleeping-tab and suspended-tab timers, kept in step with its tabs and settings.</summary>
 public sealed class TabLifecycle : IDisposable
 {
 	private static readonly HashSet<string> WatchedSettings =
@@ -386,6 +392,7 @@ public sealed class TabLifecycle : IDisposable
 
 	private readonly TabAutoCloser _autoCloser;
 	private readonly TabSleeper _sleeper;
+	private readonly TabSuspender _suspender;
 	private readonly List<IDisposable> _subscriptions;
 
 	/// <param name="onError">Receives failures of background sweeps, which have no caller to throw to.</param>
@@ -399,7 +406,9 @@ public sealed class TabLifecycle : IDisposable
 		IDayCalendar? calendar = null)
 	{
 		_autoCloser = new TabAutoCloser(tabs, () => AutoClosePolicy.FromSettings(settings), clock, scheduler, calendar ?? TimeZoneCalendar.Local);
-		_sleeper = new TabSleeper(tabs, () => SleepSettings.FromNode(settings.Get("sleepingTabs")), clock, scheduler, onError);
+		SleepSettings Sleep() => SleepSettings.FromNode(settings.Get("sleepingTabs"));
+		_sleeper = new TabSleeper(tabs, Sleep, clock, scheduler, onError);
+		_suspender = new TabSuspender(tabs, Sleep, clock, scheduler, onError);
 		_subscriptions =
 		[
 			settings.Subscribe((_, key) =>
@@ -410,6 +419,7 @@ public sealed class TabLifecycle : IDisposable
 			{
 				_autoCloser.Rearm();
 				_sleeper.Rearm();
+				_suspender.Rearm();
 			}),
 		];
 		Reschedule();
@@ -422,6 +432,7 @@ public sealed class TabLifecycle : IDisposable
 	{
 		_autoCloser.Reschedule();
 		_sleeper.Reschedule();
+		_suspender.Reschedule();
 	}
 
 	/// <summary>A sleeping tab has a fresh page: the scroll position to restore once it has loaded, if any.</summary>
@@ -432,5 +443,6 @@ public sealed class TabLifecycle : IDisposable
 		foreach (var subscription in _subscriptions) subscription.Dispose();
 		_autoCloser.Cancel();
 		_sleeper.Cancel();
+		_suspender.Cancel();
 	}
 }
