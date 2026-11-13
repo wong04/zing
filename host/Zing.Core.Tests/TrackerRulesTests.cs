@@ -37,4 +37,27 @@ public sealed class TrackerRulesTests
 	[MemberData(nameof(Requests))]
 	public void Only_third_party_web_requests_to_trackers_are_blocked(string request, string page, bool blocked) =>
 		Assert.Equal(blocked, TrackerRules.Blocks(request, page));
+
+	[Theory]
+	[InlineData("PIXEL.DoubleClick.NET", true)]
+	[InlineData("pixel.doubleclick.net.", true)]
+	[InlineData("doubleclick.net.example.com", false)]
+	[InlineData("notdoubleclick.net", false)]
+	[InlineData("", false)]
+	public void Case_and_a_trailing_dot_do_not_change_the_answer(string host, bool tracker) =>
+		Assert.Equal(tracker, TrackerRules.IsTrackerHost(host));
+
+	[Fact]
+	public void Checking_a_host_allocates_nothing()
+	{
+		// Every request a page makes is checked on the UI thread.
+		TrackerRules.IsTrackerHost("warm.up.example.com");
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 0; i < 1000; i++)
+		{
+			TrackerRules.IsTrackerHost("cdn.images.example.com");
+			TrackerRules.IsTrackerHost("pixel.doubleclick.net");
+		}
+		Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
+	}
 }
