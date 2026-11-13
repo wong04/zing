@@ -94,6 +94,8 @@ test('importing the same profile twice adds nothing the second time', async () =
 	await zing.close()
 })
 
+const macRow = (sheet: Page, app: string) => section(sheet).getByRole('group', { name: `${app} on a Mac`, exact: true })
+
 test('a bookmarks file from Safari imports into a folder named after the file', async () => {
 	const dir = scratchDir('zing-bookmarks-file-')
 	const file = join(dir, 'safari-export.html')
@@ -102,8 +104,8 @@ test('a bookmarks file from Safari imports into a folder named after the file', 
 	const sheet = await openImport(zing)
 	await zing.chrome.evaluate((f) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'pick-files', files: [f] }), file)
 
-	await section(sheet).getByRole('button', { name: 'Bookmarks file…' }).click()
-	await expect(section(sheet).getByRole('status')).toContainText('safari-export.html')
+	await macRow(sheet, 'Safari').getByRole('button', { name: 'Bookmarks file…' }).click()
+	await expect(macRow(sheet, 'Safari').getByRole('status')).toContainText('safari-export.html')
 
 	const { bookmarks } = await library(zing)
 	const imported = bookmarks.find((n) => n.title.includes('safari-export.html') && 'children' in n)
@@ -132,6 +134,32 @@ test('a broken profile shows its error and the others still import', async () =>
 	await zing.close()
 })
 
+test('From a Mac lists Dia, Safari and Arc with their export steps, and hides Passwords file while the vault is off', async () => {
+	const zing = await launch(localAppData([]))
+	const sheet = await openImport(zing)
+	for (const app of ['Dia', 'Safari', 'Arc']) {
+		await expect(macRow(sheet, app).getByRole('button', { name: 'Bookmarks file…' })).toBeVisible()
+		await expect(macRow(sheet, app).getByRole('list', { name: `Exporting from ${app}` })).toContainText('Bookmarks:')
+		await expect(macRow(sheet, app).getByRole('button', { name: 'Passwords file…' })).toHaveCount(0)
+	}
+	await expect(macRow(sheet, 'Dia')).toContainText('Open the Bookmarks menu and choose Export Bookmarks.')
+	await expect(macRow(sheet, 'Arc')).toContainText('StorableSidebar.json')
+	await zing.close()
+})
+
+test("Arc's sidebar file from a Mac imports", async () => {
+	const file = join(scratchDir('zing-arc-file-'), 'StorableSidebar.json')
+	writeFileSync(file, fixture('arc-sidebar.json'))
+	const zing = await launch(localAppData([]))
+	const sheet = await openImport(zing)
+	await zing.chrome.evaluate((f) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'pick-files', files: [f] }), file)
+
+	await macRow(sheet, 'Arc').getByRole('button', { name: 'Bookmarks file…' }).click()
+	await expect(macRow(sheet, 'Arc').getByRole('status')).toContainText('StorableSidebar.json')
+	expect((await library(zing)).bookmarks.some((n) => n.title.includes('StorableSidebar.json') && 'children' in n)).toBe(true)
+	await zing.close()
+})
+
 const PASSWORDS_CSV = 'name,url,username,password,note\nExample,https://example.test/login,ada,first password,\nOther,https://other.test,bob,second password,\n'
 
 /** A profile with the vault on or off (passwordAutofill is read at launch) and a downloads folder, for the password flow. */
@@ -145,6 +173,8 @@ function passwordProfile(vaultOn: boolean): string {
 const launchWithPasswords = (vaultOn: boolean): Promise<Launched> =>
 	launchZing({ userDataDir: passwordProfile(vaultOn), env: { ZING_LOCALAPPDATA: localAppData([['Default', 'Personal', fixture('chromium-bookmarks.json')]]) } })
 
+const CHROME_LAUNCH = { kind: 'launch:chrome', url: 'chrome://password-manager/settings', args: ['--profile-directory=Default', 'chrome://password-manager/settings'] }
+
 const passwordFlow = (sheet: Page) => row(sheet, 'Chrome (Personal)').getByRole('group', { name: 'Import Chrome passwords' })
 const summaries = (zing: Launched) => zing.chrome.evaluate(() => window.zing.vaultSummaries())
 
@@ -153,7 +183,8 @@ test("Import passwords opens Chrome's export page, imports the CSV that lands in
 	const sheet = await openImport(zing)
 	await row(sheet, 'Chrome (Personal)').getByRole('button', { name: 'Import passwords' }).click()
 	await expect(passwordFlow(sheet)).toContainText('In Chrome, click Export passwords, confirm, and save. Zing will pick up the file.')
-	expect(zing.dialogs()).toContainEqual({ kind: 'launch:chrome', url: 'chrome://password-manager/settings' })
+	await expect(passwordFlow(sheet)).toContainText('If Chrome shows a new tab instead, open ⋮ menu > Passwords and autofill > Google Password Manager > Settings.')
+	expect(zing.dialogs()).toContainEqual(CHROME_LAUNCH)
 
 	// The watch only takes a file written after it started, once its length has held for two polls.
 	const file = join(zing.userDataDir, 'downloads', 'Chrome Passwords.csv')
@@ -185,7 +216,7 @@ test('with the vault off, Import passwords asks first and turns it on', async ()
 	await passwordFlow(sheet).getByRole('button', { name: 'Turn on and continue' }).click()
 	await expect(passwordFlow(sheet)).toContainText('In Chrome, click Export passwords')
 	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getVaultState())).enabled).toBe(true)
-	expect(zing.dialogs()).toContainEqual({ kind: 'launch:chrome', url: 'chrome://password-manager/settings' })
+	expect(zing.dialogs()).toContainEqual(CHROME_LAUNCH)
 	await zing.close()
 })
 
@@ -205,6 +236,20 @@ test('a passwords file chosen by hand imports and offers to recycle it', async (
 	await expect(passwordFlow(sheet).getByRole('button', { name: 'Done' })).toBeVisible()
 	expect(existsSync(file)).toBe(false)
 	expect(zing.dialogs()).toContainEqual({ kind: 'recycle', url: 'my-export.csv' })
+	await zing.close()
+})
+
+test('a passwords file from Dia imports into the vault and reports under the Dia row', async () => {
+	const zing = await launchWithPasswords(true)
+	const sheet = await openImport(zing)
+	const file = join(scratchDir('zing-dia-passwords-'), 'Passwords.csv')
+	writeFileSync(file, PASSWORDS_CSV)
+	await zing.chrome.evaluate((f) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'pick-files', files: [f] }), file)
+
+	await macRow(sheet, 'Dia').getByRole('button', { name: 'Passwords file…' }).click()
+	await expect(macRow(sheet, 'Dia').getByRole('status')).toContainText('Added 2, merged 0')
+	await expect(macRow(sheet, 'Safari').getByRole('status')).toHaveCount(0)
+	expect((await summaries(zing)).map((l) => l.username).sort()).toEqual(['ada', 'bob'])
 	await zing.close()
 })
 
@@ -279,7 +324,7 @@ test("Import passwords too opens Settings Import already waiting for Chrome's ex
 
 	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
 	await expect(passwordFlow(sheet)).toContainText('In Chrome, click Export passwords, confirm, and save. Zing will pick up the file.')
-	await expect.poll(() => zing.dialogs()).toContainEqual({ kind: 'launch:chrome', url: 'chrome://password-manager/settings' })
+	await expect.poll(() => zing.dialogs()).toContainEqual(CHROME_LAUNCH)
 	await zing.close()
 })
 
@@ -320,6 +365,39 @@ test.describe('Import screenshots', () => {
 			await expect(row(sheet, 'Chrome (Personal)').getByRole('status')).toContainText('Added')
 			await sheet.waitForTimeout(400)
 			await sheet.getByRole('dialog', { name: 'Settings' }).screenshot({ path: join(SHOTS, `import-section-${mode}.png`) })
+			await zing.close()
+		})
+	}
+
+	for (const mode of ['light', 'dark'] as const) {
+		test(`the From a Mac rows, ${mode}`, async () => {
+			test.setTimeout(180_000)
+			mkdirSync(SHOTS, { recursive: true })
+			const zing = await launchWithPasswords(true)
+			await zing.chrome.evaluate((theme) => window.zing.setSetting('theme', theme), mode)
+			await expect.poll(async () => (await viewAccent(zing.chrome)).dark).toBe(mode === 'dark')
+			const sheet = await openImport(zing)
+			await sheet.emulateMedia({ colorScheme: mode })
+			await expect.poll(async () => (await viewAccent(sheet)).dark).toBe(mode === 'dark')
+			await macRow(sheet, 'Arc').scrollIntoViewIfNeeded()
+			await sheet.waitForTimeout(400)
+			await sheet.getByRole('dialog', { name: 'Settings' }).screenshot({ path: join(SHOTS, `import-mac-${mode}.png`) })
+			await zing.close()
+		})
+
+		test(`the password export fallback, ${mode}`, async () => {
+			test.setTimeout(180_000)
+			mkdirSync(SHOTS, { recursive: true })
+			const zing = await launchWithPasswords(true)
+			await zing.chrome.evaluate((theme) => window.zing.setSetting('theme', theme), mode)
+			await expect.poll(async () => (await viewAccent(zing.chrome)).dark).toBe(mode === 'dark')
+			const sheet = await openImport(zing)
+			await sheet.emulateMedia({ colorScheme: mode })
+			await expect.poll(async () => (await viewAccent(sheet)).dark).toBe(mode === 'dark')
+			await row(sheet, 'Chrome (Personal)').getByRole('button', { name: 'Import passwords' }).click()
+			await expect(passwordFlow(sheet)).toContainText('If Chrome shows a new tab instead')
+			await sheet.waitForTimeout(400)
+			await sheet.getByRole('dialog', { name: 'Settings' }).screenshot({ path: join(SHOTS, `import-password-fallback-${mode}.png`) })
 			await zing.close()
 		})
 	}

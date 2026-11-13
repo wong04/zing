@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { BookmarkImportOutcome, ImportSourceView } from '@shared/ipc'
 import { zing } from '../api'
 import { InfoBanner, PillButton } from '../components'
-import { fileHelp, outcomeLine, PASSWORDS_FILE_VAULT_OFF } from './importText'
+import { fileHelp, MAC_INTRO, macBrowsers, outcomeLine, PASSWORDS_FILE_VAULT_OFF } from './importText'
 import { messageOf, PasswordImportResult, usePasswordCsvImport } from './PasswordImport'
 import { PasswordImportFlow } from './PasswordImportFlow'
 import { SettingRowShell } from './SettingRowShell'
@@ -13,6 +13,7 @@ type RowId = string
 
 const FILE_ROW: RowId = 'bookmarks-file'
 const PASSWORDS_ROW: RowId = 'passwords-file'
+const macRow = (app: string): RowId => `mac:${app}`
 
 function sourceDetail(source: ImportSourceView): string {
 	if (source.error) return source.error
@@ -53,6 +54,8 @@ export function ImportSection() {
 	const [result, setResult] = useState<{ row: RowId; outcome: BookmarkImportOutcome }>()
 	const [flowSource, setFlowSource] = useState<string>()
 	const passwords = usePasswordCsvImport()
+	// The row whose Passwords file button ran last, so the result sits under it.
+	const [passwordsRow, setPasswordsRow] = useState<RowId>()
 
 	useEffect(() => {
 		let current = true
@@ -112,19 +115,23 @@ export function ImportSection() {
 	const importFrom = (source: ImportSourceView): void =>
 		void run(source.id, async () => setResult({ row: source.id, outcome: await zing.importBookmarks(source.id) }))
 
-	const importBookmarksFile = (): void =>
-		void run(FILE_ROW, async () => {
+	const importBookmarksFile = (row: RowId): void =>
+		void run(row, async () => {
 			const [file] = await zing.pickFiles(['bookmarks'])
 			if (!file) return
-			setResult({ row: FILE_ROW, outcome: await zing.importBookmarksFile(file.token) })
+			setResult({ row, outcome: await zing.importBookmarksFile(file.token) })
 		})
 
-	const importPasswordsFile = (): void => void run(PASSWORDS_ROW, passwords.pickAndImport)
+	const importPasswordsFile = (row: RowId): void => {
+		setPasswordsRow(row)
+		void run(row, passwords.pickAndImport)
+	}
 
 	const rowOutcome = (row: RowId) => (
 		<>
 			{error?.row === row ? <InfoBanner kind="warning">{error.message}</InfoBanner> : null}
 			{result?.row === row ? <Outcome outcome={result.outcome} /> : null}
+			{passwordsRow === row ? <PasswordImportResult imported={passwords.imported} /> : null}
 		</>
 	)
 
@@ -164,10 +171,38 @@ export function ImportSection() {
 				</div>
 			))}
 
+			<div className="vault-subtitle">From a Mac</div>
+			<div className="vault-none">{MAC_INTRO}</div>
+			{macBrowsers.map((mac) => (
+				<div key={mac.app} className="vault" role="group" aria-label={`${mac.app} on a Mac`}>
+					<SettingRowShell title={mac.app} detail="On a Mac">
+						<div className="vault-actions">
+							<PillButton variant="outlined" size="small" disabled={busy} onClick={() => importBookmarksFile(macRow(mac.app))}>
+								Bookmarks file…
+							</PillButton>
+							{vaultOn ? (
+								<PillButton variant="outlined" size="small" disabled={busy} onClick={() => importPasswordsFile(macRow(mac.app))}>
+									Passwords file…
+								</PillButton>
+							) : null}
+						</div>
+					</SettingRowShell>
+					<ul className="import-help" aria-label={`Exporting from ${mac.app}`}>
+						<li>
+							<strong>Bookmarks:</strong> {mac.bookmarks}
+						</li>
+						<li>
+							<strong>Passwords:</strong> {mac.passwords}
+						</li>
+					</ul>
+					{rowOutcome(macRow(mac.app))}
+				</div>
+			))}
+
 			<div className="vault-subtitle">From a file</div>
 			<SettingRowShell title="Bookmarks file" detail="An HTML bookmarks export from any browser.">
 				<div className="vault-actions">
-					<PillButton variant="outlined" size="small" disabled={busy} onClick={importBookmarksFile}>
+					<PillButton variant="outlined" size="small" disabled={busy} onClick={() => importBookmarksFile(FILE_ROW)}>
 						Bookmarks file…
 					</PillButton>
 				</div>
@@ -180,13 +215,12 @@ export function ImportSection() {
 				<>
 					<SettingRowShell title="Passwords file" detail="A CSV export from a password manager or browser.">
 						<div className="vault-actions">
-							<PillButton variant="outlined" size="small" disabled={busy} onClick={importPasswordsFile}>
+							<PillButton variant="outlined" size="small" disabled={busy} onClick={() => importPasswordsFile(PASSWORDS_ROW)}>
 								Passwords file…
 							</PillButton>
 						</div>
 					</SettingRowShell>
-					{error?.row === PASSWORDS_ROW ? <InfoBanner kind="warning">{error.message}</InfoBanner> : null}
-					<PasswordImportResult imported={passwords.imported} />
+					{rowOutcome(PASSWORDS_ROW)}
 				</>
 			) : vault === undefined || vault.state.error === 'unreadable' ? null : (
 				<div className="vault-none">{PASSWORDS_FILE_VAULT_OFF}</div>
