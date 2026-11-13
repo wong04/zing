@@ -40,22 +40,22 @@ Phase 6c is tested only against synthetic profiles and files. This check covers 
 
 1. On a Chrome row, click **Import passwords**.
    - If the vault is off, **expect** "Importing passwords turns on Zing's password vault…". Choose **Turn on and continue**.
-   - **Expect:** Chrome opens on `chrome://password-manager/settings`.
-   - **Record:** did the page open directly, or did Chrome show a new tab or a blocked page? This was decided from reading only, without launching a browser.
+   - **Expect:** Chrome opens in that row's profile, with no profile picker, whether or not Chrome was already running.
+   - Chromium drops a `chrome://` address given on its command line (`startup_tab_provider.cc` keeps web pages and the reset-settings page only), so Chrome likely shows a plain new tab. Zing's flow then reads "If Chrome shows a new tab instead, open ⋮ menu > Passwords and autofill > Google Password Manager > Settings."
+   - **Record:** did the page open directly, and does that menu path match Chrome's real menus?
 2. In Chrome, click **Export passwords**, confirm with Windows, and save to Downloads.
    - **Expect:** Zing picks the file up within a few seconds and imports it into the vault.
    - **Expect:** Zing then asks "The exported file has every password in plain text." → **Move it to the Recycle Bin**.
    - **Expect:** the CSV is gone from Downloads and is in the Recycle Bin.
-3. Repeat with Edge, if installed, on `edge://wallet/passwords`, and with Brave, if installed, on `brave://password-manager/settings`. Record whether each page opened.
+3. Repeat with Edge and Brave, if installed, and with a second Chrome profile ("Profile 1"). Record whether each opened in the right profile, whether the page opened, and whether the menu path Zing shows matches.
 4. Start an import and then cancel it. Wait past 10 minutes, or save the export somewhere other than Downloads.
    - **Expect:** "Choose the file myself…" imports a file you pick, and offers the same Recycle Bin step.
 
-## 4. Files from the Mac (Dia, Safari)
+## 4. Files from a Mac (Dia, Safari, Arc)
 
-1. Export bookmarks from Dia and from Safari on the Mac. Export passwords too, if each offers it.
-   - Check each `fileHelp` step in Settings → Import ("How to export from…") against the real menus.
-   - **Record** any wording that doesn't match.
-2. In Zing, use **Bookmarks file…** and **Passwords file…** on each export.
+1. Export bookmarks and passwords from Dia, Safari and Arc on the Mac, following the steps under each row in Settings → Import → From a Mac.
+   - **Record** any step that doesn't match the real menus. Dia's password step is unconfirmed: note where Dia actually keeps passwords.
+2. In Zing, use each row's **Bookmarks file…** and **Passwords file…** on its export.
    - **Expect:** bookmarks land in a folder named after the file.
    - **Expect:** passwords land in the vault.
    - **Expect:** an export that isn't UTF-8 shows a named error, never garbled text.
@@ -69,4 +69,4 @@ Phase 6c is tested only against synthetic profiles and files. This check covers 
 
 - Fix anything found, with a failing test first.
 - Then set I1–I4 to Done in `PARITY.md`, drop their "awaiting" markers, and close #98–#101.
-- If a browser didn't open its password page in step 3, change `ExportPages.Url` to return null for it, and have the renderer show that browser's menu path instead.
+- If a menu path in step 3 is wrong, fix it in `exportMenuPath` (`src/renderer/src/settings/importText.ts`).
