@@ -2,8 +2,8 @@ using System.Diagnostics;
 
 namespace Zing.Core.Import;
 
-/// <summary>Arc keeps passwords in iCloud Keychain (macOS) and has no export page to open.</summary>
-public sealed class NoPasswordExportException() : InvalidOperationException("Arc has no password export to import from");
+/// <summary>Arc keeps passwords in iCloud Keychain (macOS); Dia is a packaged app whose export page isn't known. Neither has a page Zing can open.</summary>
+public sealed class NoPasswordExportException(ImportBrowser browser) : InvalidOperationException($"{browser} has no password export page Zing can open");
 
 /// <summary>The browser isn't installed, or Windows has no record of where it is.</summary>
 public sealed class BrowserNotInstalledException(ImportBrowser browser) : InvalidOperationException($"{browser} isn't installed on this PC");
@@ -51,6 +51,9 @@ public static class ExportPages
 		ImportBrowser.Chrome => "chrome://password-manager/settings",
 		ImportBrowser.Edge => "edge://wallet/passwords",
 		ImportBrowser.Brave => "brave://password-manager/settings",
-		_ => throw new NoPasswordExportException(),
+		_ => throw new NoPasswordExportException(browser),
 	};
+
+	/// <summary>Whether Zing can open the browser's export page, so its row offers Import passwords.</summary>
+	public static bool Has(ImportBrowser browser) => browser is ImportBrowser.Chrome or ImportBrowser.Edge or ImportBrowser.Brave;
 }
