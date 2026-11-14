@@ -34,6 +34,8 @@ const POPUP_SUB = 'sub-e2e-popup'
 const START_OVER_SUB = 'sub-e2e-start-over'
 // Turn on sync on a second PC, for a Google account that already syncs the first: with no Zing account there, and with one.
 const JOIN_SUBS = ['sub-e2e-join', 'sub-e2e-join-account'] as const
+// A second PC that doesn't know the sync password starts over from the Join sync form.
+const JOIN_START_OVER_SUB = 'sub-e2e-join-start-over'
 
 let server: ChildProcess | undefined
 let serverUrl = ''
@@ -52,7 +54,7 @@ function serverEnvironment(): NodeJS.ProcessEnv {
 		ASPNETCORE_ENVIRONMENT: 'Staging',
 		ZING_SERVER_FAKE_GOOGLE: '1',
 		ZING_SESSION_KEY: randomBytes(32).toString('base64'),
-		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB, POPUP_SUB, START_OVER_SUB, ...JOIN_SUBS].join(','),
+		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB, POPUP_SUB, START_OVER_SUB, ...JOIN_SUBS, JOIN_START_OVER_SUB].join(','),
 		ZING_DB_PATH: join(serverDir, 'zing.db'),
 		// Every PC of the run is 127.0.0.1, so one per-IP budget: the default 60 a minute is a production limit (its own tests cover it).
 		ZING_RATE_IP_PER_MINUTE: '1000',
@@ -740,12 +742,12 @@ test('turning on sync on a second PC with no Zing account joins the first with i
 	const join = joinForm(sheet)
 	await expect(join).toContainText('This Google account already syncs passwords from another PC.')
 	await expect(join.getByLabel('Zing password on this PC')).toHaveCount(0)
-	await join.getByLabel('Sync password').fill(NEXT_STRONG)
+	await join.getByLabel('Zing password', { exact: true }).fill(NEXT_STRONG)
 	await join.getByRole('button', { name: 'Join sync' }).click()
 	await expect(join).toContainText("That isn't the Zing password this Google account syncs with.")
 	expect(await b.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: false })
 
-	await join.getByLabel('Sync password').fill(STRONG)
+	await join.getByLabel('Zing password', { exact: true }).fill(STRONG)
 	await join.getByRole('button', { name: 'Join sync' }).click()
 
 	await expect(syncGroup(sheet)).toContainText(`Sync is on. Signed in as ${sub}@example.test.`)
@@ -756,7 +758,7 @@ test('turning on sync on a second PC with no Zing account joins the first with i
 	await b.close()
 })
 
-test('a second PC with a Zing account of its own joins with that password too, never changes it to a passphrase first, and then signs in with the sync one', async () => {
+test('a second PC with a Zing account of its own joins with the sync password alone, never changes it to a passphrase first, and then signs in with it', async () => {
 	test.setTimeout(240_000)
 	const sub = JOIN_SUBS[1]
 	const { zing: a } = await turnOnWithLogins(sub)
@@ -771,13 +773,13 @@ test('a second PC with a Zing account of its own joins with that password too, n
 	const join = joinForm(sheet)
 	await expect(join).toContainText('It becomes your Zing password on this PC too.')
 	await expect(syncGroup(sheet).getByRole('form', { name: 'Choose a stronger password' })).toHaveCount(0)
-	await join.getByLabel('Zing password on this PC').fill('not-it-at-all')
-	await join.getByLabel('Sync password').fill(STRONG)
+	await expect(join.getByLabel('Zing password on this PC')).toHaveCount(0)
+	await join.getByLabel('Zing password', { exact: true }).fill(NEXT_STRONG)
 	await join.getByRole('button', { name: 'Join sync' }).click()
-	await expect(join).toContainText(WRONG_PASSWORD)
+	await expect(join).toContainText("That isn't the Zing password this Google account syncs with.")
 	expect((await b.chrome.evaluate(() => window.zing.signIn('made-up-1'))).status).toBe('ok')
 
-	await join.getByLabel('Zing password on this PC').fill('made-up-1')
+	await join.getByLabel('Zing password', { exact: true }).fill(STRONG)
 	await join.getByRole('button', { name: 'Join sync' }).click()
 
 	await expect(syncGroup(sheet)).toContainText(`Sync is on. Signed in as ${sub}@example.test.`)
@@ -785,5 +787,40 @@ test('a second PC with a Zing account of its own joins with that password too, n
 	expect((await b.chrome.evaluate(() => window.zing.signOut())).status).toBe('ok')
 	expect((await b.chrome.evaluate(() => window.zing.signIn('made-up-1'))).status).toBe('rejected')
 	expect((await b.chrome.evaluate((p) => window.zing.signIn(p), STRONG)).status).toBe('ok')
+	await b.close()
+})
+
+test('a PC that doesn’t know the sync password starts over from the Join sync form, deleting the sync account, and then turns sync on from scratch', async () => {
+	test.setTimeout(240_000)
+	const sub = JOIN_START_OVER_SUB
+	const { zing: a } = await turnOnWithLogins(sub)
+	await a.close()
+
+	const b = await launchZing({ userDataDir: vaultProfile(), env: syncEnv(sub) })
+	await signUp(b, 'made-up-1')
+	const sheet = await openSync(b)
+	await syncGroup(sheet).getByRole('button', { name: 'Turn on sync' }).click()
+	await joinForm(sheet).getByRole('button', { name: 'Forgot your Zing password? Start over' }).click()
+
+	const form = startOverForm(sheet)
+	await form.getByRole('checkbox').check()
+	await form.getByLabel('Type START OVER to confirm').fill('START OVER')
+	await form.getByRole('button', { name: 'Sign in with Google and start over' }).click()
+
+	const gate = await surfaceOf(b)
+	await expect(gate.getByRole('heading', { name: 'Create your account' })).toBeVisible()
+	expect(await b.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: false })
+	await gate.getByLabel('Username').fill('ada')
+	await gate.getByLabel('Password', { exact: true }).fill(NEXT_STRONG)
+	await gate.getByLabel('Confirm').fill(NEXT_STRONG)
+	await gate.getByRole('button', { name: 'Create Account' }).click()
+	await expect.poll(() => isGated(b)).toBe(false)
+
+	// The server kept nothing, so the same Google account turns sync on afresh instead of being asked to join.
+	const again = await openSync(b)
+	await syncGroup(again).getByRole('button', { name: 'Turn on sync' }).click()
+	await syncGroup(again).getByLabel('Zing password').fill(NEXT_STRONG)
+	await syncGroup(again).getByRole('form', { name: 'Turn on sync' }).getByRole('button', { name: 'Turn on sync' }).click()
+	await expect(recoveryScreen(again).getByLabel('Recovery key', { exact: true })).toBeVisible()
 	await b.close()
 })

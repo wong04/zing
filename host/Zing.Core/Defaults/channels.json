@@ -423,7 +423,7 @@
 		},
 		{
 			"channel": "sync:join",
-			"args": 2
+			"args": 1
 		},
 		{
 			"channel": "sync:restore-new-password",

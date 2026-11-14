@@ -324,11 +324,11 @@ public sealed class SyncRestoreTests : IDisposable
 		await _pcs.TurnOnAAsync();
 		await _b.SignInAsync();
 
-		await Assert.ThrowsAsync<SyncJoinWrongPasswordException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync("", NextStrong, Ct));
+		await Assert.ThrowsAsync<SyncJoinWrongPasswordException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync(NextStrong, Ct));
 		Assert.False(_bAccount.State().HasAccount);
 		Assert.Null(_b.Vault.SyncKeys);
 
-		await Restore(_b, _bAccount).JoinWithPasswordAsync("", Strong, Ct);
+		await Restore(_b, _bAccount).JoinWithPasswordAsync(Strong, Ct);
 		await _b.SyncAsync();
 
 		Assert.Equal(new AccountProfile("ada", "Ada Lovelace", "ada.profile@example.test"), _bAccount.State().Profile);
@@ -339,7 +339,7 @@ public sealed class SyncRestoreTests : IDisposable
 	}
 
 	[Fact]
-	public async Task JoiningFromSettingsOverThisPcsOwnAccountNeedsItsPasswordAndThenGivesItTheSyncOne()
+	public async Task JoiningFromSettingsOverThisPcsOwnAccountAsksOnlyTheSyncPasswordAndMakesItThisPcsOne()
 	{
 		const string madeUp = "made-up-1";
 		_bAccount.SignUp("bea", "Bea", "", madeUp);
@@ -349,20 +349,35 @@ public sealed class SyncRestoreTests : IDisposable
 		await _pcs.TurnOnAAsync();
 		await _b.SignInAsync();
 
-		Assert.Equal(AccountErrorCode.EmptyField, (await Assert.ThrowsAsync<AccountException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync("", Strong, Ct))).Code);
-		Assert.Equal(AccountErrorCode.WrongPassword, (await Assert.ThrowsAsync<AccountException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync("not-it-at-all", Strong, Ct))).Code);
-		await Assert.ThrowsAsync<SyncJoinWrongPasswordException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync(madeUp, NextStrong, Ct));
+		await Assert.ThrowsAsync<SyncJoinWrongPasswordException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync(NextStrong, Ct));
 		_bAccount.CheckPassword(madeUp);
 		Assert.Equal(ownVault, _b.Vault.VaultId);
 		Assert.Null(_b.Vault.SyncKeys);
 
-		await Restore(_b, _bAccount).JoinWithPasswordAsync(madeUp, Strong, Ct);
+		await Restore(_b, _bAccount).JoinWithPasswordAsync(Strong, Ct);
 
 		_bAccount.CheckPassword(Strong);
 		Assert.Throws<AccountException>(() => _bAccount.CheckPassword(madeUp));
 		Assert.Equal("bea", _bAccount.State().Profile!.Username);
 		Assert.Equal(_pcs.A.Vault.VaultId, _b.Vault.VaultId);
 		Assert.NotNull(_b.Vault.SyncKeys);
+	}
+
+	[Fact]
+	public async Task JoiningOverThisPcsOwnAccountWhileItIsSignedOutIsRefusedAndChangesNothing()
+	{
+		const string madeUp = "made-up-1";
+		_bAccount.SignUp("bea", "Bea", "", madeUp);
+		using (await _b.Vault.KeyMaterialAsync()) { }
+		var ownVault = _b.Vault.VaultId;
+		await _pcs.TurnOnAAsync();
+		await _b.SignInAsync();
+		_bAccount.SignOut();
+
+		await Assert.ThrowsAsync<SyncJoinNeedsSignInException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync(Strong, Ct));
+		_bAccount.CheckPassword(madeUp);
+		Assert.Equal(ownVault, _b.Vault.VaultId);
+		Assert.Null(_b.Vault.SyncKeys);
 	}
 
 	[Fact]

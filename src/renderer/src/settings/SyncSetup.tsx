@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { SyncState } from '@shared/vault/vault'
 import { zing } from '../api'
 import { useAccount } from '../account/useAccount'
+import { StartOver } from '../account/StartOver'
 import { InfoBanner, PillButton, PillField } from '../components'
 
 export type Strength = typeof import('@shared/vault/passwordStrength')
@@ -144,28 +145,29 @@ export function SyncSetup({ turnOn, onJoined }: { turnOn: (password: string) => 
 }
 
 /**
- * This PC joins the sync of another PC with the Zing password used there, as Restore from sync does. With an account here, its own
- * password is asked for too, and becomes the sync one.
+ * This PC joins the sync of another PC with the Zing password used there, as Restore from sync does: one Zing password everywhere,
+ * so it becomes this PC's password too. Forgotten, Start over deletes this PC's account and, if the person asks, the sync account.
  */
 function JoinSync({ onJoined }: { onJoined: (state: SyncState) => void }) {
 	const account = useAccount()
-	const [current, setCurrent] = useState('')
 	const [password, setPassword] = useState('')
+	const [startingOver, setStartingOver] = useState(false)
 	const { busy, error, run } = useAction()
 	if (!account) return null
-	const join = (): void => run(async () => onJoined(await zing.joinSync(current, password)))
+	if (startingOver) return <StartOver onBack={() => setStartingOver(false)} />
+	const join = (): void => run(async () => onJoined(await zing.joinSync(password)))
 	return (
 		<div className="sync-setup" role="form" aria-label="Join sync">
 			<InfoBanner kind="info">
 				This Google account already syncs passwords from another PC. Enter the Zing password you use there to bring them to this PC.
 				{account.hasAccount ? ' It becomes your Zing password on this PC too.' : ' Your Zing account here is made from that one.'}
 			</InfoBanner>
-			{account.hasAccount ? (
-				<PillField type="password" label="Zing password on this PC" autoComplete="current-password" value={current} onChange={setCurrent} />
-			) : null}
-			<PillField type="password" label="Sync password" autoComplete="off" value={password} onChange={setPassword} onSubmit={join} />
+			<PillField type="password" label="Zing password" autoComplete="off" value={password} onChange={setPassword} onSubmit={join} />
 			<div className="vault-edit-actions">
-				<PillButton size="small" disabled={busy || password === '' || (account.hasAccount && current === '')} onClick={join}>
+				<PillButton variant="ghost" size="small" disabled={busy} onClick={() => setStartingOver(true)}>
+					Forgot your Zing password? Start over
+				</PillButton>
+				<PillButton size="small" disabled={busy || password === ''} onClick={join}>
 					Join sync
 				</PillButton>
 			</div>
