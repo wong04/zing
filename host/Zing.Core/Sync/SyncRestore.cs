@@ -49,6 +49,10 @@ public sealed class SyncServerBehindException()
 public sealed class SyncJoinWrongPasswordException()
 	: Exception("That isn't the Zing password this Google account syncs with. Use the one from the PC where you turned sync on.");
 
+/// <summary>Joining sync over this PC's account while it's signed out: only its owner, signed in, may give it the sync password.</summary>
+public sealed class SyncJoinNeedsSignInException()
+	: Exception("Sign in to Zing on this PC first, then join sync.");
+
 /// <summary>A restore step started while another one in the same window is still running.</summary>
 public sealed class SyncRestoreBusyException()
 	: Exception("Zing is still working on the last restore step. Wait for it to finish, then try again.");
@@ -119,21 +123,19 @@ public sealed class SyncRestore(AccountStore account, Func<VaultStore> vault, Sy
 
 	/// <summary>
 	/// Turn on sync in Settings for a Google account that already syncs another PC's vault: this PC joins it, as a restore with the
-	/// sync password does. With no account here it's made from the synced profile. With one, its own password must be given first, so
-	/// only its owner can take the synced keys over it; then it becomes the sync password and the profile stays. The vault is
-	/// replaced only when it holds no logins of its own (<see cref="SyncRestoreWouldReplaceLoginsException"/>).
+	/// sync password does. With no account here it's made from the synced profile. With one, the sync password becomes its password and
+	/// the profile stays: one Zing password everywhere. Its own password isn't asked for, because it must be signed in, and the sync
+	/// password already proves the synced keys are the person's. The vault is replaced only when it holds no logins of its own
+	/// (<see cref="SyncRestoreWouldReplaceLoginsException"/>).
 	/// </summary>
-	/// <exception cref="AccountException">WrongPassword when <paramref name="current"/> isn't this PC's password; EmptyField when it's needed and missing.</exception>
+	/// <exception cref="SyncJoinNeedsSignInException">This PC has an account that isn't signed in.</exception>
 	/// <exception cref="SyncJoinWrongPasswordException">The sync password doesn't open the synced keys.</exception>
 	/// <exception cref="SyncRestoreWhileSyncingAnotherAccountException">This PC syncs as another Google account.</exception>
-	public async Task JoinWithPasswordAsync(string current, string password, CancellationToken cancellation = default)
+	public async Task JoinWithPasswordAsync(string password, CancellationToken cancellation = default)
 	{
 		_recovered = null;
-		if (account.State().HasAccount)
-		{
-			if (current == "") throw new AccountException(AccountErrorCode.EmptyField);
-			account.CheckPassword(current);
-		}
+		var state = account.State();
+		if (state.HasAccount && !state.SignedIn) throw new SyncJoinNeedsSignInException();
 		var signedIn = signIn.SyncAccount() ?? throw new NotSignedInToSyncException();
 		account.CheckNewPassword(password);
 		var server = await ServerKeysAsync(signedIn, cancellation);
