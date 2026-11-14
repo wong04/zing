@@ -100,7 +100,7 @@
 	margin-top: 4px;
 }
 
-/* The Favourites as ribbons hanging along the top of the rail: as many as the width fits, the rest behind "+N". */
+/* The Favourites as tiles along the top of the rail: as many as the width fits, the rest behind "+N". */
 .rail-favourites {
 	display: flex;
 	gap: 4px;
@@ -109,48 +109,49 @@
 	padding: 0 0 8px;
 }
 
-/* clip-path cuts the ribbon's outline and shadow off, so state shows as fill, inset shadow or filter. */
+/* A favourite is a soft tile in a faint shade of the rail's own ink, so the site's logo is the only colour on it. */
 .rail-ribbon {
-	display: flex;
-	align-items: flex-end;
-	justify-content: center;
+	display: grid;
+	place-items: center;
 	flex: none;
 	box-sizing: border-box;
 	width: 40px;
-	height: 54px;
+	height: 36px;
 	margin: 0;
-	padding: 0 0 13px;
+	padding: 0;
 	border: 0;
-	clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%);
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--window-ink) 6%, transparent);
 	color: var(--window-ink);
 	font: inherit;
 	touch-action: none;
 	user-select: none;
 }
 
-.rail-favourites > .rail-ribbon {
-	background: var(--ribbon);
-	color: var(--ribbon-ink);
+.rail-ribbon:hover {
+	background: color-mix(in srgb, var(--window-ink) 11%, transparent);
 }
 
-.rail-favourites > .rail-ribbon.more {
-	background: var(--more);
-	color: var(--more-ink);
+.rail-ribbon.more {
+	color: color-mix(in srgb, var(--window-ink) 62%, transparent);
 	font-size: 12px;
-	font-weight: 800;
+	font-weight: 700;
 }
 
-/* Nothing saved yet: a dashed slot like Pinned's, filling the row the ribbons will hang in. */
+/* Nothing saved yet: a dashed slot like Pinned's, filling the row the tiles will sit in. */
 .rail-favourites > .rail-favourites-hint {
 	flex: 1;
 }
 
+/* The open favourite takes the page's colour, like the open tab's card. */
 .rail-ribbon.active,
 .rail-ribbon.more.holds-active {
-	box-shadow: inset 0 3px 0 var(--page);
+	background: var(--page);
+	color: var(--page-ink);
+	box-shadow: 0 1px 2px rgb(0 0 0 / 0.1), 0 2px 8px rgb(0 0 0 / 0.08);
 }
 
-/* The rest of the Favourites, a list hanging under the ribbons. */
+/* The rest of the Favourites, a list hanging under the tiles. */
 .rail-favourites-panel {
 	position: absolute;
 	top: 100%;
@@ -203,10 +204,39 @@
 	opacity: 0.8;
 }
 
+/* A site not visited yet: its letter on a badge the size of a logo. */
 .rail-ribbon .rail-letter {
-	background: transparent;
-	font-size: 12px;
-	font-weight: 800;
+	width: 18px;
+	height: 18px;
+	border-radius: 5px;
+	background: color-mix(in srgb, currentColor 12%, transparent);
+	color: inherit;
+	font-size: 10.5px;
+	font-weight: 700;
+}
+
+.rail-ribbon .tab-favicon {
+	width: 18px;
+	height: 18px;
+}
+
+@media (prefers-color-scheme: dark) {
+	.rail-ribbon {
+		background: color-mix(in srgb, var(--window-ink) 7%, transparent);
+	}
+
+	.rail-ribbon.active,
+	.rail-ribbon.more.holds-active {
+		box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06), 0 2px 8px rgb(0 0 0 / 0.4);
+	}
+
+	/* A near-black logo would vanish on a dark tile, so it sits on a light plate. */
+	.rail-ribbon.dark-icon .tab-favicon {
+		box-sizing: border-box;
+		padding: 2px;
+		border-radius: 5px;
+		background: #ffffff;
+	}
 }
 
 .rail-tabs .tab-icon:not(.fault, .loading) {
@@ -287,10 +317,10 @@
 	background: var(--surface);
 }
 
-/* Keeps its colour: a shadow would be clipped with the ribbon. */
 .rail-ribbon.dragging {
 	position: relative;
 	z-index: 5;
+	box-shadow: var(--elevation-strong);
 }
 
 /* Where a dragged tab or item would land. */
@@ -532,11 +562,9 @@
 	outline-offset: -2px;
 }
 
-/* An outline would be clipped with the ribbon, so focus and a drop target darken it instead. */
-.rail-ribbon:focus-visible,
-.rail-ribbon.drop-over {
-	outline: none;
-	filter: brightness(0.82);
+.rail-ribbon:focus-visible {
+	outline: 2px solid var(--accent-ink);
+	outline-offset: -2px;
 }
 
 /* The inner edge resizes the rail. */
@@ -679,8 +707,7 @@
 
 .rail.collapsed .rail-ribbon {
 	width: 36px;
-	height: 40px;
-	padding-bottom: 9px;
+	height: 32px;
 }
 
 .rail.collapsed .rail-split {
@@ -734,7 +761,6 @@
 
 	.rail-ribbon {
 		height: 32px !important;
-		clip-path: none;
 		border: 1px solid CanvasText;
 		box-shadow: none !important;
 	}

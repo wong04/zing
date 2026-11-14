@@ -4,7 +4,7 @@ import { zing } from '../api'
 import { FolderIcon } from '../components/icons'
 import { ItemIcon, savedFolderProps, savedItemProps, type SavedFrame } from './savedItem'
 
-/** The favourites behind "+N": a list under the ribbons, opened by a click and dragged back among them. */
+/** The favourites behind "+N": a list under the tiles, opened by a click and dragged back among them. */
 export function FavouritesPanel({ nodes, firstIndex, frame, onClose }: { nodes: readonly BookmarkNode[]; firstIndex: number; frame: SavedFrame; onClose: () => void }) {
 	useEffect(() => {
 		// A drag can blur the window, and the panel must stay open for it to land.
@@ -13,7 +13,7 @@ export function FavouritesPanel({ nodes, firstIndex, frame, onClose }: { nodes: 
 		}
 		const onPointerDown = (e: PointerEvent): void => {
 			if (!(e.target instanceof Element)) return
-			// The ribbons are the panel's own bar: a drag from one must not close it.
+			// The tiles are the panel's own bar: a drag from one must not close it.
 			if (e.target.closest('.rail-favourites')) return
 			onClose()
 		}

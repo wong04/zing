@@ -241,7 +241,7 @@ test('pinned and stacked tabs take the same fills and stay inked', async () => {
 	await zing.close()
 })
 
-test('favourites on top are ribbons 30 by 34 px, named by their title and hung from the top of a 40 px bar', async () => {
+test('favourites on top are tiles 30 by 28 px, named by their title and centred in a 40 px bar', async () => {
 	const zing = await launchWithStrip()
 	await openPage(zing.chrome, 'mail', 'Mail')
 	await zing.chrome.evaluate(() => window.zing.runCommand('library.addFavourite'))
@@ -249,16 +249,18 @@ test('favourites on top are ribbons 30 by 34 px, named by their title and hung f
 	await expect(bar).toHaveCSS('height', '40px')
 	await expect(bar).toHaveCSS('background-color', (await paintOf(zing.chrome, '--band', '--band-ink')).background)
 
-	const ribbon = bar.getByRole('button', { name: 'Mail', exact: true })
-	await expect(ribbon).toHaveClass(/fav-chip/)
-	await expect(ribbon).toHaveAttribute('title', 'Mail')
-	await expect(ribbon.locator('.fav-title')).toHaveCount(0)
-	await expect(ribbon).toHaveCSS('width', '30px')
-	await expect(ribbon).toHaveCSS('height', '34px')
-	await expectPaint(ribbon, await paintOf(zing.chrome, '--ribbon', '--ribbon-ink'))
-	const ribbonBox = (await ribbon.boundingBox())!
+	const tile = bar.getByRole('button', { name: 'Mail', exact: true })
+	await expect(tile).toHaveClass(/fav-chip/)
+	await expect(tile).toHaveAttribute('title', 'Mail')
+	await expect(tile.locator('.fav-title')).toHaveCount(0)
+	await expect(tile).toHaveCSS('width', '30px')
+	await expect(tile).toHaveCSS('height', '28px')
+	await expect(tile).toHaveCSS('color', (await paintOf(zing.chrome, '--band', '--band-ink')).color)
+	const tileBox = (await tile.boundingBox())!
 	const barBox = (await bar.boundingBox())!
-	expect(Math.abs(ribbonBox.y - barBox.y)).toBeLessThan(1)
+	const centre = (box: { y: number; height: number }) => box.y + box.height / 2
+	// The bar's 1px bottom border is inside its box, so its content centre sits half a pixel high.
+	expect(Math.abs(centre(tileBox) - centre(barBox))).toBeLessThan(1)
 	await zing.close()
 })
 
@@ -302,7 +304,7 @@ test('favourites that do not fit fold into one "+N" button, which opens a menu o
 	await zing.close()
 })
 
-test('contrast themes outline the tabs and ribbons instead of filling them', async () => {
+test('contrast themes outline the tabs and favourite tiles instead of filling them', async () => {
 	const zing = await launchWithStrip()
 	await zing.chrome.emulateMedia({ forcedColors: 'active' })
 	await openPage(zing.chrome, 'one', 'Zebra')

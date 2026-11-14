@@ -39,6 +39,7 @@ const COLOURS: Readonly<Record<string, readonly [number, number, number]>> = {
 	docs: [40, 110, 230],
 	notes: [245, 180, 20],
 	music: [40, 170, 90],
+	code: [28, 30, 34],
 }
 
 /** Serves `/<name>` as a page whose icon is `/<name>.png`, and records every request it gets. */
@@ -138,6 +139,27 @@ test('a page that is not the bookmarked one leaves the bookmark blank', async ()
 	await zing.close()
 })
 
+test('a near-black site icon gets a light backing in dark mode, and a coloured one does not', async () => {
+	const profile = profileWithFavourites([
+		{ id: 'code', title: 'Code', url: `${visited.base}/code` },
+		{ id: 'mail', title: 'Mail', url: `${visited.base}/mail` },
+	])
+	const zing = await launchZing({ userDataDir: profile })
+	await visit(zing.chrome, `${visited.base}/code`)
+	await visit(zing.chrome, `${visited.base}/mail`)
+	await zing.chrome.evaluate(() => window.zing.setSetting('theme', 'dark'))
+	await zing.chrome.emulateMedia({ colorScheme: 'dark' })
+	await expect.poll(async () => (await viewAccent(zing.chrome)).dark).toBe(true)
+	await expect(ribbon(zing.chrome, 'Code')).toHaveClass(/\bdark-icon\b/)
+	await expect(ribbon(zing.chrome, 'Code').locator('img')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+	await expect(ribbon(zing.chrome, 'Mail')).not.toHaveClass(/\bdark-icon\b/)
+
+	await zing.chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'top'))
+	await expect(barChip(zing.chrome, 'Code')).toHaveClass(/\bdark-icon\b/)
+	await expect(barChip(zing.chrome, 'Mail')).not.toHaveClass(/\bdark-icon\b/)
+	await zing.close()
+})
+
 test('deleting the bookmark deletes its icon', async () => {
 	const profile = profileWithFavourites([{ id: 'mail', title: 'Mail', url: `${visited.base}/mail` }])
 	const zing = await launchZing({ userDataDir: profile })
@@ -171,6 +193,30 @@ test.describe('B22 screenshots', () => {
 			await zing.chrome.waitForTimeout(400)
 			const box = (await bar.boundingBox())!
 			await zing.chrome.screenshot({ path: join(OUT_DIR, `b22-bookmark-icons-${mode}.png`), clip: { x: 0, y: 0, width: Math.min(box.x + box.width, 900), height: box.y + box.height } })
+			await zing.close()
+		})
+
+		test(`the sidebar's favourite tiles with icons, a letter and "+N", ${mode}`, async () => {
+			const names = ['mail', 'code', 'docs']
+			const profile = profileWithFavourites([
+				...names.map((name) => ({ id: name, title: name[0]!.toUpperCase() + name.slice(1), url: `${visited.base}/${name}` })),
+				...['Hearth', 'Atlas', 'Ledger', 'Orbit', 'Quill'].map((title) => ({ id: title, title, url: `${unvisited.base}/${title}` })),
+			])
+			const zing: Launched = await launchZing({ userDataDir: profile })
+			for (const name of names) await visit(zing.chrome, `${visited.base}/${name}`)
+			await expect.poll(() => storedIcons(profile)).toHaveLength(names.length)
+			// Opened from its tile, Docs's tab is in front and the tile shows as open.
+			await ribbon(zing.chrome, 'Docs').click()
+			await expect(ribbon(zing.chrome, 'Docs')).toHaveAttribute('aria-current', 'page')
+			await zing.chrome.evaluate(() => window.zing.setSetting('accent', 'blue'))
+			await zing.chrome.evaluate((theme) => window.zing.setSetting('theme', theme), mode)
+			await zing.chrome.emulateMedia({ colorScheme: mode })
+			await expect.poll(async () => (await viewAccent(zing.chrome)).dark).toBe(mode === 'dark')
+			const tiles = zing.chrome.getByRole('list', { name: 'Favourites' })
+			await expect(tiles.locator('img')).toHaveCount(names.length)
+			await zing.chrome.waitForTimeout(400)
+			const box = (await tiles.boundingBox())!
+			await zing.chrome.screenshot({ path: join(OUT_DIR, `favourite-tiles-${mode}.png`), clip: { x: 0, y: 0, width: box.x + box.width + 12, height: box.y + box.height + 90 } })
 			await zing.close()
 		})
 	}

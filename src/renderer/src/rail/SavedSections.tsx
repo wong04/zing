@@ -4,6 +4,7 @@ import { zing } from '../api'
 import { CloseIcon } from '../chrome/icons'
 import { FolderIcon } from '../components/icons'
 import { ribbonLayout } from '@shared/layout/ribbons'
+import { useDarkIcon } from '../components/useDarkIcon'
 import { AT_END } from './dropTarget'
 import { FavouritesPanel } from './FavouritesPanel'
 import { ItemIcon, itemMenu, open, savedFolderProps, savedItemProps, type SavedFrame } from './savedItem'
@@ -11,7 +12,24 @@ import { ItemIcon, itemMenu, open, savedFolderProps, savedItemProps, type SavedF
 const EMPTY_HINT = 'Drag a tab here to favourite it'
 const EMPTY_TITLE = 'Drag a tab here, or press Ctrl+D'
 
-/** The Favourites as ribbons hanging along the top of the rail: as many as the width fits, the rest behind "+N". Ctrl+D adds the page in front. */
+/** Where a dragged item lands among the tiles. */
+function tilePlace(id: string, index: number) {
+	return { 'data-drop-item': id, 'data-drop-parent': FAVOURITES_ID, 'data-drop-index': index, 'data-drop-axis': 'x' }
+}
+
+function FavouriteTile({ link, index, frame, onOpen }: { link: BookmarkLink; index: number; frame: SavedFrame; onOpen: () => void }) {
+	const tab = frame.tabsByItem.get(link.id)
+	const icon = frame.icons[link.id]
+	const darkIcon = useDarkIcon(tab?.icon ?? icon)
+	const place = tilePlace(link.id, index)
+	return (
+		<div data-item-id={link.id} {...place} {...savedItemProps(frame, link, darkIcon ? 'rail-ribbon dark-icon' : 'rail-ribbon', onOpen)}>
+			<ItemIcon link={link} tab={tab} icon={icon} />
+		</div>
+	)
+}
+
+/** The Favourites as tiles along the top of the rail: as many as the width fits, the rest behind "+N". Ctrl+D adds the page in front. */
 export function FavouriteRibbons({ nodes, frame, innerWidth }: { nodes: readonly BookmarkNode[]; frame: SavedFrame; innerWidth: number }) {
 	const { shown, more } = ribbonLayout(nodes.length, innerWidth)
 	const [expanded, setExpanded] = useState(false)
@@ -23,7 +41,7 @@ export function FavouriteRibbons({ nodes, frame, innerWidth }: { nodes: readonly
 		if (document.activeElement?.closest('.rail-favourites-panel')) moreButton.current?.focus()
 		setExpanded(false)
 	}
-	// Opening a favourite from its ribbon closes the panel too.
+	// Opening a favourite from its tile closes the panel too.
 	const activate = (id: string): void => {
 		setExpanded(false)
 		void zing.openSavedTab(id)
@@ -40,7 +58,7 @@ export function FavouriteRibbons({ nodes, frame, innerWidth }: { nodes: readonly
 				</div>
 			) : null}
 			{nodes.slice(0, shown).map((node, index) => {
-				const place = { 'data-drop-item': node.id, 'data-drop-parent': FAVOURITES_ID, 'data-drop-index': index, 'data-drop-axis': 'x' }
+				const place = tilePlace(node.id, index)
 				if (isFolder(node)) {
 					return (
 						<div key={node.id} {...place} {...savedFolderProps(frame, node, 'rail-ribbon', (at) => void zing.openFolderMenu(node.id, at))}>
@@ -48,11 +66,7 @@ export function FavouriteRibbons({ nodes, frame, innerWidth }: { nodes: readonly
 						</div>
 					)
 				}
-				return (
-					<div key={node.id} data-item-id={node.id} {...place} {...savedItemProps(frame, node, 'rail-ribbon', () => activate(node.id))}>
-						<ItemIcon link={node} tab={frame.tabsByItem.get(node.id)} icon={frame.icons[node.id]} />
-					</div>
-				)
+				return <FavouriteTile key={node.id} link={node} index={index} frame={frame} onOpen={() => activate(node.id)} />
 			})}
 			{more > 0 ? (
 				<button
