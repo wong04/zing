@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { SyncState } from '@shared/vault/vault'
 import { zing } from '../api'
 import { useAccount } from '../account/useAccount'
@@ -154,7 +155,8 @@ function JoinSync({ onJoined }: { onJoined: (state: SyncState) => void }) {
 	const [startingOver, setStartingOver] = useState(false)
 	const { busy, error, run } = useAction()
 	if (!account) return null
-	if (startingOver) return <StartOver onBack={() => setStartingOver(false)} />
+	// Over the whole window, as at the gate: inside the sheet, its transform would hold it and the controls after it would paint on top.
+	if (startingOver) return createPortal(<StartOver overSettings onBack={() => setStartingOver(false)} />, document.body)
 	const join = (): void => run(async () => onJoined(await zing.joinSync(password)))
 	return (
 		<div className="sync-setup" role="form" aria-label="Join sync">
