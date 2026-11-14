@@ -803,6 +803,26 @@ test('a PC that doesn’t know the sync password starts over from the Join sync 
 	await joinForm(sheet).getByRole('button', { name: 'Forgot your Zing password? Start over' }).click()
 
 	const form = startOverForm(sheet)
+	// Start over covers the whole window, as at the gate: nothing of Settings shows through it, and its card is centred.
+	await expect(form).toBeVisible()
+	const showingThrough = await sheet.evaluate(() => {
+		const corners = [
+			[8, 8],
+			[innerWidth - 8, 8],
+			[innerWidth - 8, innerHeight - 8],
+			[8, innerHeight - 8],
+		]
+		const behind = [...document.querySelectorAll('[role="switch"], button, input')]
+			.filter((e) => !e.closest('.auth'))
+			.map((e) => e.getBoundingClientRect())
+			.filter((r) => r.width > 0 && r.bottom > 0 && r.top < innerHeight)
+			.map((r) => [r.left + r.width / 2, r.top + r.height / 2])
+		return [...corners, ...behind].filter(([x, y]) => document.elementFromPoint(x!, y!)?.closest('.auth') == null).length
+	})
+	expect(showingThrough).toBe(0)
+	const card = (await form.boundingBox())!
+	const width = await sheet.evaluate(() => innerWidth)
+	expect(Math.abs(card.x + card.width / 2 - width / 2)).toBeLessThan(2)
 	await form.getByRole('checkbox').check()
 	await form.getByLabel('Type START OVER to confirm').fill('START OVER')
 	await form.getByRole('button', { name: 'Sign in with Google and start over' }).click()

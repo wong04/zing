@@ -7,6 +7,11 @@
 	overflow: auto;
 }
 
+/* Start over opened from Settings: above the sheet's 40, below the pill menus' 50. */
+.auth-over-settings {
+	z-index: 45;
+}
+
 .auth-drag {
 	position: absolute;
 	top: 0;

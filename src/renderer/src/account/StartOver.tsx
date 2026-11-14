@@ -12,7 +12,7 @@ export const START_OVER_CONFIRM = 'START OVER'
  * sync account too when this PC syncs (after a Google sign-in that proves it's theirs), and deletes nothing until the confirmation is
  * typed. Afterwards the gate offers a new account.
  */
-export function StartOver({ onBack }: { onBack: () => void }) {
+export function StartOver({ onBack, overSettings = false }: { onBack: () => void; overSettings?: boolean }) {
 	const [plan, setPlan] = useState<StartOverPlan>()
 	const [planError, setPlanError] = useState<string>()
 	const [deleteSync, setDeleteSync] = useState(false)
@@ -44,7 +44,7 @@ export function StartOver({ onBack }: { onBack: () => void }) {
 		})
 
 	return (
-		<div className="auth">
+		<div className={overSettings ? 'auth auth-over-settings' : 'auth'}>
 			<div className="auth-drag" />
 			<div className="auth-card card-surface" role="form" aria-label="Start over">
 				<div className="auth-header">
