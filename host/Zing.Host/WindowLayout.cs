@@ -28,13 +28,13 @@ public sealed class WindowLayout(HostWindow window, Func<ChromeApi?> api)
 	/// <summary>
 	/// The cursor over the content while Zing is in front (an overlay of the window in front counts:
 	/// the surface or a dropdown with the keyboard is still this window). Test runs never read the real
-	/// mouse (AGENTS.md), so the sidebar never reveals itself there.
+	/// mouse (AGENTS.md): there it is wherever the test put it (TestHooks "set-cursor"), off the window until then.
 	/// </summary>
 	public Point? Cursor
 	{
 		get
 		{
-			if (TestHooks.IsEndToEndRun) return null;
+			if (TestHooks.IsEndToEndRun) return TestHooks.CursorOver(window);
 			if (!window.IsForeground || !Native.GetCursorPos(out var cursor)) return null;
 			var origin = ContentOrigin;
 			var scale = Scale;

@@ -77,6 +77,8 @@ public interface IWindowHost
 	Updater Updates { get; }
 	/// <summary>The update pill's view measured what it shows.</summary>
 	void SetUpdatePillSize(int width, int height);
+	/// <summary>The page in front leaves fullscreen and the window gets its chrome back (the Exit full screen button).</summary>
+	void ExitFullScreen();
 	/// <summary>Whether Zing is installed and the default browser, asked anew each time (the person may have changed it in Windows' Settings).</summary>
 	DefaultBrowserState DefaultBrowserState { get; }
 	/// <summary>The generated third-party notices file, shown by About's Credits.</summary>
@@ -359,6 +361,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("session:open-save", args => OpenSaveSession(Text(args, 0), StringArray(Arg(args, 1))));
 		bridge.Register("bgremove:open", args => OpenToolSession(Text(args, 0), Text(args, 1), ["image"]));
 		bridge.Register("page:save", _ => SavePageAsync());
+		bridge.Register("page:exit-fullscreen", _ => Do(host.ExitFullScreen));
 		bridge.Register("viewer:open", args => OpenViewerFile(Text(args, 0), Text(args, 1)));
 		bridge.Register("viewer:close", args => Do(() => CloseViewerFile(Text(args, 0))));
 		bridge.Register("net:diagnose", args => DiagnoseAsync(Text(args, 0)));

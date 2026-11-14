@@ -33,6 +33,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private PageUiLayer? _pageUi;
 	private PeekControlsLayer? _peekControls;
 	private UpdatePillLayer? _updatePill;
+	private FullScreenExitLayer? _fullScreenExit;
+	private FullScreenExitReveal? _exitReveal;
 	private CoveringLayer? _stacks;
 	private CoveringLayer? _overview;
 	private CoreWebView2Environment? _environment;
@@ -136,6 +138,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_pageUi = new PageUiLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays);
 		_peekControls = new PeekControlsLayer(_window, _scope, _environment, _bridge, PreviewButtons, _renderers.Add, _overlays);
 		_updatePill = new UpdatePillLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, _renderers.Add, _overlays, _app.Updates.State);
+		_fullScreenExit = new FullScreenExitLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, _renderers.Add, _overlays);
+		// The real cursor, not Cursor: that counts as away over a fullscreen page, and this button is the one thing that shows there.
+		_exitReveal = new FullScreenExitReveal(() => _layout.Cursor, Scheduler);
+		_exitReveal.Changed += ExitButtonChanged;
+		_scope.Track(_exitReveal.Dispose);
 		_app.Updates.Changed += OnUpdateChanged;
 		_scope.Track(() => _app.Updates.Changed -= OnUpdateChanged);
 		_updatePill.Start();
@@ -499,6 +506,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_stacks?.Layout();
 		_overview?.Layout();
 		_updatePill?.Layout();
+		_fullScreenExit?.Layout();
 		// The shell model works out where the surface goes and answers through SurfaceRegionChanged.
 		Api?.LayoutChanged();
 	}
@@ -507,7 +515,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public Point ContentOrigin => _layout.ContentOrigin;
 
-	/// <summary>Nothing reveals itself over a fullscreen page: the cursor counts as away.</summary>
+	/// <summary>Nothing reveals itself over a fullscreen page, the cursor counting as away, but the Exit full screen button (_exitReveal).</summary>
 	public Point? Cursor => _fullScreen ? null : _layout.Cursor;
 
 	public bool HighContrast => _highContrast;
@@ -646,9 +654,26 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			else AppWindow.SetPresenter(_windowed ?? throw new InvalidOperationException("Left fullscreen without having entered it"));
 		}
 		Relayout();
+		if (wanted) _fullScreenExit?.Prepare();
+		_exitReveal?.SetEnabled(wanted);
 		if (_notices is null || _scope.IsClosed) return;
 		if (wanted) TestHooks.Background(_notices.ShowFullScreenHintAsync(owner!.Url), "fullscreen hint");
 		else _notices.HideFullScreenHint();
+	}
+
+	/// <summary>The cursor reached the top of a fullscreen page, or left it. The button takes the hint's place at the top.</summary>
+	private void ExitButtonChanged(bool shown)
+	{
+		if (_scope.IsClosed) return;
+		if (shown) _notices?.HideFullScreenHint();
+		_fullScreenExit?.Changed(shown);
+	}
+
+	/// <summary>The Exit full screen button: the page in front leaves fullscreen as Esc would make it, and the window follows.</summary>
+	public void ExitFullScreen()
+	{
+		ScreenOwner?.ExitFullScreen();
+		FollowFullScreen();
 	}
 
 	/// <summary>The shown page goes inside the chrome, or over the whole window while it is fullscreen.</summary>

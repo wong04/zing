@@ -22,6 +22,8 @@ public enum OverlayLevel
 	Surface,
 	/// <summary>The "Relaunch to update" pill (UpdatePillLayer), over the settings sheet where Check now is.</summary>
 	UpdatePill,
+	/// <summary>The Exit full screen button over a fullscreen page (FullScreenExitLayer), under the notices it takes the place of.</summary>
+	FullScreenExit,
 	/// <summary>Notices (NoticeLayer): the top layer, over everything else.</summary>
 	Notices,
 }

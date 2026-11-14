@@ -176,6 +176,7 @@ public static class TestHooks
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption", "live-counts" and "startup-marks" (StartupMarks) write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// "update-ready" with <c>version</c> makes the next update check find that version, and "update-restarts" writes how many restarts into an update were asked for to <c>file</c>.
+	/// "set-cursor" with <c>x</c> and <c>y</c> puts the cursor there over the window's content (WindowLayout.Cursor), and without them takes it off the window.
 	/// "show-default-browser-offer" shows the default-browser offer as a launch would, skipping only whether Zing is installed and not the default.
 	/// </summary>
 	/// <summary>Written beside and moved into place: the test polls for the file and must never read half of it.</summary>
@@ -339,6 +340,14 @@ public static class TestHooks
 			if (root.TryGetProperty("close", out var close) && close.GetBoolean()) (popup ?? throw new InvalidOperationException("sign-in-window close needs the window open")).CloseAsThePersonWould();
 			return true;
 		}
+		if (action == "set-cursor")
+		{
+			// x and y over the window's content in DIPs; without them the cursor is off the window.
+			Zing.Core.Point? at = root.TryGetProperty("x", out var x) ? new Zing.Core.Point(x.GetDouble(), root.GetProperty("y").GetDouble()) : null;
+			if (Cursors.TryAdd(window, at)) window.Destroyed += () => Cursors.Remove(window);
+			else Cursors[window] = at;
+			return true;
+		}
 		if (action == "close-at")
 		{
 			var n = root.GetProperty("n").GetInt32();
@@ -378,6 +387,11 @@ public static class TestHooks
 		layers.Add(new { url = "scrim", visible = scrim.Visible, x = area.X / scale, y = area.Y / scale, width = area.Width / scale, height = area.Height / scale, depth = scrim.Depth, keyboard = false });
 		return layers;
 	}
+
+	private static readonly Dictionary<HostWindow, Zing.Core.Point?> Cursors = [];
+
+	/// <summary>Where a test put the cursor over this window's content ("set-cursor"); null until it does, and once it takes it off the window.</summary>
+	public static Zing.Core.Point? CursorOver(HostWindow window) => Cursors.TryGetValue(window, out var at) ? at : null;
 
 	/// <summary>Each window's preview scrim, for the layers hook; e2e runs only.</summary>
 	private static readonly Dictionary<HostWindow, Func<PeekScrim?>> Scrims = [];

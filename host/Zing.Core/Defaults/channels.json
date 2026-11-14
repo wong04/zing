@@ -281,6 +281,10 @@
 			"args": 0
 		},
 		{
+			"channel": "page:exit-fullscreen",
+			"args": 0
+		},
+		{
 			"channel": "page:save",
 			"args": 0
 		},

@@ -229,6 +229,8 @@ public sealed class FakeWindowHost : IWindowHost
 	public Updater Updates { get; set; } = new(null, new ManualScheduler(), () => true);
 	public List<(int Width, int Height)> UpdatePillSizes { get; } = [];
 	public void SetUpdatePillSize(int width, int height) => UpdatePillSizes.Add((width, height));
+	public int FullScreenExits { get; private set; }
+	public void ExitFullScreen() => FullScreenExits++;
 	/// <summary>Not installed, so not the default, unless a test sets it.</summary>
 	public DefaultBrowserState DefaultBrowserState { get; set; } = new(false, false);
 	public string ThirdPartyNoticesPath { get; set; } = "";

@@ -1,0 +1,46 @@
+/* The #fullscreen-exit view is exactly this box: the padding leaves room for the shadow. Tokens only, no literal colours. */
+
+.fullscreen-exit {
+	display: flex;
+	width: fit-content;
+	padding: 8px;
+	animation: fullscreen-exit-in 120ms ease-out;
+}
+
+@keyframes fullscreen-exit-in {
+	from {
+		opacity: 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.fullscreen-exit {
+		animation: none;
+	}
+}
+
+.fullscreen-exit-button {
+	display: grid;
+	place-items: center;
+	width: 40px;
+	height: 40px;
+	padding: 0;
+	border-radius: 50%;
+	border: 1px solid var(--border);
+	background: var(--raised);
+	color: var(--text);
+	box-shadow: var(--elevation-strong);
+	cursor: pointer;
+}
+
+.fullscreen-exit-button:hover {
+	background: var(--accent);
+	color: var(--on-accent);
+	border-color: transparent;
+}
+
+/* Inside the button: the view ends just past its edge, so a ring outside it would be cut off. */
+.fullscreen-exit-button:focus-visible {
+	outline: 2px solid var(--outline);
+	outline-offset: -2px;
+}
