@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { closeSync, copyFileSync, existsSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { test as base, chromium, expect, type Browser, type Page, type TestInfo } from '@playwright/test'
+import { test as base, chromium, expect, type Browser, type Locator, type Page, type TestInfo } from '@playwright/test'
 
 const ROOT = join(import.meta.dirname, '..')
 export const HOST_EXE = join(ROOT, 'host', 'Zing.Host', 'bin', 'Release', 'net9.0-windows10.0.26100.0', 'win-x64', 'Zing.exe')
@@ -535,6 +535,36 @@ export async function setModifiers(chrome: Page, { shift = false, ctrl = false, 
 		// Answered after the message before it on the same channel: the modifiers are set before the click that reads them.
 		await view.zing.getTabs()
 	}, { shift, ctrl, middle })
+}
+
+/** Puts the cursor at this point of the window's content in DIPs, or off the window with null (TestHooks "set-cursor"); e2e runs never read the real one. */
+export async function setCursor(chrome: Page, at: { readonly x: number; readonly y: number } | null): Promise<void> {
+	await chrome.evaluate(async (point) => {
+		const view = globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } }; zing: { getTabs(): Promise<unknown> } }
+		view.chrome.webview.postMessage({ kind: 'test', action: 'set-cursor', ...point })
+		// Answered after the message before it on the same channel: the cursor has moved.
+		await view.zing.getTabs()
+	}, at ?? {})
+}
+
+/**
+ * The Exit full screen button, once its view takes presses: the engine drops presses on a view that has only just loaded
+ * (moves get through sooner, so hovering is no check). The check presses the view's empty corner, outside the button,
+ * where a press does nothing, so the button itself is clicked once.
+ */
+export async function exitFullScreenButton(browser: Browser): Promise<Locator> {
+	const view = await pageWhere(browser, (p) => p.url().endsWith('#fullscreen-exit'))
+	const button = view.getByRole('button', { name: 'Exit full screen' })
+	await button.waitFor()
+	type Pressed = { pressed?: boolean; document: { addEventListener(type: string, listener: () => void): void } }
+	await view.evaluate(() => (globalThis as unknown as Pressed).document.addEventListener('mousedown', () => ((globalThis as unknown as Pressed).pressed = true)))
+	await expect
+		.poll(async () => {
+			await view.mouse.click(1, 1)
+			return view.evaluate(() => (globalThis as unknown as Pressed).pressed === true)
+		})
+		.toBe(true)
+	return button
 }
 
 /** The colours the host gave Windows' caption buttons, as channels, and their height in DIPs. */

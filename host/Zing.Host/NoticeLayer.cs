@@ -27,6 +27,8 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 	private bool _offerShowing;
 	// The fullscreen hint sits at the top of the screen, where a fake address bar would be; other notices at the bottom.
 	private bool _atTop;
+	// The hint was taken down while its view was still loading: it mustn't show once the view is ready.
+	private bool _hintWithdrawn;
 
 	/// <summary>The offer left the screen without being chosen or dismissed: it timed out, or another notice replaced it.</summary>
 	public event Action? OfferEnded;
@@ -43,13 +45,16 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 	{
 		EndOffer();
 		_atTop = true;
+		_hintWithdrawn = false;
 		return ShowAsync(new { id = _nextId++, text = FullScreenHint.Text(url) }, NoticeHeight, NoticeMs);
 	}
 
-	/// <summary>The page left fullscreen: its hint goes with it, while any other notice stays.</summary>
+	/// <summary>The page left fullscreen, or the Exit full screen button took the hint's place: the hint goes, while any other notice stays.</summary>
 	public void HideFullScreenHint()
 	{
-		if (_atTop) Hide();
+		if (!_atTop) return;
+		_hintWithdrawn = true;
+		Hide();
 	}
 
 	/// <summary>The offer after a page failed like a block: buttons that open Open a Link or Diagnose. It waits for a click and starts nothing itself.</summary>
@@ -80,6 +85,7 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 	{
 		var view = await (_ready ??= CreateAsync());
 		scope.Checkpoint("overlay");
+		if (_atTop && _hintWithdrawn) return;
 		_height = height;
 		view.Place(Bounds());
 		view.Send(Bridge.Event("overlay:notice", notice));

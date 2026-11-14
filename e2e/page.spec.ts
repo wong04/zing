@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, test, layers, pages, pageWhere } from './zing'
+import { launchZing, test, layers, pages, pageWhere, setCursor, exitFullScreenButton } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -321,6 +321,42 @@ test('a fullscreen element gives the page the whole window, and leaving puts the
 	await expect.poll(async () => (await shown())?.y).toBe(inChrome!.y)
 	expect((await shown())!.height).toBe(inChrome!.height)
 	await expect(overlay.getByRole('status')).toHaveCount(0)
+	await zing.close()
+})
+
+test('a fullscreen page shows an Exit full screen button while the cursor is at the top, and the button gives the chrome back', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)
+	await page.waitForLoadState('load')
+	const shown = async () => (await layers(zing.chrome)).find((l) => l.url === `${base}/find` && l.visible)
+	const exit = async () => (await layers(zing.chrome)).find((l) => l.url.endsWith('#fullscreen-exit') && l.visible)
+	const fullscreen = () => page.evaluate(() => (globalThis as unknown as { document: { fullscreenElement: unknown } }).document.fullscreenElement !== null)
+	const inChrome = await shown()
+	// Playwright's evaluate counts as a user gesture, which requestFullscreen needs.
+	await page.evaluate(() => (globalThis as unknown as { document: { documentElement: { requestFullscreen(): Promise<void> } } }).document.documentElement.requestFullscreen())
+	await expect.poll(async () => (await shown())?.y).toBe(0)
+	const { width, height } = (await shown())!
+	// Over the middle of the page nothing reveals itself; reaching the top edge brings the button, centred near the top.
+	await setCursor(zing.chrome, { x: width / 2, y: height / 2 })
+	expect(await exit()).toBeUndefined()
+	await setCursor(zing.chrome, { x: width / 2, y: 0 })
+	await expect.poll(exit).toBeTruthy()
+	const button = (await exit())!
+	expect(Math.abs(button.x + button.width / 2 - width / 2)).toBeLessThanOrEqual(1)
+	expect(button.y).toBeLessThan(height / 8)
+	// Moving down past it puts it away; coming back brings it again.
+	await setCursor(zing.chrome, { x: width / 2, y: height / 2 })
+	await expect.poll(exit).toBeUndefined()
+	expect(await fullscreen()).toBe(true)
+	await setCursor(zing.chrome, { x: width / 2, y: 0 })
+	await expect.poll(exit).toBeTruthy()
+	await (await exitFullScreenButton(zing.browser)).click()
+	await expect.poll(fullscreen).toBe(false)
+	await expect.poll(async () => (await shown())?.y).toBe(inChrome!.y)
+	expect((await shown())!.height).toBe(inChrome!.height)
+	// It goes with fullscreen, wherever the cursor is.
+	await expect.poll(exit).toBeUndefined()
+	await setCursor(zing.chrome, null)
 	await zing.close()
 })
 

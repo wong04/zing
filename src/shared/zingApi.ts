@@ -115,6 +115,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		runEngine: (engineId, panelId, job) => invoke('engines:run', engineId, panelId, job),
 		cancelEngineJob: (jobId) => invoke('engines:cancel-job', jobId),
 		savePage: () => invoke('page:save'),
+		exitFullScreen: () => invoke('page:exit-fullscreen'),
 		onEngineOutput: (listener) => listen('engines:output', listener),
 		onEngineExit: (listener) => listen('engines:exit', listener),
 		pickFiles: (kinds) => invoke('files:pick', kinds),

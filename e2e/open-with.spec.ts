@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, layers, pageWhere, test, type Launched } from './zing'
+import { exitFullScreenButton, launchZing, layers, pageWhere, setCursor, test, type Launched } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -58,8 +58,11 @@ test('a PDF opened from Explorer can take the whole window', async () => {
 	await page.evaluate(() => (globalThis as unknown as { document: { documentElement: { requestFullscreen(): Promise<void> } } }).document.documentElement.requestFullscreen())
 	await expect.poll(async () => (await shown())?.y).toBe(0)
 	expect((await shown())!.height).toBeGreaterThan(inChrome!.height)
-	await page.evaluate(() => (globalThis as unknown as { document: { exitFullscreen(): Promise<void> } }).document.exitFullscreen())
+	// The viewer's own fullscreen has no way out on screen, so Zing's button at the top edge is it.
+	await setCursor(zing.chrome, { x: (await shown())!.width / 2, y: 0 })
+	await (await exitFullScreenButton(zing.browser)).click()
 	await expect.poll(async () => (await shown())?.y).toBe(inChrome!.y)
+	await setCursor(zing.chrome, null)
 	await zing.close()
 })
 

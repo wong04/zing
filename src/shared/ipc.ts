@@ -358,6 +358,8 @@ export interface InvokeContract {
 	 * large one. A page view cannot call this: it has no host channel.
 	 */
 	'page:save': { args: []; result: PickedFile }
+	/** The Exit full screen button: the page in front leaves fullscreen, as Esc would make it. */
+	'page:exit-fullscreen': { args: []; result: void }
 	/**
 	 * A session that only takes results (`PUT https://view.zing/save/<id>/<name>`, for the formats of `kinds`) and serves no file. It
 	 * replaces the panel's earlier session, shares the save quota and ends with the panel. For a tool that has read its file and
@@ -766,6 +768,7 @@ export interface ZingApi {
 	runEngine(engineId: string, panelId: string, job: EngineJobSpec): Promise<string>
 	cancelEngineJob(jobId: string): Promise<void>
 	savePage(): Promise<PickedFile>
+	exitFullScreen(): Promise<void>
 	onEngineOutput(listener: (output: EngineOutput) => void): Unsubscribe
 	onEngineExit(listener: (exit: EngineExit) => void): Unsubscribe
 	pickFiles(kinds: readonly FileKind[]): Promise<PickedFile[]>
