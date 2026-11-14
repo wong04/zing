@@ -3,6 +3,7 @@ import { FAVOURITES_ID, favourites, isFolder, type BookmarkNode, type BrowserLib
 import { ribbonLayout, type Ribbon } from '@shared/layout/ribbons'
 import { zing } from '../api'
 import { FolderIcon } from '../components/icons'
+import { useDarkIcon } from '../components/useDarkIcon'
 import { useSettings } from '../settings/useSettings'
 
 const MIDDLE_BUTTON = 1
@@ -27,6 +28,7 @@ function Chip({ node, icon, onDragOver, onDrop, dropSide }: {
 	dropSide: 'before' | 'after' | undefined
 }) {
 	const folder = isFolder(node)
+	const darkIcon = useDarkIcon(icon)
 	const onClick = (e: MouseEvent<HTMLButtonElement>): void => {
 		if (!folder) {
 			void zing.openLibraryItem(node.id, e.ctrlKey ? 'tab' : 'current')
@@ -51,7 +53,7 @@ function Chip({ node, icon, onDragOver, onDrop, dropSide }: {
 	return (
 		<button
 			type="button"
-			className={['fav-chip', folder && 'folder', dropSide && `drop-${dropSide}`].filter(Boolean).join(' ')}
+			className={['fav-chip', folder && 'folder', darkIcon && 'dark-icon', dropSide && `drop-${dropSide}`].filter(Boolean).join(' ')}
 			title={folder ? `${node.title} (Ctrl-click opens all)` : node.title}
 			aria-label={node.title}
 			draggable
@@ -76,7 +78,7 @@ export function FavouritesBar({ library, icons }: { library: BrowserLibrary; ico
 	const measure = useCallback((element: HTMLDivElement | null): void => {
 		observer.current?.disconnect()
 		if (!element) return
-		// Measured now, so the first paint doesn't show one ribbon and a count.
+		// Measured now, so the first paint doesn't show one tile and a count.
 		const style = getComputedStyle(element)
 		setInnerWidth(element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight))
 		observer.current = new ResizeObserver((entries) => setInnerWidth(entries[0]!.contentRect.width))
