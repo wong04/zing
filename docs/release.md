@@ -72,6 +72,23 @@ Uninstall removes the app and its browser registration, and **keeps** `%APPDATA%
 
 The `Velopack` NuGet package (`host/Zing.Host/Zing.Host.csproj`) and the `vpk` tool (`.config/dotnet-tools.json`) must be the same version (both `1.2.161` now). Dependabot's `velopack` group bumps both in one PR; check that PR has both, then run `npm run pack` once.
 
+## Trying a new build
+
+To try the latest `main` on your own PC without uninstalling, let Zing's updater install each new build from your checkout.
+
+Once:
+
+1. Keep a checkout just for this, separate from the one you work in. `npm run handcheck` moves it to `origin/main`.
+2. Set the update feed to its `artifacts\releases` folder: `[Environment]::SetEnvironmentVariable('ZING_UPDATE_FEED', '<checkout>\artifacts\releases', 'User')`.
+3. Install Zing once from that folder's `ZingBrowser-win-Setup.exe`, and start it from the Start menu so it picks up the variable.
+
+Each new build:
+
+1. In that checkout, run `npm run handcheck`. It fetches `origin/main`, runs `npm ci`, asks for the Google client ID and secret unless they're already set in the window, and packs one patch above the highest version in `artifacts\releases` (0.9.2 → 0.9.3).
+2. In Zing, Settings → About → Check now, then click "Relaunch to update". Zing restarts into the new build with your data in place.
+
+Each build adds a full package of about 125 MB to `artifacts\releases`. Delete old `ZingBrowser-*-full.nupkg` files from time to time, but keep the newest, because the next version is counted from it.
+
 ## Hand check
 
 The installer can only be checked by hand, on a real install. Run it on a PC where Zing isn't installed yet. It needs two things in the checkout's `artifacts\` folder:
