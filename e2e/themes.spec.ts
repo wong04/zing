@@ -250,11 +250,11 @@ async function railPaint(elements: Locator): Promise<RailPaint[]> {
 	})
 }
 
-test('in a contrast theme cards are plain outlined rows', async () => {
+test('in a contrast theme tabs are plain outlined rows', async () => {
 	const zing = await launchZing()
 	await openTab(zing.chrome, 'a.site', 'Alpha')
 	await openTab(zing.chrome, 'b.site', 'Beta')
-	// Beta is a favourite, so it hangs as a ribbon and leaves the card list.
+	// Beta is a favourite, so it hangs as a tile and leaves the tab list.
 	await zing.chrome.evaluate(() => window.zing.runCommand('library.addFavourite'))
 	await zing.chrome.emulateMedia({ forcedColors: 'active' })
 	await expect.poll(async () => (await captionColours(zing.chrome)).background).toBeNull()
@@ -291,7 +291,7 @@ async function pageKeeps(view: Page): Promise<{ scrollY: number; timeOrigin: num
 	})
 }
 
-test('letters take the ink of the card or tile they sit on', async () => {
+test('letters take the ink of the row or tile they sit on', async () => {
 	const zing = await launchZing()
 	const chrome = zing.chrome
 	await chrome.evaluate(() => window.zing.runCommand('tab.new'))
@@ -314,7 +314,7 @@ test('letters take the ink of the card or tile they sit on', async () => {
 	await zing.close()
 })
 
-test('the Tab colours setting paints cards in the theme colour or none, and favourite tiles stay neutral', async () => {
+test('the Tab colours setting paints the tabs on top in the theme colour or none; sidebar rows and favourite tiles stay neutral', async () => {
 	const zing = await launchZing()
 	const chrome = zing.chrome
 	await chrome.evaluate(() => window.zing.runCommand('tab.new'))
@@ -326,19 +326,24 @@ test('the Tab colours setting paints cards in the theme colour or none, and favo
 	await chrome.evaluate(() => window.zing.runCommand('tab.new'))
 
 	const tile = chrome.locator('.rail-favourites > .rail-ribbon').first()
-	const card = chrome.locator('.rail-tabs .rail-tab:not(.active)').first()
+	const row = chrome.locator('.rail-tabs .rail-tab:not(.active)').first()
 	const paintOf = async (variable: string) => rgb((await styleOf(chrome, ':root', variable)).trim())
 	const tileFill = () => tile.evaluate((el: unknown) => (globalThis as unknown as ViewGlobals).getComputedStyle(el).getPropertyValue('background-color'))
 	const neutral = await tileFill()
 	expect(neutral).not.toBe(await paintOf('--colour-ribbon'))
 	await expect(tile).toHaveCSS('color', await paintOf('--window-ink'))
-	await expect(card).toHaveCSS('background-color', await paintOf('--colour-card'))
-
+	await expect(row).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
 	await chrome.evaluate(() => window.zing.setSetting('tabColours', 'none'))
-	await expect(card).toHaveCSS('background-color', await paintOf('--plain'))
+	await expect.poll(() => chrome.evaluate(() => document.documentElement.dataset.tabColours)).toBe('none')
 	expect(await tileFill()).toBe(neutral)
+	await expect(row).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+
+	await chrome.evaluate(() => window.zing.setSetting('tabBarPosition', 'top'))
+	const card = chrome.locator('.tabs > .tab:not(.active)').first()
 	await expect(card).toHaveCSS('background-color', await paintOf('--plain'))
 	await expect(card).toHaveCSS('color', await paintOf('--plain-ink'))
+	await chrome.evaluate(() => window.zing.setSetting('tabColours', 'colour'))
+	await expect(card).toHaveCSS('background-color', await paintOf('--colour-card'))
 	await zing.close()
 })
 
