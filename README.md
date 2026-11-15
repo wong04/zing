@@ -1,33 +1,51 @@
 # Zing
 
-A privacy-first browser for Windows, built on Chromium. It keeps nothing by default, puts tabs wherever you want them (top, left or right), does split view, and comes in actual colours.
+A private browser for Windows, with your tabs down the side and the small tools you'd otherwise go looking for built in.
 
-Zing is a remake of [Krackn](https://github.com/yityler/Krackn), a macOS browser + toolbox written in SwiftUI on WebKit. Krackn's features (the private session, tab organisation, Open a Link, Diagnose, Convert, Download, the file viewer and the utilities) are being ported to Windows: a C# WinUI 3 app hosting Edge's WebView2 (Chromium), with the UI in React and TypeScript.
+<picture>
+	<source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phase4-split-2-dark.png">
+	<img alt="Zing with its tab rail on the left and two pages side by side in split view" src="docs/screenshots/phase4-split-2-light.png">
+</picture>
 
-> **Status: in development.** The browser core runs (tabs, start page, find, downloads, reader, sleeping tabs, per-site purge, account gate); the Toolbox is in, with Open a Link, Diagnose, Network & VPN, Convert, media download, the file viewer, the background remover, PDF tools and the developer, math, text and links utilities; later phases are still to come. Follow progress on the [milestones](https://github.com/wong04/zing/milestones).
+Zing runs on Chromium through Microsoft Edge's WebView2, so sites work as they do in Edge and Chrome, Google sign-in included. Out of the box it keeps nothing: close Zing and the sites you signed in to forget you. Anything that stores data, from restoring your tabs to the password vault, is a switch you turn on, and the privacy banner in Settings turns to a warning when one is on.
 
-## Build and run
+## What you get
 
-Needs Node 24, the .NET 9 SDK and the WebView2 runtime (part of Windows 11).
+- **Tabs down the side.** A tab rail on the left or right, or a classic bar along the top. Pin tabs, group them in folders, and keep the sites you open every day as favourites tiles above the rail.
+- **Split view.** Up to four tabs side by side in one window.
+- **Link previews.** A link to another site opens over the page you're reading, with that page dimmed behind it. Close it to carry on, or expand it into a tab.
+- **Reader mode.** Strips a page down to the article.
+- **Tracker blocking.** Refuses third-party requests to a list of common ad and analytics trackers, and strips tracking parameters from the links you open.
+- **A password vault.** Unlocked with Windows Hello, and fills sign-in forms. Optional sync between your PCs is end-to-end encrypted: the sync server never sees a site, a username or a password (see [Privacy](#privacy)).
+- **Bring your stuff.** Import bookmarks from Chrome, Edge, Brave, Dia and Arc on the same PC, and passwords from Chrome, Edge and Brave. Firefox, Safari and Mac browsers come in through a file you export from them.
+- **A toolbox** of almost thirty tools, all running on your PC:
+  - PDF tools: merge, split, reorder, turn and delete pages, add text, pictures and a signature, and fill forms
+  - a file converter for images, documents, PDFs, audio and video, and a media downloader
+  - a background remover for photos
+  - QR codes, a link cleaner, a password generator, text case and text stats
+  - JSON, regex, Base64, URL encoding, hashes, HMAC, JWT, UUID, timestamps and cron
+  - a scientific calculator, a graphing calculator, units and number bases
+- **Getting past blocks.** Open a Link tries other ways to reach a page your network won't load, Diagnose shows where a site is being blocked (DNS, the connection or the encryption handshake), and Network & VPN sets up encrypted DNS for the whole PC with one script.
+- **Light on your PC.** The engine starts while the rest of Zing is still loading, which made a relaunch about 340 ms faster ([#206](https://github.com/wong04/zing/pull/206)). A tab you can't see drops from about 23 MB to about 9 MB at once, and to about 3 MB after five minutes ([#207](https://github.com/wong04/zing/pull/207)). Tabs you haven't looked at in 30 minutes go to sleep.
+- **Colour.** Theme presets, or a whole theme from one colour you pick, in light and dark.
 
-```
-npm ci
-npm start
-```
+<picture>
+	<source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phase-6/toolbox-dark.png">
+	<img alt="The Toolbox: files and media, web and network, security, developer and maths tools" src="docs/screenshots/phase-6/toolbox-light.png">
+</picture>
 
-`npm test`, `npm run test:host` and `npm run test:e2e` run the TypeScript, C# and end-to-end tests.
+<picture>
+	<source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/link-preview/link-preview-dark.png">
+	<img alt="A link opened as a preview over the tab it came from" src="docs/screenshots/link-preview/link-preview-light.png">
+</picture>
 
-A build only has password sync when `ZingGoogleClientId` and `ZingGoogleClientSecret` (the Google Desktop OAuth client, see [server/README.md](server/README.md#google-oauth-client)) are set in the environment it builds in, as for `npm run build:host` or a Release build. Without them, Turn on sync says "Sync isn't set up in this build of Zing". With only one of them, the build refuses to start.
+## Install
 
-## What's different from Krackn
+Zing runs on Windows 10 (version 2004 or later) and Windows 11.
 
-- **Chromium and Windows** instead of WebKit and macOS
-- **Tab bar on the top, left or right**, with split view
-- **Colourful themes** with presets and a custom theme from one colour
-- **Built-in password vault** (Windows Hello) instead of the macOS Keychain bridge, with optional end-to-end encrypted sync between your PCs
-- **Link previews**: a link to another site opens over the tab, and you can expand it into a tab
-- **Import** from Chrome, Edge, Brave, Dia and Arc
-- **Full ad and tracker blocking** (EasyList/EasyPrivacy)
+Download `ZingBrowser-win-Setup.exe` from [Releases](https://github.com/wong04/zing/releases) and run it. It installs for your user only, with no admin prompt, and Zing updates itself from then on. The installer isn't code-signed yet, so Windows SmartScreen warns the first time: choose **More info**, then **Run anyway**.
+
+On Windows 10, Zing needs Microsoft's WebView2 runtime, which most PCs already have through Edge.
 
 ## Privacy
 
@@ -44,19 +62,28 @@ If you turn on sync, your passwords go to a small Zing server (`server/`, run on
 
 If you forget the password, the recovery key restores your vault. Without both, the passwords can't be recovered by anyone, including the server.
 
-## Docs
+## Known limits
+
+- **Mica.** Solid tab cards cover the window, so Windows' Mica material isn't visible behind Zing's sidebar.
+
+## Building from source
+
+Zing is a C# .NET 9 host (`host/`) that runs WebView2 for pages and a React and TypeScript UI (`src/renderer`), with shared logic in `src/shared`. It needs Node 24, the .NET 9 SDK and the WebView2 runtime.
+
+```
+npm ci
+npm start
+```
+
+`npm test`, `npm run test:host` and `npm run test:e2e` run the TypeScript, C# and end-to-end tests; `npm run lint` and `npm run typecheck` check the code.
+
+A build only has password sync when `ZingGoogleClientId` and `ZingGoogleClientSecret` (the Google Desktop OAuth client, see [server/README.md](server/README.md#google-oauth-client)) are set in the environment it builds in, as for `npm run build:host` or a Release build. Without them, Turn on sync says "Sync isn't set up in this build of Zing". With only one of them, the build refuses to start.
 
 - [docs/PLAN.md](docs/PLAN.md): the plan, including the stack decision and tradeoffs
 - [PARITY.md](PARITY.md): every feature, with its issue and status
-- [reference/krackn](reference/krackn): Krackn's Swift source at the baseline commit, kept read-only until parity, then deleted
-
-## Known differences on Windows
-
-Anything Krackn does that Zing can't is listed here.
-
-- **Mica.** Solid tab cards cover the window, so Windows' Mica material isn't visible behind Zing's sidebar.
-- **User agent.** Krackn sent a cleaned Safari user agent. Zing runs on Edge's WebView2 and presents Edge's own, which sites (Google sign-in included) accept as it is.
+- [docs/release.md](docs/release.md): cutting a release
+- [CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md): working on Zing with coding agents
 
 ## License
 
-[MIT](LICENSE). Krackn by [yityler](https://github.com/yityler).
+[MIT](LICENSE).
