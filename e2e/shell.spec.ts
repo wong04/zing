@@ -1,9 +1,8 @@
-import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchBare, launchZing, test, layers, pages, pageWhere } from './zing'
+import { launchBare, launchZing, test, layers, pages, pageWhere, windowsIsDark } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -121,12 +120,6 @@ test('the empty favourites bar’s Ctrl+D hint closes, and stays closed after a 
 	await expect(again.chrome.locator('.fav-hint')).toHaveCount(0)
 	await again.close()
 })
-
-/** Whether Windows has apps in dark mode: what a view reads when nothing overrides it. */
-function windowsIsDark(): boolean {
-	const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize'
-	return /AppsUseLightTheme\s+REG_DWORD\s+0x0\b/.test(execFileSync('reg', ['query', key, '/v', 'AppsUseLightTheme'], { encoding: 'utf8' }))
-}
 
 const readsDark = (view: Page) => view.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)
 

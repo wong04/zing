@@ -6,7 +6,7 @@ import { CHROME_LAYOUT, type ZingApi } from '../src/shared/ipc'
 import { DEFAULT_CUSTOM_COLOR } from '../src/shared/settings'
 import { accentLabel, accentThemes } from '../src/shared/theme/accent'
 import { accentVariables } from '../src/shared/theme/accentVariables'
-import { captionColours, launchZing, test, pageWhere, type Channels } from './zing'
+import { captionColours, launchZing, menuTheme, test, pageWhere, windowsIsDark, type Channels } from './zing'
 import { expectAccent, viewAccent, type ViewGlobals } from './theme-helpers'
 
 declare const window: { readonly zing: ZingApi }
@@ -374,6 +374,19 @@ test('the caption buttons match what they sit on, whatever the theme and tab pos
 	// A collapsed rail is narrower than the buttons, which then sit mostly on the toolbar.
 	await chrome.evaluate(() => window.zing.setSetting('verticalTabsCollapsed', true))
 	await expectCaption('band')
+	await zing.close()
+})
+
+test('the native menus take the theme, and System follows Windows', async () => {
+	const zing = await launchZing()
+	const chrome = zing.chrome
+	const system = windowsIsDark() ? 'ForceDark' : 'ForceLight'
+	await chrome.evaluate(() => window.zing.setSetting('theme', 'dark'))
+	await expect.poll(() => menuTheme(chrome)).toBe('ForceDark')
+	await chrome.evaluate(() => window.zing.setSetting('theme', 'light'))
+	await expect.poll(() => menuTheme(chrome)).toBe('ForceLight')
+	await chrome.evaluate(() => window.zing.setSetting('theme', 'system'))
+	await expect.poll(() => menuTheme(chrome)).toBe(system)
 	await zing.close()
 })
 
