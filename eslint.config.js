@@ -9,7 +9,7 @@ export default tseslint.config(
 	{
 		// Plain Node scripts run outside the TypeScript build.
 		files: ['scripts/**/*.mjs'],
-		languageOptions: { globals: { Buffer: 'readonly', process: 'readonly', console: 'readonly', setTimeout: 'readonly' } },
+		languageOptions: { globals: { Buffer: 'readonly', process: 'readonly', console: 'readonly', setTimeout: 'readonly', fetch: 'readonly' } },
 	},
 	{
 		files: ['src/renderer/**/*.{ts,tsx}'],

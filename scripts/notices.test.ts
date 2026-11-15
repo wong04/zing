@@ -43,6 +43,13 @@ describe('formatNotices', () => {
 		expect(section).toContain('https://mozilla.org/MPL/2.0/')
 	})
 
+	it('credits the bundled EasyList and EasyPrivacy under CC BY-SA 3.0', () => {
+		const text = formatNotices([])
+		const section = text.slice(text.indexOf('\nEasyList and EasyPrivacy\n'))
+		expect(section).toContain('Creative Commons Attribution-ShareAlike 3.0')
+		expect(section).toContain('https://easylist.to/pages/licence.html')
+	})
+
 	it('credits the bundled Inter font under the SIL OFL 1.1', () => {
 		const text = formatNotices([])
 		const section = text.slice(text.indexOf('\nInter\n'))

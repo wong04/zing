@@ -102,6 +102,9 @@ public sealed class ZingApp
 		// Its continuation runs after Launch returns, by which time the services exist.
 		_environment = OpenEnvironmentAsync(Flag(settings, "acceleratedCanvas"));
 		StartupMarks.Mark("engine requested");
+		// Pages ask the filter lists about every request on the UI thread; reading them takes about 100 ms, so it happens
+		// here, off that thread, while the engine starts. A page that asks sooner waits for the read to finish.
+		TestHooks.Background(Task.Run(() => FilterRules.Bundled), "filter lists");
 		_services = OpenServices(settings);
 		StartupMarks.Mark("services open");
 		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => Primary?.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : [], _scheduler, e => TestHooks.Record("session write", e));

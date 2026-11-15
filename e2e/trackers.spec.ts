@@ -33,6 +33,26 @@ const page = (pixelHost: string) => `<!doctype html><title>waiting</title>
 	Promise.all([image, fetched]).then(([a, b]) => { document.title = a + '/' + b + location.search })
 </script>`
 
+/** An EasyList ad server, an EasyPrivacy tracker and one of Krackn's tracker domains, in that order. */
+const LIST_HOSTS = ['ads.adform.net', 'c.statcounter.com', 'pixel.doubleclick.net']
+
+/** Asks each of LIST_HOSTS for a pixel as an image and as a no-cors fetch (see `page` for why), and titles itself with the outcomes in order. */
+const listsPage = `<!doctype html><title>waiting</title>
+<script>
+	const outcome = (host) => {
+		const src = 'http://' + host + ':' + location.port + '/pixel?' + Date.now()
+		const image = new Promise((resolve) => {
+			const img = new Image()
+			img.onload = () => resolve('loaded')
+			img.onerror = () => resolve('refused')
+			img.src = src
+		})
+		const fetched = fetch(src + '-fetch', { mode: 'no-cors', cache: 'no-store' }).then(() => 'answered', () => 'failed')
+		return Promise.all([image, fetched]).then((both) => both.join(':'))
+	}
+	Promise.all(${JSON.stringify(LIST_HOSTS)}.map(outcome)).then((all) => { document.title = all.join('/') })
+</script>`
+
 test.beforeAll(async () => {
 	server = createServer((req, res) => {
 		const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
@@ -45,6 +65,10 @@ test.beforeAll(async () => {
 		}
 		if (url.pathname === '/page') pageQueries.push(url.search)
 		res.setHeader('content-type', 'text/html')
+		if (url.pathname === '/lists') {
+			res.end(listsPage)
+			return
+		}
 		res.end(page(url.pathname === '/own' ? 'static.hotjar.com' : 'pixel.doubleclick.net'))
 	})
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -90,5 +114,22 @@ test('blockTrackers refuses third-party trackers and strips parameters, and turn
 	await expect.poll(async () => (await tabOf(zing.chrome, id))?.title).toBe('refused/answered?id=3')
 	expect(pageQueries.at(-1)).toBe('?id=3')
 	expect(pixelHosts).toEqual(['static.hotjar.com', 'static.hotjar.com', 'pixel.doubleclick.net', 'pixel.doubleclick.net'])
+	await zing.close()
+})
+
+test('blockTrackers refuses ad servers and trackers from EasyList and EasyPrivacy, and turned off loads them', async () => {
+	const zing = await launchZing({ env: { ZING_E2E_MAP_HOSTS: 'MAP *.adform.net 127.0.0.1 , MAP *.statcounter.com 127.0.0.1 , MAP *.doubleclick.net 127.0.0.1' } })
+	const id = (await zing.chrome.evaluate(() => window.zing.getTabs())).activeId!
+	const base = `http://127.0.0.1:${port}`
+	pixelHosts.length = 0
+
+	await open(zing.chrome, id, `${base}/lists?on`)
+	await expect.poll(async () => (await tabOf(zing.chrome, id))?.title).toBe('refused:answered/refused:answered/refused:answered')
+	expect(pixelHosts).toEqual([])
+
+	await zing.chrome.evaluate(() => window.zing.setSetting('blockTrackers', false))
+	await open(zing.chrome, id, `${base}/lists?off`)
+	await expect.poll(async () => (await tabOf(zing.chrome, id))?.title).toBe('loaded:answered/loaded:answered/loaded:answered')
+	expect([...pixelHosts].sort()).toEqual([...LIST_HOSTS, ...LIST_HOSTS].sort())
 	await zing.close()
 })

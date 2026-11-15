@@ -55,6 +55,7 @@ If you forget the password, the recovery key restores your vault. Without both, 
 Anything Krackn does that Zing can't is listed here.
 
 - **Mica.** Solid tab cards cover the window, so Windows' Mica material isn't visible behind Zing's sidebar.
+- **Ad blocking is by server, not by element.** Block trackers refuses requests to the ad and tracker servers EasyList and EasyPrivacy name, on top of Krackn's tracker domains. It doesn't read the lists' path, per-site or element-hiding rules, so an ad a site serves from its own address still shows, and a refused ad can leave an empty box. Extensions such as uBlock Origin Lite load in WebView2 but don't block in the in-memory profile Zing browses with.
 - **User agent.** Krackn sent a cleaned Safari user agent. Zing runs on Edge's WebView2 and presents Edge's own, which sites (Google sign-in included) accept as it is.
 
 ## License

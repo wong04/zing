@@ -59,7 +59,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 1. **A tab is a record, not a `webContents`.** Tabs need to exist without a live renderer, which enables sleeping/discarded tabs (Electron has no built-in discard and memory is its weak spot), split view, session restore, import, and later Spaces. `TabSnapshot` in `TabOrganizer` already points this way.
 2. **Stable UUIDs + `updatedAt` on every tab, bookmark, reading-list item and vault entry**, so E2E sync can be added later without a migration.
 3. **Session is a parameter, not a global.** v1 has a single in-memory partition, but passing it explicitly lets roadmap Spaces/profiles each get their own isolated session.
-4. **Ad/tracker blocking at full strength.** Use `@ghostery/adblocker-electron` with EasyList/EasyPrivacy, a big upgrade from Krackn's 48 domains and not subject to MV3's rule caps. Lists update on a schedule. Keep tracking-param stripping.
+4. **Ad/tracker blocking.** Built (B11): the host reads EasyList and EasyPrivacy's domain rules (`FilterRules`), on top of Krackn's 48 domains, and refuses those requests in `WebResourceRequested`. The lists are bundled and refreshed with each release (`npm run update:blocklists`), so Zing never fetches them itself. uBlock Origin Lite loads in WebView2 but doesn't block in the InPrivate profile, and Brave's adblock-rust (path and cosmetic rules) is the step up after v1. Keep tracking-param stripping.
 5. **One command registry.** Krackn's `Commands.swift` already routes every shortcut through named actions. Keep that shape so menus, shortcuts and the roadmap Ctrl+K bar all share it.
 6. **Extensions are on the roadmap, not designed out.** Electron's support is partial and officially a non-goal. `electron-chrome-extensions` + `electron-chrome-web-store` would add store installs, but MV3 is still pending upstream. Keep tab operations behind a service that a `chrome.tabs` shim could wrap later.
 
@@ -95,7 +95,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 - **Nothing heavy on the UI thread.** Conversion, large-file hashing, ffmpeg/yt-dlp supervision, DoH diagnostics, ONNX background removal and import parsing all run in Electron `utilityProcess` workers.
 - **Batched IPC**: tab title/loading/favicon updates are coalesced to one message per animation frame, with a typed IPC contract.
 - **Background tabs**: keep Chromium's background throttling on. An **Energy saver** setting lowers frame rate for non-visible splits/tabs (`setFrameRate`) and pauses autoplay. Never disable site isolation for performance, because it's a security boundary.
-- **The ad/tracker blocker is the biggest win**: it means fewer requests and less third-party JS on every page. Ghostery's engine is serialized to a binary cache, so it loads in milliseconds at startup, with list updates in the background.
+- **The ad/tracker blocker is the biggest win**: it means fewer requests and less third-party JS on every page. The lists are read off the UI thread while the engine starts (about 100 ms), and each request is a hash lookup per host label.
 
 **Startup**
 - Show the window on `ready-to-show` with only the chrome bundle. Defer blocklist refresh, update check, import detection and toolbox modules until after first paint.
