@@ -11,7 +11,7 @@
 	</ItemGroup>
 	<ItemGroup>
 		<PackageReference Include="NSec.Cryptography" Version="26.4.0" />
-		<PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.23" />
+		<PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
 		<PackageReference Include="zxcvbn-core" Version="7.0.92" />
 	</ItemGroup>
 	<ItemGroup>
