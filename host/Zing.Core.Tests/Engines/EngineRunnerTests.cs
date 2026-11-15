@@ -557,8 +557,12 @@ public sealed class EngineRunnerTests : IDisposable
 	[Fact]
 	public async Task The_exit_comes_once_and_after_every_line_of_output()
 	{
+		// Stdout and stderr are read apart, so past MaxBatchLines a stalled flush (a busy PC) could put "last words" in one
+		// batch ahead of later stdout lines and drop it as the oldest. At the cap (the engine's arguments line, these and
+		// "last words"), every line must arrive whatever the timing.
 		await _f.InstallAsync();
-		var id = _f.Start(_f.Request(Literal("--chatty"), Literal("300"), Literal("--err"), Literal("last words")));
+		var count = EngineRunner.MaxBatchLines - 2;
+		var id = _f.Start(_f.Request(Literal("--chatty"), Literal(count.ToString()), Literal("--err"), Literal("last words")));
 
 		var exit = await _f.ExitAsync(1);
 		await Task.Delay(300, TestContext.Current.CancellationToken);
@@ -566,6 +570,8 @@ public sealed class EngineRunnerTests : IDisposable
 		Assert.Equal(id, exit.JobId);
 		Assert.Single(_f.Exits);
 		Assert.Equal("exit", _f.Events[^1]);
+		Assert.Equal(0, _f.Batches.Sum(b => b.Skipped));
+		Assert.Equal(count, _f.Lines("out").Count(l => l.StartsWith("line ")));
 		Assert.Contains("err:last words", _f.Events);
 	}
 
