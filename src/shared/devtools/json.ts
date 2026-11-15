@@ -1,6 +1,5 @@
-// Port of the JSON section of Krackn Features/Utilities/UtilityTools.swift.
-//
-// Fragments (a bare `123` or `"text"`) are allowed, as in Krackn.
+// Pretty-printing, minifying and validating JSON. Fragments (a bare `123` or
+// `"text"`) are allowed.
 
 /** Carries a human-readable parser message back to the UI. */
 export class JSONProblem extends Error {

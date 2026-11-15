@@ -1,6 +1,3 @@
-// Port of Krackn's Tests/security/main.swift (69 assertions), plus the Windows
-// executable checks Zing adds on top.
-
 import { describe, expect, it } from 'vitest'
 import { isRawIPv4 } from '../browser/registrableDomain'
 import {
@@ -185,7 +182,7 @@ describe('verdict aggregation', () => {
 	})
 })
 
-// Beyond Krackn: the Windows types that run on a double-click. Each must warn
+// The Windows types that run on a double-click. Each must warn
 // on its own and be called a disguise behind a document extension.
 describe('Windows executables (Zing addition)', () => {
 	const windowsExecutables = ['exe', 'scr', 'msi', 'lnk', 'ps1', 'hta', 'vbs', 'bat', 'cmd', 'js', 'jse', 'wsf', 'cpl']

@@ -5,7 +5,7 @@ import { SettingRowShell } from '../settings/SettingRowShell'
 import { messageOf } from '../settings/SyncSetup'
 import { initials, useAccount } from './useAccount'
 
-/** Settings › Account: the profile, the launch lock, sign out and delete (Krackn accountPane). */
+/** Settings › Account: the profile, the launch lock, sign out and delete. */
 export function AccountPane() {
 	const account = useAccount()
 	const [editing, setEditing] = useState(false)

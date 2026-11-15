@@ -65,7 +65,7 @@ public sealed record LaunchFile(string Path, LaunchFileKind Kind)
 	public string Address => new Uri(Path).AbsoluteUri;
 }
 
-/// <summary>Links that arrive before any window can take them wait here, as in Krackn's LinkInbox.</summary>
+/// <summary>Links that arrive before any window can take them wait here.</summary>
 public sealed class LinkInbox
 {
 	private readonly List<string> _pending = [];

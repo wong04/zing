@@ -1,5 +1,4 @@
-// yt-dlp: arguments, progress and failures. Ported from Krackn's
-// DownloadView.swift and DownloadErrors.swift. Pure on purpose: the failure
+// yt-dlp: arguments, progress and failures. Pure on purpose: the failure
 // classification decides whether Zing silently retries, offers an update, or
 // just reports, so it's the part worth testing.
 
@@ -23,9 +22,9 @@ export function ytdlpArgs(mode: MediaMode, outputTemplate: string, url: string):
 
 // A 403 on the media URL almost always means the player client yt-dlp picked
 // handed back links that don't validate; YouTube rotates this constantly.
-// Asking for the default client costs one retry. Krackn measured that adding
-// web_safari and tv made things worse ("requested format is not available"),
-// so it's `default` only.
+// Asking for the default client costs one retry. Adding web_safari and tv was
+// measured to make things worse ("requested format is not available"), so
+// it's `default` only.
 export function retryArgs(args: readonly string[]): string[] {
 	return ['--extractor-args', 'youtube:player_client=default', ...args]
 }
@@ -76,7 +75,7 @@ function bytes(amount: string, unit: string): number | undefined {
 	return scale === undefined ? undefined : Number(amount) * scale
 }
 
-// New in Zing: Krackn showed the raw log; this lets the UI draw a real bar.
+// Lets the UI draw a real progress bar rather than show the raw log.
 // "[download]  42.3% of ~ 12.34MiB at 1.23MiB/s ETA 00:10 (frag 3/9)"
 export function parseProgress(line: string): DownloadProgress | undefined {
 	const match = /^\[download\]\s+([\d.]+)%(?:\s+of\s+~?\s*([\d.]+)(\w+))?(?:\s+at\s+([\d.]+)(\w+)\/s)?(?:\s+ETA\s+([\d:]+))?/.exec(line.trim())

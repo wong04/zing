@@ -116,7 +116,7 @@ export interface SettingsSheetProps {
 	readonly version: string
 }
 
-/** The blurred-backdrop sheet (Krackn `SettingsSheet`): categories on the left, flat rows on the right. */
+/** The blurred-backdrop sheet: categories on the left, flat rows on the right. */
 export function SettingsSheet({ handle, initialCategory, version }: SettingsSheetProps) {
 	const [category, setCategory] = useState(initialCategory)
 	const [shown, setShown] = useState(false)

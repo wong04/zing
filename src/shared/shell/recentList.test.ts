@@ -1,4 +1,4 @@
-// Port of the recents section of Krackn Tests/panels.
+// The sidebar's recently used list.
 // The cases live in recentList.vectors.json, which the C# port (PanelLayoutTests.cs) reads too.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'

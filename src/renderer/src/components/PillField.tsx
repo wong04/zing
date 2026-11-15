@@ -10,7 +10,7 @@ export interface PillFieldProps
 	readonly label?: string
 }
 
-/** A text field: recessed, hairline border, and a soft accent focus ring (Krackn `PillField`). */
+/** A text field: recessed, hairline border, and a soft accent focus ring. */
 export function PillField({ value, onChange, icon, onSubmit, label, id, onKeyDown, ...rest }: PillFieldProps) {
 	const generated = useId()
 	const inputId = id ?? generated
@@ -48,8 +48,8 @@ export interface SelectAllFieldProps {
 
 /**
  * Selects everything when it gains focus, as a browser's address bar does, so
- * clicking in and typing replaces the URL instead of inserting into it
- * (Krackn `SelectAllField`). Escape gives up the edit.
+ * clicking in and typing replaces the URL instead of inserting into it.
+ * Escape gives up the edit.
  */
 export function SelectAllField({
 	value,

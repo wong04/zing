@@ -31,7 +31,7 @@ For the owner to check:
 - **Convert drops 3D models** (`meshio` needs Python). Archives use Windows' own `tar.exe`.
 - **FFmpeg build:** gyan.dev's versioned essentials zip, which includes HEVC decoding, x264 and MP3. It is a GPL build, which is fine because Zing doesn't ship it: the user's machine fetches it from that project. The Settings row names the source.
 - **Background removal runs in the renderer** with `onnxruntime-web`, so the host gains no native dependency. Starting model: `isnet-general-use` (Apache-2.0, about 170 MB) from rembg's releases.
-- **Pinned TLS is a `SocketsHttpHandler` with a `ConnectCallback`,** which .NET allows directly, so Krackn's hand-written HTTP client isn't ported. `src/platform/net` and `src/shared/unblock/pinnedHTTPClient.ts` go once nothing imports them.
+- **Pinned TLS is a `SocketsHttpHandler` with a `ConnectCallback`,** which .NET allows directly, so the hand-written Swift HTTP client isn't ported. `src/platform/net` and `src/shared/unblock/pinnedHTTPClient.ts` go once nothing imports them.
 - **Output files go to the Downloads folder** with numbered collisions. No save dialog.
 
 ## Review Focus
@@ -96,7 +96,7 @@ Run first, one report line per spike. **If one fails, stop that piece and bring 
 
 - [ ] **Step 1: Tests:** `2+2*3` shows `8`; `sin(` shows the `UnbalancedParenthesesError` message and no result; `1 mi` in km shows `1.609`; `255` in hex shows `ff`; plotting `x^2` draws a canvas with non-background pixels, and a wheel zoom changes the viewport label.
 - [ ] **Step 2: Run** `npx playwright test e2e/tools-math.spec.ts`. Expected: FAIL.
-- [ ] **Step 3: Build** the four components, matching Krackn's layouts in `reference/krackn/.../Utilities`. Graph on a `<canvas>` with several functions, pan and zoom.
+- [ ] **Step 3: Build** the four components, matching the Swift `Utilities` layouts. Graph on a `<canvas>` with several functions, pan and zoom.
 - [ ] **Step 4: Run.** Expected: PASS. **Commit** `math tools`.
 
 ### Task 4: Developer tools (X19) *(parallel with 3, 5)*
@@ -190,7 +190,7 @@ Run first, one report line per spike. **If one fails, stop that piece and bring 
 
 - [ ] **Step 1: Tests:** the generated script names only the up adapters passed in; an adapter name containing `'` is quoted safely; `Undo` restores static servers and DHCP adapters as they were; e2e `the script is shown before it can run`; e2e, with `dns:apply` stubbed by the test hook, `Apply then Undo returns the page to its first state`. e2e never runs the real script or an admin prompt.
 - [ ] **Step 2: Run.** Expected: FAIL.
-- [ ] **Step 3: Build.** Apply runs elevated by `runas` after a click. The previous settings are saved in `%LOCALAPPDATA%` until Undo. The page keeps Krackn's VPN guide (Windows wording) and "What beats what" table from `NetworkView.swift`. State what S1 found about browser DoH.
+- [ ] **Step 3: Build.** Apply runs elevated by `runas` after a click. The previous settings are saved in `%LOCALAPPDATA%` until Undo. The page keeps the VPN guide (Windows wording) and "What beats what" table from `NetworkView.swift`. State what S1 found about browser DoH.
 - [ ] **Step 4: Run.** Expected: PASS. **Commit** `network and vpn page`.
 
 ### Task 13: Link inspection (X11), then PR B
@@ -199,7 +199,7 @@ Run first, one report line per spike. **If one fails, stop that piece and bring 
 
 **Interfaces:** Produces `ThreatModel.InspectUrl(Uri): ThreatVerdict`, `ThreatGate.Check(string from, string to): NavigationDecision?`, internal pages `zing://warning?to=` and `zing://visit-anyway?to=`.
 
-- [ ] **Step 1: Tests:** Krackn's cases as shared vectors, including the 16 must-be-clean sites; a benchmark test: 10,000 `InspectUrl` calls under 100 ms. e2e `a flagged link shows a warning; Visit anyway loads it and doesn't warn again this session`; e2e `securityRealtime off shows no warning`. Review Focus 3: e2e `a web page linking to zing://visit-anyway is refused`, because the gate accepts it only when `from` is the warning page.
+- [ ] **Step 1: Tests:** the Swift `ThreatModel` cases as shared vectors, including the 16 must-be-clean sites; a benchmark test: 10,000 `InspectUrl` calls under 100 ms. e2e `a flagged link shows a warning; Visit anyway loads it and doesn't warn again this session`; e2e `securityRealtime off shows no warning`. Review Focus 3: e2e `a web page linking to zing://visit-anyway is refused`, because the gate accepts it only when `from` is the warning page.
 - [ ] **Step 2: Run.** Expected: FAIL.
 - [ ] **Step 3: Build.** The session's allowed hosts live in memory only.
 - [ ] **Step 4: Run.** Expected: PASS. **Commit** `link inspection`.

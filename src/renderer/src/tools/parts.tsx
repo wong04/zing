@@ -49,7 +49,7 @@ export interface ResultRowProps {
 	readonly mono?: boolean
 }
 
-/** A labelled read-only value with a copy button (Krackn `ResultRow`). */
+/** A labelled read-only value with a copy button. */
 export function ResultRow({ label, value, testId, mono = true }: ResultRowProps) {
 	return (
 		<div className="tool-result" role="group" aria-label={label}>

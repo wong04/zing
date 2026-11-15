@@ -1,5 +1,5 @@
 /*
- * The Settings sheet (Krackn SettingsSheet). The backdrop is a dim scrim:
+ * The Settings sheet. The backdrop is a dim scrim:
  * CSS can't blur other native views, so the page behind is dimmed, not blurred,
  * unless main supplies a snapshot (see .sheet-snapshot).
  */

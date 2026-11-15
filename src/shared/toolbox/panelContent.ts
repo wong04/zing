@@ -1,7 +1,3 @@
-// Port of Krackn's `Section` (App/KracknApp.swift), `UtilityTool`
-// (Features/Utilities/UtilitiesView.swift) and `PanelContent`
-// (App/FloatingPanels.swift).
-//
 // What a floating panel, a Toolbox tile or a recents row is showing: either a
 // whole section or a single tool. Identified by a string id
 // ("section:Files", "tool:Hashes") so the recents list can be stored as plain

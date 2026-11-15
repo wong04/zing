@@ -1,4 +1,4 @@
-// Port of Krackn `Tests/taborg`: organisation, pinning, stacks, reordering.
+// Organisation, pinning, stacks, reordering.
 // The cases live in tabOrganizer.vectors.json, which the C# port (TabOrganizerTests.cs) reads too.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'

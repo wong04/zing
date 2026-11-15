@@ -50,7 +50,7 @@
 - Produces: setting keys `checkForUpdates: boolean` (default `true`) and `defaultBrowserDismissed: boolean` (default `false`), readable in TS (`Settings`) and C# (`SettingsSchema`).
 
 - [ ] **Step 1:** Add a vitest assertion to the existing schema test that `defaults().checkForUpdates === true` and `defaults().defaultBrowserDismissed === false`. Run `npm test -- settings`. Expected: FAIL.
-- [ ] **Step 2:** Add both keys with `flag(...)` in `schema.ts`. Neither is a Krackn key, so don't add them to `kracknKeys`. Run `npm run gen:host-defaults`.
+- [ ] **Step 2:** Add both keys with `flag(...)` in `schema.ts`. Add both to the `keys` list in `settings.vectors.json`. Run `npm run gen:host-defaults`.
 - [ ] **Step 3:** Run `npm test` and `npm run test:host`. Expected: PASS, including the vector parity tests.
 - [ ] **Step 4:** Commit with message `settings: update and default-browser keys`.
 

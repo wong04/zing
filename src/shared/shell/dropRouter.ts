@@ -1,6 +1,3 @@
-// Port of the pure parts of Krackn App/DropRouter.swift, plus
-// `PanelContent.acceptsFiles` from App/Sidebar.swift.
-//
 // Turns anything dropped on the app into a local file. A drag from Explorer
 // carries a file, but a drag out of a web page usually doesn't: it may be an
 // http(s) URL, raw image bytes, or just some other representation. Each of
@@ -43,10 +40,10 @@ export type DropPlan =
 export const inboxFolderName = 'Zing'
 
 /**
- * Drag types a file drop target accepts: Krackn's [fileURL, image, url, text]
- * in DataTransfer terms (a dragged image arrives as a File).
+ * Drag types a file drop target accepts: a file, an image, a URL or text, in
+ * DataTransfer terms (a dragged image arrives as a File).
  *
- * Never a wildcard. Krackn learned that registering the root type made every
+ * Never a wildcard. In the macOS version, registering the root type made every
  * view a universal drop target and swallowed right-clicks underneath it.
  */
 export const acceptedDragTypes: readonly string[] = ['Files', 'text/uri-list', 'text/plain']

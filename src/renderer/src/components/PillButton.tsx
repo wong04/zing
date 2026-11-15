@@ -13,7 +13,7 @@ export interface PillButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
 	readonly size?: PillButtonSize
 }
 
-/** The app's button (Krackn `PillButton`). */
+/** The app's button. */
 export function PillButton({ icon, variant = 'filled', size = 'regular', type = 'button', children, ...rest }: PillButtonProps) {
 	return (
 		<button type={type} className={`pill-button ${variant} ${size}`} {...rest}>
@@ -32,7 +32,7 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
 	readonly accent?: boolean
 }
 
-/** A glyph-only button: borderless at rest, a soft fill under the pointer (Krackn `IconButton`). */
+/** A glyph-only button: borderless at rest, a soft fill under the pointer. */
 export function IconButton({ children, size = 30, accent = false, style, title, ...rest }: IconButtonProps) {
 	return (
 		<button

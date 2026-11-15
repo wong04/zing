@@ -1,6 +1,5 @@
-// Mirrors Krackn's "D. DoHProfile" checks in Tests/unit, for the PowerShell
-// script that replaces the .mobileconfig. The scripts are parsed by the real
-// PowerShell parser, the equivalent of Krackn parsing its plist.
+// Checks the PowerShell script that replaces the macOS .mobileconfig profile.
+// The scripts are parsed by the real PowerShell parser.
 import { spawnSync } from 'node:child_process'
 import { describe, expect, it, vi } from 'vitest'
 import { displayTitle, makeDisableScript, makeEnableScript, psQuote, RESOLVERS, scriptFileName, wireGuardCommands } from './dohScript'

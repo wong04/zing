@@ -1,5 +1,3 @@
-// Krackn has no UUID-tool test (its "UUIDs regenerate" check is about DoH
-// profiles); these are Zing's.
 import { describe, expect, it } from 'vitest'
 import { makeUUID, makeUUIDs } from './uuid'
 

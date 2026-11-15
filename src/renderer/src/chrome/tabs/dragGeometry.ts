@@ -17,7 +17,7 @@ export interface DragView {
  * Where the dragged chip is drawn and which slot it belongs in, from the
  * section's frames measured when the drag began. The chip rides at its start
  * plus the pointer distance, and its slot is judged from where it is drawn
- * (`targetIndexDragging`), the rule Krackn settled on after swaps felt twitchy.
+ * (`targetIndexDragging`), which keeps swaps from feeling twitchy.
  */
 export function dragFrame(keys: readonly string[], startIndex: number, frames: readonly Rect[], pointerDx: number): DragView {
 	const first = frames[0] as Rect

@@ -1,4 +1,4 @@
-// Port of `convertBase` from Krackn Features/Utilities/DevTools.swift.
+// Shows an integer in binary, octal, decimal and hex.
 //
 // Values are 64-bit signed integers, as Swift's `Int` was: BigInt keeps every
 // digit exact past 2^53.

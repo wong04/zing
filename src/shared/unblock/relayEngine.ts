@@ -1,4 +1,4 @@
-// The pure parts of Krackn's Features/Unblock/RelayEngine.swift: the error
+// The pure parts of the relay engine: the error
 // and strategy types the rest of Unblock shares, and URL normalisation.
 
 import { isRecord } from './json'
@@ -171,9 +171,9 @@ export function validateStatus(status: number): void {
  * The snapshot named by an `archive.org/wayback/available` answer.
  *
  * The API hands back http:// URLs which then redirect; upgrade to https so we
- * don't get downgraded mid-flight. Krackn replaced every "http://" in the
- * string, which also rewrote the archived page's own URL embedded in the
- * path; only the snapshot's scheme is upgraded here.
+ * don't get downgraded mid-flight. Only the snapshot's scheme is upgraded:
+ * replacing every "http://" in the string would also rewrite the archived
+ * page's own URL embedded in the path.
  */
 export function waybackSnapshotURL(json: unknown): URL {
 	const snapshots = isRecord(json) ? json['archived_snapshots'] : undefined

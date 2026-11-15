@@ -1,8 +1,7 @@
-// Port of the cron checks in Krackn Tests/unit (section F).
 import { describe, expect, it } from 'vitest'
 import { describeCron } from './cron'
 
-describe('cron (Krackn Tests/unit F)', () => {
+describe('cron', () => {
 	it('cron: valid parses', () => {
 		expect(describeCron('0 9 * * 1-5')).not.toBeNull()
 	})

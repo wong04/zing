@@ -1,4 +1,4 @@
-// When a five-field cron expression fires next. Krackn's `describeCron` only reads the
+// When a five-field cron expression fires next. `describeCron` only reads the
 // fields back; this answers the question people actually ask of one.
 //
 // Evaluated on the wall clock of the `from` date's own time zone, as cron does.

@@ -3,14 +3,10 @@ import { DEFAULT_SETTINGS, RETIRED_SETTING_KEYS, SETTING_KEYS, SETTINGS_SCHEMA, 
 import vectors from './settings.vectors.json'
 import { InvalidSettingError, SettingsStore, UnknownSettingError, changedSettings, parseSettings } from './store'
 
-// The `static let` names in AppSettings.Key, reference/krackn/Sources/Krackn/App/AppSettings.swift.
-const KRACKN_KEYS = vectors.kracknKeys
-
 describe('settings schema', () => {
-	it('has the 30 Krackn keys plus Zing’s own, less the retired ones', () => {
-		expect(KRACKN_KEYS).toHaveLength(30)
+	it('has every key, less the retired ones', () => {
 		expect([...RETIRED_SETTING_KEYS]).toEqual(vectors.retiredKeys)
-		expect([...SETTING_KEYS].sort()).toEqual([...KRACKN_KEYS, ...vectors.zingKeys].filter((k) => !vectors.retiredKeys.includes(k)).sort())
+		expect([...SETTING_KEYS].sort()).toEqual(vectors.keys.filter((k) => !vectors.retiredKeys.includes(k)).sort())
 	})
 
 	it('keeps the password vault off until the person turns it on', () => {
@@ -51,7 +47,7 @@ describe('settings schema', () => {
 		expectTypeOf(store.get('recentFeatures')).toEqualTypeOf<readonly string[]>()
 	})
 
-	it('keeps Krackn defaults, protective switches on and data-keeping switches off', () => {
+	it('keeps the defaults: protective switches on and data-keeping switches off', () => {
 		expect(DEFAULT_SETTINGS).toMatchObject(vectors.defaultsSubset as Partial<Settings>)
 	})
 })

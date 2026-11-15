@@ -1,6 +1,5 @@
-// The pure side of sign-in field detection, ported from the detection script in Krackn's
-// `KeychainAutofill` (Features/Browser/KeychainAutofill.swift). `autofillScript.ts` runs
-// the same rules in the page; its tests check the two agree.
+// The pure side of sign-in field detection. `autofillScript.ts` runs the same rules
+// in the page; its tests check the two agree.
 
 export type CredentialFieldKind = 'username' | 'password'
 

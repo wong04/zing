@@ -1,5 +1,5 @@
-// Runs external tools (ffmpeg, yt-dlp, pandoc, PowerShell). Replaces Krackn's
-// ShellRunner.swift. Arguments are always an array passed straight to the
+// Runs external tools (ffmpeg, yt-dlp, pandoc, PowerShell). Arguments are
+// always an array passed straight to the
 // process, never through a shell, so file names can't inject commands.
 import { spawn } from 'node:child_process'
 import { access, constants } from 'node:fs/promises'
@@ -47,8 +47,7 @@ export class LineSplitter {
 
 // winget puts command shims in WinGet\Links, but a running app keeps the PATH
 // it started with, so a tool installed a minute ago isn't on it yet. Search
-// Zing's own bin folder and the winget folders explicitly, the way Krackn
-// searched Homebrew's folders because a Finder-launched app gets a bare PATH.
+// Zing's own bin folder and the winget folders explicitly.
 export function searchPaths(env: NodeJS.ProcessEnv, zingBin: string): string[] {
 	const local = env['LOCALAPPDATA'] ?? ''
 	const fromPath = (env['PATH'] ?? env['Path'] ?? '').split(delimiter).filter(Boolean)

@@ -1,4 +1,4 @@
-// Port of `generatePassword` from Krackn Features/Utilities/UtilityTools.swift.
+// The password generator's random passwords.
 
 export type PasswordOptions = {
 	readonly length: number

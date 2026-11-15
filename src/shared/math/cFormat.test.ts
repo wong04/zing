@@ -1,4 +1,4 @@
-// Not in Krackn: pins the printf conversions the Swift got from String(format:).
+// Pins the printf conversions the Swift calculator got from String(format:).
 
 import { describe, expect, it } from 'vitest'
 import { formatFixed, formatG } from './cFormat'

@@ -1,6 +1,6 @@
 import { AUDIO, BASIC_IMAGES, category, DOCUMENTS, MAGICK_IMAGES, MESHES, MODEL_INTERCHANGE, VIDEO, ARCHIVES, label, type ConversionCategory } from './formatCatalog'
 
-// Which program reads and writes each format on Windows. Krackn's macOS backends are replaced by ImageMagick (sips),
+// Which program reads and writes each format on Windows. The macOS backends are replaced by ImageMagick (sips),
 // Pandoc (textutil), Chromium's PrintToPdfAsync (PDFKit) and FFmpeg. The downloaded engines are run by the host's
 // EngineRunner (host/Zing.Core/Engines), which accepts only the flags and output extensions in its EngineFlagPolicy.
 // There is no sharp (it isn't bundled) and no meshio (it needs Python), so 3D models are listed as unavailable
@@ -135,7 +135,7 @@ export function convertTargets(inputExt: string): ConversionFormat[] {
 
 export type InputSupport = { ext: string; category: ConversionCategory; readBy: ConversionBackend } | { ext: string; category: ConversionCategory | undefined; unavailable: string }
 
-/** Which backend reads each of the catalog's input formats on Windows, or why none does. The coverage matrix the parity audit checks against Krackn's 196. */
+/** Which backend reads each of the catalog's input formats on Windows, or why none does. The coverage matrix the parity audit checks against the macOS version's 196 formats. */
 export function inputSupport(extension: string): InputSupport {
 	const ext = extension.toLowerCase().replace(/^\./, '')
 	const cat = category(ext)

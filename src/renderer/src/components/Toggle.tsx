@@ -6,7 +6,7 @@ export interface ToggleProps {
 	readonly disabled?: boolean
 }
 
-/** The pill switch: accent track when on, recessed when off (Krackn `PillToggleStyle`). */
+/** The pill switch: accent track when on, recessed when off. */
 export function Toggle({ checked, onChange, disabled, 'aria-label': label }: ToggleProps) {
 	return (
 		<button

@@ -1,8 +1,7 @@
-// Port of the text-stats checks in Krackn Tests/unit (section F).
 import { describe, expect, it } from 'vitest'
 import { analyze } from './textStats'
 
-describe('text stats (Krackn Tests/unit F)', () => {
+describe('text stats', () => {
 	const st = analyze('Hello world. This is a test!\n\nSecond para.')
 	it('stats: words', () => {
 		expect(st.words).toBe(8)

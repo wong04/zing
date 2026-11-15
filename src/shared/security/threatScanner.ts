@@ -1,4 +1,4 @@
-// The pure parts of Krackn's Features/Security/ThreatScanner.swift. Everything
+// The pure parts of the threat scanner. Everything
 // that shelled out to a macOS tool (spctl, xattr, csrutil, fdesetup, XProtect)
 // or touched the disk or network is left to the main process.
 

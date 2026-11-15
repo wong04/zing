@@ -1,4 +1,4 @@
-// The non-accent design tokens from Krackn App/Theme.swift.
+// The non-accent design tokens.
 
 export type ColorPair = { readonly light: string; readonly dark: string }
 

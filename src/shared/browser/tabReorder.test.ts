@@ -1,5 +1,4 @@
-// Port of Krackn `Tests/tabs`: reorder geometry and tab widths. The WebViewHost
-// checks in that suite (hit-test shield, rebuilt containers, fullscreen) are AppKit-only.
+// Reorder geometry and tab widths.
 // The data-shaped cases live in tabReorder.vectors.json, which the C# port (TabReorderTests.cs) reads too.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'

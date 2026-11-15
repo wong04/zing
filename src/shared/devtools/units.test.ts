@@ -1,4 +1,3 @@
-// Port of the unit-conversion checks in Krackn Tests/unit (section F).
 import { describe, expect, it } from 'vitest'
 import { convertUnit, formatUnitValue, UnitKind, unitKinds, unitsOf } from './units'
 
@@ -6,7 +5,7 @@ function near(value: number | null, want: number): boolean {
 	return Math.abs((value ?? 0) - want) < 0.001
 }
 
-describe('units (Krackn Tests/unit F)', () => {
+describe('units', () => {
 	it('unit: m to ft', () => {
 		expect(near(convertUnit(1, 'm', 'ft', UnitKind.length), 3.28084)).toBe(true)
 	})

@@ -41,7 +41,7 @@ public static partial class DropRouter
 	/// <summary>Where dropped web content lands, under the user's Downloads folder, so the user can find it again.</summary>
 	public const string InboxFolderName = "Zing";
 
-	/// <summary>Drag types a file drop target accepts. Never a wildcard: registering the root type made every view a universal drop target in Krackn.</summary>
+	/// <summary>Drag types a file drop target accepts. Never a wildcard: registering the root type makes every view a universal drop target.</summary>
 	public static readonly IReadOnlyList<string> AcceptedDragTypes = ["Files", "text/uri-list", "text/plain"];
 
 	/// <summary>For views that only want to notice a drag passing over them and never consume it.</summary>

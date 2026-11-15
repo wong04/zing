@@ -1,5 +1,4 @@
-// Port of Krackn's Features/Utilities/GraphEngine.swift: the maths behind the
-// graphing calculator — viewport mapping, gridline choice and curve sampling.
+// The maths behind the graphing calculator — viewport mapping, gridline choice and curve sampling.
 // Kept free of any UI so every part is unit-testable.
 
 import { formatFixed, formatG } from './cFormat'

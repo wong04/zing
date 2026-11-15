@@ -1,4 +1,4 @@
-// Argument lists for the external converters, ported from Krackn's ConversionEngine.swift. Pure, so every quality
+// Argument lists for the external converters. Pure, so every quality
 // mapping is testable without running anything. Arguments are JobArgs for the host's EngineRunner: option text built
 // from fixed constants here (never from a file's name or content), files as {input: token} and {output: n}. The
 // host refuses any flag its EngineFlagPolicy does not list, so a flag added here is added there too.
@@ -125,8 +125,8 @@ export function tarArgs(sourceDir: string, sourceName: string, destination: stri
 }
 
 // Never silently clobber an existing file: append " 2", " 3"... Honours the
-// "Never overwrite existing files" preference (preserveOriginals), which in
-// Krackn was once stored and never read. Convert itself lets the host number the
+// "Never overwrite existing files" preference (preserveOriginals), which the
+// macOS version stored but never read. Convert itself lets the host number the
 // file (EngineRunner places outputs without overwriting, so two jobs can't race).
 export function uniqueOutputName(base: string, ext: string, exists: (name: string) => boolean, preserveOriginals: boolean): string {
 	const first = `${base}.${ext}`

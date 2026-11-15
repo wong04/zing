@@ -1,4 +1,4 @@
-// The arithmetic behind the tab shortcuts. Ported from Krackn's BrowserLibrary.swift.
+// The arithmetic behind the tab shortcuts.
 
 // Ctrl+Tab: the next tab, wrapping from the last to the first.
 export function nextTab(after: number, count: number): number | undefined {

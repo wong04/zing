@@ -1,4 +1,4 @@
-// Port of Krackn Tests/toolbox. The point is that what people *type* finds the
+// The point is that what people *type* finds the
 // right tool first — so each case is a real query and the one answer it must
 // lead with.
 import { describe, expect, it } from 'vitest'
@@ -130,8 +130,8 @@ describe('no false matches', () => {
 	})
 })
 
-// Zing-only: Krackn's test rebuilt the catalog by hand; these pin that the
-// real catalog is the same list, so the hand-built entries above stay honest.
+// The cases above build their entries by hand; these pin that the real
+// catalog is the same list, so the hand-built entries stay honest.
 describe('the catalog', () => {
 	it('has six groups', () => {
 		expect(toolboxGroups).toEqual([

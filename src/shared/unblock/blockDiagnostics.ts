@@ -1,4 +1,4 @@
-// The pure parts of Krackn's Features/Unblock/BlockDiagnostics.swift. The
+// The pure parts of block diagnosis. The
 // probes themselves (system DNS, raw TCP, TLS with SNI) are network calls and
 // belong to the main process; they feed `classify`.
 
@@ -130,8 +130,8 @@ function parseIPv4(ip: string): readonly [number, number] | undefined {
  * Addresses a filter hands out when it wants a name to go nowhere: the
  * unspecified and loopback blocks, RFC 1918 private space and link-local.
  *
- * Krackn matched only `172.16.` (not the whole 172.16.0.0/12) and only the
- * single loopback address 127.0.0.1; both are covered by prefix length here.
+ * Matching `172.16.` alone would miss most of 172.16.0.0/12, and 127.0.0.1
+ * alone most of loopback; both are covered by prefix length here.
  */
 export function isSinkhole(ip: string): boolean {
 	if (ip === '::' || ip === '::1') return true

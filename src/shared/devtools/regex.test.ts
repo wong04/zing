@@ -1,8 +1,7 @@
-// Port of the regex checks in Krackn Tests/unit (section F).
 import { describe, expect, it } from 'vitest'
 import { RegexProblem, regexMatchLimit, testRegex, testRegexIgnoringCase } from './regex'
 
-describe('regex (Krackn Tests/unit F)', () => {
+describe('regex', () => {
 	const m = testRegex('(\\w+)@(\\w+)', 'a@b c@d').matches
 	it('regex: match count', () => {
 		expect(m).toHaveLength(2)

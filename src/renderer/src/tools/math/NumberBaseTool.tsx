@@ -4,7 +4,7 @@ import { convertBase } from '@shared/devtools/numberBase'
 import { ResultRow, ToolPage } from '../parts'
 import './math.css'
 
-/** Number bases (Krackn `NumberBaseTool`): one value in decimal, hex, binary and octal at once. */
+/** Number bases: one value in decimal, hex, binary and octal at once. */
 export function NumberBaseTool() {
 	const [input, setInput] = useState('255')
 	const result = convertBase(input)

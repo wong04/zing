@@ -1,5 +1,4 @@
-// Port of the units section of Krackn Features/Utilities/DevTools.swift, plus
-// the value formatting from the Unit Converter's view (DevToolViews.swift).
+// Unit conversion, and the value formatting the Unit Converter shows.
 
 export const UnitKind = {
 	length: 'Length',

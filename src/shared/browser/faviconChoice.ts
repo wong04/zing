@@ -1,5 +1,4 @@
-// Port of Krackn's `FaviconChoice` (Features/Browser/FaviconChoice.swift) and the icon probe
-// from `BrowserTab.refreshIcon` (BrowserTabActions.swift).
+// Choosing each tab's favicon, and the probe script that lists the page's icons.
 //
 // Icons used to be looked up per *site* — the registrable domain — so every
 // tab on google.com showed whichever Google icon loaded first: Gmail's on

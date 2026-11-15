@@ -1,7 +1,5 @@
-// Port of `describeCron` from Krackn Features/Utilities/DevTools.swift.
-//
 // Explains a cron expression in plain English — these are famously easy to
-// get wrong and hard to read back. Like Krackn, it reads the five fields back
+// get wrong and hard to read back. It reads the five fields back
 // as written and does not validate their values.
 
 type Field = { readonly name: string; readonly plural: string }

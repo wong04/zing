@@ -34,7 +34,7 @@ export interface FileRowProps {
 	readonly dragFile?: PickedFile
 }
 
-/** A file's icon with its name and an optional second line (Krackn `FileRow`). */
+/** A file's icon with its name and an optional second line. */
 export function FileRow({ path, subtitle, iconSize = 20, selected = false, dragFile }: FileRowProps) {
 	useEffect(() => (dragFile ? () => endToolDrag(dragFile) : undefined), [dragFile])
 	const classes = ['file-row', selected ? 'selected' : '', dragFile ? 'draggable' : ''].filter(Boolean).join(' ')
@@ -92,7 +92,7 @@ export interface RecentFilesListProps {
 	readonly onCopyPath?: (path: string) => void
 }
 
-/** The shared "Recent" list under every file tool's empty state (Krackn `RecentFilesList`). */
+/** The shared "Recent" list under every file tool's empty state. */
 export function RecentFilesList({ files, maxHeight = 190, onSelect, onReveal, onCopyPath }: RecentFilesListProps) {
 	return (
 		<div className="recent-files">
@@ -149,7 +149,7 @@ export interface ToolEmptyStateProps {
 	readonly children?: ReactNode
 }
 
-/** What a file tool shows before anything is open (Krackn `ToolEmptyState`). */
+/** What a file tool shows before anything is open. */
 export function ToolEmptyState({
 	icon,
 	title,

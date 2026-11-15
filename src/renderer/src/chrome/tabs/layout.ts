@@ -1,7 +1,7 @@
 import { pinnedWidth, tabBarLayout } from '@shared/browser/tabReorder'
 import type { Slot } from '@shared/tabs/slots'
 
-/** Krackn lets one tab span the window; on a wide screen that is a very long chip, so it stops here. */
+/** Letting one tab span the window makes a very long chip on a wide screen, so it stops here. */
 export const MAX_TAB_WIDTH = 240
 /** Gap between chips, matching `tabBarLayout`'s default spacing. */
 export const TAB_GAP = 2

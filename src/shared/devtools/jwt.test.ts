@@ -1,4 +1,3 @@
-// Port of the JWT checks in Krackn Tests/unit (section F).
 import { describe, expect, it } from 'vitest'
 import { base64Encode } from './encoding'
 import { decodeJWT } from './jwt'
@@ -9,7 +8,7 @@ function segment(json: string): string {
 	return base64Encode(json).replace(/=+$/, '').replaceAll('+', '-').replaceAll('/', '_')
 }
 
-describe('jwt (Krackn Tests/unit F)', () => {
+describe('jwt', () => {
 	it('jwt: decodes payload', () => {
 		expect(decodeJWT('eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.sig', context)?.payload).toContain('123')
 	})

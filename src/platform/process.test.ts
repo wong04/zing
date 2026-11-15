@@ -1,5 +1,5 @@
-// Integration tests against real Windows processes, in the spirit of
-// Krackn's `cancellation` suite: a cancelled run must return promptly, and
+// Integration tests against real Windows processes: a cancelled run must
+// return promptly, and
 // many simultaneous cancels must not deadlock.
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

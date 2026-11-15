@@ -1,6 +1,4 @@
-// Port of Krackn `Tests/unit` section M (SessionStore). The interactionState
-// cases are WebKit-only and have no Chromium counterpart; Tests/persist drives
-// a live WKWebView and is covered by the e2e suite instead.
+// The session codec. Restoring into live pages is covered by the e2e suite.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {

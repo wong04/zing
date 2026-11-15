@@ -1,8 +1,7 @@
-// Port of the JSON checks in Krackn Tests/unit (section C).
 import { describe, expect, it } from 'vitest'
 import { JSONProblem, minifyJSON, prettyJSON, validateJSON } from './json'
 
-describe('json (Krackn Tests/unit C)', () => {
+describe('json', () => {
 	it('json pretty', () => {
 		expect(prettyJSON('{"a":1}')).toContain('\n')
 	})

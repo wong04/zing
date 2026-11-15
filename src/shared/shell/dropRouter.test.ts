@@ -1,7 +1,5 @@
-// Port of the pure parts of Krackn Tests/drop. Krackn's suite drove real
-// NSItemProviders and the network; here the same cases go through the
-// planning and naming the main process uses. Skipped as AppKit-only: the two
-// `UTType.item` registration checks and "downloaded non-empty" (network).
+// Drop handling's pure parts: the planning and naming the main process uses.
+// Downloading a dropped URL needs the network, so it isn't checked here.
 // The data-shaped cases live in dropRouter.vectors.json, which the C# port (DropRouterTests.cs) reads too.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'

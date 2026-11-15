@@ -3,7 +3,7 @@ import { scrollEdges, type ScrollEdges } from './scrollEdges'
 
 export interface FadingScrollProps {
 	readonly children: ReactNode
-	/** Height of each frosted edge, in px. Krackn used 40 for pages and 22 for lists. */
+	/** Height of each frosted edge, in px: 40 suits pages, 22 suits lists. */
 	readonly fadeHeight?: number
 	/** Cap the viewport; the area scrolls past it. Omit to fill the parent. */
 	readonly maxHeight?: number
@@ -15,7 +15,7 @@ const NONE: ScrollEdges = { top: false, bottom: false }
 
 /**
  * A scroll area whose top and bottom edges frost over when there is more
- * content past them (Krackn `FadingScrollView` / `.scrollEdgeFade`).
+ * content past them.
  */
 export function FadingScroll({ children, fadeHeight = 40, maxHeight, className, 'aria-label': label }: FadingScrollProps) {
 	const body = useRef<HTMLDivElement>(null)

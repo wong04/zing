@@ -1,4 +1,4 @@
-// Port of Krackn `Tests/unit` "favicons — each page's own icon, not the site's".
+// Favicons: each page's own icon, not the site's.
 // The cases live in faviconChoice.vectors.json, which the C# port's tests read too.
 import { describe, expect, it } from 'vitest'
 import { best, largestSize, makeFaviconLink, type FaviconLinkInit } from './faviconChoice'

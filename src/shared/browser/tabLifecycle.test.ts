@@ -1,4 +1,4 @@
-// Port of Krackn `Tests/taborg`: auto-close, schedule window, interval labels.
+// Auto-close, schedule window, interval labels.
 // The cases live in tabLifecycle.vectors.json, which the C# port's tests read too.
 import { describe, expect, it } from 'vitest'
 import {

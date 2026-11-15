@@ -1,5 +1,4 @@
-// Port of Krackn's `TrackerRules` (Features/Browser/BrowserModel.swift): the domains blockTrackers refuses
-// as third-party requests. The host reads the list from Defaults/tracker-domains.json (npm run gen:host-defaults)
+// The domains blockTrackers refuses as third-party requests. The host reads the list from Defaults/tracker-domains.json (npm run gen:host-defaults)
 // and both sides are held to trackerRules.vectors.json.
 import { registrableDomain } from './registrableDomain'
 
@@ -23,7 +22,7 @@ export const TRACKER_DOMAINS: readonly string[] = [
 	'onesignal.com', 'pushcrew.com', 'taboolasyndication.com',
 ]
 
-/** The host is a listed domain or under one. Krackn's regex had no end anchor, so it also caught `doubleclick.net.example`. */
+/** The host is a listed domain or under one. Matched to the end, so `doubleclick.net.example` is not a tracker. */
 export function isTrackerHost(rawHost: string): boolean {
 	let host = rawHost.toLowerCase()
 	if (host.endsWith('.')) host = host.slice(0, -1)

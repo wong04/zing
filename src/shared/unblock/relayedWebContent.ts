@@ -1,4 +1,4 @@
-// The pure parts of Krackn's Features/Unblock/RelayedWebContent.swift: the
+// The pure parts of the relay viewer: the
 // https <-> relay-scheme mapping and the rewriting that keeps a relayed page's
 // absolute links inside the relay.
 
@@ -39,8 +39,8 @@ export function decodeRelayURL(url: URL): URL | undefined {
  * Pulls `charset=` out of a Content-Type, e.g. "text/html; charset=EUC-JP".
  * Undefined for non-text lets the payload be treated as binary.
  *
- * Krackn took everything after `charset=`, so a parameter following it
- * ("charset=utf-8; format=flowed") became part of the name; this stops at `;`.
+ * Stops at `;`, so a parameter following it ("charset=utf-8; format=flowed")
+ * doesn't become part of the name.
  */
 export function charset(contentType: string): string | undefined {
 	const match = /charset=([^;]*)/i.exec(contentType)
@@ -103,7 +103,8 @@ function binaryStringToBytes(text: string): Uint8Array {
  *
  * The page's bytes must survive untouched apart from the rewrite: decoding
  * through the wrong charset is how Latin-1 and Windows-1252 pages got
- * corrupted. Krackn decoded with the declared charset and re-encoded; there is
+ * corrupted. The macOS version decoded with the declared charset and
+ * re-encoded; there is
  * no portable encoder for those charsets here, so this instead patches the
  * bytes one-to-one (every pattern is ASCII, and each byte maps to exactly one
  * code unit). That's lossless for every ASCII-compatible charset; UTF-16/32

@@ -1,4 +1,4 @@
-// Port of Krackn `Tests/taborg` "registrable domain". Cases are shared with the C# port.
+// The registrable domain. Cases are shared with the C# port.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { registrableDomain } from './registrableDomain'

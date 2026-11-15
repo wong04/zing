@@ -1,5 +1,5 @@
-// Port of Krackn's `TabBarLayout` and `TabReorder` (Features/Browser/TabReorder.swift).
-// The reorder geometry takes an axis so a vertical tab strip can reuse it; 'x' is Krackn's.
+// Tab widths in the tab bar, and where a dragged tab lands.
+// The reorder geometry takes an axis so a vertical tab strip can reuse it; 'x' is the default.
 
 /** Same shape as Electron's `Rectangle` and the fields of a DOM `DOMRect`. */
 export interface Rect {

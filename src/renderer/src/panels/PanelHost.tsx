@@ -137,7 +137,7 @@ function PanelWindow({ panel, front, order, origin }: { panel: ToolPanelView; fr
 }
 
 /**
- * Floating tool panels drawn over the page in the surface view (Krackn `FloatingPanelView`).
+ * Floating tool panels drawn over the page in the surface view.
  * The host reorders the list to raise a panel, but React must not follow it: moving a panel's DOM node blurs
  * its field and resets its scroll. So the nodes stay in id order and the stacking comes from `zIndex` alone.
  */

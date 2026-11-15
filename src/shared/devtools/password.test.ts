@@ -1,10 +1,9 @@
-// Port of the password checks in Krackn Tests/unit (section C).
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { generatePassword, InvalidPasswordLengthError, passwordAlphabet } from './password'
 
 const everything = { symbols: true, digits: true, uppercase: true }
 
-describe('passwords (Krackn Tests/unit C)', () => {
+describe('passwords', () => {
 	it.each([8, 20, 64])('password length %i', (length) => {
 		expect(generatePassword({ length, ...everything })).toHaveLength(length)
 	})

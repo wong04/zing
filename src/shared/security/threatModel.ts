@@ -1,5 +1,3 @@
-// Port of Krackn's Features/Security/ThreatModel.swift.
-
 import { isRawIPv4, labelsOf, registrableDomain } from '../browser/registrableDomain'
 
 /**
@@ -277,8 +275,8 @@ export function inspectHost(rawHost: string, scheme: string | undefined = 'https
  * Types the OS will execute. A download landing as one of these deserves a
  * second look regardless of what it claims to be.
  *
- * Krackn's list is macOS-first; Zing adds the Windows types that run on a
- * double-click (`lnk`, `js`, `jse`, `cpl`) — the rest of the Windows set was
+ * The list began macOS-first. `lnk`, `js`, `jse` and `cpl` were added because
+ * Windows runs them on a double-click; the rest of the Windows set was
  * already there.
  */
 export const executableExtensions: ReadonlySet<string> = new Set([

@@ -823,7 +823,7 @@ public sealed class WebView2Page : IPage
 		}
 		var isDocument = e.ResourceContext == CoreWebView2WebResourceContext.Document;
 		if (!isDocument && !TrackerRules.IsTrackerHost(address.IdnHost)) return;
-		// The page's own document is never a third party; a tracker's iframe or subresource is (Krackn's third-party load type).
+		// The page's own document is never a third party; a tracker's iframe or subresource is.
 		var topDocument = isDocument && request == _approvedDocument;
 		if (!topDocument && _features.BlockTrackers && TrackerRules.Blocks(request, TopOf(sender)))
 		{
