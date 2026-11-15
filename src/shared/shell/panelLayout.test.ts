@@ -1,4 +1,4 @@
-// Port of Krackn Tests/panels (floating-panel placement). Pure, so the rules
+// Floating-panel placement. Pure, so the rules
 // are pinned here rather than eyeballed by dragging windows around.
 // The data-shaped cases live in panelLayout.vectors.json, which the C# port (PanelLayoutTests.cs) reads too.
 import { readFileSync } from 'node:fs'

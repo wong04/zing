@@ -1,10 +1,9 @@
-// Port of the case-conversion checks in Krackn Tests/unit (section C).
 import { describe, expect, it } from 'vitest'
 import { CaseStyle, convertCase, toCamelCase, toKebabCase, toSnakeCase, toTitleCase } from './textCase'
 
 const acute = String.fromCodePoint(0x301) // combining acute accent
 
-describe('text case (Krackn Tests/unit C)', () => {
+describe('text case', () => {
 	it('camel', () => {
 		expect(convertCase('hello world again', CaseStyle.camel)).toBe('helloWorldAgain')
 	})

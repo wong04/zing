@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { COMMAND_IDS, COMMANDS, MENU_LAYOUT, commandForInput, getCommand, isCommandId } from './registry'
 import { shortcutLabel, toAccelerator, type KeyInput } from './shortcut'
 
-// Every menu item in reference/krackn/Sources/Krackn/App/Commands.swift, plus Ctrl+1–9 from AlternateShortcuts.
-const KRACKN_LABELS = [
+// Every menu item, plus Ctrl+1–9 from the alternate shortcuts.
+const MENU_LABELS = [
 	'New Tab',
 	'New Window',
 	'Open Location…',
@@ -47,9 +47,9 @@ const key = (code: string, mods: Partial<KeyInput> = {}): KeyInput => ({
 })
 
 describe('command registry', () => {
-	it('has every Krackn command', () => {
+	it('has every menu command', () => {
 		const labels = COMMANDS.map((c) => c.label)
-		for (const label of KRACKN_LABELS) expect(labels).toContain(label)
+		for (const label of MENU_LABELS) expect(labels).toContain(label)
 	})
 
 	it('has Ctrl+1 to Ctrl+9', () => {

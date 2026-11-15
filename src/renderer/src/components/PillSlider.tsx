@@ -12,7 +12,7 @@ export interface PillSliderProps extends SliderRange {
 	readonly valueText?: string
 }
 
-/** A slider drawn by hand: capsule track, accent fill, white knob (Krackn `PillSlider`). */
+/** A slider drawn by hand: capsule track, accent fill, white knob. */
 export function PillSlider({ value, onChange, min, max, step, valueText, 'aria-label': label }: PillSliderProps) {
 	const track = useRef<HTMLDivElement>(null)
 	const range: SliderRange = { min, max, step }

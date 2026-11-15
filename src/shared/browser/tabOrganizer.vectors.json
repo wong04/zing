@@ -1064,9 +1064,9 @@
 			}
 		},
 		{
-			"name": "https://www.google.com/search?q=krackn -> Google",
+			"name": "https://www.google.com/search?q=zing -> Google",
 			"op": "siteGroup",
-			"url": "https://www.google.com/search?q=krackn",
+			"url": "https://www.google.com/search?q=zing",
 			"want": {
 				"name": "Google"
 			}
@@ -1112,9 +1112,9 @@
 			}
 		},
 		{
-			"name": "https://en.wikipedia.org/wiki/Kraken -> wikipedia.org",
+			"name": "https://en.wikipedia.org/wiki/Octopus -> wikipedia.org",
 			"op": "siteGroup",
-			"url": "https://en.wikipedia.org/wiki/Kraken",
+			"url": "https://en.wikipedia.org/wiki/Octopus",
 			"want": {
 				"name": "wikipedia.org"
 			}

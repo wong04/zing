@@ -1,4 +1,4 @@
-// Port of `UtilityTools.HashAlgorithm` (Krackn Features/Utilities/UtilityTools.swift).
+// The hash tool's algorithms.
 // The digests themselves are computed by the host (Zing.Core Hashing.cs): MD5 isn't in
 // SubtleCrypto. These names are what crosses the bridge.
 

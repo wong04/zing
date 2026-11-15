@@ -51,7 +51,7 @@ public static class Split
 	}
 
 	/// <summary>
-	/// Whole pixels, as Krackn's backingAlignedRect: a page laid out across half a pixel gets its whole composited
+	/// Whole pixels: a page laid out across half a pixel gets its whole composited
 	/// layer resampled. The last pane takes up the rounding, so the panes always fill the container exactly.
 	/// </summary>
 	public static IReadOnlyList<Rect> PaneRects(Rect container, SplitLayout layout, int divider = DividerPx)

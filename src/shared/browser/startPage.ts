@@ -1,5 +1,4 @@
-// Port of Krackn's `StartPage` (Features/Browser/StartPage.swift): the new-tab page,
-// served from the app rather than the network, so opening a tab never touches the
+// The new-tab page, served from the app rather than the network, so opening a tab never touches the
 // network and can never land on a blocked or filtered page.
 import { escapeHTML as escape, glyph, isWebAddress, type StartShortcut } from './startShortcuts'
 
@@ -19,7 +18,7 @@ export type ImportAction = (typeof importActions)[number]
 /** The `<style>` holding the palette, swapped in place on a theme change. */
 export const themeStyleId = 'zing-theme'
 
-/** One appearance's colours (Krackn's `PaletteTokens` plus its derived roles). */
+/** One appearance's colours (`PaletteTokens` plus its derived roles). */
 export interface StartPageTokens {
 	background: string
 	surface: string
@@ -109,8 +108,8 @@ export function themeCSS(theme: StartPageTheme): string {
 }
 
 /**
- * Run in an open start page to recolour it without a reload (Krackn's
- * `restyleStartPages`). `JSON.stringify` makes the CSS a safe JS string literal.
+ * Run in an open start page to recolour it without a reload.
+ * `JSON.stringify` makes the CSS a safe JS string literal.
  */
 export function restyleScript(theme: StartPageTheme): string {
 	return `(() => { const s = document.getElementById('${themeStyleId}'); if (s) s.textContent = ${JSON.stringify(themeCSS(theme))}; })()`

@@ -1,6 +1,5 @@
-// Krackn has no tests for these ThreatScanner pieces (sniffType's are in
-// threatModel.test.ts with the rest of Tests/security); these pin the ported
-// behaviour.
+// sniffType's tests are in threatModel.test.ts; these cover the scanner's
+// other pure pieces.
 
 import { describe, expect, it } from 'vitest'
 import { downloadNotice, ThreatLevel, verdictLevel } from './threatModel'

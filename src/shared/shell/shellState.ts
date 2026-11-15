@@ -3,7 +3,7 @@
 // the chrome and surface renderers draw it.
 import type { Rect } from './panelLayout'
 
-/** The app sidebar's pane width and the gap around it, in DIPs (Krackn Sidebar.width / inset). */
+/** The app sidebar's pane width and the gap around it, in DIPs. */
 export const SIDEBAR = { width: 196, inset: 8 } as const
 
 /**

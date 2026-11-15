@@ -1,4 +1,4 @@
-// Port of the encoding section of Krackn Features/Utilities/UtilityTools.swift.
+// Base64 and URL percent-encoding.
 
 export class MalformedPercentEncodingError extends Error {
 	override name = 'MalformedPercentEncodingError'

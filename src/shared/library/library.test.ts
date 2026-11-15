@@ -1,4 +1,4 @@
-// Ported from reference/krackn/Tests/library/main.swift (25 checks).
+// Bookmarks, the Favourites bar and the Reading List.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
 	collect,

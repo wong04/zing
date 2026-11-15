@@ -27,10 +27,10 @@ public sealed class DownloadHost(Func<ChromeApi?> api)
 			return;
 		}
 		var operation = e.DownloadOperation;
-		// Krackn's DownloadPolicy (L12): a frame's response is saved only when the server marks it as a file. The engine only
+		// DownloadPolicy (L12): a frame's response is saved only when the server marks it as a file. The engine only
 		// downloads a navigation it can't show (or one marked as a file), so CanShow is false for every navigation here. A
-		// download that isn't a frame's navigation (the main frame's, `<a download>`, Save as) is saved, as Krackn does.
-		// Refused, it's cancelled silently and the frame stays empty, which is what Krackn's frame shows.
+		// download that isn't a frame's navigation (the main frame's, `<a download>`, Save as) is always saved.
+		// Refused, it's cancelled silently and the frame stays empty.
 		if (page.IsFrameDownload(operation.Uri)
 			&& !DownloadPolicy.ShouldDownload(new DownloadResponse(CanShow: false, operation.ContentDisposition, IsMainFrame: false)))
 		{

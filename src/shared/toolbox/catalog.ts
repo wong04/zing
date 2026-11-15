@@ -1,5 +1,3 @@
-// Port of Krackn App/Navigation.swift (`ToolboxGroup`).
-//
 // How the Toolbox groups its contents: by the job you're doing, six groups of
 // four to seven, so each is one glance and the whole set fits on a screen.
 // Engine setup isn't here: it's configuration, so it lives in Settings.

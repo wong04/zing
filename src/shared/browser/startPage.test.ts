@@ -1,5 +1,5 @@
-// Krackn has no StartPage checks of its own; its StartShortcuts checks cover the escaping
-// rule ("names are escaped for the page"), and these pin how the page applies it.
+// startShortcuts.test.ts covers the escaping rule ("names are escaped for the page");
+// these pin how the page applies it.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { defaults, type StartShortcut } from './startShortcuts'

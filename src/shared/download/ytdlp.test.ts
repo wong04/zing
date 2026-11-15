@@ -1,4 +1,3 @@
-// Ported from reference/krackn/Tests/unit/main.swift, "L. yt-dlp failures" (14 checks).
 // The cases live in ytdlp.vectors.json, which the C# port's tests read too.
 import { describe, expect, it } from 'vitest'
 import { explainFailure, looksLikeExtractorBreakage, parseProgress, retryArgs, ytdlpArgs, type MediaMode } from './ytdlp'

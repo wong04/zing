@@ -1,5 +1,4 @@
-// Port of Krackn's Tests/graph/main.swift (54 assertions). Tolerances are the
-// Swift ones: `near` defaults to 1e-6.
+// Tolerances are the Swift ones: `near` defaults to 1e-6.
 
 import { describe, expect, it } from 'vitest'
 import { BadArgumentError, evaluate, makeFunction } from './expression'

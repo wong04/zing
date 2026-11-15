@@ -72,7 +72,7 @@ This plan covers:
 | 6c import | Node `fs` | Unchanged parsers; files are read by the host |
 | 7 logo | done (C3) | `npm run make-icons` now draws with headless Edge instead of Electron, and also makes the Velopack installer art |
 | 8 packaging | electron-builder, Electron auto-update | **Velopack** + GitHub Releases. WebView2 runtime check/bootstrapper for Windows 10. Default-browser registration. Signing unchanged. |
-| 10 ongoing | Electron security bumps every ~7 days | **Gone.** The Evergreen runtime self-updates. Instead: Windows App SDK / .NET updates, and the weekly Krackn watch |
+| 10 ongoing | Electron security bumps every ~7 days | **Gone.** The Evergreen runtime self-updates. Instead: Windows App SDK / .NET updates, and the weekly upstream watch (since removed) |
 | 11 extensions (roadmap) | after v1 | **Moved up to right after W**, because it gives full ad blocking (uBO Lite) and the password managers |
 
 ### Phase W in detail

@@ -6,7 +6,7 @@ Rows X1–X23 in `PARITY.md`, reduced to what the owner will use, plus a page of
 
 The owner wants one place for the things they keep leaving the browser to do: convert a file, open a phone's photo or video, save something from YouTube, get past a blocked site on a school or work network, and do small jobs like a sum or a password. Each of those means another app or a sketchy website today. Files should stay on the owner's machine.
 
-The owner picked from Krackn's Toolbox rather than keeping all of it, so this phase is no longer full parity with Krackn. Anything cut is marked Dropped in `PARITY.md` with its reason, so the parity audit (M9) still adds up.
+The owner picked from the macOS app's Toolbox rather than keeping all of it, so this phase is no longer full parity. Anything cut is marked Dropped in `PARITY.md` with its reason, so the parity audit (M9) still adds up.
 
 ## Decided by the owner (2026-11-03)
 
@@ -14,7 +14,7 @@ The owner picked from Krackn's Toolbox rather than keeping all of it, so this ph
 
 - **Toolbox page,** with search and recent tools.
 - **Convert files on the machine.** Nothing is uploaded.
-- **PDF tools:** merging, editing and similar jobs, working with the file converter. *New, not in Krackn. What "editing" covers is my reading; see goal X25.*
+- **PDF tools:** merging, editing and similar jobs, working with the file converter. *New, not in the macOS app. What "editing" covers is my reading; see goal X25.*
 - **File viewer** that opens more than Windows does. Starting list: HEIC and HEIF; MOV, MKV, AVI and other formats FFmpeg reads; RAW camera photos if the engine handles them well; everything Chromium opens already.
 - **Background remover,** using a ready-made model. No training.
 - **Media download and Save page,** including YouTube to MP3 and MP4.
@@ -55,7 +55,7 @@ Add new rows for the links page and for the engine downloader (see X10 below).
 - **X17 Graphing calculator,** built in, using `src/shared/math/graphEngine.ts`. *My reading: the owner listed it among the things they'll use, after first mentioning it as a link. Desmos is on the links page as well.*
 - **X18 Calculator, units, number bases.**
 - **X19 Developer tools.** Logic is in `src/shared/devtools`.
-- **X20 Text and design tools,** as Krackn has them.
+- **X20 Text and design tools,** the same set as before.
 - **X21 Password generator and link cleaner.**
 - **AI link tags.** `LinkCleaner.StripTrackers` already removes every `utm_*` parameter on navigation, which covers `utm_source=chatgpt.com`. Add test vectors for the tags AI tools really use, and add any that aren't `utm_*` after checking what those tools send. *My reading of "automatic AI UTM parameter remover": rules, not AI.*
 
@@ -63,13 +63,13 @@ All of these work offline, and none starts a process.
 
 ### 2. Getting past blocks (PR B)
 
-- **X1 Open a Link** tries Krackn's methods in order and shows which one worked: direct, DoH with IP pinning, reader relay, Wayback archive.
-- **X2 Relayed pages,** with subresources through the relay. As in Krackn, content sites work and full web apps don't; when that happens Zing says so.
+- **X1 Open a Link** tries four methods in order and shows which one worked: direct, DoH with IP pinning, reader relay, Wayback archive.
+- **X2 Relayed pages,** with subresources through the relay. Content sites work through the relay and full web apps don't; when that happens Zing says so.
 - **X3 Diagnose:** compares DNS answers, tries TCP to 443, tries a TLS handshake with the real SNI. Uses `BlockDiagnostics` logic already ported to TypeScript.
 - **Offer from a failed load.** When a page fails to load, the notice offers Open a Link and Diagnose. Nothing is tried without a click. *My addition, from the conversation.*
 - **X4 DoH provider setting.**
-- **X5 Network & VPN:** a one-click script for encrypted DNS across Windows, shown before it runs and needing the admin prompt. Keeps Krackn's short guide to getting a VPN, and its "what beats what" table.
-- **X11 Link inspection,** using `threatModel.ts`, entirely on the machine. As in Krackn: on by default with a setting to turn it off, it checks each navigation before load, warns on a flagged link, and lets the user visit anyway, without warning again for that host this session. It must not noticeably slow navigation. Krackn's false-positive cases stay under test. *My call: following Krackn.*
+- **X5 Network & VPN:** a one-click script for encrypted DNS across Windows, shown before it runs and needing the admin prompt. Keeps the short guide to getting a VPN, and its "what beats what" table.
+- **X11 Link inspection,** using `threatModel.ts`, entirely on the machine. It is on by default with a setting to turn it off. It checks each navigation before load, warns on a flagged link, and lets the user visit anyway, without warning again for that host this session. It must not noticeably slow navigation. The existing false-positive cases stay under test. *My call: following the macOS app.*
 
 Rules:
 
@@ -78,13 +78,13 @@ Rules:
 - Open a Link's "direct" method is a real attempt whose result is shown. The failed-load offer appears on DNS, connection, TLS and timeout failures, not on HTTP error statuses, so ordinary site errors don't suggest getting around a block. A filter's own block page looks like a normal page, so Diagnose and Open a Link stay reachable from the Toolbox. *My call.*
 - The DNS script covers the adapters in use and has an Undo on the same page that puts the previous settings back. *My call: without it, a bad change could cut the network with no way back in Zing.*
 - A relayed page is untrusted. It loads on its own origin, with no access to Zing's bridge.
-- Say once, plainly, that routing around a school's or employer's filter may break their rules. Krackn's README has the wording. After that it's the user's call.
+- Say once, plainly, that routing around a school's or employer's filter may break their rules. After that it's the user's call.
 - Bot checks are not bypassed, and Zing does not imitate Chrome.
 
 ### 3. Files and media (PR C)
 
 - **X10, changed: engines on first use.** Zing's installer stays small. FFmpeg, Pandoc, yt-dlp and the background model each download the first time a tool needs them, into `%LOCALAPPDATA%` beside Zing's other data, not winget. Each comes from its project's own versioned release, with the URL and SHA-256 pinned in Zing; Zing hosts nothing itself. A failed check or a blocked download is an explicit error that names what failed and offers a link to get it by hand. Settings lists the engines with sizes and a remove button. yt-dlp breaks when YouTube changes, so it updates on the user's click to its latest release, checked against the SHA-256 file published with that release. *First use over bundling, and these sources, are my calls.*
-- **X6–X8 Convert.** Images, documents, audio and video, with Krackn's format matrix where the engines allow. Output never overwrites a file; collisions get numbered (`DownloadPolicy`).
+- **X6–X8 Convert.** Images, documents, audio and video, with the existing format matrix where the engines allow. Output never overwrites a file; collisions get numbered (`DownloadPolicy`).
 - **X15 File viewer.** Formats Chromium can't show are converted to a temporary copy with the same engines, then shown. Temporary copies go when the file closes, and leftovers go at next start. Long videos may take a moment before they play.
 - **X16 Background remover.** Runs a pre-trained model on the machine through ONNX Runtime. Nothing is uploaded.
 - **X9 Media download and Save page.** yt-dlp with live progress; MP3 and MP4. Started only when the user asks. Save page uses the relay when the site is blocked.
@@ -114,7 +114,7 @@ Rules:
 
 - How tools are shown: a `zing://toolbox` tab, tools in tabs, with floating panels (`ToolPanels`) kept for popping out. *My suggestion.*
 - Image library for HEIC and RAW, and whether FFmpeg alone is enough.
-- Which reader relay service, starting from Krackn's, checking that it still works.
+- Which reader relay service, starting from the one already ported, checking that it still works.
 - Which background model, subject to its licence and a download size under about 200 MB.
 - PR order is A, then B and C, which are independent of each other and can run in parallel. A short throwaway test of the riskiest pieces comes first: pinned TLS, relayed pages on their own origin, and a HEVC MOV playing through a temporary copy. If one fails, stop that piece and bring the owner the options; don't quietly build less. *My call.*
 

@@ -1,4 +1,4 @@
-// Port of Krackn's DownloadErrors.swift: reading yt-dlp's failures. Pure, so the choice of whether to offer an update is testable.
+// Reading yt-dlp's failures. Pure, so the choice of whether to offer an update is testable.
 
 export interface MediaFailure {
 	/** In plain words, for the panel. */

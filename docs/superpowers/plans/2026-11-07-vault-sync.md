@@ -48,7 +48,7 @@
 
 For the owner to check:
 
-- **The `passwordAutofill` setting's default changes from `true` to `false`.** It becomes the vault's on/off switch. Krackn's default was for Keychain, which stored nothing of its own; the spec makes the vault opt-in.
+- **The `passwordAutofill` setting's default changes from `true` to `false`.** It becomes the vault's on/off switch. The old default was for Keychain, which stored nothing of its own; the spec makes the vault opt-in.
 - **Files:**
   - `vault/vault.zing` in the profile holds the encrypted items, the same format the server stores
   - `vault/keys.bin` holds the sealed index and secret keys

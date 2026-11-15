@@ -1,10 +1,10 @@
 // The full set of formats the converter understands, grouped by discipline.
-// Ported from Krackn's FormatCatalog.swift. Coverage comes from routing to the
-// right backend rather than implementing codecs.
+// Coverage comes from routing to the right backend rather than implementing
+// codecs.
 
 export type ConversionCategory = 'image' | 'document' | 'audio' | 'video' | 'model' | 'archive'
 
-// macOS's `sips` handled these in Krackn; on Windows the common ones go to
+// macOS's `sips` handled these; on Windows the common ones go to
 // sharp and the rest to ImageMagick (see backends.ts).
 export const BASIC_IMAGES = ['jpeg', 'jpg', 'png', 'tiff', 'tif', 'gif', 'bmp', 'heic', 'heif', 'jp2', 'tga', 'psd', 'pict', 'sgi', 'exr'] as const
 

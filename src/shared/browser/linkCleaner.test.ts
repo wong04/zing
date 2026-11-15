@@ -1,5 +1,4 @@
-// Port of Krackn `Tests/unit` "C. UtilityTools" link-cleaner checks, plus `stripTrackers`,
-// which Krackn's suites never exercised directly.
+// The Link Cleaner tool's checks, plus `stripTrackers` on navigation.
 // The cases live in linkCleaner.vectors.json, which the C# port's tests read too.
 import { describe, expect, it } from 'vitest'
 import { InvalidLinkError, cleanLink, stripTrackers } from './linkCleaner'
@@ -15,7 +14,7 @@ describe('link cleaner', () => {
 })
 
 describe('stripping trackers on navigation', () => {
-	// Krackn ran navigations through the paste tidy-up too, which trims a trailing
+	// Navigations used to go through the paste tidy-up too, which trims a trailing
 	// quote: `q='hi'` became `q='hi`. A navigation is taken as it is.
 	it.each(vectors.strip)('$name', ({ input, expected }) => {
 		expect(stripTrackers(input)).toBe(expected)

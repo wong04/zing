@@ -6,7 +6,7 @@ namespace Zing.Core;
 public readonly record struct CursorSample(double X, double Y, bool InWindow, double Now);
 
 /// <summary>
-/// The edge-reveal decision (src/main/sidebar.ts, a port of Krackn's EdgeRevealMonitor). Pure: the
+/// The edge-reveal decision (src/main/sidebar.ts). Pure: the
 /// caller samples the cursor. The reveal comes from watching the cursor, not from a hover strip,
 /// because an invisible strip along the left edge would sit over the web view and eat its clicks.
 /// </summary>

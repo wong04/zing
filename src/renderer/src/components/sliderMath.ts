@@ -1,4 +1,4 @@
-// The arithmetic behind PillSlider (Krackn Components.swift `PillSlider`):
+// The arithmetic behind PillSlider:
 // a pointer position or a key press becomes a stepped value inside the range.
 
 export interface SliderRange {

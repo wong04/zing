@@ -63,6 +63,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_permissions = new PermissionHost(() => Api);
 		_window = new HostWindow("Zing", 1280, 820);
 		_layout = new WindowLayout(_window, () => Api);
+		_app.AllowDarkMenus(_window.Hwnd);
 		if (TestHooks.KeepsOutOfTheWay)
 		{
 			AppWindow.Move(new Windows.Graphics.PointInt32(-20000, -20000));
@@ -83,6 +84,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		TestHooks.RegisterScrim(_window, () => _scrim);
 		TestHooks.RegisterPickerKeys(_window, PickerKeyOnPage);
 		TestHooks.RegisterPreviewKeys(_window, PreviewKeyOnPage);
+		TestHooks.RegisterFullScreenKeys(_window, ViewerEscapeOnPage);
 		_app.Services.Vaults.Changed += FollowAutofill;
 	}
 
@@ -773,7 +775,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private void OnKey(HostedView view, CoreWebView2AcceleratorKeyPressedEventArgs e)
 	{
 		if (e.KeyEventKind is not (CoreWebView2KeyEventKind.KeyDown or CoreWebView2KeyEventKind.SystemKeyDown)) return;
-		if (PickerKey(view, (int)e.VirtualKey))
+		if (PickerKey(view, (int)e.VirtualKey) || ViewerEscape(view, (int)e.VirtualKey))
 		{
 			e.Handled = true;
 			return;
@@ -783,6 +785,21 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		var input = new KeyInput(code, Native.IsDown(VK_CONTROL), Native.IsDown(VK_SHIFT), Native.IsDown(VK_MENU), e.PhysicalKeyStatus.WasKeyDown != 0);
 		if (Key(view, input)) e.Handled = true;
 	}
+
+	/// <summary>
+	/// Esc takes the PDF viewer out of the fullscreen its own button gave it. The engine does that for a page's own document,
+	/// but the viewer is a guest view (ViewerGuests), and there Esc did nothing.
+	/// </summary>
+	private bool ViewerEscape(HostedView view, int virtualKey)
+	{
+		const int VK_ESCAPE = 0x1B;
+		if (virtualKey != VK_ESCAPE || ScreenOwner is not { InViewerFullScreen: true } owner || !ReferenceEquals(owner.View, view)) return false;
+		ExitFullScreen();
+		return true;
+	}
+
+	/// <summary>The e2e seam (fullscreen-key): CDP input never reaches AcceleratorKeyPressed, so a test enters ViewerEscape as a key press on the fullscreen page would.</summary>
+	private bool ViewerEscapeOnPage(int virtualKey) => ScreenOwner is { View: { } view } && ViewerEscape(view, virtualKey);
 
 	private bool Key(HostedView view, KeyInput input) => IsPreviewView(view) ? Api!.HandlePreviewKey(input) : Api!.HandleKey(input);
 

@@ -135,7 +135,7 @@ public static partial class YtDlp
 		return args;
 	}
 
-	// Krackn measured that adding web_safari and tv made things worse, so it's `default` only.
+	// Adding web_safari and tv was measured to make things worse, so it's `default` only.
 	public static IReadOnlyList<string> RetryArgs(IReadOnlyList<string> args) =>
 		["--extractor-args", "youtube:player_client=default", .. args];
 

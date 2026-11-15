@@ -1,6 +1,5 @@
-// The Settings sheet as data (Krackn SettingsView.swift panes). Every key in
-// SETTINGS_SCHEMA must appear here: a setting with no control is the bug
-// Krackn's AppSettings exists to prevent, and rows.test.ts enforces it.
+// The Settings sheet as data. Every key in SETTINGS_SCHEMA must appear here:
+// a setting with no control is a bug, and rows.test.ts enforces it.
 import { VERTICAL_TABS } from '@shared/layout/chrome'
 import { tabOrganizationDetail, tabOrganizationLabel } from '@shared/browser/tabOrganizer'
 import { TRACKER_DOMAINS } from '@shared/browser/trackerRules'

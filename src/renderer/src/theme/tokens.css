@@ -1,9 +1,8 @@
 /*
- * Krackn's palette (App/Theme.swift + App/Accent.swift), Yellow accent: the
- * reference beige, byte for byte. --control, --raised and --accent-ink are the
- * derived roles Accent.swift computes (PaletteTokens.control / raised /
- * accentInk), evaluated for Yellow. Other accents come from the generator port.
- * Names match the start-page CSS Krackn already emitted (StartPage.themeCSS).
+ * The palette, Yellow accent: the reference beige, byte for byte. --control,
+ * --raised and --accent-ink are the derived roles the accent generator
+ * computes, evaluated for Yellow. Other accents come from the generator.
+ * Names match the start page's theme CSS.
  */
 
 @font-face {

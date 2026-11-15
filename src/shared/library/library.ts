@@ -1,5 +1,4 @@
 // The browser's saved things: bookmarks, the Favourites bar, the Reading List.
-// Ported from Krackn's BrowserLibrary.swift.
 //
 // Privacy note: this is the one store the browser writes on purpose, because
 // every item in it is something the user explicitly chose to keep. Nothing is

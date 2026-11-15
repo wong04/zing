@@ -1,4 +1,4 @@
-// Port of Krackn `Tests/unit` "address input — go there, or search for it".
+// Address input: go there, or search for it.
 // The cases live in addressInput.vectors.json, which the C# port's tests read too.
 import { describe, expect, it } from 'vitest'
 import { classify } from './addressInput'

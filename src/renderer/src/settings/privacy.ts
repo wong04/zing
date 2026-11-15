@@ -3,8 +3,8 @@ import type { Settings } from '@shared/settings'
 /**
  * One way Zing can end up keeping something on disk. The privacy banner is
  * green only while none is active, and names every one that is: a privacy claim
- * that stays cheerful while a switch quietly contradicts it is worse than none
- * (Krackn: "Don't tidy that banner back to always-green").
+ * that stays cheerful while a switch quietly contradicts it is worse than none.
+ * Don't tidy that banner back to always-green.
  */
 export interface StoresDataCondition {
 	readonly id: string

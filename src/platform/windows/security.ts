@@ -1,7 +1,7 @@
-// Windows replacements for Krackn's macOS checks:
+// Windows replacements for the macOS version's checks:
 // Gatekeeper/notarization -> Authenticode, quarantine xattr -> Mark of the
 // Web, XProtect -> Microsoft Defender, SIP/FileVault -> Secure Boot,
-// BitLocker, firewall and SmartScreen. Like Krackn, this reports what the OS
+// BitLocker, firewall and SmartScreen. This reports what the OS
 // already does rather than duplicating it, and every check works without
 // administrator rights.
 import { existsSync } from 'node:fs'
@@ -15,7 +15,7 @@ import { parsePsDate, runPowerShell, runPowerShellJson } from './powershell'
 
 // Zone 3 is "Internet". Windows (SmartScreen, Office protected view) only
 // warns about a downloaded file if this stream exists, so a file without it
-// has skipped those checks: the equivalent of Krackn's missing-quarantine flag.
+// has skipped those checks: the equivalent of a missing quarantine flag on macOS.
 export const INTERNET_ZONE = 3
 
 export interface MarkOfTheWeb {

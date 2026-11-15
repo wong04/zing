@@ -20,13 +20,13 @@ Categories:
 |---|---|---|---|
 | B34 Shared UI components | Partial | (a) | Mark Done. Cite the unit tests in `src/renderer/src/components/` and the light + dark tool screenshots in `docs/screenshots/phase-6/`. |
 | S2 Frameless window chrome | Partial | (b) | Add a real-input drag test: the strip's empty space moves the window, a tab drag doesn't. Mica is already in the README. |
-| L12 DownloadPolicy | Partial | (b) | Add two e2e cases showing the engine decides as Krackn's rule does. Then mark Done, or wire the port in. |
+| L12 DownloadPolicy | Partial | (b) | Add two e2e cases showing the engine decides as `DownloadPolicy` does. Then mark Done, or wire the port in. |
 | B29 Floating tool panels | Partial | (b) | Add one e2e: three panels open, a fourth is refused, minimise to the sidebar and restore. Add a minimised-panel screenshot. |
 | TH4 Mica tint + contrast themes | Partial | (b) | Add a forced-colours screenshot pair. Mark Done and point Mica at the README. |
 | V4 Encrypted password sync | Partial | (b) | Owner's hand check against the deployed server. Open an issue for the row. |
 | V5 Restore on a new PC | Partial | (b) | Same hand check as V4. Open an issue. |
 | P7 Dependency updates | Open | (b) | Add `.github/dependabot.yml` (npm, NuGet, Actions). Fix the issue text, which still says Electron. |
-| B11 Tracker + ad blocking | Partial | (c) | The `blockTrackers` switch does nothing. Wire it in, block Krackn's 48 domains testably, and leave ad blocking to uBO Lite (Phase 11). |
+| B11 Tracker + ad blocking | Partial | (c) | The `blockTrackers` switch does nothing. Wire it in, block the 48 tracker domains testably, and leave ad blocking to uBO Lite (Phase 11). |
 | S10 Performance budget suite | Open | (c) | Build `test:perf` against WebView2. The budgets still name Electron's `app.getAppMetrics()`. |
 | P6 Web-compat smoke tests | Open | (c) | A scheduled workflow against live Google and YouTube. Passkeys stay a hand check. |
 | L11 FaviconChoice | Partial | (d) | Edge's engine picks the page's icon. Add one e2e for the per-page rule, delete the unused TS port, and add a README line. |
@@ -34,7 +34,7 @@ Categories:
 | X13 Download checks | Dropped | (d) | Needs a README line. |
 | X14 System posture | Dropped | (d) | Needs a README line. |
 | X15 3D models (part) | Done (no 3D models) | (d) | Needs a README line. |
-| B26 Confirm before quit | Dropped | none | No README line needed: Krackn's switch did nothing. Close the issue as is. |
+| B26 Confirm before quit | Dropped | none | No README line needed: the macOS version's switch did nothing. Close the issue as is. |
 | B27 Clean user agent | Dropped | none | Already in the README. Close the issue. |
 | I1–I4 Import | Open | (e) | Phase 6c session. |
 | P1–P5 Packaging | Open | (e) | Phase 8 session. |
@@ -43,7 +43,7 @@ Categories:
 | Two-step sign-in save prompts | (no row; V3 area) | (e) | `feat/two-step-sign-in` session. |
 | A1 Parity audit | Open | (e) | This report is its first half. |
 | X5 Network & VPN (Done, spot-check) | Done | (b) | Owner runs the DNS script as administrator once, then Undo. PR #144 says it has never run elevated. |
-| X16 Background remover (Done, spot-check) | Done | (b) | Krackn's backdrop choice (Transparent, White, Black, Beige) is missing. Add it, or add a README line. |
+| X16 Background remover (Done, spot-check) | Done | (b) | The macOS version's backdrop choice (Transparent, White, Black, Beige) is missing. Add it, or add a README line. |
 | B14 Find in page (Done, spot-check) | Done | (b) | Add a light + dark screenshot of the find bar. |
 | B18 Tab overview (Done, spot-check) | Done | (b) | Add a light + dark screenshot of the overview. |
 | B31 Account gate (Done, spot-check) | Done | (b) | Add a light + dark screenshot of the gate. |
@@ -72,7 +72,7 @@ The PARITY note says "mostly visual; needs light + dark screenshots". Those scre
   - e2e: `real-input.spec.ts` › `a real click on the window's maximise button maximises it`, and `themes.spec.ts` › `the caption buttons match what they sit on, whatever the theme and tab position`.
   - The `docs/screenshots/phase-5/` light + dark set shows the chrome at all three tab positions.
   - Mica is in the README's Known differences.
-- **What's missing:** Krackn's real gotcha (`Components.swift`, `WindowDragArea`): dragging a tab must not move the window, while the empty strip must. No test covers it. `e2e/real-input.ps1` sends only clicks.
+- **What's missing:** the real gotcha from the Swift source (`Components.swift`, `WindowDragArea`): dragging a tab must not move the window, while the empty strip must. No test covers it. `e2e/real-input.ps1` sends only clicks.
 - **Work:**
   1. Add a press-move-release step to `real-input.ps1`.
   2. Add one test to `real-input.spec.ts`: dragging the strip's empty space moves the window, and dragging a tab reorders it without moving the window.
@@ -81,8 +81,8 @@ The PARITY note says "mostly visual; needs light + dark screenshots". Those scre
 
 ### L12 DownloadPolicy (small)
 
-- **What exists:** `downloadPolicy.ts` and `DownloadPolicy` in `host/Zing.Core/Downloads.cs` match Krackn's `DownloadPolicy.swift` exactly. Nothing calls them. `DownloadHost.Starting` acts on whatever `CoreWebView2.DownloadStarting` raises.
-- **Why the engine's decision is probably enough:** Chromium already downloads a response with `Content-Disposition: attachment`, in a frame too, and a main-frame response it can't render. That is Krackn's rule. WebKit needed the policy only because it had no default.
+- **What exists:** `downloadPolicy.ts` and `DownloadPolicy` in `host/Zing.Core/Downloads.cs` match `DownloadPolicy.swift` exactly. Nothing calls them. `DownloadHost.Starting` acts on whatever `CoreWebView2.DownloadStarting` raises.
+- **Why the engine's decision is probably enough:** Chromium already downloads a response with `Content-Disposition: attachment`, in a frame too, and a main-frame response it can't render. That is the same rule. WebKit needed the policy only because it had no default.
 - **What's covered:** `e2e/page.spec.ts` › `a download lands in the downloads folder, shows in the list and numbers on collision` covers the attachment case only.
 - **Work:**
   1. Add two cases to `e2e/page.spec.ts`:
@@ -95,7 +95,7 @@ The PARITY note says "mostly visual; needs light + dark screenshots". Those scre
 
 - **What exists:** The PARITY note ("no e2e; the toolbox isn't there yet") is out of date. The Toolbox shipped in Phase 6.
   - The panel model is in C#: `host/Zing.Core/ToolPanels.cs`, `PanelLayout.cs`.
-  - Shared vectors, run by `ToolPanelsTests.Shared_panel_scenario` (`host/Zing.Core.Tests/vectors/panels.vectors.json`), cover every Krackn rule: `shows at most three panels and refuses the fourth`, `minimizing frees a slot, and restoring into a full window is refused`, `opening a minimized panel restores it`, `keeps visible panels apart after a release, moving the others`, `refuses panels the browser must keep to itself`.
+  - Shared vectors, run by `ToolPanelsTests.Shared_panel_scenario` (`host/Zing.Core.Tests/vectors/panels.vectors.json`), cover every rule from the Swift source: `shows at most three panels and refuses the fourth`, `minimizing frees a slot, and restoring into a full window is refused`, `opening a minimized panel restores it`, `keeps visible panels apart after a release, moving the others`, `refuses panels the browser must keep to itself`.
   - Tear-off is in `src/renderer/src/panels/tearOff.ts` and `useTearOff.ts`, wired from `Sidebar.tsx`.
   - `e2e/panels.spec.ts` has three panel tests, but none for the count limit, minimise or tear-off.
 - **Work:**
@@ -152,11 +152,11 @@ The PARITY note says "mostly visual; needs light + dark screenshots". Those scre
 - **The bug: the switch does nothing.** Settings shows "Block trackers" (`src/renderer/src/settings/rows.ts`, "Refuses tracking domains and strips tracking parameters"), but the host never reads `blockTrackers`.
   - `WebView2Page` sets `PreferredTrackingPreventionLevel = Strict` for every page.
   - `LinkCleaner.StripTrackers` runs on every navigation (`TabService.cs`, `Address.cs`).
-  - Krackn honours the switch for both, in `BrowserModel.installTrackerBlocking` and `BrowserTab.swift` lines 304 and 644.
+  - The macOS version honours the switch for both, in `BrowserModel.installTrackerBlocking` and `BrowserTab.swift` lines 304 and 644.
 - **No test covers domain blocking.**
 - **Work:**
   1. Wire `blockTrackers` to the tracking-prevention level and to stripping.
-  2. Make blocking testable. Either port Krackn's 48-domain `TrackerRules` as a `WebResourceRequested` filter, which an e2e can check against a host-mapped fixture, or show with an e2e that Edge's Strict list loads in WebView2 and refuses a known tracker.
+  2. Make blocking testable. Either port the 48-domain `TrackerRules` as a `WebResourceRequested` filter, which an e2e can check against a host-mapped fixture, or show with an e2e that Edge's Strict list loads in WebView2 and refuses a known tracker.
   3. Leave ad blocking (EasyList and the like) to uBlock Origin Lite under Phase 11 extensions, and put a README line meanwhile:
 
 > **Ad blocking.** Zing blocks trackers with Edge's Strict tracking prevention but has no ad blocker of its own yet; that arrives with Chrome extension support (uBlock Origin Lite).
@@ -188,37 +188,37 @@ The README section has two entries today (Mica and User agent). Draft lines for 
 
 ### L11 FaviconChoice
 
-- **Why it doesn't apply:** Krackn needed `FaviconChoice` because it looked icons up per site, so Gmail's icon showed on Docs. WebView2 hands Zing the page's own icon (`CoreWebView2.FaviconUri` and `GetFaviconAsync` in `WebView2Page.cs`), so that bug can't happen.
-- **What does differ:** the choice among a page's several declared icons follows Edge's rules, not Krackn's "nearest to 32 px, prefer SVG" score.
+- **Why it doesn't apply:** the macOS version needed `FaviconChoice` because it looked icons up per site, so Gmail's icon showed on Docs. WebView2 hands Zing the page's own icon (`CoreWebView2.FaviconUri` and `GetFaviconAsync` in `WebView2Page.cs`), so that bug can't happen.
+- **What does differ:** the choice among a page's several declared icons follows Edge's rules, not the ported "nearest to 32 px, prefer SVG" score.
 - **Dead code:** `src/shared/browser/faviconChoice.ts` and its tests have no caller and no C# port.
 - **Work:**
   1. Add an e2e to `page.spec.ts`: two pages on one host that declare different icons show different tab icons.
   2. Delete the unused port.
   3. Add:
 
-> **Tab icons.** Edge's engine chooses which of a page's declared icons to show. Krackn preferred the one nearest 32 px; Zing shows the engine's pick.
+> **Tab icons.** Edge's engine chooses which of a page's declared icons to show. The macOS version preferred the one nearest 32 px; Zing shows the engine's pick.
 
 ### X12 Domain reputation via filtering DoH
 
-> **Domain reputation.** Krackn could check every domain against a filtering DNS provider before loading it. Zing doesn't; its link inspection (Settings) checks the address itself, and Edge's SmartScreen still screens pages.
+> **Domain reputation.** The macOS version could check every domain against a filtering DNS provider before loading it. Zing doesn't; its link inspection (Settings) checks the address itself, and Edge's SmartScreen still screens pages.
 
 - **To confirm:** the SmartScreen claim. Zing doesn't set `IsReputationCheckingRequired` (default on), so check that it is on in the shipped build before writing it.
 
 ### X13 Download checks
 
-> **Download checks.** Krackn scanned downloads and checked code signatures itself. On Windows, Zing marks each download with its source (Mark of the Web), so Windows Defender, SmartScreen and Office check it when it is opened.
+> **Download checks.** The macOS version scanned downloads and checked code signatures itself. On Windows, Zing marks each download with its source (Mark of the Web), so Windows Defender, SmartScreen and Office check it when it is opened.
 
 - **Evidence:** `DownloadHost.MarkAsync` and `MarkOfTheWeb.HoldAsync` in `host/Zing.Host/DownloadHost.cs`.
 
 ### X14 System posture
 
-> **Security overview.** Krackn's Toolbox had a page summarising the Mac's security settings (firewall, FileVault, Gatekeeper). Zing has none; Windows Security shows the same on Windows.
+> **Security overview.** The macOS version's Toolbox had a page summarising the Mac's security settings (firewall, FileVault, Gatekeeper). Zing has none; Windows Security shows the same on Windows.
 
 ### X15 3D models (part of the File viewer row)
 
-> **3D models.** Krackn's file viewer opened 3D models with SceneKit. Zing's viewer doesn't open 3D model files.
+> **3D models.** The macOS version's file viewer opened 3D models with SceneKit. Zing's viewer doesn't open 3D model files.
 
-**B26** needs no README line: the switch never did anything in Krackn, so nothing is lost. **B27** is already listed.
+**B26** needs no README line: the switch never did anything in the macOS version, so nothing is lost. **B27** is already listed.
 
 ## (e) In progress elsewhere (not assessed)
 
@@ -227,7 +227,7 @@ The README section has two entries today (Mica and User agent). Draft lines for 
 - **B25** default browser: links from other apps already work and are tested (`e2e/windows.spec.ts`). Phase 8 adds the registration and the default-browser prompt.
 - **B35** link previews: PR #167.
 - **Two-step sign-in save prompts:** `feat/two-step-sign-in` session (V3 area).
-- **A1** parity audit: this report is the first half. The second half is the PARITY and README edits and deleting `reference/krackn/`.
+- **A1** parity audit: this report is the first half. The second half is the PARITY and README edits and deleting the Swift reference source, which has since been done.
 
 ## Done rows, spot-checked
 
@@ -243,7 +243,7 @@ The README section has two entries today (Mica and User agent). Draft lines for 
   - Covered: `e2e/unblock.spec.ts` (script shown before it runs, Apply then Undo, the VPN guide), `host/Zing.Core.Tests/Net/DnsScriptTests.cs`, `DnsServiceTests.cs`, `src/shared/network/dohScript.test.ts`, and the `network-vpn-{light,dark}.png` screenshots.
   - Missing: PR #144 states that the DNS script "has never run as administrator", so applying and undoing it on real Windows is unproven. This is an owner hand check. Issue #76 has no evidence comment.
 - **X16 Background remover.**
-  - Krackn offers a backdrop behind the cutout: Transparent, White, Black or Beige (`BackgroundRemover.swift`, `enum Background`). Zing has no backdrop choice, and the README doesn't mention one.
+  - The macOS version offers a backdrop behind the cutout: Transparent, White, Black or Beige (`BackgroundRemover.swift`, `enum Background`). Zing has no backdrop choice, and the README doesn't mention one.
   - The port of `Tests/bgremove` (cutout, transparency, size) runs only opt-in: `e2e/bgremove-real.spec.ts` under `ZING_REAL_ENGINES=1`, and `src/shared/convert/bgremove.real.test.ts`, which skips without the model.
   - Either add the backdrop picker (small) or add a Known-differences line.
 - **B14 Find in page.** Covered by `page.spec.ts` › `find in page shows a match count and steps through matches` and `CommandsTests.Find_opens_the_bar_searches_the_page_and_shows_its_results`. It is UI with no light + dark screenshot.
@@ -254,11 +254,11 @@ The README section has two entries today (Mica and User agent). Draft lines for 
 ### OK, with minor notes
 
 - **S3, B22, TH5, X9, X20, X24.** OK as cited.
-- **S7.** `settings.vectors.json` `defaultsSubset` pins 27 Krackn defaults. `autoCloseEnabled`, `autoCloseAtTimeEnabled`, `defaultUserAgent` and `recentFeatures` exist but aren't pinned. Optional: pin them.
+- **S7.** `settings.vectors.json` `defaultsSubset` pins 27 defaults from the Swift `AppSettings`. `autoCloseEnabled`, `autoCloseAtTimeEnabled`, `defaultUserAgent` and `recentFeatures` exist but aren't pinned. Optional: pin them.
 - **L2.** All 27 geometry and width checks from Swift `Tests/tabs` are ported. The 9 AppKit-only checks (page shield, fullscreen container) aren't, which is correct.
 - **L8.** All 19 checks in Swift `Tests/panels` are matched.
 - **L14.** All 21 checks in Swift `Tests/theme` are covered. One deliberate change: malformed hex is refused instead of falling back to black.
-- **B4.** Krackn has 5 arrangements. The e2e checks only A–Z and newest, and `recentlyUsed` has one vector case. Adequate, but thin.
+- **B4.** There are 5 arrangements. The e2e checks only A–Z and newest, and `recentlyUsed` has one vector case. Adequate, but thin.
 - **B7.** Local OAuth popups are tested. Real Google OAuth belongs with P6.
 - **T4.** The 300-tab e2e and the `phase4-rail-*` screenshots exist.
 - **BR2.** The logo test is adapted to the new logo, since headless Edge draws the icons.

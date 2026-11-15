@@ -4,7 +4,7 @@ import { TRACKER_DOMAINS, blocksTrackerRequest, isTrackerHost } from './trackerR
 import vectors from './trackerRules.vectors.json'
 
 describe('tracker rules', () => {
-	it("keeps Krackn's list, each domain once", () => {
+	it('keeps the whole list, each domain once', () => {
 		expect(TRACKER_DOMAINS).toHaveLength(vectors.domainCount)
 		expect(new Set(TRACKER_DOMAINS).size).toBe(TRACKER_DOMAINS.length)
 	})

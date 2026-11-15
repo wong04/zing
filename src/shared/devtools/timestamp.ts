@@ -1,5 +1,3 @@
-// Port of `describeTimestamp` from Krackn Features/Utilities/UtilityTools.swift.
-
 /**
  * The clock and locale a description is written against. Passed in, not read,
  * so the functions stay pure; `locale`/`timeZone` default to the system's.

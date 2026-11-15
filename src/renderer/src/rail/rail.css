@@ -143,7 +143,7 @@
 	flex: 1;
 }
 
-/* The open favourite takes the page's colour, like the open tab's card. */
+/* The open favourite takes the page's colour: a tile has no title to make bold, so it is lifted instead. */
 .rail-ribbon.active,
 .rail-ribbon.more.holds-active {
 	background: var(--page);
@@ -332,12 +332,10 @@
 .rail-tabs {
 	display: flex;
 	flex-direction: column;
-	gap: 0;
+	gap: 1px;
 	flex: 1;
 	min-height: 0;
-	margin-right: -8px;
 	padding-top: 4px;
-	padding-right: 8px;
 	overflow-y: auto;
 	overflow-x: hidden;
 	scrollbar-width: none;
@@ -361,18 +359,32 @@
 	user-select: none;
 }
 
-.rail-row:not(.rail-tab):hover {
-	background: color-mix(in srgb, var(--window-ink) 6%, transparent);
+/* Tabs and pinned items are text on the rail, a little dimmed; the open one is full ink and bold, with the accent marker. */
+.rail-tab,
+.rail-item {
+	color: color-mix(in srgb, currentColor 72%, transparent);
 }
 
-.rail-row.active:not(.rail-tab) {
-	background: var(--page);
-	box-shadow: var(--elevation, 0 1px 2px rgb(0 0 0 / 0.12));
-	color: var(--page-ink);
+.rail-row:not(.active):hover {
+	background: color-mix(in srgb, var(--window-ink) 5%, transparent);
+	color: inherit;
 }
 
-.rail-group-head.active {
-	box-shadow: none;
+.rail-row.active {
+	position: relative;
+	color: inherit;
+	font-weight: 600;
+}
+
+.rail-row.active::before {
+	content: '';
+	position: absolute;
+	top: 8px;
+	bottom: 8px;
+	left: 2px;
+	width: 3px;
+	border-radius: 3px;
+	background: var(--accent-ink);
 }
 
 .rail-row.nested {
@@ -381,79 +393,6 @@
 
 .rail-group-head {
 	color: var(--window-ink);
-}
-
-/* Each card is a tab, stacked over the one below: the next card covers this one's bottom 8px, so the row's content sits in the top 30px. */
-.rail-tab {
-	height: 38px;
-	margin-bottom: -8px;
-	align-items: flex-start;
-	padding-top: 6px;
-	border-radius: 8px 8px 0 0;
-	border-top: 1px solid color-mix(in srgb, var(--card) 80%, var(--card-ink));
-	background: var(--card);
-	color: var(--card-ink);
-}
-
-.rail-tab:not(.active):hover {
-	background: color-mix(in srgb, var(--card) 92%, var(--card-ink));
-}
-
-/* The active card takes the page's colour. */
-.rail.pinned .rail-tab.active {
-	position: relative;
-	z-index: 1;
-	align-items: center;
-	padding-top: 0;
-	border-top: 0;
-	background: var(--page);
-	color: var(--page-ink);
-	font-weight: 600;
-}
-
-/* Merged with the page, only where it sits in a column of cards: a collapsed chip or a split's box keeps its own. */
-.rail.pinned.left:not(.collapsed) :is(.rail-tabs, .rail-group) > .rail-tab.active {
-	height: 36px;
-	margin-block: -2px -4px;
-	margin-right: -8px;
-	border-radius: 10px 0 0 10px;
-	box-shadow: 0 -3px 8px rgb(0 0 0 / 0.2);
-}
-
-.rail.pinned.right:not(.collapsed) :is(.rail-tabs, .rail-group) > .rail-tab.active {
-	height: 36px;
-	margin-block: -2px -4px;
-	margin-left: -8px;
-	border-radius: 0 10px 10px 0;
-	box-shadow: 0 -3px 8px rgb(0 0 0 / 0.2);
-}
-
-/* On the right the page is on the left, so the cards mirror the left rail. */
-.rail.pinned.right .rail-tabs {
-	margin-right: 0;
-	margin-left: -8px;
-	padding-right: 0;
-	padding-left: 8px;
-}
-
-/* Floating, the rows keep their overlap; the active card stays inside the rail, so it is rounded on every corner. */
-.rail.floating .rail-tabs {
-	margin-right: 0;
-}
-
-.rail.floating .rail-tab.active {
-	position: relative;
-	z-index: 1;
-	height: 36px;
-	margin-block: -2px -4px;
-	align-items: center;
-	padding-top: 0;
-	border-radius: 8px;
-	border-top: 0;
-	background: var(--page);
-	color: var(--page-ink);
-	font-weight: 600;
-	box-shadow: 0 -3px 8px rgb(0 0 0 / 0.2);
 }
 
 /* The floating rail's surface is translucent, so text on it is --text rather than --window-ink. */
@@ -545,12 +484,6 @@
 	color: var(--page-ink);
 }
 
-.rail-tab.dragging {
-	background: var(--card);
-	box-shadow: var(--elevation-strong);
-	color: var(--card-ink);
-}
-
 /* The others slide aside while a row is held. Off otherwise, so a drop never animates twice. */
 .rail-tabs[data-dragging] > :not(.dragging) {
 	transition: transform 150ms ease-out;
@@ -611,29 +544,6 @@
 
 .rail.floating .rail-split {
 	background: var(--surface);
-}
-
-/* A split's rows sit in the box's gap rather than over one another, so the box holds them whole. */
-.rail-split > .rail-tab {
-	margin: 0;
-	height: 32px;
-	align-items: center;
-	padding-top: 0;
-	border-radius: var(--control-radius);
-	border-top: 0;
-	background: var(--card);
-	color: var(--card-ink);
-}
-
-/* Beats the merged card's rules in any variant: the active pane is a plain tab inside the box. */
-.rail .rail-split .rail-tab.active {
-	height: 32px;
-	margin: 0;
-	border-radius: var(--control-radius);
-	background: var(--page);
-	color: var(--page-ink);
-	font-weight: 600;
-	box-shadow: none;
 }
 
 /* The dividers between split panes, drawn by the chrome in the gaps the host leaves between them. */
@@ -714,21 +624,13 @@
 	padding: 2px;
 }
 
-/* Chips in a column, 4px apart, with no overlap: the card rules above are for the full rail. */
-.rail.pinned.collapsed .rail-tabs {
+/* Icons in a column, 4px apart; with no title to make bold, the open one also gets a light fill. */
+.rail.collapsed .rail-tabs {
 	gap: 4px;
-	margin-inline: 0;
-	padding-inline: 0;
 }
 
-.rail.pinned.collapsed .rail-tab {
-	height: 32px;
-	margin: 0;
-	padding: 0;
-	border-radius: 8px;
-	border-top: 0;
-	align-items: center;
-	justify-content: center;
+.rail.collapsed .rail-row.active {
+	background: color-mix(in srgb, var(--window-ink) 9%, transparent);
 }
 
 /* Hundreds of tabs stay smooth: rows scrolled out of view skip layout and painting, and keep their size for scrolling and drags. */
@@ -736,27 +638,17 @@
 .rail-tabs > .rail-group,
 .rail-tabs > .rail-split {
 	content-visibility: auto;
-	contain-intrinsic-size: auto 38px;
+	contain-intrinsic-size: auto 33px;
 }
 
-/* Contrast themes drop the fills and shadows, so every card is an outlined 32px row. The overlap and merge rules are far more
-   specific than these, hence !important on the properties they set. */
+/* Contrast themes paint over the marker, so every tab is an outlined row and the open one is outlined in Highlight. */
 @media (forced-colors: active) {
-	.rail-tabs,
-	.rail.pinned.right .rail-tabs {
-		margin-inline: 0 !important;
-		padding-inline: 0 !important;
-	}
-
 	.rail-tab {
-		height: 32px !important;
-		margin: 0 !important;
-		border: 1px solid CanvasText !important;
-		box-shadow: none !important;
+		border: 1px solid CanvasText;
 	}
 
 	.rail-tab.active {
-		border-color: Highlight !important;
+		border-color: Highlight;
 	}
 
 	.rail-ribbon {

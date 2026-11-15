@@ -12,7 +12,7 @@ import './account.css'
 type Mode = 'signIn' | 'signUp'
 
 /**
- * The sign-in gate (Krackn AuthView): a local account, or one restored from sync. With sync on, a forgotten password is reset with
+ * The sign-in gate: a local account, or one restored from sync. With sync on, a forgotten password is reset with
  * the recovery key (Restore from sync), never on this PC alone, since the synced keys would stay wrapped by the old one.
  */
 export function AuthView({ account }: { account: AccountState }) {

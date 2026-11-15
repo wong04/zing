@@ -22,7 +22,7 @@ export interface CloseResult {
 
 /**
  * The ordered tab list of one window, as pure data: no renderer, no Electron.
- * Pinned tabs always form a run at the front, as in Krackn's BrowserModel.
+ * Pinned tabs always form a run at the front.
  */
 export class TabStore {
 	#tabs: TabRecord[] = []
@@ -112,7 +112,7 @@ export class TabStore {
 
 	/**
 	 * Removes a tab. If it was active, the tab that slides into its slot (or the
-	 * new last tab) becomes active, matching Krackn. Leaves an empty list empty;
+	 * new last tab) becomes active. Leaves an empty list empty;
 	 * the caller decides what an empty window means.
 	 */
 	close(id: TabId): CloseResult {

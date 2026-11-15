@@ -33,7 +33,7 @@ const page = (pixelHost: string) => `<!doctype html><title>waiting</title>
 	Promise.all([image, fetched]).then(([a, b]) => { document.title = a + '/' + b + location.search })
 </script>`
 
-/** An EasyList ad server, an EasyPrivacy tracker and one of Krackn's tracker domains, in that order. */
+/** An EasyList ad server, an EasyPrivacy tracker and one of the built-in tracker domains, in that order. */
 const LIST_HOSTS = ['ads.adform.net', 'c.statcounter.com', 'pixel.doubleclick.net']
 
 /** Asks each of LIST_HOSTS for a pixel as an image and as a no-cors fetch (see `page` for why), and titles itself with the outcomes in order. */

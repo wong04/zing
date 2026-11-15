@@ -1,6 +1,6 @@
-// Colour maths from Krackn App/Accent.swift (`PaletteTokens.hexFromHSL`,
-// `rgb(from:)`, `contrastRatio`, `mix`). Colours are plain `#RRGGBB` strings
-// so the same values can be emitted as CSS and used by the UI.
+// Colour maths: HSL to hex, hex to RGB, contrast ratio and mixing. Colours
+// are plain `#RRGGBB` strings so the same values can be emitted as CSS and
+// used by the UI.
 
 export class InvalidHexColorError extends Error {
 	override name = 'InvalidHexColorError'

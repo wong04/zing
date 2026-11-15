@@ -1,8 +1,7 @@
-// Port of the number-base checks in Krackn Tests/unit (section F).
 import { describe, expect, it } from 'vitest'
 import { convertBase, formatBinaryByteCount } from './numberBase'
 
-describe('number bases (Krackn Tests/unit F)', () => {
+describe('number bases', () => {
 	it('base: decimal', () => {
 		expect(convertBase('255')?.hex).toBe('0xFF')
 	})

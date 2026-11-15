@@ -131,7 +131,7 @@ export interface FillContext {
 	frameUrl: string
 }
 
-// Krackn's rule: fill the main frame and same-origin frames only. A
+// Fill the main frame and same-origin frames only. A
 // cross-origin frame is someone else's page embedded in this one, so it is
 // never offered anything, even if it has its own saved logins.
 export function canFill(context: FillContext): boolean {

@@ -1,5 +1,4 @@
-// External tools Convert and Download need, installed through winget instead
-// of Krackn's Homebrew / direct-download paths (Core/ToolInstaller.swift).
+// External tools Convert and Download need, installed through winget.
 // winget is part of Windows 11 and verifies publisher hashes, so Zing never
 // downloads and runs an executable itself.
 import { runProcess } from '../process'
@@ -30,7 +29,7 @@ export function wingetInstallArgs(tool: ToolSpec): string[] {
 	return ['install', '--id', tool.wingetId, '--exact', '--source', 'winget']
 }
 
-// Krackn's lesson: a broken yt-dlp extractor is fixed by updating, and that
+// A broken yt-dlp extractor is fixed by updating, and that
 // update has to be one click away or nobody does it.
 export function wingetUpgradeArgs(tool: ToolSpec): string[] {
 	return ['upgrade', '--id', tool.wingetId, '--exact', '--source', 'winget']

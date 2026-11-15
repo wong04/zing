@@ -7,7 +7,7 @@ export interface SettingRowShellProps {
 	readonly children?: ReactNode
 }
 
-/** A flat settings row: title and detail on the left, the control on the right (Krackn `SettingsRow`). */
+/** A flat settings row: title and detail on the left, the control on the right. */
 export function SettingRowShell({ title, detail, warning = false, children }: SettingRowShellProps) {
 	return (
 		<div className="setting-row">

@@ -28,7 +28,7 @@ import { CopyButton, ToolPage } from '../parts'
 import { angleOptions } from './angleOptions'
 import './math.css'
 
-/** Distinct hues legible on both the light and dark surfaces, in the order Desmos cycles its palette (Krackn `plotColors`). */
+/** Distinct hues legible on both the light and dark surfaces, in the order Desmos cycles its palette. */
 const plotColors = ['#c7543d', '#3d73b8', '#4f8f54', '#99549e', '#d99929', '#4a949c'] as const
 
 const ZOOM_IN = 0.8
@@ -259,7 +259,7 @@ interface Drag {
 	moved: boolean
 }
 
-/** Graphing calculator laid out like Desmos (Krackn `GraphingCalculatorTool`): expressions down the left, the plot beside them. */
+/** Graphing calculator laid out like Desmos: expressions down the left, the plot beside them. */
 export function GraphingTool() {
 	const [plots, setPlots] = useState<readonly Plot[]>([
 		{ id: 1, text: 'sin(x)', colorIndex: 0, visible: true },

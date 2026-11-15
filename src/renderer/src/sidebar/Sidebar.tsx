@@ -81,7 +81,7 @@ function MinimizedRow({ panel }: { panel: ToolPanelView }) {
 export type SidebarVariant = 'pinned' | 'floating'
 
 /**
- * The app sidebar (Krackn Sidebar): Browser, Toolbox, the three most recent
+ * The app sidebar: Browser, Toolbox, the three most recent
  * tools, minimized panels, and Settings at the foot. Pinned it sits in the
  * chrome and takes layout space; unpinned it is drawn over the page by the
  * surface view when the cursor reaches the left edge.

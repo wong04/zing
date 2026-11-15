@@ -1,5 +1,3 @@
-// Port of `decodeJWT` from Krackn Features/Utilities/DevTools.swift.
-//
 // Decodes a JWT without verifying it — for inspecting claims while debugging
 // auth. Verification needs the signing key, which we don't have.
 import { base64Decode } from './encoding'

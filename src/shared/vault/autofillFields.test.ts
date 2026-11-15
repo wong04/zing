@@ -1,5 +1,4 @@
-// Krackn has no checks for KeychainAutofill; these follow its script's rules and
-// `KeychainAutofill.field(from:)`.
+// Sign-in field detection, held to the rules the detection script follows in the page.
 import { describe, expect, it } from 'vitest'
 import { AutofillMessageError, fieldKind, fieldMessageKey, parseFieldMessage, type InputDescription } from './autofillFields'
 

@@ -1,5 +1,5 @@
-// Krackn tests the relay viewer only by rendering real pages (Tests/render,
-// Tests/encoding); these cover the ported URL mapping and rewriting offline.
+// The relay viewer's URL mapping and rewriting, tested offline without
+// rendering real pages.
 
 import { describe, expect, it } from 'vitest'
 import {

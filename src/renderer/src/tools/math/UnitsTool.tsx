@@ -29,7 +29,7 @@ function convert(amount: string, from: string, to: string, kind: UnitKind): stri
 	return `${formatUnitValue(result)} ${to}`
 }
 
-/** Unit converter (Krackn `UnitTool`). */
+/** Unit converter. */
 export function UnitsTool() {
 	const [kind, setKind] = useState<UnitKind>(UnitKind.length)
 	const [amount, setAmount] = useState('1')

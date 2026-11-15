@@ -36,7 +36,7 @@ public static class Session
 	public static string Encode(IEnumerable<SessionTab> tabs) => JsonSerializer.Serialize(Prepare(tabs), ZingJson.Options);
 
 	/// <summary>
-	/// Krackn's rule: a corrupt or half-written session file must never stop the
+	/// A corrupt or half-written session file must never stop the
 	/// browser opening, so anything unreadable decodes to no tabs.
 	/// </summary>
 	public static List<SessionTab> Decode(string text)

@@ -29,7 +29,7 @@ public sealed class BookmarkIcons
 	/// http or https alike; the host lowercased, with a leading "www." dropped; the port only when it isn't the scheme's
 	/// default; the path with any trailing "/" dropped. The query and fragment are ignored. So the host and path must agree:
 	/// mail.google.com never matches docs.google.com, and docs.google.com/document never matches docs.google.com/spreadsheets,
-	/// which is the mistake Krackn's per-site icons made (src/shared/browser/faviconChoice.ts). A redirect to another address
+	/// which is the mistake per-site icons make (src/shared/browser/faviconChoice.ts). A redirect to another address
 	/// (gmail.com to mail.google.com) doesn't match either, so such a bookmark stays blank. Null for anything not http(s).
 	/// </summary>
 	public static string? MatchKey(string url)

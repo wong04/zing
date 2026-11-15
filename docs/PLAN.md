@@ -1,4 +1,4 @@
-# Zing: port Krackn to Chromium on Windows
+# Zing: a privacy browser on Chromium for Windows
 
 ## Context
 
@@ -6,7 +6,7 @@
 >
 > **2026-11-01: [architecture-review.md](architecture-review.md)** compares the WebView2 host with other WebView2 apps and sets the bug workstreams (W-0 to W-6) that come before Phase 4. W-6 decided to keep overlays as owned popups (`OverlayHost`), so Phase 4 builds on that model.
 
-[yityler/Krackn](https://github.com/yityler/Krackn) is a macOS-only "super-app": a privacy browser (WebKit, in-memory data store) plus a toolbox with Open a Link/unblock relay, Diagnose, Network & VPN, Convert (196 formats), Download (yt-dlp), Security, file Viewer, a graphing calculator, background remover and about a dozen dev utilities. It is 22.7k lines of SwiftUI/AppKit and has no third-party deps, but it relies on ~15 Apple-only frameworks (WebKit, Network, Vision, SceneKit, PDFKit, AVKit, Quartz/QuickLook, Security/Keychain, CryptoKit, `sips`, `textutil`, Gatekeeper/XProtect). None of that runs on Windows, so **"switch to Chromium + works on Windows" is a rewrite, not a patch**. The risk is quietly losing features along the way. This plan makes parity measurable: every Krackn feature becomes a tracked item, and an item closes only with a passing test or a screenshot.
+Zing started as a Windows port of a macOS-only "super-app": a privacy browser (WebKit, in-memory data store) plus a toolbox with Open a Link/unblock relay, Diagnose, Network & VPN, Convert (196 formats), Download (yt-dlp), Security, file Viewer, a graphing calculator, background remover and about a dozen dev utilities. The macOS app is 22.7k lines of SwiftUI/AppKit and has no third-party deps, but it relies on ~15 Apple-only frameworks (WebKit, Network, Vision, SceneKit, PDFKit, AVKit, Quartz/QuickLook, Security/Keychain, CryptoKit, `sips`, `textutil`, Gatekeeper/XProtect). None of that runs on Windows, so **"switch to Chromium + works on Windows" is a rewrite, not a patch**. The risk is quietly losing features along the way. This plan makes parity measurable: every feature of the macOS app becomes a tracked item, and an item closes only with a passing test or a screenshot.
 
 New work on top of parity: rename to **Zing**, a new logo, a **top / left / right tab bar** setting, and **colourful themes** (today it's 7 accent hues on a near-grey palette, `App/Accent.swift` + `App/Theme.swift`).
 
@@ -14,11 +14,11 @@ New work on top of parity: rename to **Zing**, a new logo, a **top / left / righ
 
 | | Electron (TS) | WebView2 + C# (WinUI 3) | CEF (C++ / CefSharp / JCEF) | Full Chromium fork (C++) |
 |---|---|---|---|---|
-| Effort to parity | **Lowest**: UI is HTML/CSS, which suits Krackn's custom pills/glass look | Medium | High | **Very high**: ~100 GB checkout, multi-hour Windows builds, rebasing every 4 weeks |
+| Effort to parity | **Lowest**: UI is HTML/CSS, which suits the custom pills/glass look | Medium | High | **Very high**: ~100 GB checkout, multi-hour Windows builds, rebasing every 4 weeks |
 | Platforms | Win + mac + Linux | **Windows only** | All (C++); CefSharp is Windows only | All |
 | Themes + vertical tabs | CSS variables, easy | XAML, fine | Depends on UI toolkit | C++ Views, hard |
 | Private in-memory session | `session.fromPartition('x')` (no `persist:`) | InPrivate profile | In-memory request context | Native incognito |
-| Intercept/relay https | `protocol.handle('https')`, which **could fix Krackn's "web apps can't use the relay" limit** | `WebResourceRequested` | Resource handlers | Full control |
+| Intercept/relay https | `protocol.handle('https')`, which **could fix the "web apps can't use the relay" limit** | `WebResourceRequested` | Resource handlers | Full control |
 | Built-in DoH | `app.configureHostResolver` | Edge settings only | Chromium flags | Native |
 | Chrome extensions | Partial (MV3 subset) | Edge extension API (limited) | Very limited | Full |
 | Google sign-in | Needs a clean UA; Google sometimes blocks embedded browsers | Generally works (Edge UA) | Same risk as Electron | Works |
@@ -30,22 +30,22 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 
 **Decided at first: Electron + TypeScript + React (electron-vite, electron-builder, npm), Windows only. Replaced on 2026-10-31 by a C# WebView2 host (plain Win32 window since W5) that keeps the React renderer and `src/shared` TS.** Being Windows-only means Windows APIs (DPAPI, Windows Hello, Mica, registry) can be used directly with no cross-platform abstraction, and CI runs only on `windows-latest`.
 
-**Other decisions:** public repo `wong04/zing`, MIT, crediting Krackn in the README. Password autofill becomes a **built-in vault** (Phase 6b).
+**Other decisions:** public repo `wong04/zing`, MIT. Password autofill becomes a **built-in vault** (Phase 6b).
 
 **v1 scope beyond parity:** split view (Phase 4) and import from other browsers (Phase 6c). The built-in ad/tracker blocker replaces Chrome extensions. Browser sync comes later and will be E2E encrypted, so data gets stable IDs now. On the roadmap after v1: Spaces/profiles, Ctrl+K command bar, Chrome Web Store extensions, sync.
 
 ## macOS → Zing mapping (the risky items)
 
 - **Privacy model**: in-memory partition, `clearStorageData({origin})` on tab close, tracker-param stripping + 48-domain blocklist via `webRequest`. Session restore and persistent profile stay opt-in, and the warning banner stays.
-- **Overlays over the page**: a `WebContentsView` paints *above* the chrome renderer, which is the same trap as Krackn's "SwiftUI drawn over the page doesn't get clicks". Tab dropdown, menus, find bar and floating panels go in a transparent top-layer overlay view (or the page view shrinks). Decide this in Phase 1, before building chrome.
-- **Popups/OAuth**: `setWindowOpenHandler` with `createWindow` so `window.opener` survives (Krackn gotcha).
+- **Overlays over the page**: a `WebContentsView` paints *above* the chrome renderer, which is the same trap as the macOS app's "SwiftUI drawn over the page doesn't get clicks". Tab dropdown, menus, find bar and floating panels go in a transparent top-layer overlay view (or the page view shrinks). Decide this in Phase 1, before building chrome.
+- **Popups/OAuth**: `setWindowOpenHandler` with `createWindow` so `window.opener` survives (a known gotcha from the macOS app).
 - **Unblock**: DoH via `fetch`; `PinnedHTTPClient` becomes Node `tls.connect({host: ip, servername})`, so no hand-rolled HTTP/1.1. `aiorelay://` may become a real https intercept.
 - **Network & VPN**: `.mobileconfig` is replaced by a generated PowerShell script (`Add-DnsClientDohServerAddress`, run as admin by the user), and `wg-quick` by WireGuard for Windows commands. The "honest" copy stays.
 - **Convert**: `sips` → sharp (HEIC needs libheif/ffmpeg, which sharp's prebuilt lacks); `textutil` → mammoth/pandoc; PDF via `printToPDF`; ffmpeg/yt-dlp downloaded on first use instead of `brew` (`Core/ToolInstaller.swift`). The 196-format catalog gets a coverage matrix, and any format Windows can't do is listed explicitly, not dropped silently.
 - **Security**: Gatekeeper/notarization → Authenticode (`WinVerifyTrust`); quarantine → Mark-of-the-Web; XProtect → Defender status + `MpCmdRun` scan of the file; SIP/FileVault → Secure Boot/BitLocker/SmartScreen status. Add Windows executable types (.exe .scr .msi .lnk .ps1 .hta .vbs) to the disguised-file checks.
 - **Viewer**: SceneKit → three.js loaders; AVKit → `<video>`; QuickLook fallback → metadata + "open with default app".
 - **Background remover**: Vision → ONNX Runtime + a segmentation model. Check the model license (popular ones are AGPL or non-commercial).
-- **Password autofill**: the Keychain bridge has no Windows equivalent, so it's replaced by the built-in vault (Phase 6b). Krackn's field detection logic (main frame + same-origin frames, shadow DOM, autofocus polling, cross-origin never filled) is reused, running in an isolated world.
+- **Password autofill**: the Keychain bridge has no Windows equivalent, so it's replaced by the built-in vault (Phase 6b). The existing field detection logic (main frame + same-origin frames, shadow DOM, autofocus polling, cross-origin never filled) is reused, running in an isolated world.
 - **Window chrome**: traffic-light placement → frameless window + `titleBarOverlay` (keeps Win11 snap layouts), Mica background. Default browser via registry capabilities + `ms-settings:defaultapps`. Links from other apps via single-instance lock + `second-instance` (the `LinkInbox` analog). ⌘ shortcuts → Ctrl.
 - **Drop**: `WebKitTuning`, canvas diagnostics, `Migration.swift` (all Mac/WebKit-specific).
 
@@ -59,17 +59,17 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 1. **A tab is a record, not a `webContents`.** Tabs need to exist without a live renderer, which enables sleeping/discarded tabs (Electron has no built-in discard and memory is its weak spot), split view, session restore, import, and later Spaces. `TabSnapshot` in `TabOrganizer` already points this way.
 2. **Stable UUIDs + `updatedAt` on every tab, bookmark, reading-list item and vault entry**, so E2E sync can be added later without a migration.
 3. **Session is a parameter, not a global.** v1 has a single in-memory partition, but passing it explicitly lets roadmap Spaces/profiles each get their own isolated session.
-4. **Ad/tracker blocking.** Built (B11): the host reads EasyList and EasyPrivacy's domain rules (`FilterRules`), on top of Krackn's 48 domains, and refuses those requests in `WebResourceRequested`. The lists are bundled and refreshed with each release (`npm run update:blocklists`), so Zing never fetches them itself. uBlock Origin Lite loads in WebView2 but doesn't block in the InPrivate profile, and Brave's adblock-rust (path and cosmetic rules) is the step up after v1. Keep tracking-param stripping.
-5. **One command registry.** Krackn's `Commands.swift` already routes every shortcut through named actions. Keep that shape so menus, shortcuts and the roadmap Ctrl+K bar all share it.
+4. **Ad/tracker blocking.** Built (B11): the host reads EasyList and EasyPrivacy's domain rules (`FilterRules`), on top of the macOS app's 48 domains, and refuses those requests in `WebResourceRequested`. The lists are bundled and refreshed with each release (`npm run update:blocklists`), so Zing never fetches them itself. uBlock Origin Lite loads in WebView2 but doesn't block in the InPrivate profile, and Brave's adblock-rust (path and cosmetic rules) is the step up after v1. Keep tracking-param stripping.
+5. **One command registry.** `Commands.swift` already routes every shortcut through named actions. Keep that shape so menus, shortcuts and the roadmap Ctrl+K bar all share it.
 6. **Extensions are on the roadmap, not designed out.** Electron's support is partial and officially a non-goal. `electron-chrome-extensions` + `electron-chrome-web-store` would add store installs, but MV3 is still pending upstream. Keep tab operations behind a service that a `chrome.tabs` shim could wrap later.
 
 **Ongoing costs to commit to now:**
 - **Security cadence.** A browser is only as safe as its Chromium. Electron supports the latest 3 majors, and Chromium ships security fixes weekly. Commit to shipping Electron security releases within ~7 days, with a Dependabot/Renovate PR → CI → signed release → auto-update. This is the biggest long-term cost of a browser and it never ends.
-- **Following upstream Krackn.** Krackn is still active (last pushed today), and a rewrite can't `git merge` it. Record the baseline Krackn SHA in `PARITY.md`, and add a weekly GitHub Action that lists new Krackn commits since that SHA and opens a "port or skip" issue.
+- **Following upstream.** The macOS app was still active, and a rewrite can't `git merge` it. The plan recorded its baseline SHA in `PARITY.md`, and a weekly GitHub Action listed new upstream commits since that SHA and opened a "port or skip" issue. The watch was removed once the port was done.
 - **Web-compat traps.** Google sign-in blocks some embedded browsers (needs a clean Chrome UA, tested in CI); Widevine DRM needs castlabs' Electron build plus free EVS signing; passkeys/WebAuthn through Windows Hello need verifying in Electron early.
 - **Windows polish people notice.** Accessibility (ARIA across all chrome, keyboard navigation, `forced-colors` so themes respect Windows contrast themes), per-monitor DPI, Win11 snap layouts, default-browser flow, winget manifest + optional MSIX/Microsoft Store, SmartScreen reputation (signing).
-- **Legal/notices.** Chromium/Electron credits page, ffmpeg (LGPL/GPL, so download it on first use rather than bundling), yt-dlp, model licenses, and a name check on "Zing". Keep Krackn's scope note about school/work filters.
-- **Privacy stance vs. future features.** Krackn "keeps nothing". Sync, imported data, the vault and crash reporting all store something, so each has to be opt-in, flip the privacy banner, and (for sync) be end-to-end encrypted, with a Railway backend that only ever sees ciphertext.
+- **Legal/notices.** Chromium/Electron credits page, ffmpeg (LGPL/GPL, so download it on first use rather than bundling), yt-dlp, model licenses, and a name check on "Zing". Keep the scope note about school/work filters.
+- **Privacy stance vs. future features.** Zing "keeps nothing". Sync, imported data, the vault and crash reporting all store something, so each has to be opt-in, flip the privacy banner, and (for sync) be end-to-end encrypted, with a Railway backend that only ever sees ciphertext.
 
 ## Efficiency (Electron's weak spot, so it's designed in, not tuned later)
 
@@ -86,7 +86,7 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 | Installer | < 120 MB |
 
 **Memory**
-- **Sleeping tabs**: discard the `webContents` of a tab that has been inactive for a while (30 min by default, configurable), keeping the URL, title, favicon, scroll position and a small thumbnail. Never discard the active tab, a visible split pane, pinned tabs (configurable), tabs playing audio or tabs with unsaved form input. This reuses the policy shape of Krackn's auto-close in `TabOrganizer`.
+- **Sleeping tabs**: discard the `webContents` of a tab that has been inactive for a while (30 min by default, configurable), keeping the URL, title, favicon, scroll position and a small thumbnail. Never discard the active tab, a visible split pane, pinned tabs (configurable), tabs playing audio or tabs with unsaved form input. This reuses the policy shape of the auto-close rules in `TabOrganizer`.
 - **Lazy session restore**: restored and imported tabs are records only, and only the active tab loads.
 - **Bounded caches**: favicons (still memory-only), thumbnails and the Reader cache are LRU with size caps.
 - **Virtualized tab list**, so a 300-tab vertical sidebar renders only the visible rows.
@@ -115,14 +115,14 @@ Considered and rejected: **Tauri** (Chromium only on Windows, WebKit on mac, mul
 > **Status (2026-11-07):** Phases 0–6 are done, with the Partial rows in [PARITY.md](../PARITY.md) left for the audit. Phase W, the WebView2 migration, ran between 3 and 4. Next: 6b, 6c, 7, 8, then 9.
 
 **0. Repo + tracking**
-- Local checkout at `C:\Users\USER\OneDrive\Desktop\Coding\zing`, next to your other projects. Turn on `git config core.longpaths true` (Krackn's clone already hit Windows' path limit). Exclude `node_modules`/`out` from OneDrive sync, or move the checkout outside OneDrive if sync churn becomes a problem. The session moves there before any files are written.
-- `gh repo create wong04/zing --public`, MIT LICENSE, with Krackn's Swift kept under `reference/krackn/` (read-only) until parity, then deleted.
-- `PARITY.md` (recording the baseline Krackn commit SHA): one row per Krackn feature/setting, generated from README, CLAUDE.md, the 30 `AppSettings` keys and the Toolbox catalog. Each row becomes a GitHub issue (labels `area:*`, `parity` | `new`), with milestones per phase and a GitHub Project board. This is how you sync across devices.
+- Local checkout at `C:\Users\USER\OneDrive\Desktop\Coding\zing`, next to your other projects. Turn on `git config core.longpaths true`, since deep paths can pass Windows' path limit. Exclude `node_modules`/`out` from OneDrive sync, or move the checkout outside OneDrive if sync churn becomes a problem. The session moves there before any files are written.
+- `gh repo create wong04/zing --public`, MIT LICENSE, with the macOS app's Swift source kept in a read-only reference folder until parity. It has since been deleted.
+- `PARITY.md` (recording the baseline upstream commit SHA): one row per feature/setting of the macOS app, generated from README, CLAUDE.md, the 30 `AppSettings` keys and the Toolbox catalog. Each row becomes a GitHub issue (labels `area:*`, `parity` | `new`), with milestones per phase and a GitHub Project board. This is how you sync across devices.
 - CI on `windows-latest`: lint, typecheck, Vitest, xUnit host tests, Playwright e2e against `Zing.exe` over CDP.
 
 **1. Shell on Windows**: Electron skeleton named Zing from day 1 (app ID `app.zing.browser`, schemes `zing://home`, user-data dir, strings). One window, one tab, in-memory session, frameless chrome, overlay-view architecture, and CSS theme tokens ported from `Theme.swift`/`Accent.swift` (`lightTokens`/`darkTokens` already exist as CSS).
 
-**2. Port pure logic + tests first**: port these 1:1 to TS with their assertions (Krackn has 969): `TabOrganizer` (+`SiteGroup` Google split, 24 cases), `AddressInput` (22 inputs), `ThreatModel` (16 must-be-clean sites), `BlockDiagnostics.classify` (32 combos), `Expression`, `GraphEngine`, `PanelLayout`, `ToolboxSearch` (34 queries), `StartShortcuts`, `FaviconChoice`, `DownloadPolicy`, `DevTools`, the accent generator (WCAG AA). The tests lock in behaviour before any UI exists.
+**2. Port pure logic + tests first**: port these 1:1 to TS with their assertions (the Swift suite has 969): `TabOrganizer` (+`SiteGroup` Google split, 24 cases), `AddressInput` (22 inputs), `ThreatModel` (16 must-be-clean sites), `BlockDiagnostics.classify` (32 combos), `Expression`, `GraphEngine`, `PanelLayout`, `ToolboxSearch` (34 queries), `StartShortcuts`, `FaviconChoice`, `DownloadPolicy`, `DevTools`, the accent generator (WCAG AA). The tests lock in behaviour before any UI exists.
 
 **3. Browser parity**: tabs (pin, drag-reorder, the 5 arrangements, Separate/Dropdown stacks, auto-close rules), popups, downloads, fullscreen, bookmarks/Reading List (`library.json`), Favourites bar, find, Reader (@mozilla/readability), text zoom, print, tab overview, history long-press, start page + shortcuts, memory-only favicons, permissions (camera/mic), session restore, multi-window, default browser, the full shortcut set (`Commands.swift`), sidebar + edge reveal, floating panels (max 3), account gate (`safeStorage`/DPAPI instead of Keychain).
 
@@ -149,9 +149,9 @@ Sync for passwords was pulled forward into this phase. The vault ended up in the
 
 **8. Packaging**: a Velopack per-user installer with auto-update from GitHub Releases, a WebView2 runtime check for Windows 10, default-browser registration, and code signing (Azure Trusted Signing, about $10/mo, otherwise SmartScreen warns).
 
-**9. Parity audit**: walk `PARITY.md`. Every row is closed with a linked test or screenshot, or listed in a "Known differences on Windows" section in the README. Then delete `reference/krackn/`.
+**9. Parity audit**: walk `PARITY.md`. Every row is closed with a linked test or screenshot, or listed in a "Known differences on Windows" section in the README. The Swift reference source has since been deleted.
 
-**10. Ongoing**: Windows App SDK, .NET and npm updates (Chromium security fixes arrive with the Evergreen WebView2 runtime, which Windows updates), the weekly upstream-Krackn diff issue, and blocklist updates. After v1, the roadmap in milestone order: E2E sync, Spaces/profiles, Ctrl+K command bar, Chrome extensions (see 11).
+**10. Ongoing**: Windows App SDK, .NET and npm updates (Chromium security fixes arrive with the Evergreen WebView2 runtime, which Windows updates) and blocklist updates. The weekly upstream diff issue ran until the port was done, then was removed. After v1, the roadmap in milestone order: E2E sync, Spaces/profiles, Ctrl+K command bar, Chrome extensions (see 11).
 
 **11. Chrome extensions (roadmap, after v1)**: WebView2 can run Chrome extensions, but only partly.
 - **What WebView2 gives:** with `AreBrowserExtensionsEnabled`, `CoreWebView2Profile.AddBrowserExtensionAsync` installs an **unpacked** extension (a folder with `manifest.json`) into the profile. Its background and content scripts run.
@@ -172,8 +172,8 @@ Parallelizable once Phase 2 lands: 3, 6 and 7 are independent; 4 and 5 follow 3'
 ## Verification
 
 - The efficiency budgets above, run in CI on every PR (S10; not built yet).
-- `npm test` (Vitest: ported pure-logic suites, assertion counts compared to Krackn's), `npm run test:host` (xUnit), `npm run test:e2e` (Playwright over CDP against `Zing.exe`: tabs, popups/opener, downloads, privacy purge, render, tab bar positions, theme switching without losing tabs, the Krackn gotcha being guarded against).
+- `npm test` (Vitest: ported pure-logic suites, assertion counts compared to the Swift suite's), `npm run test:host` (xUnit), `npm run test:e2e` (Playwright over CDP against `Zing.exe`: tabs, popups/opener, downloads, privacy purge, render, tab bar positions, theme switching without losing tabs, the overlay click-through gotcha being guarded against).
 - CI is green on `windows-latest`. The installer installs, sets Zing as default browser, opens external links in an existing window, and auto-updates from a test release.
-- Every visual change gets a screenshot, as Krackn's conventions require. Theme presets × 3 tab positions × split view are screenshotted in light and dark.
+- Every visual change gets a screenshot. Theme presets × 3 tab positions × split view are screenshotted in light and dark.
 - Import: run against your real Chrome profile on the PC and a Dia export from the laptop. Counts in Zing must match the source.
 - Web-compat smoke test in CI: Google sign-in page loads with no "browser not secure" message, a YouTube video plays and goes fullscreen, an OAuth popup returns to its opener.

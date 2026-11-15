@@ -1,5 +1,5 @@
 // Generates a PowerShell script that points the whole PC at a DNS-over-HTTPS
-// resolver: Zing's replacement for Krackn's macOS .mobileconfig profile.
+// resolver: Zing's replacement for the macOS .mobileconfig profile.
 //
 // The in-browser DoH only covers pages Zing loads. Windows 11's own DoH
 // client covers every app and survives reboots, which is the supported OS
@@ -96,7 +96,7 @@ export function scriptFileName(resolver: Resolver, displayName?: string): string
 	return `${cleaned || 'DoH'}.ps1`
 }
 
-// WireGuard for Windows replaces wg-quick. Krackn's stance stays: an app
+// WireGuard for Windows replaces wg-quick. The rule stands: an app
 // can't be a VPN (that needs a server elsewhere), and the user runs these
 // commands themselves from an admin terminal.
 export interface VpnCommands {

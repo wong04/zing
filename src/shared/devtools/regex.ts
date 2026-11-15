@@ -1,8 +1,6 @@
-// Port of `testRegex` from Krackn Features/Utilities/DevTools.swift.
-//
-// Krackn compiled patterns with NSRegularExpression (ICU syntax); Zing tests
-// them as JavaScript regular expressions, which is what a pattern pasted from
-// web code is written in.
+// Patterns are tested as JavaScript regular expressions, not the ICU syntax
+// the macOS version's NSRegularExpression used: a pattern pasted from web code
+// is written in JavaScript's.
 
 /** Carries the parser's message back to the UI. */
 export class RegexProblem extends Error {

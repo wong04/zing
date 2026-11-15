@@ -610,6 +610,17 @@ export function liveCounts(chrome: Page): Promise<LiveCounts> {
 	return askHost<LiveCounts>(chrome, 'live-counts')
 }
 
+/** The preferred app mode the host last gave the native menus (TestHooks "menu-theme", uxtheme's PreferredAppMode name). */
+export async function menuTheme(chrome: Page): Promise<string | null> {
+	return (await askHost<{ mode: string | null }>(chrome, 'menu-theme')).mode
+}
+
+/** Whether Windows has apps in dark mode: what a view reads when nothing overrides it. */
+export function windowsIsDark(): boolean {
+	const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize'
+	return /AppsUseLightTheme\s+REG_DWORD\s+0x0\b/.test(execFileSync('reg', ['query', key, '/v', 'AppsUseLightTheme'], { encoding: 'utf8' }))
+}
+
 /** When the host reached each step of start-up (TestHooks "startup-marks"), as ms since 1970, beside the process's own start. */
 export interface StartupMarks {
 	readonly processStart: number

@@ -1,5 +1,3 @@
-// Port of section B of Krackn's Tests/unit/main.swift (14 assertions).
-
 import { describe, expect, it } from 'vitest'
 import {
 	allRelayStrategies,
@@ -19,7 +17,7 @@ import {
 import vectors from './relayEngine.vectors.json'
 
 describe('RelayEngine.normalize', () => {
-	// Krackn only checks that these parse; the expected forms are kept for reference.
+	// Only parsing is checked; the expected forms are kept for reference.
 	it.each([
 		['example.com', 'https://example.com'],
 		['  example.com  ', 'https://example.com'],
@@ -61,7 +59,7 @@ describe('RelayStrategy', () => {
 	})
 })
 
-// Beyond Krackn's suite, which only reaches these through live fetches.
+// Checked here offline rather than only through live fetches.
 describe('validateStatus', () => {
 	it.each([200, 204, 302, 399])('%s passes', (status) => {
 		expect(() => validateStatus(status)).not.toThrow()

@@ -1,6 +1,6 @@
-// Port of Krackn's tracking-parameter stripper: `UtilityTools.cleanLink` (the Link Cleaner
-// tool, Features/Utilities/UtilityTools.swift), `RelayEngine.normalize` (its input
-// tidy-up) and `BrowserTab.stripTrackers` (navigation). Both paths share one rule.
+// The tracking-parameter stripper: `cleanLink` (the Link Cleaner tool),
+// `normalizeLink` (its input tidy-up) and `stripTrackers` (navigation). Both
+// paths share one rule.
 
 /**
  * Query parameters that exist purely to track you. Stripping them makes a

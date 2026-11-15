@@ -1,6 +1,5 @@
-// The UUID tool's generator (Krackn UtilitiesView.swift `UUIDTool`, which used
-// Foundation's `UUID().uuidString`): random version-4 identifiers, upper-case
-// like Foundation's; the tool offers a lower-case view.
+// The UUID tool's generator: random version-4 identifiers, upper-case like
+// Foundation's `UUID().uuidString`; the tool offers a lower-case view.
 
 export function makeUUID(): string {
 	return crypto.randomUUID().toUpperCase()

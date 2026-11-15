@@ -34,7 +34,7 @@ function preview(input: string, angle: AngleMode): Preview {
 	}
 }
 
-/** Scientific calculator (Krackn `CalculatorTool`): free-form entry with a live result. */
+/** Scientific calculator: free-form entry with a live result. */
 export function CalculatorTool() {
 	const [input, setInput] = useState('')
 	const [angle, setAngle] = useState<AngleMode>(AngleMode.radians)

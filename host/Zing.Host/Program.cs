@@ -64,6 +64,7 @@ public sealed class ZingApp
 	// Files from Windows' Open with, as paths; they wait for a window the same way links do.
 	private readonly LinkInbox _files = new();
 	private TaskbarIcon? _taskbar;
+	private DarkMenus? _menus;
 	private MainWindow? _mostRecent;
 	private AppServices? _services;
 	private SessionSaver? _session;
@@ -123,9 +124,36 @@ public sealed class ZingApp
 		foreach (var file in LaunchArgs.Files(argv, File.Exists)) _files.Push(file.Path);
 		SingleInstance.Listen(OnSecondLaunch);
 		_taskbar = new TaskbarIcon(dispatcher);
+		FollowThemeInMenus(dispatcher);
 		NewWindow();
 		StartupMarks.Mark("window created");
 	}
+
+	/// <summary>
+	/// Dark menus are cosmetic, so a Windows without uxtheme's dark-mode exports starts with light menus (AGENTS.md),
+	/// but the missing export is recorded, never ignored: an e2e run fails on it.
+	/// </summary>
+	private void FollowThemeInMenus(Microsoft.UI.Dispatching.DispatcherQueue dispatcher)
+	{
+		var settings = Services.Settings;
+		try
+		{
+			_menus = new DarkMenus(dispatcher, () => settings.Get("theme")?.GetValue<string>() ?? throw new InvalidDataException("Setting theme is missing"));
+		}
+		catch (UxThemeExportMissingException error)
+		{
+			TestHooks.Record("dark menus", error);
+			return;
+		}
+		var menus = _menus;
+		settings.Subscribe((_, key) =>
+		{
+			if (key == "theme") menus.Follow();
+		});
+	}
+
+	/// <summary>Lets a window's menus follow Zing's theme; a no-op where uxtheme has no dark menus (recorded at launch).</summary>
+	public void AllowDarkMenus(nint hwnd) => _menus?.Allow(hwnd);
 
 	/// <summary>The window used last; links from other apps open there.</summary>
 	public MainWindow? MostRecent => _mostRecent is { } w && _windows.Contains(w) ? w : _windows.LastOrDefault();

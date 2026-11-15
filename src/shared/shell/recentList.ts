@@ -1,5 +1,3 @@
-// Port of Krackn App/PanelLayout.swift (`RecentList`).
-//
 // The sidebar's "recently used" list: most recent first, no duplicates,
 // capped. Stored as identifier strings so it survives relaunch without
 // recording anything more revealing than which tool was opened.

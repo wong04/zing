@@ -1,5 +1,4 @@
-// Port of Krackn's `AutoCloseRule`, `AutoClosePolicy` and `TabLifecycle`
-// (Features/Browser/TabOrganizer.swift). Times are epoch milliseconds.
+// Closing tabs left unused too long, or at a set time of day. Times are epoch milliseconds.
 import type { TabSnapshot } from './tabOrganizer'
 
 const hourMs = 3_600_000

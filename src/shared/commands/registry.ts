@@ -1,7 +1,7 @@
 import { shortcutMatches, type KeyInput, type Shortcut } from './shortcut'
 
 /**
- * Every command Krackn's Commands.swift exposes, with Windows keys. Menus,
+ * Every command the app exposes, with Windows keys. Menus,
  * keyboard shortcuts, toolbar buttons and the roadmap Ctrl+K bar all route
  * through these ids, so an id must never change once shipped.
  */
@@ -56,7 +56,7 @@ export type CommandId = (typeof COMMAND_IDS)[number]
 export interface CommandDefinition {
 	readonly id: CommandId
 	readonly label: string
-	/** The first is shown in menus and tooltips; the rest are alternates (Krackn's `AlternateShortcuts`). */
+	/** The first is shown in menus and tooltips; the rest are alternates. */
 	readonly shortcuts: readonly Shortcut[]
 }
 

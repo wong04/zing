@@ -1,5 +1,4 @@
-// Krackn tests DoHResolver only against live resolvers (Tests/network); these
-// cover the ported query building and answer parsing offline.
+// Query building and answer parsing, tested offline without a live resolver.
 
 import { describe, expect, it } from 'vitest'
 import {

@@ -1,5 +1,4 @@
-// Port of Krackn's `ThreatHeuristics.registrableDomain` (Features/Security/ThreatModel.swift),
-// which `BrowserTab.registrableDomain` calls "one definition of the same site for the whole app".
+// The registrable domain: one definition of the same site for the whole app.
 // It lives here because tab grouping is its first user; security code should import it, not copy it.
 
 const twoPartSuffixes: ReadonlySet<string> = new Set([

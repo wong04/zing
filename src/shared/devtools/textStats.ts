@@ -1,4 +1,3 @@
-// Port of `analyze` from Krackn Features/Utilities/DevTools.swift.
 import { graphemes, isWhitespace } from './graphemes'
 
 /** Counts that matter when writing or preparing training data. */

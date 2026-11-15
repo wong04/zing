@@ -1,4 +1,4 @@
-// Port of `PaletteTokens` from Krackn App/Accent.swift: the palette as
+// `PaletteTokens`: the palette as
 // CSS-ready hex, so web content the app renders (the start page) is coloured
 // from exactly the same numbers as the UI — no hand-copied values to drift.
 import { contrastRatio, gammaLuma, hexFromHSL, mix } from './color'

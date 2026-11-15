@@ -9,7 +9,7 @@ import './web.css'
 const engineNote =
 	"Zing's own lookups (Open a Link and Diagnose) use the encrypted DNS provider chosen in Settings. Pages in your tabs don't: the browser engine ignored every encrypted DNS setting we tried (checked on runtime 156), so pages use Windows' DNS. This script is how pages get encrypted DNS: it changes Windows, for every app on this PC."
 
-/** What each row of "What beats what" says, reworded from Krackn for Windows. `local` rows are handled by Zing itself. */
+/** What each row of "What beats what" says, worded for Windows. `local` rows are handled by Zing itself. */
 const beats: readonly { readonly block: string; readonly fix: string; readonly local: boolean }[] = [
 	{ block: 'DNS-level block', fix: "Encrypted DNS (the script above), or Open a Link's DoH method", local: true },
 	{ block: 'IP-level block', fix: "Open a Link's reader relay, or a VPN", local: false },
