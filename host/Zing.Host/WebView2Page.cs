@@ -50,6 +50,7 @@ public sealed class WebView2Page : IPage
 	/// <summary>The latest main-frame Page.frameRequestedNavigation: it arrives before NavigationStarting for the same address (spikes/link-preview, check C).</summary>
 	private (string Url, string Reason)? _lastReason;
 	private bool _dialogOpen;
+	private ViewerGuests? _viewers;
 	private readonly FrameNavigations _frames = new(() => DateTime.UtcNow);
 
 	private static readonly Lazy<(string Script, string Css)> Reader = new(() =>
@@ -282,9 +283,9 @@ public sealed class WebView2Page : IPage
 
 	public bool InReader { get; private set; }
 
-	/// <summary>Whether an element of the page is fullscreen; the window then gives the page all of itself.</summary>
+	/// <summary>Whether an element of the page, or its PDF viewer (ViewerGuests), is fullscreen; the window then gives the page all of itself.</summary>
 	// A closed page has none, and its engine object would throw: a window closing with a preview open still asks its layers.
-	public bool IsFullScreen => IsOpen && _core?.ContainsFullScreenElement == true;
+	public bool IsFullScreen => IsOpen && (_core?.ContainsFullScreenElement == true || _viewers?.IsFullScreen == true);
 
 	/// <summary>
 	/// From the DevTools Page domain (Page.enable is on for the navigation reasons): javascriptDialogOpening and javascriptDialogClosed,
@@ -292,10 +293,15 @@ public sealed class WebView2Page : IPage
 	/// </summary>
 	public bool HasOpenDialog => IsOpen && _dialogOpen;
 
+	/// <summary>Whether the page's PDF viewer has made itself fullscreen with its own button (ViewerGuests).</summary>
+	public bool InViewerFullScreen => IsOpen && _viewers?.IsFullScreen == true;
+
 	/// <summary>Takes the page's element out of fullscreen, as the page's own exit would.</summary>
 	public void ExitFullScreen()
 	{
-		if (IsFullScreen) Run(core => Background(core.ExecuteScriptAsync("document.exitFullscreen()").AsTask(), "exit fullscreen"));
+		if (!IsOpen) return;
+		if (_core?.ContainsFullScreenElement == true) Run(core => Background(core.ExecuteScriptAsync("document.exitFullscreen()").AsTask(), "exit fullscreen"));
+		if (_viewers?.IsFullScreen == true) _viewers.Exit();
 	}
 
 	/// <summary>
@@ -624,6 +630,7 @@ public sealed class WebView2Page : IPage
 		core.NavigationCompleted += (_, e) =>
 		{
 			IsLoading = false;
+			if (e.IsSuccess) _viewers?.Loaded();
 			if (e.IsSuccess && RelayedContent.IsRelayUrl(core.Source)) Background(CheckForAppAsync(core, e.NavigationId), "relayed app check");
 			if (!e.IsSuccess && e.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled) ReportFailure(e.WebErrorStatus, e.NavigationId);
 			_events.StateChanged();
@@ -646,6 +653,7 @@ public sealed class WebView2Page : IPage
 			_dialogOpen = false;
 			// Raised for new documents only, however they started (a link, Back, a reload, the page's own script).
 			_events.NewDocument();
+			_viewers?.Left();
 		};
 		core.DownloadStarting += (_, e) =>
 		{
@@ -660,6 +668,8 @@ public sealed class WebView2Page : IPage
 		};
 		core.PermissionRequested += (_, e) => _features.PermissionRequested(this, e);
 		core.ContainsFullScreenElementChanged += (_, _) => _features.FullScreenChanged(this);
+		_viewers = new ViewerGuests(core, () => _features.FullScreenChanged(this), Background);
+		_viewers.Start();
 		// ActiveMatchIndex already counts from 1, as the find bar does; it is -1 with no match.
 		core.Find.MatchCountChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));
 		core.Find.ActiveMatchIndexChanged += (_, _) => _events.FindResult(core.Find.MatchCount, Math.Max(0, core.Find.ActiveMatchIndex));

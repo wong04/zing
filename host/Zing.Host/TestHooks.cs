@@ -169,6 +169,7 @@ public static class TestHooks
 	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers, and reset makes it forget the key it sealed with;
 	/// "picker-key" with <c>vk</c> enters the account picker's key handler as a real key press on its page would;
 	/// "preview-key" with <c>code</c> enters the window's key handler as that key pressed on the link preview's top page would;
+	/// "fullscreen-key" with <c>vk</c> enters the PDF viewer's fullscreen key handler as a real key press on the fullscreen page would;
 	/// "page-messages" writes how many page messages were dropped to <c>file</c>;
 	/// "set-modifiers" with <c>shift</c>, <c>ctrl</c> and <c>middle</c> sets the keys the next new-window request is taken to have been made with, once;
 	/// "peek-state" writes the link preview's state to <c>file</c>; "click-scrim" sends the preview's scrim a left-button press, as a click on the dim would;
@@ -288,6 +289,12 @@ public static class TestHooks
 		if (action == "picker-key")
 		{
 			var handler = PickerKeyHandlers.TryGetValue(window, out var keys) ? keys : throw new InvalidOperationException("picker-key needs a window with its chrome started");
+			handler(root.GetProperty("vk").GetInt32());
+			return true;
+		}
+		if (action == "fullscreen-key")
+		{
+			var handler = FullScreenKeyHandlers.TryGetValue(window, out var keys) ? keys : throw new InvalidOperationException("fullscreen-key needs a window with its chrome started");
 			handler(root.GetProperty("vk").GetInt32());
 			return true;
 		}
@@ -449,6 +456,16 @@ public static class TestHooks
 		if (!IsEndToEndRun) return;
 		PickerKeyHandlers[window] = handler;
 		window.Destroyed += () => PickerKeyHandlers.Remove(window);
+	}
+
+	/// <summary>Each window's key handler for its fullscreen page (MainWindow.ViewerEscapeOnPage), for fullscreen-key; e2e runs only.</summary>
+	private static readonly Dictionary<HostWindow, Func<int, bool>> FullScreenKeyHandlers = [];
+
+	public static void RegisterFullScreenKeys(HostWindow window, Func<int, bool> handler)
+	{
+		if (!IsEndToEndRun) return;
+		FullScreenKeyHandlers[window] = handler;
+		window.Destroyed += () => FullScreenKeyHandlers.Remove(window);
 	}
 
 	/// <summary>Each window's key handler for its link preview's top page (MainWindow.PreviewKeyOnPage), for preview-key; e2e runs only.</summary>
