@@ -709,7 +709,8 @@ public sealed class WebView2Page : IPage
 			return;
 		}
 		var source = core.Source;
-		var icon = await IconDataUrlAsync(core);
+		var icon = await SharpFavicon.ReadAsync((method, json) => WhileOpenAsync(core.CallDevToolsProtocolMethodAsync(method, json).AsTask()), core.FaviconUri)
+			?? await IconDataUrlAsync(core);
 		// The tab may have closed while the icon was read, or gone on to another address whose icon this may not be.
 		if (IsOpen) _events.IconChanged(icon, core.Source == source ? source : null);
 	}
