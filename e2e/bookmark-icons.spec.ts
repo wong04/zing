@@ -15,8 +15,8 @@ declare const window: { readonly zing: ZingApi }
 
 const OUT_DIR = join(import.meta.dirname, '..', 'docs', 'screenshots')
 
-/** A 16×16 PNG of one colour, so each site's icon is told apart at a glance. */
-function solidPng(r: number, g: number, b: number): Buffer {
+/** A square PNG of one colour (16×16 unless said), so each site's icon is told apart at a glance. */
+function solidPng(r: number, g: number, b: number, size = 16): Buffer {
 	const chunk = (type: string, data: Buffer): Buffer => {
 		const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
 		const length = Buffer.alloc(4)
@@ -26,12 +26,30 @@ function solidPng(r: number, g: number, b: number): Buffer {
 		return Buffer.concat([length, body, crc])
 	}
 	const header = Buffer.alloc(13)
-	header.writeUInt32BE(16, 0)
-	header.writeUInt32BE(16, 4)
-	header.set([8, 2, 0, 0, 0], 8)
-	const row = Buffer.from([0, ...Array.from({ length: 16 }, () => [r, g, b]).flat()])
-	const pixels = deflateSync(Buffer.concat(Array.from({ length: 16 }, () => row)))
+	header.writeUInt32BE(size, 0)
+	header.writeUInt32BE(size, 4)
+	header.set([8, 6, 0, 0, 0], 8)
+	const row = Buffer.from([0, ...Array.from({ length: size }, () => [r, g, b, 255]).flat()])
+	const pixels = deflateSync(Buffer.concat(Array.from({ length: size }, () => row)))
 	return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', pixels), chunk('IEND', Buffer.alloc(0))])
+}
+
+/** An .ico holding these PNG frames, as many sites' favicon.ico does. */
+function ico(frames: readonly Buffer[]): Buffer {
+	const header = Buffer.from([0, 0, 1, 0, frames.length, 0])
+	let offset = 6 + 16 * frames.length
+	const entries = frames.map((png) => {
+		const size = png.readUInt32BE(16)
+		const entry = Buffer.alloc(16)
+		entry.set([size % 256, size % 256, 0, 0], 0)
+		entry.writeUInt16LE(1, 4)
+		entry.writeUInt16LE(32, 6)
+		entry.writeUInt32LE(png.length, 8)
+		entry.writeUInt32LE(offset, 12)
+		offset += png.length
+		return entry
+	})
+	return Buffer.concat([header, ...entries, ...frames])
 }
 
 const COLOURS: Readonly<Record<string, readonly [number, number, number]>> = {
@@ -48,14 +66,25 @@ async function siteServer(): Promise<{ server: Server; base: string; requests: s
 	const server = createServer((req, res) => {
 		const path = req.url ?? '/'
 		requests.push(path)
-		const name = path.slice(1).replace(/\.png$/, '')
+		const name = decodeURIComponent(path.slice(1).replace(/\.png$/, ''))
+		if (path === '/sharp.png') {
+			res.setHeader('content-type', 'image/png')
+			res.end(solidPng(200, 90, 30, 64))
+			return
+		}
+		if (path === '/frames.ico') {
+			res.setHeader('content-type', 'image/x-icon')
+			res.end(ico([solidPng(30, 140, 200), solidPng(30, 140, 200, 48)]))
+			return
+		}
 		if (path.endsWith('.png')) {
 			res.setHeader('content-type', 'image/png')
 			res.end(solidPng(...(COLOURS[name] ?? [128, 128, 128])))
 			return
 		}
+		const icon = name === 'frames' ? '/frames.ico' : `/${name}.png`
 		res.setHeader('content-type', 'text/html')
-		res.end(`<!doctype html><title>${name}</title><link rel="icon" href="/${name}.png"><body>${name}</body>`)
+		res.end(`<!doctype html><title>${name}</title><link rel="icon" href="${icon}"><body>${name}</body>`)
 	})
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
 	return { server, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requests }
@@ -74,12 +103,12 @@ test.afterAll(async () => {
 })
 
 /** A profile whose Favourites hold these links, as an earlier run or an import might have left them. */
-function profileWithFavourites(links: readonly { id: string; title: string; url: string }[]): string {
+function profileWithFavourites(links: readonly { id: string; title: string; url: string }[], pinned: readonly { id: string; title: string; url: string }[] = []): string {
 	const dir = scratchDir('zing-bookmark-icons-')
 	const library = {
 		bookmarks: [
 			{ id: FAVOURITES_ID, title: 'Favourites', updatedAt: 1, children: links.map((l) => ({ ...l, updatedAt: 1 })) },
-			{ id: PINNED_ID, title: 'Pinned', updatedAt: 1, children: [] },
+			{ id: PINNED_ID, title: 'Pinned', updatedAt: 1, children: pinned.map((l) => ({ ...l, updatedAt: 1 })) },
 		],
 		readingList: [],
 	}
@@ -160,6 +189,21 @@ test('a near-black site icon gets a light backing in dark mode, and a coloured o
 	await zing.close()
 })
 
+test('a site icon is kept at its own size, not the 16 px the engine hands over', async () => {
+	const profile = profileWithFavourites([
+		{ id: 'sharp', title: 'Sharp', url: `${visited.base}/sharp` },
+		{ id: 'frames', title: 'Frames', url: `${visited.base}/frames` },
+	])
+	const zing = await launchZing({ userDataDir: profile })
+	const width = (name: string): Promise<number> => ribbon(zing.chrome, name).locator('img').evaluate((img: HTMLImageElement) => img.decode().then(() => img.naturalWidth))
+	await visit(zing.chrome, `${visited.base}/sharp`)
+	await expect.poll(() => width('Sharp')).toBe(64)
+	// An .ico gives its largest frame.
+	await visit(zing.chrome, `${visited.base}/frames`)
+	await expect.poll(() => width('Frames')).toBe(48)
+	await zing.close()
+})
+
 test('deleting the bookmark deletes its icon', async () => {
 	const profile = profileWithFavourites([{ id: 'mail', title: 'Mail', url: `${visited.base}/mail` }])
 	const zing = await launchZing({ userDataDir: profile })
@@ -217,6 +261,28 @@ test.describe('B22 screenshots', () => {
 			await zing.chrome.waitForTimeout(400)
 			const box = (await tiles.boundingBox())!
 			await zing.chrome.screenshot({ path: join(OUT_DIR, `favourite-tiles-${mode}.png`), clip: { x: 0, y: 0, width: box.x + box.width + 12, height: box.y + box.height + 90 } })
+			await zing.close()
+		})
+
+		test(`the sidebar's pinned items and tabs, ${mode}`, async () => {
+			const link = (name: string) => ({ id: name, title: name[0]!.toUpperCase() + name.slice(1), url: `${visited.base}/${name}` })
+			const profile = profileWithFavourites(['mail', 'code', 'docs'].map(link), ['notes', 'music'].map(link))
+			const zing: Launched = await launchZing({ userDataDir: profile })
+			for (const name of ['mail', 'code', 'docs', 'notes', 'music']) await visit(zing.chrome, `${visited.base}/${name}`)
+			await expect.poll(() => storedIcons(profile)).toHaveLength(5)
+			for (const title of ['Reading list', 'Weather', 'Recipes']) {
+				await zing.chrome.evaluate(() => window.zing.runCommand('tab.new'))
+				await visit(zing.chrome, `${visited.base}/${encodeURIComponent(title)}`)
+			}
+			await zing.chrome.getByRole('tab', { name: /Weather/ }).click()
+			await zing.chrome.evaluate(() => window.zing.setSetting('accent', 'blue'))
+			await zing.chrome.evaluate((theme) => window.zing.setSetting('theme', theme), mode)
+			await zing.chrome.emulateMedia({ colorScheme: mode })
+			await expect.poll(async () => (await viewAccent(zing.chrome)).dark).toBe(mode === 'dark')
+			await zing.chrome.mouse.move(600, 600)
+			await zing.chrome.waitForTimeout(400)
+			const rail = (await zing.chrome.locator('.rail').boundingBox())!
+			await zing.chrome.screenshot({ path: join(OUT_DIR, `sidebar-rows-${mode}.png`), clip: { x: rail.x, y: 0, width: rail.width + 24, height: 470 } })
 			await zing.close()
 		})
 	}
