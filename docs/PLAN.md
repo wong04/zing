@@ -165,6 +165,7 @@ Sync for passwords was pulled forward into this phase. The vault ended up in the
   - **UI host:** Zing draws its own toolbar buttons for `action` / `browser_action`. They show icons and badges, and open the extension's popup page (`chrome-extension://<id>/<popup>`) in an overlay WebView2. `chrome.tabs` / `chrome.windows` calls are answered from Zing's tab service, where WebView2 doesn't.
   - **Updates and removal:** re-download on a schedule. Editing an installed extension's files removes it from the profile, so updates reinstall it. Remove with `RemoveAsync`.
 - **First targets:** uBlock Origin Lite, Bitwarden and 1Password. Each is verified in the e2e suite with a local fixture page.
+- **Local AI over MCP (post-v1, not in the v1 checklist):** see [local-ai-mcp-design](superpowers/specs/2026-11-15-local-ai-mcp-design.md).
 - **Docs:** [AddBrowserExtensionAsync](https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2profile.addbrowserextensionasync) and the [WebView2 extensions spec](https://github.com/MicrosoftEdge/WebView2Feedback/blob/main/specs/Extensions.md).
 
 Parallelizable once Phase 2 lands: 3, 6 and 7 are independent; 4 and 5 follow 3's tab strip; 6c only needs the bookmark/vault stores.
