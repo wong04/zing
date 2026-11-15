@@ -424,7 +424,7 @@ public sealed class AccountTests : IDisposable
 		Assert.True(sealedBytes.AsSpan().IndexOf(plain) < 0);
 		Assert.Equal(plain, cipher.Decrypt(sealedBytes));
 		sealedBytes[^1] ^= 0xFF;
-		Assert.Throws<CryptographicException>(() => cipher.Decrypt(sealedBytes));
+		Assert.ThrowsAny<CryptographicException>(() => cipher.Decrypt(sealedBytes));
 	}
 
 	[Fact]
