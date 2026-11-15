@@ -63,6 +63,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_permissions = new PermissionHost(() => Api);
 		_window = new HostWindow("Zing", 1280, 820);
 		_layout = new WindowLayout(_window, () => Api);
+		_app.AllowDarkMenus(_window.Hwnd);
 		if (TestHooks.KeepsOutOfTheWay)
 		{
 			AppWindow.Move(new Windows.Graphics.PointInt32(-20000, -20000));

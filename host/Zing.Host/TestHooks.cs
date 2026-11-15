@@ -177,6 +177,7 @@ public static class TestHooks
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// "update-ready" with <c>version</c> makes the next update check find that version, and "update-restarts" writes how many restarts into an update were asked for to <c>file</c>.
 	/// "set-cursor" with <c>x</c> and <c>y</c> puts the cursor there over the window's content (WindowLayout.Cursor), and without them takes it off the window.
+	/// "menu-theme" writes the preferred app mode the native menus were last given (DarkMenus) to <c>file</c>.
 	/// "show-default-browser-offer" shows the default-browser offer as a launch would, skipping only whether Zing is installed and not the default.
 	/// </summary>
 	/// <summary>Written beside and moved into place: the test polls for the file and must never read half of it.</summary>
@@ -252,6 +253,11 @@ public static class TestHooks
 		{
 			var bar = window.AppWindow.TitleBar;
 			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { background = bar.ButtonBackgroundColor, ink = bar.ButtonForegroundColor, height = bar.Height / window.Scale, buttonsHeight = bar.Height, buttonsWidth = bar.RightInset, passedBand = window.PassedThrough.Band, passedButtons = window.PassedThrough.Buttons }));
+			return true;
+		}
+		if (action == "menu-theme")
+		{
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { mode = DarkMenus.Applied?.ToString() }));
 			return true;
 		}
 		if (action == "startup-marks")
