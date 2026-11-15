@@ -19,5 +19,7 @@
 		<None Include="Defaults\*.json" CopyToOutputDirectory="PreserveNewest" />
 		<!-- From https://publicsuffix.org/list/public_suffix_list.dat (MPL 2.0); refresh by downloading it again. -->
 		<None Include="Defaults\public_suffix_list.dat" CopyToOutputDirectory="PreserveNewest" />
+		<!-- EasyList and EasyPrivacy from https://easylist.to/ (GPLv3 or CC BY-SA 3.0); refresh with `npm run update:blocklists`. -->
+		<None Include="Defaults\easylist.txt;Defaults\easyprivacy.txt" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 </Project>

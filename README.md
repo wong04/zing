@@ -15,7 +15,7 @@ Zing runs on Chromium through Microsoft Edge's WebView2, so sites work as they d
 - **Split view.** Up to four tabs side by side in one window.
 - **Link previews.** A link to another site opens over the page you're reading, with that page dimmed behind it. Close it to carry on, or expand it into a tab.
 - **Reader mode.** Strips a page down to the article.
-- **Tracker blocking.** Refuses third-party requests to a list of common ad and analytics trackers, and strips tracking parameters from the links you open.
+- **Ad and tracker blocking.** Refuses requests to the ad and tracker servers EasyList and EasyPrivacy name, and strips tracking parameters from the links you open.
 - **A password vault.** Unlocked with Windows Hello, and fills sign-in forms. Optional sync between your PCs is end-to-end encrypted: the sync server never sees a site, a username or a password (see [Privacy](#privacy)).
 - **Bring your stuff.** Import bookmarks from Chrome, Edge, Brave, Dia and Arc on the same PC, and passwords from Chrome, Edge and Brave. Firefox, Safari and Mac browsers come in through a file you export from them.
 - **A toolbox** of almost thirty tools, all running on your PC:
@@ -65,6 +65,7 @@ If you forget the password, the recovery key restores your vault. Without both, 
 ## Known limits
 
 - **Mica.** Solid tab cards cover the window, so Windows' Mica material isn't visible behind Zing's sidebar.
+- **Ad blocking is by server, not by element.** Zing refuses requests to the servers EasyList and EasyPrivacy name, but doesn't read their path, per-site or element-hiding rules. An ad a site serves from its own address still shows, and a refused ad can leave an empty box. Extensions such as uBlock Origin Lite load in WebView2 but don't block in the in-memory profile Zing browses with.
 
 ## Building from source
 

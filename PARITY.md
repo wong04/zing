@@ -92,7 +92,7 @@ Also dropped:
 | B8 | Downloads | parity | [#35](https://github.com/wong04/zing/issues/35) | Done |
 | B9 | Fullscreen video | parity | [#36](https://github.com/wong04/zing/issues/36) | Done |
 | B10 | Keeps-nothing privacy model | parity | [#37](https://github.com/wong04/zing/issues/37) | Done |
-| B11 | Tracker + ad blocking | parity | [#38](https://github.com/wong04/zing/issues/38) | Partial |
+| B11 | Tracker + ad blocking | parity | [#38](https://github.com/wong04/zing/issues/38) | Done: `e2e/trackers.spec.ts` (the built-in tracker domains refused as third parties and parameters stripped; an EasyList ad server, an EasyPrivacy tracker and a built-in tracker domain refused with the switch on and loaded with it off), `FilterRulesTests`, `TrackerRulesTests`; by server only, see README Known limits |
 | B12 | Opt-in persistent profile and tab restore | parity | [#39](https://github.com/wong04/zing/issues/39) | Done |
 | B13 | Bookmarks, Reading List, Favourites bar | parity | [#40](https://github.com/wong04/zing/issues/40) | Done |
 | B14 | Find in page | parity | [#41](https://github.com/wong04/zing/issues/41) | Done |
@@ -119,7 +119,6 @@ Also dropped:
 | B35 | Link previews (Arc Peek) | new | [#160](https://github.com/wong04/zing/pull/160) | Done: e2e in `e2e/link-preview.spec.ts`; hand checks H1-H9 passed (2026-11-08 and 2026-11-09, real-input tier 8/8), recorded in [the design](docs/superpowers/specs/2026-11-08-link-preview-design.md); screenshots in `docs/screenshots/link-preview/` |
 
 **B rows, 2026-11-01:** re-verified on the WebView2 host. Evidence for each Done row is in its issue, and every cited test passed on Windows CI ([run 41289375469](https://github.com/wong04/zing/actions/runs/41289375469), the whole e2e suite plus vitest and xUnit). Partial rows, still open:
-- B11: domain blocking is Edge Strict, untested; full blocking waits on uBO Lite
 - B25: the installer registers Zing as a browser and Settings offers to make it the default (Phase 8); a real install, Default apps and a link from another app wait on the owner's hand check in [docs/release.md](docs/release.md#hand-check)
 - B29: no e2e; the toolbox isn’t there yet
 - B34: mostly visual; needs light + dark screenshots

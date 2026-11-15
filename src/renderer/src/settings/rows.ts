@@ -187,7 +187,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 		toggle('linkPreviewsShiftClick', 'Shift-click previews any link', { disabled: (s) => !s.linkPreviews }),
 		toggle('linkPreviewsFromNewWindows', 'Links that open a new window preview too', { disabled: (s) => !s.linkPreviews }),
 		toggle('blockTrackers', 'Block trackers', {
-			detail: `Refuses ${TRACKER_DOMAINS.length} tracking domains and strips tracking parameters.`,
+			detail: `Refuses ad and tracker servers from EasyList and EasyPrivacy and ${TRACKER_DOMAINS.length} more tracking domains, and strips tracking parameters.`,
 		}),
 		toggle('restoreTabs', 'Reopen tabs from last time', {
 			detail: (s) => (s.restoreTabs ? 'Your open tabs are saved to a file on this PC. Relaunch to apply.' : undefined),

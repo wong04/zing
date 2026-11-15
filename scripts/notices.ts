@@ -36,6 +36,14 @@ const FIXED_SECTIONS: readonly FixedSection[] = [
 		],
 	},
 	{
+		title: 'EasyList and EasyPrivacy',
+		lines: [
+			'Bundled unmodified as host/Zing.Core/Defaults/easylist.txt and easyprivacy.txt, from https://easylist.to/. Block trackers reads their domain rules.',
+			'Copyright The EasyList authors. License: GNU General Public License v3 or Creative Commons Attribution-ShareAlike 3.0, used here under CC BY-SA 3.0.',
+			'Licence: https://easylist.to/pages/licence.html',
+		],
+	},
+	{
 		title: 'Inter',
 		lines: [
 			'The typeface the app is set in, bundled as Inter.ttf. Copyright The Inter Project Authors, https://github.com/rsms/inter',
