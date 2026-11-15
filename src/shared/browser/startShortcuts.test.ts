@@ -1,5 +1,4 @@
-// Port of Krackn `Tests/unit` "New-tab shortcuts are yours to choose". Krackn stored the
-// list in UserDefaults; here storage is the caller's, so "stored" means `encode`d and
+// New-tab shortcuts. Storage is the caller's, so "stored" means `encode`d and
 // "nothing stored" means `decode(null)`.
 import { describe, expect, it } from 'vitest'
 import { decode, defaults, encode, escapeHTML, glyph, isWebAddress, limit, make, name, type StartShortcut } from './startShortcuts'
@@ -50,7 +49,7 @@ describe('New-tab shortcuts are yours to choose', () => {
 		expect(decode(encode([]))).toEqual([])
 	})
 	it('restore defaults', () => {
-		// Krackn's resetToDefaults removes the stored value.
+		// Restoring the defaults removes the stored value.
 		expect(decode(null)).toEqual(defaults)
 	})
 
@@ -72,7 +71,6 @@ describe('New-tab shortcuts are yours to choose', () => {
 	})
 })
 
-// Not in Krackn's suite: cases the TypeScript port has to get right on its own.
 describe('shortcut details', () => {
 	it('a name keeps the host as typed, not punycode', () => {
 		expect(make('', 'bücher.de')?.title).toBe('Bücher')

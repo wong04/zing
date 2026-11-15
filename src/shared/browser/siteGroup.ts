@@ -1,4 +1,4 @@
-// Port of Krackn's `SiteGroup` (Features/Browser/TabOrganizer.swift).
+// Which site a tab belongs to, for grouping tabs by site.
 import { registrableDomain } from './registrableDomain'
 
 export interface SiteGroup {

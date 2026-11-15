@@ -14,13 +14,11 @@ public class SettingsTests
 	private static string[] Strings(string name) => V.GetProperty(name).EnumerateArray().Select(e => e.GetString()!).ToArray();
 
 	[Fact]
-	public void HasAllKracknKeysPlusZingKeysLessRetired()
+	public void HasEveryKeyLessRetired()
 	{
-		var krackn = Strings("kracknKeys");
 		var retired = Strings("retiredKeys");
-		Assert.Equal(30, krackn.Length);
 		Assert.Equal(retired, SettingsSchema.Retired);
-		Assert.Equal(krackn.Concat(Strings("zingKeys")).Except(retired).Order(), SettingsSchema.Keys.Order());
+		Assert.Equal(Strings("keys").Except(retired).Order(), SettingsSchema.Keys.Order());
 	}
 
 	[Fact]
@@ -55,7 +53,7 @@ public class SettingsTests
 	}
 
 	[Fact]
-	public void KeepsKracknDefaults()
+	public void KeepsTheDefaults()
 	{
 		var defaults = SettingsSchema.Defaults();
 		foreach (var p in V.GetProperty("defaultsSubset").EnumerateObject())

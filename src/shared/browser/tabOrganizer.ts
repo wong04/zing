@@ -1,5 +1,5 @@
-// Port of Krackn's `TabSnapshot`, `TabOrganization` and `TabOrganizer`
-// (Features/Browser/TabOrganizer.swift), plus `BrowserModel.arrange` / `freezeDisplayedOrder`.
+// Ordering tabs by the chosen organisation, grouping them into stacks, and moving
+// tabs and stacks by hand (`arrange`, `freezeDisplayedOrder`).
 
 /**
  * Everything the organiser and the auto-closer need to know about a tab,

@@ -1,6 +1,6 @@
-// User-perceived characters. Krackn iterated Swift `Character`s, which are
-// grapheme clusters, so "é" written as e + combining accent, or a flag emoji,
-// counts as one character there and must here too.
+// User-perceived characters, i.e. grapheme clusters (what Swift's `Character`
+// is), so "é" written as e + combining accent, or a flag emoji, counts as one
+// character.
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 

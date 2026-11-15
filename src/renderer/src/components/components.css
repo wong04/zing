@@ -1,6 +1,5 @@
 /*
- * Krackn's controls (App/Components.swift, FileComponents.swift,
- * ScrollFade.swift) on the theme tokens. Nothing here is a stock form
+ * The app's controls on the theme tokens. Nothing here is a stock form
  * control: appearance is reset and every colour is a token, so a new accent
  * or theme reaches all of them.
  */

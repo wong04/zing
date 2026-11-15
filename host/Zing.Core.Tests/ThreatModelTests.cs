@@ -5,7 +5,7 @@ namespace Zing.Core.Tests;
 
 /// <summary>
 /// The C# twin of src/shared/security/threatModel.ts (URL part), held to it by threatModel.vectors.json, so the
-/// 16 must-be-clean sites of Krackn and the rest are checked by both.
+/// 16 must-be-clean sites and the rest are checked by both.
 /// </summary>
 [Collection("Timing")]
 public sealed class ThreatModelTests

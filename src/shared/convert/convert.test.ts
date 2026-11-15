@@ -10,8 +10,8 @@ const token = { input: 'token-1' }
 const out = { output: 0 }
 
 describe('format catalog (ported)', () => {
-	it('knows Krackn’s full set of input formats', () => expect(allInputs().size).toBe(ALL_CATALOG_EXTENSIONS.length))
-	it('overlapping extensions resolve in Krackn’s order', () => {
+	it('knows the full set of input formats', () => expect(allInputs().size).toBe(ALL_CATALOG_EXTENSIONS.length))
+	it('overlapping extensions resolve in catalog order', () => {
 		expect(category('gif')).toBe('video')
 		expect(category('svg')).toBe('image')
 		expect(category('obj')).toBe('model')

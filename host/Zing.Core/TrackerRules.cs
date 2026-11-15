@@ -1,7 +1,7 @@
 namespace Zing.Core;
 
 /// <summary>
-/// src/shared/browser/trackerRules.ts: the domains blockTrackers refuses as third-party requests (Krackn's TrackerRules).
+/// src/shared/browser/trackerRules.ts: the domains blockTrackers refuses as third-party requests.
 /// The list is the TypeScript one, exported to Defaults/tracker-domains.json.
 /// </summary>
 public static class TrackerRules

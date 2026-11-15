@@ -1,15 +1,14 @@
-// Port of the Base64 and URL checks in Krackn Tests/unit (section C).
 import { describe, expect, it } from 'vitest'
 import { base64Decode, base64Encode, MalformedPercentEncodingError, urlDecode, urlEncode } from './encoding'
 
-describe('base64 (Krackn Tests/unit C)', () => {
+describe('base64', () => {
 	it('b64 roundtrip unicode', () => {
 		expect(base64Decode(base64Encode('héllo 🎉'))).toBe('héllo 🎉')
 	})
 	it('b64 unpadded', () => {
 		expect(base64Decode('aGVsbG8')).toBe('hello')
 	})
-	// Krackn's check was `.map { _ in true } ?? true`, which passes whatever
+	// The Swift check was `.map { _ in true } ?? true`, which passes whatever
 	// the decoder returns. Pinned to the real answer here.
 	it('b64 urlsafe', () => {
 		expect(base64Decode('aGVsbG8_d29ybGQ')).toBe('hello?world')
@@ -25,7 +24,7 @@ describe('base64 (Krackn Tests/unit C)', () => {
 	})
 })
 
-describe('url encoding (Krackn Tests/unit C)', () => {
+describe('url encoding', () => {
 	it('url encode space', () => {
 		expect(urlEncode('a b')).toBe('a%20b')
 	})

@@ -1,7 +1,6 @@
-// Port of the sign-in field detection and fill scripts from Krackn's `KeychainAutofill`
-// (Features/Browser/KeychainAutofill.swift). Krackn handed the field to Apple's Passwords
-// picker; here the script reports it to the host with `chrome.webview.postMessage`, and the
-// host shows Zing's own account picker and answers a choice with `fillScript`.
+// The sign-in field detection and fill scripts. The detection script reports the focused
+// field to the host with `chrome.webview.postMessage`, and the host shows Zing's own
+// account picker and answers a choice with `fillScript`.
 //
 // The host injects `detectionScript` with `AddScriptToExecuteOnDocumentCreatedAsync`, which
 // runs it in every frame; it installs itself in the top frame only and reaches same-origin
@@ -34,7 +33,7 @@ export const autofillFillFunction = fill
 /**
  * Reports which sign-in field has focus, and where it is.
  *
- * Krackn's first version listened for `focusin` and nothing else, and the key
+ * An earlier version listened for `focusin` and nothing else, and the key
  * failed to appear on exactly the pages that matter:
  *   - a field the page focuses itself on load (Google's sign-in does) — focus
  *     landed before the script ran, and nobody clicks a field that already has

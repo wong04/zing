@@ -1,6 +1,5 @@
-// Port of Krackn's Tests/logo: the logo art lands where it should, and the files drawn from it
-// (`npm run make-icons`) are complete and current. Krackn parsed its own SVG path data, so half its
-// cases test that parser; Zing's logo is plain circles and clip polygons, so those have no counterpart.
+// The logo art lands where it should, and the files drawn from it (`npm run make-icons`)
+// are complete and current.
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

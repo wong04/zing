@@ -1,5 +1,5 @@
-// Port of Krackn's TearOffModifier (App/FloatingPanels.swift) as a state
-// machine, so the click / hold / drag arbitration is testable without a DOM.
+// Tearing a tool off into a floating panel, as a state machine, so the
+// click / hold / drag arbitration is testable without a DOM.
 //
 // A press that is held still becomes "armed": letting go somewhere else tears
 // the item off into a panel. Moving before the hold completes means it was a

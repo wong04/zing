@@ -1,5 +1,3 @@
-// Port of Krackn's Tests/calc/main.swift (61 assertions).
-
 import { describe, expect, it } from 'vitest'
 import {
 	AngleMode,
@@ -14,7 +12,7 @@ import {
 	UnknownSymbolError,
 } from './expression'
 
-/** Krackn's `eq`: within `tol`, or within 1e-12 relative error. */
+/** Within `tol`, or within 1e-12 relative error. */
 function eq(expr: string, want: number, tol = 1e-9, angle: AngleMode = AngleMode.radians): void {
 	const got = evaluate(expr, angle)
 	const close = Math.abs(got - want) <= tol || (want !== 0 && Math.abs((got - want) / want) <= 1e-12)
@@ -75,7 +73,7 @@ describe('errors are thrown, not crashes', () => {
 		'', '2+', '(1+2', '1+2)', 'foo(2)', 'sqrt(-1)',
 		'ln(0)', 'asin(5)', '2 3 &',
 	])("'%s' throws", (expr) => {
-		// Krackn accepts any throw; an EvalError also proves it wasn't a crash in disguise.
+		// Any throw would do; an EvalError also proves it wasn't a crash in disguise.
 		expect(() => evaluate(expr)).toThrow(EvalError)
 	})
 })
@@ -89,7 +87,7 @@ describe('formatting', () => {
 	})
 })
 
-// Not in Krackn: places where JavaScript's Math differs from the Swift/C the
+// Places where JavaScript's Math differs from the Swift/C the
 // calculator was written against, and the specific errors callers can show.
 describe('Swift numeric semantics', () => {
 	it('round sends ties away from zero on both sides', () => {

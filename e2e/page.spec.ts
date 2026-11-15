@@ -31,7 +31,7 @@ test.beforeAll(async () => {
 			res.setHeader('content-type', 'application/zip')
 			return void res.end(Buffer.alloc(1024, 3))
 		}
-		// The server marking a frame's response as a file: Krackn saves it, frame or not.
+		// The server marking a frame's response as a file: it's saved, frame or not.
 		if (req.url === '/inner-file.bin') {
 			framedFileServed = true
 			res.setHeader('content-type', 'application/zip')
@@ -102,7 +102,7 @@ test('a download lands in the downloads folder, shows in the list and numbers on
 	await zing.close()
 })
 
-// L12: Krackn's DownloadPolicy saves a main-frame response it can't show, but not the same response in a frame, where an
+// L12: DownloadPolicy saves a main-frame response it can't show, but not the same response in a frame, where an
 // ad's odd content type shouldn't drop a file in Downloads.
 test('a main-frame response the engine cannot show, with no Content-Disposition, downloads', async () => {
 	const zing = await launchZing()

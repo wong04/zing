@@ -146,7 +146,7 @@ export interface MenuAnchor {
  * Heights of the chrome bands above the page, in DIPs. Their sum is a multiple
  * of 4 so the page's top edge lands on a whole device pixel at 100, 125, 150,
  * 175 and 200% scaling; a web view on a half pixel gets its whole layer
- * resampled (Krackn's pixel-alignment gotcha).
+ * resampled.
  */
 export const CHROME_LAYOUT = {
 	// Windows draws its caption buttons 32 or 48 tall, and they share a row with these.

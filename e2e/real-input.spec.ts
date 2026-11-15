@@ -284,7 +284,7 @@ test('dragging the tab strip’s empty space moves the window, and dragging a ta
 		return { x: chromeAt.x + box.x, y: chromeAt.y + box.y, width: box.width, height: box.height }
 	}
 
-	// Krackn's WindowDragArea gotcha: a tab is a drag of its own, which reorders and leaves the window where it is.
+	// A window drag area mustn't swallow tabs: a tab is a drag of its own, which reorders and leaves the window where it is.
 	const before = await windowAt(zing)
 	const tabsBefore = await order()
 	const tab = await tabBox(first)

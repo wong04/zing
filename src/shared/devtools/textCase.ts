@@ -1,4 +1,4 @@
-// Port of the case-conversion section of Krackn Features/Utilities/UtilityTools.swift.
+// Converts text between letter cases and naming conventions.
 import { graphemes, isUppercase, isWhitespace } from './graphemes'
 
 export const CaseStyle = {
@@ -65,8 +65,8 @@ function capitalize(word: string): string {
 
 /**
  * Splits on whitespace, `_`, `-` and camelCase humps, so all three naming
- * conventions can round-trip into each other. (Krackn's comment said
- * "punctuation", but only `_` and `-` ever split; "a.b" stays one word.)
+ * conventions can round-trip into each other. Other punctuation doesn't
+ * split: "a.b" stays one word.
  */
 function words(text: string): string[] {
 	const result: string[] = []

@@ -1,4 +1,4 @@
-// Port of Krackn's `AddressInput` (Features/Browser/AddressInput.swift).
+// What the address bar makes of typed text: an address to go to, or a search.
 
 /**
  * `url` is what was typed (with `https://` or `http://` put in front when it

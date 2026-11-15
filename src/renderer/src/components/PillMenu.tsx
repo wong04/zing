@@ -27,7 +27,7 @@ const ROW_HEIGHT = 28
 const LIST_PADDING = 10
 
 /**
- * A dropdown drawn by hand (Krackn `PillMenu`): a recessed button that opens
+ * A dropdown drawn by hand: a recessed button that opens
  * a listbox. The list is fixed-positioned so a scrolling sheet can't clip it.
  */
 export function PillMenu<T extends SegmentValue>({ options, value, onChange, 'aria-label': label }: PillMenuProps<T>) {

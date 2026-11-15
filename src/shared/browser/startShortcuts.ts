@@ -1,5 +1,4 @@
-// Port of Krackn's `StartShortcuts` (Features/Browser/StartShortcuts.swift). Storage is the
-// caller's: keep the `encode`d string, and remove it (store nothing) to restore the defaults.
+// The new-tab page's shortcut tiles. Storage is the caller's: keep the `encode`d string, and remove it (store nothing) to restore the defaults.
 import { classify } from './addressInput'
 
 /** One tile on the new-tab page. Its identity is its `url`. */
@@ -67,8 +66,8 @@ function parseShortcutList(raw: string): StartShortcut[] | null {
 }
 
 /**
- * Nothing stored, or something unreadable → the built-in set (Krackn's spec:
- * the new-tab page must always have tiles). Entries that aren't web addresses
+ * Nothing stored, or something unreadable → the built-in set: the new-tab
+ * page must always have tiles. Entries that aren't web addresses
  * are dropped rather than rendered: the list ends up in a page's `href`s, and
  * `javascript:` must never get there.
  */

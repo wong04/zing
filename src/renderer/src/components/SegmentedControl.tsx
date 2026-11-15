@@ -18,7 +18,7 @@ export interface SegmentedControlProps<T extends SegmentValue> {
 
 /**
  * A recessed track with the selected segment raised on a plate: selection is
- * shown by elevation, not by an accent flood (Krackn `SegmentedControl`).
+ * shown by elevation, not by an accent flood.
  * A radio group underneath: one tab stop, arrow keys move the choice.
  */
 export function SegmentedControl<T extends SegmentValue>({

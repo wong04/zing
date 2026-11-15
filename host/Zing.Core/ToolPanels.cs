@@ -132,7 +132,7 @@ public sealed record PanelContent(PanelKind Kind, string Name)
 public sealed record PanelRecord(string Id, PanelContent Content, Rect Frame, bool Minimized, PanelInput? Input = null);
 
 /// <summary>
-/// The floating tool panels (src/main/panels.ts, a port of Krackn's PanelStore). It works in window
+/// The floating tool panels (src/main/panels.ts). It works in window
 /// content coordinates and is driven by <see cref="ShellModel"/>, so every rule can be tested directly.
 /// </summary>
 public sealed class ToolPanels
@@ -253,8 +253,8 @@ public sealed class ToolPanels
 	}
 
 	/// <summary>
-	/// Other panels make room only now, on release. Resolving every frame mid-drag was rejected in
-	/// Krackn as distracting; the dragged panel is local view state until this point.
+	/// Other panels make room only now, on release. Resolving every frame mid-drag was rejected
+	/// as distracting; the dragged panel is local view state until this point.
 	/// </summary>
 	public void EndDrag(string id, Point origin, Rect area)
 	{

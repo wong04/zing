@@ -1,8 +1,7 @@
-// Port of the colour checks in Krackn Tests/unit (section F).
 import { describe, expect, it } from 'vitest'
 import { convertColor } from './colorConverter'
 
-describe('colour (Krackn Tests/unit F)', () => {
+describe('colour', () => {
 	it('color: hex', () => {
 		expect(convertColor('#FF0000')?.rgb).toBe('rgb(255, 0, 0)')
 	})

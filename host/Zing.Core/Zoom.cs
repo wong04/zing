@@ -1,9 +1,9 @@
 namespace Zing.Core;
 
 /// <summary>
-/// Per-tab page zoom: Krackn's steps (BrowserTab.zoomSteps). It scales the whole page, unlike
+/// Per-tab page zoom in fixed steps. It scales the whole page, unlike
 /// <see cref="TextSize"/>. The engine's own Ctrl+wheel zoom can leave a page between steps, so a
-/// step goes to the first one past the current factor, as Krackn's zoomIn/zoomOut do.
+/// step goes to the first one past the current factor.
 /// </summary>
 public static class Zoom
 {

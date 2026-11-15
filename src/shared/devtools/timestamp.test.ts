@@ -1,10 +1,9 @@
-// Port of the timestamp checks in Krackn Tests/unit (section C).
 import { describe, expect, it } from 'vitest'
 import { describeTimestamp, formatRelative } from './timestamp'
 
 const context = { now: new Date('2025-08-01T14:40:00Z'), locale: 'en-US', timeZone: 'UTC' }
 
-describe('timestamps (Krackn Tests/unit C)', () => {
+describe('timestamps', () => {
 	it('timestamp seconds', () => {
 		expect(describeTimestamp('1753800000', context)).toHaveLength(5)
 	})

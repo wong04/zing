@@ -61,7 +61,7 @@ export function removePane(layout: SplitLayout, tabId: string): SplitLayout | un
 	return { ...layout, tabIds, ratios: kept.map((r) => r / total) }
 }
 
-// Whole device pixels, like Krackn's backingAlignedRect: a page laid out
+// Whole device pixels: a page laid out
 // across half a pixel gets its whole composited layer resampled. The last
 // pane absorbs the rounding so the panes always fill the container exactly.
 export function paneRects(container: Rect, layout: SplitLayout, divider = DIVIDER_PX): Rect[] {
@@ -103,7 +103,7 @@ export type StripUnit = { kind: 'tab'; tabId: string } | { kind: 'split'; splitI
 
 // What the tab strip shows: each split once, as a joined chip, at the
 // position of its first member. Ordering strategies treat a unit as one item,
-// the way Krackn's TabOrganizer.movingStack treats a stack.
+// the way tabOrganizer's movingStack treats a stack.
 export function stripUnits(orderedTabIds: readonly string[], splits: readonly SplitLayout[]): StripUnit[] {
 	const splitOf = new Map<string, SplitLayout>()
 	for (const split of splits) for (const id of split.tabIds) splitOf.set(id, split)

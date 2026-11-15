@@ -1,5 +1,5 @@
 // Pure parsing tests, plus integration tests against this real Windows
-// install. The false-positive cases come first, as in Krackn: a signed
+// install. The false-positive cases come first: a signed
 // Windows binary must come back Valid, and this PC's protections must read
 // as what they are.
 import { mkdtemp, writeFile } from 'node:fs/promises'

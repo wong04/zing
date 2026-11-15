@@ -3,10 +3,10 @@ import { DEFAULT_TOOL_LINKS, isToolLinkList } from '../toolbox/links'
 import { DEFAULT_SLEEPING_TABS, isSleepSettings } from '../session/sleepSettings'
 
 /**
- * Every persisted preference, with an explicit default, in one table. Port of
- * Krackn's AppSettings.swift. A missing key always reads as its default here,
- * never as a zero value: Krackn's `bool(forKey:)` returned false for unset
- * keys and turned "never overwrite files" into "always overwrite".
+ * Every persisted preference, with an explicit default, in one table. A
+ * missing key always reads as its default, never as a zero value: in the
+ * macOS version `bool(forKey:)` returned false for unset keys and turned
+ * "never overwrite files" into "always overwrite".
  */
 
 interface Setting<T> {
@@ -84,7 +84,7 @@ export const TAB_BAR_POSITIONS = ['top', 'left', 'right'] as const
 export const TAB_COLOURS = ['colour', 'none'] as const
 
 export const SETTINGS_SCHEMA = {
-	/** Krackn's `appTheme`: Auto / Light / Dark. Every view is forced to it by the host (`HostedView.FollowTheme`). */
+	/** The appearance: Auto / Light / Dark. Every view is forced to it by the host (`HostedView.FollowTheme`). */
 	theme: oneOf(APPEARANCES, 'system'),
 	accent: oneOf(ACCENTS, 'yellow'),
 	/** Zing: the seed colour the `custom` accent is generated from, as #RRGGBB. */
@@ -163,7 +163,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze(
 /**
  * Keys Zing once had and dropped. A stored file may still hold one (it was written while the key
  * existed), so reading skips it instead of failing the whole file as unknown; the next save leaves it out.
- * confirmQuit: Krackn's "Confirm before quitting" switch, which Krackn never read either.
+ * confirmQuit: a "Confirm before quitting" switch that nothing ever read.
  * securityDownloadScan, securityDomainBlocking, securitySignatureCheck: the Security switches whose features
  * Zing dropped (PARITY X12 to X14), so nothing would honour them.
  */

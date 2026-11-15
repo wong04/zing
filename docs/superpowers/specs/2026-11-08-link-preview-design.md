@@ -1,6 +1,6 @@
 # Link previews (Arc's "Peek"): design
 
-A new feature with no Krackn source, so it gets a `new` PARITY row. Written 2026-11-08 from a conversation with the owner. The research behind it covers how Arc behaves (each point marked confirmed or not) and how the feature fits Zing's code. It is outside the repo, at `zing-notes/arc-peek-research.md`. This document repeats the parts a builder needs.
+A new feature with no counterpart in the macOS app, so it gets a `new` PARITY row. Written 2026-11-08 from a conversation with the owner. The research behind it covers how Arc behaves (each point marked confirmed or not) and how the feature fits Zing's code. It is outside the repo, at `zing-notes/arc-peek-research.md`. This document repeats the parts a builder needs.
 
 ## Intent
 

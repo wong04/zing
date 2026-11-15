@@ -1,5 +1,3 @@
-// Port of Krackn App/PanelLayout.swift (`PanelLayout`).
-//
 // Where floating panels go so they never sit on top of each other. Pure
 // geometry over rectangles, so the rules can be tested directly: the panel
 // being placed always wins its spot, and everything it lands on moves the

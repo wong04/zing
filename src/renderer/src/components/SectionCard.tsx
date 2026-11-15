@@ -4,7 +4,7 @@ import { InfoIcon, ShieldAlertIcon } from './icons'
 export interface SectionCardProps {
 	readonly title: string
 	readonly children: ReactNode
-	/** Tighter spacing, for tools shown in a floating panel (Krackn's `inFloatingPanel`). */
+	/** Tighter spacing, for tools shown in a floating panel. */
 	readonly compact?: boolean
 }
 
@@ -12,7 +12,7 @@ export interface SectionCardProps {
  * A titled group, laid out the way System Settings groups controls: a small
  * secondary heading sitting above the card, the controls inside it. A title
  * inside the card at heading weight made every page a stack of competing
- * headlines (Krackn `SectionCard`).
+ * headlines.
  */
 export function SectionCard({ title, children, compact = false }: SectionCardProps) {
 	return (
@@ -30,7 +30,7 @@ export interface InfoBannerProps {
 	readonly children: ReactNode
 }
 
-/** Krackn `InfoBanner`: a quiet note, or a caution tinted with the fixed status colour. */
+/** A quiet note, or a caution tinted with the fixed status colour. */
 export function InfoBanner({ kind, children }: InfoBannerProps) {
 	return (
 		<div className={`info-banner ${kind}`} role={kind === 'warning' ? 'alert' : 'note'}>

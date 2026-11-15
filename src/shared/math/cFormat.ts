@@ -1,4 +1,4 @@
-// Krackn formats numbers with `String(format:)`, i.e. C printf. These
+// The macOS version formats numbers with `String(format:)`, i.e. C printf. These
 // reproduce the two conversions it uses, so labels and results read the same.
 
 /** printf `%.Nf`. `toFixed` already matches it except for negative zero. */

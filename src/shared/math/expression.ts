@@ -1,5 +1,4 @@
-// Port of Krackn's Features/Utilities/Expression.swift: a small
-// recursive-descent expression evaluator for the calculator. Parsing it here
+// A small recursive-descent expression evaluator for the calculator. Parsing it here
 // (rather than handing input to `eval`/`Function`) keeps errors as ordinary
 // typed throws and makes the whole thing unit-testable.
 

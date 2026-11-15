@@ -1,6 +1,3 @@
-// Port of section A of Krackn's Tests/unit/main.swift (89 assertions), plus
-// tests for the helpers around it.
-
 import { describe, expect, it } from 'vitest'
 import {
 	answersDiffer,
@@ -31,7 +28,7 @@ function allCombinations(): BlockObservations[] {
 
 describe('BlockDiagnostics.classify — all 32 combinations', () => {
 	it('keeps every invariant', () => {
-		// Krackn's 89 checks, plus the table size it only prints.
+		// 89 invariant checks, plus the table size.
 		expect.assertions(90)
 		const table = allCombinations().map((o) => ({ o, k: classify(o) }))
 		expect(table).toHaveLength(32)
@@ -65,7 +62,7 @@ describe('BlockDiagnostics.classify — shared vectors', () => {
 	})
 })
 
-// Beyond Krackn's suite: the helpers diagnose() feeds into classify. Their cases are shared with the C# port too.
+// The helpers diagnose() feeds into classify. Their cases are shared with the C# port too.
 describe('isSinkhole', () => {
 	it.each(vectors.isSinkhole as [string, boolean][])('%s -> %s', (ip, want) => {
 		expect(isSinkhole(ip)).toBe(want)

@@ -401,7 +401,7 @@ public sealed class TabService
 		_host.ShowSplit(pages, split, pages[split.TabIds.ToList().IndexOf(active.Id)]);
 	}
 
-	/// <summary>Closing the last tab leaves a fresh one, as in Krackn: a window is never tabless.</summary>
+	/// <summary>Closing the last tab leaves a fresh one: a window is never tabless.</summary>
 	public void Close(string id)
 	{
 		if (Preview?.SourceTabId == id) ClosePreview();
@@ -449,7 +449,7 @@ public sealed class TabService
 		if (_store.ActiveId != keep) Activate(keep);
 	}
 
-	/// <summary>The URL without its tracking parameters while blockTrackers is on (Krackn's BrowserTab.load), else as given.</summary>
+	/// <summary>The URL without its tracking parameters while blockTrackers is on, else as given.</summary>
 	public string CleanLink(string url) => _blockTrackers() ? LinkCleaner.StripTrackers(url) : url;
 
 	/// <summary>Loads a ready URL (the window has already resolved what was typed).</summary>

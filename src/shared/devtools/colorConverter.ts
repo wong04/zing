@@ -1,7 +1,5 @@
-// Port of `convertColor` from Krackn Features/Utilities/DevTools.swift.
-//
 // Converts a hex or `rgb()` colour into every notation a designer or
-// front-end engineer needs. Unlike Krackn, an `rgb()` channel past 255 is refused
+// front-end engineer needs. An `rgb()` channel past 255 is refused
 // instead of producing a hex such as #3E70000; fractional parts are truncated in the integer notations.
 
 export type ColorValues = {

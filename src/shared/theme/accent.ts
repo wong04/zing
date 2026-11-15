@@ -1,4 +1,4 @@
-// Port of `AccentTheme` from Krackn App/Accent.swift: the colour families the
+// `AccentTheme`: the colour families the
 // whole app can be tinted with.
 //
 // The original beige is kept byte-for-byte as `yellow` — it's the reference

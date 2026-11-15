@@ -1,5 +1,4 @@
-// Port of Krackn's ScrollMetrics (App/ScrollFade.swift): which edges of a
-// scroll area have more content past them, and so should show a frosted fade.
+// Which edges of a scroll area have more content past them, and so should show a frosted fade.
 
 export interface ScrollMetrics {
 	readonly offset: number
@@ -12,7 +11,7 @@ export interface ScrollEdges {
 	readonly bottom: boolean
 }
 
-/** A sub-pixel remainder is rounding, not content; one pixel is the threshold Krackn used. */
+/** A sub-pixel remainder is rounding, not content; one pixel is the threshold. */
 const EPSILON = 1
 
 export function scrollEdges({ offset, contentHeight, viewportHeight }: ScrollMetrics): ScrollEdges {

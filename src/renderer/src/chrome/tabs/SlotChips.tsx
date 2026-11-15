@@ -69,7 +69,7 @@ export function TabChip({ tab, active, frame, inSplit = false }: { tab: TabView;
 		e.preventDefault()
 		void zing.openTabMenu(tab.id, { x: e.clientX, y: e.clientY })
 	}
-	// Alt-click closes every other tab, as in Krackn.
+	// Alt-click closes every other tab.
 	const onClose = (e: MouseEvent): void => {
 		e.stopPropagation()
 		if (e.altKey) void zing.closeOtherTabs(tab.id)
@@ -98,7 +98,7 @@ export function TabChip({ tab, active, frame, inSplit = false }: { tab: TabView;
 			onContextMenu={onContextMenu}
 			{...springLoad}
 		>
-			{/* Close sits on the left, as in Krackn, so it never moves when a title changes width. */}
+			{/* Close sits on the left so it never moves when a title changes width. */}
 			{tab.pinned ? null : (
 				<button
 					type="button"

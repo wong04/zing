@@ -1,4 +1,4 @@
-// The pure parts of Krackn's Features/Unblock/DoHResolver.swift: building the
+// The pure parts of the DoH resolver: building the
 // JSON-dialect query and reading its answer. The fetch itself and the system
 // resolver lookup belong to the main process.
 

@@ -1,8 +1,8 @@
-// Port of Krackn's `DownloadPolicy` (Features/Browser/DownloadPolicy.swift).
+// Which responses are saved rather than shown.
 //
-// Krackn's web view only downloaded when the app answered "download" for a
-// response; without that answer it tried to display everything, and a .zip or
-// an installer it couldn't display failed silently.
+// The macOS version's web view only downloaded when the app answered "download"
+// for a response; without that answer it tried to display everything, and a .zip
+// or an installer it couldn't display failed silently.
 
 export interface DownloadResponse {
 	/** Whether the engine can display the response's MIME type. */

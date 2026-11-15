@@ -1,4 +1,4 @@
-// Port of Krackn Tests/theme.
+// The accent families, the palette generator and the colour maths behind them.
 import { describe, expect, it } from 'vitest'
 import {
 	accentLabel,
@@ -162,9 +162,8 @@ describe('hex parsing round-trips', () => {
 	it.each(['#F7F2E9', '#000000', '#FFFFFF', '#D9B872', '#1A1714'])('round-trip %s', (hex) => {
 		expect(hexFromRGB(rgbFromHex(hex))).toBe(hex)
 	})
-	// Krackn degraded malformed input to black ("rather than crash"). Zing
-	// throws instead: every token is generated, so a malformed one is a bug
-	// to surface, not a colour to guess.
+	// Malformed input throws rather than degrading to black: every token is
+	// generated, so a malformed one is a bug to surface, not a colour to guess.
 	it('malformed hex is refused', () => {
 		expect(() => rgbFromHex('not-a-colour')).toThrow(InvalidHexColorError)
 	})

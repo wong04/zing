@@ -1,5 +1,3 @@
-// Port of Krackn App/ToolboxSearch.swift.
-//
 // Finding a tool by what you want to do, not by what it happens to be called.
 // Nobody looks for "Hashes" — they look for "sha256", or "checksum". Nobody
 // thinks "Open a Link" when a site is blocked; they think "unblock". Every

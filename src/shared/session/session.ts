@@ -1,6 +1,6 @@
-// Port of Krackn's `SessionStore` pure codec (Features/Browser/SessionStore.swift).
-// WebKit's `interactionState` has no Chromium equivalent, so restored tabs keep
-// URL, title, pinned and which tab was in front; the page reloads fresh.
+// The session file's pure codec. Chromium has no equivalent of WebKit's
+// `interactionState`, so restored tabs keep URL, title, pinned and which tab
+// was in front; the page reloads fresh.
 
 /** One tab as it survives a quit. */
 export interface SessionTab {
@@ -45,8 +45,8 @@ function isSessionTab(value: unknown): value is SessionTab {
 }
 
 /**
- * Krackn's spec: a corrupt or half-written session file must never stop the
- * browser opening, so anything unreadable decodes to no tabs.
+ * A corrupt or half-written session file must never stop the browser
+ * opening, so anything unreadable decodes to no tabs.
  */
 export function decodeSession(text: string): SessionTab[] {
 	let parsed: unknown
