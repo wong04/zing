@@ -46,7 +46,48 @@ test('a PDF in the launch arguments opens in the blank tab at its file address',
 	await zing.close()
 })
 
-test('a PDF opened from Explorer can take the whole window', async () => {
+/**
+ * The engine's PDF viewer: a guest view (a `webview` target whose parent is the tab's page), not a frame of the page, so
+ * Playwright doesn't list it. Its own toolbar button is pressed over the browser's DevTools session.
+ */
+async function pdfViewer(zing: Launched, page: Page) {
+	const cdp = await zing.browser.newBrowserCDPSession()
+	const own = await page.context().newCDPSession(page)
+	const { targetInfo } = await own.send('Target.getTargetInfo')
+	await own.detach()
+	type Target = { targetId: string; type: string; parentId?: string }
+	const find = async () => ((await cdp.send('Target.getTargets')).targetInfos as Target[]).find((t) => t.type === 'webview' && t.parentId === targetInfo.targetId)
+	await expect.poll(async () => (await find()) !== undefined).toBe(true)
+	const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: (await find())!.targetId, flatten: false })
+	let next = 1
+	const send = async <T>(method: string, params: object): Promise<T> => {
+		const id = next++
+		const answer = new Promise<T>((resolve, reject) => {
+			const listener = ({ sessionId: from, message }: { sessionId: string; message: string }) => {
+				const reply = JSON.parse(message) as { id?: number; result?: T; error?: { message: string } }
+				if (from !== sessionId || reply.id !== id) return
+				cdp.off('Target.receivedMessageFromTarget', listener)
+				if (reply.error) reject(new Error(`${method}: ${reply.error.message}`))
+				else resolve(reply.result!)
+			}
+			cdp.on('Target.receivedMessageFromTarget', listener)
+		})
+		await cdp.send('Target.sendMessageToTarget', { sessionId, message: JSON.stringify({ id, method, params }) })
+		return answer
+	}
+	const evaluate = async <T>(expression: string): Promise<T> => (await send<{ result: { value: T } }>('Runtime.evaluate', { expression, returnByValue: true })).result.value
+	await expect.poll(() => evaluate<boolean>('document.getElementById("full-screen") !== null')).toBe(true)
+	return {
+		fullScreen: () => evaluate<boolean>('document.fullscreenElement !== null'),
+		// A click on the button as a user gesture, which the viewer's requestFullscreen needs. Input.dispatchMouseEvent at the
+		// button's centre never reached it in the off-screen test window.
+		press: async (id: string) => {
+			await send('Runtime.evaluate', { expression: `document.getElementById(${JSON.stringify(id)}).click()`, userGesture: true })
+		},
+	}
+}
+
+test("a PDF that the viewer's own button makes fullscreen takes the whole window, and Zing's button gives the chrome back", async () => {
 	const { pdf } = files()
 	const zing = await launchZing({ args: [pdf] })
 	const page = await expectPdfTab(zing, pdf)
@@ -54,15 +95,36 @@ test('a PDF opened from Explorer can take the whole window', async () => {
 	const shown = async () => (await layers(zing.chrome)).find((l) => l.url === url && l.visible)
 	const inChrome = await shown()
 	expect(inChrome!.y).toBeGreaterThan(0)
-	// Playwright's evaluate counts as a user gesture, which requestFullscreen needs.
-	await page.evaluate(() => (globalThis as unknown as { document: { documentElement: { requestFullscreen(): Promise<void> } } }).document.documentElement.requestFullscreen())
+	const viewer = await pdfViewer(zing, page)
+	await viewer.press('full-screen')
+	await expect.poll(viewer.fullScreen).toBe(true)
 	await expect.poll(async () => (await shown())?.y).toBe(0)
 	expect((await shown())!.height).toBeGreaterThan(inChrome!.height)
+	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
+	await expect(overlay.getByRole('status')).toHaveText('This page is now full screen · Press Esc to exit')
 	// The viewer's own fullscreen has no way out on screen, so Zing's button at the top edge is it.
 	await setCursor(zing.chrome, { x: (await shown())!.width / 2, y: 0 })
 	await (await exitFullScreenButton(zing.browser)).click()
+	await expect.poll(viewer.fullScreen).toBe(false)
 	await expect.poll(async () => (await shown())?.y).toBe(inChrome!.y)
 	await setCursor(zing.chrome, null)
+	await zing.close()
+})
+
+test("Esc takes a PDF out of the viewer's own fullscreen", async () => {
+	const { pdf } = files()
+	const zing = await launchZing({ args: [pdf] })
+	const page = await expectPdfTab(zing, pdf)
+	const url = pathToFileURL(pdf).href
+	const shown = async () => (await layers(zing.chrome)).find((l) => l.url === url && l.visible)
+	const inChrome = await shown()
+	const viewer = await pdfViewer(zing, page)
+	await viewer.press('full-screen')
+	await expect.poll(async () => (await shown())?.y).toBe(0)
+	// A real Esc as the page's controller reports it (AcceleratorKeyPressed), which CDP input never reaches: the same handler.
+	await zing.chrome.evaluate(() => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'fullscreen-key', vk: 0x1b }))
+	await expect.poll(viewer.fullScreen).toBe(false)
+	await expect.poll(async () => (await shown())?.y).toBe(inChrome!.y)
 	await zing.close()
 })
 
