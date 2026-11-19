@@ -15,7 +15,7 @@ public sealed class WrongRecoveryKeyException()
 /// (turning it off keeps its files, M4), so the advice is to export, then remove those files with Zing closed.
 /// </summary>
 public sealed class SyncRestoreWouldReplaceLoginsException(int logins)
-	: Exception($"This PC already has {logins} saved passwords that aren't the synced ones, so Zing didn't restore over them. Export them first, then close Zing and delete the vault folder in %APPDATA%\\Zing to start empty.");
+	: Exception($"This PC already has {logins} saved passwords that aren't the synced ones, counting any in Recently deleted, so Zing didn't restore over them. Export them first, then close Zing and delete the vault folder in %APPDATA%\\Zing to start empty.");
 
 /// <summary>
 /// Restoring over this PC's Zing account keys that carry this vault's ID but aren't its keys (Ruling 71): the ID is in plaintext on the

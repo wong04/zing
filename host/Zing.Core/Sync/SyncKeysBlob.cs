@@ -294,8 +294,15 @@ public static class SyncWire
 	private const int PushEnvelopeBytes = 64;
 
 	/// <summary>Whether the server would take the item: its summary, password and joined history each within <see cref="MaxBlobBytes"/>.</summary>
-	public static bool Fits(LoginRecord record) =>
-		record.Summary.Length <= MaxBlobBytes && record.Password.Length <= MaxBlobBytes && JoinHistory(record.History).Length <= MaxBlobBytes;
+	public static bool Fits(LoginRecord record)
+	{
+		var (summary, password, history) = PartSizes(record);
+		return summary <= MaxBlobBytes && password <= MaxBlobBytes && history <= MaxBlobBytes;
+	}
+
+	/// <summary>The sizes of the three ciphertexts the server limits, as a push sends them.</summary>
+	public static (int Summary, int Password, int History) PartSizes(LoginRecord record) =>
+		(record.Summary.Length, record.Password.Length, JoinHistory(record.History).Length);
 
 	/// <summary>
 	/// <paramref name="items"/> in order, in batches of at most <see cref="SyncKeys.PushBatch"/> whose request bodies stay within
