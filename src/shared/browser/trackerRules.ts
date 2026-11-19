@@ -5,11 +5,12 @@ import { registrableDomain } from './registrableDomain'
 /**
  * A short, readable list of the trackers behind most third-party requests, not a bundled 100k-entry one: a giant
  * list can't be reviewed and goes stale the moment it ships. Ad blocking proper waits for uBlock Origin Lite.
+ * A whole host is listed only where nothing on it is needed: Facebook's (connect.facebook.net, graph.facebook.com) also
+ * serve its login and embeds, so they are left to EasyPrivacy's narrower rules for their tracking paths.
  */
 export const TRACKER_DOMAINS: readonly string[] = [
 	'doubleclick.net', 'googlesyndication.com', 'googletagservices.com',
 	'google-analytics.com', 'googletagmanager.com', 'adservice.google.com',
-	'facebook.net', 'connect.facebook.net', 'graph.facebook.com',
 	'scorecardresearch.com', 'quantserve.com', 'outbrain.com', 'taboola.com',
 	'criteo.com', 'criteo.net', 'adnxs.com', 'rubiconproject.com',
 	'pubmatic.com', 'openx.net', 'casalemedia.com', 'sharethrough.com',

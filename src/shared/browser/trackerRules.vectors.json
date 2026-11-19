@@ -1,5 +1,5 @@
 {
-	"domainCount": 48,
+	"domainCount": 45,
 	"hosts": [
 		{ "name": "a listed domain", "host": "doubleclick.net", "tracker": true },
 		{ "name": "a subdomain of a listed domain", "host": "stats.g.doubleclick.net", "tracker": true },
@@ -16,7 +16,9 @@
 		{ "name": "a site's own analytics still load", "request": "https://adservice.google.com/ddm/x", "page": "https://www.google.com/search?q=a", "blocked": false },
 		{ "name": "a tracker's own page loads its own scripts", "request": "https://static.hotjar.com/c.js", "page": "https://www.hotjar.com/", "blocked": false },
 		{ "name": "an unlisted third party loads", "request": "https://cdn.example.net/app.js", "page": "https://news.example/", "blocked": false },
-		{ "name": "a request from a page with no web address is third-party", "request": "https://connect.facebook.net/en_US/sdk.js", "page": "about:blank", "blocked": true },
+		{ "name": "a request from a page with no web address is third-party", "request": "https://www.googletagmanager.com/gtm.js", "page": "about:blank", "blocked": true },
+		{ "name": "Facebook's SDK loads on another site, for its login and embeds (EasyPrivacy blocks its tracking paths)", "request": "https://connect.facebook.net/en_US/sdk.js", "page": "https://news.example/", "blocked": false },
+		{ "name": "Facebook's Graph API answers another site, for its login", "request": "https://graph.facebook.com/v19.0/me", "page": "https://news.example/", "blocked": false },
 		{ "name": "only web requests are blocked", "request": "ws://doubleclick.net/socket", "page": "https://news.example/", "blocked": false },
 		{ "name": "an unparsable request is not blocked", "request": "not a url", "page": "https://news.example/", "blocked": false }
 	]
