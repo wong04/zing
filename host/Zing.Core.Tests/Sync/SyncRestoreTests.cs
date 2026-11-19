@@ -338,6 +338,77 @@ public sealed class SyncRestoreTests : IDisposable
 		Assert.Equal("bank-secret", await _b.Vault.PasswordAsync(id));
 	}
 
+	/// <summary>B's own vault holds no live login: a "never" mark, a login in Recently deleted, and one past it (a tombstone).</summary>
+	private async Task GiveBOnlyMarksAndDeletedLoginsAsync()
+	{
+		await _b.Vault.NeverSave("https://never.example.test");
+		var purged = await _b.Vault.SaveAsync(new NewLogin("https://old.example.test", "ada", "old-secret", "Old", ""));
+		_b.Vault.Delete(purged);
+		_b.Clock.Advance(TimeSpan.FromDays(31));
+		var deleted = await _b.Vault.SaveAsync(new NewLogin("https://gone.example.test", "ada", "gone-secret", "Gone", ""));
+		_b.Vault.Delete(deleted);
+		Assert.Equal(1, _b.Vault.TombstoneDue(_b.Clock.Now()));
+		Assert.DoesNotContain(_b.Vault.Summaries(), s => s.DeletedAt is null);
+	}
+
+	/// <summary>B holds only what it joined, every record opens with the synced keys (a restart reads them all), and B uploaded nothing of its own.</summary>
+	private async Task AssertBHoldsOnlyTheSyncedLoginAsync(string id)
+	{
+		await _b.SyncAsync();
+		Assert.Null(_b.Engine.Status.Error);
+		_b.Restart();
+		Assert.Equal([id], _b.Vault.Summaries().Select(s => s.Id));
+		Assert.Empty(_b.Vault.NeverSaves());
+		Assert.Equal("bank-secret", await _b.Vault.PasswordAsync(id));
+		Assert.Equal([id], (await _pcs.ServerItemsAsync()).Items.Select(i => i.ItemId));
+	}
+
+	[Fact]
+	public async Task JoiningOverAVaultWithOnlyNeverMarksAndDeletedLoginsDropsThemAndJoins()
+	{
+		await GiveBOnlyMarksAndDeletedLoginsAsync();
+		var id = await _pcs.SaveOnAAsync(password: "bank-secret");
+		await _pcs.TurnOnAAsync();
+		await _b.SignInAsync();
+
+		await Restore(_b, _bAccount).JoinWithPasswordAsync(Strong, Ct);
+
+		Assert.Equal(_pcs.A.Vault.VaultId, _b.Vault.VaultId);
+		await AssertBHoldsOnlyTheSyncedLoginAsync(id);
+	}
+
+	[Fact]
+	public async Task RestoringOverAVaultWithOnlyNeverMarksAndDeletedLoginsDropsThemAndRestores()
+	{
+		await GiveBOnlyMarksAndDeletedLoginsAsync();
+		var id = await _pcs.SaveOnAAsync(password: "bank-secret");
+		await _pcs.TurnOnAAsync();
+		await _b.SignInAsync();
+
+		await Restore(_b, _bAccount).RestoreWithPasswordAsync(Strong, Ct);
+
+		Assert.Equal(_pcs.A.Vault.VaultId, _b.Vault.VaultId);
+		await AssertBHoldsOnlyTheSyncedLoginAsync(id);
+	}
+
+	[Fact]
+	public async Task OneLiveLoginStillRefusesTheJoinAndDropsNothing()
+	{
+		await GiveBOnlyMarksAndDeletedLoginsAsync();
+		await _b.Vault.SaveAsync(new NewLogin("https://shop.example.test", "ada", "shop-secret", "Shop", ""));
+		var vaultId = _b.Vault.VaultId;
+		await _pcs.SaveOnAAsync(password: "bank-secret");
+		await _pcs.TurnOnAAsync();
+		await _b.SignInAsync();
+
+		var refused = await Assert.ThrowsAsync<SyncRestoreWouldReplaceLoginsException>(() => Restore(_b, _bAccount).JoinWithPasswordAsync(Strong, Ct));
+
+		Assert.Contains("1 saved password", refused.Message);
+		Assert.Equal(vaultId, _b.Vault.VaultId);
+		Assert.Single(_b.Vault.NeverSaves());
+		Assert.Equal(2, _b.Vault.Summaries().Count);
+	}
+
 	[Fact]
 	public async Task JoiningFromSettingsOverThisPcsOwnAccountAsksOnlyTheSyncPasswordAndMakesItThisPcsOne()
 	{

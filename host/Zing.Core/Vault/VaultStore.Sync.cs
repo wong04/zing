@@ -134,13 +134,16 @@ public sealed partial class VaultStore
 	/// <exception cref="SyncProtocolException">A purged placeholder (revision 0), which a pull never sends (Ruling 56).</exception>
 	/// <exception cref="ServerRolledBackException">A copy older than one this PC has seen.</exception>
 	/// <exception cref="VaultTamperedException">A copy that fails its tag, or whose tombstone flag its sealed summary doesn't back.</exception>
-	public void ApplyFromServer(string userId, IReadOnlyList<SyncItem> items, long? cursor, long serverRevision)
+	public async Task ApplyFromServerAsync(string userId, IReadOnlyList<SyncItem> items, long? cursor, long serverRevision)
 	{
 		RequireNoPlaceholder(items);
-		ApplyStaged(userId, stage =>
+		// A page of 200 takes a few hundred ms to open, merge and flush (measured on a pull of 1,000), so it runs off the UI thread;
+		// everything it touches is under _gate, and Changed still fires on the caller's thread.
+		var changed = await Task.Run(() => StageLocked(userId, stage =>
 		{
 			foreach (var item in items) stage.Apply(item);
-		}, cursor, serverRevision);
+		}, cursor, serverRevision));
+		if (changed) Changed?.Invoke();
 	}
 
 	/// <summary>
@@ -186,6 +189,12 @@ public sealed partial class VaultStore
 	/// </summary>
 	private void ApplyStaged(string userId, Action<Stage> apply, long? cursor, long? serverRevision)
 	{
+		if (StageLocked(userId, apply, cursor, serverRevision)) Changed?.Invoke();
+	}
+
+	/// <summary><see cref="ApplyStaged"/> without the event: whether anything changed.</summary>
+	private bool StageLocked(string userId, Action<Stage> apply, long? cursor, long? serverRevision)
+	{
 		bool changed;
 		lock (_gate)
 		{
@@ -200,7 +209,7 @@ public sealed partial class VaultStore
 			if (changed) stage.Write(userId);
 			if (cursor is { } next && next != floored.Cursor) WriteProgress(floored with { Cursor = next });
 		}
-		if (changed) Changed?.Invoke();
+		return changed;
 	}
 
 	/// <summary>Under <c>_gate</c>: on disk first, then in memory, so a failed write leaves both as they were.</summary>

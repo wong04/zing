@@ -27,6 +27,24 @@ internal sealed class FakeSealer : IHelloSealer
 
 	public void Announce() => AvailabilityChanged?.Invoke();
 
+	/// <summary>Hello was set up in Windows while Zing ran: <see cref="Available"/> still says no until something checks again.</summary>
+	public bool SetUpSinceLastCheck { get; set; }
+
+	/// <summary>How many times Windows was asked again whether Hello is set up.</summary>
+	public int Rechecks { get; private set; }
+
+	public Task<bool> CheckAgainAsync()
+	{
+		Rechecks++;
+		if (SetUpSinceLastCheck && Result == HelloResult.Unavailable)
+		{
+			SetUpSinceLastCheck = false;
+			Result = HelloResult.Pass;
+			Announce();
+		}
+		return Task.FromResult(Available);
+	}
+
 	/// <summary>How many stores listen for availability: one per store not yet disposed.</summary>
 	public int Listeners => AvailabilityChanged?.GetInvocationList().Length ?? 0;
 
@@ -126,6 +144,71 @@ public sealed class VaultStoreTests : IDisposable
 		Assert.All(errors, e => Assert.Equal("Set up the vault again on this PC", e.Message));
 		Assert.All(errors, e => Assert.Same(failure, e.InnerException));
 		Assert.Single(store.Summaries());
+	}
+
+	[Fact]
+	public async Task HelloSetUpWhileZingRunsIsFoundByTheNextSaveInsteadOfRefusingIt()
+	{
+		_sealer.Result = HelloResult.Unavailable;
+		var store = Open();
+		Assert.False(store.HelloAvailable);
+		_sealer.SetUpSinceLastCheck = true;
+
+		var id = await store.SaveAsync(Login);
+
+		Assert.True(store.HelloAvailable);
+		Assert.Equal(Login.Password, await store.PasswordAsync(id));
+	}
+
+	[Fact]
+	public async Task WithHelloStillNotSetUpASaveChecksWindowsAgainThenRefuses()
+	{
+		_sealer.Result = HelloResult.Unavailable;
+		var store = Open();
+
+		await Assert.ThrowsAsync<HelloUnavailableException>(() => store.SaveAsync(Login));
+
+		Assert.Equal(1, _sealer.Rechecks);
+		Assert.Equal(0, _sealer.Calls);
+	}
+
+	[Fact]
+	public async Task WithHelloAvailableNothingChecksWindowsAgain()
+	{
+		var store = Open();
+
+		await store.SaveAsync(Login);
+
+		Assert.Equal(0, _sealer.Rechecks);
+	}
+
+	[Fact]
+	public async Task ANoteTooLargeToSyncIsRefusedWhenSavedAndNothingIsWritten()
+	{
+		var store = Open();
+		var id = await store.SaveAsync(Login);
+		var huge = new string('n', Zing.Core.Sync.SyncWire.MaxBlobBytes + 1);
+		var before = File.ReadAllBytes(VaultFile);
+
+		var error = await Assert.ThrowsAsync<VaultLoginTooLargeException>(() => store.SaveAsync(Login with { Username = "grace", Note = huge }));
+		Assert.Throws<VaultLoginTooLargeException>(() => store.UpdateSummary(id, "Example", huge, Login.Username));
+		await Assert.ThrowsAsync<VaultLoginTooLargeException>(() => store.ImportAsync([new NewLogin("https://b.example", "bob", "pw", "", huge)]));
+
+		Assert.Contains("Shorten its note", error.Message);
+		Assert.Equal(before, File.ReadAllBytes(VaultFile));
+		Assert.Equal(Login.Note, store.Summaries().Single().Note);
+	}
+
+	[Fact]
+	public async Task ADeletedHelloKeyAsksToSetTheVaultUpAgainNotForHello()
+	{
+		var store = Open();
+		var id = await store.SaveAsync(Login);
+		_sealer.UnsealFailure = new HelloKeyMissingException("the Hello key was deleted by a PIN reset");
+
+		var error = await Assert.ThrowsAsync<VaultSetUpAgainException>(() => store.PasswordAsync(id));
+
+		Assert.IsType<HelloKeyMissingException>(error.InnerException);
 	}
 
 	[Fact]
