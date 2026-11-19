@@ -15,8 +15,8 @@ public static class EngineFolder
 	/// <summary>The file the engine holds open, unshared, for as long as its browser process runs.</summary>
 	public static string LockFile(string userDataFolder) => Path.Combine(userDataFolder, "EBWebView", "lockfile");
 
-	/// <summary>Where the engine keeps a named browsing profile (CoreWebView2Profile.ProfilePath).</summary>
-	public static string ProfileFolder(string userDataFolder, string profileName) => Path.Combine(userDataFolder, "EBWebView", profileName);
+	/// <summary>Where the engine keeps a named browsing profile (CoreWebView2Profile.ProfilePath): EBWebView, WV2Profile_ and the name.</summary>
+	public static string ProfileFolder(string userDataFolder, string profileName) => Path.Combine(userDataFolder, "EBWebView", $"WV2Profile_{profileName}");
 
 	/// <summary>Deletes a profile's cookies, storage and cache. Only for a folder no engine holds (after <see cref="WaitUntilFreeAsync"/>).</summary>
 	public static void DeleteProfile(string userDataFolder, string profileName)
