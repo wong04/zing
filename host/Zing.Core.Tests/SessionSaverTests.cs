@@ -48,4 +48,31 @@ public sealed class SessionSaverTests : IDisposable
 		_scheduler.Advance(TimeSpan.FromSeconds(1));
 		Assert.False(System.IO.File.Exists(File));
 	}
+
+	[Fact]
+	public void A_file_left_as_it_is_is_not_overwritten_by_a_window_of_blank_tabs()
+	{
+		System.IO.File.WriteAllText(File, "unread");
+		using var saver = Saver();
+		saver.KeepUnreadFile();
+		_settings.Set("restoreTabs", true);
+		_tabs.Activate(_tabs.Add(TabStore.NewTabUrl).Id);
+		saver.Changed();
+		_scheduler.Advance(TimeSpan.FromSeconds(1));
+		saver.Flush();
+		Assert.Equal("unread", System.IO.File.ReadAllText(File));
+	}
+
+	[Fact]
+	public void A_file_left_as_it_is_is_replaced_once_a_page_is_opened()
+	{
+		System.IO.File.WriteAllText(File, "unread");
+		using var saver = Saver();
+		saver.KeepUnreadFile();
+		_settings.Set("restoreTabs", true);
+		_tabs.Activate(_tabs.Add("https://example.com/").Id);
+		saver.Changed();
+		_scheduler.Advance(TimeSpan.FromSeconds(1));
+		Assert.Equal("https://example.com/", Assert.Single(Session.Load(File)).Url);
+	}
 }

@@ -18,50 +18,27 @@ public sealed class SessionFileException(string path, Exception cause)
 
 public static class Session
 {
-	/// <summary>Beyond this the file stops being a convenience and becomes a liability.</summary>
-	public const int MaxSessionTabs = 40;
-
 	/// <summary>A tab worth saving: real web pages only.</summary>
 	public static bool IsRestorableUrl(string url) =>
 		Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
-	/// <summary>What is worth persisting. Pinned tabs survive the cap first.</summary>
-	public static List<SessionTab> Prepare(IEnumerable<SessionTab> tabs)
-	{
-		var kept = tabs.Where(t => IsRestorableUrl(t.Url)).ToList();
-		if (kept.Count <= MaxSessionTabs) return kept;
-		return kept.Where(t => t.Pinned).Concat(kept.Where(t => !t.Pinned)).Take(MaxSessionTabs).ToList();
-	}
+	/// <summary>What is worth persisting: every web page, in order. Restored tabs other than the front one get no page, so their number costs little.</summary>
+	public static List<SessionTab> Prepare(IEnumerable<SessionTab> tabs) => tabs.Where(t => IsRestorableUrl(t.Url)).ToList();
 
 	public static string Encode(IEnumerable<SessionTab> tabs) => JsonSerializer.Serialize(Prepare(tabs), ZingJson.Options);
 
-	/// <summary>
-	/// A corrupt or half-written session file must never stop the
-	/// browser opening, so anything unreadable decodes to no tabs.
-	/// </summary>
+	/// <summary>A corrupt file throws (JsonException or InvalidDataException), never decodes to no tabs: the caller keeps it aside and says so.</summary>
 	public static List<SessionTab> Decode(string text)
 	{
-		JsonDocument document;
-		try
-		{
-			document = JsonDocument.Parse(text);
-		}
-		catch (JsonException)
-		{
-			return [];
-		}
-		using (document)
-		{
-			if (document.RootElement.ValueKind != JsonValueKind.Array) return [];
-			return document.RootElement.EnumerateArray()
-				.Select(ToTab)
-				.OfType<SessionTab>()
-				.Where(t => IsRestorableUrl(t.Url))
-				.ToList();
-		}
+		using var document = JsonDocument.Parse(text);
+		if (document.RootElement.ValueKind != JsonValueKind.Array) throw new InvalidDataException("The session file is not a list of tabs");
+		return document.RootElement.EnumerateArray()
+			.Select(e => ToTab(e) ?? throw new InvalidDataException("The session file has an entry that is not a tab"))
+			.Where(t => IsRestorableUrl(t.Url))
+			.ToList();
 	}
 
-	/// <summary>No file is a first run; a corrupt one decodes to no tabs. An unreadable one is an error.</summary>
+	/// <summary>No file is a first run. One that can't be read, or isn't a session, is a <see cref="SessionFileException"/>.</summary>
 	public static List<SessionTab> Load(string path)
 	{
 		string text;
@@ -77,21 +54,21 @@ public static class Session
 		{
 			throw new SessionFileException(path, error);
 		}
-		return Decode(text);
-	}
-
-	/// <summary>For startup: a corrupt file is no tabs (Load), and one that can't be read is no tabs plus the problem, so the browser still opens.</summary>
-	public static Loaded<List<SessionTab>> LoadOrRecover(string path)
-	{
 		try
 		{
-			return new Loaded<List<SessionTab>>(Load(path), null);
+			return Decode(text);
 		}
-		catch (SessionFileException error)
+		catch (Exception error) when (error is JsonException or InvalidDataException)
 		{
-			return new Loaded<List<SessionTab>>([], new LoadProblem(path, null, error));
+			throw new SessionFileException(path, error);
 		}
 	}
+
+	/// <summary>
+	/// For startup: a corrupt file is kept aside as <c>session.json.corrupt-…</c> (as settings is), and one that can't be read
+	/// is left where it is; either way no tabs plus the problem, so the browser still opens and the person is told.
+	/// </summary>
+	public static Loaded<List<SessionTab>> LoadOrRecover(string path, DateTime now) => UserData.Load(path, () => Load(path), () => [], now);
 
 	/// <summary>With restore off nothing may stay on disk, including a file left by an earlier run.</summary>
 	public static void Discard(string path)

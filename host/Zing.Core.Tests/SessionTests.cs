@@ -36,16 +36,27 @@ public sealed class SessionTests : IDisposable
 	public void Everything_else_is_not(string url) => Assert.False(Session.IsRestorableUrl(url));
 
 	[Fact]
-	public void Preparing_respects_the_cap_and_keeps_every_pinned_tab_through_it()
+	public void Preparing_keeps_every_tab_however_many_in_order()
 	{
 		var c = V.GetProperty("prepare")[0];
 		var gen = c.GetProperty("generate");
 		var loose = Enumerable.Range(0, gen.GetProperty("loose").GetInt32()).Select(i => new SessionTab($"https://loose{i}.com", "t", false, false));
 		var pinned = Enumerable.Range(0, gen.GetProperty("pinned").GetInt32()).Select(i => new SessionTab($"https://pinned{i}.com", "t", true, false));
-		var capped = Session.Prepare(loose.Concat(pinned));
-		Assert.Equal(Session.MaxSessionTabs, c.GetProperty("expectLength").GetInt32());
-		Assert.Equal(Session.MaxSessionTabs, capped.Count);
-		Assert.Equal(c.GetProperty("expectPinned").GetInt32(), capped.Count(t => t.Pinned));
+		var all = loose.Concat(pinned).ToList();
+		var kept = Session.Prepare(all);
+		Assert.Equal(c.GetProperty("expectLength").GetInt32(), kept.Count);
+		Assert.Equal(c.GetProperty("expectPinned").GetInt32(), kept.Count(t => t.Pinned));
+		Assert.Equal(all, kept);
+	}
+
+	[Fact]
+	public void An_active_tab_and_a_split_far_down_the_list_survive_a_save()
+	{
+		var tabs = Enumerable.Range(0, 80).Select(i => new SessionTab($"https://t{i}.test/", "t", false, i == 70, Split: i >= 76 ? new SessionSplit("s", "row", i - 76, 0.25) : null)).ToList();
+		var saved = Session.Decode(Session.Encode(tabs));
+		Assert.Equal(80, saved.Count);
+		Assert.True(saved[70].Active);
+		Assert.Equal(4, saved.Count(t => t.Split is not null));
 	}
 
 	[Fact]
@@ -83,7 +94,14 @@ public sealed class SessionTests : IDisposable
 	public void Decoding(string name)
 	{
 		var c = V.GetProperty("decode").EnumerateArray().Single(x => x.GetProperty("name").GetString() == name);
-		Assert.Equal(Tabs(c.GetProperty("expect")), Session.Decode(c.GetProperty("text").GetString()!));
+		var text = c.GetProperty("text").GetString()!;
+		if (c.TryGetProperty("error", out _))
+		{
+			var error = Assert.ThrowsAny<Exception>(() => Session.Decode(text));
+			Assert.True(error is JsonException or InvalidDataException, $"{name}: {error.GetType().Name}");
+			return;
+		}
+		Assert.Equal(Tabs(c.GetProperty("expect")), Session.Decode(text));
 	}
 
 	[Fact]
@@ -103,11 +121,12 @@ public sealed class SessionTests : IDisposable
 	}
 
 	[Fact]
-	public void A_corrupt_file_is_no_tabs()
+	public void A_corrupt_file_is_an_error_not_no_tabs()
 	{
 		var path = Path.Combine(_dir, "s.json");
 		File.WriteAllText(path, "{{{not json");
-		Assert.Empty(Session.Load(path));
+		var error = Assert.Throws<SessionFileException>(() => Session.Load(path));
+		Assert.IsAssignableFrom<JsonException>(error.InnerException);
 	}
 
 	[Fact]
@@ -125,20 +144,26 @@ public sealed class SessionTests : IDisposable
 		Assert.Throws<SessionFileException>(() => Session.Load(_dir));
 	}
 
-	[Fact]
-	public void At_startup_a_corrupt_file_is_no_tabs_and_no_problem()
+	[Theory]
+	[InlineData("{{{not json")]
+	[InlineData("{\"url\": \"https://a.test/\"}")]
+	[InlineData("[{\"url\": \"https://a.test/\"}]")]
+	public void At_startup_a_corrupt_file_is_kept_aside_as_settings_is_and_told(string text)
 	{
 		var path = Path.Combine(_dir, "s.json");
-		File.WriteAllText(path, "{{{not json");
-		var loaded = Session.LoadOrRecover(path);
+		File.WriteAllText(path, text);
+		var loaded = Session.LoadOrRecover(path, new DateTime(2026, 11, 19, 10, 0, 0));
 		Assert.Empty(loaded.Value);
-		Assert.Null(loaded.Problem);
+		var problem = Assert.IsType<LoadProblem>(loaded.Problem);
+		Assert.Equal($"{path}.corrupt-20261119-100000", problem.KeptAs);
+		Assert.Equal(text, File.ReadAllText(problem.KeptAs!));
+		Assert.False(File.Exists(path));
 	}
 
 	[Fact]
 	public void At_startup_an_unreadable_file_is_no_tabs_and_a_problem_not_a_throw()
 	{
-		var loaded = Session.LoadOrRecover(_dir);
+		var loaded = Session.LoadOrRecover(_dir, new DateTime(2026, 11, 19));
 		Assert.Empty(loaded.Value);
 		var problem = Assert.IsType<LoadProblem>(loaded.Problem);
 		Assert.IsType<SessionFileException>(problem.Error);

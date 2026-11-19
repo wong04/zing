@@ -15,13 +15,13 @@
 	},
 	"prepare": [
 		{
-			"name": "respects the cap and keeps every pinned tab through it",
+			"name": "keeps every tab, however many, in order",
 			"generate": {
 				"loose": 60,
 				"pinned": 5,
 				"pinnedLast": true
 			},
-			"expectLength": 40,
+			"expectLength": 65,
 			"expectPinned": 5
 		},
 		{
@@ -96,29 +96,22 @@
 		{
 			"name": "garbage",
 			"text": "{{{not json",
-			"expect": []
+			"error": true
 		},
 		{
 			"name": "empty",
 			"text": "",
-			"expect": []
+			"error": true
 		},
 		{
 			"name": "not an array",
 			"text": "{\"url\":\"https://a.com\"}",
-			"expect": []
+			"error": true
 		},
 		{
-			"name": "drops malformed entries but keeps valid ones",
+			"name": "a malformed entry",
 			"text": "[{\"url\": \"https://a.com\"}, 7, {\"url\": \"https://ok.com\", \"title\": \"t\", \"pinned\": false, \"active\": false}]",
-			"expect": [
-				{
-					"url": "https://ok.com",
-					"title": "t",
-					"pinned": false,
-					"active": false
-				}
-			]
+			"error": true
 		},
 		{
 			"name": "drops unrestorable urls",
@@ -133,9 +126,9 @@
 			]
 		},
 		{
-			"name": "wrong field types are malformed",
+			"name": "wrong field types",
 			"text": "[{\"url\": \"https://a.com\", \"title\": \"t\", \"pinned\": \"yes\", \"active\": false}]",
-			"expect": []
+			"error": true
 		}
 	],
 	"toSessionTabs": {

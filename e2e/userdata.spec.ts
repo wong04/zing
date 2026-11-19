@@ -43,6 +43,18 @@ test('a garbage settings.json is set aside, and Zing starts with the defaults an
 	expect(JSON.parse(readFileSync(join(userDataDir, 'settings.json'), 'utf8')).searchEngine).toBe('duckduckgo')
 })
 
+test('a garbage session.json is set aside, and Zing starts without the saved tabs and says so', async () => {
+	const userDataDir = profileWith({ 'settings.json': JSON.stringify({ restoreTabs: true }), 'session.json': GARBAGE })
+	const zing = await launchZing({ userDataDir })
+	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
+	await expect(overlay.getByText(/couldn't read your saved tabs, so it started without them/)).toBeVisible()
+	const [corrupt, ...others] = kept(userDataDir, 'session.json')
+	expect(others).toEqual([])
+	expect(readFileSync(join(userDataDir, corrupt!), 'utf8')).toBe(GARBAGE)
+	await expect(overlay.getByText(corrupt!, { exact: false })).toBeVisible()
+	await zing.close()
+})
+
 test('a garbage library.json is set aside, and Zing starts with an empty library and says so', async () => {
 	const userDataDir = profileWith({ 'library.json': GARBAGE })
 	const zing = await launchZing({ userDataDir })
