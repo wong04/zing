@@ -28,6 +28,7 @@ public sealed class WebView2Page : IPage
 	/// <summary>A popup of a relayed page: relayed from its birth, while it is still on its blank first document.</summary>
 	private bool _bornRelayed;
 	private static readonly TimeSpan AppLikeWait = TimeSpan.FromMilliseconds(1500);
+	private static readonly TimeSpan HangCheckEvery = TimeSpan.FromSeconds(3);
 	private readonly List<Action<CoreWebView2>> _queued = [];
 	/// <summary>The queue has run: calls go straight to the engine. Until then they queue, even once the core exists, so none overtakes an earlier one while the page's scripts are added.</summary>
 	private bool _drained;
@@ -50,6 +51,8 @@ public sealed class WebView2Page : IPage
 	/// <summary>The latest main-frame Page.frameRequestedNavigation: it arrives before NavigationStarting for the same address (spikes/link-preview, check C).</summary>
 	private (string Url, string Reason)? _lastReason;
 	private bool _dialogOpen;
+	/// <summary>The renderer was reported unresponsive and hasn't answered since.</summary>
+	private bool _hung;
 	private ViewerGuests? _viewers;
 	private readonly FrameNavigations _frames = new(() => DateTime.UtcNow);
 
@@ -627,6 +630,8 @@ public sealed class WebView2Page : IPage
 			_approvedDocument = e.Uri;
 			// NavigationStarting is only raised for new documents; in-page navigations keep their grants.
 			_features.Left(this);
+			// The new document clears the tab's mark (TabService), and a renderer that starts one is answering.
+			_hung = false;
 			InReader = false;
 			IsLoading = true;
 			_events.StateChanged();
@@ -960,6 +965,24 @@ public sealed class WebView2Page : IPage
 	}
 
 	/// <summary>
+	/// The engine says when a renderer hangs but never when it recovers. So while it is hung, a trivial script is sent every few
+	/// seconds, each a fresh chance to be answered; the first that comes back means the page works again and its mark goes.
+	/// </summary>
+	private async Task WatchForAnswerAsync(CoreWebView2 core)
+	{
+		while (IsOpen && _hung)
+		{
+			var ping = core.ExecuteScriptAsync("0").AsTask();
+			Background(ping, "hung page ping");
+			if (await Task.WhenAny(ping, Task.Delay(HangCheckEvery)) != ping) continue;
+			if (!ping.IsCompletedSuccessfully || !_hung) return;
+			_hung = false;
+			_events.Responding();
+			return;
+		}
+	}
+
+	/// <summary>
 	/// A process of this page failed (EngineFailures). The page's own renderer, gone or hung, marks
 	/// the tab, which keeps its record and offers Reload; the engine shows its error page meanwhile.
 	/// A subframe's renderer, the GPU and helper processes come back by themselves, so they are only
@@ -977,10 +1000,14 @@ public sealed class WebView2Page : IPage
 				IsLoading = false;
 				// The dialog went with its renderer, which may never say so.
 				_dialogOpen = false;
+				_hung = false;
 				_events.Crashed(PageFault.Crashed);
 				break;
 			case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
 				_events.Crashed(PageFault.Unresponsive);
+				if (_hung) break;
+				_hung = true;
+				Background(WatchForAnswerAsync(sender), "hung page check");
 				break;
 			case CoreWebView2ProcessFailedKind.BrowserProcessExited:
 				EngineFailures.ReportBrowserLost();

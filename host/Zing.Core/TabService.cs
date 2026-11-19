@@ -95,6 +95,8 @@ public interface IPageEvents
 	/// page; the chrome offers Reload, and the next document the page starts clears the fault.
 	/// </summary>
 	void Crashed(PageFault fault);
+	/// <summary>The page's renderer answered again after it was reported unresponsive.</summary>
+	void Responding();
 	/// <summary>Something the person should be told about this page that isn't a failure to load, e.g. a relayed web app that can't work.</summary>
 	void Notice(string text);
 	/// <summary>The page's autofill script posted <paramref name="message"/>; <paramref name="frameSource"/> is the engine's own Source for it, never anything the page said.</summary>
@@ -865,6 +867,11 @@ public sealed class TabService
 			service._changed();
 		}
 
+		public void Responding()
+		{
+			if (service.FaultOf(id) == PageFault.Unresponsive) service.ClearFault(id);
+		}
+
 		public void Navigated(string url)
 		{
 			service._siteData?.Visit(id, url);
@@ -974,6 +981,8 @@ public sealed class TabService
 			if (fault == PageFault.Crashed) service.PreviewPageCrashed(Own);
 		}
 
+		public void Responding() { }
+
 		public void Notice(string text)
 		{
 			if (service._store.Has(sourceId)) service._pageNotice(service._store.Get(sourceId), text);
@@ -1011,6 +1020,7 @@ public sealed class TabService
 		/// <summary>A window opened before this one showed anything belongs beside the opener's tab, as before.</summary>
 		public IPage Popup(PopupRequest request) => service.AdoptPopup(Own.OpenerTabId, request.Url, OpensBehind(request.Modifiers));
 		public void Crashed(PageFault fault) { }
+		public void Responding() { }
 		public void Notice(string text) { }
 		public void Autofill(Uri frameSource, Vault.AutofillMessage message) { }
 		public void NewDocument() { }
