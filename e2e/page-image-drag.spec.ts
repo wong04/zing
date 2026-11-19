@@ -61,9 +61,19 @@ async function dragOutOf(zing: Launched, page: Page, selector: string): Promise<
 	return data
 }
 
+/**
+ * Drops `data` on the part of `zone` the surface shows. The surface view ends at the screen's edge, so a panel opened near it
+ * (as on CI's smaller screen) is cut off, and its zone's centre can lie outside the view, where a drop reaches nothing.
+ */
 async function dropOn(zing: Launched, surface: Page, zone: Locator, data: DragData): Promise<void> {
 	const box = (await zone.boundingBox())!
-	const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+	const view = await surface.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+	const left = Math.max(box.x, 0)
+	const right = Math.min(box.x + box.width, view.width)
+	const top = Math.max(box.y, 0)
+	const bottom = Math.min(box.y + box.height, view.height)
+	if (right - left < 1 || bottom - top < 1) throw new Error(`The drop zone (${JSON.stringify(box)}) is outside the surface view (${view.width}x${view.height})`)
+	const at = { x: (left + right) / 2, y: (top + bottom) / 2 }
 	const cdp = await zing.chrome.context().newCDPSession(surface)
 	for (const type of ['dragEnter', 'dragOver', 'drop'] as const) await cdp.send('Input.dispatchDragEvent', { type, ...at, data })
 	await cdp.detach()
