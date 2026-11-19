@@ -43,6 +43,9 @@ public sealed class DownloadHost(Func<ChromeApi?> api)
 		// Zing's downloads list replaces Edge's download bubble.
 		e.Handled = true;
 		_downloads.Track(started.Id, operation);
+		page.DownloadStarted();
+		// Read now: the page may be closed, or somewhere else, by the time the download ends.
+		var referrer = page.Url;
 		var lastPublish = DateTime.MinValue;
 		operation.BytesReceivedChanged += (_, _) =>
 		{
@@ -62,8 +65,9 @@ public sealed class DownloadHost(Func<ChromeApi?> api)
 			};
 			if (outcome is not { } done) return;
 			_downloads.Forget(started.Id);
+			page.DownloadEnded();
 			chrome.Downloads.Done(started.Id, done, operation.BytesReceived);
-			if (done == DownloadOutcome.Completed) TestHooks.Background(MarkAsync(started, operation.Uri, page.Url), "mark of the web");
+			if (done == DownloadOutcome.Completed) TestHooks.Background(MarkAsync(started, operation.Uri, referrer), "mark of the web");
 		};
 	}
 

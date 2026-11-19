@@ -76,6 +76,14 @@ public sealed class TabServiceTests
 	}
 
 	[Fact]
+	public void A_form_post_to_a_tracked_link_is_not_cleaned_since_a_redirect_would_send_it_as_a_get()
+	{
+		var tab = _tabs.Open("https://a.example/");
+		var events = ((FakePage)_tabs.PageOf(tab.Id)!).Events;
+		Assert.Equal(NavigationDecision.Allow, events.Navigating("https://a.example/", "https://b.example/order?utm_source=x", NavigationCause.FormPost));
+	}
+
+	[Fact]
 	public void With_blockTrackers_off_navigations_keep_their_parameters()
 	{
 		var block = false;
@@ -478,6 +486,14 @@ public sealed class TabPreviewServiceTests
 		var preview = Peek(page);
 		Assert.Equal(NavigationDecision.Allow, preview.Events.Navigating("https://b.example/", "https://c.example/", NavigationCause.AnchorClick));
 		Assert.Single(_tabs.Preview!.Layers);
+	}
+
+	[Fact]
+	public void AFormPostInsideAPreviewIsNotCleaned()
+	{
+		var (_, page) = OpenSource();
+		var preview = Peek(page);
+		Assert.Equal(NavigationDecision.Allow, preview.Events.Navigating("https://b.example/", "https://b.example/order?utm_source=x", NavigationCause.FormPost));
 	}
 
 	[Fact]

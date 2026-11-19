@@ -452,6 +452,9 @@ public sealed class TabService
 	/// <summary>The URL without its tracking parameters while blockTrackers is on, else as given.</summary>
 	public string CleanLink(string url) => _blockTrackers() ? LinkCleaner.StripTrackers(url) : url;
 
+	/// <summary>A page's own navigation, cleaned unless it posts a form: the cleaned address is loaded anew as a GET.</summary>
+	private string CleanNavigation(string to, NavigationCause cause) => cause == NavigationCause.FormPost ? to : CleanLink(to);
+
 	/// <summary>Loads a ready URL (the window has already resolved what was typed).</summary>
 	public void Navigate(string id, string url)
 	{
@@ -540,7 +543,11 @@ public sealed class TabService
 	/// <summary>Window teardown: every page goes, records go with the window.</summary>
 	public void Destroy()
 	{
-		foreach (var layer in Preview?.CloseAll() ?? []) layer.Page.Close();
+		if (Preview is { } preview)
+		{
+			foreach (var layer in preview.CloseAll()) layer.Page.Close();
+			_siteData?.Release(PreviewSitesKey(preview.SourceTabId));
+		}
 		Preview = null;
 		_previewIcons.Clear();
 		foreach (var held in _pending.Keys.ToList()) DropPending(held);
@@ -665,6 +672,7 @@ public sealed class TabService
 		RememberClosed(layers[^1].Page);
 		_host.ShowPreview([]);
 		foreach (var layer in layers) layer.Page.Close();
+		_siteData?.Release(PreviewSitesKey(session.SourceTabId));
 		PreviewChanged?.Invoke();
 		_changed();
 	}
@@ -694,12 +702,18 @@ public sealed class TabService
 		if (_previewIcons.TryGetValue(page, out var icon)) _icons[record.Id] = icon;
 		_previewIcons.Clear();
 		page.Rebind(new TabPageEvents(this, record.Id));
+		// The tab takes the site it is on before the preview lets go, so that site isn't purged under it.
+		_siteData?.Visit(record.Id, page.Url);
+		_siteData?.Release(PreviewSitesKey(session.SourceTabId));
 		Attach(record, page, session.SourceTabId, background: false);
 		// After the tab is shown, so the host keeps the page on screen and gives it the keyboard.
 		_host.ShowPreview([]);
 		PreviewChanged?.Invoke();
 		return _store.Get(record.Id);
 	}
+
+	/// <summary>The sites a source tab's preview touched, kept apart from the tab's own so they go when the preview does.</summary>
+	private static string PreviewSitesKey(string sourceId) => $"preview of {sourceId}";
 
 	/// <summary>A preview page that goes away is offered on the reopen-closed stack as an ordinary tab (decision 7).</summary>
 	private void RememberClosed(IPage page) =>
@@ -838,7 +852,7 @@ public sealed class TabService
 				if (decision is NavigationDecision.Redirect redirect) service.Update(id, new TabContentPatch(Url: redirect.Url));
 				return decision;
 			}
-			var clean = service.CleanLink(to);
+			var clean = service.CleanNavigation(to, cause);
 			var link = new LinkRequest(from, to, LinkTrigger.Navigation, cause, default, HasPopupFeatures: false, FromPreview: false);
 			if (service.Verdict(id, link) == PeekVerdict.Preview)
 			{
@@ -938,11 +952,15 @@ public sealed class TabService
 			// Inspection is keyed by the source tab, so without it the link can't be inspected: refuse rather than fail open.
 			if (!service._store.Has(sourceId)) return NavigationDecision.Cancel;
 			if (service._intercept(sourceId, from, to) is { } decision) return decision;
-			var clean = service.CleanLink(to);
+			var clean = service.CleanNavigation(to, cause);
 			return clean == to ? NavigationDecision.Allow : new NavigationDecision.Redirect(clean);
 		}
 
-		public void Navigated(string url) => service.PreviewChanged?.Invoke();
+		public void Navigated(string url)
+		{
+			service._siteData?.Visit(PreviewSitesKey(sourceId), url);
+			service.PreviewChanged?.Invoke();
+		}
 		public void TitleChanged(string title) => service.PreviewChanged?.Invoke();
 		/// <summary>Kept for the tab the preview may become (Expand).</summary>
 		public void IconChanged(string? dataUrl, string? pageUrl)

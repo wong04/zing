@@ -41,10 +41,14 @@ public sealed class WebView2Page : IPage
 	private int _textSize = Zing.Core.TextSize.Default;
 	private double _zoom = Zing.Core.Zoom.Default;
 	private int _downloads;
+	/// <summary>Downloads this page started that are still coming in; its engine view outlives the page until they end.</summary>
+	private int _downloading;
 	private ulong _navigation;
 	private static readonly TimeSpan DownloadGrace = TimeSpan.FromSeconds(1);
 	/// <summary>A real document has started to show (ContentLoading for anything but the blank first one).</summary>
 	private bool _showedDocument;
+	/// <summary>The engine opened this page for another one's window request (a link to a new tab, window.open).</summary>
+	private bool _openedForPage;
 	/// <summary>The main frame's DevTools id, once Page.getFrameTree has answered; frames' navigation reasons are not the page's.</summary>
 	private string? _mainFrameId;
 	/// <summary>The latest main-frame Page.frameRequestedNavigation: it arrives before NavigationStarting for the same address (spikes/link-preview, check C).</summary>
@@ -387,7 +391,25 @@ public sealed class WebView2Page : IPage
 		_features.Left(this);
 		_queued.Clear();
 		_relayRuns.Dispose();
+		// A download's operation stops working once the view that started it closes (no more events, and Cancel fails),
+		// though the file still comes in. So a page closed mid-download keeps its view, hidden and silent, until they end.
+		if (_downloading > 0 && _view is { } held && _core is { } core)
+		{
+			held.Visible = false;
+			core.IsMuted = true;
+			return;
+		}
 		_view?.Close();
+	}
+
+	/// <summary>A download this page started is under way: the engine view stays until <see cref="DownloadEnded"/>.</summary>
+	public void DownloadStarted() => _downloading++;
+
+	public void DownloadEnded()
+	{
+		if (_downloading == 0) throw new InvalidOperationException("A download ended that this page never started");
+		_downloading--;
+		if (_downloading == 0 && !IsOpen) _view?.Close();
 	}
 
 	private void Run(Action<CoreWebView2> action)
@@ -472,11 +494,15 @@ public sealed class WebView2Page : IPage
 		_drained = true;
 	}
 
-	/// <summary>Edge's tracking prevention is Strict while blockTrackers is on and off with it. The level is the profile's, so it applies to every page on it.</summary>
+	/// <summary>
+	/// Edge's tracking prevention is Balanced while blockTrackers is on and off with it. EasyList, EasyPrivacy and the tracker
+	/// list already refuse the trackers; Strict on top of them also blocks what sites need from other hosts (sign-in
+	/// widgets, embeds), which Balanced leaves to sites the person uses. The level is the profile's, so it applies to every page on it.
+	/// </summary>
 	public void FollowTrackerBlocking()
 	{
 		if (!IsOpen || _core is not { } core) return;
-		core.Profile.PreferredTrackingPreventionLevel = _features.BlockTrackers ? CoreWebView2TrackingPreventionLevel.Strict : CoreWebView2TrackingPreventionLevel.None;
+		core.Profile.PreferredTrackingPreventionLevel = _features.BlockTrackers ? CoreWebView2TrackingPreventionLevel.Balanced : CoreWebView2TrackingPreventionLevel.None;
 	}
 
 	/// <summary>Whether the autofill channel is on for this page: web messages, the script, and OnPageMessage reading them.</summary>
@@ -575,7 +601,14 @@ public sealed class WebView2Page : IPage
 		core.NavigationStarting += (_, e) =>
 		{
 			// Decided here and now: NavigationStarting has no deferral, and the reason has already arrived.
-			var cause = _lastReason is { Url: var url, Reason: "anchorClick" } && url == e.Uri && !e.IsRedirected ? NavigationCause.AnchorClick : NavigationCause.Other;
+			var cause = _lastReason is { Url: var url, Reason: var reason } && url == e.Uri && !e.IsRedirected
+				? reason switch
+				{
+					"anchorClick" => NavigationCause.AnchorClick,
+					"formSubmissionPost" => NavigationCause.FormPost,
+					_ => NavigationCause.Other,
+				}
+				: NavigationCause.Other;
 			_lastReason = null;
 			var origin = e.NavigationKind switch
 			{
@@ -667,9 +700,9 @@ public sealed class WebView2Page : IPage
 		{
 			_downloads++;
 			_features.DownloadStarting(this, e);
-			// A preview that never showed a document was only this download: it closes, and the download goes on in the list.
-			// After the event, so the engine has the answer before the page goes.
-			if (!_showedDocument && _features.InPreview(this)) Faults.Enqueue(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), () =>
+			// A preview, or a tab a page opened, that never showed a document was only this download: it closes, as Chrome's
+			// does, and the download goes on in the list. After the event, so the engine has the answer before the page goes.
+			if (!_showedDocument && (_openedForPage || _features.InPreview(this))) Faults.Enqueue(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), () =>
 			{
 				if (IsOpen) _events.Closed();
 			}, "preview download");
@@ -860,7 +893,7 @@ public sealed class WebView2Page : IPage
 		var listed = _features.BlockTrackers && (TrackerRules.IsTrackerHost(host) || FilterRules.Bundled.Names(host));
 		if (!isDocument && !listed) return;
 		// The page's own document is never a third party; a tracker's iframe or subresource is.
-		var topDocument = isDocument && request == _approvedDocument;
+		var topDocument = isDocument && _approvedDocument is not null && RelayedNavigation.Same(_approvedDocument, request);
 		if (!topDocument && listed && Refused(request, host, TopOf(sender)))
 		{
 			e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
@@ -1043,6 +1076,7 @@ public sealed class WebView2Page : IPage
 			if (IsOpen && popup.IsOpen && popup.IsStarted)
 			{
 				e.NewWindow = popup.Core;
+				popup._openedForPage = true;
 				popup._events.WindowOpened();
 			}
 		}

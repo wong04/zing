@@ -1,6 +1,6 @@
 // Link previews (docs/superpowers/specs/2026-11-08-link-preview-design.md): a link to another site opens over the tab,
 // on local fixtures served on two hosts, 127.0.0.1 and localhost, so "another site" needs no live one.
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
@@ -47,6 +47,7 @@ test.beforeAll(async () => {
 <a id="same" href="/b">same</a>
 <a id="to-opener" href="${elsewhere}/opener">opener</a>
 <a id="blank" href="${elsewhere}/b" target="_blank">blank</a>
+<a id="blank-file" href="/file.bin" target="_blank">blank file</a>
 <button id="open" onclick="window.open('${elsewhere}/b')">open</button>
 <button id="open-same" onclick="window.open('/b')">open same</button>
 <button id="open-blank" onclick="window.open('about:blank').location = '${elsewhere}/b'">open blank</button>
@@ -381,6 +382,8 @@ function downloadsOf(zing: Launched) {
 	return {
 		sizeOf: (name: string) => () => existsSync(join(folder, name)) && statSync(join(folder, name)).size,
 		statusOf: (name: string) => async () => (await zing.chrome.evaluate(() => window.zing.getPageUi())).downloads.find((d) => d.filename === name)?.status,
+		idOf: async (name: string) => (await zing.chrome.evaluate(() => window.zing.getPageUi())).downloads.find((d) => d.filename === name)!.id,
+		markOf: (name: string) => () => existsSync(join(folder, `${name}:Zone.Identifier`)) && readFileSync(join(folder, `${name}:Zone.Identifier`), 'utf8'),
 	}
 }
 
@@ -399,7 +402,7 @@ test('a download started in a preview completes', async () => {
 
 test('a download still completes when its preview closes while it comes in', async () => {
 	const { zing, source } = await start()
-	const { sizeOf, statusOf } = downloadsOf(zing)
+	const { sizeOf, statusOf, markOf } = downloadsOf(zing)
 	try {
 		await source.click('#cross')
 		const preview = await previewPage(zing, `${other}/b`)
@@ -411,15 +414,47 @@ test('a download still completes when its preview closes while it comes in', asy
 		expect(finishSlow, 'the server is holding the slow body').toBeDefined()
 		finishSlow!()
 		await expect.poll(sizeOf('slow.bin')).toBe(2048)
-		// Known product bug, not the preview's own: the file is written whole, but the downloads list never hears the end once
-		// the page that started it is closed (its CoreWebView2 goes, and the operation's StateChanged with it). A tab closed
-		// mid-download shows the same. Expected to fail from here only, so every step above must still pass. Remove this
-		// line when it is fixed.
-		test.fail(true, 'the downloads list keeps a download "progressing" after the page that started it closes')
+		// The engine stops raising the operation's events once its page has gone; the list still hears the end.
 		await expect.poll(statusOf('slow.bin')).toBe('completed')
+		await expect.poll(markOf('slow.bin')).toContain(`HostUrl=${other}/slow.bin`)
+		expect(markOf('slow.bin')()).toContain(`ReferrerUrl=${other}/b`)
+		await zing.chrome.evaluate(() => window.zing.clearDownloads())
+		await expect.poll(statusOf('slow.bin')).toBeUndefined()
 	} finally {
 		await zing.close()
 	}
+})
+
+test('a download whose preview has closed can still be cancelled', async () => {
+	const { zing, source } = await start()
+	const { statusOf, idOf } = downloadsOf(zing)
+	try {
+		await source.click('#cross')
+		const preview = await previewPage(zing, `${other}/b`)
+		finishSlow = undefined
+		await preview.click('#slow')
+		await expect.poll(statusOf('slow.bin')).toBe('progressing')
+		await run(zing.chrome, 'preview.close')
+		await expectNoPreview(zing.chrome, `${other}/b`)
+		const id = await idOf('slow.bin')
+		await zing.chrome.evaluate((download) => window.zing.cancelDownload(download), id)
+		await expect.poll(statusOf('slow.bin')).toBe('cancelled')
+	} finally {
+		finishSlow?.()
+		await zing.close()
+	}
+})
+
+test('a new tab a link opens onto a download closes, as in Chrome, and the download goes on', async () => {
+	const { zing, source } = await start()
+	const { sizeOf, statusOf } = downloadsOf(zing)
+	const tabs = await tabCount(zing.chrome)
+	await source.click('#blank-file')
+	await expect.poll(sizeOf('report.bin')).toBe(2048)
+	await expect.poll(statusOf('report.bin')).toBe('completed')
+	await expect.poll(() => tabCount(zing.chrome)).toBe(tabs)
+	expect((await tabsOf(zing.chrome)).tabs.map((t) => t.url)).toEqual([`${own}/a`])
+	await zing.close()
 })
 
 test('Esc leaves a page dialog in a preview to the dialog, then closes the preview', async () => {
