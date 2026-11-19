@@ -482,6 +482,15 @@ export async function layers(chrome: Page): Promise<Layer[]> {
 	return JSON.parse(readFileSync(file, 'utf8')) as Layer[]
 }
 
+/** The address of the view Windows gives a click at this point of the content, in DIPs (TestHooks "window-at"), or the class of the window it gives it to when that is none of Zing's views. */
+export async function viewAt(chrome: Page, at: { x: number; y: number }): Promise<string> {
+	const file = join(scratchDir('zing-hit-'), 'hit.json')
+	await chrome.evaluate(([path, x, y]) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'window-at', file: path, x, y }), [file, at.x, at.y] as const)
+	await expect.poll(() => existsSync(file)).toBe(true)
+	const hit = JSON.parse(readFileSync(file, 'utf8')) as { url: string | null; windowClass: string }
+	return hit.url ?? `window ${hit.windowClass}`
+}
+
 export interface PeekState {
 	readonly open: boolean
 	/** The preview's pages, bottom first: its page, then any popups stacked over it. */

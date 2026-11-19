@@ -122,6 +122,16 @@ public sealed class LibraryTests
 	}
 
 	[Fact]
+	public void Removal_count_is_every_link_and_folder_a_remove_would_take()
+	{
+		foreach (var c in Cases("removalCount"))
+		{
+			var want = c.GetProperty("expected");
+			Assert.Equal(new RemovalCount(want.GetProperty("bookmarks").GetInt32(), want.GetProperty("folders").GetInt32()), Library.RemovalCount(Set(c.GetProperty("ids")), Tree));
+		}
+	}
+
+	[Fact]
 	public void Urls_are_every_link_depth_first()
 	{
 		foreach (var c in Cases("urls"))

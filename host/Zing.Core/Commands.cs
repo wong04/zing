@@ -163,10 +163,22 @@ public static class Menus
 				// A saved tab opens as its own tab; a copy in an ordinary tab is still there for the asking.
 				? [new MenuItem("Open", () => saved.Open(id)), new MenuItem("Open a Copy in New Tab", () => open(id, "tab"))]
 				: [new MenuItem("Open", () => open(id, "current")), new MenuItem("Open in New Tab", () => open(id, "tab"))];
+		if (Library.IsFixedFolder(id)) return items;
 		items.Add(MenuItem.Separator);
-		items.Add(new MenuItem("Remove", () => library.Apply(new RemoveAction([id]))));
+		items.Add(Remove(library, id));
 		return items;
 	}
+
+	/// <summary>A folder with things in it goes only from a second click on an item that says how much goes with it.</summary>
+	private static MenuItem Remove(LibraryStore library, string id)
+	{
+		void remove() => library.Apply(new RemoveAction([id]));
+		var count = Library.RemovalCount(new HashSet<string> { id }, library.Snapshot.Bookmarks);
+		if (count.Bookmarks + count.Folders <= 1) return new MenuItem("Remove", remove);
+		return new MenuItem("Remove", Submenu: [new MenuItem($"Delete {Counted(count.Bookmarks, "Bookmark")} and {Counted(count.Folders, "Folder")}", remove)]);
+	}
+
+	private static string Counted(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n} {noun}s";
 
 	private static MenuItem LibraryNode(BookmarkNode node, Action<string> open) => node switch
 	{

@@ -183,6 +183,13 @@
 	padding: 3px 10px;
 }
 
+.library-confirm {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
 .library-list {
 	flex: 1;
 	overflow-y: auto;

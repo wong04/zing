@@ -70,11 +70,12 @@ Also dropped:
 | L12 | Port DownloadPolicy | port-logic | [#23](https://github.com/wong04/zing/issues/23) | Done: the host consults `DownloadPolicy` for frame downloads ([#175](https://github.com/wong04/zing/pull/175)); host `DownloadsTests`; e2e in `e2e/page.spec.ts` (main-frame response it can't show downloads, a frame marked as a file downloads, the same response in a frame doesn't) |
 | L13 | Port DevTools pure logic | port-logic | [#24](https://github.com/wong04/zing/issues/24) | Done |
 | L14 | Port accent generator + WCAG AA test | port-logic | [#25](https://github.com/wong04/zing/issues/25) | Done |
-| L15 | Port DropRouter | port-logic | [#26](https://github.com/wong04/zing/issues/26) | Done |
+| L15 | Port DropRouter | port-logic | [#26](https://github.com/wong04/zing/issues/26) | Partial |
 | L16 | Port tracking-parameter stripper | port-logic | [#27](https://github.com/wong04/zing/issues/27) | Done |
 
 **L rows, 2026-11-02:** re-verified by reading each port and its tests; the shared suites passed locally (1,265 tests) and CI passed on `7edc3dd`. Done here means the logic is ported and tested, not that the app uses it yet:
-- **Waiting for the toolbox:** L15 (X23) has no caller until its row is built. L6, L7, L9 and L13 now have callers in the Toolbox, and exist only in TypeScript. L4 (X11) and L5 (X1–X3) now run as C# ports in the host; their TypeScript versions have no caller, and shared vectors keep the pairs in step.
+- **L15, Partial:** `dropRouter.ts` and `DropRouter.cs` are ported and held together by shared vectors, but nothing outside their tests calls either. Tool drop zones (`components/files.tsx`) take only dropped files and drags from another tool, so an image dragged from a web page onto Background Remover or Convert is not taken. Wiring it in needs the host to fetch the dragged image's address (`planDrop`'s download plan) and hand the file to the tool.
+- **Waiting for the toolbox:** L6, L7, L9 and L13 now have callers in the Toolbox, and exist only in TypeScript. L4 (X11) and L5 (X1–X3) now run as C# ports in the host; their TypeScript versions have no caller, and shared vectors keep the pairs in step.
 - **L11, Partial:** `faviconChoice.ts` has no caller and no C# port. `WebView2Page` takes the engine's `FaviconUri`, so the best-icon rule isn't applied.
 - **L12, Done since [#175](https://github.com/wong04/zing/pull/175):** `DownloadHost` consults `DownloadPolicy` when a frame's navigation becomes a download, and saves it only when the server marks it as a file. Any other download (the main frame's, `<a download>`, Save as) is saved as the engine started it.
 

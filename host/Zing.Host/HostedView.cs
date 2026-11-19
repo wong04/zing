@@ -30,6 +30,7 @@ public sealed class HostedView
 	private readonly bool _overlay;
 	private readonly IDisposable _tracked;
 	private Rect _bounds;
+	private IReadOnlyList<Rect>? _parts;
 	private bool _visible;
 
 	private HostedView(HostWindow window, nint hwnd, bool overlay, CoreWebView2Controller controller, IDisposable tracked)
@@ -161,6 +162,17 @@ public sealed class HostedView
 		}
 	}
 
+	/// <summary>
+	/// Places an overlay at a rectangle of the window's content and lets it take clicks only in <paramref name="parts"/>
+	/// (content DIPs, inside the rectangle): a click anywhere else in it reaches the window beneath, as if the view weren't there.
+	/// </summary>
+	public void Place(Rect bounds, IReadOnlyList<Rect> parts)
+	{
+		if (!_overlay) throw new InvalidOperationException("Only an overlay, a window of its own, can pass clicks to the window beneath");
+		_parts = parts;
+		Place(bounds);
+	}
+
 	/// <summary>Places the view at a rectangle of the window's content, in DIPs.</summary>
 	public void Place(Rect bounds)
 	{
@@ -192,6 +204,9 @@ public sealed class HostedView
 	}
 
 	internal bool IsOverlayWindow(nint hwnd) => _overlay && hwnd == _hwnd;
+
+	/// <summary>Whether a window is the view's own, or one of the engine's inside it.</summary>
+	internal bool Owns(nint hwnd) => !IsClosed && hwnd != 0 && (hwnd == _hwnd || Native.IsChild(_hwnd, hwnd));
 
 	/// <summary>Whether the keyboard is in this view right now (its window, or the engine's windows inside it).</summary>
 	public bool HasKeyboard
@@ -228,14 +243,50 @@ public sealed class HostedView
 		if (!IsClosed) Native.SetWindowPos(_hwnd, insertAfter, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
 	}
 
+	/// <summary>
+	/// Sets the popup's window region to the parts, in its own pixels (it has no frame, so they start at its top-left). Windows
+	/// hit-tests a window only inside its region, so a click outside the parts goes to whatever window is beneath.
+	/// </summary>
+	private void Clip(IReadOnlyList<Rect> parts, double scale, int left, int top)
+	{
+		const int RGN_OR = 2, ERROR = 0;
+		var region = Native.CreateRectRgn(0, 0, 0, 0);
+		if (region == 0) throw new NativeCallException("CreateRectRgn overlay");
+		foreach (var part in parts)
+		{
+			var piece = Native.CreateRectRgn(
+				(int)Math.Round(part.X * scale) - left,
+				(int)Math.Round(part.Y * scale) - top,
+				(int)Math.Round((part.X + part.Width) * scale) - left,
+				(int)Math.Round((part.Y + part.Height) * scale) - top);
+			if (piece == 0)
+			{
+				Native.DeleteObject(region);
+				throw new NativeCallException("CreateRectRgn overlay part");
+			}
+			var combined = Native.CombineRgn(region, region, piece, RGN_OR);
+			Native.DeleteObject(piece);
+			if (combined != ERROR) continue;
+			Native.DeleteObject(region);
+			throw new NativeCallException("CombineRgn overlay");
+		}
+		// On success the window owns the region; on failure it is still ours.
+		if (Native.SetWindowRgn(_hwnd, region, true) != 0) return;
+		var error = new NativeCallException("SetWindowRgn overlay");
+		Native.DeleteObject(region);
+		throw error;
+	}
+
 	private void Apply()
 	{
 		if (IsClosed) return;
 		var scale = _window.Scale;
 		var width = (int)Math.Round(Math.Max(0, _bounds.Width) * scale);
 		var height = (int)Math.Round(Math.Max(0, _bounds.Height) * scale);
-		var x = (int)Math.Round(_bounds.X * scale);
-		var y = (int)Math.Round(_bounds.Y * scale);
+		var left = (int)Math.Round(_bounds.X * scale);
+		var top = (int)Math.Round(_bounds.Y * scale);
+		var x = left;
+		var y = top;
 		if (_overlay)
 		{
 			// A popup is placed on screen.
@@ -245,6 +296,7 @@ public sealed class HostedView
 		}
 		Native.SetWindowPos(_hwnd, 0, x, y, width, height, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
 		Controller.Bounds = new Windows.Foundation.Rect(0, 0, width, height);
+		if (_parts is not null) Clip(_parts, scale, left, top);
 	}
 
 	/// <summary>

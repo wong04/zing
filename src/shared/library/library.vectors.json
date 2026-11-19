@@ -804,6 +804,71 @@
 			"expected": []
 		}
 	],
+	"removalCount": [
+		{
+			"name": "one bookmark is one bookmark",
+			"ids": [
+				"apple"
+			],
+			"expected": {
+				"bookmarks": 1,
+				"folders": 0
+			}
+		},
+		{
+			"name": "a folder counts itself, its subfolders and every link inside",
+			"ids": [
+				"docs"
+			],
+			"expected": {
+				"bookmarks": 2,
+				"folders": 2
+			}
+		},
+		{
+			"name": "a selection inside a selected folder is counted once",
+			"ids": [
+				"inner",
+				"swift"
+			],
+			"expected": {
+				"bookmarks": 1,
+				"folders": 1
+			}
+		},
+		{
+			"name": "several bookmarks",
+			"ids": [
+				"apple",
+				"wiki"
+			],
+			"expected": {
+				"bookmarks": 2,
+				"folders": 0
+			}
+		},
+		{
+			"name": "a fixed folder is never removed, so nothing in it goes",
+			"ids": [
+				"fab00000-0000-4000-8000-000000000001"
+			],
+			"expected": {
+				"bookmarks": 0,
+				"folders": 0
+			}
+		},
+		{
+			"name": "a link inside a fixed folder still goes",
+			"ids": [
+				"fab00000-0000-4000-8000-000000000001",
+				"wiki"
+			],
+			"expected": {
+				"bookmarks": 1,
+				"folders": 0
+			}
+		}
+	],
 	"groupIntoFolder": [
 		{
 			"name": "wraps the selection where the first item was",

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
-import { LIBRARY_PANEL_WIDTH, type LibraryPanel as PanelKind } from '@shared/ipc'
+import { LIBRARY_PANEL_WIDTH, type LibraryAction, type LibraryPanel as PanelKind } from '@shared/ipc'
 import { chromeInsets, type TabBarPosition } from '@shared/layout/chrome'
 import { FAVOURITES_ID, isFixedFolder, isFolder, visibleRows, type BookmarkNode, type BrowserLibrary } from '@shared/library/library'
 import { zing } from '../api'
+import { dropAction, removalPrompt } from './panelEdits'
 
 interface Row {
 	readonly id: string
@@ -59,6 +60,9 @@ export function LibraryPanel({ library, icons, panel, favouritesBar, offset, pos
 	const [focused, setFocused] = useState<string | undefined>()
 	const [renaming, setRenaming] = useState<string | undefined>()
 	const [dragged, setDragged] = useState<string | undefined>()
+	const [asked, setPending] = useState<{ readonly panel: PanelKind; readonly ids: string[]; readonly prompt: string } | undefined>()
+	// A question asked on the other tab of the panel isn't this one's.
+	const pending = asked?.panel === panel ? asked : undefined
 	const list = useRef<HTMLDivElement>(null)
 
 	const rows = panel === 'bookmarks' ? bookmarkRows(library, expanded) : readingRows(library)
@@ -91,7 +95,17 @@ export function LibraryPanel({ library, icons, panel, favouritesBar, offset, pos
 		if (panel === 'readingList') void zing.applyLibrary({ type: 'setRead', id: row.id, read: true })
 	}
 	const targets = (id: string): string[] => (selected.has(id) ? [...selected] : [id])
-	const remove = (ids: string[]): void => void zing.applyLibrary({ type: 'remove', ids: ids.filter((id) => !isFixedFolder(id)) })
+	const remove = (ids: string[]): void => {
+		const going = ids.filter((id) => !isFixedFolder(id))
+		const prompt = removalPrompt(library, panel, going)
+		if (prompt) setPending({ panel, ids: going, prompt })
+		else void zing.applyLibrary({ type: 'remove', ids: going })
+	}
+	const answer = (confirmed: boolean): void => {
+		if (confirmed && pending) void zing.applyLibrary({ type: 'remove', ids: pending.ids })
+		setPending(undefined)
+		list.current?.focus()
+	}
 	const newFolder = async (): Promise<void> => {
 		const id = await zing.applyLibrary({ type: 'newFolder', ids: [...selected].filter((s) => !isFixedFolder(s)) })
 		if (!id) return
@@ -112,13 +126,11 @@ export function LibraryPanel({ library, icons, panel, favouritesBar, offset, pos
 		if (target < 0 || target >= at.count) return
 		void zing.applyLibrary({ type: 'move', id, to: delta < 0 ? target : target + 1 })
 	}
+	const dropOn = (target: Row): LibraryAction | undefined => (dragged ? dropAction(library, panel, dragged, target.id) : undefined)
 	const dropOnRow = (target: Row): void => {
-		if (!dragged || dragged === target.id) return
-		const to = positionOf(library, panel, target.id)
-		const id = dragged
+		const action = dropOn(target)
 		setDragged(undefined)
-		if (!to) return
-		void zing.applyLibrary({ type: 'move', id, to: to.index })
+		if (action) void zing.applyLibrary(action)
 	}
 
 	const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
@@ -168,6 +180,26 @@ export function LibraryPanel({ library, icons, panel, favouritesBar, offset, pos
 					</button>
 				</div>
 			) : null}
+			{pending ? (
+				<div
+					className="library-actions library-confirm"
+					role="alertdialog"
+					aria-label={pending.prompt}
+					onKeyDown={(e) => {
+						if (e.key !== 'Escape') return
+						e.preventDefault()
+						answer(false)
+					}}
+				>
+					<span>{pending.prompt}</span>
+					<button type="button" onClick={() => answer(true)}>
+						Delete
+					</button>
+					<button type="button" autoFocus onClick={() => answer(false)}>
+						Cancel
+					</button>
+				</div>
+			) : null}
 			<div ref={list} className="library-list" role="tree" tabIndex={0} onKeyDown={onKeyDown}>
 				{rows.length === 0 ? <p className="library-empty">{panel === 'bookmarks' ? 'No bookmarks yet.' : 'Your Reading List is empty.'}</p> : null}
 				{rows.map((row) => (
@@ -180,8 +212,9 @@ export function LibraryPanel({ library, icons, panel, favouritesBar, offset, pos
 						style={{ paddingLeft: 8 + row.depth * 16 }}
 						draggable={!isFixedFolder(row.id)}
 						onDragStart={() => setDragged(row.id)}
-						onDragOver={(e) => dragged && e.preventDefault()}
+						onDragOver={(e) => dropOn(row) && e.preventDefault()}
 						onDrop={() => dropOnRow(row)}
+						onDragEnd={() => setDragged(undefined)}
 						onClick={(e) => select(row.id, e.ctrlKey || e.metaKey)}
 						onDoubleClick={() => open(row)}
 					>
