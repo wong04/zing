@@ -444,7 +444,7 @@ public sealed class StartPageTests
 	public void ServedPageMatchesTheVectors(string name)
 	{
 		var vector = Named("handle", name);
-		var settings = Settings.Parse(JsonNode.Parse(vector.GetProperty("stored").GetRawText()));
+		var settings = Settings.Parse(JsonNode.Parse(vector.GetProperty("stored").GetRawText()), key => Assert.Fail($"unknown key {key}"));
 		var response = StartPage.Handle("zing://home", settings);
 		Assert.Equal(200, response.Status);
 		Assert.Equal("text/html; charset=utf-8", response.ContentType);

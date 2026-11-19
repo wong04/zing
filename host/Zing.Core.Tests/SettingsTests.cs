@@ -65,36 +65,41 @@ public class SettingsTests
 	{
 		foreach (var c in V.GetProperty("parseAccepted").EnumerateArray())
 		{
-			var parsed = Settings.Parse(Node(c.GetProperty("input")));
+			var unknown = new List<string>();
+			var parsed = Settings.Parse(Node(c.GetProperty("input")), unknown.Add);
 			foreach (var p in c.GetProperty("expectSubset").EnumerateObject())
 				Assert.True(JsonNode.DeepEquals(Node(p.Value), parsed[p.Name]), $"{c.GetProperty("name")} {p.Name}");
 			if (c.TryGetProperty("expectAbsent", out var absent))
 				foreach (var key in absent.EnumerateArray()) Assert.False(parsed.ContainsKey(key.GetString()!), $"{c.GetProperty("name")} {key}");
+			var expectUnknown = c.TryGetProperty("expectUnknown", out var u) ? u.EnumerateArray().Select(k => k.GetString()!).ToList() : [];
+			Assert.Equal(expectUnknown, unknown);
 		}
 	}
 
 	[Fact]
 	public void AStoredFileWithoutACustomColourReadsTheDefault()
 	{
-		var parsed = Settings.Parse(JsonNode.Parse("""{"accent":"red"}"""));
+		var parsed = Settings.Parse(JsonNode.Parse("""{"accent":"red"}"""), NoUnknownKeys);
 		Assert.Equal("red", parsed["accent"]!.GetValue<string>());
 		Assert.Equal("#D9B872", parsed["customColor"]!.GetValue<string>());
 	}
 
 	[Fact]
 	public void ACustomColourThatIsNotHexIsRefused() =>
-		Assert.Throws<InvalidSettingException>(() => Settings.Parse(JsonNode.Parse("""{"customColor":"blue"}""")));
+		Assert.Throws<InvalidSettingException>(() => Settings.Parse(JsonNode.Parse("""{"customColor":"blue"}"""), NoUnknownKeys));
 
 	[Fact]
-	public void ParseRejectsInvalidValuesAndUnknownKeys()
+	public void ParseRejectsInvalidValues()
 	{
 		foreach (var c in V.GetProperty("parseRejected").EnumerateArray())
 		{
 			var input = Node(c.GetProperty("input"));
-			if (c.GetProperty("error").GetString() == "UnknownSetting") Assert.Throws<UnknownSettingException>(() => Settings.Parse(input));
-			else Assert.Throws<InvalidSettingException>(() => Settings.Parse(input));
+			Assert.Equal("InvalidSetting", c.GetProperty("error").GetString());
+			Assert.Throws<InvalidSettingException>(() => Settings.Parse(input, NoUnknownKeys));
 		}
 	}
+
+	private static void NoUnknownKeys(string key) => Assert.Fail($"unexpected unknown key {key}");
 
 	[Fact]
 	public void AcceptsValueMatchesVectors()

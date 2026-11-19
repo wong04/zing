@@ -342,7 +342,7 @@ public sealed class ZingApp
 	private SettingsStore OpenSettings()
 	{
 		var scheduler = _scheduler ?? throw new InvalidOperationException("Launch creates the scheduler first");
-		var loadedSettings = JsonFiles.LoadSettingsOrRecover(AppPaths.Settings, Stamp());
+		var loadedSettings = JsonFiles.LoadSettingsOrRecover(AppPaths.Settings, Stamp(), key => Faults.Warning("settings load", new UnknownSettingException(key)));
 		if (loadedSettings.Problem is { } settingsProblem) StartupProblem("settings", "your settings", "with the defaults", settingsProblem);
 		var settings = new SettingsStore(loadedSettings.Value);
 		// A file that couldn't be read is still there and may be fine, so this launch's changes don't overwrite it.
