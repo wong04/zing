@@ -102,6 +102,25 @@ public sealed class ProfileOwner
 		JsonSerializer.Serialize(pipe, argv);
 	}
 
+	/// <summary>What a later launch says when the owner never takes its command line: it is still starting, or stuck (on an error box, say).</summary>
+	public const string OwnerStuckMessage = "Zing is already open, but it isn't answering. It may still be starting, or it may be stuck. Wait a moment and try again, or end Zing in Task Manager and start it again.";
+
+	/// <summary>
+	/// <see cref="HandOver"/> for a launch: an owner that never listens is told to the person through <paramref name="tellStuck"/>
+	/// rather than thrown, since a second launch has nowhere else to say it and the first Zing still holds the profile.
+	/// </summary>
+	public static void HandOverOrTellStuck(string key, IReadOnlyList<string> argv, TimeSpan patience, Action<string> tellStuck)
+	{
+		try
+		{
+			HandOver(key, argv, patience);
+		}
+		catch (TimeoutException)
+		{
+			tellStuck(OwnerStuckMessage);
+		}
+	}
+
 	public static NamedPipeClientStream Connect(string key, TimeSpan patience)
 	{
 		var pipe = new NamedPipeClientStream(".", PipeName(key), PipeDirection.Out, PipeOptions.CurrentUserOnly);

@@ -20,12 +20,15 @@ public static class SingleInstance
 	// A static, so the collector can't close the mutex while this process runs.
 	private static ProfileOwner? _owner;
 
-	/// <summary>True when another Zing owns this profile and has been handed this launch; the caller exits.</summary>
+	/// <summary>
+	/// True when another Zing owns this profile; the caller exits. It has been handed this launch, or, when it never
+	/// answered (still starting, or stuck on an error box), the person has been told so.
+	/// </summary>
 	public static bool RedirectedToRunningZing()
 	{
 		_owner = ProfileOwner.TryClaim(Key);
 		if (_owner is not null) return false;
-		ProfileOwner.HandOver(Key, Environment.GetCommandLineArgs().Skip(1).ToList(), OwnerPatience);
+		ProfileOwner.HandOverOrTellStuck(Key, Environment.GetCommandLineArgs().Skip(1).ToList(), OwnerPatience, StartupFailure.TellAlreadyRunning);
 		return true;
 	}
 

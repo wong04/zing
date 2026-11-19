@@ -657,11 +657,20 @@ internal static class StartupFailure
 {
 	private const uint MB_OK = 0x0;
 	private const uint MB_ICONERROR = 0x10;
+	private const uint MB_ICONWARNING = 0x30;
 
 	public static void Tell(Exception error)
 	{
 		if (TestHooks.IsEndToEndRun) return;
 		MessageBoxW(0, $"Zing couldn't start.\n\n{error.Message}", "Zing can't start", MB_OK | MB_ICONERROR);
+	}
+
+	/// <summary>A second launch found a Zing that never took its command line (ProfileOwner.OwnerStuckMessage).</summary>
+	public static void TellAlreadyRunning(string message)
+	{
+		Faults.Warning("second launch", new TimeoutException(message));
+		if (TestHooks.IsEndToEndRun) return;
+		MessageBoxW(0, message, "Zing is already open", MB_OK | MB_ICONWARNING);
 	}
 
 	[System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
