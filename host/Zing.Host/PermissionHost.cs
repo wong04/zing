@@ -14,6 +14,7 @@ public sealed class PermissionHost(Func<ChromeApi?> api)
 		if (api() is not { } chrome)
 		{
 			// No window API yet, so no one to ask: refused, never left to Edge's own prompt.
+			e.SavesInProfile = false;
 			e.State = CoreWebView2PermissionState.Deny;
 			TestHooks.Record("permission", new InvalidOperationException($"A permission request came before the window's API ({e.PermissionKind})"));
 			return;

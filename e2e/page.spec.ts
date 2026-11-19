@@ -206,6 +206,37 @@ test('Allow grants a notification, and the camera and microphone, each asked in 
 	await zing.close()
 })
 
+test('a grant or a refusal lasts as long as the page: after a reload the site is asked again', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/perm` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/perm`)
+	const result = () => page.evaluate(() => (globalThis as unknown as { result?: string }).result)
+	const ask = async () => {
+		await page.waitForLoadState('domcontentloaded')
+		await page.evaluate(() => {
+			const g = globalThis as unknown as { result?: string; Notification: { requestPermission(): Promise<string> } }
+			g.result = 'pending'
+			void g.Notification.requestPermission().then((r) => (g.result = r))
+		})
+	}
+	await ask()
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await ui.getByRole('button', { name: 'Allow' }).click()
+	await expect.poll(result).toBe('granted')
+
+	await page.reload()
+	await ask()
+	await expect(ui.getByText('wants to show notifications')).toBeVisible()
+	expect(await result()).toBe('pending')
+	await ui.getByRole('button', { name: 'Deny' }).click()
+	await expect.poll(result).toBe('denied')
+
+	await page.reload()
+	await ask()
+	await expect(ui.getByText('wants to show notifications')).toBeVisible()
+	expect(await result()).toBe('pending')
+	await zing.close()
+})
+
 test('a click that lands on Allow the moment a prompt opens is ignored', async () => {
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/perm` } })
 	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/perm`)
