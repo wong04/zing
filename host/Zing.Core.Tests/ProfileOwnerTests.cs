@@ -133,6 +133,14 @@ public sealed class ProfileOwnerTests
 	}
 
 	[Fact]
+	public void A_second_launch_to_an_owner_that_never_listens_tells_the_person_instead_of_crashing()
+	{
+		var told = new List<string>();
+		ProfileOwner.HandOverOrTellStuck(NewKey(), ["https://a.test/"], TimeSpan.FromMilliseconds(200), told.Add);
+		Assert.Equal([ProfileOwner.OwnerStuckMessage], told);
+	}
+
+	[Fact]
 	public async Task ABrokenMessageDoesNotStopTheNextLaunch()
 	{
 		var key = NewKey();

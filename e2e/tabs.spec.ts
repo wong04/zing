@@ -1,9 +1,11 @@
+import { writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { join } from 'node:path'
 import { expect, type Locator, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
 import { favourites, FAVOURITES_ID } from '../src/shared/library/library'
-import { launchZing, test, layers, liveCounts, pageWhere } from './zing'
+import { launchZing, test, layers, liveCounts, pageWhere, scratchDir } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -125,6 +127,9 @@ test('the tab overview shows a card per tab with pictures, and closes again', as
 	// The start page tab plus the two opened.
 	await expect(overview.locator('.overview-card')).toHaveCount(3)
 	await expect(overview.locator('.overview-thumb img')).not.toHaveCount(0)
+	// Pictures are card-sized: every change while the overview is open sends them all again.
+	const widths = await overview.locator('.overview-thumb img').evaluateAll((images) => images.map((image) => (image as unknown as { naturalWidth: number }).naturalWidth))
+	for (const width of widths) expect(width).toBeLessThanOrEqual(640)
 	// The active tab's card takes the keyboard, so arrows and Enter work at once.
 	await expect(overview.locator('.overview-card[aria-current="true"]')).toBeFocused()
 	await zing.chrome.evaluate(() => window.zing.closeOverview())
@@ -346,5 +351,30 @@ test('Open All shows the last tab and starts the others when they are first acti
 
 	await zing.chrome.evaluate((id) => window.zing.activateTab(id!), first)
 	await expect.poll(async () => (await tabsNow()).find((t) => t.id === first)?.title).toBe('All-0')
+	await zing.close()
+})
+
+test('a row of tabs too long for the strip scrolls, keeps the tab in front in view, and leaves New Tab in reach', async () => {
+	// Restored, so only the tab in front gets a page.
+	const userDataDir = scratchDir('zing-host-data-')
+	const saved = Array.from({ length: 60 }, (_, i) => ({ url: url(`t${i}`, `Tab ${i}`), title: `Tab ${i}`, pinned: false, active: i === 59 }))
+	writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({ restoreTabs: true, tabBarPosition: 'top' }))
+	writeFileSync(join(userDataDir, 'session.json'), JSON.stringify(saved))
+	const zing = await launchZing({ userDataDir })
+	const chips = zing.chrome.locator('.tabs > [role="tab"]')
+	await expect(chips).toHaveCount(60)
+	expect(await zing.chrome.locator('.tabs').evaluate((row) => row.scrollWidth > row.clientWidth)).toBe(true)
+	await expect(chips.last()).toBeInViewport({ ratio: 1 })
+	const newTab = zing.chrome.getByRole('button', { name: 'New Tab' })
+	await expect(newTab).toBeInViewport({ ratio: 1 })
+	// Nothing lies over it, so a click reaches it.
+	expect(await newTab.evaluate((button) => {
+		const box = button.getBoundingClientRect()
+		return button.ownerDocument.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest('button') === button
+	})).toBe(true)
+
+	const first = (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs[0]!.id
+	await zing.chrome.evaluate((id) => window.zing.activateTab(id), first)
+	await expect(chips.first()).toBeInViewport({ ratio: 1 })
 	await zing.close()
 })

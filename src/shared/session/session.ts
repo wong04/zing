@@ -10,8 +10,10 @@ export interface SessionTab {
 	readonly active: boolean
 }
 
-/** Beyond this the file stops being a convenience and becomes a liability, in size and in recorded history. */
-export const MAX_SESSION_TABS = 40
+/** The session file is not a session: it is corrupt, so it must be kept aside rather than read as no tabs. */
+export class SessionDecodeError extends Error {
+	override name = 'SessionDecodeError'
+}
 
 /** A tab worth saving: real web pages only. A window of blank new tabs is worse than nothing. */
 export function isRestorableUrl(url: string): boolean {
@@ -20,13 +22,9 @@ export function isRestorableUrl(url: string): boolean {
 	return protocol === 'http:' || protocol === 'https:'
 }
 
-/** What is worth persisting. Pinned tabs survive the cap first: they are the ones explicitly kept. */
+/** What is worth persisting: every web page, in order. Restored tabs other than the front one get no page, so their number costs little. */
 export function prepareSession(tabs: readonly SessionTab[]): SessionTab[] {
-	const kept = tabs.filter((t) => isRestorableUrl(t.url))
-	if (kept.length <= MAX_SESSION_TABS) return kept
-	const pinned = kept.filter((t) => t.pinned)
-	const loose = kept.filter((t) => !t.pinned)
-	return [...pinned, ...loose].slice(0, MAX_SESSION_TABS)
+	return tabs.filter((t) => isRestorableUrl(t.url))
 }
 
 export function encodeSession(tabs: readonly SessionTab[]): string {
@@ -44,17 +42,15 @@ function isSessionTab(value: unknown): value is SessionTab {
 	)
 }
 
-/**
- * A corrupt or half-written session file must never stop the browser
- * opening, so anything unreadable decodes to no tabs.
- */
+/** A corrupt file throws SessionDecodeError, never decodes to no tabs: the caller keeps it aside and says so. */
 export function decodeSession(text: string): SessionTab[] {
 	let parsed: unknown
 	try {
 		parsed = JSON.parse(text)
-	} catch {
-		return []
+	} catch (error) {
+		throw new SessionDecodeError('The session file is not JSON', { cause: error })
 	}
-	if (!Array.isArray(parsed)) return []
-	return parsed.filter(isSessionTab).filter((t) => isRestorableUrl(t.url))
+	if (!Array.isArray(parsed)) throw new SessionDecodeError('The session file is not a list of tabs')
+	if (!parsed.every(isSessionTab)) throw new SessionDecodeError('The session file has an entry that is not a tab')
+	return parsed.filter((t) => isRestorableUrl(t.url))
 }

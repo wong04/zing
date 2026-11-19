@@ -11,6 +11,7 @@ public sealed class SessionSaver : IDisposable
 	private readonly Func<IReadOnlyList<SessionTab>> _source;
 	private readonly DebouncedJsonWriter _writer;
 	private readonly IDisposable _subscription;
+	private bool _keepFile;
 
 	public SessionSaver(string path, SettingsStore settings, Func<IReadOnlyList<SessionTab>> source, IScheduler scheduler, Action<Exception> onError)
 	{
@@ -32,8 +33,17 @@ public sealed class SessionSaver : IDisposable
 	public void Changed()
 	{
 		if (!Enabled) return;
-		_writer.Write(Session.Prepare(_source()));
+		var tabs = Session.Prepare(_source());
+		if (_keepFile && tabs.Count == 0) return;
+		_keepFile = false;
+		_writer.Write(tabs);
 	}
+
+	/// <summary>
+	/// The file couldn't be read and was left as it is, as the person was told: it stays until there is a web page to save in
+	/// its place, so a window of blank tabs doesn't replace tabs that may still be there.
+	/// </summary>
+	public void KeepUnreadFile() => _keepFile = true;
 
 	/// <summary>On quit, so the last change inside the debounce window isn't lost.</summary>
 	public void Flush() => _writer.Flush();

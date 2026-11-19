@@ -596,4 +596,29 @@ public sealed class ChromeApiTests : IDisposable
 		Assert.True(_api.HandlePreviewKey(Esc with { Repeat = true }));
 		Assert.Same(preview, _api.Tabs.Preview!.Top.Page);
 	}
+
+	[Fact]
+	public void Split_with_New_Tab_on_a_full_split_opens_no_stray_tab()
+	{
+		for (var i = 1; i < Split.MaxPanes; i++) _api.Run("tab.split");
+		Assert.Equal(Split.MaxPanes, _api.Tabs.Splits.Of(ActiveId)!.TabIds.Count);
+		var before = _api.Tabs.Records.Count;
+		var outcome = JsonSerializer.SerializeToElement(_api.Run("tab.split"));
+		Assert.Equal("not-applicable", outcome.GetProperty("Status").GetString());
+		Assert.Equal(before, _api.Tabs.Records.Count);
+	}
+
+	[Fact]
+	public void A_restored_tab_whose_item_is_gone_comes_back_as_an_ordinary_tab()
+	{
+		var kept = _library.AddLink(Library.PinnedId, 0, "Kept", "https://kept.test/");
+		using var api = new ChromeApi(new Bridge(), new AppServices(_settings, _library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent()), new FakeWindowHost(), "test");
+		api.Start([new SessionTab("https://kept.test/", "Kept", true, false, kept), new SessionTab("https://gone.test/", "Gone", true, true, "deleted-item")], null);
+		var gone = api.Tabs.Records.Single(r => r.Url == "https://gone.test/");
+		Assert.Null(gone.ItemId);
+		Assert.False(gone.Pinned);
+		Assert.Equal(kept, api.Tabs.Records.Single(r => r.Url == "https://kept.test/").ItemId);
+		// Gone from the library, so no new item was made for it either.
+		Assert.Equal(["https://kept.test/"], Library.Pinned(_library.Snapshot).OfType<BookmarkLink>().Select(l => l.Url));
+	}
 }

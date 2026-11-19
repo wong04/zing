@@ -186,7 +186,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			if (key == "blockTrackers") FollowTrackerBlocking();
 		});
 		_scope.Track(themeSubscription.Dispose);
-		Api.Start(_app.TakePendingRestore(), System.Environment.GetEnvironmentVariable("ZING_START_URL"));
+		Api.Start(_app.TakePendingRestore(this), System.Environment.GetEnvironmentVariable("ZING_START_URL"));
 		_app.Ready(this);
 		_chrome = await chrome;
 		_scope.Checkpoint("startup");

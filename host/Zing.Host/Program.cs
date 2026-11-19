@@ -68,7 +68,10 @@ public sealed class ZingApp
 	private MainWindow? _mostRecent;
 	private AppServices? _services;
 	private SessionSaver? _session;
-	private IReadOnlyList<SessionTab> _pendingRestore = [];
+	// The tabs each window brings back as it starts: at launch the saved session for the first window, after an engine rebuild every window's own.
+	private readonly Dictionary<MainWindow, IReadOnlyList<SessionTab>> _pendingRestores = [];
+	// Windows whose views died with the engine, closing for a rebuild: none of them may write the session.
+	private readonly HashSet<MainWindow> _lost = [];
 	private readonly List<string> _startupNotices = [];
 	private IScheduler? _scheduler;
 	private Microsoft.UI.Dispatching.DispatcherQueue? _dispatcher;
@@ -114,11 +117,13 @@ public sealed class ZingApp
 		_onQuit.Add(_session.Flush);
 		_updates = OpenUpdates();
 		TestHooks.OfferDefaultBrowser = OfferDefaultBrowserForTest;
+		IReadOnlyList<SessionTab> restore = [];
 		if (Flag("restoreTabs"))
 		{
-			var restored = Session.LoadOrRecover(AppPaths.Session);
-			_pendingRestore = restored.Value;
+			var restored = Session.LoadOrRecover(AppPaths.Session, Stamp());
+			restore = restored.Value;
 			if (restored.Problem is { } problem) StartupProblem("session", "your saved tabs", "without them", problem);
+			if (restored.Problem is { OriginalInPlace: true }) _session.KeepUnreadFile();
 		}
 		else DiscardSession();
 		var argv = System.Environment.GetCommandLineArgs().Skip(1).ToList();
@@ -127,7 +132,7 @@ public sealed class ZingApp
 		SingleInstance.Listen(OnSecondLaunch);
 		_taskbar = new TaskbarIcon(dispatcher);
 		FollowThemeInMenus(dispatcher);
-		NewWindow();
+		NewWindow(restore);
 		StartupMarks.Mark("window created");
 	}
 
@@ -253,27 +258,27 @@ public sealed class ZingApp
 		if (urls.Count == 0 && files.Count == 0) MostRecent?.Reveal();
 	}
 
-	public MainWindow NewWindow()
+	public MainWindow NewWindow() => NewWindow([]);
+
+	/// <summary>A window that starts with <paramref name="restore"/> as its tabs, through the same path as session restore.</summary>
+	private MainWindow NewWindow(IReadOnlyList<SessionTab> restore)
 	{
 		var window = new MainWindow(this);
 		_windows.Add(window);
+		if (restore.Count > 0) _pendingRestores[window] = restore;
 		_taskbar?.Add(window.AppWindow);
 		window.Start();
 		window.Show();
 		return window;
 	}
 
-	/// <summary>Hands the saved tabs to exactly one window, so later windows open blank.</summary>
-	public IReadOnlyList<SessionTab> TakePendingRestore()
-	{
-		var tabs = _pendingRestore;
-		_pendingRestore = [];
-		return tabs;
-	}
+	/// <summary>The tabs this window was opened to bring back, handed over once; other windows open blank.</summary>
+	public IReadOnlyList<SessionTab> TakePendingRestore(MainWindow window) => _pendingRestores.Remove(window, out var tabs) ? tabs : [];
 
+	/// <summary>A window lost with the engine never writes: the file keeps the session saved as it died, never a partial set.</summary>
 	public void TabsChanged(MainWindow window)
 	{
-		if (window == Primary) _session?.Changed();
+		if (window == Primary && !_lost.Contains(window)) _session?.Changed();
 	}
 
 	/// <summary>
@@ -291,12 +296,15 @@ public sealed class ZingApp
 	public void Closed(MainWindow window)
 	{
 		var wasPrimary = window == Primary;
+		var lost = _lost.Remove(window);
 		_windows.Remove(window);
+		_pendingRestores.Remove(window);
 		_taskbar?.Remove(window.AppWindow);
 		if (_windows.Count > 0)
 		{
 			// The next window is now the one saved; without this, quitting it untouched restores the closed one.
-			if (wasPrimary) _session?.Changed();
+			// Not for a window lost with the engine: the next one is closing too, and the file keeps the session as it died.
+			if (wasPrimary && !lost) _session?.Changed();
 			return;
 		}
 		// The windows went with a dead engine, not because the person quit: Zing comes back instead.
@@ -533,32 +541,36 @@ public sealed class ZingApp
 	}
 
 	/// <summary>
-	/// The first step of coming back from a dead engine: keep the primary window's tabs in memory (nothing
+	/// The first step of coming back from a dead engine: keep every window's tabs in memory (nothing
 	/// new goes to disk), save the session as it stood, and close every window, whose views are all dead.
 	/// </summary>
 	private void LoseEngine()
 	{
 		if (_rebuild is not null) return;
 		TestHooks.Record("engine", new EngineStoppedException());
-		var tabs = Primary?.Api?.Tabs;
-		var rebuild = new EngineRebuild(tabs is null ? [] : Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All));
+		var rebuild = new EngineRebuild([.. _windows.Select(TabsOf)]);
 		_rebuild = rebuild;
+		_lost.UnionWith(_windows);
 		_session?.Flush();
 		// If the engine never says it has exited, Zing still comes back rather than idling with no window.
 		rebuild.Deadline = _scheduler?.Schedule(EngineRebuild.ExitWait, Rebuild);
 		foreach (var window in _windows.ToList()) window.CloseWindow();
 	}
 
-	/// <summary>A new engine and one window with the primary window's tabs, through the same path as session restore.</summary>
+	/// <summary>A window's tabs as a session, or, for one that hadn't started yet, the tabs it was to bring back.</summary>
+	private IReadOnlyList<SessionTab> TabsOf(MainWindow window) =>
+		window.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : TakePendingRestore(window);
+
+	/// <summary>A new engine and a window for each that was open, oldest first, each with its own tabs, through the same path as session restore.</summary>
 	private void Rebuild()
 	{
 		if (_rebuild is not { } rebuild) return;
 		_rebuild = null;
 		rebuild.Deadline?.Dispose();
-		_pendingRestore = rebuild.Tabs;
 		_environment = OpenEnvironmentAsync(Flag("acceleratedCanvas"));
 		_startupNotices.Add("Zing's web engine stopped unexpectedly, so Zing restarted it.");
-		NewWindow();
+		if (rebuild.Windows.Count == 0) NewWindow();
+		foreach (var tabs in rebuild.Windows) NewWindow(tabs);
 	}
 
 	private CoreWebView2? AnyLivePage() => _windows.Select(w => w.AnyLivePage()).FirstOrDefault(core => core is not null);
@@ -582,13 +594,13 @@ public sealed class ZingApp
 	}
 }
 
-/// <summary>A rebuild in progress: the tabs to bring back, and whether the old engine has finished exiting.</summary>
-internal sealed class EngineRebuild(IReadOnlyList<SessionTab> tabs)
+/// <summary>A rebuild in progress: each window's tabs to bring back, oldest window first, and whether the old engine has finished exiting.</summary>
+internal sealed class EngineRebuild(IReadOnlyList<IReadOnlyList<SessionTab>> windows)
 {
 	/// <summary>How long Zing waits for the dead engine to release its data folder before starting a new one anyway.</summary>
 	public static readonly TimeSpan ExitWait = TimeSpan.FromSeconds(10);
 
-	public IReadOnlyList<SessionTab> Tabs { get; } = tabs;
+	public IReadOnlyList<IReadOnlyList<SessionTab>> Windows { get; } = windows;
 	public bool Exited { get; set; }
 	public IDisposable? Deadline { get; set; }
 }
@@ -670,11 +682,20 @@ internal static class StartupFailure
 {
 	private const uint MB_OK = 0x0;
 	private const uint MB_ICONERROR = 0x10;
+	private const uint MB_ICONWARNING = 0x30;
 
 	public static void Tell(Exception error)
 	{
 		if (TestHooks.IsEndToEndRun) return;
 		MessageBoxW(0, $"Zing couldn't start.\n\n{error.Message}", "Zing can't start", MB_OK | MB_ICONERROR);
+	}
+
+	/// <summary>A second launch found a Zing that never took its command line (ProfileOwner.OwnerStuckMessage).</summary>
+	public static void TellAlreadyRunning(string message)
+	{
+		Faults.Warning("second launch", new TimeoutException(message));
+		if (TestHooks.IsEndToEndRun) return;
+		MessageBoxW(0, message, "Zing is already open", MB_OK | MB_ICONWARNING);
 	}
 
 	[System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
