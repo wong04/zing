@@ -452,6 +452,9 @@ public sealed class TabService
 	/// <summary>The URL without its tracking parameters while blockTrackers is on, else as given.</summary>
 	public string CleanLink(string url) => _blockTrackers() ? LinkCleaner.StripTrackers(url) : url;
 
+	/// <summary>A page's own navigation, cleaned unless it posts a form: the cleaned address is loaded anew as a GET.</summary>
+	private string CleanNavigation(string to, NavigationCause cause) => cause == NavigationCause.FormPost ? to : CleanLink(to);
+
 	/// <summary>Loads a ready URL (the window has already resolved what was typed).</summary>
 	public void Navigate(string id, string url)
 	{
@@ -849,7 +852,7 @@ public sealed class TabService
 				if (decision is NavigationDecision.Redirect redirect) service.Update(id, new TabContentPatch(Url: redirect.Url));
 				return decision;
 			}
-			var clean = service.CleanLink(to);
+			var clean = service.CleanNavigation(to, cause);
 			var link = new LinkRequest(from, to, LinkTrigger.Navigation, cause, default, HasPopupFeatures: false, FromPreview: false);
 			if (service.Verdict(id, link) == PeekVerdict.Preview)
 			{
@@ -949,7 +952,7 @@ public sealed class TabService
 			// Inspection is keyed by the source tab, so without it the link can't be inspected: refuse rather than fail open.
 			if (!service._store.Has(sourceId)) return NavigationDecision.Cancel;
 			if (service._intercept(sourceId, from, to) is { } decision) return decision;
-			var clean = service.CleanLink(to);
+			var clean = service.CleanNavigation(to, cause);
 			return clean == to ? NavigationDecision.Allow : new NavigationDecision.Redirect(clean);
 		}
 

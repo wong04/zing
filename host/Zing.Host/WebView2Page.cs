@@ -572,7 +572,14 @@ public sealed class WebView2Page : IPage
 		core.NavigationStarting += (_, e) =>
 		{
 			// Decided here and now: NavigationStarting has no deferral, and the reason has already arrived.
-			var cause = _lastReason is { Url: var url, Reason: "anchorClick" } && url == e.Uri && !e.IsRedirected ? NavigationCause.AnchorClick : NavigationCause.Other;
+			var cause = _lastReason is { Url: var url, Reason: var reason } && url == e.Uri && !e.IsRedirected
+				? reason switch
+				{
+					"anchorClick" => NavigationCause.AnchorClick,
+					"formSubmissionPost" => NavigationCause.FormPost,
+					_ => NavigationCause.Other,
+				}
+				: NavigationCause.Other;
 			_lastReason = null;
 			var origin = e.NavigationKind switch
 			{

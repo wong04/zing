@@ -2,7 +2,8 @@ namespace Zing.Core.LinkPreview;
 
 public enum LinkTrigger { Navigation, NewWindow }
 
-public enum NavigationCause { AnchorClick, Other }
+/// <summary>Why a page navigates. A FormPost is never cleaned: a cleaned address is loaded anew, as a GET, which would drop the form's body.</summary>
+public enum NavigationCause { AnchorClick, FormPost, Other }
 
 public readonly record struct Modifiers(bool Shift, bool Ctrl, bool Middle);
 
