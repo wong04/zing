@@ -59,6 +59,48 @@ public sealed class SyncEngineTests : IDisposable
 	}
 
 	[Fact]
+	public async Task APasswordChangedOnBAfterADeleteOnARevivesTheLoginWithTheNewPassword()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+
+		A.Vault.Delete(id);
+		B.Clock.Advance(TimeSpan.FromMinutes(1));
+		await B.Vault.UpdatePasswordAsync(id, "changed-after-the-delete");
+		await A.SyncAsync();
+		await B.SyncAsync();
+		await A.SyncAsync();
+
+		foreach (var pc in new[] { A, B })
+		{
+			Assert.Null(pc.Login(id).DeletedAt);
+			Assert.Equal("changed-after-the-delete", await pc.Vault.PasswordAsync(id));
+		}
+	}
+
+	[Fact]
+	public async Task ADeleteOnAAfterAPasswordChangeOnBStaysDeletedAndKeepsTheNewPassword()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+
+		await B.Vault.UpdatePasswordAsync(id, "changed-before-the-delete");
+		A.Clock.Advance(TimeSpan.FromMinutes(1));
+		A.Vault.Delete(id);
+		await A.SyncAsync();
+		await B.SyncAsync();
+		await A.SyncAsync();
+
+		foreach (var pc in new[] { A, B })
+		{
+			Assert.NotNull(pc.Login(id).DeletedAt);
+			Assert.Equal("changed-before-the-delete", await pc.Vault.PasswordAsync(id));
+		}
+	}
+
+	[Fact]
 	public async Task BothChangedDifferentFieldsAndBothPcsEndWithBothChanges()
 	{
 		var id = await _pcs.SaveOnAAsync();
@@ -383,6 +425,7 @@ public sealed class SyncEngineTests : IDisposable
 		await started.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 		Assert.Equal([SyncEngine.Every], A.Scheduler.Pending);
 
+		A.Clock.Advance(SyncEngine.ChangeGap);
 		await _pcs.SaveOnAAsync();
 		await A.Vault.ImportAsync(Logins(1));
 		Assert.Equal([SyncEngine.Every, SyncEngine.AfterChange], A.Scheduler.Pending);
@@ -397,6 +440,114 @@ public sealed class SyncEngineTests : IDisposable
 		A.Scheduler.Fire(SyncEngine.Every);
 		await periodic.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 		Assert.Equal(pulls + 1, _pcs.Server.Wire.Count("GET /changes"));
+	}
+
+	/// <summary>A's first sync, run as Zing starting runs it.</summary>
+	private async Task StartAAsync()
+	{
+		var started = A.Engine.NextRun;
+		A.Engine.Start();
+		A.Scheduler.Fire(TimeSpan.Zero);
+		await started.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+	}
+
+	[Fact]
+	public async Task EditsRightAfterASyncWaitForTheGapSoTheyShareOneSync()
+	{
+		await _pcs.TurnOnAAsync();
+		await StartAAsync();
+
+		await _pcs.SaveOnAAsync();
+		await A.Vault.ImportAsync(Logins(1));
+
+		var wait = Assert.Single(A.Scheduler.Pending, d => d != SyncEngine.Every);
+		Assert.InRange(wait, SyncEngine.ChangeGap - TimeSpan.FromSeconds(1), SyncEngine.ChangeGap);
+		var pushes = _pcs.Server.Wire.Count("POST /changes");
+		var afterChange = A.Engine.NextRun;
+		A.Scheduler.Fire(wait);
+		await afterChange.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+		Assert.Equal(pushes + 1, _pcs.Server.Wire.Count("POST /changes"));
+		Assert.Empty(A.Vault.Unsent());
+	}
+
+	[Fact]
+	public async Task A429WaitsAsTheServerSaysSaysSoPlainlyAndThenSyncs()
+	{
+		await _pcs.TurnOnAAsync();
+		_pcs.Server.Wire.AnswerRetryAfter = TimeSpan.FromSeconds(42);
+		_pcs.Server.Wire.AnswerWith = r => r.RequestUri!.AbsolutePath == "/manifest" ? System.Net.HttpStatusCode.TooManyRequests : null;
+		await StartAAsync();
+
+		Assert.Equal("rate-limited", A.Engine.Status.Error);
+		Assert.Equal("The sync server asked Zing to slow down, so it syncs again in 42 seconds.", A.Engine.Status.Message);
+		Assert.Equal([TimeSpan.FromSeconds(42)], A.Scheduler.Pending);
+		// A change meanwhile waits for the retry too, instead of meeting the limit again.
+		await _pcs.SaveOnAAsync();
+		Assert.All(A.Scheduler.Pending, d => Assert.True(d > SyncEngine.AfterChange));
+
+		_pcs.Server.Wire.AnswerWith = null;
+		var retried = A.Engine.NextRun;
+		A.Scheduler.Fire(TimeSpan.FromSeconds(42));
+		await retried.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+		Assert.Null(A.Engine.Status.Error);
+		Assert.Empty(A.Vault.Unsent());
+		Assert.Contains(SyncEngine.Every, A.Scheduler.Pending);
+	}
+
+	[Fact]
+	public async Task A429WithNoRetryAfterBacksOffAMinuteThenTwo()
+	{
+		await _pcs.TurnOnAAsync();
+		_pcs.Server.Wire.AnswerWith = r => r.RequestUri!.AbsolutePath == "/manifest" ? System.Net.HttpStatusCode.TooManyRequests : null;
+		await StartAAsync();
+		Assert.Equal([SyncEngine.RateLimitedRetry], A.Scheduler.Pending);
+		Assert.Equal("The sync server asked Zing to slow down, so it syncs again in a minute.", A.Engine.Status.Message);
+
+		var again = A.Engine.NextRun;
+		A.Scheduler.Fire(SyncEngine.RateLimitedRetry);
+		await again.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+		Assert.Equal([SyncEngine.RateLimitedRetry * 2], A.Scheduler.Pending);
+		Assert.Equal("The sync server asked Zing to slow down, so it syncs again in 2 minutes.", A.Engine.Status.Message);
+	}
+
+	[Fact]
+	public async Task ALoginTooLargeForTheServerIsLeftOutAndEverythingElseStillSyncs()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+		// Each PC's history holds one 130 KiB old password, within the server's 256 KiB; the merge keeps both, which isn't.
+		var big = new string('a', 130 * 1024);
+		await A.Vault.UpdatePasswordAsync(id, big);
+		await A.Vault.UpdatePasswordAsync(id, "a-small-one");
+		await B.Vault.UpdatePasswordAsync(id, big.Replace('a', 'b'));
+		await B.Vault.UpdatePasswordAsync(id, "b-small-one");
+		await A.SyncAsync();
+		var other = await B.Vault.SaveAsync(new NewLogin("https://mail.example.test", "ada.mail", "mail-secret", "Mail", ""));
+
+		await Assert.ThrowsAsync<SyncLoginsTooLargeException>(() => B.SyncAsync());
+
+		Assert.Equal("too-large", B.Engine.Status.Error);
+		Assert.Equal("One login is too large to sync, so it stays on this PC only. Shorten its note to sync it.", B.Engine.Status.Message);
+		await A.SyncAsync();
+		Assert.Null(A.Engine.Status.Error);
+		Assert.Equal("mail-secret", await A.Vault.PasswordAsync(other));
+	}
+
+	[Fact]
+	public async Task ABatchIsSplitBySizeSoTheServerTakesEveryLogin()
+	{
+		await _pcs.TurnOnAAsync();
+		// About 200 KiB each: twenty-five of them are more than one 4 MiB body.
+		await A.Vault.ImportAsync([.. Enumerable.Range(0, 25).Select(i => new NewLogin($"https://big{i}.example.test", "ada", "pw", "", new string('n', 200 * 1024)))]);
+		var pushes = _pcs.Server.Wire.Count("POST /changes");
+
+		await A.SyncAsync();
+
+		Assert.True(_pcs.Server.Wire.Count("POST /changes") - pushes >= 2);
+		Assert.Empty(A.Vault.Unsent());
+		Assert.Equal(25, (await _pcs.ServerItemsAsync()).Items.Count);
 	}
 
 	[Fact]

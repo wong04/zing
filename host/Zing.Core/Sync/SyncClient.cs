@@ -13,6 +13,16 @@ public class SyncHttpException(HttpStatusCode status, string message) : Exceptio
 	public HttpStatusCode Status { get; } = status;
 }
 
+/// <summary>
+/// The sync server takes no more requests from this account or address for now (429, its per-minute limit). <see cref="RetryAfter"/>
+/// is how long it said to wait; null when it didn't say.
+/// </summary>
+public sealed class SyncRateLimitedException(TimeSpan? retryAfter)
+	: SyncHttpException(HttpStatusCode.TooManyRequests, "The sync server is getting too many requests from this PC just now. Try again in a minute.")
+{
+	public TimeSpan? RetryAfter { get; } = retryAfter;
+}
+
 /// <summary>A versioned write (keys or manifest) was based on an old version; <see cref="Current"/> is what the server holds now (null when it holds none).</summary>
 public sealed class SyncConflictException(VersionedBlob? current)
 	: SyncHttpException(HttpStatusCode.Conflict, "The sync server has a newer copy than the one this write was based on")
@@ -466,10 +476,19 @@ public sealed class SyncClient : IDisposable
 	private static async Task EnsureSuccess(HttpResponseMessage response, string path, CancellationToken cancellation)
 	{
 		if (response.IsSuccessStatusCode) return;
+		if (response.StatusCode == HttpStatusCode.TooManyRequests) throw new SyncRateLimitedException(RetryAfter(response));
 		var body = await response.Content.ReadAsStringAsync(cancellation);
 		var detail = body.Length == 0 ? "" : $": {(body.Length > 200 ? body[..200] : body)}";
 		throw new SyncHttpException(response.StatusCode, $"The sync server answered {(int)response.StatusCode} to {path}{detail}");
 	}
+
+	/// <summary>Retry-After as a wait from now, in seconds or as a date; null when the server sent none.</summary>
+	private static TimeSpan? RetryAfter(HttpResponseMessage response) => response.Headers.RetryAfter switch
+	{
+		{ Delta: { } delta } => delta,
+		{ Date: { } date } => date - DateTimeOffset.UtcNow,
+		_ => null,
+	};
 
 	private static async Task<T> Read<T>(HttpResponseMessage response, CancellationToken cancellation) where T : class
 	{

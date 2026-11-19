@@ -73,6 +73,8 @@ export type SyncError =
 	| 'unreachable'
 	| 'server-error'
 	| 'account-changed'
+	| 'rate-limited'
+	| 'too-large'
 	| 'failed'
 
 // The errors Upload this PC's copy answers.
