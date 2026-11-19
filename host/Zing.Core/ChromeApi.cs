@@ -589,8 +589,20 @@ public sealed class ChromeApi : IDisposable
 	public bool HandleKey(KeyInput input)
 	{
 		if (Commands.ForInput(input) is not { } command) return false;
-		return Run(command.Id) is not Outcome { Status: "not-applicable" };
+		return RunForKey(command.Id);
 	}
+
+	/// <summary>
+	/// A key pressed in one of Zing's own views (the chrome, a panel, the page UI). As <see cref="HandleKey"/>, except that Esc
+	/// there is the view's own (closing a menu, leaving a field) and never stops the page loading behind it.
+	/// </summary>
+	public bool HandleChromeKey(KeyInput input)
+	{
+		if (Commands.ForInput(input) is not { } command || command.Id == "page.stop") return false;
+		return RunForKey(command.Id);
+	}
+
+	private bool RunForKey(string command) => Run(command) is not Outcome { Status: "not-applicable" };
 
 	/// <summary>
 	/// A key pressed in a link preview's page or its buttons. Esc closes the preview's top layer, unless that page is in

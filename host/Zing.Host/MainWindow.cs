@@ -801,7 +801,11 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	/// <summary>The e2e seam (fullscreen-key): CDP input never reaches AcceleratorKeyPressed, so a test enters ViewerEscape as a key press on the fullscreen page would.</summary>
 	private bool ViewerEscapeOnPage(int virtualKey) => ScreenOwner is { View: { } view } && ViewerEscape(view, virtualKey);
 
-	private bool Key(HostedView view, KeyInput input) => IsPreviewView(view) ? Api!.HandlePreviewKey(input) : Api!.HandleKey(input);
+	private bool Key(HostedView view, KeyInput input)
+	{
+		if (IsPreviewView(view)) return Api!.HandlePreviewKey(input);
+		return IsPageView(view) ? Api!.HandleKey(input) : Api!.HandleChromeKey(input);
+	}
 
 	/// <summary>
 	/// The e2e seam (preview-key): CDP input never reaches AcceleratorKeyPressed, so a test enters Key as a key press on the

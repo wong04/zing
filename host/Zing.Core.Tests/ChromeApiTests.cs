@@ -512,6 +512,21 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
+	public void Esc_in_Zings_own_views_is_theirs_and_never_stops_the_page()
+	{
+		ActivePage.IsLoading = true;
+		Assert.False(_api.HandleChromeKey(Esc));
+		Assert.DoesNotContain("stop", ActivePage.Calls);
+	}
+
+	[Fact]
+	public void Other_keys_in_Zings_own_views_are_the_window_commands()
+	{
+		Assert.True(_api.HandleChromeKey(new KeyInput("KeyT", Ctrl: true, Shift: false, Alt: false)));
+		Assert.Equal(2, _api.Tabs.Records.Count);
+	}
+
+	[Fact]
 	public void Other_keys_in_a_preview_are_the_window_commands()
 	{
 		Peek();
