@@ -71,6 +71,48 @@ public sealed class CommandsTests : IDisposable
 		Assert.False(pinned.Single(m => m.Label == "Back to Saved Page").Enabled);
 	}
 
+	private static LibraryStore LibraryWithAFolder()
+	{
+		BookmarkNode[] work = [Library.Link("a", "A", "https://a.test/", 0), Library.Folder("sub", "Sub", [Library.Link("b", "B", "https://b.test/", 0)], 0)];
+		var library = Library.EmptyLibrary(0);
+		library = Library.WithFavourites(library, [Library.Folder("work", "Work", work, 0), Library.Folder("empty", "Empty", [], 0), Library.Link("c", "C", "https://c.test/", 0)], 0);
+		return new LibraryStore(library, _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+	}
+
+	private IReadOnlyList<MenuItem> LibraryMenu(LibraryStore library, string id) => Menus.LibraryItem(library, id, (_, _) => { }, _ => { }, _api.Saved);
+
+	[Theory]
+	[InlineData(Library.FavouritesId)]
+	[InlineData(Library.PinnedId)]
+	public void A_fixed_folder_offers_no_Remove(string id)
+	{
+		Assert.DoesNotContain(LibraryMenu(LibraryWithAFolder(), id), m => m.Label == "Remove");
+	}
+
+	[Theory]
+	[InlineData("c")]
+	[InlineData("empty")]
+	public void Remove_takes_a_single_bookmark_or_an_empty_folder_at_once(string id)
+	{
+		var library = LibraryWithAFolder();
+		LibraryMenu(library, id).Single(m => m.Label == "Remove").Click!();
+		Assert.Null(Library.Find(id, library.Snapshot.Bookmarks));
+	}
+
+	[Fact]
+	public void Remove_on_a_folder_with_bookmarks_in_it_asks_first_and_says_how_many_go()
+	{
+		var library = LibraryWithAFolder();
+		var remove = LibraryMenu(library, "work").Single(m => m.Label == "Remove");
+		Assert.Null(remove.Click);
+		var confirm = Assert.Single(remove.Submenu!);
+		Assert.Equal("Delete 2 Bookmarks and 2 Folders", confirm.Label);
+		Assert.NotNull(Library.Find("work", library.Snapshot.Bookmarks));
+		confirm.Click!();
+		Assert.Null(Library.Find("work", library.Snapshot.Bookmarks));
+		Assert.Null(Library.Find("b", library.Snapshot.Bookmarks));
+	}
+
 	// The native menu runs its own loop; the page can close its tab (window.close) while the menu is open.
 	[Fact]
 	public void A_tab_menu_item_chosen_after_its_tab_closed_does_nothing()

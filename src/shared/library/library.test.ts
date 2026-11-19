@@ -11,6 +11,7 @@ import {
 	link,
 	move,
 	readingItem,
+	removalCount,
 	remove,
 	rename,
 	urls,
@@ -80,6 +81,7 @@ describe('library vectors', () => {
 		expect(favourites(c.library as BrowserLibrary).map((n) => n.id)).toEqual(c.expected)
 	})
 	it.each(vectors.remove)('remove: $name', (c) => expect(remove(set(c.ids), tree)).toEqual(c.expected))
+	it.each(vectors.removalCount)('removalCount: $name', (c) => expect(removalCount(set(c.ids), tree)).toEqual(c.expected))
 	it.each(vectors.rename)('rename: $name', (c) => {
 		expect(rename(c.id, c.title, nodesOf(c as Case), c.now)).toEqual(c.expected)
 	})

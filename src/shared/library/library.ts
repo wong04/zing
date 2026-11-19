@@ -109,6 +109,33 @@ export function remove(ids: ReadonlySet<string>, nodes: BookmarkNode[]): Bookmar
 	return out
 }
 
+export interface RemovalCount {
+	readonly bookmarks: number
+	readonly folders: number
+}
+
+// What `remove` with these ids would take: links and folders, at any depth, each once.
+export function removalCount(ids: ReadonlySet<string>, nodes: BookmarkNode[]): RemovalCount {
+	let bookmarks = 0
+	let folders = 0
+	const all = (node: BookmarkNode): void => {
+		if (!isFolder(node)) {
+			bookmarks++
+			return
+		}
+		folders++
+		node.children.forEach(all)
+	}
+	const walk = (list: BookmarkNode[]): void => {
+		for (const node of list) {
+			if (ids.has(node.id) && !isFixedFolder(node.id)) all(node)
+			else if (isFolder(node)) walk(node.children)
+		}
+	}
+	walk(nodes)
+	return { bookmarks, folders }
+}
+
 export function rename(id: string, title: string, nodes: BookmarkNode[], now = Date.now()): BookmarkNode[] {
 	const trimmed = title.trim()
 	if (!trimmed) return nodes

@@ -18,6 +18,8 @@ public sealed record BrowserLibrary(IReadOnlyList<BookmarkNode> Bookmarks, IRead
 
 public sealed record VisibleRow(BookmarkNode Node, int Depth);
 
+public sealed record RemovalCount(int Bookmarks, int Folders);
+
 public sealed record GroupResult(IReadOnlyList<BookmarkNode> Nodes, string? FolderId);
 
 /// <summary>Writes the TS shape field for field (id, title, url | children, updatedAt, importedFrom when set) and reads it back with the same strictness as parseNode.</summary>
@@ -114,6 +116,33 @@ public static class Library
 			result.Add(node is BookmarkFolder folder ? folder with { Children = Remove(ids, folder.Children) } : node);
 		}
 		return result;
+	}
+
+	/// <summary>What <see cref="Remove"/> with these ids would take: links and folders, at any depth, each once.</summary>
+	public static RemovalCount RemovalCount(IReadOnlySet<string> ids, IReadOnlyList<BookmarkNode> nodes)
+	{
+		var bookmarks = 0;
+		var folders = 0;
+		void All(BookmarkNode node)
+		{
+			if (node is not BookmarkFolder folder)
+			{
+				bookmarks++;
+				return;
+			}
+			folders++;
+			foreach (var child in folder.Children) All(child);
+		}
+		void Walk(IReadOnlyList<BookmarkNode> list)
+		{
+			foreach (var node in list)
+			{
+				if (ids.Contains(node.Id) && !IsFixedFolder(node.Id)) All(node);
+				else if (node is BookmarkFolder folder) Walk(folder.Children);
+			}
+		}
+		Walk(nodes);
+		return new RemovalCount(bookmarks, folders);
 	}
 
 	public static IReadOnlyList<BookmarkNode> Rename(string id, string title, IReadOnlyList<BookmarkNode> nodes, long now)
