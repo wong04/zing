@@ -5,6 +5,7 @@ import { extension, fileName, folderName } from './filePath'
 import { CopyIcon, FolderOpenIcon } from './icons'
 import { PillButton } from './PillButton'
 import { FadingScroll } from './ScrollFade'
+import { isPageImageDrag, pageImageAddress } from './pageImageDrag'
 import { beginToolDrag, droppedToolFile, endToolDrag, isToolDrag } from './toolDrag'
 
 export interface FileIconProps {
@@ -184,11 +185,12 @@ export interface FileDropZoneProps {
 	readonly onFiles: (files: readonly PickedFile[]) => void
 	/** The host refused the drop or couldn't read it. */
 	readonly onError: (error: Error) => void
+	/** Also take an image dragged out of a web page: the host fetches its address into a file. */
+	readonly takesPageImages?: boolean
 	readonly children: (state: { readonly targeted: boolean }) => ReactNode
 }
 
 const isFileDrag = (event: DragEvent): boolean => event.dataTransfer.types.includes('Files')
-const isAcceptedDrag = (event: DragEvent): boolean => isFileDrag(event) || isToolDrag(event.dataTransfer.types)
 
 class ForeignToolDragError extends Error {
 	override name = 'ForeignToolDragError'
@@ -197,13 +199,24 @@ class ForeignToolDragError extends Error {
 	}
 }
 
+class NoPageImageError extends Error {
+	override name = 'NoPageImageError'
+	constructor() {
+		super('That drag has no picture address in it, so it was not taken. Save the picture from the page, then drop the file here.')
+	}
+}
+
 /**
  * Takes files dropped on a Zing view (Spike S4). The host reads each file's path from the drop itself, so what comes
  * back is a token and a name; a page can't do this, since only Zing's own views reach the host. A file another tool
- * made (a `FileRow` with `dragFile`) is taken by its token and never touches the host. Text and links are refused.
+ * made (a `FileRow` with `dragFile`) is taken by its token and never touches the host. With `takesPageImages`, an image dragged
+ * out of a web page is fetched by the host from its address (pageImageDrag.ts), and a link is fetched and refused unless it is a
+ * picture. Text is refused.
  */
-export function FileDropZone({ onFiles, onError, children }: FileDropZoneProps) {
+export function FileDropZone({ onFiles, onError, takesPageImages = false, children }: FileDropZoneProps) {
 	const [targeted, setTargeted] = useState(false)
+	const isPageImage = (event: DragEvent): boolean => takesPageImages && event.dataTransfer.files.length === 0 && isPageImageDrag(event.dataTransfer.types)
+	const isAcceptedDrag = (event: DragEvent): boolean => isFileDrag(event) || isToolDrag(event.dataTransfer.types) || isPageImage(event)
 	return (
 		<div
 			onDragEnter={(event) => {
@@ -225,6 +238,13 @@ export function FileDropZone({ onFiles, onError, children }: FileDropZoneProps) 
 					const file = droppedToolFile(event.dataTransfer.types)
 					if (file === undefined) onError(new ForeignToolDragError())
 					else onFiles([file])
+					return
+				}
+				// A page image offers no file; files can only be read at the drop, and an Explorer drop always has one.
+				if (isPageImage(event)) {
+					const address = pageImageAddress(event.dataTransfer)
+					if (address === undefined) onError(new NoPageImageError())
+					else zing.openDroppedImage(address).then((file) => onFiles([file]), onError)
 					return
 				}
 				zing.openDropped([...event.dataTransfer.files]).then(onFiles, onError)

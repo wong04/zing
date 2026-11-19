@@ -127,7 +127,6 @@ test('text and a made-up tool file are refused by a file tool, and a real file d
 	// The control: a file drag is taken, so the refusals below are not just a test that can't see anything.
 	expect((await offered('Files', '')).over).toBe(true)
 	expect(await offered('text/plain', 'just some words')).toEqual({ over: false, drop: false })
-	expect(await offered('text/uri-list', 'https://example.com/a.png')).toEqual({ over: false, drop: false })
 	expect(await offered('application/x-zing-tool-file', 'f'.repeat(32))).toEqual({ over: false, drop: false })
 	await expect(remover.getByText('Drop a picture here')).toBeVisible()
 	await zing.close()

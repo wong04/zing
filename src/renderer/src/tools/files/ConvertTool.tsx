@@ -253,7 +253,7 @@ export function ConvertTool() {
 
 	return (
 		<ToolPage subtitle="Images, documents, PDFs, audio and video. The converted file goes to your Downloads folder; the original is never changed.">
-			<FileDropZone onFiles={take} onError={fail}>
+			<FileDropZone onFiles={take} onError={fail} takesPageImages>
 				{({ targeted }) => (
 					<div className={targeted ? 'convert-drop targeted' : 'convert-drop'}>
 						{file === null ? <span className="convert-hint">Drop a file here</span> : <FileRow path={file.name} />}
