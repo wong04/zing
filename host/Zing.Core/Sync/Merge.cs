@@ -19,7 +19,8 @@ internal static class Merge
 	/// A field changed on one side only takes that side's value; changed on both, it takes the copy edited later (<c>updatedAt</c>;
 	/// a tie goes to <paramref name="theirs"/>, the server's copy). The password with the later <c>passwordUpdatedAt</c> wins, and the
 	/// other moves into the history as it is, so a merge never loses one. Every old password of either side is kept. A delete on one
-	/// side loses to an edit the other side made after it: that login is still wanted (a password changed after the delete above all).
+	/// side loses to an edit the other side made that it hadn't seen: that login is still wanted (a changed password above all). With a
+	/// common copy, an edit is a change from it, whatever the clocks say; with none, only the timestamps can tell.
 	/// </summary>
 	/// <param name="common">The copy both started from; null when there is none, so every field that differs counts as changed on both.</param>
 	public static MergeInput Items(MergeInput? common, MergeInput mine, MergeInput theirs)
@@ -59,7 +60,7 @@ internal static class Merge
 			Math.Min(mine.Summary.CreatedAt, theirs.Summary.CreatedAt),
 			Math.Max(mine.Summary.UpdatedAt, theirs.Summary.UpdatedAt),
 			winner.Summary.PasswordUpdatedAt,
-			DeletedAt(Field(s => s.DeletedAt), mine, theirs),
+			DeletedAt(Field(s => s.DeletedAt), common, mine, theirs),
 			winner.Summary.PasswordVersion,
 			[.. ordered.Select(h => h.Entry)],
 			Field(s => s.NeverSave),
@@ -70,11 +71,25 @@ internal static class Merge
 		return new MergeInput(summary, winner.Password, [.. ordered.Select(h => h.Sealed)]);
 	}
 
-	/// <summary>The merged delete, unless a side that didn't delete edited the login after it: then it is kept.</summary>
-	private static long? DeletedAt(long? merged, MergeInput mine, MergeInput theirs)
+	/// <summary>
+	/// The merged delete, unless a side that didn't delete edited the login: then it is kept. With <paramref name="common"/>, the edit
+	/// is a change of content from it, so a clock that is behind can't lose an edit and one that is ahead can't revive an unchanged
+	/// login. With none, an edit is one timed after the delete.
+	/// </summary>
+	private static long? DeletedAt(long? merged, MergeInput? common, MergeInput mine, MergeInput theirs)
 	{
 		if (merged is not { } deletedAt) return null;
+		if (common is not null) return Revives(common, mine) || Revives(common, theirs) ? null : deletedAt;
 		return EditedAfter(mine, deletedAt) || EditedAfter(theirs, deletedAt) ? null : deletedAt;
+	}
+
+	private static bool Revives(MergeInput common, MergeInput side) => side.Summary.DeletedAt is null && ChangedFrom(common, side);
+
+	/// <summary>What a person edits: the fields and the password, not the times.</summary>
+	private static bool ChangedFrom(MergeInput common, MergeInput side)
+	{
+		var (c, s) = (common.Summary, side.Summary);
+		return c.Origin != s.Origin || c.Username != s.Username || c.Title != s.Title || c.Note != s.Note || c.NeverSave != s.NeverSave || !Same(common.Password, side.Password);
 	}
 
 	private static bool EditedAfter(MergeInput side, long deletedAt) => side.Summary.DeletedAt is null && side.Summary.UpdatedAt > deletedAt;

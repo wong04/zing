@@ -105,11 +105,32 @@
 			"expected": { "deletedAt": null, "note": "edited", "updatedAt": 3000 }
 		},
 		{
-			"name": "an edit there and a later delete here: deleted, with the edit",
+			"name": "an edit there made before a delete here that hadn't seen it: the edit still revives the login",
 			"common": {},
 			"mine": { "deletedAt": 3000, "updatedAt": 3000 },
 			"theirs": { "note": "edited", "updatedAt": 2000 },
-			"expected": { "deletedAt": 3000, "note": "edited", "updatedAt": 3000 }
+			"expected": { "deletedAt": null, "note": "edited", "updatedAt": 3000 }
+		},
+		{
+			"name": "a delete here and an edit there on a clock behind it: the edit revives the login, whatever the timestamps say",
+			"common": {},
+			"mine": { "deletedAt": 5000, "updatedAt": 5000 },
+			"theirs": { "title": "Edited on a slow clock", "updatedAt": 1500 },
+			"expected": { "deletedAt": null, "title": "Edited on a slow clock", "updatedAt": 5000 }
+		},
+		{
+			"name": "a delete here and no change there on a clock ahead of it: still deleted, whatever the timestamps say",
+			"common": {},
+			"mine": { "deletedAt": 2000, "updatedAt": 2000 },
+			"theirs": { "updatedAt": 9000 },
+			"expected": { "deletedAt": 2000, "updatedAt": 9000 }
+		},
+		{
+			"name": "with no common copy, an edit here and a later delete there: the timestamps decide, so the later copy, deleted",
+			"common": null,
+			"mine": { "title": "Mine", "updatedAt": 2000 },
+			"theirs": { "deletedAt": 3000, "updatedAt": 3000 },
+			"expected": { "deletedAt": 3000, "updatedAt": 3000 }
 		},
 		{
 			"name": "a delete here and a later password change there: the new password revives the login",
@@ -119,11 +140,11 @@
 			"expected": { "deletedAt": null, "password": "P2", "passwordVersion": 2, "passwordUpdatedAt": 3000, "updatedAt": 3000, "history": [{ "password": "P1", "version": 1, "replacedAt": 3000 }] }
 		},
 		{
-			"name": "a password change here and a later delete there: deleted, with the new password",
+			"name": "a password change here and a delete there that hadn't seen it: the new password revives the login",
 			"common": {},
 			"mine": { "password": "P2", "passwordVersion": 2, "passwordUpdatedAt": 2000, "updatedAt": 2000, "history": [{ "password": "P1", "version": 1, "replacedAt": 2000 }] },
 			"theirs": { "deletedAt": 3000, "updatedAt": 3000 },
-			"expected": { "deletedAt": 3000, "password": "P2", "passwordVersion": 2, "passwordUpdatedAt": 2000, "updatedAt": 3000, "history": [{ "password": "P1", "version": 1, "replacedAt": 2000 }] }
+			"expected": { "deletedAt": null, "password": "P2", "passwordVersion": 2, "passwordUpdatedAt": 2000, "updatedAt": 3000, "history": [{ "password": "P1", "version": 1, "replacedAt": 2000 }] }
 		},
 		{
 			"name": "with no common copy, a delete there and a later edit here: the edit revives the login",
