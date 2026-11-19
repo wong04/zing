@@ -469,11 +469,15 @@ public sealed class WebView2Page : IPage
 		_drained = true;
 	}
 
-	/// <summary>Edge's tracking prevention is Strict while blockTrackers is on and off with it. The level is the profile's, so it applies to every page on it.</summary>
+	/// <summary>
+	/// Edge's tracking prevention is Balanced while blockTrackers is on and off with it. EasyList, EasyPrivacy and the tracker
+	/// list already refuse the trackers; Strict on top of them also blocks what sites need from other hosts (sign-in
+	/// widgets, embeds), which Balanced leaves to sites the person uses. The level is the profile's, so it applies to every page on it.
+	/// </summary>
 	public void FollowTrackerBlocking()
 	{
 		if (!IsOpen || _core is not { } core) return;
-		core.Profile.PreferredTrackingPreventionLevel = _features.BlockTrackers ? CoreWebView2TrackingPreventionLevel.Strict : CoreWebView2TrackingPreventionLevel.None;
+		core.Profile.PreferredTrackingPreventionLevel = _features.BlockTrackers ? CoreWebView2TrackingPreventionLevel.Balanced : CoreWebView2TrackingPreventionLevel.None;
 	}
 
 	/// <summary>Whether the autofill channel is on for this page: web messages, the script, and OnPageMessage reading them.</summary>
