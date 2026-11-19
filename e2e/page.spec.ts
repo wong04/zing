@@ -240,6 +240,16 @@ test('a grant or a refusal lasts as long as the page: after a reload the site is
 	await zing.close()
 })
 
+test('closing the window while a prompt is open refuses it and records no error', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/perm` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/perm`)
+	await page.waitForLoadState('domcontentloaded')
+	await page.evaluate(() => void (globalThis as unknown as { Notification: { requestPermission(): Promise<string> } }).Notification.requestPermission())
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(ui.getByText('wants to show notifications')).toBeVisible()
+	await zing.close()
+})
+
 test('a click that lands on Allow the moment a prompt opens is ignored', async () => {
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/perm` } })
 	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/perm`)

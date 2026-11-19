@@ -280,6 +280,8 @@ public sealed class ChromeApi : IDisposable
 		Tabs.IconLoaded += (url, icon) => app.BookmarkIcons?.Visited(app.Library.Snapshot, url, icon);
 		PageUi.Changed += state =>
 		{
+			// Closing the window closes its pages, whose open prompts then go (DropFor): its views are gone by then.
+			if (_disposed) return;
 			host.Push("pageui:state", state);
 			host.PageUiChanged(state);
 		};
