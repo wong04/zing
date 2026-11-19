@@ -396,6 +396,13 @@ export interface InvokeContract {
 	 */
 	'files:open-dropped': { args: [files: readonly File[]]; result: PickedFile[] }
 	/**
+	 * An image dragged out of a web page onto a tool: the drop carries its address, not a file. The host fetches an http(s)
+	 * address (no cookies or credentials, up to 16 MB) or decodes a base64 `data:image/` URL, keeps it only if the bytes are a
+	 * PNG, JPEG, GIF or WebP, and answers with a token for a temporary copy that goes when the window closes. Anything else is
+	 * refused with a plain message (PageImageRefusedException).
+	 */
+	'files:open-dropped-image': { args: [address: string]; result: PickedFile }
+	/**
 	 * Opens a picked or dropped file (by its token) in the viewer panel `panelId`, converting a copy when Chromium can't show it.
 	 * One file per panel: it replaces the panel's earlier one. Closing the panel (or the window) ends the conversion and deletes the copy.
 	 * Rejects for a format it can't show, an engine that isn't downloaded, or a file that has gone.
@@ -791,6 +798,8 @@ export interface ZingApi {
 	openBackgroundPicture(panelId: string, token: string): Promise<ViewerOpened>
 	/** Hand over the `File`s of a drop (`event.dataTransfer.files`); resolves with a token for each. */
 	openDropped(files: readonly File[]): Promise<PickedFile[]>
+	/** Fetch an image dragged out of a page by its address (see `files:open-dropped-image`). */
+	openDroppedImage(address: string): Promise<PickedFile>
 	openViewerFile(token: string, panelId: string): Promise<ViewerOpened>
 	closeViewerFile(id: string): Promise<void>
 	onAccountState(listener: (state: AccountState) => void): Unsubscribe

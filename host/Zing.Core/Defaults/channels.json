@@ -177,6 +177,10 @@
 			"args": 1
 		},
 		{
+			"channel": "files:open-dropped-image",
+			"args": 1
+		},
+		{
 			"channel": "files:pick",
 			"args": 1
 		},

@@ -125,6 +125,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		openSaveSession: (panelId, kinds) => invoke('session:open-save', panelId, kinds),
 		openBackgroundPicture: (panelId, token) => invoke('bgremove:open', panelId, token),
 		openDropped: (files) => invoke('files:open-dropped', files),
+		openDroppedImage: (address) => invoke('files:open-dropped-image', address),
 		openViewerFile: (token, panelId) => invoke('viewer:open', token, panelId),
 		closeViewerFile: (id) => invoke('viewer:close', id),
 		getAccount: () => invoke('account:get'),
