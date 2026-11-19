@@ -234,6 +234,9 @@ test('a grant or a refusal lasts as long as the page: after a reload the site is
 	await ask()
 	await expect(ui.getByText('wants to show notifications')).toBeVisible()
 	expect(await result()).toBe('pending')
+	await ui.getByRole('button', { name: 'Deny' }).click()
+	await expect.poll(result).toBe('denied')
+	await expect(ui.getByRole('alertdialog')).toHaveCount(0)
 	await zing.close()
 })
 
