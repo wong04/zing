@@ -76,7 +76,7 @@ Also dropped:
 **L rows, 2026-11-02:** re-verified by reading each port and its tests; the shared suites passed locally (1,265 tests) and CI passed on `7edc3dd`. Done here means the logic is ported and tested, not that the app uses it yet:
 - **Waiting for the toolbox:** L15 (X23) has no caller until its row is built. L6, L7, L9 and L13 now have callers in the Toolbox, and exist only in TypeScript. L4 (X11) and L5 (X1–X3) now run as C# ports in the host; their TypeScript versions have no caller, and shared vectors keep the pairs in step.
 - **L11, Partial:** `faviconChoice.ts` has no caller and no C# port. `WebView2Page` takes the engine's `FaviconUri`, so the best-icon rule isn't applied.
-- **L12, Partial:** `DownloadPolicy` is ported to both sides but nothing calls it. `DownloadHost` relies on the engine's own `DownloadStarting` decision. Either wire it in or confirm the engine decides the same way.
+- **L12, Done since [#175](https://github.com/wong04/zing/pull/175):** `DownloadHost` consults `DownloadPolicy` when a frame's navigation becomes a download, and saves it only when the server marks it as a file. Any other download (the main frame's, `<a download>`, Save as) is saved as the engine started it.
 
 ## M3 Browser parity
 
@@ -119,8 +119,8 @@ Also dropped:
 | B35 | Link previews (Arc Peek) | new | [#160](https://github.com/wong04/zing/pull/160) | Done: e2e in `e2e/link-preview.spec.ts`; hand checks H1-H9 passed (2026-11-08 and 2026-11-09, real-input tier 8/8), recorded in [the design](docs/superpowers/specs/2026-11-08-link-preview-design.md); screenshots in `docs/screenshots/link-preview/` |
 
 **B rows, 2026-11-01:** re-verified on the WebView2 host. Evidence for each Done row is in its issue, and every cited test passed on Windows CI ([run 41289375469](https://github.com/wong04/zing/actions/runs/41289375469), the whole e2e suite plus vitest and xUnit). Partial rows, still open:
-- B25: the installer registers Zing as a browser and Settings offers to make it the default (Phase 8); a real install, Default apps and a link from another app wait on the owner's hand check in [docs/release.md](docs/release.md#hand-check)
-- B29: no e2e; the toolbox isn’t there yet
+- B25: Done since the owner's hand check on 2026-11-11 (see the table); only Open with for .pdf/.htm/.html waits on a hand re-check
+- B29: tool panels open from the Toolbox, three show at once, a fourth is refused, and a minimised one comes back from the sidebar (`e2e/panels.spec.ts`); tear-off and make-room-on-release are tested in `tearOff.test.ts` and `panelLayout.test.ts`. Still Partial: nothing is linked in [#56](https://github.com/wong04/zing/issues/56) yet showing the behaviour matches Krackn
 - B34: mostly visual; needs light + dark screenshots
 
 **Phase 3 close-out, 2026-11-01:**
@@ -252,7 +252,7 @@ Evidence (e2e/import.spec.ts unless noted; screenshots in [docs/screenshots](doc
 - B25, files from Open with: the installer also registers `ZingPDF` for `.pdf` (as Edge and Chrome do) beside `ZingHTML`, and Zing opens a `.pdf`, `.htm` or `.html` path it is handed: each in a tab at its file: address (a PDF in the engine's PDF viewer, so it has the whole window and fullscreen), cold or into a running Zing. A dropped PDF still opens in the Files viewer. Host tests `LaunchFilesTests` and `DefaultBrowserTests`; e2e `e2e/open-with.spec.ts`. The owner's first hand check (2026-11-11) passed install, update, Default apps, a link from another app and uninstall; it found `.pdf` missing from Open with, so Open with on a `.pdf` and an `.html` is re-checked.
 - P5: `scripts/notices.test.ts`, `ChromeApiCreditsTests`, and the Credits region in `e2e/update.spec.ts`.
 - Screenshots, light and dark, in `docs/screenshots/phase-8/`: About, the update pill (alone and in a window), the default-browser offer and the Settings row.
-- P1, P2 and B25 stay Partial until the owner runs the hand check in [docs/release.md](docs/release.md#hand-check) (install 0.9.0, make Zing the default, update to 0.9.1 from the local feed, uninstall and keep the data).
+- P1, P2 and B25 are Done: the owner's hand check in [docs/release.md](docs/release.md#hand-check) passed on 2026-11-11 (install 0.9.0, make Zing the default, update to 0.9.1 from the local feed, uninstall and keep the data). Open with on a `.pdf` and an `.html` still waits on a hand re-check (B25 above).
 
 ## M9 Parity audit
 
