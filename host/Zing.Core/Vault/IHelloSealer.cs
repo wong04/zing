@@ -9,6 +9,12 @@ public sealed class HelloCancelledException(string message) : Exception(message)
 /// <summary>Windows Hello isn't set up on this PC, or can't be used now. No Hello means no vault: there's no password-only fallback.</summary>
 public sealed class HelloUnavailableException(string message) : Exception(message);
 
+/// <summary>
+/// Windows Hello has no vault key on this PC any more: the PIN or Hello was reset, which deletes it. What it sealed never opens again,
+/// so the vault must be set up again (<see cref="VaultSetUpAgainException"/>), unlike a Hello that is only off for now.
+/// </summary>
+public sealed class HelloKeyMissingException(string message) : Exception(message);
+
 /// <summary>A Hello-sealed key in a format this Zing doesn't know.</summary>
 public sealed class HelloSealFormatException(string message) : Exception(message);
 
@@ -30,6 +36,12 @@ public interface IHelloSealer
 	/// <summary>Fires when <see cref="Available"/> changes, so the renderer's vault state can follow.</summary>
 	event Action? AvailabilityChanged;
 
+	/// <summary>
+	/// Asks Windows again, without a prompt, whether Hello is set up, and updates <see cref="Available"/>: Hello set up while Zing runs
+	/// is otherwise only seen by a call that gets as far as the sealer.
+	/// </summary>
+	Task<bool> CheckAgainAsync();
+
 	/// <exception cref="HelloCancelledException">The prompt was dismissed.</exception>
 	/// <exception cref="HelloUnavailableException">Hello can't be used.</exception>
 	Task<byte[]> SealAsync(byte[] key);
@@ -37,6 +49,7 @@ public interface IHelloSealer
 	/// <summary>The caller wipes the returned key with <see cref="CryptographicOperations.ZeroMemory"/>.</summary>
 	/// <exception cref="HelloCancelledException">The prompt was dismissed.</exception>
 	/// <exception cref="HelloUnavailableException">Hello can't be used.</exception>
+	/// <exception cref="HelloKeyMissingException">Hello's vault key is gone (reset).</exception>
 	Task<byte[]> UnsealAsync(byte[] sealedBytes);
 }
 

@@ -77,6 +77,31 @@ public sealed class VaultBridgeTests : IDisposable
 	}
 
 	[Fact]
+	public async Task HelloSetUpWhileZingRunsLetsADeleteThroughAndShowsInTheVaultState()
+	{
+		var id = Value(await Invoke(_bridge, "vault:save", Login)).GetString()!;
+		_sealer.Result = HelloResult.Unavailable;
+		_sealer.Announce();
+		Assert.False(Value(await Invoke(_bridge, "vault:get")).GetProperty("helloAvailable").GetBoolean());
+		_sealer.SetUpSinceLastCheck = true;
+
+		Ok(await Invoke(_bridge, "vault:delete", id));
+
+		Assert.Equal(JsonValueKind.Number, Value(await Invoke(_bridge, "vault:summaries"))[0].GetProperty("deletedAt").ValueKind);
+		Assert.True(PushedStates()[^1].HelloAvailable);
+	}
+
+	[Fact]
+	public async Task OpeningTheVaultStateChecksAgainForAHelloSetUpMeanwhile()
+	{
+		_sealer.Result = HelloResult.Unavailable;
+		_sealer.Announce();
+		_sealer.SetUpSinceLastCheck = true;
+
+		Assert.True(Value(await Invoke(_bridge, "vault:get")).GetProperty("helloAvailable").GetBoolean());
+	}
+
+	[Fact]
 	public async Task AnEditWithAPasswordIsOneChange()
 	{
 		var id = Value(await Invoke(_bridge, "vault:save", Login)).GetString()!;
