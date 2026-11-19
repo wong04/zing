@@ -150,6 +150,19 @@ test('files the converter does not read are refused with the reason', async () =
 	await zing.close()
 })
 
+test('the quality starts at the Default quality setting', async () => {
+	fixture = await startEngineFixture()
+	const zing = await launchZing({ env: fixture.env })
+	await zing.chrome.evaluate(() => window.zing.setSetting('defaultQuality', 55))
+	const { panel } = await openConvert(zing)
+
+	const input = join(zing.userDataDir, 'IMG_0002.HEIC')
+	writeFileSync(input, 'pretend this is a photo')
+	await choose(zing, panel, input)
+	await expect(panel.getByText('Quality 55', { exact: true })).toBeVisible()
+	await zing.close()
+})
+
 test('HTML to PDF is printed by Chromium with scripts and the network off', async () => {
 	fixture = await startEngineFixture()
 	// Anything the page tries to reach on the network, or that a script does, shows up here.

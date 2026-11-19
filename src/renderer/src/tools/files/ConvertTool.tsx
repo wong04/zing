@@ -14,13 +14,12 @@ import './files.css'
 import { newPdfWorkerClient } from './pdfEditClient'
 import { handOffPdf, takeHandedPdf } from './pdfHandoff'
 import { usePanelId } from '../panelId'
+import { useSettings } from '../../settings/useSettings'
 import { readGranted, saveResult, saveSessionFor } from './pdfHost'
 import { describeCancelledPages, runParts } from './pdfRun'
 import { createPreviewSession } from './pdfRender'
 import { toPicture } from './pictureBytes'
 import { useEngineJob } from './useEngineJob'
-
-const DEFAULT_QUALITY = 80
 
 type Stage =
 	| { readonly kind: 'idle' }
@@ -57,7 +56,10 @@ export function ConvertTool() {
 	const job = useEngineJob()
 	const [file, setFile] = useState<PickedFile | null>(null)
 	const [choice, setChoice] = useState<string | null>(null)
-	const [quality, setQuality] = useState(DEFAULT_QUALITY)
+	const defaultQuality = useSettings()?.settings.defaultQuality
+	const [chosenQuality, setQuality] = useState<number | undefined>()
+	// Undefined only until the settings arrive.
+	const quality = chosenQuality ?? defaultQuality
 	const [stage, setStage] = useState<Stage>({ kind: 'idle' })
 	const [problem, setProblem] = useState<string | null>(null)
 
@@ -195,7 +197,7 @@ export function ConvertTool() {
 	}
 
 	const start = (): void => {
-		if (file === null || target === undefined) return
+		if (file === null || target === undefined || quality === undefined) return
 		setProblem(null)
 		setStage({ kind: 'preparing' })
 		void guarded(async () => {
@@ -269,7 +271,7 @@ export function ConvertTool() {
 						<span className="tool-label">Convert to</span>
 						<PillMenu aria-label="Convert to" options={targets.map((t) => ({ value: t.ext, label: t.label }))} value={target.ext} onChange={setChoice} />
 					</div>
-					{target.lossy ? (
+					{target.lossy && quality !== undefined ? (
 						<div className="convert-row">
 							<span className="tool-label">Quality {quality}</span>
 							<PillSlider aria-label="Quality" min={1} max={100} step={1} value={quality} onChange={setQuality} valueText={`${quality} out of 100`} />
@@ -278,7 +280,7 @@ export function ConvertTool() {
 					{ext === 'pdf' ? <span className="convert-hint">Pages with JPEG 2000, JBIG2 or CCITT pictures (common in scans) may come out blank; the PDF viewer here does not decode those.</span> : null}
 					{target.ext === 'pdf' ? <span className="convert-hint">The page is printed as UTF-8 text, with scripts and the network off.</span> : null}
 					<div className="convert-row">
-						<PillButton disabled={busy} onClick={start}>
+						<PillButton disabled={busy || quality === undefined} onClick={start}>
 							Convert
 						</PillButton>
 					</div>
