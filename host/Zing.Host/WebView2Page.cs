@@ -41,10 +41,14 @@ public sealed class WebView2Page : IPage
 	private int _textSize = Zing.Core.TextSize.Default;
 	private double _zoom = Zing.Core.Zoom.Default;
 	private int _downloads;
+	/// <summary>Downloads this page started that are still coming in; its engine view outlives the page until they end.</summary>
+	private int _downloading;
 	private ulong _navigation;
 	private static readonly TimeSpan DownloadGrace = TimeSpan.FromSeconds(1);
 	/// <summary>A real document has started to show (ContentLoading for anything but the blank first one).</summary>
 	private bool _showedDocument;
+	/// <summary>The engine opened this page for another one's window request (a link to a new tab, window.open).</summary>
+	private bool _openedForPage;
 	/// <summary>The main frame's DevTools id, once Page.getFrameTree has answered; frames' navigation reasons are not the page's.</summary>
 	private string? _mainFrameId;
 	/// <summary>The latest main-frame Page.frameRequestedNavigation: it arrives before NavigationStarting for the same address (spikes/link-preview, check C).</summary>
@@ -387,7 +391,25 @@ public sealed class WebView2Page : IPage
 		_features.Left(this);
 		_queued.Clear();
 		_relayRuns.Dispose();
+		// A download's operation stops working once the view that started it closes (no more events, and Cancel fails),
+		// though the file still comes in. So a page closed mid-download keeps its view, hidden and silent, until they end.
+		if (_downloading > 0 && _view is { } held && _core is { } core)
+		{
+			held.Visible = false;
+			core.IsMuted = true;
+			return;
+		}
 		_view?.Close();
+	}
+
+	/// <summary>A download this page started is under way: the engine view stays until <see cref="DownloadEnded"/>.</summary>
+	public void DownloadStarted() => _downloading++;
+
+	public void DownloadEnded()
+	{
+		if (_downloading == 0) throw new InvalidOperationException("A download ended that this page never started");
+		_downloading--;
+		if (_downloading == 0 && !IsOpen) _view?.Close();
 	}
 
 	private void Run(Action<CoreWebView2> action)
@@ -675,9 +697,9 @@ public sealed class WebView2Page : IPage
 		{
 			_downloads++;
 			_features.DownloadStarting(this, e);
-			// A preview that never showed a document was only this download: it closes, and the download goes on in the list.
-			// After the event, so the engine has the answer before the page goes.
-			if (!_showedDocument && _features.InPreview(this)) Faults.Enqueue(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), () =>
+			// A preview, or a tab a page opened, that never showed a document was only this download: it closes, as Chrome's
+			// does, and the download goes on in the list. After the event, so the engine has the answer before the page goes.
+			if (!_showedDocument && (_openedForPage || _features.InPreview(this))) Faults.Enqueue(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), () =>
 			{
 				if (IsOpen) _events.Closed();
 			}, "preview download");
@@ -1051,6 +1073,7 @@ public sealed class WebView2Page : IPage
 			if (IsOpen && popup.IsOpen && popup.IsStarted)
 			{
 				e.NewWindow = popup.Core;
+				popup._openedForPage = true;
 				popup._events.WindowOpened();
 			}
 		}
