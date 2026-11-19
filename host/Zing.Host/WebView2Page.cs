@@ -242,6 +242,12 @@ public sealed class WebView2Page : IPage
 	/// </summary>
 	public static int CapturesInFlight { get; private set; }
 
+	/// <summary>
+	/// A picture's widest, about twice an overview card. The engine draws the whole view, and every overview push while it
+	/// is open carries every picture: at full size five tabs made 4.7 MB per push and some 400 ms on the UI thread each.
+	/// </summary>
+	private const uint PictureWidth = 640;
+
 	public Task<string?> CaptureAsync()
 	{
 		var capture = CaptureNowAsync();
@@ -268,10 +274,26 @@ public sealed class WebView2Page : IPage
 			CapturesInFlight--;
 		}
 		if (stream.Size == 0) return null;
+		using var picture = await ShrinkAsync(stream);
 		using var memory = new MemoryStream();
-		stream.Seek(0);
-		await stream.AsStreamForRead().CopyToAsync(memory);
+		picture.Seek(0);
+		await picture.AsStreamForRead().CopyToAsync(memory);
 		return "data:image/jpeg;base64," + Convert.ToBase64String(memory.ToArray());
+	}
+
+	/// <summary>The engine's JPEG at most <see cref="PictureWidth"/> wide, re-encoded off the UI thread.</summary>
+	private static async Task<Windows.Storage.Streams.InMemoryRandomAccessStream> ShrinkAsync(Windows.Storage.Streams.IRandomAccessStream full)
+	{
+		full.Seek(0);
+		var decoder = await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(full);
+		var scale = Math.Min(1.0, (double)PictureWidth / decoder.PixelWidth);
+		var shrunk = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+		var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateForTranscodingAsync(shrunk, decoder);
+		encoder.BitmapTransform.ScaledWidth = (uint)Math.Max(1, Math.Round(decoder.PixelWidth * scale));
+		encoder.BitmapTransform.ScaledHeight = (uint)Math.Max(1, Math.Round(decoder.PixelHeight * scale));
+		encoder.BitmapTransform.InterpolationMode = Windows.Graphics.Imaging.BitmapInterpolationMode.Fant;
+		await encoder.FlushAsync();
+		return shrunk;
 	}
 
 	/// <summary>Edge's own print preview, inside the page; an e2e run records it instead.</summary>

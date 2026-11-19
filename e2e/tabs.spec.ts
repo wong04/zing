@@ -127,6 +127,9 @@ test('the tab overview shows a card per tab with pictures, and closes again', as
 	// The start page tab plus the two opened.
 	await expect(overview.locator('.overview-card')).toHaveCount(3)
 	await expect(overview.locator('.overview-thumb img')).not.toHaveCount(0)
+	// Pictures are card-sized: every change while the overview is open sends them all again.
+	const widths = await overview.locator('.overview-thumb img').evaluateAll((images) => images.map((image) => (image as unknown as { naturalWidth: number }).naturalWidth))
+	for (const width of widths) expect(width).toBeLessThanOrEqual(640)
 	// The active tab's card takes the keyboard, so arrows and Enter work at once.
 	await expect(overview.locator('.overview-card[aria-current="true"]')).toBeFocused()
 	await zing.chrome.evaluate(() => window.zing.closeOverview())
