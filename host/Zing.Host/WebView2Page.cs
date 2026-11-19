@@ -864,7 +864,7 @@ public sealed class WebView2Page : IPage
 		var listed = _features.BlockTrackers && (TrackerRules.IsTrackerHost(host) || FilterRules.Bundled.Names(host));
 		if (!isDocument && !listed) return;
 		// The page's own document is never a third party; a tracker's iframe or subresource is.
-		var topDocument = isDocument && request == _approvedDocument;
+		var topDocument = isDocument && _approvedDocument is not null && RelayedNavigation.Same(_approvedDocument, request);
 		if (!topDocument && listed && Refused(request, host, TopOf(sender)))
 		{
 			e.Response = sender.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
