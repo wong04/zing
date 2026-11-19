@@ -22,6 +22,10 @@ updates:
         patterns: [Velopack, vpk]
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Its major version follows .NET's; 10+ targets newer runtimes than the net9.0 the host builds for.
+      - dependency-name: System.Security.Cryptography.ProtectedData
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
