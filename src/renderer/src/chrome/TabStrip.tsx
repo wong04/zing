@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from 'react'
 import { dividerWidth } from '@shared/browser/tabReorder'
 import type { TabsState, TabView } from '@shared/ipc'
 import { buildSlots, snapshotOf, type Slot } from '@shared/tabs/slots'
@@ -77,6 +77,15 @@ export function TabStrip({ state }: { state: TabsState | undefined }) {
 	}
 	const { drag, register, handlersFor, consumeClick } = useSlotDrag(displayed, onDrop)
 
+	// A row too long for the strip scrolls; the tab in front is kept in view as it changes and as tabs come and go.
+	const row = useRef<HTMLDivElement>(null)
+	useEffect(() => {
+		row.current?.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+	}, [activeId, displayed.length, roomWidth])
+	const onWheel = (e: WheelEvent<HTMLDivElement>): void => {
+		if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY
+	}
+
 	// A click anywhere outside the open stack closes it, as with a menu.
 	useEffect(() => {
 		if (openStack === undefined) return
@@ -108,7 +117,7 @@ export function TabStrip({ state }: { state: TabsState | undefined }) {
 	return (
 		<div className="tabstrip">
 			<div className="tab-room" ref={measure}>
-				<div className="tabs" role="tablist" aria-label="Tabs" data-dragging={drag ? '' : undefined}>
+				<div ref={row} className="tabs" role="tablist" aria-label="Tabs" data-dragging={drag ? '' : undefined} onWheel={onWheel}>
 					{displayed.map((slot, index) => (
 						<SlotView
 							key={slot.key}

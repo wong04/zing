@@ -18,6 +18,10 @@
 	flex: 0 1 auto;
 	gap: 2px;
 	height: 100%;
+	/* Past the narrowest chips the row scrolls, so the New Tab button after it stays in the window. */
+	overflow-x: auto;
+	overflow-y: hidden;
+	scrollbar-width: none;
 }
 
 /*
