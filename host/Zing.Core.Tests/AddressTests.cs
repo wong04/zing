@@ -89,4 +89,25 @@ public sealed class AddressTests
 	[InlineData("1.2.3.x", false)]
 	[InlineData("1..3.4", false)]
 	public void IPv4_addresses_are_recognised(string host, bool expected) => Assert.Equal(expected, AddressInput.IsIPv4(host));
+
+	// The address bar's list is the Public Suffix List's, so a top-level domain that came after the hand-kept list still opens.
+	[Theory]
+	[InlineData("remix.run", "https://remix.run")]
+	[InlineData("astro.build", "https://astro.build")]
+	[InlineData("val.town/v/x", "https://val.town/v/x")]
+	[InlineData("example.museum", "https://example.museum")]
+	[InlineData("nic.xn--p1ai", "https://nic.xn--p1ai")]
+	[InlineData("пример.рф", "https://пример.рф")]
+	[InlineData("printer.local", "https://printer.local")]
+	[InlineData("router.home", "https://router.home")]
+	public void A_name_under_any_real_top_level_domain_is_opened(string typed, string expected) =>
+		Assert.Equal(new AddressInputResult.Url(expected), AddressInput.Classify(typed));
+
+	[Theory]
+	[InlineData("node.js")]
+	[InlineData("setup.exe")]
+	[InlineData("notes.txt")]
+	[InlineData("main.cpp")]
+	public void A_file_name_whose_extension_is_no_top_level_domain_is_searched(string typed) =>
+		Assert.Equal(new AddressInputResult.Search(typed), AddressInput.Classify(typed));
 }

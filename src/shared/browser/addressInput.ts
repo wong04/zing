@@ -28,6 +28,16 @@ export function isIPv4(host: string): boolean {
 	)
 }
 
+/** `[::1]` or `[2001:db8::1]:8080`: an IPv6 literal in brackets, then a port or nothing. */
+function isBracketedIPv6WithPort(host: string): boolean {
+	const close = host.indexOf(']')
+	if (close < 0) return false
+	const literal = host.slice(1, close)
+	if (!/^[0-9a-f:.]+$/.test(literal) || !literal.includes(':') || !URL.canParse(`http://[${literal}]/`)) return false
+	const rest = host.slice(close + 1)
+	return rest === '' || (rest.startsWith(':') && allDigits.test(rest.slice(1)))
+}
+
 /**
  * Decides whether what was typed is a place to go or something to search for.
  * Null when there is nothing but whitespace.
@@ -55,6 +65,7 @@ export function classify(raw: string): AddressInputResult | null {
 	// The host is everything before the first /, ? or #; a port may follow.
 	const hostEnd = text.search(/[/?#]/)
 	let host = (hostEnd < 0 ? text : text.slice(0, hostEnd)).toLowerCase()
+	if (host.startsWith('[')) return isBracketedIPv6WithPort(host) ? urlOrSearch('http://' + text, text) : { kind: 'search', text }
 	let hasPort = false
 	const colon = host.lastIndexOf(':')
 	if (colon >= 0) {

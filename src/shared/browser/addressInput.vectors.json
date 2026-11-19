@@ -12,9 +12,12 @@
 		["localhost:3000", "http://localhost:3000"],
 		["192.168.1.1", "http://192.168.1.1"],
 		["myserver.lan:8080/status", "https://myserver.lan:8080/status"],
-		["about:blank", "about:blank"]
+		["about:blank", "about:blank"],
+		["[::1]", "http://[::1]"],
+		["[::1]:8080", "http://[::1]:8080"],
+		["[2001:db8::1]:3000/status", "http://[2001:db8::1]:3000/status"]
 	],
-	"searches": ["node.js", "index.html", "file.txt", "what is apple.com", "hello", "2+2", "swift.version", "c++ tutorial"],
+	"searches": ["node.js", "index.html", "file.txt", "what is apple.com", "hello", "2+2", "swift.version", "c++ tutorial", "[::1", "[not-an-address]:80", "[::1]:http", "[::1]x"],
 	"blank": ["   "],
 	"resolve": [
 		{ "name": "goes to a real address and adds https", "input": "docs.google.com", "engine": "google", "expected": "https://docs.google.com" },
