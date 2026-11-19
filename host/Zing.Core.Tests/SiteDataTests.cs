@@ -1,4 +1,5 @@
 using Zing.Core;
+using Zing.Core.LinkPreview;
 
 namespace Zing.Core.Tests;
 
@@ -94,5 +95,46 @@ public sealed class SiteDataKeeperTests
 		((FakePage)tabs.PageOf(tab.Id)!).Events.Navigated("https://example.com/");
 		tabs.Close(tab.Id);
 		Assert.Equal(["example.com"], purger.Purged);
+	}
+
+	private static (TabService Tabs, FakePageHost Host, Purger Purger) PreviewTabs()
+	{
+		var purger = new Purger();
+		var host = new FakePageHost();
+		var tabs = new TabService(new TabStore(Deterministic.Clock(), Deterministic.Ids()), host, "about:blank", () => { }, (_, _) => { },
+			peekSettings: () => new PeekSettings(Enabled: true, ShiftClick: true, FromNewWindows: true), siteData: new SiteDataKeeper(purger, (_, _) => { }));
+		return (tabs, host, purger);
+	}
+
+	private static void Peek(TabService tabs, FakePageHost host, TabRecord source)
+	{
+		var page = host.PageFor(tabs, source.Id);
+		page.Events.Navigated("https://a.example/");
+		Assert.Equal(NavigationDecision.Cancel, page.Events.Navigating("https://a.example/", "https://b.example/", NavigationCause.AnchorClick));
+		((FakePage)tabs.Preview!.Top.Page).Events.Navigated("https://b.example/");
+	}
+
+	[Fact]
+	public void A_site_visited_only_in_a_preview_is_purged_when_the_preview_closes()
+	{
+		var (tabs, host, purger) = PreviewTabs();
+		var source = tabs.Open("about:blank");
+		Peek(tabs, host, source);
+		tabs.ClosePreview();
+		Assert.Equal(["b.example"], purger.Purged);
+		tabs.Close(source.Id);
+		Assert.Equal(["b.example", "a.example"], purger.Purged);
+	}
+
+	[Fact]
+	public void A_preview_expanded_into_a_tab_keeps_its_site_until_that_tab_closes()
+	{
+		var (tabs, host, purger) = PreviewTabs();
+		var source = tabs.Open("about:blank");
+		Peek(tabs, host, source);
+		var expanded = tabs.ExpandPreview();
+		Assert.Empty(purger.Purged);
+		tabs.Close(expanded.Id);
+		Assert.Equal(["b.example"], purger.Purged);
 	}
 }
