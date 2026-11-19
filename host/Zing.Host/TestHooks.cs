@@ -178,7 +178,7 @@ public static class TestHooks
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// "update-ready" with <c>version</c> makes the next update check find that version, and "update-restarts" writes how many restarts into an update were asked for to <c>file</c>.
 	/// "set-cursor" with <c>x</c> and <c>y</c> puts the cursor there over the window's content (WindowLayout.Cursor), and without them takes it off the window.
-	/// "window-at" with <c>x</c> and <c>y</c> writes to <c>file</c> the address of the view Windows gives a click at that point of the content (WindowFromPoint), null for none.
+	/// "window-at" with <c>x</c> and <c>y</c> writes to <c>file</c> the address of the view Windows gives a click at that point of the content (WindowFromPoint), null for none, and the class of the window hit.
 	/// "menu-theme" writes the preferred app mode the native menus were last given (DarkMenus) to <c>file</c>.
 	/// "show-default-browser-offer" shows the default-browser offer as a launch would, skipping only whether Zing is installed and not the default.
 	/// </summary>
@@ -247,7 +247,9 @@ public static class TestHooks
 			var origin = window.ClientOrigin;
 			var point = new Native.POINT { X = origin.X + (int)Math.Round(root.GetProperty("x").GetDouble() * scale), Y = origin.Y + (int)Math.Round(root.GetProperty("y").GetDouble() * scale) };
 			var hit = Native.WindowFromPoint(point);
-			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { url = window.Views.FirstOrDefault(v => v.Owns(hit))?.Core.Source }));
+			var name = new System.Text.StringBuilder(64);
+			Native.GetClassNameW(hit, name, name.Capacity);
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { url = window.Views.FirstOrDefault(v => v.Owns(hit))?.Core.Source, windowClass = name.ToString() }));
 			return true;
 		}
 		if (action == "layers")

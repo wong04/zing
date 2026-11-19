@@ -137,16 +137,32 @@ test('a click between two panels reaches the page beneath, and a click on a pane
 	const zing = await launchZing()
 	let page: Layer | undefined
 	await expect.poll(async () => (page = (await layers(zing.chrome)).find((l) => l.url.startsWith('zing://home') && l.visible)) !== undefined).toBe(true)
+	// The surface view starts with the first panel.
+	await zing.chrome.evaluate((x) => window.zing.openPanel('tool:Hashes', { x, y: 300 }), page!.x + 20)
 	const surface = await surfaceOf(zing)
-	await openToolDirect(zing, surface, 'tool:Hashes', 'Hashes', page!.x + 20)
+	await expect(surface.getByRole('dialog', { name: 'Hashes' })).toBeVisible()
 	await openToolDirect(zing, surface, 'tool:HMAC', 'HMAC', page!.x + page!.width - 20)
-	const [left, right] = (await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels.map((p) => p.frame).sort((a, b) => a.x - b.x)
-	// Wider than both panels' shadow room (32 px each side), so the gap is the page's.
-	expect(right!.x - (left!.x + left!.width)).toBeGreaterThan(100)
+	// To opposite corners of the page, so there is page between them, inside the rectangle the two span.
+	const panels = async () => (await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels
+	const [hashes, hmac] = (await panels()).map((p) => p.id)
+	const place = (id: string, origin: { x: number; y: number }) => zing.chrome.evaluate(async ([panel, x, y]) => {
+		await window.zing.beginPanelDrag(panel!)
+		await window.zing.endPanelDrag(panel!, { x: Number(x), y: Number(y) })
+	}, [id, String(origin.x), String(origin.y)])
+	// A drop isn't clamped to the page, so the lower panel's corner is put on the page's.
+	const size = (await panels()).find((p) => p.id === hmac)!.frame
+	await place(hashes!, { x: page!.x, y: page!.y })
+	await place(hmac!, { x: page!.x + page!.width - size.width, y: page!.y + page!.height - size.height })
+	const [upper, lower] = (await panels()).map((p) => p.frame).sort((a, b) => a.y - b.y)
+	// The page's top-right corner: beside the upper panel and above the lower one, clear of both panels' shadow room.
+	const SHADOW = 32
+	const gap = { x: lower!.x + lower!.width - 16, y: upper!.y + 16 }
+	expect(gap.x).toBeGreaterThan(upper!.x + upper!.width + SHADOW)
+	expect(gap.y).toBeLessThan(lower!.y - SHADOW)
 
 	const middle = (r: { x: number; y: number; width: number; height: number }) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 })
-	await expect.poll(() => viewAt(zing.chrome, middle(left!))).toMatch(/#surface$/)
-	expect(await viewAt(zing.chrome, middle(right!))).toMatch(/#surface$/)
-	expect(await viewAt(zing.chrome, { x: (left!.x + left!.width + right!.x) / 2, y: middle(left!).y })).toBe(page!.url)
+	await expect.poll(() => viewAt(zing.chrome, middle(upper!))).toMatch(/#surface$/)
+	expect(await viewAt(zing.chrome, middle(lower!)), `lower ${JSON.stringify(lower)} on page ${JSON.stringify(page)}`).toMatch(/#surface$/)
+	expect(await viewAt(zing.chrome, gap)).toBe(page!.url)
 	await zing.close()
 })

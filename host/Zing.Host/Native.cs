@@ -184,6 +184,9 @@ internal static class Native
 	[DllImport("user32.dll")]
 	public static extern nint WindowFromPoint(POINT point);
 
+	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+	public static extern int GetClassNameW(nint hwnd, System.Text.StringBuilder name, int size);
+
 	[DllImport("user32.dll")]
 	private static extern short GetAsyncKeyState(int key);
 
