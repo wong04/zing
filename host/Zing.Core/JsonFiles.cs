@@ -21,14 +21,14 @@ public static class JsonFiles
 	};
 
 	/// <summary>No file yet means first run: every key reads as its default. Anything unreadable is an error.</summary>
-	public static JsonObject LoadSettingsFile(string path)
+	public static JsonObject LoadSettingsFile(string path, Action<string> onUnknownKey)
 	{
 		if (!File.Exists(path)) return SettingsSchema.Defaults();
 		try
 		{
-			return Settings.Parse(JsonNode.Parse(File.ReadAllText(path)));
+			return Settings.Parse(JsonNode.Parse(File.ReadAllText(path)), onUnknownKey);
 		}
-		catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or InvalidSettingException or UnknownSettingException)
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or InvalidSettingException)
 		{
 			throw new SettingsFileException(path, error);
 		}
@@ -65,8 +65,8 @@ public static class JsonFiles
 	/// Settings for this launch. A file whose content is invalid is moved aside and Zing starts from the defaults;
 	/// one that can't be read (locked, access denied) is left where it is. Either way startup goes on, and the problem is returned so the person can be told.
 	/// </summary>
-	public static Loaded<JsonObject> LoadSettingsOrRecover(string path, DateTime now) =>
-		UserData.Load(path, () => LoadSettingsFile(path), SettingsSchema.Defaults, now);
+	public static Loaded<JsonObject> LoadSettingsOrRecover(string path, DateTime now, Action<string> onUnknownKey) =>
+		UserData.Load(path, () => LoadSettingsFile(path, onUnknownKey), SettingsSchema.Defaults, now);
 
 	private static void TryDelete(string path)
 	{

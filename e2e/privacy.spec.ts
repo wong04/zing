@@ -1,5 +1,7 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { join } from 'node:path'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
 import { launchZing, test, pageWhere } from './zing'
@@ -91,6 +93,42 @@ test('the browsing profile is in memory unless persistentProfile is on, which ke
 	}
 	expect(await keptAfterRelaunch(false)).toBeNull()
 	expect(await keptAfterRelaunch(true)).toBe('v')
+})
+
+/** Whether a profile's localStorage files name the origin. Read with Zing closed: the engine holds them while it runs. */
+function storageHolds(profile: string, origin: string): boolean {
+	const folder = join(profile, 'Local Storage', 'leveldb')
+	if (!existsSync(folder)) return false
+	return readdirSync(folder).some((name) => readFileSync(join(folder, name)).includes(origin))
+}
+
+test('turning persistentProfile off deletes the kept profile at the next launch, so sites are signed out', async () => {
+	const first = await launchZing()
+	await first.chrome.evaluate(() => window.zing.setSetting('persistentProfile', true))
+	await first.close()
+	const kept = join(first.userDataDir, 'WebView2', 'EBWebView', 'WV2Profile_zing')
+
+	const signedIn = await launchZing({ userDataDir: first.userDataDir })
+	const tab = (await signedIn.chrome.evaluate(() => window.zing.getTabs())).activeId!
+	await openIn(signedIn.chrome, tab, '/set')
+	await expect.poll(() => titleOf(signedIn.chrome, tab)).toBe('set:v:k=v')
+	await signedIn.chrome.evaluate(() => window.zing.setSetting('persistentProfile', false))
+	await signedIn.close()
+	expect(storageHolds(kept, base)).toBe(true)
+
+	// The engine makes the folder again, empty, as it starts (its Local State still lists the profile), so the check is on what it holds.
+	const off = await launchZing({ userDataDir: first.userDataDir })
+	// On again: the site data from before is gone, not just hidden while the setting was off.
+	await off.chrome.evaluate(() => window.zing.setSetting('persistentProfile', true))
+	await off.close()
+	expect(storageHolds(kept, base)).toBe(false)
+
+	const on = await launchZing({ userDataDir: first.userDataDir })
+	const again = (await on.chrome.evaluate(() => window.zing.getTabs())).activeId!
+	await openIn(on.chrome, again, '/read')
+	await expect.poll(async () => (await titleOf(on.chrome, again))?.startsWith('{')).toBe(true)
+	expect(JSON.parse((await titleOf(on.chrome, again))!)).toEqual({ ls: null, cookie: '' })
+	await on.close()
 })
 
 test('the Back button menu reads the page history without errors', async () => {

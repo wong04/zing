@@ -104,17 +104,23 @@ public static class Settings
 {
 	/// <summary>
 	/// Builds a full settings object from stored JSON. Absent keys take their
-	/// default; retired keys are skipped; present keys must be known and valid,
-	/// or this throws rather than quietly replacing what the user chose.
+	/// default; retired keys are skipped; an unknown key (from a newer or older
+	/// build sharing the file) is skipped and passed to <paramref name="onUnknownKey"/>,
+	/// so it can't reset everything else. Known keys must be valid, or this throws
+	/// rather than quietly replacing what the user chose.
 	/// </summary>
-	public static JsonObject Parse(JsonNode? stored)
+	public static JsonObject Parse(JsonNode? stored, Action<string> onUnknownKey)
 	{
 		if (stored is not JsonObject obj) throw new InvalidSettingException("(root)", stored);
 		var values = SettingsSchema.Defaults();
 		foreach (var (key, value) in obj)
 		{
 			if (SettingsSchema.Retired.Contains(key)) continue;
-			if (!SettingsSchema.IsSettingKey(key)) throw new UnknownSettingException(key);
+			if (!SettingsSchema.IsSettingKey(key))
+			{
+				onUnknownKey(key);
+				continue;
+			}
 			if (!SettingsSchema.AcceptsValue(key, value)) throw new InvalidSettingException(key, value);
 			values[key] = value?.DeepClone();
 		}

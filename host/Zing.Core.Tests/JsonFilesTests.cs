@@ -12,15 +12,17 @@ public sealed class JsonFilesTests : IDisposable
 
 	public void Dispose() => Directory.Delete(_dir, recursive: true);
 
+	private static void NoUnknownKeys(string key) => Assert.Fail($"unexpected unknown key {key}");
+
 	[Fact]
 	public void ReadsDefaultsOnFirstRun() =>
-		Assert.True(JsonNode.DeepEquals(SettingsSchema.Defaults(), JsonFiles.LoadSettingsFile(SettingsPath)));
+		Assert.True(JsonNode.DeepEquals(SettingsSchema.Defaults(), JsonFiles.LoadSettingsFile(SettingsPath, NoUnknownKeys)));
 
 	[Fact]
 	public void RoundTripsAChangeThroughADebouncedAtomicWrite()
 	{
 		var clock = new ManualScheduler();
-		var store = new SettingsStore(JsonFiles.LoadSettingsFile(SettingsPath));
+		var store = new SettingsStore(JsonFiles.LoadSettingsFile(SettingsPath, NoUnknownKeys));
 		var writer = new DebouncedJsonWriter(SettingsPath, TimeSpan.FromMilliseconds(300), clock, _writeErrors.Add);
 		store.Subscribe((s, _) => writer.Write(Settings.Changed(s)));
 		store.Set("tabBarPosition", JsonValue.Create("right"));
@@ -32,7 +34,7 @@ public sealed class JsonFilesTests : IDisposable
 		var written = JsonNode.Parse(File.ReadAllText(SettingsPath))!;
 		Assert.True(JsonNode.DeepEquals(JsonNode.Parse("""{"tabBarPosition":"right","restoreTabs":true}"""), written));
 		Assert.Equal(["settings.json"], Directory.GetFiles(Path.GetDirectoryName(SettingsPath)!).Select(Path.GetFileName));
-		var reloaded = JsonFiles.LoadSettingsFile(SettingsPath);
+		var reloaded = JsonFiles.LoadSettingsFile(SettingsPath, NoUnknownKeys);
 		Assert.Equal("right", reloaded["tabBarPosition"]!.GetValue<string>());
 		Assert.True(reloaded["blockTrackers"]!.GetValue<bool>());
 	}
@@ -43,7 +45,7 @@ public sealed class JsonFilesTests : IDisposable
 		var writer = new DebouncedJsonWriter(SettingsPath, TimeSpan.FromSeconds(10), new ManualScheduler(), _writeErrors.Add);
 		writer.Write(new JsonObject { ["restoreTabs"] = true });
 		writer.Flush();
-		Assert.True(JsonFiles.LoadSettingsFile(SettingsPath)["restoreTabs"]!.GetValue<bool>());
+		Assert.True(JsonFiles.LoadSettingsFile(SettingsPath, NoUnknownKeys)["restoreTabs"]!.GetValue<bool>());
 	}
 
 	[Fact]
@@ -68,11 +70,23 @@ public sealed class JsonFilesTests : IDisposable
 	{
 		Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
 		File.WriteAllText(SettingsPath, "{ not json");
-		Assert.Throws<SettingsFileException>(() => JsonFiles.LoadSettingsFile(SettingsPath));
+		Assert.Throws<SettingsFileException>(() => JsonFiles.LoadSettingsFile(SettingsPath, NoUnknownKeys));
 		File.WriteAllText(SettingsPath, """{"defaultQuality":"high"}""");
-		Assert.Throws<SettingsFileException>(() => JsonFiles.LoadSettingsFile(SettingsPath));
-		File.WriteAllText(SettingsPath, """{"history":true}""");
-		Assert.Throws<SettingsFileException>(() => JsonFiles.LoadSettingsFile(SettingsPath));
+		Assert.Throws<SettingsFileException>(() => JsonFiles.LoadSettingsFile(SettingsPath, NoUnknownKeys));
+	}
+
+	[Fact]
+	public void AnUnknownKeyIsReportedAndTheOtherSettingsAreKept()
+	{
+		Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+		File.WriteAllText(SettingsPath, """{"fromANewerBuild":true,"tabBarPosition":"right"}""");
+		var unknown = new List<string>();
+		var loaded = JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp, unknown.Add);
+		Assert.Null(loaded.Problem);
+		Assert.Equal("right", loaded.Value["tabBarPosition"]!.GetValue<string>());
+		Assert.False(loaded.Value.ContainsKey("fromANewerBuild"));
+		Assert.Equal(["fromANewerBuild"], unknown);
+		Assert.True(File.Exists(SettingsPath));
 	}
 
 	[Fact]
@@ -125,19 +139,18 @@ public sealed class JsonFilesTests : IDisposable
 		Directory.Delete(SettingsPath);
 		writer.Flush();
 		Assert.Single(_writeErrors);
-		Assert.True(JsonFiles.LoadSettingsFile(SettingsPath)["restoreTabs"]!.GetValue<bool>());
+		Assert.True(JsonFiles.LoadSettingsFile(SettingsPath, NoUnknownKeys)["restoreTabs"]!.GetValue<bool>());
 	}
 
 	[Theory]
 	[InlineData("{ not json")]
 	[InlineData("""{"defaultQuality":"high"}""")]
-	[InlineData("""{"history":true}""")]
 	public void ACorruptSettingsFileIsKeptAsideAndZingStartsFromTheDefaults(string content)
 	{
 		Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
 		File.WriteAllText(SettingsPath, content);
 
-		var loaded = JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp);
+		var loaded = JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp, NoUnknownKeys);
 
 		Assert.True(JsonNode.DeepEquals(SettingsSchema.Defaults(), loaded.Value));
 		var problem = Assert.IsType<LoadProblem>(loaded.Problem);
@@ -153,9 +166,9 @@ public sealed class JsonFilesTests : IDisposable
 	{
 		Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
 		File.WriteAllText(SettingsPath, "first");
-		var first = JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp).Problem!.KeptAs;
+		var first = JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp, NoUnknownKeys).Problem!.KeptAs;
 		File.WriteAllText(SettingsPath, "second");
-		var second = JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp).Problem!.KeptAs;
+		var second = JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp, NoUnknownKeys).Problem!.KeptAs;
 		Assert.Equal(SettingsPath + ".corrupt-20260304-050607-2", second);
 		Assert.Equal("first", File.ReadAllText(first!));
 		Assert.Equal("second", File.ReadAllText(second!));
@@ -164,9 +177,9 @@ public sealed class JsonFilesTests : IDisposable
 	[Fact]
 	public void AGoodOrMissingSettingsFileHasNoProblem()
 	{
-		Assert.Null(JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp).Problem);
+		Assert.Null(JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp, NoUnknownKeys).Problem);
 		JsonFiles.WriteJsonAtomic(SettingsPath, new JsonObject { ["restoreTabs"] = true });
-		var loaded = JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp);
+		var loaded = JsonFiles.LoadSettingsOrRecover(SettingsPath, Stamp, NoUnknownKeys);
 		Assert.Null(loaded.Problem);
 		Assert.True(loaded.Value["restoreTabs"]!.GetValue<bool>());
 	}

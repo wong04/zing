@@ -397,6 +397,9 @@ public sealed class WebView2Page : IPage
 		else action(_core);
 	}
 
+	/// <summary>The on-disk browsing profile's name; with persistentProfile off, Zing deletes it at launch (ZingApp.OpenEnvironmentAsync).</summary>
+	public const string KeptProfileName = "zing";
+
 	/// <summary>
 	/// The person's browsing profile, which tabs and the Google sign-in window (SignInPopup) use. Keeps nothing by default: an
 	/// in-memory profile, as Electron's non-persistent partition was; <paramref name="persistent"/> is the opt-in on-disk one.
@@ -405,7 +408,7 @@ public sealed class WebView2Page : IPage
 	{
 		var options = environment.CreateCoreWebView2ControllerOptions();
 		options.IsInPrivateModeEnabled = !persistent;
-		options.ProfileName = persistent ? "zing" : "zing-private";
+		options.ProfileName = persistent ? KeptProfileName : "zing-private";
 		return options;
 	}
 

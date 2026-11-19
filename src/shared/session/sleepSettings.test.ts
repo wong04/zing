@@ -26,6 +26,6 @@ describe('sleepingTabs setting', () => {
 		store.set('sleepingTabs', { enabled: true, afterMinutes: 10, sleepPinned: false })
 		expect(changedSettings(store.snapshot())).toEqual({ sleepingTabs: { enabled: true, afterMinutes: 10, sleepPinned: false } })
 		expect(() => store.set('sleepingTabs', { enabled: true, afterMinutes: -1, sleepPinned: false })).toThrow(InvalidSettingError)
-		expect(parseSettings({ sleepingTabs: { enabled: false, afterMinutes: 60, sleepPinned: true } }).sleepingTabs.afterMinutes).toBe(60)
+		expect(parseSettings({ sleepingTabs: { enabled: false, afterMinutes: 60, sleepPinned: true } }, (key) => expect.unreachable(key)).sleepingTabs.afterMinutes).toBe(60)
 	})
 })

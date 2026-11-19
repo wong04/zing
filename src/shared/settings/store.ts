@@ -19,17 +19,22 @@ export class UnknownSettingError extends Error {
 
 /**
  * Builds a full settings object from stored JSON. Keys that are absent take
- * their default; retired keys are skipped; keys that are present must be known
- * and valid, or this throws rather than quietly replacing what the user chose.
+ * their default; retired keys are skipped; an unknown key (from a newer or older
+ * build sharing the file) is skipped and passed to `onUnknownKey`, so it can't
+ * reset everything else. Known keys must be valid, or this throws rather than
+ * quietly replacing what the user chose.
  */
-export function parseSettings(stored: unknown): Settings {
+export function parseSettings(stored: unknown, onUnknownKey: (key: string) => void): Settings {
 	if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) {
 		throw new InvalidSettingError('(root)', stored)
 	}
 	const values: Record<string, unknown> = { ...DEFAULT_SETTINGS }
 	for (const [key, value] of Object.entries(stored)) {
 		if (RETIRED_SETTING_KEYS.includes(key)) continue
-		if (!isSettingKey(key)) throw new UnknownSettingError(key)
+		if (!isSettingKey(key)) {
+			onUnknownKey(key)
+			continue
+		}
 		if (!acceptsValue(key, value)) throw new InvalidSettingError(key, value)
 		values[key] = value
 	}

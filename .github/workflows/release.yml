@@ -1,8 +1,8 @@
 # Builds the Velopack installer (scripts/pack.ps1) and, on a v* tag, uploads it to a draft GitHub release.
 #
 # Secrets (Settings → Secrets and variables → Actions), passed only on tag pushes and manual runs, never on pull requests:
-#   ZING_GOOGLE_CLIENT_ID     → env ZingGoogleClientId      (MSBuild reads it as a property; without it the build has no sync)
-#   ZING_GOOGLE_CLIENT_SECRET → env ZingGoogleClientSecret
+#   ZING_GOOGLE_CLIENT_ID     → env ZingGoogleClientId      (MSBuild reads it as a property; without it the build has no sync,
+#   ZING_GOOGLE_CLIENT_SECRET → env ZingGoogleClientSecret    so a tag build fails when either is empty)
 #   AZURE_SIGNING_ACCOUNT     → env AZURE_SIGNING_ACCOUNT   (unset for now, so the sign step never runs)
 name: release
 
@@ -88,12 +88,35 @@ jobs:
           }
           "version=$version" >> $env:GITHUB_OUTPUT
           Write-Host "version $version"
-      # The latest published release, so vpk pack can build a delta package from it.
+      # A release without these has no sync, so a tag build stops here instead of shipping one.
+      - name: Require the Google sign-in secrets
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          ZingGoogleClientId: ${{ secrets.ZING_GOOGLE_CLIENT_ID }}
+          ZingGoogleClientSecret: ${{ secrets.ZING_GOOGLE_CLIENT_SECRET }}
+        run: |
+          $missing = @()
+          if ([string]::IsNullOrWhiteSpace($env:ZingGoogleClientId)) { $missing += 'ZING_GOOGLE_CLIENT_ID' }
+          if ([string]::IsNullOrWhiteSpace($env:ZingGoogleClientSecret)) { $missing += 'ZING_GOOGLE_CLIENT_SECRET' }
+          if ($missing) { throw "these secrets are empty: $($missing -join ', '). Set them under Settings, Secrets and variables, Actions, then re-run this workflow" }
+      # The latest published release, so vpk pack can build a delta package from it. The first release has none before
+      # it (drafts and prereleases don't count, as installed copies never see them), so it ships the full package alone.
       - name: Download the previous release
         if: github.event_name == 'push'
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: dotnet vpk download github --repoUrl https://github.com/wong04/zing --token $env:GH_TOKEN --outputDir artifacts/releases
+        run: |
+          $previous = gh release list --repo wong04/zing --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty'
+          if ($LASTEXITCODE -ne 0) { throw "gh release list failed with exit code $LASTEXITCODE" }
+          if (-not $previous) {
+            Write-Host "no published release yet: this one ships without a delta package"
+            exit 0
+          }
+          Write-Host "previous release $previous"
+          dotnet vpk download github --repoUrl https://github.com/wong04/zing --token $env:GH_TOKEN --outputDir artifacts/releases
+          if ($LASTEXITCODE -ne 0) { throw "vpk download failed with exit code $LASTEXITCODE" }
       - name: Sign
         if: env.AZURE_SIGNING_ACCOUNT != ''
         # Code signing plugs in here: Azure Trusted Signing (`vpk pack --azureTrustedSignFile metadata.json`) or SignPath

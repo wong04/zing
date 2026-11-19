@@ -55,17 +55,19 @@ describe('settings schema', () => {
 const ERRORS = { InvalidSetting: InvalidSettingError, UnknownSetting: UnknownSettingError }
 
 describe('parseSettings', () => {
-	for (const { name, input, expectSubset, expectAbsent = [] } of vectors.parseAccepted as { name: string; input: unknown; expectSubset: object; expectAbsent?: string[] }[]) {
+	for (const { name, input, expectSubset, expectAbsent = [], expectUnknown = [] } of vectors.parseAccepted as { name: string; input: unknown; expectSubset: object; expectAbsent?: string[]; expectUnknown?: string[] }[]) {
 		it(name, () => {
-			const parsed = parseSettings(input)
+			const unknown: string[] = []
+			const parsed = parseSettings(input, (key) => unknown.push(key))
 			expect(parsed).toMatchObject(expectSubset)
 			for (const key of expectAbsent) expect(Object.hasOwn(parsed, key), key).toBe(false)
+			expect(unknown).toEqual(expectUnknown)
 		})
 	}
 
-	it('rejects invalid values and unknown keys instead of replacing them', () => {
+	it('rejects invalid values instead of replacing them', () => {
 		for (const { input, error } of vectors.parseRejected) {
-			expect(() => parseSettings(input), JSON.stringify(input)).toThrow(ERRORS[error as keyof typeof ERRORS])
+			expect(() => parseSettings(input, () => {}), JSON.stringify(input)).toThrow(ERRORS[error as keyof typeof ERRORS])
 		}
 	})
 })

@@ -17,6 +17,28 @@ public sealed class EngineFolderTests : IDisposable
 	}
 
 	[Fact]
+	public void DeletingAProfileRemovesItsDataAndLeavesTheOthers()
+	{
+		var kept = EngineFolder.ProfileFolder(_folder, "zing");
+		Directory.CreateDirectory(Path.Combine(kept, "Network"));
+		File.WriteAllText(Path.Combine(kept, "Network", "Cookies"), "signed in");
+		var other = EngineFolder.ProfileFolder(_folder, "zing-chrome");
+		Directory.CreateDirectory(other);
+
+		EngineFolder.DeleteProfile(_folder, "zing");
+
+		Assert.False(Directory.Exists(kept));
+		Assert.True(Directory.Exists(other));
+	}
+
+	[Fact]
+	public void DeletingAProfileThatWasNeverMadeDoesNothing()
+	{
+		EngineFolder.DeleteProfile(_folder, "zing");
+		Assert.False(Directory.Exists(EngineFolder.ProfileFolder(_folder, "zing")));
+	}
+
+	[Fact]
 	public async Task AFolderNoEngineEverUsedIsFree()
 	{
 		await EngineFolder.WaitUntilFreeAsync(_folder, TimeSpan.Zero, Cancel);

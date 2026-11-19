@@ -10,8 +10,8 @@ Set these in GitHub under Settings → Secrets and variables → Actions. Never 
 
 | Secret | Used for | Without it |
 |---|---|---|
-| `ZING_GOOGLE_CLIENT_ID` | Sync's Google sign-in. `release.yml` passes it to the build as `ZingGoogleClientId`. | The build has no sync. |
-| `ZING_GOOGLE_CLIENT_SECRET` | The same, as `ZingGoogleClientSecret`. | The build has no sync. |
+| `ZING_GOOGLE_CLIENT_ID` | Sync's Google sign-in. `release.yml` passes it to the build as `ZingGoogleClientId`. | A tag build fails at "Require the Google sign-in secrets". A manual run builds without sync. |
+| `ZING_GOOGLE_CLIENT_SECRET` | The same, as `ZingGoogleClientSecret`. | The same. |
 | `AZURE_SIGNING_ACCOUNT` | Turns on the sign step (see [Signing](#signing)). | Unsigned build. Leave it unset for now. |
 | `WINGET_TOKEN` | The winget job, from 1.0 (see [winget](#winget-at-10)). | Not needed until then. |
 
@@ -21,7 +21,8 @@ Pull-request runs never get the secrets. For a local build with sync, set `ZingG
 
 1. Make sure `main` is green.
 2. Tag and push: `git tag v1.0.0` then `git push origin v1.0.0`. The tag must be `v<semver>`; the version comes from it (`v1.0.0` → `1.0.0`).
-3. The `release` workflow runs the checks, downloads the latest published release (so vpk can build a delta package), packs, and uploads everything as a **draft** release named "Zing 1.0.0".
+3. The `release` workflow runs the checks, fails if either Google secret is empty (so no release ships without sync), downloads the latest published release (so vpk can build a delta package), packs, and uploads everything as a **draft** release named "Zing 1.0.0". The first release has no published release before it, so the workflow says so in the log and ships the full package without a delta; drafts and prereleases don't count as earlier releases.
+   If it fails on the secrets, set them and re-run the workflow from the run's page. The tag stays as it is.
 4. Open the draft on GitHub, write the notes, and **publish it by hand**. A prerelease tag (`v1.1.0-beta.1`) is uploaded the same way; tick "Set as a pre-release" when publishing.
 
 Installed copies only see published releases, and never prereleases, so a draft reaches nobody.
