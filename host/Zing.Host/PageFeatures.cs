@@ -90,6 +90,8 @@ public sealed class PermissionDeferral(CoreWebView2PermissionRequestedEventArgs 
 {
 	public void Resolve(bool granted)
 	{
+		// A grant lasts as long as the tab (PermissionBroker): the engine must not keep it, or a refusal, in the profile.
+		request.SavesInProfile = false;
 		request.State = granted ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
 		deferral.Complete();
 	}

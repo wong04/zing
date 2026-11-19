@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -50,6 +52,17 @@ public static class AddressInput
 		return part[0] != '-' && int.Parse(digits, CultureInfo.InvariantCulture) <= 255 || digits.All(d => d == '0');
 	}
 
+	/// <summary>"[::1]" or "[2001:db8::1]:8080": an IPv6 literal in brackets, then a port or nothing.</summary>
+	private static bool IsBracketedIPv6WithPort(string host)
+	{
+		var close = host.IndexOf(']');
+		if (close < 0) return false;
+		var literal = host[1..close];
+		if (!literal.Contains(':') || !IPAddress.TryParse(literal, out var address) || address.AddressFamily != AddressFamily.InterNetworkV6) return false;
+		var rest = host[(close + 1)..];
+		return rest.Length == 0 || rest[0] == ':' && AllRunes(rest[1..], IsNumber);
+	}
+
 	// Iterates code points: JS's /u regexes match astral letters and digits, UTF-16 units would not.
 	private static bool AllRunes(string text, Func<Rune, bool> test) => text.Length > 0 && text.EnumerateRunes().All(test);
 
@@ -71,6 +84,7 @@ public static class AddressInput
 
 		var hostEnd = text.IndexOfAny(['/', '?', '#']);
 		var host = (hostEnd < 0 ? text : text[..hostEnd]).ToLowerInvariant();
+		if (host.StartsWith('[')) return IsBracketedIPv6WithPort(host) ? UrlOrSearch("http://" + text, text) : search;
 		var hasPort = false;
 		var colon = host.LastIndexOf(':');
 		if (colon >= 0) {
@@ -87,45 +101,13 @@ public static class AddressInput
 		return UrlOrSearch("https://" + text, text);
 	}
 
-	public static bool IsTopLevelDomain(string tld)
-	{
-		var t = tld.ToLowerInvariant();
-		return CountryTlds.Contains(t) || GenericTlds.Contains(t);
-	}
+	/// <summary>
+	/// A top-level domain by the Public Suffix List, so a new one (remix.run, astro.build) opens without a list to keep, while
+	/// node.js and file.txt are still searched. Also the names that only exist on a home or company network.
+	/// </summary>
+	public static bool IsTopLevelDomain(string tld) => PrivateNames.Contains(tld.ToLowerInvariant()) || PublicSuffix.IsTopLevelDomain(tld);
 
-	private static string[] Words(string text) => text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-
-	public static readonly IReadOnlySet<string> CountryTlds = new HashSet<string>(
-		Words("""
-		ac ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bm bn bo
-		br bs bt bw by bz ca cc cd cf cg ch ci ck cl cm cn co cr cu cv cw cx cy cz de dj dk dm
-		do dz ec ee eg er es et eu fi fj fk fm fo fr ga gd ge gf gg gh gi gl gm gn gp gq gr gs
-		gt gu gw gy hk hm hn hr ht hu id ie il im in io iq ir is it je jm jo jp ke kg kh ki km
-		kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mg mh mk ml mm mn mo mp
-		mq mr ms mt mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pe pf pg ph pk
-		pl pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sk sl sm sn so sr ss
-		st su sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug uk us uy uz va
-		vc ve vg vi vn vu wf ws ye yt za zm zw
-		"""),
-		StringComparer.Ordinal);
-
-	public static readonly IReadOnlySet<string> GenericTlds = new HashSet<string>(
-		Words("""
-		com net org edu gov mil int info biz name pro
-		io ai app dev page cloud tech online site website
-		store shop blog news live art design xyz top club
-		today world space studio media network systems software
-		digital agency email solutions services academy school
-		college university museum travel health law finance bank
-		money games game fun wiki social chat video music
-		photo photos gallery film tv radio zone one link
-		click help support guide tips how new plus inc
-		ltd llc gmbh group global earth city land moe
-		dog cat eco green lol wtf rocks ninja codes
-		google apple microsoft amazon youtube gle goog mozilla
-		local lan home internal test localhost onion arpa coop aero
-		"""),
-		StringComparer.Ordinal);
+	private static readonly IReadOnlySet<string> PrivateNames = new HashSet<string>(["local", "lan", "home", "internal", "test", "localhost"], StringComparer.Ordinal);
 }
 
 /// <summary>What typing in the address bar opens (src/main/address.ts). Engine URLs come from searchEngines.ts via Defaults.</summary>

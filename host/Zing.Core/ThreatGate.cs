@@ -96,19 +96,21 @@ public sealed class ThreatGate(Func<bool> enabled, Func<Uri, Uri>? inspectedAs =
 	}
 
 	/// <summary>
-	/// A navigation to a zing://warning address. Our own landing on a warning is left to be served; any other (a page's link, a
-	/// session restored, Back to a warning that has since been replaced) becomes a new warning of the host's own making.
+	/// A navigation to a zing://warning address. One for an address the person has since let in goes on to that address: they
+	/// are never warned twice in a session. Otherwise our own landing on a warning is left to be served; any other (a page's
+	/// link, a session restored, Back to a warning that has since been replaced) becomes a new warning of the host's own making.
 	/// </summary>
 	private NavigationDecision? Revisit(string tab, string from, string to)
 	{
 		var id = StartPage.QueryParam(to, "w");
 		var target = StartPage.QueryParam(to, "to");
+		if (target is null || Web(target) is not { } address) return null;
+		if (ThreatModel.InspectUrl(Inspected(address)).Level < ThreatLevel.Suspicious) return null;
+		if (!NeedsWarning(address)) return new NavigationDecision.Redirect(address.AbsoluteUri);
 		lock (_lock)
 		{
 			if (_warnings.TryGetValue(tab, out var live) && live.Id == id && live.To == target) return null;
 		}
-		if (target is null || Web(target) is not { } address) return null;
-		if (ThreatModel.InspectUrl(Inspected(address)).Level < ThreatLevel.Suspicious) return null;
 		// The warning this address came back from is gone, and with it whether it was for a relay; the page says so.
 		return Warn(tab, from, address, false, fromHistory: true);
 	}
@@ -167,7 +169,7 @@ public sealed class ThreatGate(Func<bool> enabled, Func<Uri, Uri>? inspectedAs =
 			if (inspected.UserInfo.Length > 0) _allowedAddresses.Add(inspected.AbsoluteUri);
 			else _allowedOrigins.Add(OriginOf(inspected));
 		}
-		return new NavigationDecision.Redirect(next.AbsoluteUri);
+		return new NavigationDecision.Replace(next.AbsoluteUri);
 	}
 
 	private static Target? Destination(string to)

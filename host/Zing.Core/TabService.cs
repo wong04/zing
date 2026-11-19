@@ -63,6 +63,8 @@ public abstract record NavigationDecision
 	public sealed record Allowed : NavigationDecision;
 	public sealed record Cancelled : NavigationDecision;
 	public sealed record Redirect(string Url) : NavigationDecision;
+	/// <summary>Goes to <paramref name="Url"/> in place of the document the page is on, so Back skips that document (the warning, after Visit anyway).</summary>
+	public sealed record Replace(string Url) : NavigationDecision;
 }
 
 /// <summary>What a live page reports to its tab. The host calls these from the page's events.</summary>
@@ -93,6 +95,8 @@ public interface IPageEvents
 	/// page; the chrome offers Reload, and the next document the page starts clears the fault.
 	/// </summary>
 	void Crashed(PageFault fault);
+	/// <summary>The page's renderer answered again after it was reported unresponsive.</summary>
+	void Responding();
 	/// <summary>Something the person should be told about this page that isn't a failure to load, e.g. a relayed web app that can't work.</summary>
 	void Notice(string text);
 	/// <summary>The page's autofill script posted <paramref name="message"/>; <paramref name="frameSource"/> is the engine's own Source for it, never anything the page said.</summary>
@@ -850,6 +854,7 @@ public sealed class TabService
 			{
 				// Like typing it: the tab shows where it is going even before (or if never) the page commits.
 				if (decision is NavigationDecision.Redirect redirect) service.Update(id, new TabContentPatch(Url: redirect.Url));
+				if (decision is NavigationDecision.Replace replace) service.Update(id, new TabContentPatch(Url: replace.Url));
 				return decision;
 			}
 			var clean = service.CleanNavigation(to, cause);
@@ -874,6 +879,11 @@ public sealed class TabService
 			if (current == fault || current == PageFault.Crashed) return;
 			service._faults[id] = fault;
 			service._changed();
+		}
+
+		public void Responding()
+		{
+			if (service.FaultOf(id) == PageFault.Unresponsive) service.ClearFault(id);
 		}
 
 		public void Navigated(string url)
@@ -989,6 +999,8 @@ public sealed class TabService
 			if (fault == PageFault.Crashed) service.PreviewPageCrashed(Own);
 		}
 
+		public void Responding() { }
+
 		public void Notice(string text)
 		{
 			if (service._store.Has(sourceId)) service._pageNotice(service._store.Get(sourceId), text);
@@ -1026,6 +1038,7 @@ public sealed class TabService
 		/// <summary>A window opened before this one showed anything belongs beside the opener's tab, as before.</summary>
 		public IPage Popup(PopupRequest request) => service.AdoptPopup(Own.OpenerTabId, request.Url, OpensBehind(request.Modifiers));
 		public void Crashed(PageFault fault) { }
+		public void Responding() { }
 		public void Notice(string text) { }
 		public void Autofill(Uri frameSource, Vault.AutofillMessage message) { }
 		public void NewDocument() { }

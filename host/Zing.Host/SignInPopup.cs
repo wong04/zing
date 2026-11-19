@@ -158,7 +158,12 @@ public sealed class SignInPopup : ISignInPopup
 			core.SourceChanged += (_, _) => ShowAddress(core.Source);
 			// A sign-in has nothing to download or ask permission for; neither goes around Zing's downloads list and site permissions.
 			core.DownloadStarting += (_, e) => e.Cancel = true;
-			core.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
+			// It shares the tabs' profile, where a refusal kept would refuse the site in a tab too.
+			core.PermissionRequested += (_, e) =>
+			{
+				e.SavesInProfile = false;
+				e.State = CoreWebView2PermissionState.Deny;
+			};
 			core.ProcessFailed += (_, e) => TestHooks.Guard(() => OnProcessFailed(e.ProcessFailedKind), "sign-in window engine");
 			// A link the person clicks that opens a window (Google's help, its privacy policy) opens as a tab of the Zing window under
 			// this one, by the rules tabs follow; nothing else opens (SignInWindowLinks).

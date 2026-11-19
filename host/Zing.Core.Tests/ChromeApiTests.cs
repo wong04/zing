@@ -511,6 +511,48 @@ public sealed class ChromeApiTests : IDisposable
 		Assert.Equal("stop", ActivePage.Calls[^1]);
 	}
 
+	private sealed class Answers : IPermissionResolver
+	{
+		public List<bool> Given { get; } = [];
+		public void Resolve(bool granted) => Given.Add(granted);
+	}
+
+	[Fact]
+	public void A_prompt_still_open_when_the_window_closes_is_refused_and_pushes_nothing_to_the_gone_views()
+	{
+		var host = new FakeWindowHost();
+		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
+		var api = new ChromeApi(new Bridge(), new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new Zing.Core.Net.RelayConsent()), host, "test");
+		api.Start([], "about:blank");
+		var page = api.Tabs.ActivePage!;
+		var answers = new Answers();
+		api.Permissions.Request(page, "https://a.test/", "notifications", new PermissionDetails("https://a.test/"), answers);
+		Assert.NotNull(api.PageUi.State.Permission);
+
+		api.Dispose();
+		var pushedBefore = host.Pushed.Count;
+		// The host drops a closing page's requests (PermissionHost.Left) as TabService.Destroy closes it.
+		api.Permissions.DropFor(page);
+
+		Assert.Equal([false], answers.Given);
+		Assert.Equal(pushedBefore, host.Pushed.Count);
+	}
+
+	[Fact]
+	public void Esc_in_Zings_own_views_is_theirs_and_never_stops_the_page()
+	{
+		ActivePage.IsLoading = true;
+		Assert.False(_api.HandleChromeKey(Esc));
+		Assert.DoesNotContain("stop", ActivePage.Calls);
+	}
+
+	[Fact]
+	public void Other_keys_in_Zings_own_views_are_the_window_commands()
+	{
+		Assert.True(_api.HandleChromeKey(new KeyInput("KeyT", Ctrl: true, Shift: false, Alt: false)));
+		Assert.Equal(2, _api.Tabs.Records.Count);
+	}
+
 	[Fact]
 	public void Other_keys_in_a_preview_are_the_window_commands()
 	{

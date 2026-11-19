@@ -351,6 +351,29 @@ public sealed class TabCrashServiceTests
 	}
 
 	[Fact]
+	public void A_hung_page_that_answers_again_loses_its_mark()
+	{
+		var tab = _tabs.Open("https://a.example/");
+		var events = PageOf(tab.Id).Events;
+		events.Crashed(PageFault.Unresponsive);
+		var before = _changes;
+		events.Responding();
+		Assert.Null(_tabs.FaultOf(tab.Id));
+		Assert.Null(ViewOf(tab.Id).PageState);
+		Assert.Equal(before + 1, _changes);
+	}
+
+	[Fact]
+	public void A_crashed_page_stays_crashed_whatever_answers()
+	{
+		var tab = _tabs.Open("https://a.example/");
+		var events = PageOf(tab.Id).Events;
+		events.Crashed(PageFault.Crashed);
+		events.Responding();
+		Assert.Equal(PageFault.Crashed, _tabs.FaultOf(tab.Id));
+	}
+
+	[Fact]
 	public void A_crashed_background_tab_that_sleeps_wakes_with_a_working_page()
 	{
 		var background = _tabs.Open("https://a.example/");

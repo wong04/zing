@@ -33,6 +33,25 @@ public static class PublicSuffix
 		return suffixStart == 0 ? null : string.Join('.', labels[(suffixStart - 1)..]);
 	}
 
+	/// <summary>
+	/// Whether the label is a top-level domain the list knows (a rule of its own, or the "*" under one, as .ck has). A name
+	/// that can't be put in ASCII is no domain.
+	/// </summary>
+	public static bool IsTopLevelDomain(string label)
+	{
+		var lower = label.ToLowerInvariant();
+		string ascii;
+		try
+		{
+			ascii = lower.All(char.IsAscii) ? lower : Idn.GetAscii(lower);
+		}
+		catch (ArgumentException)
+		{
+			return false;
+		}
+		return List.Value.Plain.Contains(ascii) || List.Value.Wildcards.Contains(ascii);
+	}
+
 	/// <summary>Where the public suffix starts: an exception rule wins, then the longest rule, then the implicit "*".</summary>
 	private static int SuffixStart(string[] labels, Rules rules)
 	{
