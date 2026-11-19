@@ -104,7 +104,8 @@ public sealed class SavedTabs : IDisposable
 
 	public void Dispose() => _unsubscribe();
 
-	private void UntieRemoved()
+	/// <summary>Unties every tab whose item is gone, so it shows as an ordinary tab. Runs on each library change, and after a restore.</summary>
+	public void UntieRemoved()
 	{
 		foreach (var tab in _tabs.Records.Where(t => t.ItemId is { } id && !_library.IsSavedTab(id)).ToList()) _tabs.Unbind(tab.Id);
 	}

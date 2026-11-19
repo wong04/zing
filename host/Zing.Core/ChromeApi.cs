@@ -550,6 +550,8 @@ public sealed class ChromeApi : IDisposable
 		if (restored.Count > 0)
 		{
 			Tabs.Restore(restored);
+			// An item deleted since the session was saved (from another window, or sync) leaves its tab to stand alone.
+			Saved.UntieRemoved();
 			Saved.AdoptPinnedTabs();
 		}
 		else Tabs.Open(startUrl ?? HomepageUrl());
@@ -680,7 +682,7 @@ public sealed class ChromeApi : IDisposable
 			"tab.new" => Act(true, NewTab),
 			"tab.close" => Tabs.Preview is not null ? Act(true, Tabs.ClosePreview) : Act(Tabs.ActiveId is not null, () => Tabs.Close(Tabs.ActiveId!)),
 			"tab.reopenClosed" => Tabs.ReopenClosed() is null ? NotApplicable : Done,
-			"tab.split" => Act(Tabs.ActiveId is not null, SplitWithNewTab),
+			"tab.split" => Act(Tabs.ActiveId is { } splitting && Tabs.Splits.Of(splitting) is not { TabIds.Count: >= Split.MaxPanes }, SplitWithNewTab),
 			"tab.next" => ActivateIfAny(Tabs.NextId()),
 			"tab.previous" => ActivateIfAny(Tabs.PreviousId()),
 			"window.new" => Act(true, _host.NewWindow),
