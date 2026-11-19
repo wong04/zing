@@ -92,8 +92,10 @@ public sealed class SyncEngine : IDisposable
 	private bool _disposed;
 	private string _syncedAs = "";
 	private long? _refreshUnansweredSince;
-	/// <summary>When a change may start the next sync: <see cref="ChangeGap"/> after the last began, or once a 429's wait is over.</summary>
-	private long _changeNotBefore;
+	/// <summary>When an edit may start the next sync: <see cref="ChangeGap"/> after the last began.</summary>
+	private long _editNotBefore;
+	/// <summary>When anything may start the next sync after a 429: once its wait is over. 0 when the last sync didn't get one.</summary>
+	private long _rateLimitedUntil;
 	private int _rateLimitedRuns;
 	/// <summary>How long to wait after the last sync's 429; null when it didn't get one.</summary>
 	private TimeSpan? _rateLimitedWait;
@@ -180,7 +182,7 @@ public sealed class SyncEngine : IDisposable
 				_refreshUnansweredSince ??= _clock.Now();
 				if (_running) return;
 				_next?.Dispose();
-				_next = _scheduler.Schedule(RefreshRetry, Run);
+				_next = _scheduler.Schedule(Later(RefreshRetry, Until(_rateLimitedUntil)), Run);
 			}
 		}
 		catch (Exception error)
@@ -190,13 +192,19 @@ public sealed class SyncEngine : IDisposable
 		}
 	}
 
+	/// <summary>An edit: sync soon, but no sooner than <see cref="ChangeGap"/> after the last began, so edits close together share one.</summary>
 	private void OnEdited()
 	{
-		Soon(AfterChange);
+		TimeSpan gap;
+		lock (_lock) gap = Until(_editNotBefore);
+		Soon(Later(AfterChange, gap));
 		StatusChanged?.Invoke();
 	}
 
-	/// <summary>A sign-in, a sign-out or sync turned on: sync soon. A refresh saving its rotated token changes none of that, so it doesn't.</summary>
+	/// <summary>
+	/// A sign-in, a sign-out or sync turned on: sync soon, without the gap edits keep, since nothing else would send what it set up. A
+	/// refresh saving its rotated token changes none of that, so it doesn't.
+	/// </summary>
 	private void OnSyncChanged()
 	{
 		var now = SyncedAs();
@@ -222,20 +230,21 @@ public sealed class SyncEngine : IDisposable
 		}
 	}
 
-	/// <summary>
-	/// Debounced: a sync already waiting to start is moved to <paramref name="delay"/> from now, or later, to when a change may start
-	/// one (<see cref="ChangeGap"/> after the last began, or once a 429's wait is over).
-	/// </summary>
+	/// <summary>Debounced: a sync already waiting to start is moved to <paramref name="delay"/> from now, or after a 429's wait, if later.</summary>
 	private void Soon(TimeSpan delay)
 	{
 		lock (_lock)
 		{
 			if (_disposed) return;
-			var gap = TimeSpan.FromMilliseconds(_changeNotBefore - _clock.Now());
 			_soon?.Dispose();
-			_soon = _scheduler.Schedule(gap > delay ? gap : delay, Run);
+			_soon = _scheduler.Schedule(Later(delay, Until(_rateLimitedUntil)), Run);
 		}
 	}
+
+	/// <summary>How long from now until <paramref name="at"/>: negative once it's past.</summary>
+	private TimeSpan Until(long at) => TimeSpan.FromMilliseconds(at - _clock.Now());
+
+	private static TimeSpan Later(TimeSpan a, TimeSpan b) => a > b ? a : b;
 
 	/// <summary>Starts a sync, or, while one runs, has another run straight after it, so a change made meanwhile isn't left for 5 minutes.</summary>
 	private void Run()
@@ -249,7 +258,7 @@ public sealed class SyncEngine : IDisposable
 				return;
 			}
 			_running = true;
-			_changeNotBefore = _clock.Now() + (long)ChangeGap.TotalMilliseconds;
+			_editNotBefore = _clock.Now() + (long)ChangeGap.TotalMilliseconds;
 		}
 		_ = LoopAsync();
 	}
@@ -312,7 +321,7 @@ public sealed class SyncEngine : IDisposable
 			if (_disposed) return;
 			_next?.Dispose();
 			var retry = _refreshUnansweredSince is { } since && _clock.Now() - since < RefreshRetryWindow.TotalMilliseconds;
-			_next = _scheduler.Schedule(retry ? RefreshRetry : _rateLimitedWait ?? Every, Run);
+			_next = _scheduler.Schedule(_rateLimitedWait ?? (retry ? RefreshRetry : Every), Run);
 		}
 	}
 
@@ -350,13 +359,14 @@ public sealed class SyncEngine : IDisposable
 			{
 				_rateLimitedRuns = 0;
 				_rateLimitedWait = null;
+				_rateLimitedUntil = 0;
 				return;
 			}
 			_rateLimitedRuns++;
 			var doubled = RateLimitedRetry * Math.Pow(2, Math.Min(_rateLimitedRuns - 1, 8));
 			var wait = limited.RetryAfter is { } asked && asked > TimeSpan.Zero ? (asked < MaxRateLimitedWait ? asked : MaxRateLimitedWait) : doubled < Every ? doubled : Every;
 			_rateLimitedWait = wait;
-			_changeNotBefore = Math.Max(_changeNotBefore, _clock.Now() + (long)wait.TotalMilliseconds);
+			_rateLimitedUntil = _clock.Now() + (long)wait.TotalMilliseconds;
 			_soon?.Dispose();
 			_soon = null;
 			_again = false;

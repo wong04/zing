@@ -601,6 +601,34 @@ public sealed class SyncEngineTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ARefreshLostDuringA429sWaitWaitsToo()
+	{
+		await _pcs.TurnOnAAsync();
+		_pcs.Server.Wire.AnswerRetryAfter = TimeSpan.FromMinutes(2);
+		_pcs.Server.Wire.AnswerWith = r => r.RequestUri!.AbsolutePath == "/manifest" ? System.Net.HttpStatusCode.TooManyRequests : null;
+		await StartAAsync();
+		// The access token is refused, and the refresh it brings gets no answer.
+		_pcs.Server.Wire.AnswerWith = r => r.RequestUri!.AbsolutePath == "/manifest" ? System.Net.HttpStatusCode.Unauthorized : null;
+		_pcs.Server.Wire.LoseNextRefreshAnswer = true;
+
+		await Assert.ThrowsAnyAsync<Exception>(() => A.Client.GetManifestAsync(Ct, asUser: A.Vault.SyncKeys!.UserId));
+
+		Assert.True(A.Client.RefreshUnanswered);
+		Assert.All(A.Scheduler.Pending, d => Assert.True(d > TimeSpan.FromMinutes(1), $"{d} is before the retry"));
+	}
+
+	[Fact]
+	public async Task TurningSyncOnOrOffRightAfterASyncSyncsWithoutTheChangeGap()
+	{
+		await _pcs.TurnOnAAsync();
+		await StartAAsync();
+
+		A.Vault.TurnOffSync();
+
+		Assert.Contains(SyncEngine.AfterChange, A.Scheduler.Pending);
+	}
+
+	[Fact]
 	public async Task ARetryAfterOfADayWaitsAnHourAtMost()
 	{
 		await _pcs.TurnOnAAsync();
@@ -639,7 +667,8 @@ public sealed class SyncEngineTests : IDisposable
 		B.Vault.Delete(id);
 		B.Vault.Restore(id);
 		B.Vault.UpdateSummary(id, "Shorter", "", "ada");
-		await Assert.ThrowsAsync<VaultLoginTooLargeException>(() => B.Vault.UpdatePasswordAsync(id, "one-more"));
+		var refused = await Assert.ThrowsAsync<VaultLoginTooLargeException>(() => B.Vault.UpdatePasswordAsync(id, "one-more"));
+		Assert.Equal("This login's earlier passwords already fill all the space sync allows, so Zing can't keep another and nothing was saved. Delete this login, then save the new password as a new login.", refused.Message);
 		B.Vault.Delete(id);
 		await B.SyncAsync();
 
