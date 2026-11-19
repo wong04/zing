@@ -206,7 +206,7 @@ export function BgRemoveTool() {
 
 	return (
 		<ToolPage subtitle="Cuts the background out of a PNG, JPEG or WebP picture, on this PC. The result is a PNG in your Downloads folder; the original is never changed.">
-			<FileDropZone onFiles={take} onError={fail}>
+			<FileDropZone onFiles={take} onError={fail} takesPageImages>
 				{({ targeted }) => (
 					<div className={targeted ? 'convert-drop targeted' : 'convert-drop'}>
 						{file === null ? <span className="convert-hint">Drop a picture here</span> : <FileRow path={file.name} />}

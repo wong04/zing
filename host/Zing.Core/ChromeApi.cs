@@ -152,6 +152,9 @@ public sealed class ChromeApi : IDisposable
 	/// <summary>The files this window's renderer may give an engine: what the picker or a drop issued.</summary>
 	public FileGrants Grants { get; } = new();
 
+	// Images dragged out of a page onto a tool, fetched into the viewer's temporary folder; null with no such folder.
+	private readonly PageImageDrops? _pageImages;
+
 	/// <summary>Where the host leaves what a Zing view dropped until the renderer collects it.</summary>
 	public DropInbox Drops { get; }
 
@@ -231,6 +234,7 @@ public sealed class ChromeApi : IDisposable
 				IssueToken = path => Grants.Issue(path).Token,
 			};
 			bridge.UseViewer(Viewer);
+			_pageImages = new PageImageDrops(viewerRoot, PageImageDrops.Http, (what, error) => host.Warn(what, error));
 		}
 		Stacks = new StackDropdown(key => StackMembers.Of(Tabs.State(Setting("tabOrganization"), Flag("tabDropdowns")), Ordering.Stacks(), key), host.Scheduler, state =>
 		{
@@ -358,6 +362,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("files:pick", args => PickFilesAsync(Arg(args, 0)));
 		bridge.Register("convert:html-to-pdf", args => HtmlToPdfAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("files:open-dropped", _ => Drops.Take());
+		bridge.Register("files:open-dropped-image", args => OpenDroppedImageAsync(Text(args, 0)));
 		bridge.Register("files:copy-to-clipboard", args => Do(() => CopyFileToClipboard(Text(args, 0))));
 		bridge.Register("session:open", args => OpenToolSession(Text(args, 0), Text(args, 1), StringArray(Arg(args, 2))));
 		bridge.Register("session:open-save", args => OpenSaveSession(Text(args, 0), StringArray(Arg(args, 1))));
@@ -637,6 +642,7 @@ public sealed class ChromeApi : IDisposable
 		_importApi?.Dispose();
 		_app.Runner?.KillWindow(_windowId);
 		Viewer?.Dispose();
+		_pageImages?.Dispose();
 		_closing.Cancel();
 		_closing.Dispose();
 		_host.OfferEnded -= EndOffer;
@@ -774,6 +780,13 @@ public sealed class ChromeApi : IDisposable
 		var path = Grants.Resolve(token);
 		if (!File.Exists(path)) throw new FileNotFoundException($"{Path.GetFileName(path)} is no longer there, so it can't be copied", path);
 		_host.CopyFilesToClipboard([path]);
+	}
+
+	private async Task<object?> OpenDroppedImageAsync(string address)
+	{
+		var images = _pageImages ?? throw new InvalidOperationException("This host has no temporary folder for a dropped picture");
+		var path = await images.FetchAsync(address, DateTimeOffset.FromUnixTimeMilliseconds(_app.Clock.Now()), _closing.Token);
+		return Grants.Issue(path);
 	}
 
 	private async Task<object?> PickFilesAsync(JsonElement kinds)
