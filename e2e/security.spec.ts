@@ -282,6 +282,20 @@ test('Go back from a warning returns to the page the link was on, and does not l
 	await zing.close()
 })
 
+test('Back after Visit anyway reaches the page the link was on, and the host is never warned about again', async () => {
+	const zing = await launch()
+	await (await linksPage(zing)).locator('#flagged').click()
+	await (await pageWhere(zing.browser, isWarning)).getByRole('link', { name: 'Visit anyway' }).click()
+	await pageWhere(zing.browser, (p) => p.url() === `${flaggedBase}/phish`)
+	await zing.chrome.evaluate(() => window.zing.runCommand('history.back'))
+	await pageWhere(zing.browser, (p) => p.url() === `${cleanBase}/`)
+	expect(pages(zing.browser).some(isWarning)).toBe(false)
+	await zing.chrome.evaluate(() => window.zing.runCommand('history.forward'))
+	await pageWhere(zing.browser, (p) => p.url() === `${flaggedBase}/phish`)
+	expect(pages(zing.browser).some(isWarning)).toBe(false)
+	await zing.close()
+})
+
 test('a warning in a tab with no history sends Go back to the start page', async () => {
 	const zing = await launchZing({ env: { ZING_START_URL: `${flaggedBase}/phish`, ZING_E2E_INSPECT_AS: standIns() } })
 	const warning = await pageWhere(zing.browser, isWarning)

@@ -608,6 +608,12 @@ public sealed class WebView2Page : IPage
 					_warnedDocument = redirect.Url.StartsWith(StartPage.Scheme + "://", StringComparison.OrdinalIgnoreCase) ? e.Uri : null;
 					core.Navigate(redirect.Url);
 					return;
+				case NavigationDecision.Replace replace:
+					e.Cancel = true;
+					_zingNavigation = replace.Url;
+					_warnedDocument = null;
+					Background(core.ExecuteScriptAsync($"location.replace({System.Text.Json.JsonSerializer.Serialize(replace.Url)})").AsTask(), "replacing the document");
+					return;
 			}
 			// The warning page itself starts after the cancelled navigation and must not lift the refusal.
 			if (!e.Uri.StartsWith(StartPage.Scheme + "://", StringComparison.OrdinalIgnoreCase)) _warnedDocument = null;

@@ -63,6 +63,8 @@ public abstract record NavigationDecision
 	public sealed record Allowed : NavigationDecision;
 	public sealed record Cancelled : NavigationDecision;
 	public sealed record Redirect(string Url) : NavigationDecision;
+	/// <summary>Goes to <paramref name="Url"/> in place of the document the page is on, so Back skips that document (the warning, after Visit anyway).</summary>
+	public sealed record Replace(string Url) : NavigationDecision;
 }
 
 /// <summary>What a live page reports to its tab. The host calls these from the page's events.</summary>
@@ -836,6 +838,7 @@ public sealed class TabService
 			{
 				// Like typing it: the tab shows where it is going even before (or if never) the page commits.
 				if (decision is NavigationDecision.Redirect redirect) service.Update(id, new TabContentPatch(Url: redirect.Url));
+				if (decision is NavigationDecision.Replace replace) service.Update(id, new TabContentPatch(Url: replace.Url));
 				return decision;
 			}
 			var clean = service.CleanLink(to);

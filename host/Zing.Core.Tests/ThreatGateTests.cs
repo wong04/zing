@@ -114,7 +114,7 @@ public sealed partial class ThreatGateTests
 	{
 		var (warning, visit) = Warn("zing-relay://apple.com.secure-login.tk/verify", "zing://home");
 		var decision = Check(warning, visit);
-		Assert.Equal("zing-relay://apple.com.secure-login.tk/verify", Assert.IsType<NavigationDecision.Redirect>(decision).Url);
+		Assert.Equal("zing-relay://apple.com.secure-login.tk/verify", Assert.IsType<NavigationDecision.Replace>(decision).Url);
 	}
 
 	// MARK: - Visit anyway
@@ -123,7 +123,7 @@ public sealed partial class ThreatGateTests
 	public void Visit_anyway_from_the_warning_loads_the_address_and_does_not_warn_again_for_the_host()
 	{
 		var (warning, visit) = Warn(Flagged);
-		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Redirect>(Check(warning, visit)).Url);
+		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Replace>(Check(warning, visit)).Url);
 		Assert.Null(Check(Page, Flagged));
 		Assert.Null(Check(Page, "https://apple.com.secure-login.tk/other/page"));
 		Assert.NotNull(Check(Page, "https://paypal.account-update.xyz/signin"));
@@ -180,7 +180,7 @@ public sealed partial class ThreatGateTests
 	public void A_key_is_used_once()
 	{
 		var (warning, visit) = Warn(Flagged);
-		Assert.IsType<NavigationDecision.Redirect>(Check(warning, visit));
+		Assert.IsType<NavigationDecision.Replace>(Check(warning, visit));
 		Assert.IsType<NavigationDecision.Cancelled>(Check(warning, visit));
 	}
 
@@ -189,7 +189,7 @@ public sealed partial class ThreatGateTests
 	{
 		var (warning, _) = Warn(Flagged);
 		var again = VisitLink().Match(Html(Serve(warning))).Groups[1].Value;
-		Assert.IsType<NavigationDecision.Redirect>(Check(warning, WebUtility.HtmlDecode(again)));
+		Assert.IsType<NavigationDecision.Replace>(Check(warning, WebUtility.HtmlDecode(again)));
 	}
 
 	[Theory]
@@ -215,7 +215,7 @@ public sealed partial class ThreatGateTests
 	{
 		var (warning, visit) = Warn(Flagged);
 		_on = false;
-		Assert.IsType<NavigationDecision.Redirect>(Check(warning, visit));
+		Assert.IsType<NavigationDecision.Replace>(Check(warning, visit));
 	}
 
 	// MARK: - The warning page
@@ -272,7 +272,7 @@ public sealed partial class ThreatGateTests
 		var visit = WebUtility.HtmlDecode(VisitLink().Match(body).Groups[1].Value);
 		Assert.Equal(new Uri(evil).AbsoluteUri, StartPage.QueryParam(visit, "to"));
 		Assert.Equal(new Uri(evil).AbsoluteUri, StartPage.QueryParam(warning, "to"));
-		Assert.IsType<NavigationDecision.Redirect>(Check(warning, visit));
+		Assert.IsType<NavigationDecision.Replace>(Check(warning, visit));
 		Assert.Null(Check(Page, "https://nested.example/"));
 	}
 
@@ -366,7 +366,7 @@ public sealed partial class ThreatGateTests
 		Assert.DoesNotContain("Open a Link", body);
 		Assert.Contains("history.back()", body);
 		var visit = WebUtility.HtmlDecode(VisitLink().Match(body).Groups[1].Value);
-		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Redirect>(Check(rebuilt, visit)).Url);
+		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Replace>(Check(rebuilt, visit)).Url);
 	}
 
 	[Fact]
@@ -401,7 +401,7 @@ public sealed partial class ThreatGateTests
 			Check(Page, $"https://paypal.account-update.xyz/{i}", "evil");
 		}
 		Assert.Equal(2, _gate.KeysHeld);
-		Assert.IsType<NavigationDecision.Redirect>(Check(warning, visit, "tab-1"));
+		Assert.IsType<NavigationDecision.Replace>(Check(warning, visit, "tab-1"));
 	}
 
 	[Fact]
@@ -411,8 +411,8 @@ public sealed partial class ThreatGateTests
 		var other = Warn("https://paypal.account-update.xyz/signin", tab: "tab-2");
 		var (secondWarning, secondVisit) = Warn("https://signin-netflix.billing-verify.top/", tab: "tab-1");
 		Assert.IsType<NavigationDecision.Cancelled>(Check(firstWarning, firstVisit, "tab-1"));
-		Assert.IsType<NavigationDecision.Redirect>(Check(secondWarning, secondVisit, "tab-1"));
-		Assert.IsType<NavigationDecision.Redirect>(Check(other.Warning, other.Visit, "tab-2"));
+		Assert.IsType<NavigationDecision.Replace>(Check(secondWarning, secondVisit, "tab-1"));
+		Assert.IsType<NavigationDecision.Replace>(Check(other.Warning, other.Visit, "tab-2"));
 	}
 
 	[Fact]
@@ -420,7 +420,7 @@ public sealed partial class ThreatGateTests
 	{
 		var (warning, visit) = Warn(Flagged, tab: "tab-1");
 		Assert.IsType<NavigationDecision.Cancelled>(Check(warning, visit, "tab-2"));
-		Assert.IsType<NavigationDecision.Redirect>(Check(warning, visit, "tab-1"));
+		Assert.IsType<NavigationDecision.Replace>(Check(warning, visit, "tab-1"));
 	}
 
 	// MARK: - A warning that outlived the process (session restore, pinned tab, Back)
@@ -436,17 +436,31 @@ public sealed partial class ThreatGateTests
 		Assert.Contains("location.replace('zing://home')", body);
 		Assert.DoesNotContain("history.back()", body);
 		var visit = WebUtility.HtmlDecode(VisitLink().Match(body).Groups[1].Value);
-		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Redirect>(restarted.Check("tab-9", rebuilt, visit)).Url);
+		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Replace>(restarted.Check("tab-9", rebuilt, visit)).Url);
 	}
 
 	[Fact]
-	public void Back_to_a_warning_after_visiting_anyway_shows_the_warning_and_does_not_bounce_on()
+	public void Visit_anyway_takes_the_warnings_place_so_Back_skips_it()
+	{
+		var (warning, visit) = Warn(Flagged);
+		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Replace>(Check(warning, visit)).Url);
+	}
+
+	[Fact]
+	public void A_warning_in_history_for_an_address_allowed_this_session_goes_on_to_it_and_never_warns_again()
 	{
 		var (warning, visit) = Warn(Flagged);
 		Check(warning, visit);
-		var again = WarningUrlOf(Check(Flagged, warning));
-		Assert.StartsWith("zing://warning?to=", again);
-		Assert.Equal(200, Assert.IsType<StartPageResponse>(Serve(again)).Status);
+		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Redirect>(Check(Page, warning)).Url);
+	}
+
+	[Fact]
+	public void A_warning_another_tab_holds_for_a_host_allowed_since_is_not_shown_again()
+	{
+		var (held, _) = Warn(Flagged, tab: "tab-2");
+		var (warning, visit) = Warn(Flagged, tab: "tab-1");
+		Check(warning, visit, "tab-1");
+		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Redirect>(Check(Page, held, "tab-2")).Url);
 	}
 
 	[Fact]
@@ -454,13 +468,13 @@ public sealed partial class ThreatGateTests
 	{
 		var plain = Html(Serve(WarningUrlOf(Check(Page, Flagged, "tab-2"))));
 		Assert.DoesNotContain("connect directly", plain);
-		var (warning, visit) = Warn("zing-relay://apple.com.secure-login.tk/verify", "zing://home");
-		Check(warning, visit);
-		var again = WarningUrlOf(Check("zing://home", warning));
-		var body = Html(Serve(again));
+		var (warning, _) = Warn("zing-relay://apple.com.secure-login.tk/verify", "zing://home");
+		var restarted = new ThreatGate(() => true);
+		var again = WarningUrlOf(restarted.Check("tab-1", "zing://home", warning));
+		var body = Html(restarted.Serve(again, new SettingsStore().Snapshot()));
 		Assert.Contains("connect directly", body);
 		var direct = WebUtility.HtmlDecode(VisitLink().Match(body).Groups[1].Value);
-		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Redirect>(Check(again, direct)).Url);
+		Assert.Equal(Flagged, Assert.IsType<NavigationDecision.Replace>(restarted.Check("tab-1", again, direct)).Url);
 	}
 
 	[Fact]
