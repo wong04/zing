@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, type Locator, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, pageWhere, scratchDir, test, type Launched } from './zing'
+import { launchZing, layers, pageWhere, scratchDir, test, viewAt, type Launched, type Layer } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -130,5 +130,23 @@ test('three panels show at once, a fourth is refused, and one minimised to the s
 	await expect(hashes).toBeVisible()
 	await expect(row).toHaveCount(0)
 	expect(await shown()).toEqual(['tool:HMAC', 'tool:Hashes', 'tool:JSON'])
+	await zing.close()
+})
+
+test('a click between two panels reaches the page beneath, and a click on a panel the panel', async () => {
+	const zing = await launchZing()
+	let page: Layer | undefined
+	await expect.poll(async () => (page = (await layers(zing.chrome)).find((l) => l.url.startsWith('zing://home') && l.visible)) !== undefined).toBe(true)
+	const surface = await surfaceOf(zing)
+	await openToolDirect(zing, surface, 'tool:Hashes', 'Hashes', page!.x + 20)
+	await openToolDirect(zing, surface, 'tool:HMAC', 'HMAC', page!.x + page!.width - 20)
+	const [left, right] = (await zing.chrome.evaluate(() => window.zing.getToolPanels())).panels.map((p) => p.frame).sort((a, b) => a.x - b.x)
+	// Wider than both panels' shadow room (32 px each side), so the gap is the page's.
+	expect(right!.x - (left!.x + left!.width)).toBeGreaterThan(100)
+
+	const middle = (r: { x: number; y: number; width: number; height: number }) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 })
+	await expect.poll(() => viewAt(zing.chrome, middle(left!))).toMatch(/#surface$/)
+	expect(await viewAt(zing.chrome, middle(right!))).toMatch(/#surface$/)
+	expect(await viewAt(zing.chrome, { x: (left!.x + left!.width + right!.x) / 2, y: middle(left!).y })).toBe(page!.url)
 	await zing.close()
 })

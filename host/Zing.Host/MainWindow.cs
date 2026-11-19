@@ -852,7 +852,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			_surface.Visible = false;
 			return;
 		}
-		_surface.Place(region);
+		// The view spans every panel; its region keeps the gaps between them the page's.
+		_surface.View.Place(region, (Api ?? throw new InvalidOperationException("The surface shows before the window's chrome started")).Shell.SurfaceParts);
 		_overlays.Show(OverlayLevel.Surface);
 		_surface.Visible = true;
 		if (!_surfaceWantsFocus) return;

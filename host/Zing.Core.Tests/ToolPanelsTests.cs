@@ -141,6 +141,30 @@ public sealed class ToolPanelsTests
 		Assert.Equal(want.ValueKind == JsonValueKind.Null ? null : PanelLayoutTests.ToRect(want), SurfaceRegion.Compute(input));
 	}
 
+	private static SurfaceInput TwoPanels(bool dragging = false, bool settingsOpen = false) => new(
+		new ContentSize(1200, 800),
+		new Rect(0, 80, 1200, 720),
+		Gated: false,
+		SettingsOpen: settingsOpen,
+		SidebarRevealed: false,
+		SidebarWidth: Layout.SidebarColumnWidth,
+		PanelFrames: [new Rect(100, 200, 300, 300), new Rect(700, 200, 300, 300)],
+		Dragging: dragging);
+
+	[Fact]
+	public void The_surface_takes_clicks_only_on_each_panel_and_its_shadow_not_between_them()
+	{
+		Assert.Equal([new Rect(68, 168, 364, 364), new Rect(668, 168, 364, 364)], SurfaceRegion.Parts(TwoPanels()));
+		Assert.Equal(new Rect(68, 168, 964, 364), SurfaceRegion.Compute(TwoPanels()));
+	}
+
+	[Fact]
+	public void A_sheet_or_a_drag_takes_the_surface_whole()
+	{
+		Assert.Equal([new Rect(0, 0, 1200, 800)], SurfaceRegion.Parts(TwoPanels(settingsOpen: true)));
+		Assert.Equal([new Rect(0, 80, 1200, 720)], SurfaceRegion.Parts(TwoPanels(dragging: true)));
+	}
+
 	[Fact]
 	public void Panel_ids_round_trip_and_unknown_ids_name_nothing()
 	{

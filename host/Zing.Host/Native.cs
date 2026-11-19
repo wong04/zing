@@ -182,6 +182,9 @@ internal static class Native
 	public static extern bool IsChild(nint parent, nint hwnd);
 
 	[DllImport("user32.dll")]
+	public static extern nint WindowFromPoint(POINT point);
+
+	[DllImport("user32.dll")]
 	private static extern short GetAsyncKeyState(int key);
 
 	/// <summary>Whether the left, right or middle mouse button is held down now.</summary>

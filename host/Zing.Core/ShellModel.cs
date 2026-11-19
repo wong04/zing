@@ -77,6 +77,9 @@ public sealed class ShellModel : IDisposable
 	/// </summary>
 	public event Action<Rect?>? SurfaceRegionChanged;
 
+	/// <summary>Where in the surface's rectangle it takes clicks, as of the last <see cref="SurfaceRegionChanged"/>; empty while it is hidden.</summary>
+	public IReadOnlyList<Rect> SurfaceParts { get; private set; } = [];
+
 	/// <summary>The settings sheet opened or the gate covers the window: give the surface view keyboard focus.</summary>
 	public event Action? FocusSurfaceRequested;
 
@@ -424,7 +427,7 @@ public sealed class ShellModel : IDisposable
 
 	private void Sync()
 	{
-		_region = SurfaceRegion.Compute(new SurfaceInput(
+		var input = new SurfaceInput(
 			_window.ContentSize(),
 			PageRect(),
 			Gated,
@@ -434,7 +437,9 @@ public sealed class ShellModel : IDisposable
 			_panels.Visible.Select(p => p.Frame).ToList(),
 			_panels.Dragging,
 			_dropZone,
-			_toolboxOpen));
+			_toolboxOpen);
+		_region = SurfaceRegion.Compute(input);
+		SurfaceParts = SurfaceRegion.Parts(input);
 		SurfaceRegionChanged?.Invoke(_region);
 	}
 

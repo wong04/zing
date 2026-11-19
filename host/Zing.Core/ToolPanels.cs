@@ -325,8 +325,22 @@ public static class SurfaceRegion
 	/// </summary>
 	public static Rect? Compute(SurfaceInput input)
 	{
+		var parts = Unclipped(input);
+		if (parts.Count == 0) return null;
+		return ClippedToContent(Union(parts), input.Content);
+	}
+
+	/// <summary>
+	/// The pieces of the window the surface takes clicks in, each clipped to the content: the view spans their union
+	/// (<see cref="Compute"/>), and a click in the gaps between them goes to the page beneath.
+	/// </summary>
+	public static IReadOnlyList<Rect> Parts(SurfaceInput input) =>
+		Unclipped(input).Select(p => ClippedToContent(p, input.Content)).OfType<Rect>().ToList();
+
+	private static List<Rect> Unclipped(SurfaceInput input)
+	{
 		var content = input.Content;
-		if (input.Gated || input.SettingsOpen || input.ToolboxOpen) return new Rect(0, 0, content.Width, content.Height);
+		if (input.Gated || input.SettingsOpen || input.ToolboxOpen) return [new Rect(0, 0, content.Width, content.Height)];
 		var parts = new List<Rect>();
 		if (input.SidebarRevealed) parts.Add(new Rect(0, 0, input.SidebarWidth, content.Height));
 		if (input.DropZone is { } zone) parts.Add(zone);
@@ -334,8 +348,7 @@ public static class SurfaceRegion
 		else
 			foreach (var f in input.PanelFrames)
 				parts.Add(new Rect(f.X - ShadowRoom, f.Y - ShadowRoom, f.Width + 2 * ShadowRoom, f.Height + 2 * ShadowRoom));
-		if (parts.Count == 0) return null;
-		return ClippedToContent(Union(parts), content);
+		return parts;
 	}
 
 	private static Rect Union(IReadOnlyList<Rect> rects)
