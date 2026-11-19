@@ -7,7 +7,7 @@ namespace Zing.Core.Sync;
 /// What Settings shows of the engine: the last sync's error, as a code the renderer acts on and a message it shows (null after a
 /// sync that worked), and how many logins haven't uploaded yet.
 /// </summary>
-public sealed record SyncStatus(string? Error, string? Message, int Unsent);
+public sealed record SyncStatus(string? Error, string? Message, int Unsent, string? Warning = null);
 
 /// <summary>A push kept meeting newer copies from another PC; what is left goes next time.</summary>
 public sealed class SyncKeepsConflictingException(int left)
@@ -18,13 +18,16 @@ public sealed class SyncUploadNotOfferedException()
 	: Exception("Upload this PC's copy is only for when the sync server went back to an older copy or held a login back.");
 
 /// <summary>
-/// Logins too large for the sync server (a ciphertext over its 256 KiB), so they stay on this PC only. Everything else syncs: they're
-/// never sent, since the server would refuse the whole batch they were in.
+/// What a sync that worked says of logins too large for the sync server (a ciphertext over its 256 KiB): they stay on this PC only and
+/// are never sent, since the server would refuse the whole batch they were in. A merge of two long histories can make one, so the way
+/// out is a shorter note or a delete, both of which the vault always takes.
 /// </summary>
-public sealed class SyncLoginsTooLargeException(int count)
-	: Exception(count == 1
-		? "One login is too large to sync, so it stays on this PC only. Shorten its note to sync it."
-		: $"{count} logins are too large to sync, so they stay on this PC only. Shorten their notes to sync them.");
+public static class SyncTooLarge
+{
+	public static string Warning(int count) => count == 1
+		? "One login is too large to sync (a long note or many old passwords), so it stays on this PC only. Shorten its note, or delete it if you don't need it."
+		: $"{count} logins are too large to sync (long notes or many old passwords), so they stay on this PC only. Shorten their notes, or delete the ones you don't need.";
+}
 
 /// <summary>Another PC kept replacing the account manifest while this one wrote it.</summary>
 public sealed class SyncManifestBusyException()
@@ -60,6 +63,9 @@ public sealed class SyncEngine : IDisposable
 	/// <summary>The first wait after a 429 that says nothing about how long; it doubles after each one in a row, up to <see cref="Every"/>.</summary>
 	public static readonly TimeSpan RateLimitedRetry = TimeSpan.FromMinutes(1);
 
+	/// <summary>The longest a 429 makes Zing wait, whatever its Retry-After says: a server asking for days would stop sync unseen.</summary>
+	public static readonly TimeSpan MaxRateLimitedWait = TimeSpan.FromHours(1);
+
 	/// <summary>
 	/// After a refresh got no answer, the next try comes this soon (N4): the server takes the same token again only within 2 minutes
 	/// of first seeing it, and the refresh itself may have waited 90 s.
@@ -91,6 +97,8 @@ public sealed class SyncEngine : IDisposable
 	private int _rateLimitedRuns;
 	/// <summary>How long to wait after the last sync's 429; null when it didn't get one.</summary>
 	private TimeSpan? _rateLimitedWait;
+	/// <summary>What the last sync that worked warned of (<see cref="SyncTooLarge"/>), beside its error, which is then null.</summary>
+	private string? _warning;
 	private (string Code, string Message)? _error;
 	private TaskCompletionSource _ran = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -111,8 +119,9 @@ public sealed class SyncEngine : IDisposable
 		get
 		{
 			(string Code, string Message)? error;
-			lock (_lock) error = _error;
-			return new SyncStatus(error?.Code, error?.Message, _vault.UnsentLogins);
+			string? warning;
+			lock (_lock) (error, warning) = (_error, _warning);
+			return new SyncStatus(error?.Code, error?.Message, _vault.UnsentLogins, warning);
 		}
 	}
 
@@ -183,10 +192,7 @@ public sealed class SyncEngine : IDisposable
 
 	private void OnEdited()
 	{
-		long notBefore;
-		lock (_lock) notBefore = _changeNotBefore;
-		var gap = TimeSpan.FromMilliseconds(notBefore - _clock.Now());
-		Soon(gap > AfterChange ? gap : AfterChange);
+		Soon(AfterChange);
 		StatusChanged?.Invoke();
 	}
 
@@ -216,14 +222,18 @@ public sealed class SyncEngine : IDisposable
 		}
 	}
 
-	/// <summary>Debounced: a sync already waiting to start is moved to <paramref name="delay"/> from now.</summary>
+	/// <summary>
+	/// Debounced: a sync already waiting to start is moved to <paramref name="delay"/> from now, or later, to when a change may start
+	/// one (<see cref="ChangeGap"/> after the last began, or once a 429's wait is over).
+	/// </summary>
 	private void Soon(TimeSpan delay)
 	{
 		lock (_lock)
 		{
 			if (_disposed) return;
+			var gap = TimeSpan.FromMilliseconds(_changeNotBefore - _clock.Now());
 			_soon?.Dispose();
-			_soon = _scheduler.Schedule(delay, Run);
+			_soon = _scheduler.Schedule(gap > delay ? gap : delay, Run);
 		}
 	}
 
@@ -263,7 +273,8 @@ public sealed class SyncEngine : IDisposable
 			lock (_lock)
 			{
 				_refreshUnansweredSince = _client.RefreshUnanswered ? _refreshUnansweredSince ?? _clock.Now() : null;
-				// After a 429, a change made meanwhile waits for the retry scheduled below, which sends it too.
+				// After a 429 nothing runs before the retry scheduled below, which sends any change made meanwhile: RateLimited dropped
+				// the run asked for during this one and the one waiting to start.
 				if (_disposed || !_again || _rateLimitedWait is not null)
 				{
 					_running = false;
@@ -314,9 +325,9 @@ public sealed class SyncEngine : IDisposable
 	{
 		try
 		{
-			await RunAsync(cancellation);
+			var tooLarge = await RunAsync(cancellation);
 			RateLimited(null);
-			Report(null);
+			ReportWorked(tooLarge);
 		}
 		catch (Exception error)
 		{
@@ -327,8 +338,9 @@ public sealed class SyncEngine : IDisposable
 	}
 
 	/// <summary>
-	/// After a 429 the next sync waits as long as the server said, or, when it didn't say, a minute doubled for each 429 in a row up to
-	/// <see cref="Every"/>; a change made meanwhile waits as long. Anything else ends the backoff.
+	/// After a 429 the next sync waits as long as the server said, up to <see cref="MaxRateLimitedWait"/>, or, when it didn't say, a
+	/// minute doubled for each 429 in a row up to <see cref="Every"/>. Nothing runs sooner: the sync waiting to start and one asked for
+	/// while this one ran are dropped, and a change or sign-in meanwhile waits as long. Anything else ends the backoff.
 	/// </summary>
 	private void RateLimited(SyncRateLimitedException? limited)
 	{
@@ -342,27 +354,33 @@ public sealed class SyncEngine : IDisposable
 			}
 			_rateLimitedRuns++;
 			var doubled = RateLimitedRetry * Math.Pow(2, Math.Min(_rateLimitedRuns - 1, 8));
-			var wait = limited.RetryAfter is { } asked && asked > TimeSpan.Zero ? asked : doubled < Every ? doubled : Every;
+			var wait = limited.RetryAfter is { } asked && asked > TimeSpan.Zero ? (asked < MaxRateLimitedWait ? asked : MaxRateLimitedWait) : doubled < Every ? doubled : Every;
 			_rateLimitedWait = wait;
 			_changeNotBefore = Math.Max(_changeNotBefore, _clock.Now() + (long)wait.TotalMilliseconds);
+			_soon?.Dispose();
+			_soon = null;
+			_again = false;
 		}
 	}
 
-	/// <summary>A wait as Settings says it: "30 seconds", "a minute", "4 minutes".</summary>
+	/// <summary>A wait as Settings says it: "30 seconds", "a minute", "4 minutes", "an hour".</summary>
 	private static string Words(TimeSpan wait)
 	{
 		var seconds = Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds));
 		if (seconds < 60) return seconds == 1 ? "a second" : $"{seconds} seconds";
 		var minutes = (int)Math.Ceiling(wait.TotalMinutes);
-		return minutes == 1 ? "a minute" : $"{minutes} minutes";
+		if (minutes < 60) return minutes == 1 ? "a minute" : $"{minutes} minutes";
+		var hours = (int)Math.Ceiling(wait.TotalHours);
+		return hours == 1 ? "an hour" : $"{hours} hours";
 	}
 
-	private async Task RunAsync(CancellationToken cancellation)
+	/// <returns>How many logins were too large to send.</returns>
+	private async Task<int> RunAsync(CancellationToken cancellation)
 	{
 		using var gate = await SyncKeys.EnterGateAsync(_vault, cancellation);
-		if (_vault.SyncAccount() is not { } signedIn) return;
+		if (_vault.SyncAccount() is not { } signedIn) return 0;
 		await SyncKeys.SettlePendingAsync(_vault, _client, signedIn, cancellation);
-		if (_vault.SyncKeys?.UserId != signedIn.UserId) return;
+		if (_vault.SyncKeys?.UserId != signedIn.UserId) return 0;
 		var user = signedIn.UserId;
 		await CheckKeysVersionAsync(user, cancellation);
 		_vault.StartSyncAs(user);
@@ -371,18 +389,13 @@ public sealed class SyncEngine : IDisposable
 		{
 			if (!await RoundAsync(user, cancellation)) continue;
 			_vault.DequeueSent();
-			RequireNoneTooLarge();
-			return;
+			return TooLarge();
 		}
 		throw new SyncManifestBusyException();
 	}
 
-	/// <summary>Raised once everything else is synced, so the logins left behind show in Settings.</summary>
-	private void RequireNoneTooLarge()
-	{
-		var tooLarge = _vault.Unsent().Count(u => !SyncWire.Fits(u.Record));
-		if (tooLarge > 0) throw new SyncLoginsTooLargeException(tooLarge);
-	}
+	/// <summary>The logins left behind once everything else is synced, for Settings' warning.</summary>
+	private int TooLarge() => _vault.Unsent().Count(u => !SyncWire.Fits(u.Record));
 
 	/// <summary>
 	/// The server's keys at a later version than this PC's mean the password was changed on another PC (Task 14): they're kept for the
@@ -466,7 +479,7 @@ public sealed class SyncEngine : IDisposable
 	/// <summary>
 	/// Everything changed here that the server would take, in batches of at most 100 and its body size, each over the server copy it
 	/// was based on. The server's newer copy of a refused item is merged in (or found to be this one, already uploaded) and goes in the
-	/// next round. A login too large to send is left out (<see cref="SyncLoginsTooLargeException"/>), so it can't stop the rest.
+	/// next round. A login too large to send is left out (<see cref="SyncTooLarge"/>), so it can't stop the rest.
 	/// </summary>
 	private async Task PushAsync(string user, CancellationToken cancellation)
 	{
@@ -524,8 +537,8 @@ public sealed class SyncEngine : IDisposable
 	{
 		try
 		{
-			await UploadAsync(cancellation);
-			Report(null);
+			var tooLarge = await UploadAsync(cancellation);
+			ReportWorked(tooLarge);
 		}
 		catch (Exception error)
 		{
@@ -537,7 +550,8 @@ public sealed class SyncEngine : IDisposable
 	/// <summary>The errors Settings answers with Upload this PC's copy.</summary>
 	public static bool OffersUpload(string? error) => error is "server-rolled-back" or "server-withheld-item";
 
-	private async Task UploadAsync(CancellationToken cancellation)
+	/// <returns>How many logins were too large to send.</returns>
+	private async Task<int> UploadAsync(CancellationToken cancellation)
 	{
 		using var gate = await SyncKeys.EnterGateAsync(_vault, cancellation);
 		// Read under the gate (N3): a second click waits for the first upload, which clears the error, and is then refused.
@@ -567,16 +581,27 @@ public sealed class SyncEngine : IDisposable
 			var manifest = await _client.GetManifestAsync(cancellation, asUser: user);
 			if (!await PutManifestAsync(user, manifest?.Version ?? 0, _vault.ManifestEntries(), cancellation)) continue;
 			_vault.DequeueSent();
-			RequireNoneTooLarge();
-			return;
+			return TooLarge();
 		}
 		throw new SyncManifestBusyException();
 	}
 
-	private void Report(Exception? error)
+	/// <summary>A sync or upload that failed: its error, beside the warning the last one that worked left.</summary>
+	private void Report(Exception error)
 	{
-		var described = error is null ? null : Describe(error);
+		var described = Describe(error);
 		lock (_lock) _error = described;
+		StatusChanged?.Invoke();
+	}
+
+	/// <summary>A sync or upload that worked, and the logins it left behind as too large, if any.</summary>
+	private void ReportWorked(int tooLarge)
+	{
+		lock (_lock)
+		{
+			_error = null;
+			_warning = tooLarge > 0 ? SyncTooLarge.Warning(tooLarge) : null;
+		}
 		StatusChanged?.Invoke();
 	}
 
@@ -606,7 +631,6 @@ public sealed class SyncEngine : IDisposable
 		HttpRequestException or OperationCanceledException => ("unreachable", "Zing couldn't reach the sync server. It tries again in 5 minutes."),
 		SyncAccountChangedException => ("account-changed", error.Message),
 		SyncRateLimitedException => ("rate-limited", $"The sync server asked Zing to slow down, so it syncs again in {Words(_rateLimitedWait ?? RateLimitedRetry)}."),
-		SyncLoginsTooLargeException => ("too-large", error.Message),
 		SyncHttpException => ("server-error", error.Message),
 		_ => ("failed", error.Message),
 	};

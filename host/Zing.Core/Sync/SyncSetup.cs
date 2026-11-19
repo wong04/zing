@@ -57,7 +57,7 @@ public sealed class SyncBuildException(string message) : Exception(message);
 /// (a code such as "server-rolled-back", and what to show), and <see cref="Unsent"/>, the logins that haven't uploaded yet.
 /// <see cref="PasswordChangedElsewhere"/>, while on: sync found the password changed on another PC, and the next start asks for it.
 /// </summary>
-public sealed record SyncState(bool SignedIn, string? Email, string? Notice = null, bool On = false, bool RecoveryPending = false, string? Error = null, string? Message = null, int Unsent = 0, bool PasswordChangedElsewhere = false, bool KeysHere = false)
+public sealed record SyncState(bool SignedIn, string? Email, string? Notice = null, bool On = false, bool RecoveryPending = false, string? Error = null, string? Message = null, int Unsent = 0, bool PasswordChangedElsewhere = false, bool KeysHere = false, string? Warning = null)
 {
 	/// <param name="vault">The open vault, for what its keys.bin holds, for whichever account.</param>
 	public static SyncState SignedInAs(SyncAccount account, VaultStore vault)

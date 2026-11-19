@@ -1128,7 +1128,7 @@ public sealed class ChromeApi : IDisposable
 		var state = SyncState.SignedInAs(account, vault);
 		if (_app.SyncClients?.Engine is not { } engine) return state;
 		var status = engine.Status;
-		return state with { Error = status.Error, Message = status.Message, Unsent = state.On ? status.Unsent : 0 };
+		return state with { Error = status.Error, Message = status.Message, Unsent = state.On ? status.Unsent : 0, Warning = status.Warning };
 	}
 
 	/// <summary>

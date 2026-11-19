@@ -46,6 +46,12 @@ describe('syncBanner', () => {
 		expect(syncBanner(on({ on: false, error: 'unreachable', message: 'Zing couldn’t reach the sync server.' }), undefined)).toMatchObject({ offerUpload: false })
 	})
 
+	it('shows a sync that worked with logins too large to send as that warning, and an error over it', () => {
+		const warning = 'One login is too large to sync (a long note or many old passwords), so it stays on this PC only.'
+		expect(syncBanner(on({ warning }), undefined)).toEqual({ message: warning, offerUpload: false })
+		expect(syncBanner(on({ warning, error: 'unreachable', message: 'Zing couldn’t reach the sync server.' }), undefined)).toMatchObject({ message: 'Zing couldn’t reach the sync server.' })
+	})
+
 	it('shows nothing when all is well', () => {
 		expect(syncBanner(on(), undefined)).toBeUndefined()
 	})
