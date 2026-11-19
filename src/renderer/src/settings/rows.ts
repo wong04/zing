@@ -289,7 +289,9 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 		{ type: 'custom', id: 'privacy-banner', keys: [] },
 		toggle('persistentProfile', 'Stay signed in to sites', {
 			detail: (s) =>
-				s.persistentProfile ? 'Cookies and cache are saved to disk. Relaunch to apply.' : 'Off: every sign-in ends when Zing quits.',
+				s.persistentProfile
+					? 'Cookies and cache are saved to disk. Turning this off signs you out of every site and deletes them. Relaunch to apply.'
+					: 'Off: every sign-in ends when Zing quits.',
 			warning: (s) => s.persistentProfile,
 		}),
 		{

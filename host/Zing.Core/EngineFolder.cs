@@ -15,6 +15,16 @@ public static class EngineFolder
 	/// <summary>The file the engine holds open, unshared, for as long as its browser process runs.</summary>
 	public static string LockFile(string userDataFolder) => Path.Combine(userDataFolder, "EBWebView", "lockfile");
 
+	/// <summary>Where the engine keeps a named browsing profile (CoreWebView2Profile.ProfilePath).</summary>
+	public static string ProfileFolder(string userDataFolder, string profileName) => Path.Combine(userDataFolder, "EBWebView", profileName);
+
+	/// <summary>Deletes a profile's cookies, storage and cache. Only for a folder no engine holds (after <see cref="WaitUntilFreeAsync"/>).</summary>
+	public static void DeleteProfile(string userDataFolder, string profileName)
+	{
+		var folder = ProfileFolder(userDataFolder, profileName);
+		if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+	}
+
 	/// <summary>Returns once no engine holds the folder; throws <see cref="EngineFolderInUseException"/> if one still does after <paramref name="patience"/>.</summary>
 	public static async Task WaitUntilFreeAsync(string userDataFolder, TimeSpan patience, CancellationToken cancel = default)
 	{

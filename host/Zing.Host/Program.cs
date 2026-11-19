@@ -101,6 +101,8 @@ public sealed class ZingApp
 		EngineFailures.BrowserLost += () => Faults.Enqueue(dispatcher, LoseEngine, "engine rebuild");
 		// The engine needs only a setting, so its browser process starts now and the rest of the services open while it does.
 		// Its continuation runs after Launch returns, by which time the services exist.
+		// A persistent profile exists so sign-ins survive closing a tab and quitting; purging would undo exactly that.
+		PersistentProfile = Flag(settings, "persistentProfile");
 		_environment = OpenEnvironmentAsync(Flag(settings, "acceleratedCanvas"));
 		StartupMarks.Mark("engine requested");
 		// Pages ask the filter lists about every request on the UI thread; reading them takes about 100 ms, so it happens
@@ -371,8 +373,6 @@ public sealed class ZingApp
 		var library = openedLibrary.Value;
 		_onQuit.Add(() => libraryWriter?.Flush());
 		var bookmarkIcons = OpenBookmarkIcons(library, openedLibrary.Problem is null ? libraryPath : null);
-		// A persistent profile exists so sign-ins survive closing a tab and quitting; purging would undo exactly that.
-		PersistentProfile = settings.Get("persistentProfile")?.GetValue<bool>() ?? throw new InvalidDataException("Setting persistentProfile is missing");
 		// One purger for both jobs: a site's data when its last tab closes, and Settings' Clear session (all of it).
 		var purger = new WebViewSitePurger(AnyLivePage, () => _windows.Count > 0);
 		var siteData = PersistentProfile ? null : new SiteDataKeeper(purger, (domain, error) => TestHooks.Record($"purge {domain}", error));
@@ -476,11 +476,32 @@ public sealed class ZingApp
 	/// <summary>Opens the engine and listens to it: a browser process that dies, and a runtime update waiting for the next launch.</summary>
 	private async Task<CoreWebView2Environment> OpenEnvironmentAsync(bool acceleratedCanvas)
 	{
-		var environment = await CreateEnvironmentAsync(acceleratedCanvas);
+		var userData = EngineUserData();
+		// A Zing that is still quitting gave up the profile before its engine went.
+		await EngineFolder.WaitUntilFreeAsync(userData, EngineFolder.Patience);
+		// Off means signed out: the profile kept while it was on goes before any page can use it.
+		if (!PersistentProfile) DiscardKeptProfile(userData);
+		var environment = await CreateEnvironmentAsync(userData, acceleratedCanvas);
 		StartupMarks.Mark("engine ready");
 		environment.BrowserProcessExited += OnBrowserProcessExited;
 		environment.NewBrowserVersionAvailable += OnNewBrowserVersionAvailable;
 		return environment;
+	}
+
+	/// <summary>A profile that can't be deleted now (a file held open) is said, and the next launch tries again; tabs use the in-memory profile meanwhile.</summary>
+	private void DiscardKeptProfile(string userData)
+	{
+		try
+		{
+			EngineFolder.DeleteProfile(userData, WebView2Page.KeptProfileName);
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+		{
+			Faults.Warning("kept profile delete", error);
+			const string notice = "Zing couldn't delete the sign-ins saved while \"Stay signed in to sites\" was on. It tries again the next time you start Zing.";
+			if (Primary is { Api: not null } primary) primary.Notify(notice);
+			else _startupNotices.Add(notice);
+		}
 	}
 
 	/// <summary>A new WebView2 runtime is installed; this engine keeps the old one until Zing restarts. Said once.</summary>
@@ -547,16 +568,16 @@ public sealed class ZingApp
 	private static bool Flag(SettingsStore settings, string key) => settings.Get(key)?.GetValue<bool>() ?? throw new InvalidDataException($"Setting {key} is missing");
 
 	/// <param name="acceleratedCanvas">The acceleratedCanvas setting; like Electron's, it applies from the next launch.</param>
-	private static async Task<CoreWebView2Environment> CreateEnvironmentAsync(bool acceleratedCanvas)
+	/// <summary>The engine's own data; an e2e run keeps it in its scratch profile, so a relaunch finds it and nothing is left in AppData.</summary>
+	private static string EngineUserData() =>
+		TestHooks.IsEndToEndRun ? Path.Combine(AppPaths.UserData, "WebView2") : Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Zing", "WebView2");
+
+	private static async Task<CoreWebView2Environment> CreateEnvironmentAsync(string userData, bool acceleratedCanvas)
 	{
 		var options = new CoreWebView2EnvironmentOptions();
 		options.AdditionalBrowserArguments = string.Join(" ", new[] { TestHooks.BrowserArguments(), acceleratedCanvas ? "" : "--disable-accelerated-2d-canvas" }.Where(a => a.Length > 0));
 		// zing://home parses with a host, as Electron's standard scheme did. The getter hands back a copy, so assign the whole list.
 		options.CustomSchemeRegistrations = new List<CoreWebView2CustomSchemeRegistration> { new(StartPage.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true }, new(Zing.Core.Net.RelayedContent.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true } };
-		// The engine's own data; an e2e run keeps it in its scratch profile, so a relaunch finds it and nothing is left in AppData.
-		var userData = TestHooks.IsEndToEndRun ? Path.Combine(AppPaths.UserData, "WebView2") : Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Zing", "WebView2");
-		// A Zing that is still quitting gave up the profile before its engine went.
-		await EngineFolder.WaitUntilFreeAsync(userData, EngineFolder.Patience);
 		return await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, options);
 	}
 }

@@ -1,5 +1,7 @@
+import { existsSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { join } from 'node:path'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
 import { launchZing, test, pageWhere } from './zing'
@@ -91,6 +93,34 @@ test('the browsing profile is in memory unless persistentProfile is on, which ke
 	}
 	expect(await keptAfterRelaunch(false)).toBeNull()
 	expect(await keptAfterRelaunch(true)).toBe('v')
+})
+
+test('turning persistentProfile off deletes the kept profile at the next launch, so sites are signed out', async () => {
+	const first = await launchZing()
+	await first.chrome.evaluate(() => window.zing.setSetting('persistentProfile', true))
+	await first.close()
+	const kept = join(first.userDataDir, 'WebView2', 'EBWebView', 'zing')
+
+	const signedIn = await launchZing({ userDataDir: first.userDataDir })
+	const tab = (await signedIn.chrome.evaluate(() => window.zing.getTabs())).activeId!
+	await openIn(signedIn.chrome, tab, '/set')
+	await expect.poll(() => titleOf(signedIn.chrome, tab)).toBe('set:v:k=v')
+	await signedIn.chrome.evaluate(() => window.zing.setSetting('persistentProfile', false))
+	await signedIn.close()
+	expect(existsSync(kept)).toBe(true)
+
+	const off = await launchZing({ userDataDir: first.userDataDir })
+	expect(existsSync(kept)).toBe(false)
+	// On again: the site data from before is gone, not just hidden while the setting was off.
+	await off.chrome.evaluate(() => window.zing.setSetting('persistentProfile', true))
+	await off.close()
+
+	const on = await launchZing({ userDataDir: first.userDataDir })
+	const again = (await on.chrome.evaluate(() => window.zing.getTabs())).activeId!
+	await openIn(on.chrome, again, '/read')
+	await expect.poll(async () => (await titleOf(on.chrome, again))?.startsWith('{')).toBe(true)
+	expect(JSON.parse((await titleOf(on.chrome, again))!)).toEqual({ ls: null, cookie: '' })
+	await on.close()
 })
 
 test('the Back button menu reads the page history without errors', async () => {
