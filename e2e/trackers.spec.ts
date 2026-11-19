@@ -14,6 +14,13 @@ let server: Server
 let port = 0
 const pixelHosts: string[] = []
 const pageQueries: string[] = []
+/** Each request for /posted: its method, query and body. */
+const posted: string[] = []
+
+/** Posts a form to an address with a tracking parameter as soon as it loads. */
+const formPage = `<!doctype html><title>form</title>
+<form method="post" action="/posted?utm_source=x&id=4"><input name="a" value="1"></form>
+<script>document.forms[0].requestSubmit()</script>`
 
 /**
  * A page that asks for a pixel on `pixelHost`, as an image and as a no-cors fetch, and titles itself with both outcomes and
@@ -65,6 +72,19 @@ test.beforeAll(async () => {
 		}
 		if (url.pathname === '/page') pageQueries.push(url.search)
 		res.setHeader('content-type', 'text/html')
+		if (url.pathname === '/form') {
+			res.end(formPage)
+			return
+		}
+		if (url.pathname === '/posted') {
+			let body = ''
+			req.on('data', (chunk: Buffer) => (body += chunk.toString()))
+			req.on('end', () => {
+				posted.push(`${req.method} ${url.search} ${body}`)
+				res.end(`<!doctype html><title>${req.method} ${body}</title>`)
+			})
+			return
+		}
 		if (url.pathname === '/lists') {
 			res.end(listsPage)
 			return
@@ -114,6 +134,20 @@ test('blockTrackers refuses third-party trackers and strips parameters, and turn
 	await expect.poll(async () => (await tabOf(zing.chrome, id))?.title).toBe('refused/answered?id=3')
 	expect(pageQueries.at(-1)).toBe('?id=3')
 	expect(pixelHosts).toEqual(['static.hotjar.com', 'static.hotjar.com', 'pixel.doubleclick.net', 'pixel.doubleclick.net'])
+
+	// A fragment is never sent, so the request for a tracker's own page has none: it is still the top document, not a third party.
+	await open(zing.chrome, id, `http://www.hotjar.com:${port}/own#top`)
+	await expect.poll(async () => (await tabOf(zing.chrome, id))?.title).toBe('loaded/answered')
+	await zing.close()
+})
+
+test('a form posted to an address with a tracking parameter is sent as posted, not cleaned into a GET', async () => {
+	const zing = await launchZing()
+	const id = (await zing.chrome.evaluate(() => window.zing.getTabs())).activeId!
+	posted.length = 0
+	await open(zing.chrome, id, `http://127.0.0.1:${port}/form`)
+	await expect.poll(async () => (await tabOf(zing.chrome, id))?.title).toBe('POST a=1')
+	expect(posted).toEqual(['POST ?utm_source=x&id=4 a=1'])
 	await zing.close()
 })
 
