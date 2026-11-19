@@ -412,22 +412,22 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("permission:allow", args => Do(() => Permissions.Answer(Int(args, 0), true)));
 		bridge.Register("permission:deny", args => Do(() => Permissions.Answer(Int(args, 0), false)));
 
-		bridge.Register("vault:get", _ => CurrentVaultState());
+		bridge.Register("vault:get", async _ => await CheckedVaultStateAsync());
 		bridge.Register("vault:summaries", _ => Vault().Summaries());
 		bridge.Register("vault:reveal", async args => await Vault().PasswordAsync(Text(args, 0)));
 		bridge.Register("vault:reveal-history", async args => await Vault().HistoryPasswordAsync(Text(args, 0), Int(args, 1)));
 		bridge.Register("vault:save", async args => await Vault().SaveAsync(NewLoginArg(Arg(args, 0))));
 		bridge.Register("vault:update", async args => await UpdateLoginAsync(Text(args, 0), Arg(args, 1)));
-		bridge.Register("vault:delete", args => Do(() => Vault().Delete(Text(args, 0))));
-		bridge.Register("vault:restore", args => Do(() => Vault().Restore(Text(args, 0))));
+		bridge.Register("vault:delete", async args => await WithHelloCheckedAsync(vault => vault.Delete(Text(args, 0))));
+		bridge.Register("vault:restore", async args => await WithHelloCheckedAsync(vault => vault.Restore(Text(args, 0))));
 		bridge.Register("vault:history", args => Vault().History(Text(args, 0)));
 		bridge.Register("vault:copy", async args => await CopyPasswordAsync(Text(args, 0)));
 		bridge.Register("vault:import-csv", async args => await ImportCsvAsync(Text(args, 0)));
 		bridge.Register("vault:export-csv", async _ => await ExportCsvAsync());
 		bridge.Register("vault:never-saves", _ => Vault().NeverSaves());
 		bridge.Register("vault:remove-never-save", args => Do(() => Vault().RemoveNeverSave(Text(args, 0))));
-		bridge.Register("vault:fill", async args => await Autofill.FillAsync(Text(args, 0), Text(args, 1)));
-		bridge.Register("vault:answer-save", async args => await SignIn.AnswerAsync(Text(args, 0), Text(args, 1)));
+		bridge.Register("vault:fill", async args => await TellingSetUpAgainAsync("Couldn't fill the password", () => Autofill.FillAsync(Text(args, 0), Text(args, 1))));
+		bridge.Register("vault:answer-save", async args => await TellingSetUpAgainAsync("Couldn't save the password", () => SignIn.AnswerAsync(Text(args, 0), Text(args, 1))));
 		bridge.Register("sync:get", _ => CurrentSyncState());
 		bridge.Register("sync:sign-in", async _ => await SignInToSyncAsync());
 		bridge.Register("sync:sign-out", async _ => await SignOutOfSyncAsync());
@@ -436,6 +436,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("sync:turn-on", async args => new { recoveryKey = await TurnOnSyncAsync(Text(args, 0)) });
 		bridge.Register("sync:server-has-keys", async _ => await SyncServerHasKeysAsync());
 		bridge.Register("sync:join", async args => await JoinSyncAsync(Text(args, 0)));
+		bridge.Register("sync:delete-sync-account", async _ => await DeleteSyncAccountOnlyAsync());
 		bridge.Register("sync:confirm-recovery-saved", _ =>
 		{
 			Vault().ConfirmRecoverySaved();
@@ -988,6 +989,39 @@ public sealed class ChromeApi : IDisposable
 
 	private VaultStore Vault() => _app.Vaults.Current ?? throw new VaultOffException();
 
+	/// <summary>
+	/// The picker and the save prompt have closed by the time Hello answers, and nothing on the page shows their call's error, so a
+	/// vault that must be set up again is told as a notice; the call still raises it.
+	/// </summary>
+	private async Task<string> TellingSetUpAgainAsync(string what, Func<Task<string>> answer)
+	{
+		try
+		{
+			return await answer();
+		}
+		catch (VaultSetUpAgainException error)
+		{
+			_host.Notify($"{what}. {error.Message}.");
+			throw;
+		}
+	}
+
+	/// <summary>A summary edit needs no Hello prompt, but is refused without Hello: Hello set up since it was last checked counts.</summary>
+	private async Task<object?> WithHelloCheckedAsync(Action<VaultStore> edit)
+	{
+		var vault = Vault();
+		await vault.CheckHelloAgainAsync();
+		edit(vault);
+		return null;
+	}
+
+	/// <summary>The vault's state as Settings opens it, with Hello checked again if it wasn't set up: it may have been since.</summary>
+	private async Task<VaultState> CheckedVaultStateAsync()
+	{
+		if (_app.Vaults.Current is { } vault) await vault.CheckHelloAgainAsync();
+		return CurrentVaultState();
+	}
+
 	private VaultState CurrentVaultState() => _app.Vaults.Current is { } vault
 		? new(true, vault.HelloAvailable, vault.Summaries().Count(s => s.DeletedAt is null), null, _app.Vaults.FilesExist)
 		: new(false, false, 0, _app.Vaults.Unreadable ? "unreadable" : null, _app.Vaults.FilesExist);
@@ -1034,6 +1068,7 @@ public sealed class ChromeApi : IDisposable
 		var note = RequiredText(edit, "note");
 		if (!edit.TryGetProperty("password", out var password) || password.ValueKind == JsonValueKind.Null)
 		{
+			await vault.CheckHelloAgainAsync();
 			vault.UpdateSummary(id, title, note, username);
 			return null;
 		}
@@ -1311,6 +1346,27 @@ public sealed class ChromeApi : IDisposable
 				return AccountOutcome.Ok(_app.Account.State());
 			}, () => null);
 		});
+	}
+
+	/// <summary>
+	/// Join's other way when the sync password is forgotten: the sync account and everything it syncs go from the server, proven by a
+	/// Google sign-in made for it, and this PC's account and vault stay. The server ends every sign-in with the account, so this PC
+	/// signs in again with that Google sign-in, to a new sync account that holds nothing, and Turn on sync is next. A cancelled sign-in
+	/// answers null and deletes nothing.
+	/// </summary>
+	/// <exception cref="SyncOnHereException">This PC syncs already, so its sync is turned off first.</exception>
+	private async Task<object?> DeleteSyncAccountOnlyAsync()
+	{
+		var setup = _app.Sync ?? throw new SyncNotSetUpException();
+		var vault = Vault();
+		var user = vault.SyncAccount()?.UserId ?? throw new NotSignedInToSyncException();
+		if (vault.SyncKeys is not null || vault.PendingSyncKeys is not null) throw new SyncOnHereException();
+		var client = SyncClient(vault);
+		return await WithGoogleSignInAsync(setup, async (idToken, cancellation) =>
+		{
+			await client.DeleteServerAccountAsync(idToken, user, cancellation);
+			return SignedInState(vault, await client.SignInAsync(idToken, cancellation));
+		}, () => null);
 	}
 
 	/// <summary>

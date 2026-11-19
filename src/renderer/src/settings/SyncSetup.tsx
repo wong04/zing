@@ -141,23 +141,111 @@ export function SyncSetup({ turnOn, onJoined }: { turnOn: (password: string) => 
 			</div>
 		)
 	}
-	if (hasKeys) return <JoinSync onJoined={onJoined} />
+	if (hasKeys) {
+		return (
+			<JoinSync
+				onJoined={onJoined}
+				onSyncAccountDeleted={(state) => {
+					setHasKeys(false)
+					onJoined(state)
+				}}
+			/>
+		)
+	}
 	return <TurnOnSync turnOn={turnOn} syncsElsewhere={() => setHasKeys(true)} />
+}
+
+/** What the person types before the sync account is deleted. */
+export const DELETE_SYNC_CONFIRM = 'DELETE SYNC ACCOUNT'
+
+/**
+ * Join's way out when the sync password is forgotten. Deleting the sync account can't be undone, so it says what goes and what stays,
+ * and deletes nothing until the confirmation is typed, as Start over does.
+ */
+export function ForgotSyncPassword({
+	typed,
+	onTyped,
+	busy,
+	error,
+	onBack,
+	onStartOver,
+	onDelete,
+}: {
+	typed: string
+	onTyped: (typed: string) => void
+	busy: boolean
+	error: string | undefined
+	onBack: () => void
+	onStartOver: () => void
+	onDelete: () => void
+}) {
+	const confirmed = typed === DELETE_SYNC_CONFIRM
+	return (
+		<div className="sync-setup" role="form" aria-label="Forgot your Zing password">
+			<InfoBanner kind="info">Without the Zing password you use on your other PC, its passwords can&rsquo;t come to this PC.</InfoBanner>
+			<InfoBanner kind="warning">
+				Deleting the sync account deletes it and its encrypted passwords on the sync server. They can&rsquo;t be brought back. Your other
+				PCs stop syncing. Zing asks you to sign in with Google first, to prove the account is yours.
+			</InfoBanner>
+			<InfoBanner kind="info">
+				This PC keeps its Zing account and passwords, and you can turn on sync from here after.
+			</InfoBanner>
+			<PillField label={`Type ${DELETE_SYNC_CONFIRM} to confirm`} value={typed} onChange={onTyped} autoComplete="off" />
+			<div className="vault-edit-actions">
+				<PillButton variant="ghost" size="small" disabled={busy} onClick={onBack}>
+					Back
+				</PillButton>
+				<PillButton variant="outlined" size="small" disabled={busy} onClick={onStartOver}>
+					Start over instead
+				</PillButton>
+				<PillButton size="small" disabled={busy || !confirmed} onClick={onDelete}>
+					Sign in with Google and delete the sync account
+				</PillButton>
+			</div>
+			{error ? <InfoBanner kind="warning">{error}</InfoBanner> : null}
+		</div>
+	)
 }
 
 /**
  * This PC joins the sync of another PC with the Zing password used there, as Restore from sync does: one Zing password everywhere,
- * so it becomes this PC's password too. Forgotten, Start over deletes this PC's account and, if the person asks, the sync account.
+ * so it becomes this PC's password too. Forgotten, the person can delete only the sync account, keeping this PC's account and
+ * passwords so sync can be turned on from here, or Start over, which deletes this PC's account and, if asked, the sync account.
  */
-function JoinSync({ onJoined }: { onJoined: (state: SyncState) => void }) {
+function JoinSync({ onJoined, onSyncAccountDeleted }: { onJoined: (state: SyncState) => void; onSyncAccountDeleted: (state: SyncState) => void }) {
 	const account = useAccount()
 	const [password, setPassword] = useState('')
+	const [forgot, setForgot] = useState(false)
+	const [typed, setTyped] = useState('')
 	const [startingOver, setStartingOver] = useState(false)
 	const { busy, error, run } = useAction()
 	if (!account) return null
 	// Over the whole window, as at the gate: inside the sheet, its transform would hold it and the controls after it would paint on top.
 	if (startingOver) return createPortal(<StartOver overSettings onBack={() => setStartingOver(false)} />, document.body)
 	const join = (): void => run(async () => onJoined(await zing.joinSync(password)))
+	const deleteSyncAccount = (): void =>
+		run(async () => {
+			const state = await zing.deleteSyncAccount()
+			// The Google sign-in was cancelled: nothing was deleted.
+			if (state === null) return
+			onSyncAccountDeleted(state)
+		})
+	if (forgot) {
+		return (
+			<ForgotSyncPassword
+				typed={typed}
+				onTyped={setTyped}
+				busy={busy}
+				error={error}
+				onBack={() => {
+					setTyped('')
+					setForgot(false)
+				}}
+				onStartOver={() => setStartingOver(true)}
+				onDelete={deleteSyncAccount}
+			/>
+		)
+	}
 	return (
 		<div className="sync-setup" role="form" aria-label="Join sync">
 			<InfoBanner kind="info">
@@ -166,8 +254,8 @@ function JoinSync({ onJoined }: { onJoined: (state: SyncState) => void }) {
 			</InfoBanner>
 			<PillField type="password" label="Zing password" autoComplete="off" value={password} onChange={setPassword} onSubmit={join} />
 			<div className="vault-edit-actions">
-				<PillButton variant="ghost" size="small" disabled={busy} onClick={() => setStartingOver(true)}>
-					Forgot your Zing password? Start over
+				<PillButton variant="ghost" size="small" disabled={busy} onClick={() => setForgot(true)}>
+					Forgot your Zing password?
 				</PillButton>
 				<PillButton size="small" disabled={busy || password === ''} onClick={join}>
 					Join sync

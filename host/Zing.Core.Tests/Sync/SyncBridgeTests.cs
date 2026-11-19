@@ -290,6 +290,54 @@ public sealed class SyncBridgeTests : IDisposable
 	private static bool RecoveryPending(JsonElement state) => state.GetProperty("recoveryPending").GetBoolean();
 
 	[Fact]
+	public async Task DeletingOnlyTheSyncAccountFromJoinKeepsThisPcsAccountAndLoginsAndSyncThenTurnsOnFromHere()
+	{
+		const string mine = "labour-muzzle-medici-rushes-fiction7";
+		var elsewhereDir = Directory.CreateTempSubdirectory("zing-syncbridge-elsewhere-").FullName;
+		using var elsewhere = new VaultStore(elsewhereDir, new FakeCipher(), new FakeSealer(), new TickingClock(), new ManualScheduler(), new FakeSessionEvents());
+		var a = Api(Setup(new FakeIssuerSignIn(_server)), elsewhere, AccountWith(Strong));
+		Value(await Invoke(a, "sync:sign-in"));
+		Value(await Invoke(a, "sync:turn-on", Strong));
+		var account = AccountWith(mine);
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: account);
+		var id = await _vault.SaveAsync(new NewLogin("https://shop.example.test", "ada", "shop-secret", "Shop", ""));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Assert.True(Value(await Invoke(bridge, "sync:server-has-keys")).GetBoolean());
+
+		var state = Value(await Invoke(bridge, "sync:delete-sync-account"));
+
+		Assert.True(state.GetProperty("signedIn").GetBoolean());
+		Assert.False(state.GetProperty("on").GetBoolean());
+		Assert.False(Value(await Invoke(bridge, "sync:server-has-keys")).GetBoolean());
+		account.CheckPassword(mine);
+		Assert.Equal("shop-secret", await _vault.PasswordAsync(id));
+		Value(await Invoke(bridge, "sync:turn-on", mine));
+		Assert.NotNull(_vault.SyncKeys);
+		elsewhere.Dispose();
+		Directory.Delete(elsewhereDir, recursive: true);
+	}
+
+	[Fact]
+	public async Task DeletingOnlyTheSyncAccountWithTheGoogleSignInCancelledDeletesNothing()
+	{
+		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		Value(await Invoke(bridge, "sync:turn-on", Strong));
+		Value(await Invoke(bridge, "sync:turn-off"));
+		Value(await Invoke(bridge, "sync:sign-in"));
+		var cancelled = Api(Setup(new NeverFinishedSignIn()), account: AccountWith(Strong));
+
+		var deleting = Invoke(cancelled, "sync:delete-sync-account");
+		Assert.True((await Invoke(cancelled, "sync:cancel-sign-in")).GetProperty("ok").GetBoolean());
+		// Null, which the bridge leaves out.
+		var answer = await deleting;
+		Assert.True(answer.GetProperty("ok").GetBoolean());
+		Assert.False(answer.TryGetProperty("value", out _));
+
+		Assert.True(Value(await Invoke(bridge, "sync:server-has-keys")).GetBoolean());
+	}
+
+	[Fact]
 	public async Task TurningOnGivesTheRecoveryKeyOnceAndSyncWaitsUntilItIsConfirmedSaved()
 	{
 		var bridge = Api(Setup(new FakeIssuerSignIn(_server)), account: AccountWith(Strong));
