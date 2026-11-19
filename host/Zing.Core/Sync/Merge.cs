@@ -18,7 +18,8 @@ internal static class Merge
 	/// <summary>
 	/// A field changed on one side only takes that side's value; changed on both, it takes the copy edited later (<c>updatedAt</c>;
 	/// a tie goes to <paramref name="theirs"/>, the server's copy). The password with the later <c>passwordUpdatedAt</c> wins, and the
-	/// other moves into the history as it is, so a merge never loses one. Every old password of either side is kept.
+	/// other moves into the history as it is, so a merge never loses one. Every old password of either side is kept. A delete on one
+	/// side loses to an edit the other side made after it: that login is still wanted (a password changed after the delete above all).
 	/// </summary>
 	/// <param name="common">The copy both started from; null when there is none, so every field that differs counts as changed on both.</param>
 	public static MergeInput Items(MergeInput? common, MergeInput mine, MergeInput theirs)
@@ -58,7 +59,7 @@ internal static class Merge
 			Math.Min(mine.Summary.CreatedAt, theirs.Summary.CreatedAt),
 			Math.Max(mine.Summary.UpdatedAt, theirs.Summary.UpdatedAt),
 			winner.Summary.PasswordUpdatedAt,
-			Field(s => s.DeletedAt),
+			DeletedAt(Field(s => s.DeletedAt), mine, theirs),
 			winner.Summary.PasswordVersion,
 			[.. ordered.Select(h => h.Entry)],
 			Field(s => s.NeverSave),
@@ -68,6 +69,15 @@ internal static class Merge
 			PasswordHash: winner.Password.Length == 0 ? null : CipherHash.Of(winner.Password));
 		return new MergeInput(summary, winner.Password, [.. ordered.Select(h => h.Sealed)]);
 	}
+
+	/// <summary>The merged delete, unless a side that didn't delete edited the login after it: then it is kept.</summary>
+	private static long? DeletedAt(long? merged, MergeInput mine, MergeInput theirs)
+	{
+		if (merged is not { } deletedAt) return null;
+		return EditedAfter(mine, deletedAt) || EditedAfter(theirs, deletedAt) ? null : deletedAt;
+	}
+
+	private static bool EditedAfter(MergeInput side, long deletedAt) => side.Summary.DeletedAt is null && side.Summary.UpdatedAt > deletedAt;
 
 	/// <summary>The copy whose password is kept: the side that changed it, or of two that did, the later.</summary>
 	private static MergeInput PasswordWinner(MergeInput? common, MergeInput mine, MergeInput theirs)
