@@ -67,17 +67,40 @@ public static partial class DownloadNames
 	/// </summary>
 	private static readonly (int From, int To)[] Invisible = [(0x7f, 0x9f), (0x61c, 0x61c), (0x200b, 0x200f), (0x2028, 0x202e), (0x2060, 0x2069), (0xfeff, 0xfeff)];
 
-	/// <summary>The file name a download is saved under: safe for Windows, and numbered ("report 2.pdf") rather than overwriting.</summary>
+	/// <summary>Windows' longest file name, in UTF-16 units.</summary>
+	private const int MaxName = 255;
+	/// <summary>Longer than any real extension: past this it is part of the name, and is cut so the name keeps room.</summary>
+	private const int MaxExtension = 64;
+
+	/// <summary>
+	/// The file name a download is saved under: safe for Windows, at most 255 characters with its extension kept, and
+	/// numbered ("report 2.pdf") rather than overwriting.
+	/// </summary>
 	public static string FileName(string filename, Func<string, bool> exists)
 	{
 		var dot = filename.LastIndexOf('.');
 		var hasExtension = dot > 0 && dot < filename.Length - 1;
 		var baseName = SafeFileBase(hasExtension ? filename[..dot] : filename);
-		var cleanExtension = hasExtension ? SafeFileExtension(filename[(dot + 1)..]) : "";
+		var cleanExtension = hasExtension ? CutTo(SafeFileExtension(filename[(dot + 1)..]), MaxExtension) : "";
 		var extension = cleanExtension == "" ? "" : "." + cleanExtension;
-		var candidate = baseName + extension;
-		for (var counter = 2; exists(candidate); counter++) candidate = $"{baseName} {counter}{extension}";
+		var candidate = Fitted(baseName, extension);
+		for (var counter = 2; exists(candidate); counter++) candidate = Fitted(baseName, $" {counter}{extension}");
 		return candidate;
+	}
+
+	private static string Fitted(string baseName, string tail)
+	{
+		if (baseName.Length + tail.Length <= MaxName) return baseName + tail;
+		var cut = CutTo(baseName, MaxName - tail.Length).TrimEnd('.', ' ');
+		return (cut == "" ? "file" : cut) + tail;
+	}
+
+	/// <summary>The first <paramref name="length"/> UTF-16 units, without splitting a surrogate pair.</summary>
+	private static string CutTo(string text, int length)
+	{
+		if (text.Length <= length) return text;
+		var cut = text[..length];
+		return char.IsHighSurrogate(cut[^1]) ? cut[..^1] : cut;
 	}
 
 	/// <summary>
