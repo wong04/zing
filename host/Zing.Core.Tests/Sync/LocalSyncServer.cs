@@ -181,6 +181,9 @@ internal sealed class Wire : DelegatingHandler
 	/// <summary>Answers a request with this status itself, without sending it: a server that refuses what it would take.</summary>
 	public Func<HttpRequestMessage, System.Net.HttpStatusCode?>? AnswerWith { get; set; }
 
+	/// <summary>The Retry-After header an <see cref="AnswerWith"/> answer carries; null sends none.</summary>
+	public TimeSpan? AnswerRetryAfter { get; set; }
+
 	/// <summary>Runs once the server has answered a refresh, before the client sees the answer.</summary>
 	public Action? AfterRefreshAnswered { get; set; }
 
@@ -239,7 +242,12 @@ internal sealed class Wire : DelegatingHandler
 		if (Down) throw new HttpRequestException("The test's sync server is down");
 		if (FailWhen?.Invoke(line) == true) throw new HttpRequestException($"The test dropped {line}");
 		if (request.Headers.Authorization is not null && Spoil()) request.Headers.Authorization = new("Bearer", "user.1.junk");
-		if (AnswerWith?.Invoke(request) is { } status) return new HttpResponseMessage(status) { RequestMessage = request, Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json") };
+		if (AnswerWith?.Invoke(request) is { } status)
+		{
+			var answer = new HttpResponseMessage(status) { RequestMessage = request, Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json") };
+			if (AnswerRetryAfter is { } after) answer.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(after);
+			return answer;
+		}
 		var response = await base.SendAsync(request, cancellationToken);
 		if (line == LoseNextAnswerTo)
 		{

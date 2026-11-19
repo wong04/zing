@@ -23,7 +23,7 @@ public sealed class HelloSealer : IHelloSealer
 	public HelloSealer(Func<nint?> owner)
 	{
 		_owner = owner;
-		TestHooks.Background(CheckAsync(), "windows hello check");
+		TestHooks.Background(CheckAgainAsync(), "windows hello check");
 	}
 
 	public bool Available => _available;
@@ -64,6 +64,8 @@ public sealed class HelloSealer : IHelloSealer
 		await RequireSupportedAsync();
 		var opened = await KeyCredentialManager.OpenAsync(HelloKeySeal.CredentialName);
 		if (opened.Status == KeyCredentialStatus.Success) return opened.Credential;
+		// A PIN or Hello reset deletes the key: nothing it sealed opens again, so this isn't a Hello that is only off for now.
+		if (opened.Status == KeyCredentialStatus.NotFound) throw new HelloKeyMissingException("Windows Hello has no vault key on this PC any more: it was reset");
 		throw Failure("open the vault's Windows Hello key", opened.Status);
 	}
 
@@ -111,15 +113,18 @@ public sealed class HelloSealer : IHelloSealer
 
 	private async Task RequireSupportedAsync()
 	{
+		if (!await CheckAgainAsync()) throw new HelloUnavailableException("Windows Hello isn't set up on this PC");
+	}
+
+	public async Task<bool> CheckAgainAsync()
+	{
 		var supported = await IsSupportedAsync();
 		SetAvailable(supported);
-		if (!supported) throw new HelloUnavailableException("Windows Hello isn't set up on this PC");
+		return supported;
 	}
 
 	/// <summary>No prompt: whether a Hello PIN, face or fingerprint is set up for this Windows user.</summary>
 	private static async Task<bool> IsSupportedAsync() => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 26100) && await KeyCredentialManager.IsSupportedAsync();
-
-	private async Task CheckAsync() => SetAvailable(await IsSupportedAsync());
 
 	private void SetAvailable(bool available)
 	{

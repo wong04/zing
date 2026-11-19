@@ -536,6 +536,13 @@ export interface InvokeContract {
 	 * SyncRestoreWhileSyncingAnotherAccountException.
 	 */
 	'sync:join': { args: [password: string]; result: SyncState }
+	/**
+	 * Join's other way when the sync password is forgotten: after a Google sign-in made for it, the server deletes the sync account
+	 * and its encrypted passwords, and this PC signs in again to a new, empty one, keeping its own Zing account and vault, so Turn on
+	 * sync is next. A cancelled sign-in answers null and deletes nothing. Rejects with SyncOnHereException while this PC syncs, or
+	 * SyncDeleteWithAnotherGoogleAccountException when the sign-in was another account's.
+	 */
+	'sync:delete-sync-account': { args: []; result: SyncState | null }
 	/** The person confirmed they saved or printed the recovery key, so Settings stops showing it. */
 	'sync:confirm-recovery-saved': { args: []; result: SyncState }
 	/** The recovery key again, after Windows Hello (unless it was passed in the last 5 minutes). A cancelled Hello rejects and reveals nothing. */
@@ -812,6 +819,7 @@ export interface ZingApi {
 	turnOnSync(password: string): Promise<RecoveryKeyShown>
 	syncServerHasKeys(): Promise<boolean>
 	joinSync(password: string): Promise<SyncState>
+	deleteSyncAccount(): Promise<SyncState | null>
 	confirmRecoverySaved(): Promise<SyncState>
 	showRecoveryKey(): Promise<RecoveryKeyShown>
 	uploadLocalCopy(): Promise<SyncState>

@@ -422,6 +422,10 @@
 			"args": 0
 		},
 		{
+			"channel": "sync:delete-sync-account",
+			"args": 0
+		},
+		{
 			"channel": "sync:get",
 			"args": 0
 		},

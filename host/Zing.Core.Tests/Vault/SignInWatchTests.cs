@@ -411,6 +411,32 @@ public sealed class SignInWatchTests : IDisposable
 	}
 
 	[Fact]
+	public async Task A_deleted_Hello_key_on_save_raises_set_up_again_instead_of_passing_as_cancelled()
+	{
+		await Save("other@example.test");
+		await SignIn("ada@example.test", "s3cret");
+		_sealer.UnsealFailure = new HelloKeyMissingException("the Hello key was deleted by a PIN reset");
+
+		await Assert.ThrowsAsync<VaultSetUpAgainException>(() => _watch.AnswerAsync(Page, "save"));
+
+		Assert.Null(Shown);
+		Assert.Single(Store.Summaries());
+	}
+
+	[Fact]
+	public async Task A_deleted_Hello_key_on_update_raises_set_up_again_instead_of_passing_as_cancelled()
+	{
+		var id = await Save("ada@example.test", "old password");
+		await SignIn("ada@example.test", "new password");
+		_sealer.UnsealFailure = new HelloKeyMissingException("the Hello key was deleted by a PIN reset");
+
+		await Assert.ThrowsAsync<VaultSetUpAgainException>(() => _watch.AnswerAsync(Page, "save"));
+
+		_sealer.UnsealFailure = null;
+		Assert.Equal("old password", await Store.PasswordAsync(id));
+	}
+
+	[Fact]
 	public async Task Update_replaces_the_password_in_one_Hello_and_keeps_the_old_one_in_history()
 	{
 		var id = await Save("ada@example.test", "old password");

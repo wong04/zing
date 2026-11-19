@@ -59,6 +59,88 @@ public sealed class SyncEngineTests : IDisposable
 	}
 
 	[Fact]
+	public async Task APasswordChangedOnBAfterADeleteOnARevivesTheLoginWithTheNewPassword()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+
+		A.Vault.Delete(id);
+		B.Clock.Advance(TimeSpan.FromMinutes(1));
+		await B.Vault.UpdatePasswordAsync(id, "changed-after-the-delete");
+		await A.SyncAsync();
+		await B.SyncAsync();
+		await A.SyncAsync();
+
+		foreach (var pc in new[] { A, B })
+		{
+			Assert.Null(pc.Login(id).DeletedAt);
+			Assert.Equal("changed-after-the-delete", await pc.Vault.PasswordAsync(id));
+		}
+	}
+
+	[Fact]
+	public async Task ADeleteOnAAfterAPasswordChangeOnBItHasSyncedStaysDeletedAndKeepsTheNewPassword()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+
+		await B.Vault.UpdatePasswordAsync(id, "changed-before-the-delete");
+		await B.SyncAsync();
+		await A.SyncAsync();
+		A.Vault.Delete(id);
+		await A.SyncAsync();
+		await B.SyncAsync();
+		await A.SyncAsync();
+
+		foreach (var pc in new[] { A, B })
+		{
+			Assert.NotNull(pc.Login(id).DeletedAt);
+			Assert.Equal("changed-before-the-delete", await pc.Vault.PasswordAsync(id));
+		}
+	}
+
+	[Fact]
+	public async Task APasswordChangedOnBWhileADeletedItRevivesTheLoginEvenWithBsClockAnHourBehind()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+
+		B.Clock.Advance(TimeSpan.FromHours(-1));
+		await B.Vault.UpdatePasswordAsync(id, "changed-on-a-slow-clock");
+		A.Vault.Delete(id);
+		await A.SyncAsync();
+		await B.SyncAsync();
+		await A.SyncAsync();
+
+		foreach (var pc in new[] { A, B })
+		{
+			Assert.Null(pc.Login(id).DeletedAt);
+			Assert.Equal("changed-on-a-slow-clock", await pc.Vault.PasswordAsync(id));
+		}
+	}
+
+	[Fact]
+	public async Task ADeleteOnAStaysDeletedWhenBChangedNothingEvenWithBsClockAnHourAhead()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+
+		B.Clock.Advance(TimeSpan.FromHours(1));
+		var login = B.Login(id);
+		B.Vault.UpdateSummary(id, login.Title, login.Note, login.Username);
+		A.Vault.Delete(id);
+		await A.SyncAsync();
+		await B.SyncAsync();
+		await A.SyncAsync();
+
+		foreach (var pc in new[] { A, B }) Assert.NotNull(pc.Login(id).DeletedAt);
+	}
+
+	[Fact]
 	public async Task BothChangedDifferentFieldsAndBothPcsEndWithBothChanges()
 	{
 		var id = await _pcs.SaveOnAAsync();
@@ -383,6 +465,7 @@ public sealed class SyncEngineTests : IDisposable
 		await started.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 		Assert.Equal([SyncEngine.Every], A.Scheduler.Pending);
 
+		A.Clock.Advance(SyncEngine.ChangeGap);
 		await _pcs.SaveOnAAsync();
 		await A.Vault.ImportAsync(Logins(1));
 		Assert.Equal([SyncEngine.Every, SyncEngine.AfterChange], A.Scheduler.Pending);
@@ -397,6 +480,258 @@ public sealed class SyncEngineTests : IDisposable
 		A.Scheduler.Fire(SyncEngine.Every);
 		await periodic.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 		Assert.Equal(pulls + 1, _pcs.Server.Wire.Count("GET /changes"));
+	}
+
+	/// <summary>A's first sync, run as Zing starting runs it.</summary>
+	private async Task StartAAsync()
+	{
+		var started = A.Engine.NextRun;
+		A.Engine.Start();
+		A.Scheduler.Fire(TimeSpan.Zero);
+		await started.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+	}
+
+	[Fact]
+	public async Task EditsRightAfterASyncWaitForTheGapSoTheyShareOneSync()
+	{
+		await _pcs.TurnOnAAsync();
+		await StartAAsync();
+
+		await _pcs.SaveOnAAsync();
+		await A.Vault.ImportAsync(Logins(1));
+
+		var wait = Assert.Single(A.Scheduler.Pending, d => d != SyncEngine.Every);
+		Assert.InRange(wait, SyncEngine.ChangeGap - TimeSpan.FromSeconds(1), SyncEngine.ChangeGap);
+		var pushes = _pcs.Server.Wire.Count("POST /changes");
+		var afterChange = A.Engine.NextRun;
+		A.Scheduler.Fire(wait);
+		await afterChange.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+		Assert.Equal(pushes + 1, _pcs.Server.Wire.Count("POST /changes"));
+		Assert.Empty(A.Vault.Unsent());
+	}
+
+	[Fact]
+	public async Task A429WaitsAsTheServerSaysSaysSoPlainlyAndThenSyncs()
+	{
+		await _pcs.TurnOnAAsync();
+		_pcs.Server.Wire.AnswerRetryAfter = TimeSpan.FromSeconds(42);
+		_pcs.Server.Wire.AnswerWith = r => r.RequestUri!.AbsolutePath == "/manifest" ? System.Net.HttpStatusCode.TooManyRequests : null;
+		await StartAAsync();
+
+		Assert.Equal("rate-limited", A.Engine.Status.Error);
+		Assert.Equal("The sync server asked Zing to slow down, so it syncs again in 42 seconds.", A.Engine.Status.Message);
+		Assert.Equal([TimeSpan.FromSeconds(42)], A.Scheduler.Pending);
+		// A change meanwhile waits for the retry too, instead of meeting the limit again.
+		await _pcs.SaveOnAAsync();
+		Assert.All(A.Scheduler.Pending, d => Assert.True(d > SyncEngine.AfterChange));
+
+		_pcs.Server.Wire.AnswerWith = null;
+		var retried = A.Engine.NextRun;
+		A.Scheduler.Fire(TimeSpan.FromSeconds(42));
+		await retried.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+		Assert.Null(A.Engine.Status.Error);
+		Assert.Empty(A.Vault.Unsent());
+		Assert.Contains(SyncEngine.Every, A.Scheduler.Pending);
+	}
+
+	[Fact]
+	public async Task A429WithNoRetryAfterBacksOffAMinuteThenTwo()
+	{
+		await _pcs.TurnOnAAsync();
+		_pcs.Server.Wire.AnswerWith = r => r.RequestUri!.AbsolutePath == "/manifest" ? System.Net.HttpStatusCode.TooManyRequests : null;
+		await StartAAsync();
+		Assert.Equal([SyncEngine.RateLimitedRetry], A.Scheduler.Pending);
+		Assert.Equal("The sync server asked Zing to slow down, so it syncs again in a minute.", A.Engine.Status.Message);
+
+		var again = A.Engine.NextRun;
+		A.Scheduler.Fire(SyncEngine.RateLimitedRetry);
+		await again.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+		Assert.Equal([SyncEngine.RateLimitedRetry * 2], A.Scheduler.Pending);
+		Assert.Equal("The sync server asked Zing to slow down, so it syncs again in 2 minutes.", A.Engine.Status.Message);
+	}
+
+	[Fact]
+	public async Task A429DropsTheSyncAChangeAskedForSoNothingRunsBeforeTheRetryAndTheRetryRunsOnce()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await StartAAsync();
+		_pcs.Server.Wire.AnswerRetryAfter = TimeSpan.FromMinutes(2);
+		var edited = false;
+		_pcs.Server.Wire.AnswerWith = r =>
+		{
+			if (r.RequestUri!.AbsolutePath != "/manifest") return null;
+			if (!edited)
+			{
+				edited = true;
+				// A change mid-sync asks for a sync, which comes due while this one still runs.
+				A.Vault.UpdateSummary(id, "Edited mid-sync", "", "ada");
+				A.Scheduler.Fire(A.Scheduler.Pending.First(d => d < SyncEngine.Every));
+			}
+			return System.Net.HttpStatusCode.TooManyRequests;
+		};
+		var limited = A.Engine.NextRun;
+		A.Scheduler.Fire(SyncEngine.Every);
+		await limited.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+		Assert.Equal([TimeSpan.FromMinutes(2)], A.Scheduler.Pending);
+		_pcs.Server.Wire.AnswerWith = null;
+		var pulls = _pcs.Server.Wire.Count("GET /changes");
+		var retried = A.Engine.NextRun;
+		A.Scheduler.Fire(TimeSpan.FromMinutes(2));
+		await retried.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+		Assert.Equal(pulls + 1, _pcs.Server.Wire.Count("GET /changes"));
+		Assert.Empty(A.Vault.Unsent());
+		Assert.Equal([SyncEngine.Every], A.Scheduler.Pending);
+	}
+
+	[Fact]
+	public async Task ASyncChangeDuringA429sWaitWaitsToo()
+	{
+		await _pcs.TurnOnAAsync();
+		_pcs.Server.Wire.AnswerRetryAfter = TimeSpan.FromMinutes(2);
+		_pcs.Server.Wire.AnswerWith = r => r.RequestUri!.AbsolutePath == "/manifest" ? System.Net.HttpStatusCode.TooManyRequests : null;
+		await StartAAsync();
+
+		A.Vault.TurnOffSync();
+
+		Assert.All(A.Scheduler.Pending, d => Assert.True(d > TimeSpan.FromMinutes(1), $"{d} is before the retry"));
+	}
+
+	[Fact]
+	public async Task ARefreshLostDuringA429sWaitWaitsToo()
+	{
+		await _pcs.TurnOnAAsync();
+		_pcs.Server.Wire.AnswerRetryAfter = TimeSpan.FromMinutes(2);
+		_pcs.Server.Wire.AnswerWith = r => r.RequestUri!.AbsolutePath == "/manifest" ? System.Net.HttpStatusCode.TooManyRequests : null;
+		await StartAAsync();
+		// The access token is refused, and the refresh it brings gets no answer.
+		_pcs.Server.Wire.AnswerWith = r => r.RequestUri!.AbsolutePath == "/manifest" ? System.Net.HttpStatusCode.Unauthorized : null;
+		_pcs.Server.Wire.LoseNextRefreshAnswer = true;
+
+		await Assert.ThrowsAnyAsync<Exception>(() => A.Client.GetManifestAsync(Ct, asUser: A.Vault.SyncKeys!.UserId));
+
+		Assert.True(A.Client.RefreshUnanswered);
+		Assert.All(A.Scheduler.Pending, d => Assert.True(d > TimeSpan.FromMinutes(1), $"{d} is before the retry"));
+	}
+
+	[Fact]
+	public async Task TurningSyncOnOrOffRightAfterASyncSyncsWithoutTheChangeGap()
+	{
+		await _pcs.TurnOnAAsync();
+		await StartAAsync();
+
+		A.Vault.TurnOffSync();
+
+		Assert.Contains(SyncEngine.AfterChange, A.Scheduler.Pending);
+	}
+
+	[Fact]
+	public async Task ARetryAfterOfADayWaitsAnHourAtMost()
+	{
+		await _pcs.TurnOnAAsync();
+		_pcs.Server.Wire.AnswerRetryAfter = TimeSpan.FromDays(1);
+		_pcs.Server.Wire.AnswerWith = r => r.RequestUri!.AbsolutePath == "/manifest" ? System.Net.HttpStatusCode.TooManyRequests : null;
+		await StartAAsync();
+
+		Assert.Equal(TimeSpan.FromHours(1), SyncEngine.MaxRateLimitedWait);
+		Assert.Equal([SyncEngine.MaxRateLimitedWait], A.Scheduler.Pending);
+		Assert.Equal("The sync server asked Zing to slow down, so it syncs again in an hour.", A.Engine.Status.Message);
+	}
+
+	/// <summary>Each PC's history holds one 130 KiB old password, within the server's 256 KiB; the merge on B keeps both, which isn't.</summary>
+	private async Task<string> GiveBALoginTooLargeToSyncAsync()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+		var big = new string('a', 130 * 1024);
+		await A.Vault.UpdatePasswordAsync(id, big);
+		await A.Vault.UpdatePasswordAsync(id, "a-small-one");
+		await B.Vault.UpdatePasswordAsync(id, big.Replace('a', 'b'));
+		await B.Vault.UpdatePasswordAsync(id, "b-small-one");
+		await A.SyncAsync();
+		return id;
+	}
+
+	private const string TooLargeWarning = "One login is too large to sync (a long note or many old passwords), so it stays on this PC only. Shorten its note, or delete it if you don't need it.";
+
+	[Fact]
+	public async Task ALoginTooLargeToSyncCanStillBeDeletedAndRestoredButNotGrown()
+	{
+		var id = await GiveBALoginTooLargeToSyncAsync();
+		await B.SyncAsync();
+
+		B.Vault.Delete(id);
+		B.Vault.Restore(id);
+		B.Vault.UpdateSummary(id, "Shorter", "", "ada");
+		var refused = await Assert.ThrowsAsync<VaultLoginTooLargeException>(() => B.Vault.UpdatePasswordAsync(id, "one-more"));
+		Assert.Equal("This login's earlier passwords already fill all the space sync allows, so Zing can't keep another and nothing was saved. Delete this login, then save the new password as a new login.", refused.Message);
+		B.Vault.Delete(id);
+		await B.SyncAsync();
+
+		Assert.Null(B.Engine.Status.Error);
+		Assert.Equal(TooLargeWarning, B.Engine.Status.Warning);
+		Assert.NotNull(B.Login(id).DeletedAt);
+	}
+
+	[Fact]
+	public async Task AnUploadOfThisPcsCopyWithALoginTooLargeSucceedsAndWarnsApart()
+	{
+		var id = await GiveBALoginTooLargeToSyncAsync();
+		var backup = _pcs.Server.Backup();
+		await A.Vault.SaveAsync(new NewLogin("https://mail.example.test", "ada.mail", "mail-secret", "Mail", ""));
+		await A.SyncAsync();
+		await B.SyncAsync();
+		_pcs.Server.Restore(backup);
+		await Assert.ThrowsAsync<ServerRolledBackException>(() => B.SyncAsync());
+
+		await B.Engine.UploadLocalCopyAsync(Ct);
+
+		Assert.Null(B.Engine.Status.Error);
+		Assert.Equal(TooLargeWarning, B.Engine.Status.Warning);
+		Assert.Single(B.Vault.Unsent(), u => u.Record.ItemId == id);
+	}
+
+	[Fact]
+	public async Task ALoginTooLargeForTheServerIsLeftOutAndEverythingElseStillSyncs()
+	{
+		var id = await _pcs.SaveOnAAsync();
+		await _pcs.TurnOnAAsync();
+		await _pcs.JoinBAsync();
+		// Each PC's history holds one 130 KiB old password, within the server's 256 KiB; the merge keeps both, which isn't.
+		var big = new string('a', 130 * 1024);
+		await A.Vault.UpdatePasswordAsync(id, big);
+		await A.Vault.UpdatePasswordAsync(id, "a-small-one");
+		await B.Vault.UpdatePasswordAsync(id, big.Replace('a', 'b'));
+		await B.Vault.UpdatePasswordAsync(id, "b-small-one");
+		await A.SyncAsync();
+		var other = await B.Vault.SaveAsync(new NewLogin("https://mail.example.test", "ada.mail", "mail-secret", "Mail", ""));
+
+		await B.SyncAsync();
+
+		Assert.Null(B.Engine.Status.Error);
+		Assert.Equal(TooLargeWarning, B.Engine.Status.Warning);
+		await A.SyncAsync();
+		Assert.Null(A.Engine.Status.Error);
+		Assert.Equal("mail-secret", await A.Vault.PasswordAsync(other));
+	}
+
+	[Fact]
+	public async Task ABatchIsSplitBySizeSoTheServerTakesEveryLogin()
+	{
+		await _pcs.TurnOnAAsync();
+		// About 200 KiB each: twenty-five of them are more than one 4 MiB body.
+		await A.Vault.ImportAsync([.. Enumerable.Range(0, 25).Select(i => new NewLogin($"https://big{i}.example.test", "ada", "pw", "", new string('n', 200 * 1024)))]);
+		var pushes = _pcs.Server.Wire.Count("POST /changes");
+
+		await A.SyncAsync();
+
+		Assert.True(_pcs.Server.Wire.Count("POST /changes") - pushes >= 2);
+		Assert.Empty(A.Vault.Unsent());
+		Assert.Equal(25, (await _pcs.ServerItemsAsync()).Items.Count);
 	}
 
 	[Fact]

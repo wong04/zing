@@ -73,6 +73,7 @@ export type SyncError =
 	| 'unreachable'
 	| 'server-error'
 	| 'account-changed'
+	| 'rate-limited'
 	| 'failed'
 
 // The errors Upload this PC's copy answers.
@@ -93,6 +94,8 @@ export type SyncState =
 			unsent: number
 			error?: SyncError
 			message?: string
+			/** The last sync worked, but left logins too large for the sync server on this PC only, and says so. */
+			warning?: string
 			/** Sync found the Zing password changed on another PC: the next start asks for the new one. */
 			passwordChangedElsewhere?: boolean
 			/** keys.bin holds sync keys (pending ones included), for any account: Settings offers Turn off sync on this PC. */

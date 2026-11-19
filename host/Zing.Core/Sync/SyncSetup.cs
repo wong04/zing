@@ -57,7 +57,7 @@ public sealed class SyncBuildException(string message) : Exception(message);
 /// (a code such as "server-rolled-back", and what to show), and <see cref="Unsent"/>, the logins that haven't uploaded yet.
 /// <see cref="PasswordChangedElsewhere"/>, while on: sync found the password changed on another PC, and the next start asks for it.
 /// </summary>
-public sealed record SyncState(bool SignedIn, string? Email, string? Notice = null, bool On = false, bool RecoveryPending = false, string? Error = null, string? Message = null, int Unsent = 0, bool PasswordChangedElsewhere = false, bool KeysHere = false)
+public sealed record SyncState(bool SignedIn, string? Email, string? Notice = null, bool On = false, bool RecoveryPending = false, string? Error = null, string? Message = null, int Unsent = 0, bool PasswordChangedElsewhere = false, bool KeysHere = false, string? Warning = null)
 {
 	/// <param name="vault">The open vault, for what its keys.bin holds, for whichever account.</param>
 	public static SyncState SignedInAs(SyncAccount account, VaultStore vault)
@@ -533,7 +533,8 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	/// <summary>The items to upload and the manifest that lists them, sealed before the keys are sent so a manifest the server would refuse stops the turn-on first.</summary>
 	private Upload Snapshot(VaultKeyMaterial keys)
 	{
-		var records = vault.Records;
+		// A login too large for the server is neither sent nor listed: it stays unsent, and each sync says so.
+		List<LoginRecord> records = [.. vault.Records.Where(SyncWire.Fits)];
 		return Sealed(keys, records, [.. records.Select(r => new SyncManifestEntry(r.ItemId, r.Version))]);
 	}
 
@@ -544,8 +545,9 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	private Upload ResumedSnapshot(VaultKeyMaterial keys, string userId)
 	{
 		vault.StartSyncAs(userId);
-		var records = vault.Records;
-		var known = records.ToDictionary(r => r.ItemId, r => vault.KnownVersion(r.ItemId), StringComparer.Ordinal);
+		var held = vault.Records;
+		var known = held.ToDictionary(r => r.ItemId, r => vault.KnownVersion(r.ItemId), StringComparer.Ordinal);
+		List<LoginRecord> records = [.. held.Where(r => known[r.ItemId] is not null || SyncWire.Fits(r))];
 		return Sealed(keys, [.. records.Where(r => known[r.ItemId] is null)], [.. records.Select(r => new SyncManifestEntry(r.ItemId, known[r.ItemId] ?? r.Version))]);
 	}
 
@@ -567,7 +569,7 @@ public sealed class SyncKeys(AccountStore account, VaultStore vault, SyncClient 
 	private async Task UploadAsync(Upload upload, SyncAccount signedIn, CancellationToken cancellation)
 	{
 		vault.StartSyncAs(signedIn.UserId);
-		foreach (var batch in upload.Records.Chunk(PushBatch))
+		foreach (var batch in SyncWire.Batches(upload.Records, SyncWire.NewItem))
 		{
 			var pushed = await client.PostChangesAsync([.. batch.Select(SyncWire.NewItem)], cancellation, asUser: signedIn.UserId);
 			SyncWire.CheckPushAnswer([.. batch.Select(r => r.ItemId)], pushed);

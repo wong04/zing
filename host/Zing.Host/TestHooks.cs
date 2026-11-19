@@ -166,7 +166,7 @@ public static class TestHooks
 	/// <summary>
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
-	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers, and reset makes it forget the key it sealed with;
+	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers, reset makes it forget the key it sealed with, and missing deletes that key;
 	/// "picker-key" with <c>vk</c> enters the account picker's key handler as a real key press on its page would;
 	/// "preview-key" with <c>code</c> enters the window's key handler as that key pressed on the link preview's top page would;
 	/// "fullscreen-key" with <c>vk</c> enters the PDF viewer's fullscreen key handler as a real key press on the fullscreen page would;

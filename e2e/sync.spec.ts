@@ -36,6 +36,8 @@ const START_OVER_SUB = 'sub-e2e-start-over'
 const JOIN_SUBS = ['sub-e2e-join', 'sub-e2e-join-account'] as const
 // A second PC that doesn't know the sync password starts over from the Join sync form.
 const JOIN_START_OVER_SUB = 'sub-e2e-join-start-over'
+// A second PC that doesn't know the sync password deletes only the sync account from the Join sync form.
+const JOIN_DELETE_SYNC_SUB = 'sub-e2e-join-delete-sync'
 
 let server: ChildProcess | undefined
 let serverUrl = ''
@@ -54,7 +56,7 @@ function serverEnvironment(): NodeJS.ProcessEnv {
 		ASPNETCORE_ENVIRONMENT: 'Staging',
 		ZING_SERVER_FAKE_GOOGLE: '1',
 		ZING_SESSION_KEY: randomBytes(32).toString('base64'),
-		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB, POPUP_SUB, START_OVER_SUB, ...JOIN_SUBS, JOIN_START_OVER_SUB].join(','),
+		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB, POPUP_SUB, START_OVER_SUB, ...JOIN_SUBS, JOIN_START_OVER_SUB, JOIN_DELETE_SYNC_SUB].join(','),
 		ZING_DB_PATH: join(serverDir, 'zing.db'),
 		// Every PC of the run is 127.0.0.1, so one per-IP budget: the default 60 a minute is a production limit (its own tests cover it).
 		ZING_RATE_IP_PER_MINUTE: '1000',
@@ -790,6 +792,41 @@ test('a second PC with a Zing account of its own joins with the sync password al
 	await b.close()
 })
 
+const forgotForm = (sheet: Page) => syncGroup(sheet).getByRole('form', { name: 'Forgot your Zing password' })
+
+test('a PC that doesn’t know the sync password deletes only the sync account from the Join sync form, keeps its own account and logins, and turns sync on', async () => {
+	test.setTimeout(240_000)
+	const { zing: a } = await turnOnWithLogins(JOIN_DELETE_SYNC_SUB)
+	await a.close()
+
+	const b = await launchZing({ userDataDir: vaultProfile(), env: syncEnv(JOIN_DELETE_SYNC_SUB) })
+	await signUp(b, NEXT_STRONG)
+	const shop = await b.chrome.evaluate(() => window.zing.saveLogin({ origin: 'https://shop.example.test', username: 'bea', password: 'shop-password', title: 'Shop', note: '' }))
+	const sheet = await openSync(b)
+	await syncGroup(sheet).getByRole('button', { name: 'Turn on sync' }).click()
+	await joinForm(sheet).getByRole('button', { name: 'Forgot your Zing password?' }).click()
+	await expect(forgotForm(sheet)).toContainText('deletes it and its encrypted passwords on the sync server')
+	await expect(forgotForm(sheet)).toContainText('This PC keeps its Zing account and passwords')
+	const deleteSync = forgotForm(sheet).getByRole('button', { name: 'Sign in with Google and delete the sync account' })
+	await expect(deleteSync).toBeDisabled()
+	await forgotForm(sheet).getByLabel('Type DELETE SYNC ACCOUNT to confirm').fill('delete sync account')
+	await expect(deleteSync).toBeDisabled()
+	await forgotForm(sheet).getByLabel('Type DELETE SYNC ACCOUNT to confirm').fill('DELETE SYNC ACCOUNT')
+	await deleteSync.click()
+
+	// The server kept nothing, so this PC turns sync on with its own password.
+	const turnOn = syncGroup(sheet).getByRole('form', { name: 'Turn on sync' })
+	await expect(turnOn).toBeVisible()
+	expect(await b.chrome.evaluate(() => window.zing.getAccount())).toMatchObject({ hasAccount: true })
+	expect(await titles(b)).toEqual(['Shop'])
+	await turnOn.getByLabel('Zing password').fill(NEXT_STRONG)
+	await turnOn.getByRole('button', { name: 'Turn on sync' }).click()
+	await expect(recoveryScreen(sheet).getByLabel('Recovery key', { exact: true })).toBeVisible()
+	await hello(b, 'pass')
+	expect(await b.chrome.evaluate((id) => window.zing.revealPassword(id), shop)).toBe('shop-password')
+	await b.close()
+})
+
 test('a PC that doesn’t know the sync password starts over from the Join sync form, deleting the sync account, and then turns sync on from scratch', async () => {
 	test.setTimeout(240_000)
 	const sub = JOIN_START_OVER_SUB
@@ -800,7 +837,8 @@ test('a PC that doesn’t know the sync password starts over from the Join sync 
 	await signUp(b, 'made-up-1')
 	const sheet = await openSync(b)
 	await syncGroup(sheet).getByRole('button', { name: 'Turn on sync' }).click()
-	await joinForm(sheet).getByRole('button', { name: 'Forgot your Zing password? Start over' }).click()
+	await joinForm(sheet).getByRole('button', { name: 'Forgot your Zing password?' }).click()
+	await forgotForm(sheet).getByRole('button', { name: 'Start over instead' }).click()
 
 	const form = startOverForm(sheet)
 	// Start over covers the whole window, as at the gate: nothing of Settings shows through it, and its card is centred.

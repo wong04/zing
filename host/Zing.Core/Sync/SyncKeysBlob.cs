@@ -284,6 +284,52 @@ public static class RecoverySeal
 /// <summary>How a stored login travels to the server: its ciphertexts as they are, the history as one blob.</summary>
 public static class SyncWire
 {
+	/// <summary>The most the sync server takes in one ciphertext: SyncLimits.MaxBlobBytes in server/Zing.Server/SyncCommon.cs.</summary>
+	public const int MaxBlobBytes = 256 * 1024;
+
+	/// <summary>The most the sync server takes in one request body: SyncLimits.MaxBodyBytes in server/Zing.Server/SyncCommon.cs.</summary>
+	public const int MaxBodyBytes = 4 * 1024 * 1024;
+
+	/// <summary><c>{"items":[</c> and <c>]}</c> around a push's items, with room to spare.</summary>
+	private const int PushEnvelopeBytes = 64;
+
+	/// <summary>Whether the server would take the item: its summary, password and joined history each within <see cref="MaxBlobBytes"/>.</summary>
+	public static bool Fits(LoginRecord record)
+	{
+		var (summary, password, history) = PartSizes(record);
+		return summary <= MaxBlobBytes && password <= MaxBlobBytes && history <= MaxBlobBytes;
+	}
+
+	/// <summary>The sizes of the three ciphertexts the server limits, as a push sends them.</summary>
+	public static (int Summary, int Password, int History) PartSizes(LoginRecord record) =>
+		(record.Summary.Length, record.Password.Length, JoinHistory(record.History).Length);
+
+	/// <summary>
+	/// <paramref name="items"/> in order, in batches of at most <see cref="SyncKeys.PushBatch"/> whose request bodies stay within
+	/// <see cref="MaxBodyBytes"/>, measured as the push serializes them. Every item must <see cref="Fits"/>, so each fits a body alone.
+	/// </summary>
+	public static List<List<T>> Batches<T>(IReadOnlyList<T> items, Func<T, SyncPush> push)
+	{
+		var batches = new List<List<T>>();
+		var batch = new List<T>();
+		long bytes = PushEnvelopeBytes;
+		foreach (var item in items)
+		{
+			// One more for the comma between items.
+			var size = JsonSerializer.SerializeToUtf8Bytes(push(item), SyncJson.Options).Length + 1;
+			if (batch.Count > 0 && (batch.Count == SyncKeys.PushBatch || bytes + size > MaxBodyBytes))
+			{
+				batches.Add(batch);
+				batch = [];
+				bytes = PushEnvelopeBytes;
+			}
+			batch.Add(item);
+			bytes += size;
+		}
+		if (batch.Count > 0) batches.Add(batch);
+		return batches;
+	}
+
 	/// <summary>An item the server hasn't seen: based on revision 0.</summary>
 	public static SyncPush NewItem(LoginRecord record) =>
 		new(record.ItemId, checked((int)record.Version), 0, record.Tombstone, record.Summary, record.Password, JoinHistory(record.History));

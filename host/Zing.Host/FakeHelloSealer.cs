@@ -6,7 +6,7 @@ namespace Zing.Host;
 
 /// <summary>
 /// The Windows Hello stand-in for e2e runs, which must never show a prompt (AGENTS.md). Created only by <see cref="TestHooks.HelloSealer"/>,
-/// so a real launch can't get it. Each call answers as the test set it with {kind: "test", action: "vault-hello", result: "pass" | "cancel" | "unavailable" | "reset"}; "reset" is Windows Hello's key being made again, so what was sealed before no longer opens.
+/// so a real launch can't get it. Each call answers as the test set it with {kind: "test", action: "vault-hello", result: "pass" | "cancel" | "unavailable" | "reset" | "missing"}; "reset" is Windows Hello's key being made again, so what was sealed before no longer opens, and "missing" is the key deleted (a PIN reset), so an unseal finds none until a seal makes a new one.
 /// It wraps the key under a fixed key: it stands in for Hello, and protects nothing.
 /// </summary>
 public sealed class FakeHelloSealer : IHelloSealer
@@ -15,17 +15,25 @@ public sealed class FakeHelloSealer : IHelloSealer
 
 	private string _result = "pass";
 	private int _generation;
+	private bool _missing;
 
 	public event Action? AvailabilityChanged;
 
 	public bool Available => _result != "unavailable";
 
+	public Task<bool> CheckAgainAsync() => Task.FromResult(Available);
+
 	public void Answer(string result)
 	{
-		if (result is not ("pass" or "cancel" or "unavailable" or "reset")) throw new InvalidOperationException($"vault-hello takes pass, cancel, unavailable or reset, not {result}");
+		if (result is not ("pass" or "cancel" or "unavailable" or "reset" or "missing")) throw new InvalidOperationException($"vault-hello takes pass, cancel, unavailable, reset or missing, not {result}");
 		if (result == "reset")
 		{
 			_generation++;
+			return;
+		}
+		if (result == "missing")
+		{
+			_missing = true;
 			return;
 		}
 		var wasAvailable = Available;
@@ -36,11 +44,19 @@ public sealed class FakeHelloSealer : IHelloSealer
 	public Task<byte[]> SealAsync(byte[] key)
 	{
 		Prompt();
+		// As HelloSealer's seal does, a missing key is made again: a new one.
+		if (_missing)
+		{
+			_missing = false;
+			_generation++;
+		}
 		return Task.FromResult(KeyWrap.Wrap(CurrentKey(), key, WrapLabel));
 	}
 
 	public Task<byte[]> UnsealAsync(byte[] sealedBytes)
 	{
+		// HelloSealer finds the key gone before it would ask for a signature.
+		if (_missing && _result != "unavailable") throw new HelloKeyMissingException("The e2e test deleted the Windows Hello key (vault-hello: missing)");
 		Prompt();
 		return Task.FromResult(KeyWrap.Unwrap(CurrentKey(), sealedBytes, WrapLabel));
 	}

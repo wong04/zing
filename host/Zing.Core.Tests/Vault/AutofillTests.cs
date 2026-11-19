@@ -579,6 +579,39 @@ public sealed class AutofillTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ADeletedHelloKeyFillsNothingAndTellsThePersonToSetTheVaultUpAgain()
+	{
+		var id = await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		Focus($"{Site}/login");
+		Wait();
+		_sealer.UnsealFailure = new HelloKeyMissingException("the Hello key was deleted by a PIN reset");
+
+		var result = await Invoke("vault:fill", TabId, id);
+
+		Assert.Equal(nameof(VaultSetUpAgainException), result.GetProperty("error").GetProperty("name").GetString());
+		Assert.Empty(Page.Evaluated);
+		Assert.Contains(_host.Notices, n => n.Contains("Set up the vault again on this PC"));
+	}
+
+	[Fact]
+	public async Task ADeletedHelloKeyOnTheSavePromptStoresNothingAndTellsThePersonToSetTheVaultUpAgain()
+	{
+		await Save(Site, "grace");
+		OnPage($"{Site}/login");
+		_api.SignIn.Submitted(TabId, Site, "ada", "s3cret");
+		_api.SignIn.Landed(TabId, Site, hasVisiblePasswordBox: false);
+		Assert.NotNull(_api.SignIn.Prompt);
+		_sealer.UnsealFailure = new HelloKeyMissingException("the Hello key was deleted by a PIN reset");
+
+		var result = await Invoke("vault:answer-save", TabId, "save");
+
+		Assert.Equal(nameof(VaultSetUpAgainException), result.GetProperty("error").GetProperty("name").GetString());
+		Assert.Single(Vault.Summaries());
+		Assert.Contains(_host.Notices, n => n.Contains("Set up the vault again on this PC"));
+	}
+
+	[Fact]
 	public async Task CanFillRefusesAFrameSourceThatDiffersFromTheOriginTheEntriesWereChosenFor()
 	{
 		var id = await Save(Site, "ada");

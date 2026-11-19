@@ -11,6 +11,10 @@ public sealed class StartOverVaultUnreadableException()
 public sealed class StartOverNoSyncAccountException()
 	: Exception("This PC doesn't sync with a Google account, so there's no sync account to delete.");
 
+/// <summary>Deleting only the sync account while this PC syncs with it: its own sync would be left over a deleted account.</summary>
+public sealed class SyncOnHereException()
+	: Exception("This PC syncs with this Google account, so Zing didn't delete the sync account. Turn off sync on this PC first.");
+
 /// <summary>
 /// "Forgot your password? Start over." For a person with no Zing password and no recovery key: this PC's account and every password
 /// saved in its vault are deleted, so the gate offers a new account. Nothing here is unlocked by the password, which the gate's own

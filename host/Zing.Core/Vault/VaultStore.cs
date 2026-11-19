@@ -41,6 +41,23 @@ public sealed class NeverSaveNotFoundException(string origin) : Exception($"{ori
 
 public sealed class VaultItemNotFoundException(string id) : Exception($"No login with ID {id} in the vault");
 
+/// <summary>
+/// A login too large for the sync server to take (<see cref="SyncWire.Fits"/>), almost always for its note: refused when it is saved,
+/// so it can't sit unsynced, and nothing is written.
+/// </summary>
+public sealed class VaultLoginTooLargeException(string message) : Exception(message)
+{
+	public static VaultLoginTooLargeException Note() => new("This login is too large to save, so nothing was saved. Shorten its note and try again.");
+
+	public static VaultLoginTooLargeException Password() => new("This password is too long to save, so nothing was saved.");
+
+	/// <summary>
+	/// Old passwords aren't trimmed to make room: Settings shows them (Earlier passwords) for when a change didn't take, and a merge
+	/// keeps every one either PC holds, so one dropped here would come back. A new login starts a new history.
+	/// </summary>
+	public static VaultLoginTooLargeException History() => new("This login's earlier passwords already fill all the space sync allows, so Zing can't keep another and nothing was saved. Delete this login, then save the new password as a new login.");
+}
+
 /// <summary>Deleting a login that's already in Recently deleted, or restoring one that isn't.</summary>
 public sealed class VaultItemStateException(string message) : Exception(message);
 
@@ -236,7 +253,7 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 		if (IsNeverSave(exact)) return;
 		if (_keys is null)
 		{
-			RequireHello();
+			await RequireHelloAsync();
 			var (_, secretKey) = await SecretKeyForWriteAsync();
 			CryptographicOperations.ZeroMemory(secretKey);
 		}
@@ -279,7 +296,7 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	public async Task<string> SaveAsync(NewLogin login)
 	{
 		var origin = VaultModel.OriginOf(login.Origin);
-		RequireHello();
+		await RequireHelloAsync();
 		var (keys, secretKey) = await SecretKeyForWriteAsync();
 		try
 		{
@@ -290,7 +307,9 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 				var now = _clock.Now();
 				var password = Seal(secretKey, keys, id, 1, ItemPart.Password, login.Password);
 				var summary = new SummaryPayload(origin, login.Username, login.Title, login.Note, now, now, now, null, 1, [], PasswordHash: CipherHash.Of(password));
-				Commit(null, new LoginRecord(id, 1, SealSummary(keys, id, 1, summary), password, [], false), summary);
+				var record = new LoginRecord(id, 1, SealSummary(keys, id, 1, summary), password, [], false);
+				RequireNoGrowthPastLimit(null, record);
+				Commit(null, record, summary);
 			}
 			OnEdited();
 			return id;
@@ -318,7 +337,7 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	private async Task<bool> ChangePasswordAsync(string id, string password, Func<SummaryPayload, SummaryPayload> edit, bool skipIfSame)
 	{
 		Find(id);
-		RequireHello();
+		await RequireHelloAsync();
 		var keys = Keys();
 		var secretKey = await SecretKeyAsync(keys);
 		try
@@ -329,6 +348,7 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 				var (record, summary) = Find(id);
 				if (skipIfSame && IsSame(secretKey, keys, record, summary, password)) return false;
 				var (changedRecord, changed) = WithNewPassword(secretKey, keys, record, summary, password, edit);
+				RequireNoGrowthPastLimit(record, changedRecord);
 				Commit(record, changedRecord, changed);
 			}
 			OnEdited();
@@ -369,7 +389,7 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	{
 		if (logins.Count == 0) return new ImportOutcome(0, 0);
 		var origins = logins.Select(l => VaultModel.OriginOf(l.Origin)).ToList();
-		RequireHello();
+		await RequireHelloAsync();
 		var (keys, secretKey) = await SecretKeyForWriteAsync();
 		try
 		{
@@ -429,7 +449,7 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	public async Task<IReadOnlyList<ExportedLogin>> ExportAsync()
 	{
 		if (Summaries().All(s => s.DeletedAt is not null)) throw new NothingToExportException();
-		RequireHello();
+		await RequireHelloAsync();
 		var keys = Keys();
 		var secretKey = await keys.SecretKeyAsync(_cipher, _sealer);
 		try
@@ -504,17 +524,17 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 
 	/// <summary>No Hello.</summary>
 	public void UpdateSummary(string id, string title, string note, string username) =>
-		EditSummary(id, (s, now) => s with { Title = title, Note = note, Username = username, UpdatedAt = now });
+		EditSummary(id, (s, now) => s with { Title = title, Note = note, Username = username, UpdatedAt = now }, RequireNoGrowthPastLimit);
 
-	/// <summary>Moves the login to Recently deleted. No Hello.</summary>
+	/// <summary>Moves the login to Recently deleted. No Hello. Taken whatever its size: deleting is the way out of one too large to sync.</summary>
 	public void Delete(string id) =>
-		EditSummary(id, (s, now) => s.DeletedAt is null ? s with { DeletedAt = now, UpdatedAt = now } : throw new VaultItemStateException($"Login {id} is already in Recently deleted"));
+		EditSummary(id, (s, now) => s.DeletedAt is null ? s with { DeletedAt = now, UpdatedAt = now } : throw new VaultItemStateException($"Login {id} is already in Recently deleted"), AnySize);
 
-	/// <summary>Brings a login back from Recently deleted. No Hello.</summary>
+	/// <summary>Brings a login back from Recently deleted. No Hello. Taken whatever its size, as the delete was.</summary>
 	public void Restore(string id) =>
-		EditSummary(id, (s, now) => s.DeletedAt is not null ? s with { DeletedAt = null, UpdatedAt = now } : throw new VaultItemStateException($"Login {id} isn't in Recently deleted"));
+		EditSummary(id, (s, now) => s.DeletedAt is not null ? s with { DeletedAt = null, UpdatedAt = now } : throw new VaultItemStateException($"Login {id} isn't in Recently deleted"), AnySize);
 
-	private void EditSummary(string id, Func<SummaryPayload, long, SummaryPayload> edit)
+	private void EditSummary(string id, Func<SummaryPayload, long, SummaryPayload> edit, Action<LoginRecord?, LoginRecord> requireSize)
 	{
 		RequireHello();
 		lock (_gate)
@@ -524,7 +544,9 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 			var keys = Keys();
 			var changed = edit(summary, _clock.Now());
 			var version = record.Version + 1;
-			Commit(record, record with { Version = version, Summary = SealSummary(keys, id, version, changed) }, changed);
+			var next = record with { Version = version, Summary = SealSummary(keys, id, version, changed) };
+			requireSize(record, next);
+			Commit(record, next, changed);
 		}
 		OnEdited();
 	}
@@ -545,9 +567,32 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	private void CommitBatch(IReadOnlyDictionary<string, (LoginRecord Record, SummaryPayload Summary)> changed, IReadOnlyList<string> added)
 	{
 		RequireOpen();
+		var replaced = _records.Where(r => changed.ContainsKey(r.ItemId)).ToDictionary(r => r.ItemId, StringComparer.Ordinal);
+		foreach (var (id, change) in changed) RequireNoGrowthPastLimit(replaced.GetValueOrDefault(id), change.Record);
 		List<LoginRecord> records = [.. _records.Select(r => changed.TryGetValue(r.ItemId, out var next) ? next.Record : r), .. added.Select(id => changed[id].Record)];
 		Persist(records, [.. changed.Values.Select(c => new QueuedChange(c.Record.ItemId, c.Record.Version))], KeepingOriginals(_records.Where(r => changed.ContainsKey(r.ItemId))));
 		foreach (var (id, change) in changed) _summaries[id] = change.Summary;
+	}
+
+	/// <summary>
+	/// A change that adds to a part already past the sync server's limit, or takes one past it, is refused: it could never sync. One that
+	/// leaves the parts no larger is taken, so a login already too large (a merge of two long histories) can still be shortened.
+	/// </summary>
+	/// <exception cref="VaultLoginTooLargeException">The change grows a part the sync server wouldn't take.</exception>
+	private static void RequireNoGrowthPastLimit(LoginRecord? replaced, LoginRecord record)
+	{
+		if (SyncWire.Fits(record)) return;
+		var before = replaced is null ? (Summary: 0, Password: 0, History: 0) : SyncWire.PartSizes(replaced);
+		var after = SyncWire.PartSizes(record);
+		if (Grows(before.Summary, after.Summary)) throw VaultLoginTooLargeException.Note();
+		if (Grows(before.Password, after.Password)) throw VaultLoginTooLargeException.Password();
+		if (Grows(before.History, after.History)) throw VaultLoginTooLargeException.History();
+	}
+
+	private static bool Grows(int before, int after) => after > SyncWire.MaxBlobBytes && after > before;
+
+	private static void AnySize(LoginRecord? replaced, LoginRecord record)
+	{
 	}
 
 	/// <summary>The sync account, its refresh token unsealed; null when this PC isn't signed in to sync.</summary>
@@ -669,7 +714,7 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	/// </summary>
 	public async Task<VaultKeyMaterial> KeyMaterialAsync()
 	{
-		RequireHello();
+		await RequireHelloAsync();
 		var (keys, secretKey) = await SecretKeyForWriteAsync();
 		try
 		{
@@ -755,7 +800,7 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	{
 		var sync = SyncKeys ?? throw new SyncNotOnException();
 		var sealedRecovery = sync.SealedRecoveryKey ?? throw new SyncRecoveryKeyNotOnThisPcException();
-		RequireHello();
+		await RequireHelloAsync();
 		var keys = Keys();
 		var secretKey = await SecretKeyAsync(keys);
 		try
@@ -771,12 +816,14 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 	/// <summary>
 	/// Restoring from sync (Task 14): <paramref name="keys"/>, unwrapped from the server's copy, become this PC's, sealed with one Hello
 	/// call, and sync is on as <paramref name="sync"/> says. Pending keys go with the old ones. Refused before Hello, and again before
-	/// the write, when this vault holds logins under other keys, which would no longer open.
+	/// the write, when this vault holds logins under other keys, Recently deleted included, which would no longer open. What else it holds
+	/// under them ("never" marks, tombstones) wouldn't open either, so it is dropped before the keys are swapped, with the sync progress
+	/// kept under them.
 	/// </summary>
 	/// <exception cref="SyncRestoreWouldReplaceLoginsException">The vault holds logins under another vault ID.</exception>
 	public async Task RestoreKeysAsync(VaultKeyMaterial keys, VaultSyncKeys sync)
 	{
-		RequireHello();
+		await RequireHelloAsync();
 		lock (_gate) RequireRestorableOver(keys.VaultId);
 		await _creatingKeys.WaitAsync();
 		try
@@ -786,6 +833,7 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 			{
 				RequireOpen();
 				RequireRestorableOver(keys.VaultId);
+				DropItemsUnderOtherKeys(keys.VaultId);
 				restored.Save(KeysFile);
 				_keys = restored;
 				// A secret key held from before was the old keys' one.
@@ -796,13 +844,31 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 		{
 			_creatingKeys.Release();
 		}
+		Changed?.Invoke();
 		SyncChanged?.Invoke();
 	}
 
-	/// <summary>Under <c>_gate</c>.</summary>
+	/// <summary>Under <c>_gate</c>. Every login counts, Recently deleted included: only "never" marks and tombstones are dropped (<see cref="DropItemsUnderOtherKeys"/>).</summary>
 	private void RequireRestorableOver(string vaultId)
 	{
-		if (_keys is { } held && held.VaultId != vaultId && _records.Count > 0) throw new SyncRestoreWouldReplaceLoginsException(_records.Count);
+		if (_keys is not { } held || held.VaultId == vaultId) return;
+		var logins = _records.Count(r => !r.Tombstone && !_summaries[r.ItemId].NeverSave);
+		if (logins > 0) throw new SyncRestoreWouldReplaceLoginsException(logins);
+	}
+
+	/// <summary>
+	/// Under <c>_gate</c>, after <see cref="RequireRestorableOver"/>: every item left is a "never" mark or a tombstone, sealed under keys
+	/// about to go, and the sync bases and progress were kept against them. They are written out before the new keys are, so a crash
+	/// between leaves the old keys over an empty vault, never items under keys that can't open them, and the next pull starts from 0.
+	/// </summary>
+	private void DropItemsUnderOtherKeys(string vaultId)
+	{
+		if (_keys is not { } held || held.VaultId == vaultId) return;
+		WriteVaultFile([], new Dictionary<string, SyncBase>(StringComparer.Ordinal), null);
+		WriteSyncFile([], _syncAccount, _syncSignedOut, null);
+		_progress = null;
+		_queued.Clear();
+		_summaries.Clear();
 	}
 
 	/// <summary>Sync found the server's keys at a later version than this PC's: the password was changed on another PC (Task 14).</summary>
@@ -1014,8 +1080,26 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 
 	private void RequireHello()
 	{
-		if (!_sealer.Available) throw new HelloUnavailableException("Set up Windows Hello to use the password vault. Zing keeps passwords only behind Hello.");
+		if (!_sealer.Available) throw HelloNotSetUp();
 	}
+
+	/// <summary>Before refusing, Windows is asked again: Hello may have been set up since it was last checked.</summary>
+	private async Task RequireHelloAsync()
+	{
+		if (_sealer.Available || await _sealer.CheckAgainAsync()) return;
+		throw HelloNotSetUp();
+	}
+
+	/// <summary>
+	/// Hello may have been set up since it was last checked: asks Windows again, without a prompt, so a summary edit (which can't wait
+	/// on it) and the vault's state see it. Nothing is asked while Hello is known to be set up.
+	/// </summary>
+	public async Task CheckHelloAgainAsync()
+	{
+		if (!_sealer.Available) await _sealer.CheckAgainAsync();
+	}
+
+	private static HelloUnavailableException HelloNotSetUp() => new("Set up Windows Hello to use the password vault. Zing keeps passwords only behind Hello.");
 
 	private VaultKeys Keys() => _keys ?? throw new InvalidOperationException("The vault has no keys yet: only a save makes them");
 
