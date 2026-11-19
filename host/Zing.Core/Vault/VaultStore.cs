@@ -45,8 +45,18 @@ public sealed class VaultItemNotFoundException(string id) : Exception($"No login
 /// A login too large for the sync server to take (<see cref="SyncWire.Fits"/>), almost always for its note: refused when it is saved,
 /// so it can't sit unsynced, and nothing is written.
 /// </summary>
-public sealed class VaultLoginTooLargeException()
-	: Exception("This login is too large to save, so nothing was saved. Shorten its note and try again.");
+public sealed class VaultLoginTooLargeException(string message) : Exception(message)
+{
+	public static VaultLoginTooLargeException Note() => new("This login is too large to save, so nothing was saved. Shorten its note and try again.");
+
+	public static VaultLoginTooLargeException Password() => new("This password is too long to save, so nothing was saved.");
+
+	/// <summary>
+	/// Old passwords aren't trimmed to make room: Settings shows them (Earlier passwords) for when a change didn't take, and a merge
+	/// keeps every one either PC holds, so one dropped here would come back. A new login starts a new history.
+	/// </summary>
+	public static VaultLoginTooLargeException History() => new("This login's earlier passwords already fill all the space sync allows, so Zing can't keep another and nothing was saved. Delete this login, then save the new password as a new login.");
+}
 
 /// <summary>Deleting a login that's already in Recently deleted, or restoring one that isn't.</summary>
 public sealed class VaultItemStateException(string message) : Exception(message);
@@ -574,7 +584,9 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 		if (SyncWire.Fits(record)) return;
 		var before = replaced is null ? (Summary: 0, Password: 0, History: 0) : SyncWire.PartSizes(replaced);
 		var after = SyncWire.PartSizes(record);
-		if (Grows(before.Summary, after.Summary) || Grows(before.Password, after.Password) || Grows(before.History, after.History)) throw new VaultLoginTooLargeException();
+		if (Grows(before.Summary, after.Summary)) throw VaultLoginTooLargeException.Note();
+		if (Grows(before.Password, after.Password)) throw VaultLoginTooLargeException.Password();
+		if (Grows(before.History, after.History)) throw VaultLoginTooLargeException.History();
 	}
 
 	private static bool Grows(int before, int after) => after > SyncWire.MaxBlobBytes && after > before;
