@@ -70,6 +70,8 @@ public sealed class ZingApp
 	private SessionSaver? _session;
 	// The tabs each window brings back as it starts: at launch the saved session for the first window, after an engine rebuild every window's own.
 	private readonly Dictionary<MainWindow, IReadOnlyList<SessionTab>> _pendingRestores = [];
+	// Windows whose views died with the engine, closing for a rebuild: none of them may write the session.
+	private readonly HashSet<MainWindow> _lost = [];
 	private readonly List<string> _startupNotices = [];
 	private IScheduler? _scheduler;
 	private Microsoft.UI.Dispatching.DispatcherQueue? _dispatcher;
@@ -271,10 +273,10 @@ public sealed class ZingApp
 	/// <summary>The tabs this window was opened to bring back, handed over once; other windows open blank.</summary>
 	public IReadOnlyList<SessionTab> TakePendingRestore(MainWindow window) => _pendingRestores.Remove(window, out var tabs) ? tabs : [];
 
-	/// <summary>While the engine is rebuilt the file keeps the session saved as it died, never a window's partial set.</summary>
+	/// <summary>A window lost with the engine never writes: the file keeps the session saved as it died, never a partial set.</summary>
 	public void TabsChanged(MainWindow window)
 	{
-		if (window == Primary && _rebuild is null) _session?.Changed();
+		if (window == Primary && !_lost.Contains(window)) _session?.Changed();
 	}
 
 	/// <summary>
@@ -292,14 +294,15 @@ public sealed class ZingApp
 	public void Closed(MainWindow window)
 	{
 		var wasPrimary = window == Primary;
+		var lost = _lost.Remove(window);
 		_windows.Remove(window);
 		_pendingRestores.Remove(window);
 		_taskbar?.Remove(window.AppWindow);
 		if (_windows.Count > 0)
 		{
 			// The next window is now the one saved; without this, quitting it untouched restores the closed one.
-			// Not while the engine is rebuilt: every window is closing then, and the file keeps the session as it died.
-			if (wasPrimary && _rebuild is null) _session?.Changed();
+			// Not for a window lost with the engine: the next one is closing too, and the file keeps the session as it died.
+			if (wasPrimary && !lost) _session?.Changed();
 			return;
 		}
 		// The windows went with a dead engine, not because the person quit: Zing comes back instead.
@@ -526,6 +529,7 @@ public sealed class ZingApp
 		TestHooks.Record("engine", new EngineStoppedException());
 		var rebuild = new EngineRebuild([.. _windows.Select(TabsOf)]);
 		_rebuild = rebuild;
+		_lost.UnionWith(_windows);
 		_session?.Flush();
 		// If the engine never says it has exited, Zing still comes back rather than idling with no window.
 		rebuild.Deadline = _scheduler?.Schedule(EngineRebuild.ExitWait, Rebuild);
