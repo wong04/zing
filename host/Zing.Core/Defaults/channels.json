@@ -325,6 +325,10 @@
 			"args": 1
 		},
 		{
+			"channel": "permission:allow-site",
+			"args": 1
+		},
+		{
 			"channel": "permission:deny",
 			"args": 1
 		},

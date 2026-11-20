@@ -559,6 +559,36 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
+	public async Task A_blocked_popup_opened_from_its_prompt_is_a_tab_beside_the_page_and_allowing_the_site_lasts_the_session()
+	{
+		var openerId = ActiveId;
+		var page = _api.Tabs.ActivePage!;
+		_api.Tabs.Open("https://other.test/");
+		_api.Tabs.Activate(openerId);
+		_api.PopupBlocked(page, "https://a.test/", "https://a.test/popup");
+		Assert.Equal("pop-ups", _api.PageUi.State.Permission?.Kind);
+		Value(await Invoke("permission:allow", _api.PageUi.State.Permission!.Id));
+		Assert.Equal("https://a.test/popup", _api.Tabs.Get(ActiveId).Url);
+		Assert.Equal(_api.Tabs.Records.ToList().FindIndex(r => r.Id == openerId) + 1, _api.Tabs.Records.ToList().FindIndex(r => r.Id == ActiveId));
+		Assert.False(_api.Permissions.PopupsAllowed("https://a.test/"));
+
+		_api.PopupBlocked(page, "https://a.test/", "https://a.test/again");
+		Value(await Invoke("permission:allow-site", _api.PageUi.State.Permission!.Id));
+		Assert.Equal("https://a.test/again", _api.Tabs.Get(ActiveId).Url);
+		Assert.True(_api.Permissions.PopupsAllowed("https://a.test/x"));
+	}
+
+	[Fact]
+	public void A_blocked_popup_kept_blocked_opens_no_tab()
+	{
+		var before = _api.Tabs.Records.Count;
+		_api.PopupBlocked(_api.Tabs.ActivePage!, "https://a.test/", "https://a.test/popup");
+		_api.Permissions.Answer(_api.PageUi.State.Permission!.Id, false);
+		Assert.Equal(before, _api.Tabs.Records.Count);
+		Assert.Null(_api.PageUi.State.Permission);
+	}
+
+	[Fact]
 	public void Esc_in_Zings_own_views_is_theirs_and_never_stops_the_page()
 	{
 		ActivePage.IsLoading = true;

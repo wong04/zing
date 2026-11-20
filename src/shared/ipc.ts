@@ -306,6 +306,8 @@ export interface InvokeContract {
 	'downloads:dismiss': { args: []; result: void }
 	'permission:allow': { args: [id: number]; result: void }
 	'permission:deny': { args: [id: number]; result: void }
+	/** A blocked pop-up: opens it, and lets the site open pop-ups until Zing quits. */
+	'permission:allow-site': { args: [id: number]; result: void }
 	'library:get': { args: []; result: LibraryViewState }
 	'library:apply': { args: [action: LibraryAction]; result: string | undefined }
 	'library:open': { args: [id: string, target: LibraryOpenTarget]; result: void }
@@ -717,6 +719,7 @@ export interface ZingApi {
 	dismissDownloads(): Promise<void>
 	allowPermission(id: number): Promise<void>
 	denyPermission(id: number): Promise<void>
+	allowPopupsForSite(id: number): Promise<void>
 	getLibrary(): Promise<LibraryViewState>
 	applyLibrary(action: LibraryAction): Promise<string | undefined>
 	openLibraryItem(id: string, target: LibraryOpenTarget): Promise<void>

@@ -20,7 +20,7 @@ let framedFileServed = false
 
 test.beforeAll(async () => {
 	server = createServer((req, res) => {
-		if (req.url === '/file.bin') {
+		if (req.url?.startsWith('/file.bin')) {
 			res.setHeader('content-type', 'application/octet-stream')
 			res.setHeader('content-disposition', 'attachment; filename="report.bin"')
 			return void res.end(Buffer.alloc(2048, 7))
@@ -43,6 +43,12 @@ test.beforeAll(async () => {
 		if (req.url === '/framed-file') return void res.end('<!doctype html><title>Framed file</title><iframe src="/inner-file.bin"></iframe>')
 		if (req.url === '/framed') return void res.end('<!doctype html><title>Framed</title><iframe src="/inner.zip"></iframe>')
 		if (req.url === '/perm') return void res.end('<!doctype html><title>Permissions</title>')
+		if (req.url === '/paste')
+			return void res.end(`<!doctype html><title>Paste</title><button id="paste" onclick="result = 'pending'; navigator.clipboard.readText().then(() => (result = 'read'), (e) => (result = e.name))">Paste</button>`)
+		if (req.url === '/two-files')
+			return void res.end(`<!doctype html><title>Two files</title><script>
+				for (const name of ['one', 'two']) Object.assign(document.createElement('a'), { href: '/file.bin?' + name, download: name + '.bin' }).click()
+			</script>`)
 		if (req.url === '/article') return void res.end(`<!doctype html><title>Fixture Headline</title><nav><a href="/other">Site menu</a></nav><article><h1>Fixture Headline</h1><p>${PARAGRAPH}</p><p>${PARAGRAPH}</p></article><footer>Footer junk</footer>`)
 		if (req.url === '/short') return void res.end('<!doctype html><title>Short</title><p>Too little to read.</p>')
 		if (req.url === '/icon.png') {
@@ -237,6 +243,34 @@ test('a grant or a refusal lasts as long as the page: after a reload the site is
 	await ui.getByRole('button', { name: 'Deny' }).click()
 	await expect.poll(result).toBe('denied')
 	await expect(ui.getByRole('alertdialog')).toHaveCount(0)
+	await zing.close()
+})
+
+test('reading the clipboard is asked in the page UI, and Deny refuses it', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/paste` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/paste`)
+	await page.waitForLoadState('domcontentloaded')
+	const result = () => page.evaluate(() => (globalThis as unknown as { result?: string }).result)
+	// A click: the page must have the focus to ask.
+	const box = await page.locator('#paste').boundingBox()
+	if (box === null) throw new Error('#paste has no box to click')
+	await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(ui.getByText('wants to see text and images you copy')).toBeVisible()
+	expect(await result()).toBe('pending')
+	await ui.getByRole('button', { name: 'Deny' }).click()
+	await expect.poll(result).toBe('NotAllowedError')
+	await zing.close()
+})
+
+test('a page starting several downloads at once is asked about, and Deny keeps it to the first', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/two-files` } })
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(ui.getByText('wants to download multiple files')).toBeVisible()
+	await ui.getByRole('button', { name: 'Deny' }).click()
+	await expect(ui.getByRole('alertdialog')).toHaveCount(0)
+	await zing.chrome.waitForTimeout(800)
+	expect((await zing.chrome.evaluate(() => window.zing.getPageUi())).downloads).toHaveLength(1)
 	await zing.close()
 })
 

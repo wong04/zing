@@ -17,13 +17,130 @@ public sealed class PermissionsTests
 
 	private const string Url = "https://a.test/";
 
-	[Fact]
-	public void What_it_does_not_prompt_for_is_refused()
+	[Theory]
+	[InlineData("midi")]
+	[InlineData("LocalFonts")]
+	[InlineData("WindowManagement")]
+	[InlineData("UnknownPermission")]
+	public void What_it_does_not_prompt_for_is_refused(string permission)
 	{
-		var (broker, _, page) = Setup();
+		var (broker, ui, page) = Setup();
 		var resolver = new Resolver();
-		broker.Request(page, Url, "midi", new PermissionDetails(), resolver);
+		broker.Request(page, Url, permission, new PermissionDetails(), resolver);
 		Assert.Equal([false], resolver.Answers);
+		Assert.Null(ui.State.Permission);
+	}
+
+	[Theory]
+	[InlineData("clipboard-read", "clipboard")]
+	[InlineData("multiple-automatic-downloads", "multiple downloads")]
+	[InlineData("file-read-write", "files")]
+	public void Clipboard_reads_multiple_downloads_and_file_edits_are_asked_for_and_kept_for_the_page(string permission, string kind)
+	{
+		var (broker, ui, page) = Setup();
+		var first = new Resolver();
+		broker.Request(page, Url, permission, new PermissionDetails("https://a.test/x"), first);
+		Assert.Empty(first.Answers);
+		Assert.Equal(new PermissionPrompt(1, "https://a.test", kind), ui.State.Permission);
+		broker.Answer(1, true);
+		Assert.Equal([true], first.Answers);
+
+		var again = new Resolver();
+		broker.Request(page, Url, permission, new PermissionDetails("https://a.test/y"), again);
+		Assert.Equal([true], again.Answers);
+		broker.DropFor(page);
+		var afterLeaving = new Resolver();
+		broker.Request(page, Url, permission, new PermissionDetails("https://a.test/y"), afterLeaving);
+		Assert.Empty(afterLeaving.Answers);
+	}
+
+	// MARK: pop-ups
+
+	[Fact]
+	public void A_blocked_popup_is_offered_once_and_allowing_it_once_allows_nothing_more()
+	{
+		var (broker, ui, page) = Setup();
+		Assert.False(broker.PopupsAllowed(Url));
+		var open = new Resolver();
+		broker.PopupBlocked(page, Url, open);
+		Assert.Empty(open.Answers);
+		Assert.Equal(new PermissionPrompt(1, "https://a.test", "pop-ups"), ui.State.Permission);
+		broker.Answer(1, true);
+		Assert.Equal([true], open.Answers);
+		Assert.Null(ui.State.Permission);
+		Assert.False(broker.PopupsAllowed(Url));
+	}
+
+	[Fact]
+	public void Keeping_a_popup_blocked_opens_nothing()
+	{
+		var (broker, ui, page) = Setup();
+		var open = new Resolver();
+		broker.PopupBlocked(page, Url, open);
+		broker.Answer(ui.State.Permission!.Id, false);
+		Assert.Equal([false], open.Answers);
+		Assert.False(broker.PopupsAllowed(Url));
+	}
+
+	[Fact]
+	public void Allowing_popups_for_a_site_lasts_the_session_in_every_window_and_is_never_saved()
+	{
+		var sites = new PopupSites();
+		var ui = new PageUiStore();
+		var broker = new PermissionBroker(ui, _ => null, sites);
+		var page = new object();
+		var open = new Resolver();
+		broker.PopupBlocked(page, "https://a.test/one", open);
+		broker.AllowForSite(ui.State.Permission!.Id);
+		Assert.Equal([true], open.Answers);
+		Assert.True(broker.PopupsAllowed("https://a.test/two"));
+		Assert.False(broker.PopupsAllowed("https://b.test/"));
+		// Another window shares the session's sites; navigating away doesn't take it back.
+		broker.DropFor(page);
+		Assert.True(new PermissionBroker(new PageUiStore(), _ => null, sites).PopupsAllowed("https://a.test/three"));
+		Assert.False(new PermissionBroker(new PageUiStore(), _ => null).PopupsAllowed("https://a.test/"));
+	}
+
+	[Fact]
+	public void A_page_that_isnt_a_web_site_cannot_be_allowed_popups_for_the_session()
+	{
+		var (broker, ui, page) = Setup();
+		broker.PopupBlocked(page, "file:///c:/a.html", new Resolver());
+		Assert.Throws<NotAWebSiteException>(() => broker.AllowForSite(ui.State.Permission!.Id));
+		Assert.False(broker.PopupsAllowed("file:///c:/b.html"));
+	}
+
+	[Fact]
+	public void Only_a_popup_can_be_allowed_for_the_site()
+	{
+		var (broker, ui, page) = Setup();
+		broker.Request(page, Url, "geolocation", new PermissionDetails(), new Resolver());
+		Assert.Throws<NotAPopupPromptException>(() => broker.AllowForSite(ui.State.Permission!.Id));
+	}
+
+	[Fact]
+	public void A_page_has_one_blocked_popup_on_offer_at_a_time_so_a_flood_of_them_is_refused()
+	{
+		var (broker, ui, page) = Setup();
+		var first = new Resolver();
+		var flood = new Resolver();
+		broker.PopupBlocked(page, Url, first);
+		broker.PopupBlocked(page, Url, flood);
+		Assert.Empty(first.Answers);
+		Assert.Equal([false], flood.Answers);
+		broker.Answer(ui.State.Permission!.Id, false);
+		Assert.Null(ui.State.Permission);
+	}
+
+	[Fact]
+	public void Leaving_the_page_withdraws_its_blocked_popup()
+	{
+		var (broker, ui, page) = Setup();
+		var open = new Resolver();
+		broker.PopupBlocked(page, Url, open);
+		broker.DropFor(page);
+		Assert.Equal([false], open.Answers);
+		Assert.Null(ui.State.Permission);
 	}
 
 	[Theory]

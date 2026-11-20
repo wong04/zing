@@ -26,6 +26,10 @@ const PERMISSION_VERB: Record<PermissionKind, string> = {
 	'camera and microphone': 'use your camera and microphone',
 	location: 'know your location',
 	notifications: 'show notifications',
+	clipboard: 'see text and images you copy',
+	'multiple downloads': 'download multiple files',
+	files: 'edit the files or folders you picked',
+	'pop-ups': 'open pop-ups',
 }
 
 function FindBar({ state }: { state: PageUiState }) {
@@ -147,15 +151,20 @@ function PermissionPrompt({ state }: { state: PageUiState }) {
 	const prompt = state.permission
 	if (!prompt) return null
 	// Keyed by id, so each new prompt starts with Allow unarmed.
-	return <PermissionCard key={prompt.id} prompt={prompt} />
+	return prompt.kind === 'pop-ups' ? <PopupCard key={prompt.id} prompt={prompt} /> : <PermissionCard key={prompt.id} prompt={prompt} />
 }
 
-function PermissionCard({ prompt }: { prompt: NonNullable<PageUiState['permission']> }) {
+function useArmed(): boolean {
 	const [armed, setArmed] = useState(false)
 	useEffect(() => {
 		const timer = setTimeout(() => setArmed(true), ALLOW_ARMS_AFTER_MS)
 		return () => clearTimeout(timer)
 	}, [])
+	return armed
+}
+
+function PermissionCard({ prompt }: { prompt: NonNullable<PageUiState['permission']> }) {
+	const armed = useArmed()
 	return (
 		<div className="pageui-card" role="alertdialog" aria-label="Permission request">
 			<span>
@@ -168,6 +177,32 @@ function PermissionCard({ prompt }: { prompt: NonNullable<PageUiState['permissio
 				</button>
 				<button type="button" className="pageui-button" onClick={() => void zing.denyPermission(prompt.id)}>
 					Deny
+				</button>
+			</div>
+		</div>
+	)
+}
+
+/** A pop-up the page opened without a click, already blocked. Only a web site (an http origin) can be allowed for the session. */
+function PopupCard({ prompt }: { prompt: NonNullable<PageUiState['permission']> }) {
+	const armed = useArmed()
+	return (
+		<div className="pageui-card" role="alertdialog" aria-label="Pop-up blocked">
+			<span>
+				Zing blocked a pop-up from <strong>{prompt.origin}</strong>
+			</span>
+			{prompt.tab !== undefined && <span className="pageui-detail">From the tab “{prompt.tab}”</span>}
+			<div className="pageui-row">
+				<button type="button" className="pageui-button primary" disabled={!armed} onClick={() => void zing.allowPermission(prompt.id)}>
+					Allow once
+				</button>
+				{prompt.origin.startsWith('http') && (
+					<button type="button" className="pageui-button" disabled={!armed} onClick={() => void zing.allowPopupsForSite(prompt.id)}>
+						Allow for this site, this session
+					</button>
+				)}
+				<button type="button" className="pageui-button" onClick={() => void zing.denyPermission(prompt.id)}>
+					Keep blocked
 				</button>
 			</div>
 		</div>

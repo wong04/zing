@@ -120,6 +120,9 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 
 	/// <summary>The open vault's one sync client, for every window; null without <see cref="Sync"/>.</summary>
 	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync, Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable), SyncScheduler, Clock);
+
+	/// <summary>The sites allowed pop-ups this session, in every window.</summary>
+	public PopupSites PopupSites { get; } = new();
 }
 
 /// <summary>
@@ -215,7 +218,7 @@ public sealed class ChromeApi : IDisposable
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
-		Permissions = new PermissionBroker(PageUi, HiddenTabOf);
+		Permissions = new PermissionBroker(PageUi, HiddenTabOf, app.PopupSites);
 		_secretCopy = new TimedSecretCopy(host.SecretClipboard, host.Scheduler, error => host.Report("clearing a copied password", error));
 		SignIn = new SignInWatch(() => app.Vaults.Current, id => Tabs.IsShown(id), host.Scheduler, prompt => PageUi.Update(s => s with { SaveLogin = prompt }), host.Background);
 		Autofill = new Autofill(() => app.Vaults.Current, id => Tabs.IsShown(id) ? Tabs.PageOf(id) : null, picker =>
@@ -425,6 +428,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("downloads:dismiss", _ => Do(Downloads.Dismiss));
 		bridge.Register("permission:allow", args => Do(() => Permissions.Answer(Int(args, 0), true)));
 		bridge.Register("permission:deny", args => Do(() => Permissions.Answer(Int(args, 0), false)));
+		bridge.Register("permission:allow-site", args => Do(() => Permissions.AllowForSite(Int(args, 0))));
 
 		bridge.Register("vault:get", async _ => await CheckedVaultStateAsync());
 		bridge.Register("vault:summaries", _ => Vault().Summaries());
@@ -1909,8 +1913,27 @@ public sealed class ChromeApi : IDisposable
 	/// <summary>The title of the tab whose page this is, when that tab isn't on screen.</summary>
 	private string? HiddenTabOf(object page)
 	{
-		var tab = Tabs.Records.FirstOrDefault(r => ReferenceEquals(Tabs.PageOf(r.Id), page));
+		var tab = TabOf(page);
 		return tab is null || Tabs.IsShown(tab.Id) ? null : tab.Title;
+	}
+
+	private TabRecord? TabOf(object page) => Tabs.Records.FirstOrDefault(r => ReferenceEquals(Tabs.PageOf(r.Id), page));
+
+	/// <summary>
+	/// The page opened a pop-up without a click, which the engine was told not to open. If the person opens it from the
+	/// prompt it becomes a tab beside the page's (a preview's page has none, so at the end); it has no window.opener then.
+	/// </summary>
+	public void PopupBlocked(object page, string pageUrl, string popupUrl) =>
+		Permissions.PopupBlocked(page, pageUrl, new BlockedPopup(this, page, popupUrl));
+
+	private sealed class BlockedPopup(ChromeApi api, object page, string url) : IPermissionResolver
+	{
+		public void Resolve(bool granted)
+		{
+			if (!granted) return;
+			if (api.TabOf(page) is { } opener) api.Tabs.OpenBeside(opener.Id, url);
+			else api.Tabs.Open(url);
+		}
 	}
 
 	private void OnTabsChanged()

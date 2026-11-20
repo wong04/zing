@@ -652,6 +652,10 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public void PermissionRequested(WebView2Page page, CoreWebView2PermissionRequestedEventArgs e) => _permissions.Requested(page, e);
 
+	public bool PopupsAllowed(WebView2Page page) => _permissions.PopupsAllowed(page);
+
+	public void PopupBlocked(WebView2Page page, string url) => _permissions.PopupBlocked(page, url);
+
 	public void Left(WebView2Page page) => _permissions.Left(page);
 
 	public bool InPreview(WebView2Page page) => _preview.Contains(page);
