@@ -232,6 +232,12 @@ export interface BookmarkImportOutcome {
 	skipped: string[]
 }
 
+export interface BookmarkExportOutcome {
+	/** The saved file's name, never its path. */
+	name: string
+	bookmarks: number
+}
+
 /**
  * Renderer → host requests, answered with a promise. The C# host registers a
  * handler for each by name (ChromeApi, plus a few in MainWindow); the list is
@@ -605,6 +611,8 @@ export interface InvokeContract {
 	'import:bookmarks': { args: [sourceId: string]; result: BookmarkImportOutcome }
 	/** The same for a bookmarks file picked with `pickFiles(['bookmarks'])` (token from `files:pick`); marked with `file:<name>` and titled with the name. */
 	'import:bookmarks-file': { args: [token: string]; result: BookmarkImportOutcome }
+	/** Writes every bookmark (Favourites as the bar, Pinned and every folder) as a Netscape bookmarks HTML file where the Save dialog says; null when it was cancelled. */
+	'import:export-bookmarks': { args: []; result: BookmarkExportOutcome | null }
 	/**
 	 * Opens the source browser's password export page in that browser and watches the downloads folder for the CSV; the file comes back as
 	 * `import:password-export`, or `import:watch-timed-out` after 10 minutes. A new watch ends the old. Rejects with UnknownImportSourceException,
@@ -848,6 +856,7 @@ export interface ZingApi {
 	importSources(): Promise<ImportSourceView[]>
 	importBookmarks(sourceId: string): Promise<BookmarkImportOutcome>
 	importBookmarksFile(token: string): Promise<BookmarkImportOutcome>
+	exportBookmarks(): Promise<BookmarkExportOutcome | null>
 	watchPasswords(sourceId: string): Promise<void>
 	cancelPasswordWatch(): Promise<void>
 	recycleFile(token: string): Promise<void>

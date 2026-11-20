@@ -179,6 +179,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		importSources: () => invoke('import:sources'),
 		importBookmarks: (sourceId) => invoke('import:bookmarks', sourceId),
 		importBookmarksFile: (token) => invoke('import:bookmarks-file', token),
+		exportBookmarks: () => invoke('import:export-bookmarks'),
 		watchPasswords: (sourceId) => invoke('import:watch-passwords', sourceId),
 		cancelPasswordWatch: () => invoke('import:cancel-watch'),
 		recycleFile: (token) => invoke('import:recycle', token),

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { BookmarkImportOutcome, ImportSourceView } from '@shared/ipc'
 import { zing } from '../api'
 import { InfoBanner, PillButton } from '../components'
-import { fileHelp, MAC_INTRO, macBrowsers, outcomeLine, PASSWORDS_FILE_VAULT_OFF } from './importText'
+import { exportLine, fileHelp, MAC_INTRO, macBrowsers, outcomeLine, PASSWORDS_FILE_VAULT_OFF } from './importText'
 import { messageOf, PasswordImportResult, usePasswordCsvImport } from './PasswordImport'
 import { PasswordImportFlow } from './PasswordImportFlow'
 import { SettingRowShell } from './SettingRowShell'
@@ -12,6 +12,7 @@ import { useVault } from './useVaultData'
 type RowId = string
 
 const FILE_ROW: RowId = 'bookmarks-file'
+const EXPORT_ROW: RowId = 'export-bookmarks'
 const PASSWORDS_ROW: RowId = 'passwords-file'
 const macRow = (app: string): RowId => `mac:${app}`
 
@@ -52,6 +53,7 @@ export function ImportSection() {
 	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState<{ row: RowId; message: string }>()
 	const [result, setResult] = useState<{ row: RowId; outcome: BookmarkImportOutcome }>()
+	const [exported, setExported] = useState<string>()
 	const [flowSource, setFlowSource] = useState<string>()
 	const passwords = usePasswordCsvImport()
 	// The row whose Passwords file button ran last, so the result sits under it.
@@ -103,6 +105,7 @@ export function ImportSection() {
 		setBusy(true)
 		setError(undefined)
 		setResult(undefined)
+		setExported(undefined)
 		try {
 			await work()
 		} catch (failure) {
@@ -120,6 +123,12 @@ export function ImportSection() {
 			const [file] = await zing.pickFiles(['bookmarks'])
 			if (!file) return
 			setResult({ row, outcome: await zing.importBookmarksFile(file.token) })
+		})
+
+	const exportBookmarks = (): void =>
+		void run(EXPORT_ROW, async () => {
+			const outcome = await zing.exportBookmarks()
+			if (outcome) setExported(exportLine(outcome))
 		})
 
 	const importPasswordsFile = (row: RowId): void => {
@@ -232,6 +241,21 @@ export function ImportSection() {
 					</li>
 				))}
 			</ul>
+
+			<div className="vault-subtitle">Export</div>
+			<SettingRowShell title="Export bookmarks (HTML)" detail="Every bookmark, folder, Favourites and Pinned, in the file any browser imports.">
+				<div className="vault-actions">
+					<PillButton variant="outlined" size="small" disabled={busy} onClick={exportBookmarks}>
+						Export…
+					</PillButton>
+				</div>
+			</SettingRowShell>
+			{error?.row === EXPORT_ROW ? <InfoBanner kind="warning">{error.message}</InfoBanner> : null}
+			{exported ? (
+				<div className="vault-import" role="status">
+					<InfoBanner kind="info">{exported}</InfoBanner>
+				</div>
+			) : null}
 		</div>
 	)
 }
