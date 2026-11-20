@@ -352,8 +352,11 @@ export async function launchBare(userDataDir: string, env: Readonly<Record<strin
 	const overridden = Object.keys(env).filter((key) => PROTECTED.includes(key.toUpperCase()))
 	if (overridden.length > 0) throw new HostProcessError(`launchBare sets ${overridden.join(', ')} itself; a test can't override it`)
 	const port = await freePort()
-	const errors = join(scratchDir('zing-host-e2e-'), 'errors.log')
-	const host = spawn(HOST_EXE, [], { env: { ...hostEnvironment(port, errors, userDataDir), ...env }, stdio: 'ignore' })
+	const scratch = scratchDir('zing-host-e2e-')
+	const errors = join(scratch, 'errors.log')
+	// Closing a window of tabs records its confirm as a dialog (it never shows one in a test run).
+	const dialogs = join(scratch, 'dialogs.jsonl')
+	const host = spawn(HOST_EXE, [], { env: { ...hostEnvironment(port, errors, userDataDir), ZING_DIALOGS_FILE: dialogs, ...env }, stdio: 'ignore' })
 	const self: Running = { host, exit: exitOf(host), errors, userData: userDataDir }
 	running.add(self)
 	const targets = async () => {

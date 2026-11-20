@@ -68,10 +68,12 @@ public sealed class ZingApp
 	private MainWindow? _mostRecent;
 	private AppServices? _services;
 	private SessionSaver? _session;
-	// The tabs each window brings back as it starts: at launch the saved session for the first window, after an engine rebuild every window's own.
+	// The tabs each window brings back as it starts: at launch each saved window's, after an engine rebuild every window's own.
 	private readonly Dictionary<MainWindow, IReadOnlyList<SessionTab>> _pendingRestores = [];
-	// Windows whose views died with the engine, closing for a rebuild: none of them may write the session.
-	private readonly HashSet<MainWindow> _lost = [];
+	// Windows closing all at once (their views died with the engine, or Zing is quitting into an update): none of them may
+	// write the session, so the file keeps every window as it stood, never a partial set, and none goes on the closed list.
+	private readonly HashSet<MainWindow> _closingTogether = [];
+	private readonly ClosedWindows _closedWindows = new();
 	private readonly List<string> _startupNotices = [];
 	private IScheduler? _scheduler;
 	private Microsoft.UI.Dispatching.DispatcherQueue? _dispatcher;
@@ -86,7 +88,7 @@ public sealed class ZingApp
 
 	public Task<CoreWebView2Environment> Environment => _environment ?? throw new InvalidOperationException("Zing has not started");
 
-	/// <summary>The oldest open window. The only one that saves the session, so two windows never overwrite each other.</summary>
+	/// <summary>The oldest open window: it takes the links and notices that arrive during startup.</summary>
 	public MainWindow? Primary => _windows.FirstOrDefault();
 
 	/// <summary>Browsing data on disk (opt-in) instead of in memory; chosen at launch, so a change applies on the next one.</summary>
@@ -113,27 +115,44 @@ public sealed class ZingApp
 		TestHooks.Background(Task.Run(() => FilterRules.Bundled), "filter lists");
 		_services = OpenServices(settings);
 		StartupMarks.Mark("services open");
-		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => Primary?.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : [], _scheduler, e => TestHooks.Record("session write", e));
+		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => [.. _windows.Select(SessionOf)], _scheduler, e => TestHooks.Record("session write", e));
 		_onQuit.Add(_session.Flush);
-		_updates = OpenUpdates();
+		_updates = OpenUpdates(_session);
 		TestHooks.OfferDefaultBrowser = OfferDefaultBrowserForTest;
-		IReadOnlyList<SessionTab> restore = [];
-		if (Flag("restoreTabs"))
+		// The tabs saved by a relaunch into an update come back whatever restoreTabs says, and are newer than session.json.
+		IReadOnlyList<IReadOnlyList<SessionTab>> restore = TakeRelaunchSession();
+		if (!Flag("restoreTabs")) DiscardSession();
+		else if (restore.Count == 0)
 		{
 			var restored = Session.LoadOrRecover(AppPaths.Session, Stamp());
 			restore = restored.Value;
 			if (restored.Problem is { } problem) StartupProblem("session", "your saved tabs", "without them", problem);
 			if (restored.Problem is { OriginalInPlace: true }) _session.KeepUnreadFile();
 		}
-		else DiscardSession();
 		var argv = System.Environment.GetCommandLineArgs().Skip(1).ToList();
 		foreach (var url in LaunchArgs.Urls(argv)) _links.Push(url);
 		foreach (var file in LaunchArgs.Files(argv, File.Exists)) _files.Push(file.Path);
 		SingleInstance.Listen(OnSecondLaunch);
 		_taskbar = new TaskbarIcon(dispatcher);
 		FollowThemeInMenus(dispatcher);
-		NewWindow(restore);
+		if (restore.Count == 0) NewWindow();
+		foreach (var tabs in restore) NewWindow(tabs);
 		StartupMarks.Mark("window created");
+	}
+
+	/// <summary>The relaunch's tabs, read once and gone from disk (Session.TakeOnce); a file that can't be read is said, and Zing starts without it.</summary>
+	private IReadOnlyList<IReadOnlyList<SessionTab>> TakeRelaunchSession()
+	{
+		try
+		{
+			return Session.TakeOnce(AppPaths.RelaunchSession, e => TestHooks.Record("relaunch session discard", e));
+		}
+		catch (SessionFileException error)
+		{
+			Faults.Warning("relaunch session load", error);
+			_startupNotices.Add("Zing couldn't read the tabs it saved for the update, so it started without them.");
+			return [];
+		}
 	}
 
 	/// <summary>
@@ -222,15 +241,17 @@ public sealed class ZingApp
 	}
 
 	/// <summary>With restore off the file must go; if it can't be deleted now, the next launch tries again.</summary>
-	private static void DiscardSession()
+	private static void DiscardSession() => Discard(AppPaths.Session, "session discard");
+
+	private static void Discard(string path, string what)
 	{
 		try
 		{
-			Session.Discard(AppPaths.Session);
+			Session.Discard(path);
 		}
 		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
 		{
-			TestHooks.Record("session discard", error);
+			TestHooks.Record(what, error);
 		}
 	}
 
@@ -275,11 +296,32 @@ public sealed class ZingApp
 	/// <summary>The tabs this window was opened to bring back, handed over once; other windows open blank.</summary>
 	public IReadOnlyList<SessionTab> TakePendingRestore(MainWindow window) => _pendingRestores.Remove(window, out var tabs) ? tabs : [];
 
-	/// <summary>A window lost with the engine never writes: the file keeps the session saved as it died, never a partial set.</summary>
+	/// <summary>A window closing with the others never writes: the file keeps every window as it stood, never a partial set.</summary>
 	public void TabsChanged(MainWindow window)
 	{
-		if (window == Primary && !_lost.Contains(window)) _session?.Changed();
+		if (!_closingTogether.Contains(window)) _session?.Changed();
 	}
+
+	/// <summary>
+	/// The person closed this window, as it starts closing and while its tabs are still there: it goes on the app's closed
+	/// list for Ctrl+Shift+T. Not a window closing with the others, nor the last one: Zing is quitting, and the list goes with it.
+	/// </summary>
+	public void Closing(MainWindow window)
+	{
+		if (_closingTogether.Contains(window) || IsLastWindow(window)) return;
+		_closedWindows.Push(SessionOf(window));
+	}
+
+	/// <summary>The last window the person closed, open again as a new window; false when there is none.</summary>
+	public bool ReopenClosedWindow()
+	{
+		if (_closedWindows.Pop() is not { } tabs) return false;
+		NewWindow(tabs);
+		return true;
+	}
+
+	/// <summary>Whether closing this window quits Zing.</summary>
+	public bool IsLastWindow(MainWindow window) => _windows.Count == 1 && _windows[0] == window;
 
 	/// <summary>
 	/// Called as a window starts closing, before its pages go. When it is the last one and Zing is quitting (not rebuilding
@@ -295,16 +337,15 @@ public sealed class ZingApp
 
 	public void Closed(MainWindow window)
 	{
-		var wasPrimary = window == Primary;
-		var lost = _lost.Remove(window);
+		var together = _closingTogether.Remove(window);
 		_windows.Remove(window);
 		_pendingRestores.Remove(window);
 		_taskbar?.Remove(window.AppWindow);
 		if (_windows.Count > 0)
 		{
-			// The next window is now the one saved; without this, quitting it untouched restores the closed one.
-			// Not for a window lost with the engine: the next one is closing too, and the file keeps the session as it died.
-			if (wasPrimary && !lost) _session?.Changed();
+			// The person closed it, so it no longer comes back on the next launch (Ctrl+Shift+T brings it back meanwhile).
+			// Not for one closing with the others: they are closing too, and the file keeps them all.
+			if (!together) _session?.Changed();
 			return;
 		}
 		// The windows went with a dead engine, not because the person quit: Zing comes back instead.
@@ -318,11 +359,14 @@ public sealed class ZingApp
 	}
 
 	/// <summary>A failed check, relaunch or apply is a warning, never a fault: offline or rate-limited is expected, and the next interval or quit tries again.</summary>
-	private Updater OpenUpdates()
+	private Updater OpenUpdates(SessionSaver session)
 	{
 		var scheduler = _scheduler ?? throw new InvalidOperationException("Launch creates the scheduler first");
 		var updates = new Updater(UpdateSource(), scheduler, () => Flag("checkForUpdates"));
 		updates.Failed += error => Faults.Warning("update", error);
+		// Every tab comes back after the update, whatever restoreTabs says (the pill says so); the next launch reads the file once.
+		updates.Relaunching += () => session.SaveOnce(AppPaths.RelaunchSession);
+		updates.RelaunchAbandoned += () => Discard(AppPaths.RelaunchSession, "relaunch session discard");
 		return updates;
 	}
 
@@ -340,10 +384,13 @@ public sealed class ZingApp
 		}
 	}
 
-	/// <summary>Closes every window, the oldest last, so the session saved on quit is still the oldest window's.</summary>
+	/// <summary>Closes every window together, without asking: the session on disk keeps them all, as they stand now.</summary>
 	private void QuitAll()
 	{
-		foreach (var window in Enumerable.Reverse(_windows.ToList())) window.CloseWindow();
+		_session?.Changed();
+		_session?.Flush();
+		_closingTogether.UnionWith(_windows);
+		foreach (var window in Enumerable.Reverse(_windows.ToList())) window.CloseNow();
 	}
 
 	/// <summary>Names a quarantined file; the e2e clock keeps it deterministic.</summary>
@@ -548,18 +595,18 @@ public sealed class ZingApp
 	{
 		if (_rebuild is not null) return;
 		TestHooks.Record("engine", new EngineStoppedException());
-		var rebuild = new EngineRebuild([.. _windows.Select(TabsOf)]);
+		var rebuild = new EngineRebuild([.. _windows.Select(SessionOf)]);
 		_rebuild = rebuild;
-		_lost.UnionWith(_windows);
+		_closingTogether.UnionWith(_windows);
 		_session?.Flush();
 		// If the engine never says it has exited, Zing still comes back rather than idling with no window.
 		rebuild.Deadline = _scheduler?.Schedule(EngineRebuild.ExitWait, Rebuild);
-		foreach (var window in _windows.ToList()) window.CloseWindow();
+		foreach (var window in _windows.ToList()) window.CloseNow();
 	}
 
-	/// <summary>A window's tabs as a session, or, for one that hadn't started yet, the tabs it was to bring back.</summary>
-	private IReadOnlyList<SessionTab> TabsOf(MainWindow window) =>
-		window.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : TakePendingRestore(window);
+	/// <summary>A window's tabs as a session, or, for one that hadn't started yet, the tabs it is to bring back.</summary>
+	private IReadOnlyList<SessionTab> SessionOf(MainWindow window) =>
+		window.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : _pendingRestores.GetValueOrDefault(window) ?? [];
 
 	/// <summary>A new engine and a window for each that was open, oldest first, each with its own tabs, through the same path as session restore.</summary>
 	private void Rebuild()
