@@ -1961,7 +1961,7 @@ internal sealed class LifecycleTabs(TabService tabs, TabOverview overview) : ILi
 		var page = tabs.PageOf(id) ?? throw new PageUnavailableException(id);
 		try
 		{
-			return PageProbe.Parse(await page.EvaluateAsync(PageProbe.Source));
+			return PageProbe.Combine([.. (await page.EvaluateInFramesAsync(PageProbe.Source)).Select(PageProbe.Parse)]);
 		}
 		catch (Exception error) when (error is not PageProbeException)
 		{

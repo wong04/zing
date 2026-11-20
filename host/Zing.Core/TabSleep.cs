@@ -51,9 +51,8 @@ public enum KeepAwakeReason
 	Active,
 	VisibleInSplit,
 	PlayingAudio,
-	Capturing,
+	LiveStream,
 	PictureInPicture,
-	Uploading,
 	UnsavedForm,
 	Pinned,
 	RecentlyUsed,
@@ -115,70 +114,111 @@ public static class SleepRules
 public readonly record struct SweepTarget(long? At, long? RetryAt);
 
 /// <summary>What the page reports just before it sleeps or is suspended (src/shared/session/pageProbe.ts).</summary>
-public sealed record PageProbe(double ScrollY, bool Dirty, bool Capturing, bool PictureInPicture, bool Uploading)
+public sealed record PageProbe(double ScrollY, bool Dirty, bool LiveStream, bool PictureInPicture)
 {
 	/// <summary>
-	/// Runs inside a page just before it sleeps, in the page and each same-origin frame. A form counts as unsaved when any
-	/// field differs from what the markup gave it, or when the person typed into a field that still holds text: React keeps
-	/// value and defaultValue equal, so only the typing shows its drafts. The camera, microphone and screen it captures,
-	/// picture-in-picture and uploads come from <see cref="SleepGuards.Source"/> and the engine's own document state.
+	/// The isolated world the probe and <see cref="WorldSource"/> run in: they share the page's DOM but none of its
+	/// scripts, so the page can neither see them nor change what they report.
 	/// </summary>
-	public const string Source = """
+	public const string World = "zing-sleep";
+
+	/// <summary>
+	/// Runs in <see cref="World"/> as each document is created, in every frame. It notes the text fields and
+	/// rich-text editors the person types into, with what they held before the first keystroke. They are held weakly
+	/// and dropped once they leave the page, and submitting their form forgets them.
+	/// </summary>
+	public const string WorldSource = """
 		(() => {
-			const key = Symbol.for('zing.sleepGuards')
-			const windows = []
-			const collect = (w) => {
-				// A cross-origin frame's document can't be read (SecurityError); its own frames may still be same-origin.
-				try {
-					if (w.document) windows.push(w)
-				} catch {}
-				for (let i = 0; i < w.frames.length; i++) collect(w.frames[i])
+			const textTypes = ['text', 'search', 'email', 'url', 'tel', 'password', 'number']
+			const textOf = (el) => {
+				if (el instanceof HTMLTextAreaElement) return el.value
+				if (el instanceof HTMLInputElement) return textTypes.includes(el.type) ? el.value : null
+				return el instanceof HTMLElement && el.isContentEditable ? el.textContent : null
 			}
-			collect(window)
-			const edited = (w, el) => {
-				if (el instanceof w.HTMLTextAreaElement) return el.value !== el.defaultValue
-				if (el instanceof w.HTMLSelectElement) {
-					if (el.multiple) return [...el.options].some((o) => o.selected !== o.defaultSelected)
-					const expected = Math.max(0, [...el.options].findIndex((o) => o.defaultSelected))
-					return el.selectedIndex !== expected
+			const before = new WeakMap()
+			const edited = new Set()
+			const prune = () => {
+				for (const ref of edited) if (!ref.deref()?.isConnected) edited.delete(ref)
+			}
+			addEventListener('beforeinput', (e) => {
+				if (!e.isTrusted) return
+				prune()
+				const el = e.composedPath().find((node) => node instanceof Element)
+				if (!el || before.has(el)) return
+				const text = textOf(el)
+				if (text === null) return
+				before.set(el, text)
+				edited.add(new WeakRef(el))
+			}, true)
+			addEventListener('submit', (e) => {
+				for (const ref of edited) {
+					const el = ref.deref()
+					if (el && (el.form === e.target || e.target.contains(el))) {
+						edited.delete(ref)
+						before.delete(el)
+					}
 				}
-				if (!(el instanceof w.HTMLInputElement)) return false
-				if (['hidden', 'submit', 'button', 'reset', 'image', 'file'].includes(el.type)) return false
-				if (el.type === 'checkbox' || el.type === 'radio') return el.checked !== el.defaultChecked
-				return el.value !== el.defaultValue
-			}
-			const dirty = (w) => {
-				const doc = w.document
-				const richText = [...doc.querySelectorAll('[contenteditable=""], [contenteditable="true"]')]
-					.some((el) => (el.textContent || '').trim() !== '')
-				return richText || [...doc.querySelectorAll('input, textarea, select')].some((el) => edited(w, el)) || !!w[key]?.typed()
-			}
-			return {
-				scrollY: Math.round(window.scrollY),
-				dirty: windows.some(dirty),
-				capturing: windows.some((w) => !!w[key]?.capturing()),
-				pictureInPicture: !!window.documentPictureInPicture?.window || windows.some((w) => w.document.pictureInPictureElement !== null),
-				uploading: windows.some((w) => !!w[key]?.uploading()),
+			}, true)
+			globalThis.zingSleep = {
+				textOf,
+				typed: () => {
+					prune()
+					return [...edited].some((ref) => {
+						const el = ref.deref()
+						const text = textOf(el)
+						return text !== null && text.trim() !== '' && text !== before.get(el) && el.checkVisibility()
+					})
+				},
 			}
 		})()
 		""";
 
-	/// <summary>Reads the script's JSON result; anything but {scrollY: finite number, and the four flags as bools} is refused.</summary>
+	/// <summary>
+	/// Runs in <see cref="World"/> of the page and of each same-origin frame just before the tab sleeps. A draft is
+	/// unsaved while a visible text field or editor holds text that differs from what the markup gave it, or from what
+	/// it held before the person typed. Typing is the only sign in a React form, which keeps value and defaultValue
+	/// equal. Checkboxes, radio buttons, selects, sliders and pickers never count. A live stream is a video or audio
+	/// element playing a live camera, mic, screen or call track; picture-in-picture includes Document PiP.
+	/// </summary>
+	public const string Source = """
+		(() => {
+			const watch = globalThis.zingSleep
+			const fromMarkup = !!watch && [...document.querySelectorAll('input, textarea')].some((el) => {
+				const text = watch.textOf(el)
+				return text !== null && text.trim() !== '' && text !== el.defaultValue && el.checkVisibility()
+			})
+			const live = (media) => media.srcObject instanceof MediaStream && media.srcObject.getTracks().some((track) => track.readyState === 'live')
+			return {
+				scrollY: Math.round(scrollY),
+				dirty: fromMarkup || !!watch?.typed(),
+				liveStream: [...document.querySelectorAll('video, audio')].some(live),
+				pictureInPicture: document.pictureInPictureElement !== null || !!globalThis.documentPictureInPicture?.window,
+			}
+		})()
+		""";
+
+	/// <summary>Reads one frame's answer; anything but {scrollY: finite number, and dirty, liveStream, pictureInPicture as bools} is refused.</summary>
 	public static PageProbe Parse(JsonElement value)
 	{
 		if (value.ValueKind != JsonValueKind.Object) throw new PageProbeException(value);
 		if (!value.TryGetProperty("scrollY", out var scroll) || scroll.ValueKind != JsonValueKind.Number) throw new PageProbeException(value);
 		if (!scroll.TryGetDouble(out var y) || !double.IsFinite(y)) throw new PageProbeException(value);
-		return new PageProbe(Math.Max(0, y), Flag(value, "dirty"), Flag(value, "capturing"), Flag(value, "pictureInPicture"), Flag(value, "uploading"));
+		return new PageProbe(Math.Max(0, y), Flag(value, "dirty"), Flag(value, "liveStream"), Flag(value, "pictureInPicture"));
+	}
+
+	/// <summary>The page's answer from its frames' (the top frame first): its scroll position, and what any frame reported.</summary>
+	public static PageProbe Combine(IReadOnlyList<PageProbe> frames)
+	{
+		if (frames.Count == 0) throw new ArgumentException("A page has at least its top frame", nameof(frames));
+		return new PageProbe(frames[0].ScrollY, frames.Any(f => f.Dirty), frames.Any(f => f.LiveStream), frames.Any(f => f.PictureInPicture));
 	}
 
 	/// <summary>Why the page must stay running, or null if nothing it reported holds it.</summary>
 	public KeepAwakeReason? KeepAwake()
 	{
-		// Dropping or freezing the page would end the call or share, close the floating video, or kill the upload.
-		if (Capturing) return KeepAwakeReason.Capturing;
+		// Dropping the page would end the call or capture, or close the floating video.
+		if (LiveStream) return KeepAwakeReason.LiveStream;
 		if (PictureInPicture) return KeepAwakeReason.PictureInPicture;
-		if (Uploading) return KeepAwakeReason.Uploading;
 		// Discarding would throw away what the user typed.
 		if (Dirty) return KeepAwakeReason.UnsavedForm;
 		return null;
@@ -189,98 +229,6 @@ public sealed record PageProbe(double ScrollY, bool Dirty, bool Capturing, bool 
 		if (!value.TryGetProperty(name, out var flag) || flag.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new PageProbeException(value);
 		return flag.GetBoolean();
 	}
-}
-
-/// <summary>
-/// Added to every document as it is created, in every frame, before the page's own scripts: it notes what the probe
-/// can't see afterwards. Fields the person typed into (cleared when their form is submitted; a new document starts
-/// afresh), the camera, microphone and screen tracks the page was given, and its uploads in progress (XHR or fetch with
-/// a file, a stream or a large binary body). Its window property holds only those three answers.
-/// </summary>
-public static class SleepGuards
-{
-	public const string Source = """
-		(() => {
-			const key = Symbol.for('zing.sleepGuards')
-			if (Object.prototype.hasOwnProperty.call(window, key)) return
-			const typed = new Set()
-			const tracks = new Set()
-			let uploads = 0
-			addEventListener('input', (e) => {
-				if (e.isTrusted) typed.add(e.composedPath()[0])
-			}, true)
-			addEventListener('submit', (e) => {
-				for (const el of typed) if (el.form === e.target || e.target.contains(el)) typed.delete(el)
-			}, true)
-			const holdsInput = (el) => {
-				if (el.isContentEditable) return (el.textContent || '').trim() !== ''
-				if (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT') return true
-				return typeof el.value === 'string' && el.value.trim() !== ''
-			}
-			if (typeof MediaDevices !== 'undefined') {
-				for (const name of ['getUserMedia', 'getDisplayMedia']) {
-					const original = MediaDevices.prototype[name]
-					if (typeof original !== 'function') continue
-					MediaDevices.prototype[name] = function (...args) {
-						return original.apply(this, args).then((stream) => {
-							for (const track of stream.getTracks()) tracks.add(track)
-							return stream
-						})
-					}
-				}
-				const clone = MediaStreamTrack.prototype.clone
-				MediaStreamTrack.prototype.clone = function () {
-					const copy = clone.call(this)
-					if (tracks.has(this)) tracks.add(copy)
-					return copy
-				}
-			}
-			const isUpload = (body) =>
-				body instanceof Blob ||
-				body instanceof ReadableStream ||
-				(body instanceof FormData && [...body.values()].some((v) => v instanceof Blob)) ||
-				((body instanceof ArrayBuffer || ArrayBuffer.isView(body)) && body.byteLength >= 65536)
-			const send = XMLHttpRequest.prototype.send
-			XMLHttpRequest.prototype.send = function (body) {
-				if (!isUpload(body)) return send.call(this, body)
-				uploads++
-				let open = true
-				const done = () => {
-					if (open) uploads--
-					open = false
-				}
-				this.addEventListener('loadend', done, { once: true })
-				try {
-					return send.call(this, body)
-				} catch (error) {
-					done()
-					throw error
-				}
-			}
-			const fetch = window.fetch
-			window.fetch = function (input, init) {
-				const response = fetch.apply(this, arguments)
-				if (!isUpload(init?.body)) return response
-				uploads++
-				const done = () => uploads--
-				response.then(done, done)
-				return response
-			}
-			Object.defineProperty(window, key, {
-				value: Object.freeze({
-					typed: () => {
-						for (const el of typed) if (!el.isConnected) typed.delete(el)
-						return [...typed].some(holdsInput)
-					},
-					capturing: () => {
-						for (const track of tracks) if (track.readyState === 'ended') tracks.delete(track)
-						return tracks.size > 0
-					},
-					uploading: () => uploads > 0,
-				}),
-			})
-		})()
-		""";
 }
 
 public sealed class PageProbeException(JsonElement value) : Exception($"Page probe returned an unexpected value: {value.GetRawText()}")
@@ -302,7 +250,7 @@ public sealed class PageUnavailableException(string tabId, Exception? inner = nu
 /// </summary>
 public sealed class TabSleeper
 {
-	/// <summary>Audio, capture, uploads and unsaved input have no event that says "now safe", so blocked tabs are looked at again after this.</summary>
+	/// <summary>Audio, live streams and unsaved input have no event that says "now safe", so blocked tabs are looked at again after this.</summary>
 	public const long RetryMs = 5 * 60_000;
 	private const int MaxThumbnails = 64;
 

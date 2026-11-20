@@ -210,13 +210,13 @@
 			]
 		},
 		{
-			"name": "leaves a tab capturing, in picture-in-picture or uploading awake, and sleeps the call once it ends",
+			"name": "leaves a tab with a live stream (a call, a capture) or in picture-in-picture awake, and sleeps the call once it ends",
 			"active": "active",
-			"tabs": [{ "id": "active" }, { "id": "call", "capturing": true }, { "id": "pip", "pictureInPicture": true }, { "id": "upload", "uploading": true }],
+			"tabs": [{ "id": "active" }, { "id": "call", "liveStream": true }, { "id": "pip", "pictureInPicture": true }],
 			"steps": [
 				{ "advanceMinutes": 31 },
 				{ "expectSlept": [] },
-				{ "setCapturing": "call", "value": false },
+				{ "setLiveStream": "call", "value": false },
 				{ "advanceMinutes": 6 },
 				{ "expectSlept": ["call"] }
 			]

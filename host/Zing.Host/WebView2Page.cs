@@ -393,6 +393,38 @@ public sealed class WebView2Page : IPage
 		return System.Text.Json.JsonDocument.Parse(json).RootElement;
 	}
 
+	/// <summary>
+	/// DevTools' isolated worlds: the page's scripts can't see what runs there. Asking for <see cref="PageProbe.World"/> in
+	/// a frame gives back the world its document-start script ran in. Frames of other origins are left out.
+	/// </summary>
+	public async Task<IReadOnlyList<System.Text.Json.JsonElement>> EvaluateInFramesAsync(string script)
+	{
+		if (!IsOpen || _core is not { } core) throw new InvalidOperationException("The page is not running");
+		if (core.IsSuspended) core.Resume();
+		using var tree = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}").AsTask()));
+		var root = tree.RootElement.GetProperty("frameTree");
+		var origin = root.GetProperty("frame").GetProperty("securityOrigin").GetString();
+		var results = new List<System.Text.Json.JsonElement>();
+		foreach (var frame in FramesOf(root).Where(f => f.GetProperty("securityOrigin").GetString() == origin))
+		{
+			var world = System.Text.Json.JsonSerializer.Serialize(new { frameId = frame.GetProperty("id").GetString(), worldName = PageProbe.World });
+			using var created = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Page.createIsolatedWorld", world).AsTask()));
+			var evaluate = System.Text.Json.JsonSerializer.Serialize(new { expression = script, contextId = created.RootElement.GetProperty("executionContextId").GetInt32(), returnByValue = true });
+			using var answer = System.Text.Json.JsonDocument.Parse(await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Runtime.evaluate", evaluate).AsTask()));
+			if (answer.RootElement.TryGetProperty("exceptionDetails", out var error)) throw new InvalidOperationException($"The script failed in a frame: {error.GetRawText()}");
+			results.Add(answer.RootElement.GetProperty("result").GetProperty("value").Clone());
+		}
+		return results;
+	}
+
+	private static IEnumerable<System.Text.Json.JsonElement> FramesOf(System.Text.Json.JsonElement node)
+	{
+		yield return node.GetProperty("frame");
+		if (!node.TryGetProperty("childFrames", out var children)) yield break;
+		foreach (var child in children.EnumerateArray())
+			foreach (var frame in FramesOf(child)) yield return frame;
+	}
+
 	public void RunWhenLoaded(string script) => Run(core =>
 	{
 		void Loaded(CoreWebView2 sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -508,8 +540,8 @@ public sealed class WebView2Page : IPage
 			if (_view.HasKeyboard && Native.MouseButtonDown()) _events.Focused();
 		};
 
-		// Before any navigation, so every document notes typing, capture and uploads from its start (PageProbe).
-		await _core.AddScriptToExecuteOnDocumentCreatedAsync(SleepGuards.Source);
+		// Before any navigation, so every document notes typing from its start (PageProbe.WorldSource).
+		await _core.CallDevToolsProtocolMethodAsync("Page.addScriptToEvaluateOnNewDocument", System.Text.Json.JsonSerializer.Serialize(new { source = PageProbe.WorldSource, worldName = PageProbe.World }));
 		if (!IsOpen) return;
 		_core.WebMessageReceived += OnPageMessage;
 		// Before any queued navigation, so every document gets the script; it installs itself in the top frame only.
