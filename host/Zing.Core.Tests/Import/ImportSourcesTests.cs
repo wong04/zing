@@ -9,7 +9,14 @@ public sealed class ImportSourcesTests : IDisposable
 
 	private readonly string root = Path.Combine(Path.GetTempPath(), "zing-sources-" + Guid.NewGuid().ToString("N"));
 
-	public ImportSourcesTests() => Directory.CreateDirectory(root);
+	// The roaming AppData, where Opera keeps its profile; inside root so Dispose removes it too.
+	private readonly string appData;
+
+	public ImportSourcesTests()
+	{
+		Directory.CreateDirectory(root);
+		appData = Path.Combine(root, "Roaming");
+	}
 
 	public void Dispose() => Directory.Delete(root, recursive: true);
 
@@ -60,7 +67,7 @@ public sealed class ImportSourcesTests : IDisposable
 		WriteLocalState(brave, null, ("Default", "Shields"));
 		WriteProfile(brave, "Default", Fixture("chromium-bookmarks.json"));
 
-		var found = ImportSources.Find(root);
+		var found = ImportSources.Find(root, appData);
 
 		Assert.Equal(["Chrome (Personal)", "Chrome (Work)", "Edge (Me)", "Brave (Shields)"], found.Select(s => s.Display));
 		Assert.Equal(["chrome:Default", "chrome:Profile 1", "edge:Default", "brave:Default"], found.Select(s => s.Id));
@@ -80,7 +87,7 @@ public sealed class ImportSourcesTests : IDisposable
 		WriteProfile(chrome, "Default", Fixture("chromium-bookmarks.json"));
 		WriteProfile(chrome, "Profile 1");
 
-		Assert.Equal(["chrome:Default"], ImportSources.Find(root).Select(s => s.Id));
+		Assert.Equal(["chrome:Default"], ImportSources.Find(root, appData).Select(s => s.Id));
 	}
 
 	[Fact]
@@ -90,7 +97,7 @@ public sealed class ImportSourcesTests : IDisposable
 		WriteLocalState(chrome, null, ("Default", "Personal"), ("Guest Profile", "Guest"), ("System Profile", "System"));
 		foreach (var dir in new[] { "Default", "Guest Profile", "System Profile" }) WriteProfile(chrome, dir, Fixture("chromium-bookmarks.json"));
 
-		Assert.Equal(["chrome:Default"], ImportSources.Find(root).Select(s => s.Id));
+		Assert.Equal(["chrome:Default"], ImportSources.Find(root, appData).Select(s => s.Id));
 	}
 
 	[Fact]
@@ -100,7 +107,7 @@ public sealed class ImportSourcesTests : IDisposable
 		Directory.CreateDirectory(arc);
 		File.WriteAllText(Path.Combine(arc, "StorableSidebar.json"), Fixture("arc-sidebar.json"));
 
-		var source = Assert.Single(ImportSources.Find(root));
+		var source = Assert.Single(ImportSources.Find(root, appData));
 
 		Assert.Equal("arc", source.Id);
 		Assert.Equal(ImportBrowser.Arc, source.Browser);
@@ -120,7 +127,7 @@ public sealed class ImportSourcesTests : IDisposable
 		WriteProfile(dia, "Default", Fixture("chromium-bookmarks.json"));
 		WriteProfile(dia, "Profile 1", Fixture("chromium-bookmarks.json"));
 
-		var found = ImportSources.Find(root);
+		var found = ImportSources.Find(root, appData);
 
 		Assert.Equal(["dia:Default", "dia:Profile 1"], found.Select(s => s.Id));
 		var personal = found[0];
@@ -145,7 +152,92 @@ public sealed class ImportSourcesTests : IDisposable
 		Directory.CreateDirectory(arc);
 		File.WriteAllText(Path.Combine(arc, "StorableSidebar.json"), Fixture("arc-sidebar.json"));
 
-		Assert.Equal(["chrome:Default", "dia:Default", "arc"], ImportSources.Find(root).Select(s => s.Id));
+		Assert.Equal(["chrome:Default", "dia:Default", "arc"], ImportSources.Find(root, appData).Select(s => s.Id));
+	}
+
+	[Fact]
+	public void FindsVivaldiProfilesBesideTheOtherChromiumBrowsers()
+	{
+		var chrome = ChromeUserData();
+		WriteLocalState(chrome, null, ("Default", "Personal"));
+		WriteProfile(chrome, "Default", Fixture("chromium-bookmarks.json"));
+		var vivaldi = UserData("Vivaldi");
+		WriteLocalState(vivaldi, "Profile 1", ("Default", "Home"), ("Profile 1", "Work"));
+		WriteProfile(vivaldi, "Default", Fixture("chromium-bookmarks.json"));
+		WriteProfile(vivaldi, "Profile 1", Fixture("chromium-bookmarks.json"));
+
+		var found = ImportSources.Find(root, appData);
+
+		Assert.Equal(["chrome:Default", "vivaldi:Default", "vivaldi:Profile 1"], found.Select(s => s.Id));
+		var work = found[2];
+		Assert.Equal(ImportBrowser.Vivaldi, work.Browser);
+		Assert.Equal("Profile 1", work.Profile);
+		Assert.Equal("Vivaldi (Work)", work.Display);
+		Assert.Equal(Path.Combine(vivaldi, "Profile 1", "Bookmarks"), work.Path);
+		Assert.Equal(LinkCount(ChromiumBookmarks.Parse(Fixture("chromium-bookmarks.json"))), work.Bookmarks);
+		Assert.True(work.LastUsed);
+	}
+
+	private string OperaDir(string channel) => Path.Combine(appData, "Opera Software", channel);
+
+	private void WriteOpera(string channel, string bookmarks)
+	{
+		Directory.CreateDirectory(OperaDir(channel));
+		File.WriteAllText(Path.Combine(OperaDir(channel), "Bookmarks"), bookmarks);
+	}
+
+	[Fact]
+	public void FindsOperaAndOperaGxInRoamingAppDataWithoutProfiles()
+	{
+		WriteOpera("Opera Stable", Fixture("chromium-bookmarks.json"));
+		WriteOpera("Opera GX Stable", Fixture("chromium-bookmarks.json"));
+
+		var found = ImportSources.Find(root, appData);
+
+		Assert.Equal(["opera:stable", "opera-gx:stable"], found.Select(s => s.Id));
+		Assert.Equal(["Opera", "Opera GX"], found.Select(s => s.Display));
+		Assert.Equal([ImportBrowser.Opera, ImportBrowser.OperaGX], found.Select(s => s.Browser));
+		Assert.All(found, s => Assert.Null(s.Profile));
+		Assert.Equal(Path.Combine(OperaDir("Opera Stable"), "Bookmarks"), found[0].Path);
+		Assert.Equal(LinkCount(ChromiumBookmarks.Parse(Fixture("chromium-bookmarks.json"))), found[0].Bookmarks);
+		Assert.NotEmpty(ImportSources.Read(found[1]).Bar);
+	}
+
+	[Fact]
+	public void AnOperaFolderWithoutBookmarksIsNotARow()
+	{
+		Directory.CreateDirectory(OperaDir("Opera Stable"));
+
+		Assert.Empty(ImportSources.Find(root, appData));
+	}
+
+	[Fact]
+	public void ADamagedOperaBookmarksFileIsARowWithAnError()
+	{
+		WriteOpera("Opera Stable", Fixture("invalid.json"));
+
+		var row = Assert.Single(ImportSources.Find(root, appData));
+
+		Assert.Equal("opera:stable", row.Id);
+		Assert.Null(row.Bookmarks);
+		Assert.Equal(new BookmarksFileDamagedException("Bookmarks").Message, row.Error);
+	}
+
+	[Fact]
+	public void OperaSitsAfterTheChromiumBrowsersAndBeforeDiaAndArc()
+	{
+		var vivaldi = UserData("Vivaldi");
+		WriteLocalState(vivaldi, null, ("Default", "Home"));
+		WriteProfile(vivaldi, "Default", Fixture("chromium-bookmarks.json"));
+		WriteOpera("Opera Stable", Fixture("chromium-bookmarks.json"));
+		var dia = DiaUserData();
+		WriteLocalState(dia, null, ("Default", "Personal"));
+		WriteProfile(dia, "Default", Fixture("chromium-bookmarks.json"));
+		var arc = Path.Combine(root, "Packages", "TheBrowserCompany.Arc_ttt1ap7aakyb4", "LocalCache", "Local", "Arc");
+		Directory.CreateDirectory(arc);
+		File.WriteAllText(Path.Combine(arc, "StorableSidebar.json"), Fixture("arc-sidebar.json"));
+
+		Assert.Equal(["vivaldi:Default", "opera:stable", "dia:Default", "arc"], ImportSources.Find(root, appData).Select(s => s.Id));
 	}
 
 	[Fact]
@@ -153,7 +245,7 @@ public sealed class ImportSourcesTests : IDisposable
 	{
 		Directory.CreateDirectory(Path.Combine(root, "Packages", "TheBrowserCompany.Dia_ttt1ap7aakyb4", "LocalCache", "Local"));
 
-		Assert.Empty(ImportSources.Find(root));
+		Assert.Empty(ImportSources.Find(root, appData));
 	}
 
 	[Fact]
@@ -163,7 +255,7 @@ public sealed class ImportSourcesTests : IDisposable
 		Directory.CreateDirectory(dia);
 		File.WriteAllText(Path.Combine(dia, "Local State"), "{ not json");
 
-		var row = Assert.Single(ImportSources.Find(root));
+		var row = Assert.Single(ImportSources.Find(root, appData));
 
 		Assert.Equal("dia", row.Id);
 		Assert.Equal(ImportBrowser.Dia, row.Browser);
@@ -180,7 +272,7 @@ public sealed class ImportSourcesTests : IDisposable
 		WriteProfile(chrome, "Default", Fixture("invalid.json"));
 		WriteProfile(chrome, "Profile 1", Fixture("not-chromium.json"));
 
-		var found = ImportSources.Find(root);
+		var found = ImportSources.Find(root, appData);
 
 		var damaged = found.Single(s => s.Id == "chrome:Default");
 		Assert.Null(damaged.Bookmarks);
@@ -192,7 +284,7 @@ public sealed class ImportSourcesTests : IDisposable
 	}
 
 	[Fact]
-	public void NoBrowsersFindsNothing() => Assert.Empty(ImportSources.Find(root));
+	public void NoBrowsersFindsNothing() => Assert.Empty(ImportSources.Find(root, appData));
 
 	[Fact]
 	public void MarksTheLastUsedProfile()
@@ -202,7 +294,7 @@ public sealed class ImportSourcesTests : IDisposable
 		WriteProfile(chrome, "Default", Fixture("chromium-bookmarks.json"));
 		WriteProfile(chrome, "Profile 1", Fixture("chromium-bookmarks.json"));
 
-		Assert.Equal(["chrome:Profile 1"], ImportSources.Find(root).Where(s => s.LastUsed).Select(s => s.Id));
+		Assert.Equal(["chrome:Profile 1"], ImportSources.Find(root, appData).Where(s => s.LastUsed).Select(s => s.Id));
 	}
 
 	[Fact]
@@ -213,7 +305,7 @@ public sealed class ImportSourcesTests : IDisposable
 		WriteProfile(chrome, "Default", Fixture("chromium-bookmarks.json"));
 		using var writer = new FileStream(Path.Combine(chrome, "Default", "Bookmarks"), FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
 
-		var source = Assert.Single(ImportSources.Find(root));
+		var source = Assert.Single(ImportSources.Find(root, appData));
 
 		Assert.Null(source.Error);
 		Assert.True(source.Bookmarks > 0);
@@ -233,7 +325,7 @@ public sealed class ImportSourcesTests : IDisposable
 		Directory.CreateDirectory(arc);
 		File.WriteAllText(Path.Combine(arc, "StorableSidebar.json"), Fixture("arc-sidebar.json"));
 
-		var found = ImportSources.Find(root);
+		var found = ImportSources.Find(root, appData);
 
 		Assert.Equal(["chrome", "edge:Default", "arc"], found.Select(s => s.Id));
 		var row = found[0];
@@ -255,7 +347,7 @@ public sealed class ImportSourcesTests : IDisposable
 		WriteProfile(chrome, "Default", Fixture("chromium-bookmarks.json"));
 		using var lockFile = new FileStream(Path.Combine(chrome, "Default", "Bookmarks"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
 
-		var source = Assert.Single(ImportSources.Find(root));
+		var source = Assert.Single(ImportSources.Find(root, appData));
 
 		Assert.Null(source.Bookmarks);
 		Assert.Equal("Zing couldn't read this profile's bookmarks: the file is in use or unreadable", source.Error);
@@ -277,7 +369,7 @@ public sealed class ImportSourcesTests : IDisposable
 		packages.SetAccessControl(security);
 		try
 		{
-			var found = ImportSources.Find(root);
+			var found = ImportSources.Find(root, appData);
 
 			Assert.Equal(["chrome:Default", "arc"], found.Select(s => s.Id));
 			var arc = found[1];
@@ -300,7 +392,7 @@ public sealed class ImportSourcesTests : IDisposable
 		WriteProfile(chrome, "Default");
 		using (var file = File.Create(Path.Combine(chrome, "Default", "Bookmarks"))) file.SetLength(ImportFile.MaxBytes + 1);
 
-		var source = Assert.Single(ImportSources.Find(root));
+		var source = Assert.Single(ImportSources.Find(root, appData));
 
 		Assert.Null(source.Bookmarks);
 		Assert.Equal("This file is too large to be an import. Zing reads files of up to 10 MB, which is far more than any real export.", source.Error);
@@ -314,7 +406,7 @@ public sealed class ImportSourcesTests : IDisposable
 		WriteProfile(chrome, "Default");
 		File.WriteAllBytes(Path.Combine(chrome, "Default", "Bookmarks"), [.. "{\"roots\":{\"other\":{\"name\":\"Caf"u8.ToArray(), 0xE9, .. "\"}}}"u8.ToArray()]);
 
-		var source = Assert.Single(ImportSources.Find(root));
+		var source = Assert.Single(ImportSources.Find(root, appData));
 
 		Assert.Null(source.Bookmarks);
 		Assert.Equal("The file isn't UTF-8 text, so it can't be an export Zing reads.", source.Error);
