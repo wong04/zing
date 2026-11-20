@@ -16,15 +16,27 @@ public static class ChangesEndpoints
 
 	private sealed record NewItem(string ItemId, int Version, long BaseRevision, bool Tombstone, byte[] Summary, byte[] Password, byte[] History);
 
+	/// <summary>
+	/// /changes is the vault's, as v1 clients know it. The library has its own routes, so a server without them answers a newer client
+	/// 404 rather than storing library items where a v1 client would pull them as logins.
+	/// </summary>
 	public static void MapChanges(this IEndpointRouteBuilder app)
 	{
-		app.MapGet("/changes", (HttpContext context, Db db, TimeProvider clock, long? since, int? limit) =>
-			Pull(db, clock, SyncEndpoints.UserId(context), since ?? 0, limit ?? SyncLimits.MaxPageSize));
-		app.MapPost("/changes", async (HttpContext context, Db db, TimeProvider clock) =>
-			Push(db, clock, SyncEndpoints.UserId(context), await SyncEndpoints.ReadBody<ChangesPush>(context)));
+		MapCollection(app, "/changes", Db.VaultCollection);
+		MapCollection(app, "/library/changes", Db.LibraryCollection);
 	}
 
-	private static IResult Pull(Db db, TimeProvider clock, string userId, long since, int limit)
+	private static void MapCollection(IEndpointRouteBuilder app, string path, string collection)
+	{
+		app.MapGet(path, (HttpContext context, Db db, TimeProvider clock, long? since, int? limit) =>
+			Pull(db, clock, SyncEndpoints.UserId(context), collection, since ?? 0, limit ?? SyncLimits.MaxPageSize));
+		app.MapPost(path, async (HttpContext context, Db db, TimeProvider clock) =>
+			Push(db, clock, SyncEndpoints.UserId(context), collection, await SyncEndpoints.ReadBody<ChangesPush>(context)));
+	}
+
+	// The revision counter and the tombstone horizon are the account's, shared by every collection: a pull answers the account's
+	// revision, and only the collection's items.
+	private static IResult Pull(Db db, TimeProvider clock, string userId, string collection, long since, int limit)
 	{
 		if (since < 0) throw new RequestRejectedException(StatusCodes.Status400BadRequest, "since must not be negative.");
 		if (limit < 1) throw new RequestRejectedException(StatusCodes.Status400BadRequest, "limit must be at least 1.");
@@ -48,9 +60,10 @@ public static class ChangesEndpoints
 		if (since > 0 && since < horizon) return Results.StatusCode(StatusCodes.Status410Gone);
 
 		using var select = Db.Command(connection, $"""
-			SELECT {ItemColumns} FROM items WHERE user_id = $userId AND revision > $since ORDER BY revision LIMIT $limit
+			SELECT {ItemColumns} FROM items WHERE user_id = $userId AND collection = $collection AND revision > $since ORDER BY revision LIMIT $limit
 			""", transaction);
 		select.Parameters.AddWithValue("$userId", userId);
+		select.Parameters.AddWithValue("$collection", collection);
 		select.Parameters.AddWithValue("$since", since);
 		select.Parameters.AddWithValue("$limit", limit + 1);
 		var items = new List<ItemView>();
@@ -86,7 +99,7 @@ public static class ChangesEndpoints
 		raise.ExecuteNonQuery();
 	}
 
-	private static IResult Push(Db db, TimeProvider clock, string userId, ChangesPush body)
+	private static IResult Push(Db db, TimeProvider clock, string userId, string collection, ChangesPush body)
 	{
 		if (body.Items is null) throw new RequestRejectedException(StatusCodes.Status400BadRequest, "items is required.");
 		if (body.Items.Count > SyncLimits.MaxItemsPerPush)
@@ -102,13 +115,18 @@ public static class ChangesEndpoints
 		var conflicts = new List<ItemView>();
 		foreach (var item in pushed)
 		{
-			if (TryWrite(connection, transaction, userId, item, revision + 1, storedAt))
+			if (CollectionOf(connection, transaction, userId, item.ItemId) is { } held && held != collection)
+				throw new RequestRejectedException(StatusCodes.Status400BadRequest, $"itemId {item.ItemId} belongs to another collection.");
+		}
+		foreach (var item in pushed)
+		{
+			if (TryWrite(connection, transaction, userId, collection, item, revision + 1, storedAt))
 			{
 				revision++;
 				accepted.Add(new AcceptedItem(item.ItemId, revision));
 				continue;
 			}
-			conflicts.Add(Current(connection, transaction, userId, item.ItemId));
+			conflicts.Add(Current(connection, transaction, userId, collection, item.ItemId));
 		}
 
 		if (revision > start) SetRevision(connection, transaction, userId, start, revision);
@@ -131,21 +149,22 @@ public static class ChangesEndpoints
 	}
 
 	// A new item is an insert that must not collide; an existing one is an update that must still be at the revision the client saw.
-	private static bool TryWrite(SqliteConnection connection, SqliteTransaction transaction, string userId, NewItem item, long revision, long storedAt)
+	private static bool TryWrite(SqliteConnection connection, SqliteTransaction transaction, string userId, string collection, NewItem item, long revision, long storedAt)
 	{
 		var sql = item.BaseRevision == 0
 			? """
-				INSERT INTO items (user_id, item_id, version, revision, tombstone, summary, password, history, stored_at)
-				VALUES ($userId, $itemId, $version, $revision, $tombstone, $summary, $password, $history, $storedAt)
+				INSERT INTO items (user_id, item_id, collection, version, revision, tombstone, summary, password, history, stored_at)
+				VALUES ($userId, $itemId, $collection, $version, $revision, $tombstone, $summary, $password, $history, $storedAt)
 				ON CONFLICT (user_id, item_id) DO NOTHING
 				"""
 			: """
 				UPDATE items SET version = $version, revision = $revision, tombstone = $tombstone,
 					summary = $summary, password = $password, history = $history, stored_at = $storedAt
-				WHERE user_id = $userId AND item_id = $itemId AND revision = $base
+				WHERE user_id = $userId AND item_id = $itemId AND collection = $collection AND revision = $base
 				""";
 		using var write = Db.Command(connection, sql, transaction);
 		write.Parameters.AddWithValue("$userId", userId);
+		write.Parameters.AddWithValue("$collection", collection);
 		write.Parameters.AddWithValue("$itemId", item.ItemId);
 		write.Parameters.AddWithValue("$version", item.Version);
 		write.Parameters.AddWithValue("$revision", revision);
@@ -159,13 +178,23 @@ public static class ChangesEndpoints
 	}
 
 	// An item that no longer exists was purged as a tombstone, so it is reported as one at revision 0.
-	private static ItemView Current(SqliteConnection connection, SqliteTransaction transaction, string userId, string itemId)
+	private static ItemView Current(SqliteConnection connection, SqliteTransaction transaction, string userId, string collection, string itemId)
 	{
-		using var select = Db.Command(connection, $"SELECT {ItemColumns} FROM items WHERE user_id = $userId AND item_id = $itemId", transaction);
+		using var select = Db.Command(connection, $"SELECT {ItemColumns} FROM items WHERE user_id = $userId AND collection = $collection AND item_id = $itemId", transaction);
 		select.Parameters.AddWithValue("$userId", userId);
+		select.Parameters.AddWithValue("$collection", collection);
 		select.Parameters.AddWithValue("$itemId", itemId);
 		using var reader = select.ExecuteReader();
 		return reader.Read() ? ReadItem(reader) : new ItemView(itemId, 0, 0, true, "", "", "");
+	}
+
+	/// <summary>The collection an item ID is stored in; null when it isn't stored.</summary>
+	private static string? CollectionOf(SqliteConnection connection, SqliteTransaction transaction, string userId, string itemId)
+	{
+		using var select = Db.Command(connection, "SELECT collection FROM items WHERE user_id = $userId AND item_id = $itemId", transaction);
+		select.Parameters.AddWithValue("$userId", userId);
+		select.Parameters.AddWithValue("$itemId", itemId);
+		return select.ExecuteScalar() as string;
 	}
 
 	private static long CurrentRevision(SqliteConnection connection, SqliteTransaction transaction, string userId)

@@ -41,7 +41,7 @@ public sealed class ImportPasswordWatchTests : IDisposable
 		Directory.CreateDirectory(_downloads);
 		_host.DownloadsDirectory = _downloads;
 		var library = new LibraryStore(Library.EmptyLibrary(0), _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), LocalAppData: () => _root, BrowserLauncher: _launcher, FileTrash: _trash), _host, "test");
+		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), LocalAppData: () => _root, AppData: () => _root, BrowserLauncher: _launcher, FileTrash: _trash), _host, "test");
 		var userData = Path.Combine(_root, "Google", "Chrome", "User Data");
 		Directory.CreateDirectory(Path.Combine(userData, "Default"));
 		Directory.CreateDirectory(Path.Combine(userData, "Profile 1"));

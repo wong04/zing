@@ -68,6 +68,38 @@ public sealed class Db
 			CREATE INDEX IF NOT EXISTS refresh_tokens_by_user ON refresh_tokens (user_id);
 			""");
 		UpgradeRefreshTokens(connection);
+		UpgradeCollections(connection);
+	}
+
+	/// <summary>The collection a v1 client's items are in, and the only one /changes reads or writes.</summary>
+	public const string VaultCollection = "vault";
+
+	/// <summary>Bookmarks and the Reading List (/library/*), which a v1 client must never be sent: it reads every item as a login.</summary>
+	public const string LibraryCollection = "library";
+
+	// Library and settings sync, in one transaction like the refresh token upgrade below. Every item stored before it is a login, so
+	// the column's default puts it in the vault collection. Every step can run again.
+	private static void UpgradeCollections(SqliteConnection connection)
+	{
+		using var transaction = connection.BeginTransaction();
+		var items = Columns(connection, transaction, "items");
+		if (!items.Contains("collection")) Execute(connection, $"ALTER TABLE items ADD COLUMN collection TEXT NOT NULL DEFAULT '{VaultCollection}'", transaction);
+		Execute(connection, "CREATE INDEX IF NOT EXISTS items_by_collection ON items (user_id, collection, revision)", transaction);
+		var users = Columns(connection, transaction, "users");
+		if (!users.Contains("library_manifest_blob")) Execute(connection, "ALTER TABLE users ADD COLUMN library_manifest_blob BLOB", transaction);
+		if (!users.Contains("library_manifest_version")) Execute(connection, "ALTER TABLE users ADD COLUMN library_manifest_version INTEGER NOT NULL DEFAULT 0", transaction);
+		if (!users.Contains("settings_blob")) Execute(connection, "ALTER TABLE users ADD COLUMN settings_blob BLOB", transaction);
+		if (!users.Contains("settings_version")) Execute(connection, "ALTER TABLE users ADD COLUMN settings_version INTEGER NOT NULL DEFAULT 0", transaction);
+		transaction.Commit();
+	}
+
+	private static HashSet<string> Columns(SqliteConnection connection, SqliteTransaction transaction, string table)
+	{
+		var columns = new HashSet<string>(StringComparer.Ordinal);
+		using var info = Command(connection, $"PRAGMA table_info({table})", transaction);
+		using var reader = info.ExecuteReader();
+		while (reader.Read()) columns.Add(reader.GetString(1));
+		return columns;
 	}
 
 	// Columns added after the first deploy (Rulings 49 to 51), in one transaction (SQLite's DDL is transactional), so a crash leaves
@@ -75,12 +107,7 @@ public sealed class Db
 	private static void UpgradeRefreshTokens(SqliteConnection connection)
 	{
 		using var transaction = connection.BeginTransaction();
-		var columns = new HashSet<string>(StringComparer.Ordinal);
-		using (var info = Command(connection, "PRAGMA table_info(refresh_tokens)", transaction))
-		using (var reader = info.ExecuteReader())
-		{
-			while (reader.Read()) columns.Add(reader.GetString(1));
-		}
+		var columns = Columns(connection, transaction, "refresh_tokens");
 		if (!columns.Contains("family")) Execute(connection, "ALTER TABLE refresh_tokens ADD COLUMN family TEXT", transaction);
 		if (!columns.Contains("used_at")) Execute(connection, "ALTER TABLE refresh_tokens ADD COLUMN used_at INTEGER", transaction);
 		if (!columns.Contains("successor")) Execute(connection, "ALTER TABLE refresh_tokens ADD COLUMN successor TEXT", transaction);
