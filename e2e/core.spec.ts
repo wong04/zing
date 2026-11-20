@@ -18,6 +18,10 @@ test.beforeAll(async () => {
 		res.setHeader('content-type', 'text/html')
 		const name = (req.url ?? '/').slice(1) || 'home'
 		if (name === 'opener') return res.end(`<!doctype html><title>Opener</title><button onclick="window.open('/popup')">open</button>`)
+		// A sign-in button that waits on the network before it opens its window, as OAuth libraries can.
+		if (name === 'late-opener') return res.end(`<!doctype html><title>Late opener</title><button onclick="setTimeout(() => window.open('/popup'), 1000)">open</button>`)
+		// Opens a window as it loads: no click, so it is blocked.
+		if (name === 'pushy') return res.end(`<!doctype html><title>Pushy</title><script>window.open('/popup')</script>`)
 		if (name === 'popup') return res.end('<!doctype html><title>Popup</title><script>document.title = window.opener ? "Popup with opener" : "Popup alone"</script>')
 		res.end(`<!doctype html><title>Page ${name}</title><p>${name}</p>`)
 	})
@@ -226,6 +230,40 @@ test('a popup opens as a tab and keeps window.opener', async () => {
 	const opener = await pageWhere(zing.browser, (p) => p.url() === `${base}/opener`)
 	await opener.getByRole('button', { name: 'open' }).click()
 	await expect.poll(async () => (await tabsOf(zing.chrome)).tabs.map((t) => t.title)).toContain('Popup with opener')
+	await zing.close()
+})
+
+test('a popup a click asked for a second earlier, after an await, still opens with window.opener', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/late-opener` } })
+	const opener = await pageWhere(zing.browser, (p) => p.url() === `${base}/late-opener`)
+	await opener.getByRole('button', { name: 'open' }).click()
+	await expect.poll(async () => (await tabsOf(zing.chrome)).tabs.map((t) => t.title)).toContain('Popup with opener')
+	await zing.close()
+})
+
+test('a popup opened without a click is blocked and offered: once, then for the site this session', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/pushy` } })
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(ui.getByText(`Zing blocked a pop-up from ${base}`)).toBeVisible()
+	expect((await tabsOf(zing.chrome)).tabs.map((t) => t.url)).toEqual([`${base}/pushy`])
+
+	await ui.getByRole('button', { name: 'Allow once' }).click()
+	// Opened by Zing from the prompt, so it has no opener; it is in front, beside the page.
+	await expect.poll(async () => (await tabsOf(zing.chrome)).tabs.map((t) => t.title)).toEqual(['Pushy', 'Popup alone'])
+	const { tabs, activeId } = await tabsOf(zing.chrome)
+	expect(activeId).toBe(tabs[1]!.id)
+
+	// Once was only once: the page loading again is blocked again.
+	await zing.chrome.evaluate((id) => window.zing.activateTab(id), tabs[0]!.id)
+	await zing.chrome.evaluate(async ([id, url]) => window.zing.navigateTab(id!, url!), [tabs[0]!.id, `${base}/pushy`])
+	await expect(ui.getByText(`Zing blocked a pop-up from ${base}`)).toBeVisible()
+	await ui.getByRole('button', { name: 'Allow for this site, this session' }).click()
+	await expect.poll(async () => (await tabsOf(zing.chrome)).tabs.length).toBe(3)
+
+	// Now the site's pop-ups open without asking, as the engine's own window, so window.opener works.
+	await zing.chrome.evaluate(async ([id, url]) => window.zing.navigateTab(id!, url!), [tabs[0]!.id, `${base}/pushy`])
+	await expect.poll(async () => (await tabsOf(zing.chrome)).tabs.filter((t) => t.title === 'Popup with opener').length).toBe(1)
+	await expect(ui.getByText('Zing blocked a pop-up')).toHaveCount(0)
 	await zing.close()
 })
 
