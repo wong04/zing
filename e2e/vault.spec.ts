@@ -61,7 +61,7 @@ test.afterAll(async () => {
 function vaultProfile(on: boolean): string {
 	const dir = scratchDir('zing-host-data-')
 	mkdirSync(dir, { recursive: true })
-	writeFileSync(join(dir, 'settings.json'), JSON.stringify({ passwordAutofill: on }))
+	writeFileSync(join(dir, 'settings.json'), JSON.stringify({ passwordAutofill: on, restoreTabs: false }))
 	return dir
 }
 

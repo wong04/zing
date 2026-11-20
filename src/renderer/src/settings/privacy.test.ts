@@ -2,15 +2,21 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings'
 import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setLibraryHoldsImports, setLibraryKeepsIcons, setVaultKeepsData } from './privacy'
 
-const withSettings = (patch: Partial<Settings>): Settings => ({ ...DEFAULT_SETTINGS, ...patch })
+// Reopen tabs is on by default; turning it off is the state where Zing keeps nothing.
+const NOTHING_KEPT: Settings = { ...DEFAULT_SETTINGS, restoreTabs: false }
+const withSettings = (patch: Partial<Settings>): Settings => ({ ...NOTHING_KEPT, ...patch })
 
 describe('privacyStatus', () => {
-	it('is green with the defaults: Zing keeps nothing', () => {
-		expect(privacyStatus(DEFAULT_SETTINGS)).toMatchObject({ traceless: true })
+	it('warns with the defaults, because Reopen tabs is on and writes the open tabs to disk', () => {
+		expect(privacyStatus(DEFAULT_SETTINGS)).toMatchObject({ traceless: false, detail: 'Your open tabs are written to disk.' })
+	})
+
+	it('is green with Reopen tabs off: Zing keeps nothing', () => {
+		expect(privacyStatus(NOTHING_KEPT)).toMatchObject({ traceless: true })
 	})
 
 	it('says while green that a bookmark keeps its icon only once its page is visited', () => {
-		expect(privacyStatus(DEFAULT_SETTINGS).detail).toContain("A bookmark's site icon is saved only once you visit that page.")
+		expect(privacyStatus(NOTHING_KEPT).detail).toContain("A bookmark's site icon is saved only once you visit that page.")
 	})
 
 	it('flips to a warning for restoreTabs and names what is kept', () => {
@@ -39,11 +45,11 @@ describe('registerStoresDataCondition', () => {
 			what: 'saved passwords',
 			plural: true,
 		})
-		expect(privacyStatus(DEFAULT_SETTINGS).traceless).toBe(true)
+		expect(privacyStatus(NOTHING_KEPT).traceless).toBe(true)
 		vaultHasEntries = true
-		expect(privacyStatus(DEFAULT_SETTINGS)).toMatchObject({ traceless: false, detail: 'Saved passwords are written to disk.' })
+		expect(privacyStatus(NOTHING_KEPT)).toMatchObject({ traceless: false, detail: 'Saved passwords are written to disk.' })
 		unregister()
-		expect(privacyStatus(DEFAULT_SETTINGS).traceless).toBe(true)
+		expect(privacyStatus(NOTHING_KEPT).traceless).toBe(true)
 	})
 
 	it('refuses two conditions with one id', () => {
@@ -80,9 +86,9 @@ describe('the password vault', () => {
 describe('imported bookmarks', () => {
 	it('imported bookmarks flip the banner and clearing them restores it', () => {
 		setLibraryHoldsImports(true)
-		expect(privacyStatus(DEFAULT_SETTINGS)).toMatchObject({ traceless: false, detail: 'Imported bookmarks are written to disk.' })
+		expect(privacyStatus(NOTHING_KEPT)).toMatchObject({ traceless: false, detail: 'Imported bookmarks are written to disk.' })
 		setLibraryHoldsImports(false)
-		expect(privacyStatus(DEFAULT_SETTINGS).traceless).toBe(true)
+		expect(privacyStatus(NOTHING_KEPT).traceless).toBe(true)
 	})
 })
 
@@ -91,8 +97,8 @@ describe('bookmark icons', () => {
 
 	it('a saved bookmark icon flips the banner and names it, and none left restores it', () => {
 		setLibraryKeepsIcons(true)
-		expect(privacyStatus(DEFAULT_SETTINGS)).toMatchObject({ traceless: false, detail: 'Icons of bookmarked sites you visited are written to disk.' })
+		expect(privacyStatus(NOTHING_KEPT)).toMatchObject({ traceless: false, detail: 'Icons of bookmarked sites you visited are written to disk.' })
 		setLibraryKeepsIcons(false)
-		expect(privacyStatus(DEFAULT_SETTINGS).traceless).toBe(true)
+		expect(privacyStatus(NOTHING_KEPT).traceless).toBe(true)
 	})
 })

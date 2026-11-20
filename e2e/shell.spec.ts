@@ -41,14 +41,14 @@ test('Settings opens over the window, a changed toggle survives a relaunch, and 
 	await expect(sheet.getByRole('dialog', { name: 'Settings' })).toBeVisible()
 	await sheet.getByRole('button', { name: 'Browsing' }).click()
 	await sheet.getByRole('switch', { name: 'Reopen tabs from last time' }).click()
-	await expect(sheet.getByRole('switch', { name: 'Reopen tabs from last time' })).toHaveAttribute('aria-checked', 'true')
+	await expect(sheet.getByRole('switch', { name: 'Reopen tabs from last time' })).toHaveAttribute('aria-checked', 'false')
 	await sheet.getByRole('button', { name: 'Close settings (Esc)' }).click()
 	await expect(sheet.getByRole('dialog', { name: 'Settings' })).toHaveCount(0)
 	await expect.poll(async () => (await first.chrome.evaluate(() => window.zing.getShell())).settingsOpen).toBe(false)
 	await first.close()
 
 	const second = await launchZing({ userDataDir: first.userDataDir })
-	expect((await second.chrome.evaluate(() => window.zing.getSettings())).restoreTabs).toBe(true)
+	expect((await second.chrome.evaluate(() => window.zing.getSettings())).restoreTabs).toBe(false)
 	await second.close()
 })
 

@@ -111,7 +111,7 @@ export const SETTINGS_SCHEMA = {
 	defaultUserAgent: flag(false),
 	acceleratedCanvas: flag(true),
 	/** Off by default: remembering open tabs means writing visited URLs to disk. */
-	restoreTabs: flag(false),
+	restoreTabs: flag(true),
 	securityRealtime: flag(true),
 	sidebarPinned: flag(true),
 	/** Feature names only, never what was done with them. */

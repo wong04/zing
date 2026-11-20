@@ -26,13 +26,13 @@ public sealed class JsonFilesTests : IDisposable
 		var writer = new DebouncedJsonWriter(SettingsPath, TimeSpan.FromMilliseconds(300), clock, _writeErrors.Add);
 		store.Subscribe((s, _) => writer.Write(Settings.Changed(s)));
 		store.Set("tabBarPosition", JsonValue.Create("right"));
-		store.Set("restoreTabs", JsonValue.Create(true));
+		store.Set("restoreTabs", JsonValue.Create(false));
 		clock.Advance(TimeSpan.FromMilliseconds(299));
 		Assert.False(File.Exists(SettingsPath));
 		clock.Advance(TimeSpan.FromMilliseconds(1));
 
 		var written = JsonNode.Parse(File.ReadAllText(SettingsPath))!;
-		Assert.True(JsonNode.DeepEquals(JsonNode.Parse("""{"tabBarPosition":"right","restoreTabs":true}"""), written));
+		Assert.True(JsonNode.DeepEquals(JsonNode.Parse("""{"tabBarPosition":"right","restoreTabs":false}"""), written));
 		Assert.Equal(["settings.json"], Directory.GetFiles(Path.GetDirectoryName(SettingsPath)!).Select(Path.GetFileName));
 		var reloaded = JsonFiles.LoadSettingsFile(SettingsPath, NoUnknownKeys);
 		Assert.Equal("right", reloaded["tabBarPosition"]!.GetValue<string>());
