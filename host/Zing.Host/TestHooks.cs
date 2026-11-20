@@ -161,6 +161,8 @@ public static class TestHooks
 	public static int? QuitExitCode { get; private set; }
 	/// <summary>"close-window-answer": what the confirm on closing a window of tabs answers in an e2e run, which shows no dialog.</summary>
 	public static bool CloseWindowAnswer { get; private set; } = true;
+	/// <summary>"close-window-answer" with <c>dontAskAgain</c>: whether the confirm's "Don't ask again" is ticked as it is answered.</summary>
+	public static bool CloseWindowDontAsk { get; private set; }
 	private static WindowScope? _newest;
 	private static int _windows;
 	private static bool _newestStarted;
@@ -180,7 +182,7 @@ public static class TestHooks
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption", "live-counts" and "startup-marks" (StartupMarks) write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
 	/// "update-ready" with <c>version</c> makes the next update check find that version (with <c>restart</c> "quits", a restart into it then quits Zing as Velopack's does; with "fails", it throws), and "update-restarts" writes how many restarts into an update were asked for to <c>file</c>.
-	/// "close-window-answer" with <c>close</c> sets how the confirm on closing a window of tabs is answered (recorded as a "close-window" dialog); it closes until told otherwise.
+	/// "close-window-answer" with <c>close</c> sets how the confirm on closing a window of tabs is answered (recorded as a "close-window" dialog), and with <c>dontAskAgain</c> whether its "Don't ask again" is ticked; it closes, unticked, until told otherwise.
 	/// "close-all-as-taskbar" posts WM_CLOSE to every window back to back, as the taskbar's "Close all windows" does.
 	/// "set-cursor" with <c>x</c> and <c>y</c> puts the cursor there over the window's content (WindowLayout.Cursor), and without them takes it off the window.
 	/// "window-at" with <c>x</c> and <c>y</c> writes to <c>file</c> the address of the view Windows gives a click at that point of the content (WindowFromPoint), null for none, and the class of the window hit.
@@ -366,6 +368,7 @@ public static class TestHooks
 		if (action == "close-window-answer")
 		{
 			CloseWindowAnswer = root.GetProperty("close").GetBoolean();
+			CloseWindowDontAsk = root.TryGetProperty("dontAskAgain", out var dontAsk) && dontAsk.GetBoolean();
 			return true;
 		}
 		if (action == "show-default-browser-offer")

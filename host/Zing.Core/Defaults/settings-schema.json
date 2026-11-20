@@ -116,6 +116,9 @@
 	"restoreTabs": {
 		"type": "flag"
 	},
+	"confirmWindowClose": {
+		"type": "flag"
+	},
 	"securityRealtime": {
 		"type": "flag"
 	},
