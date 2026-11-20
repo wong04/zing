@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http'
+import { createServer, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
@@ -13,19 +13,28 @@ const TEST_CLOCK = { ZING_TEST_CLOCK: '1' }
 
 let server: Server
 let base = ''
+const hanging: ServerResponse[] = []
 
 test.beforeAll(async () => {
 	server = createServer((req, res) => {
 		res.setHeader('content-type', 'text/html')
 		if (req.url === '/tall') return void res.end('<!doctype html><title>tall</title><div style="height:5000px">tall</div>')
 		if (req.url === '/form') return void res.end('<!doctype html><title>form</title><input name="draft">')
+		// As React does for a controlled input: the value attribute follows what was typed, so value equals defaultValue.
+		if (req.url === '/react') return void res.end('<!doctype html><title>react</title><input name="draft"><script>const i = document.querySelector("input"); i.addEventListener("input", () => (i.defaultValue = i.value))</script>')
+		if (req.url === '/framed') return void res.end('<!doctype html><title>framed</title><iframe src="/react"></iframe>')
+		// An upload the server never answers, so it stays in progress.
+		if (req.url === '/upload') return void hanging.push(res)
 		res.end('<!doctype html><title>other</title>')
 	})
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
 	base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 })
 
-test.afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())))
+test.afterAll(() => {
+	for (const res of hanging) res.end()
+	return new Promise<void>((resolve) => server.close(() => resolve()))
+})
 
 /** Moves the app's test clock forward (TestHooks.TryHandle in the host). */
 async function advanceClock(chrome: Page, ms: number): Promise<void> {
@@ -88,5 +97,63 @@ test('a tab with unsaved form input stays awake', async () => {
 	// Give the sweep time to run, then check it left the tab alone.
 	await new Promise((resolve) => setTimeout(resolve, 2000))
 	expect((await tab(zing.chrome, form)).sleeping).toBe(false)
+	await zing.close()
+})
+
+/** Opens another tab, moves the clock past the sleep time and gives the sweep time to run. */
+async function leaveIdle(chrome: Page): Promise<void> {
+	await openTab(chrome, '/other')
+	await advanceClock(chrome, 3 * MINUTE)
+	await new Promise((resolve) => setTimeout(resolve, 2000))
+}
+
+test('a tab with a draft typed into a React-style input stays awake, in the page or a same-origin frame', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const top = await openTab(zing.chrome, '/react')
+	await (await pageWhere(zing.browser, (p) => p.url() === `${base}/react`)).locator('input[name=draft]').fill('half a thought')
+	const framed = await openTab(zing.chrome, '/framed')
+	await (await pageWhere(zing.browser, (p) => p.url() === `${base}/framed`)).frameLocator('iframe').locator('input[name=draft]').fill('another')
+	await leaveIdle(zing.chrome)
+	expect((await tab(zing.chrome, top)).sleeping).toBe(false)
+	expect((await tab(zing.chrome, framed)).sleeping).toBe(false)
+	await zing.close()
+})
+
+test('a tab with an upload in progress stays awake', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const uploading = await openTab(zing.chrome, '/other')
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/other`)
+	await page.evaluate(() => {
+		const g = globalThis as unknown as { XMLHttpRequest: new () => { open(m: string, u: string): void; send(b: unknown): void }; Blob: new (parts: string[]) => unknown }
+		const xhr = new g.XMLHttpRequest()
+		xhr.open('POST', '/upload')
+		xhr.send(new g.Blob(['file contents']))
+	})
+	await leaveIdle(zing.chrome)
+	expect((await tab(zing.chrome, uploading)).sleeping).toBe(false)
+	await zing.close()
+})
+
+test('a tab using the camera stays awake', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const call = await openTab(zing.chrome, '/tall')
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/tall`)
+	const result = () => page.evaluate(() => (globalThis as unknown as { result?: string }).result)
+	await page.evaluate(() => {
+		const g = globalThis as unknown as { result?: string; navigator: { mediaDevices: { getUserMedia(c: object): Promise<unknown> } } }
+		g.result = 'pending'
+		g.navigator.mediaDevices.getUserMedia({ video: true }).then(
+			() => (g.result = 'granted'),
+			(error: Error) => (g.result = error.name),
+		)
+	})
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await ui.getByRole('button', { name: 'Allow' }).click()
+	await expect.poll(result).toBe('granted')
+	await leaveIdle(zing.chrome)
+	expect((await tab(zing.chrome, call)).sleeping).toBe(false)
 	await zing.close()
 })
