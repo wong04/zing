@@ -19,7 +19,7 @@ export interface DownloadEntry {
 	readonly error?: string
 }
 
-export type PermissionKind = 'camera' | 'microphone' | 'camera and microphone' | 'location' | 'notifications'
+export type PermissionKind = 'camera' | 'microphone' | 'camera and microphone' | 'location' | 'notifications' | 'clipboard' | 'multiple downloads' | 'files' | 'pop-ups'
 
 export interface PermissionPrompt {
 	readonly id: number

@@ -269,6 +269,15 @@ public sealed class TabService
 		return record;
 	}
 
+	/// <summary>A pop-up that was blocked, opened after all: a tab in front, beside its opener's, which closing it goes back to.</summary>
+	public TabRecord OpenBeside(string openerId, string url)
+	{
+		var record = _store.AddAfter(openerId, url);
+		_openers[record.Id] = openerId;
+		Activate(record.Id);
+		return record;
+	}
+
 	/// <summary>
 	/// Several tabs at once (Open All): the last is shown, and the others get their pages when first activated, as restored
 	/// tabs do. Pages the engine starts together hold up the UI thread for seconds, however little each start asks of it.
