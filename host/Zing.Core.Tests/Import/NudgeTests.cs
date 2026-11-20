@@ -26,7 +26,7 @@ public sealed class NudgeTests : IDisposable
 
 	public NudgeTests()
 	{
-		_api = new ImportApi(_library, new FileGrants(), () => _rootUnreadable ? throw new UnauthorizedAccessException("denied") : _root, () => throw new InvalidOperationException("no launcher"), () => throw new InvalidOperationException("no trash"), new ManualScheduler(), _root, (_, _) => { }, _hooks.Host);
+		_api = new ImportApi(_library, new FileGrants(), () => _rootUnreadable ? throw new UnauthorizedAccessException("denied") : _root, () => _root, () => throw new InvalidOperationException("no launcher"), () => throw new InvalidOperationException("no trash"), new ManualScheduler(), _root, (_, _) => { }, _hooks.Host);
 		WriteChrome("Default", "Personal", "chromium-bookmarks.json");
 		WriteChrome("Profile 1", "Work", "chromium-bookmarks.json", lastUsed: "Profile 1");
 	}
@@ -60,7 +60,7 @@ public sealed class NudgeTests : IDisposable
 	public async Task TheFirstStartPageIsServedWithoutWaitingForTheScan()
 	{
 		var release = new ManualResetEventSlim();
-		var slow = new ImportApi(_library, new FileGrants(), () => { release.Wait(TestContext.Current.CancellationToken); return _root; }, () => throw new InvalidOperationException("no launcher"), () => throw new InvalidOperationException("no trash"), new ManualScheduler(), _root, (_, _) => { }, _hooks.Host);
+		var slow = new ImportApi(_library, new FileGrants(), () => { release.Wait(TestContext.Current.CancellationToken); return _root; }, () => _root, () => throw new InvalidOperationException("no launcher"), () => throw new InvalidOperationException("no trash"), new ManualScheduler(), _root, (_, _) => { }, _hooks.Host);
 		try
 		{
 			Assert.Null(slow.Nudge());
@@ -82,7 +82,7 @@ public sealed class NudgeTests : IDisposable
 	public async Task ADismissWhileScanningDropsTheLateCard()
 	{
 		var release = new ManualResetEventSlim();
-		var slow = new ImportApi(_library, new FileGrants(), () => { release.Wait(TestContext.Current.CancellationToken); return _root; }, () => throw new InvalidOperationException("no launcher"), () => throw new InvalidOperationException("no trash"), new ManualScheduler(), _root, (_, _) => { }, _hooks.Host);
+		var slow = new ImportApi(_library, new FileGrants(), () => { release.Wait(TestContext.Current.CancellationToken); return _root; }, () => _root, () => throw new InvalidOperationException("no launcher"), () => throw new InvalidOperationException("no trash"), new ManualScheduler(), _root, (_, _) => { }, _hooks.Host);
 		Assert.Null(slow.Nudge());
 		slow.Act("dismiss", null);
 		release.Set();

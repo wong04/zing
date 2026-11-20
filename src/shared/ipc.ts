@@ -216,7 +216,7 @@ export interface RendererErrorReport {
 
 export interface ImportSourceView {
 	id: string
-	browser: 'chrome' | 'edge' | 'brave' | 'dia' | 'arc'
+	browser: 'chrome' | 'edge' | 'brave' | 'vivaldi' | 'opera' | 'operagx' | 'dia' | 'arc'
 	display: string
 	bookmarks?: number
 	error?: string

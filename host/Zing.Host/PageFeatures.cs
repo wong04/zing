@@ -57,6 +57,15 @@ public sealed class WindowsDownloads : IDownloadHost
 		return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 	}
 
+	/// <summary>The roaming AppData, where Opera keeps its profile; ZING_APPDATA in tests, so they never read the real profiles.</summary>
+	public static string AppData()
+	{
+		var configured = Environment.GetEnvironmentVariable("ZING_APPDATA");
+		if (!string.IsNullOrEmpty(configured)) return configured;
+		if (TestHooks.IsEndToEndRun) throw new InvalidOperationException("e2e runs must set ZING_APPDATA so they never read the real browser profiles");
+		return Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+	}
+
 	public void Track(int id, CoreWebView2DownloadOperation operation) => _operations[id] = operation;
 
 	public void Forget(int id) => _operations.Remove(id);
