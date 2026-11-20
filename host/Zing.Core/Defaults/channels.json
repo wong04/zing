@@ -57,6 +57,30 @@
 			"args": 2
 		},
 		{
+			"channel": "addressbar:close",
+			"args": 0
+		},
+		{
+			"channel": "addressbar:get",
+			"args": 0
+		},
+		{
+			"channel": "addressbar:height",
+			"args": 1
+		},
+		{
+			"channel": "addressbar:highlight",
+			"args": 1
+		},
+		{
+			"channel": "addressbar:open",
+			"args": 1
+		},
+		{
+			"channel": "addressbar:suggest",
+			"args": 2
+		},
+		{
 			"channel": "app:report-error",
 			"args": 1
 		},
@@ -680,6 +704,7 @@
 	],
 	"events": [
 		"account:state",
+		"addressbar:suggestions",
 		"chrome:focus-address",
 		"engines:exit",
 		"engines:output",
