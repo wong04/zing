@@ -2,10 +2,10 @@ using System.Text.Json;
 
 namespace Zing.Core.Import;
 
-public enum ImportBrowser { Chrome, Edge, Brave, Dia, Arc }
+public enum ImportBrowser { Chrome, Edge, Brave, Vivaldi, Opera, OperaGX, Dia, Arc }
 
-/// <param name="Id">"chrome:Default", "edge:Profile 1", "dia:Default", "arc"; also the merge source key, since it outlives a profile rename.</param>
-/// <param name="Profile">The profile folder name; null for Arc.</param>
+/// <param name="Id">"chrome:Default", "edge:Profile 1", "vivaldi:Default", "opera:stable", "dia:Default", "arc"; also the merge source key, since it outlives a profile rename.</param>
+/// <param name="Profile">The profile folder name; null for Opera and Arc.</param>
 /// <param name="Display">"Chrome (Personal)", "Arc"; the import folder's title.</param>
 /// <param name="Path">The Bookmarks file or StorableSidebar.json. Host-only: never sent to the renderer.</param>
 /// <param name="Bookmarks">The link count; null when the file couldn't be read or parsed, and then <paramref name="Error"/> says why.</param>
@@ -19,6 +19,14 @@ public static class ImportSources
 		(ImportBrowser.Chrome, "Chrome", ["Google", "Chrome", "User Data"]),
 		(ImportBrowser.Edge, "Edge", ["Microsoft", "Edge", "User Data"]),
 		(ImportBrowser.Brave, "Brave", ["BraveSoftware", "Brave-Browser", "User Data"]),
+		(ImportBrowser.Vivaldi, "Vivaldi", ["Vivaldi", "User Data"]),
+	];
+
+	// Opera keeps one profile per channel in roaming AppData, with the Bookmarks file at the top of it: no Local State profile list, no profile folders.
+	private static readonly (ImportBrowser Browser, string Id, string Label, string Folder)[] OperaChannels =
+	[
+		(ImportBrowser.Opera, "opera:stable", "Opera", "Opera Stable"),
+		(ImportBrowser.OperaGX, "opera-gx:stable", "Opera GX", "Opera GX Stable"),
 	];
 
 	// Chromium creates these itself; they're never someone's bookmarks.
@@ -42,11 +50,18 @@ public static class ImportSources
 	}
 
 	/// <remarks>A file that can't be read or parsed is still a row, with <see cref="ImportSource.Error"/> set, and so is a damaged Local State (one row for the browser). A missing Local State means no rows.</remarks>
-	public static IReadOnlyList<ImportSource> Find(string localAppData)
+	/// <param name="localAppData">%LOCALAPPDATA%: the Chromium browsers, Dia and Arc.</param>
+	/// <param name="appData">%APPDATA% (roaming): Opera.</param>
+	public static IReadOnlyList<ImportSource> Find(string localAppData, string appData)
 	{
 		List<ImportSource> found = [];
 		foreach (var (browser, label, userDataParts) in ChromiumBrowsers)
 			found.AddRange(FindChromium(browser, label, System.IO.Path.Combine([localAppData, .. userDataParts])));
+		foreach (var (browser, id, label, folder) in OperaChannels)
+		{
+			var bookmarks = System.IO.Path.Combine(appData, "Opera Software", folder, "Bookmarks");
+			if (File.Exists(bookmarks)) found.Add(Describe(new ImportSource(id, browser, null, label, bookmarks, null, null, false)));
+		}
 		found.AddRange(FindDia(localAppData));
 		if (FindArc(localAppData) is { } arc) found.Add(arc);
 		return found;

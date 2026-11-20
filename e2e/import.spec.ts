@@ -1,5 +1,5 @@
-// Settings, Import: browser profiles found under a fake LocalAppData (ZING_LOCALAPPDATA, built from the synthetic
-// fixtures in src/shared/import/fixtures), imported into the library, and a bookmarks file picked through the pick-files
+// Settings, Import: browser profiles found under a fake LocalAppData (ZING_LOCALAPPDATA) and roaming AppData (ZING_APPDATA, for Opera),
+// built from the synthetic fixtures in src/shared/import/fixtures, imported into the library, and a bookmarks file picked through the pick-files
 // test message. With ZING_SCREENSHOTS=1 it also takes the section's pictures, light and dark, into docs/screenshots.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -217,6 +217,33 @@ test('Dia installed on this PC is listed per profile from its package folder and
 	await importFrom(sheet, 'Dia (Personal)')
 	await expect(row(sheet, 'Dia (Personal)').getByRole('status')).toContainText('Imported from Dia (Personal)')
 	expect(topFolder((await library(zing)).bookmarks, 'Imported from Dia (Personal)')).toBeDefined()
+	await zing.close()
+})
+
+test('Vivaldi profiles and Opera / Opera GX are listed, import their bookmarks, and say passwords need a file', async () => {
+	const root = localAppData([])
+	const vivaldi = join(root, 'Vivaldi', 'User Data')
+	write(join(vivaldi, 'Local State'), JSON.stringify({ profile: { info_cache: { Default: { name: 'Home' } } } }))
+	write(join(vivaldi, 'Default', 'Bookmarks'), fixture('chromium-bookmarks.json'))
+	const appData = scratchDir('zing-appdata-')
+	write(join(appData, 'Opera Software', 'Opera Stable', 'Bookmarks'), fixture('chromium-bookmarks.json'))
+	write(join(appData, 'Opera Software', 'Opera GX Stable', 'Bookmarks'), fixture('chromium-bookmarks.json'))
+	const zing = await launchZing({ userDataDir: passwordProfile(true), env: { ZING_LOCALAPPDATA: root, ZING_APPDATA: appData } })
+	const sheet = await openImport(zing)
+	for (const name of ['Vivaldi (Home)', 'Opera', 'Opera GX']) {
+		await expect(row(sheet, name)).toContainText(/\d+ bookmarks?/)
+		await expect(row(sheet, name).getByRole('button', { name: 'Import passwords' })).toHaveCount(0)
+	}
+	await expect(row(sheet, 'Vivaldi (Home)')).toContainText('Zing imports bookmarks only from Vivaldi.')
+	await expect(row(sheet, 'Opera GX')).toContainText('Zing imports bookmarks only from Opera GX.')
+
+	await importFrom(sheet, 'Vivaldi (Home)')
+	await expect(row(sheet, 'Vivaldi (Home)').getByRole('status')).toContainText('Imported from Vivaldi (Home)')
+	await importFrom(sheet, 'Opera')
+	await expect(row(sheet, 'Opera').getByRole('status')).toContainText('Imported from Opera')
+	const { bookmarks } = await library(zing)
+	expect(topFolder(bookmarks, 'Imported from Vivaldi (Home)')).toBeDefined()
+	expect(topFolder(bookmarks, 'Imported from Opera')).toBeDefined()
 	await zing.close()
 })
 
