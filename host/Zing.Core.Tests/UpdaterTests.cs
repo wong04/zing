@@ -222,6 +222,53 @@ public sealed class UpdaterTests
 	}
 
 	[Fact]
+	public async Task Relaunch_saves_the_tabs_before_restarting()
+	{
+		_source.Newer = "0.9.1";
+		var updater = Make();
+		await updater.CheckNowAsync();
+		var restartsWhenSaved = -1;
+		updater.Relaunching += () => restartsWhenSaved = _source.Restarts;
+		updater.Relaunch();
+		Assert.Equal(0, restartsWhenSaved);
+		Assert.Equal(1, _source.Restarts);
+	}
+
+	[Fact]
+	public async Task Tabs_that_cannot_be_saved_stop_the_relaunch_which_can_be_tried_again()
+	{
+		_source.Newer = "0.9.1";
+		var updater = Make();
+		await updater.CheckNowAsync();
+		var error = new IOException("disk full");
+		var fail = true;
+		updater.Relaunching += () =>
+		{
+			if (fail) throw error;
+		};
+		updater.Relaunch();
+		Assert.Equal(0, _source.Restarts);
+		Assert.Same(error, Assert.Single(_failures));
+		Assert.Equal(UpdateStatus.Ready, updater.State.Status);
+		fail = false;
+		updater.Relaunch();
+		Assert.Equal(1, _source.Restarts);
+	}
+
+	[Fact]
+	public async Task A_restart_that_fails_takes_back_the_saved_tabs()
+	{
+		_source.Newer = "0.9.1";
+		_source.RestartError = new InvalidOperationException("updater would not start");
+		var updater = Make();
+		await updater.CheckNowAsync();
+		var abandoned = 0;
+		updater.RelaunchAbandoned += () => abandoned++;
+		updater.Relaunch();
+		Assert.Equal(1, abandoned);
+	}
+
+	[Fact]
 	public async Task A_failed_relaunch_stays_ready_and_quitting_still_applies()
 	{
 		_source.Newer = "0.9.1";

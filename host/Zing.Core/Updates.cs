@@ -91,18 +91,35 @@ public sealed class Updater(IUpdateSource? source, IScheduler scheduler, Func<bo
 		return State;
 	}
 
+	/// <summary>Raised before restarting into the update, to save the tabs that come back after it; a handler that throws stops the relaunch.</summary>
+	public event Action? Relaunching;
+
+	/// <summary>The restart failed after <see cref="Relaunching"/>: what it saved must go. Handlers must not throw.</summary>
+	public event Action? RelaunchAbandoned;
+
 	public void Relaunch()
 	{
 		if (source is null || State.Status != UpdateStatus.Ready || _restarting) return;
 		_restarting = true;
+		// Still Ready on a failure: the pill can try again, and quitting applies the update.
+		try
+		{
+			Relaunching?.Invoke();
+		}
+		catch (Exception error)
+		{
+			_restarting = false;
+			Failed?.Invoke(error);
+			return;
+		}
 		try
 		{
 			source.RestartIntoUpdate();
 		}
-		// Still Ready: the pill can try again, and quitting applies the update.
 		catch (Exception error)
 		{
 			_restarting = false;
+			RelaunchAbandoned?.Invoke();
 			Failed?.Invoke(error);
 		}
 	}

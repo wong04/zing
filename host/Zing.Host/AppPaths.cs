@@ -13,6 +13,9 @@ public static class AppPaths
 	public static string Library => Path.Combine(UserData, "library.json");
 	public static string Session => Path.Combine(UserData, "session.json");
 
+	/// <summary>Every window's tabs, saved as Zing relaunches into an update and read once by the next launch, whatever restoreTabs says.</summary>
+	public static string RelaunchSession => Path.Combine(UserData, "relaunch-session.json");
+
 	/// <summary>The password vault: vault.zing, keys.bin and sync.json (Zing.Core.Vault.VaultStore). Not created until the first save.</summary>
 	public static string Vault => Path.Combine(UserData, "vault");
 
