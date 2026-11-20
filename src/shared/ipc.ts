@@ -125,7 +125,7 @@ export interface Notice {
 	readonly text: string
 	/** Present for the offer after a page failed like a block: it stays until chosen or dismissed and carries the buttons. */
 	readonly offer?: { readonly address: string }
-	/** Present for the offer to make Zing the default browser: "Make default" and "Don't ask again". Left alone, it times out and comes back next launch. */
+	/** Present for the offer to make Zing the default browser: "Make default" and "Not now". It asks once: left alone, it times out and never comes back. */
 	readonly defaultBrowser?: true
 }
 
@@ -595,7 +595,7 @@ export interface InvokeContract {
 	/** The pill view measured what it shows, in CSS pixels. */
 	'update:pill-size': { args: [width: number, height: number]; result: void }
 	'default-browser:get': { args: []; result: DefaultBrowserState }
-	/** "Don't ask again": sets defaultBrowserDismissed and takes the offer down. */
+	/** "Not now": sets defaultBrowserDismissed (already set once the offer shows) and takes the offer down. */
 	'default-browser:dismiss': { args: []; result: void }
 	/** The third-party notices the build generated (THIRD-PARTY-NOTICES.txt). Rejects if the file is missing. */
 	'about:credits': { args: []; result: string }

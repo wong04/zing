@@ -106,6 +106,7 @@ public sealed class ZingApp
 		// Its continuation runs after Launch returns, by which time the services exist.
 		// A persistent profile exists so sign-ins survive closing a tab and quitting; purging would undo exactly that.
 		PersistentProfile = Flag(settings, "persistentProfile");
+		HostedView.SmartScreen = Flag(settings, "smartScreen");
 		_environment = OpenEnvironmentAsync(Flag(settings, "acceleratedCanvas"));
 		StartupMarks.Mark("engine requested");
 		// Pages ask the filter lists about every request on the UI thread; reading them takes about 100 ms, so it happens
@@ -193,7 +194,7 @@ public sealed class ZingApp
 		if (noticeShown || !DefaultBrowserOffer.Allowed(Flag("defaultBrowserDismissed"), launchedBefore: !_firstLaunch.Value)) return;
 		try
 		{
-			if (DefaultBrowserOffer.Wanted(window.DefaultBrowserState)) window.OfferDefaultBrowser();
+			if (DefaultBrowserOffer.Wanted(window.DefaultBrowserState)) AskDefaultBrowser(window);
 		}
 		catch (Exception error) when (error is System.Security.SecurityException or IOException or UnauthorizedAccessException)
 		{
@@ -205,7 +206,14 @@ public sealed class ZingApp
 	private void OfferDefaultBrowserForTest()
 	{
 		if (_firstLaunch is not { } first) return;
-		if (DefaultBrowserOffer.Allowed(Flag("defaultBrowserDismissed"), launchedBefore: !first)) Primary?.OfferDefaultBrowser();
+		if (Primary is { } window && DefaultBrowserOffer.Allowed(Flag("defaultBrowserDismissed"), launchedBefore: !first)) AskDefaultBrowser(window);
+	}
+
+	/// <summary>Asked once per profile: recorded as it shows, so Make default, Not now, closing it or letting it time out all end it.</summary>
+	private void AskDefaultBrowser(MainWindow window)
+	{
+		Services.Settings.Set("defaultBrowserDismissed", true);
+		window.OfferDefaultBrowser();
 	}
 
 	/// <summary>

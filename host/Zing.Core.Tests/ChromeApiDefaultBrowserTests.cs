@@ -3,7 +3,7 @@ using Zing.Core;
 
 namespace Zing.Core.Tests;
 
-/// <summary>default-browser:get and default-browser:dismiss: the Settings row's state and the offer's "Don't ask again".</summary>
+/// <summary>default-browser:get and default-browser:dismiss: the Settings row's state and the offer's "Not now".</summary>
 public sealed class ChromeApiDefaultBrowserTests : IDisposable
 {
 	private readonly Bridge _bridge = new();
@@ -40,7 +40,7 @@ public sealed class ChromeApiDefaultBrowserTests : IDisposable
 	}
 
 	[Fact]
-	public async Task Dont_ask_again_remembers_it_and_takes_the_offer_down()
+	public async Task Not_now_remembers_it_and_takes_the_offer_down()
 	{
 		Assert.False(_settings.Get("defaultBrowserDismissed")!.GetValue<bool>());
 		await Invoke("default-browser:dismiss");
