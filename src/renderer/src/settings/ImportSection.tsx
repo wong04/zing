@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { BookmarkImportOutcome, ImportSourceView } from '@shared/ipc'
 import { zing } from '../api'
 import { InfoBanner, PillButton } from '../components'
-import { exportLine, fileHelp, MAC_INTRO, macBrowsers, outcomeLine, PASSWORDS_FILE_VAULT_OFF } from './importText'
+import { bookmarksOnlyNote, exportLine, fileHelp, MAC_INTRO, macBrowsers, outcomeLine, PASSWORDS_FILE_VAULT_OFF } from './importText'
 import { messageOf, PasswordImportResult, usePasswordCsvImport } from './PasswordImport'
 import { PasswordImportFlow } from './PasswordImportFlow'
 import { SettingRowShell } from './SettingRowShell'
@@ -166,6 +166,7 @@ export function ImportSection() {
 							) : null}
 						</div>
 					</SettingRowShell>
+					{bookmarksOnlyNote[source.browser] ? <div className="vault-none">{bookmarksOnlyNote[source.browser]}</div> : null}
 					{rowOutcome(source.id)}
 					{activeFlow === source.id ? (
 						<PasswordImportFlow

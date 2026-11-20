@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { exportLine, exportMenuPath, fileHelp, InvalidPasswordImportEventError, macBrowsers, outcomeLine, PASSWORDS_FILE_VAULT_OFF, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, type PasswordImportEvent, type PasswordImportState } from './importText'
+import { bookmarksOnlyNote, exportLine, exportMenuPath, fileHelp, InvalidPasswordImportEventError, macBrowsers, outcomeLine, PASSWORDS_FILE_VAULT_OFF, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, type PasswordImportEvent, type PasswordImportState } from './importText'
 
 const outcome = (patch: Partial<Parameters<typeof outcomeLine>[0]> = {}) => ({
 	folderTitle: 'Imported from Chrome (Personal)',
@@ -64,6 +64,18 @@ describe('exportMenuPath', () => {
 		expect(exportMenuPath.edge).toContain('Passwords')
 		expect(exportMenuPath.brave).toContain('Password Manager')
 		expect(exportMenuPath.arc).toBeUndefined()
+	})
+})
+
+describe('bookmarksOnlyNote', () => {
+	it('says Vivaldi and Opera rows bring bookmarks only, and where their passwords can come in', () => {
+		expect(bookmarksOnlyNote.vivaldi).toBe('Zing imports bookmarks only from Vivaldi. To bring passwords, export them from Vivaldi to a CSV file and use Passwords file below.')
+		expect(bookmarksOnlyNote.opera).toContain('from Opera.')
+		expect(bookmarksOnlyNote.operagx).toContain('from Opera GX.')
+	})
+
+	it('says nothing for browsers whose rows already explain passwords', () => {
+		for (const browser of ['chrome', 'edge', 'brave', 'dia', 'arc'] as const) expect(bookmarksOnlyNote[browser]).toBeUndefined()
 	})
 })
 

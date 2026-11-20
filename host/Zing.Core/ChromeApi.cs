@@ -49,6 +49,10 @@ public interface IWindowHost
 	void PageUiChanged(PageUiState state);
 	/// <summary>The page UI renderer measured what it shows.</summary>
 	void SetPageUiHeight(int height);
+	/// <summary>The address bar's suggestions opened, changed or closed (null); show, place or hide their view.</summary>
+	void AddressSuggestionsChanged(AddressSuggestionsState? state);
+	/// <summary>The suggestions view measured what it shows.</summary>
+	void SetAddressSuggestionsHeight(int height);
 	void FocusPageUi();
 	/// <summary>The vault's account picker opened, moved or closed (null); show, place or hide its view.</summary>
 	void AccountPickerChanged(AccountPicker? picker);
@@ -108,11 +112,12 @@ public interface IWindowHost
 /// <param name="Sync">The sync server and Google sign-in this build has; null when it was built without a Google client ID (Ruling 48).</param>
 /// <param name="SyncScheduler">Runs the open vault's sync engine (Task 13); null runs none.</param>
 /// <param name="LocalAppData">Where browser profiles live (the import channels read it when called); null where the host has none, and then those channels throw.</param>
+/// <param name="AppData">The roaming AppData, where Opera's profile lives; read and null the same way as <paramref name="LocalAppData"/>.</param>
 /// <param name="BrowserLauncher">Starts another browser at its password export page; null where the host can't, and then <c>import:watch-passwords</c> throws.</param>
 /// <param name="FileTrash">Sends a found export to the Recycle Bin; null where the host can't, and then <c>import:recycle</c> throws.</param>
 /// <param name="BookmarkIcons">The icons kept for bookmarked sites once visited; null where the host keeps none, and bookmarks show their letter.</param>
 /// <param name="CrashLog">The local log of renderer and engine crashes; null where the host keeps none, and the about:*crash-log channels throw.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null, CrashLog? CrashLog = null)
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null, Func<string>? AppData = null, CrashLog? CrashLog = null)
 {
 	public long Now() => Clock.Now();
 
@@ -180,6 +185,9 @@ public sealed class ChromeApi : IDisposable
 	public TabOrdering Ordering { get; }
 
 	public PageUiStore PageUi { get; } = new();
+
+	/// <summary>The rows under the address bar while something is typed there.</summary>
+	public AddressSuggestions Suggestions { get; }
 
 	public FindController Find { get; }
 
@@ -293,6 +301,12 @@ public sealed class ChromeApi : IDisposable
 		};
 		Tabs.FindResult += (page, matches, active) => Find.OnResult(page, matches, active);
 		Tabs.IconLoaded += (url, icon) => app.BookmarkIcons?.Visited(app.Library.Snapshot, url, icon);
+		Suggestions = new AddressSuggestions(state =>
+		{
+			if (_disposed) return;
+			host.Push("addressbar:suggestions", state);
+			host.AddressSuggestionsChanged(state);
+		});
 		PageUi.Changed += state =>
 		{
 			// Closing the window closes its pages, whose open prompts then go (DropFor): its views are gone by then.
@@ -474,6 +488,12 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("pageui:picker-get", _ => Autofill.Picker);
 		bridge.Register("pageui:picker-height", args => Do(() => host.SetAccountPickerHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("pageui:picker-close", _ => Do(Autofill.Dismiss));
+		bridge.Register("addressbar:suggest", args => Suggestions.Show(AddressRanking.Rank(Text(args, 0), Tabs.Records, Tabs.ActiveId, app.Library.Snapshot), RectArg(args, 1)));
+		bridge.Register("addressbar:get", _ => Suggestions.Current);
+		bridge.Register("addressbar:highlight", args => Do(() => Suggestions.Highlight(Int(args, 0))));
+		bridge.Register("addressbar:close", _ => Do(Suggestions.Close));
+		bridge.Register("addressbar:open", args => Do(() => OpenSuggestion(Arg(args, 0))));
+		bridge.Register("addressbar:height", args => Do(() => host.SetAddressSuggestionsHeight((int)Math.Ceiling(Number(args, 0)))));
 		bridge.Register("peek:get", _ => Peek());
 		bridge.Register("update:get", _ => host.Updates.State);
 		bridge.Register("update:check", async _ => await host.Updates.CheckNowAsync());
@@ -490,7 +510,7 @@ public sealed class ChromeApi : IDisposable
 			app.Settings.Set("defaultBrowserDismissed", true);
 			DismissOffer();
 		}));
-		var importApi = new ImportApi(app.Library, Grants, app.LocalAppData ?? (() => throw new InvalidOperationException("This host has no browser profile root to import from")), () => app.BrowserLauncher ?? throw new InvalidOperationException("This host can't start another browser"), () => app.FileTrash ?? throw new InvalidOperationException("This host can't use the Recycle Bin"), host.Scheduler, host.DownloadsDirectory, host.Push, new NudgeHost(() => Flag("importNudgeDone"), () => _app.Settings.Set("importNudgeDone", JsonValue.Create(true)), () => app.DefaultBrowser?.HttpsProgId(), category => Shell.OpenSettings(category), () => ForEachStartPage(ReloadWhenLoaded), host.Background));
+		var importApi = new ImportApi(app.Library, Grants, app.LocalAppData ?? (() => throw new InvalidOperationException("This host has no browser profile root to import from")), app.AppData ?? (() => throw new InvalidOperationException("This host has no roaming AppData to import from")), () => app.BrowserLauncher ?? throw new InvalidOperationException("This host can't start another browser"), () => app.FileTrash ?? throw new InvalidOperationException("This host can't use the Recycle Bin"), host.Scheduler, host.DownloadsDirectory, host.Push, new NudgeHost(() => Flag("importNudgeDone"), () => _app.Settings.Set("importNudgeDone", JsonValue.Create(true)), () => app.DefaultBrowser?.HttpsProgId(), category => Shell.OpenSettings(category), () => ForEachStartPage(ReloadWhenLoaded), host.Background));
 		_importApi = importApi;
 		bridge.Register("import:sources", _ => importApi.Sources());
 		bridge.Register("import:bookmarks", args => importApi.ImportSource(Text(args, 0)));
@@ -1641,7 +1661,7 @@ public sealed class ChromeApi : IDisposable
 		new(RequiredText(login, "origin"), RequiredText(login, "username"), RequiredText(login, "password"), RequiredText(login, "title"), RequiredText(login, "note"));
 
 	private static string RequiredText(JsonElement value, string name) =>
-		value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out var text) && text.ValueKind == JsonValueKind.String ? text.GetString()! : throw new ArgumentException($"A login needs a string {name}");
+		value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out var text) && text.ValueKind == JsonValueKind.String ? text.GetString()! : throw new ArgumentException($"Needs a string {name}");
 
 	private DnsService DnsSetup() => _app.Dns ?? throw new InvalidOperationException("This host can't change DNS");
 
@@ -1868,6 +1888,22 @@ public sealed class ChromeApi : IDisposable
 		if (panel is not null) _host.FocusChrome();
 	}
 
+	/// <summary>A picked suggestion: an open tab comes to the front, anything else opens in the tab on screen. The list closes either way.</summary>
+	private void OpenSuggestion(JsonElement suggestion)
+	{
+		Suggestions.Close();
+		var kind = RequiredText(suggestion, "kind");
+		if (kind == SuggestionKinds.Tab)
+		{
+			var id = RequiredText(suggestion, "tabId");
+			Tabs.Activate(id);
+			Tabs.FocusPage(id);
+			return;
+		}
+		if (kind is not (SuggestionKinds.Bookmark or SuggestionKinds.Reading)) throw new ArgumentException($"Not a suggestion kind: {kind}");
+		Navigate(Tabs.ActiveId ?? throw new InvalidOperationException("No tab to open a suggestion in"), RequiredText(suggestion, "url"));
+	}
+
 	private void OpenLibraryItem(string id, string target)
 	{
 		if (target is not ("current" or "tab")) throw new ArgumentException($"Unknown library open target {target}");
@@ -1980,6 +2016,12 @@ public sealed class ChromeApi : IDisposable
 
 	private static double Number(JsonElement value, string name) =>
 		value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out var n) && n.ValueKind == JsonValueKind.Number ? n.GetDouble() : throw new ArgumentException($"Anchor needs a numeric {name}");
+
+	private static Rect RectArg(JsonElement[] args, int index)
+	{
+		var arg = Arg(args, index);
+		return new Rect(Number(arg, "x"), Number(arg, "y"), Number(arg, "width"), Number(arg, "height"));
+	}
 
 	private static JsonElement Arg(JsonElement[] args, int index) =>
 		index < args.Length ? args[index] : throw new ArgumentException($"Argument {index} is missing");

@@ -2,11 +2,13 @@ using Microsoft.Data.Sqlite;
 
 namespace Zing.Server;
 
-// The column names are compile-time constants of the two slots below, never request data.
+// The column names are compile-time constants of the slots below, never request data.
 public sealed record BlobSlot(string BlobColumn, string VersionColumn)
 {
 	public static readonly BlobSlot Keys = new("keys_blob", "keys_version");
 	public static readonly BlobSlot Manifest = new("manifest_blob", "manifest_version");
+	public static readonly BlobSlot LibraryManifest = new("library_manifest_blob", "library_manifest_version");
+	public static readonly BlobSlot Settings = new("settings_blob", "settings_version");
 }
 
 public sealed record BlobPut(string? Blob, long BaseVersion);
@@ -22,6 +24,18 @@ public static class VersionedBlobs
 		var (blob, version) = Read(connection, transaction, userId, slot);
 		if (version == 0) return Results.NotFound();
 		return Results.Ok(new BlobView(SyncEndpoints.EncodeBlob(blob), version));
+	}
+
+	/// <summary>
+	/// A slot added after v1 answers version 0 with no blob before its first write, rather than 404: a 404 then only ever means a server
+	/// from before the slot, which a client must not write library or settings data to.
+	/// </summary>
+	public static IResult GetOrEmpty(Db db, string userId, BlobSlot slot)
+	{
+		using var connection = db.Open();
+		using var transaction = connection.BeginTransaction(deferred: true);
+		var (blob, version) = Read(connection, transaction, userId, slot);
+		return Results.Ok(new BlobView(version == 0 ? null : SyncEndpoints.EncodeBlob(blob), version));
 	}
 
 	public static IResult Put(Db db, string userId, BlobSlot slot, BlobPut body)
@@ -68,5 +82,22 @@ public static class KeysEndpoints
 		app.MapGet("/keys", (HttpContext context, Db db) => VersionedBlobs.Get(db, SyncEndpoints.UserId(context), BlobSlot.Keys));
 		app.MapPut("/keys", async (HttpContext context, Db db) =>
 			VersionedBlobs.Put(db, SyncEndpoints.UserId(context), BlobSlot.Keys, await SyncEndpoints.ReadBody<BlobPut>(context)));
+	}
+}
+
+/// <summary>The library's manifest and the settings blob, both sealed by the client. Settings is one slot, and the last writer wins.</summary>
+public static class LibraryAndSettingsEndpoints
+{
+	public static void MapLibraryAndSettings(this IEndpointRouteBuilder app)
+	{
+		MapSlot(app, "/library/manifest", BlobSlot.LibraryManifest);
+		MapSlot(app, "/settings", BlobSlot.Settings);
+	}
+
+	private static void MapSlot(IEndpointRouteBuilder app, string path, BlobSlot slot)
+	{
+		app.MapGet(path, (HttpContext context, Db db) => VersionedBlobs.GetOrEmpty(db, SyncEndpoints.UserId(context), slot));
+		app.MapPut(path, async (HttpContext context, Db db) =>
+			VersionedBlobs.Put(db, SyncEndpoints.UserId(context), slot, await SyncEndpoints.ReadBody<BlobPut>(context)));
 	}
 }

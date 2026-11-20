@@ -94,3 +94,26 @@ type PickerRect = { readonly x: number; readonly y: number; readonly width: numb
 
 /** `ignored`: a click on a picker that hadn't been on screen, where it is, for 500 ms yet. */
 export type FillOutcome = 'filled' | 'not-filled' | 'cancelled' | 'refused' | 'ignored'
+
+export type AddressSuggestionKind = 'tab' | 'bookmark' | 'reading'
+
+/** One row under the address bar, from what Zing already holds: an open tab, a bookmark or a Reading List item. Never history. */
+export interface AddressSuggestion {
+	readonly kind: AddressSuggestionKind
+	readonly title: string
+	readonly url: string
+	/** Set for an open tab: picking it switches to that tab. */
+	readonly tabId?: string
+}
+
+/** The address bar's suggestions, drawn by Zing's own view under the field. */
+export interface AddressSuggestionsState {
+	/** The address field, in DIPs of the window's content. */
+	readonly field: PickerRect
+	/** Best first, at most 8. */
+	readonly items: readonly AddressSuggestion[]
+	/** The row the arrow keys selected, -1 for none. */
+	readonly active: number
+}
+
+export type FieldRect = PickerRect
