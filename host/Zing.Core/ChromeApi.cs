@@ -119,7 +119,7 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 	public VaultSwitch Vaults { get; } = Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable);
 
 	/// <summary>The open vault's one sync client, for every window; null without <see cref="Sync"/>.</summary>
-	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync, Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable), SyncScheduler, Clock);
+	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync, Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable), SyncScheduler, Clock, Library, Settings);
 
 	/// <summary>The sites allowed pop-ups this session, in every window.</summary>
 	public PopupSites PopupSites { get; } = new();
