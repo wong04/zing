@@ -1,7 +1,19 @@
 {
 	"invoke": [
 		{
+			"channel": "about:clear-crash-log",
+			"args": 0
+		},
+		{
+			"channel": "about:crash-log",
+			"args": 0
+		},
+		{
 			"channel": "about:credits",
+			"args": 0
+		},
+		{
+			"channel": "about:open-crash-log",
 			"args": 0
 		},
 		{

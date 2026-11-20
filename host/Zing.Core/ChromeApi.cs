@@ -111,7 +111,8 @@ public interface IWindowHost
 /// <param name="BrowserLauncher">Starts another browser at its password export page; null where the host can't, and then <c>import:watch-passwords</c> throws.</param>
 /// <param name="FileTrash">Sends a found export to the Recycle Bin; null where the host can't, and then <c>import:recycle</c> throws.</param>
 /// <param name="BookmarkIcons">The icons kept for bookmarked sites once visited; null where the host keeps none, and bookmarks show their letter.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null)
+/// <param name="CrashLog">The local log of renderer and engine crashes; null where the host keeps none, and the about:*crash-log channels throw.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null, CrashLog? CrashLog = null)
 {
 	public long Now() => Clock.Now();
 
@@ -481,6 +482,9 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("update:pill-size", args => Do(() => host.SetUpdatePillSize((int)Math.Ceiling(Number(args, 0)), (int)Math.Ceiling(Number(args, 1)))));
 		bridge.Register("default-browser:get", _ => host.DefaultBrowserState);
 		bridge.Register("about:credits", _ => File.ReadAllText(host.ThirdPartyNoticesPath));
+		bridge.Register("about:crash-log", _ => new { exists = RequireCrashLog().Exists });
+		bridge.Register("about:open-crash-log", _ => Do(OpenCrashLog));
+		bridge.Register("about:clear-crash-log", _ => Do(RequireCrashLog().Clear));
 		bridge.Register("default-browser:dismiss", _ => Do(() =>
 		{
 			app.Settings.Set("defaultBrowserDismissed", true);
@@ -594,6 +598,17 @@ public sealed class ChromeApi : IDisposable
 	{
 		var file = LaunchArgs.Files([path], File.Exists).SingleOrDefault() ?? throw new UnsupportedLaunchFileException(path);
 		OpenLink(file.Address);
+	}
+
+	private CrashLog RequireCrashLog() => _app.CrashLog ?? throw new InvalidOperationException("This host keeps no crash log");
+
+	/// <summary>The log in a new tab, as plain text at its file: address.</summary>
+	/// <exception cref="NoCrashLogException"/>
+	private void OpenCrashLog()
+	{
+		var log = RequireCrashLog();
+		if (!log.Exists) throw new NoCrashLogException();
+		OpenLinkInNewTab(log.Address);
 	}
 
 	/// <summary>A link tile: one new tab at the address, so there is no blank page behind it in Back and the keyboard stays with the page.</summary>

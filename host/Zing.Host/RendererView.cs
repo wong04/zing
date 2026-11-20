@@ -152,11 +152,12 @@ public sealed class RendererView
 		switch (e.ProcessFailedKind)
 		{
 			case CoreWebView2ProcessFailedKind.RenderProcessExited:
+				EngineFailures.LogCrash(CrashKind.Renderer, e.ExitCode);
 				sender.Reload();
 				Crashed?.Invoke(this);
 				break;
 			case CoreWebView2ProcessFailedKind.BrowserProcessExited:
-				EngineFailures.ReportBrowserLost();
+				EngineFailures.ReportBrowserLost(e.ExitCode);
 				break;
 		}
 	}
