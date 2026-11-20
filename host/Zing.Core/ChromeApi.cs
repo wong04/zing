@@ -743,8 +743,13 @@ public sealed class ChromeApi : IDisposable
 			"window.close" => Act(true, _host.CloseWindow),
 			"app.quit" => Act(true, _host.Quit),
 			"location.open" => Act(true, FocusAddress),
-			"history.back" => Act(page is { CanGoBack: true }, () => page!.GoBack()),
-			"history.forward" => Act(page is { CanGoForward: true }, () => page!.GoForward()),
+			// A tab's Back and Forward include the history it had before it slept or was restored (TabService.GoBack).
+			"history.back" => Tabs.Preview is null
+				? Act(Tabs.ActiveId is { } back && Tabs.CanGoBack(back), () => Tabs.GoBack(Tabs.ActiveId!))
+				: Act(page is { CanGoBack: true }, () => page!.GoBack()),
+			"history.forward" => Tabs.Preview is null
+				? Act(Tabs.ActiveId is { } forward && Tabs.CanGoForward(forward), () => Tabs.GoForward(Tabs.ActiveId!))
+				: Act(page is { CanGoForward: true }, () => page!.GoForward()),
 			"history.home" => Act(Tabs.ActiveId is not null, () => Tabs.Navigate(Tabs.ActiveId!, HomepageUrl())),
 			"page.reload" => Act(page is not null, () => page!.Reload()),
 			"page.find" => Act(findable, Find.Open),
@@ -2059,6 +2064,7 @@ internal sealed class LifecycleTabs(TabService tabs, TabOverview overview, TimeS
 	public IReadOnlyList<TabRecord> Records => tabs.Records;
 	public bool HasPage(string id) => tabs.HasPage(id);
 	public bool IsAudible(string id) => tabs.PageOf(id)?.IsAudible ?? false;
+	public bool IsUploading(string id) => tabs.PageOf(id)?.IsUploading ?? false;
 	public bool IsBlocked(string id) => tabs.PageOf(id)?.HasOpenDialog == true || tabs.FaultOf(id) is not null;
 
 	public async Task<PageProbe> ProbeAsync(string id)

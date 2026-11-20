@@ -652,7 +652,7 @@ public sealed class ZingApp
 
 	/// <summary>A window's tabs as a session, or, for one that hadn't started yet, the tabs it is to bring back.</summary>
 	public IReadOnlyList<SessionTab> SessionOf(MainWindow window) =>
-		window.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : _pendingRestores.GetValueOrDefault(window) ?? [];
+		window.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All, tabs.HistoryOf) : _pendingRestores.GetValueOrDefault(window) ?? [];
 
 	/// <summary>A new engine and a window for each that was open, oldest first, each with its own tabs, through the same path as session restore.</summary>
 	private void Rebuild()

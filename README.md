@@ -82,6 +82,8 @@ If you forget the password, the recovery key restores your vault. Without both, 
 
 - **Sync covers passwords, bookmarks, the Reading List and settings, not tabs or history.** Settings that need a relaunch or belong to one PC stay on it: Keep me signed in to sites, Reopen tabs from last time, SmartScreen, Draw canvas on the GPU, Offer to fill saved passwords, Check for updates, the tab sidebar's width, the first-run hints and recent tools, and the two sync switches themselves.
 - **Mica.** Solid tab cards cover the window, so Windows' Mica material isn't visible behind Zing's sidebar.
+- **A woken or restored tab's history is Zing's, not the page's.** Back and Forward walk the pages a tab had before it slept or was restored, but each one loads afresh, the page's own `history.length` doesn't count them, and the menu behind the Back button lists only the pages since it woke.
+- **Uploads keep a tab awake only when Zing can see them.** A request sending at least 256 KB with a stated length keeps its tab from sleeping until it ends. Streamed uploads, WebSocket and WebRTC transfers, and uploads from a service worker or another site's frame don't.
 - **Ad blocking is by server, not by element.** Zing refuses requests to the servers EasyList and EasyPrivacy name, but doesn't read their path, per-site or element-hiding rules. An ad a site serves from its own address still shows, and a refused ad can leave an empty box. Extensions such as uBlock Origin Lite load in WebView2 but don't block in the in-memory profile Zing browses with.
 
 ## Building from source

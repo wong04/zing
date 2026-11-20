@@ -13,10 +13,19 @@ const TEST_CLOCK = { ZING_TEST_CLOCK: '1' }
 
 let server: Server
 let base = ''
+/** Uploads the server has read and not yet answered, so they stay in flight until the test lets them finish. */
+const uploads: (() => void)[] = []
 
 test.beforeAll(async () => {
 	server = createServer((req, res) => {
+		if (req.url === '/sink') {
+			req.resume()
+			req.on('end', () => uploads.push(() => res.end('ok')))
+			return
+		}
 		res.setHeader('content-type', 'text/html')
+		// A step of a tab's history, titled after its path.
+		if (req.url?.startsWith('/step/')) return void res.end(`<!doctype html><title>${req.url.slice('/step/'.length)}</title>`)
 		if (req.url === '/tall') return void res.end('<!doctype html><title>tall</title><div style="height:5000px">tall</div>')
 		if (req.url === '/form') return void res.end('<!doctype html><title>form</title><input name="draft">')
 		// As React does for a controlled input: the value attribute follows what was typed, so value equals defaultValue.
@@ -197,5 +206,73 @@ test('a tab stuck on a dialog is held, and the other idle tabs still sleep', asy
 	await leaveIdle(zing.chrome)
 	await expect.poll(async () => (await tab(zing.chrome, idle)).sleeping).toBe(true)
 	expect((await tab(zing.chrome, stuck)).sleeping).toBe(false)
+	await zing.close()
+})
+
+/** Sends the tab to a step of its history and waits until the tab shows it. */
+async function step(chrome: Page, id: string, name: string): Promise<void> {
+	await chrome.evaluate(([tab, url]) => window.zing.navigateTab(tab!, url!), [id, `${base}/step/${name}`])
+	await expect.poll(async () => (await tab(chrome, id)).title).toBe(name)
+}
+
+async function command(chrome: Page, id: 'history.back' | 'history.forward', expected: string, tabId: string): Promise<void> {
+	expect((await chrome.evaluate((c) => window.zing.runCommand(c), id)).status).toBe('done')
+	await expect.poll(async () => (await tab(chrome, tabId)).url).toBe(`${base}/step/${expected}`)
+}
+
+test('a tab that slept goes back and forward through the history it had', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const walked = await openTab(zing.chrome, '/step/a')
+	await expect.poll(async () => (await tab(zing.chrome, walked)).title).toBe('a')
+	await step(zing.chrome, walked, 'b')
+	await step(zing.chrome, walked, 'c')
+	await command(zing.chrome, 'history.back', 'b', walked)
+	await expect.poll(async () => (await tab(zing.chrome, walked)).canGoForward).toBe(true)
+	// Gives the engine's history time to reach the host before the page goes.
+	await new Promise((resolve) => setTimeout(resolve, 500))
+
+	await openTab(zing.chrome, '/other')
+	await advanceClock(zing.chrome, 3 * MINUTE)
+	await expect.poll(async () => (await tab(zing.chrome, walked)).sleeping).toBe(true)
+	await zing.chrome.evaluate((id) => window.zing.activateTab(id), walked)
+	const woken = await pageWhere(zing.browser, (p) => p.url() === `${base}/step/b`)
+	await expect(woken).toHaveTitle('b')
+	expect(await tab(zing.chrome, walked)).toMatchObject({ canGoBack: true, canGoForward: true })
+
+	await command(zing.chrome, 'history.back', 'a', walked)
+	await expect(woken).toHaveTitle('a')
+	await expect.poll(async () => (await tab(zing.chrome, walked)).canGoBack).toBe(false)
+	await command(zing.chrome, 'history.forward', 'b', walked)
+	await command(zing.chrome, 'history.forward', 'c', walked)
+	await expect(woken).toHaveTitle('c')
+	await expect.poll(async () => (await tab(zing.chrome, walked)).canGoForward).toBe(false)
+
+	// A new page from there drops nothing behind it: Back walks the page's own history, then the one it had.
+	await step(zing.chrome, walked, 'd')
+	await command(zing.chrome, 'history.back', 'c', walked)
+	await command(zing.chrome, 'history.back', 'b', walked)
+	await zing.close()
+})
+
+test('a tab sending an upload stays awake, and sleeps once the upload is done', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const sending = await openTab(zing.chrome, '/form')
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/form`)
+	type Uploader = { fetch(url: string, init: object): Promise<unknown>; Blob: new (parts: unknown[]) => unknown; Uint8Array: new (n: number) => unknown }
+	// A photo's worth of bytes, as a file picker would hand the page.
+	await page.evaluate(() => {
+		const g = globalThis as unknown as Uploader
+		void g.fetch('/sink', { method: 'POST', body: new g.Blob([new g.Uint8Array(2_000_000)]) })
+	})
+	await expect.poll(() => uploads.length).toBe(1)
+	await leaveIdle(zing.chrome)
+	expect((await tab(zing.chrome, sending)).sleeping).toBe(false)
+
+	uploads.splice(0).forEach((finish) => finish())
+	// A held tab is looked at again after TabSleeper.RetryMs.
+	await advanceClock(zing.chrome, 6 * MINUTE)
+	await expect.poll(async () => (await tab(zing.chrome, sending)).sleeping).toBe(true)
 	await zing.close()
 })

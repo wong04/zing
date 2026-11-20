@@ -53,6 +53,8 @@ public enum KeepAwakeReason
 	PlayingAudio,
 	LiveStream,
 	PictureInPicture,
+	/// <summary>The page is still sending a large request body (<see cref="UploadTracker"/>): dropping it would cancel the upload.</summary>
+	Uploading,
 	UnsavedForm,
 	Pinned,
 	RecentlyUsed,
@@ -355,7 +357,7 @@ public sealed class TabSleeper
 		var before = Find(id);
 		if (before is null || !_tabs.HasPage(id)) return;
 		// A dialog waits for the person, and a stuck page can't be read: dropping either could lose what it holds.
-		if (_tabs.IsBlocked(id))
+		if (_tabs.IsBlocked(id) || HostHold(_tabs, id) is not null)
 		{
 			_held.Add(id);
 			return;
@@ -386,7 +388,7 @@ public sealed class TabSleeper
 		// Awaits above let the user come back to the tab, or the page die.
 		var after = Find(id);
 		if (after is null || after.LastActiveAt != before.LastActiveAt) return;
-		if (_tabs.IsShown(id) || !_tabs.HasPage(id) || _tabs.IsAudible(id)) return;
+		if (_tabs.IsShown(id) || !_tabs.HasPage(id) || _tabs.IsAudible(id) || HostHold(_tabs, id) is not null) return;
 		_scroll[id] = probe.ScrollY;
 		if (thumbnail is not null) Remember(id, thumbnail);
 		_tabs.Sleep(id);
@@ -400,6 +402,12 @@ public sealed class TabSleeper
 	}
 
 	private TabRecord? Find(string id) => _tabs.Records.FirstOrDefault(t => t.Id == id);
+
+	/// <summary>
+	/// Why the page must stay running, from what the host sees of it without asking the page; null if nothing. It has no event
+	/// that says "now safe" the sweep listens for, so a held tab is looked at again after <see cref="RetryMs"/>.
+	/// </summary>
+	internal static KeepAwakeReason? HostHold(ILifecycleTabs tabs, string id) => tabs.IsUploading(id) ? KeepAwakeReason.Uploading : null;
 
 	/// <summary>Only tabs with a renderer: one without is already asleep, or was never loaded.</summary>
 	private List<SleepCandidate> Candidates() =>
@@ -527,7 +535,7 @@ public sealed class TabSuspender
 	{
 		var before = Find(id);
 		if (before is null || !_tabs.HasPage(id)) return true;
-		if (_tabs.IsBlocked(id)) return false;
+		if (_tabs.IsBlocked(id) || TabSleeper.HostHold(_tabs, id) is not null) return false;
 		PageProbe probe;
 		try
 		{
@@ -547,6 +555,7 @@ public sealed class TabSuspender
 		var after = Find(id);
 		if (after is null || after.LastActiveAt != before.LastActiveAt) return true;
 		if (_tabs.IsShown(id) || !_tabs.HasPage(id) || _tabs.IsAudible(id)) return true;
+		if (TabSleeper.HostHold(_tabs, id) is not null) return false;
 		return await _tabs.SuspendAsync(id);
 	}
 
