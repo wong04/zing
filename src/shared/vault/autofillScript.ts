@@ -160,8 +160,18 @@ export const detectionScript = `(() => {
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0;
   };
-  const passwordBoxes = scope => Array.prototype.filter.call(scope.querySelectorAll('input'),
-    el => (el.type || '').toLowerCase() === 'password' && !el.disabled && visible(el));
+  // Every input in a form or document, in document order, including those inside open shadow roots (web components):
+  // querySelectorAll never looks inside one. A closed shadow root can't be read, so its form is never seen.
+  const inputsOf = scope => {
+    const found = [];
+    const walk = root => root.querySelectorAll('*').forEach(el => {
+      if (el.tagName === 'INPUT') found.push(el);
+      if (el.shadowRoot) walk(el.shadowRoot);
+    });
+    walk(scope);
+    return found;
+  };
+  const passwordBoxes = scope => inputsOf(scope).filter(el => (el.type || '').toLowerCase() === 'password' && !el.disabled && visible(el));
   const documents = () => {
     const docs = [document];
     document.querySelectorAll('iframe, frame').forEach(f => { const d = sameOrigin(f); if (d) docs.push(d); });
@@ -172,7 +182,6 @@ export const detectionScript = `(() => {
   // it would be offered as the password.
   const looksLikeCode = el => (el.autocomplete || '').toLowerCase().includes('one-time-code')
     || /otp|one.?time|code|pin|token|mfa|2fa|verif/i.test((el.name || '') + ' ' + (el.id || '') + ' ' + (el.getAttribute('aria-label') || ''));
-  const inputsOf = scope => Array.prototype.slice.call(scope.querySelectorAll('input'));
   const usernameLike = el => kind(el) === 'username' && el.value && el.value.length <= ${signInLimits.usernameMax};
   // The username and password typed into a form (or document), or null when it isn't a plain sign-in. With no visible
   // username, the username is empty (the host may have one from the page before) and a hidden field marked as the
@@ -251,17 +260,25 @@ export const detectionScript = `(() => {
     report(m);
     watchLanding(c.boxes);
   };
-  const onSubmit = e => { if (e.target && e.target.tagName === 'FORM') submitted(e.target); };
+  // An event from inside a shadow root reaches this document retargeted to its host element; the first node of its composed
+  // path is the element itself.
+  const realTarget = e => e.composedPath()[0];
+  const onSubmit = e => { const form = realTarget(e); if (form && form.tagName === 'FORM') submitted(form); };
   const onEnter = e => {
-    const el = e.target;
+    const el = realTarget(e);
     if (e.key !== 'Enter' || !el || el.tagName !== 'INPUT') return;
-    if ((el.type || '').toLowerCase() === 'password') { submitted(el.form || el.ownerDocument); return; }
+    const scope = el.form || el.ownerDocument;
+    if ((el.type || '').toLowerCase() === 'password') { submitted(scope); return; }
+    if (!usernameLike(el) || !visible(el)) return;
     // Enter in the box just typed in: that box is the username, whatever else the page holds.
-    if (usernameLike(el) && visible(el) && passwordBoxes(el.form || el.ownerDocument).length === 0) steppedUsername(el.value);
+    if (passwordBoxes(scope).length === 0) steppedUsername(el.value);
+    // A submit event never leaves a shadow root, so Enter in a shadow form's username box is its submit.
+    else if (el.getRootNode() !== el.ownerDocument) submitted(scope);
   };
   const signInLabel = /sign.?in|log.?in|continue|submit|next/i;
+  const buttonSelector = 'button, input[type=submit], input[type=button], [role=button]';
   const onClick = e => {
-    const button = e.target && e.target.closest ? e.target.closest('button, input[type=submit], input[type=button], [role=button]') : null;
+    const button = e.composedPath().find(n => n.matches && n.matches(buttonSelector));
     if (!button) return;
     const label = button.textContent || button.value || button.getAttribute('aria-label') || '';
     if (signInLabel.test(label)) submitted(button.form || button.ownerDocument);
@@ -314,8 +331,7 @@ export const detectionScript = `(() => {
   // The other half of the credential: the first password box after a username
   // box, or the last username box before a password box, in its form (or document).
   const partner = (el, wanted) => {
-    const scope = el.form || el.ownerDocument;
-    const inputs = Array.prototype.slice.call(scope.querySelectorAll('input'));
+    const inputs = inputsOf(el.form || el.ownerDocument);
     const at = inputs.indexOf(el);
     if (at < 0) return null;
     const candidates = wanted === 'password' ? inputs.slice(at + 1) : inputs.slice(0, at).reverse();
