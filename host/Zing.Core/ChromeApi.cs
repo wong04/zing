@@ -64,6 +64,8 @@ public interface IWindowHost
 	IDownloadHost DownloadHost { get; }
 	/// <summary>Shows the native open dialog for these extensions (none means every file) and returns what the person picked; empty if they cancelled. An e2e run shows no dialog.</summary>
 	Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions);
+	/// <summary>Shows the native Save dialog with this name and type; null if they cancelled. An e2e run shows no dialog: it takes the next queued pick, one path or none.</summary>
+	Task<string?> PickSaveFileAsync(string suggestedName, string extension, string kind);
 	/// <summary>Puts these files on the clipboard as files (CF_HDROP), so Explorer can paste them. Called on the UI thread; throws if the clipboard can't be written. An e2e run leaves the real clipboard alone.</summary>
 	void CopyFilesToClipboard(IReadOnlyList<string> paths);
 	/// <summary>Where a copied password goes (Ruling 41). An e2e run never touches the real clipboard.</summary>
@@ -484,6 +486,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("import:cancel-watch", _ => Do(importApi.CancelWatch));
 		bridge.Register("import:recycle", args => Do(() => importApi.Recycle(Text(args, 0))));
 		bridge.Register("import:take-pending", _ => importApi.TakePending());
+		bridge.Register("import:export-bookmarks", async _ => await ExportBookmarksAsync());
 		_watchedVault = app.Vaults.Current;
 		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;
@@ -1128,6 +1131,15 @@ public sealed class ChromeApi : IDisposable
 	{
 		var logins = await Vault().ExportAsync();
 		return Grants.Issue(VaultCsv.SaveExport(_placement, _host.DownloadsDirectory, logins));
+	}
+
+	private async Task<BookmarkExportOutcome?> ExportBookmarksAsync()
+	{
+		var path = await _host.PickSaveFileAsync(BookmarkExport.SuggestedFileName, "html", "Bookmarks HTML");
+		if (path is null) return null;
+		var library = _app.Library.Snapshot;
+		JsonFiles.WriteAllBytesAtomic(path, System.Text.Encoding.UTF8.GetBytes(BookmarkExport.Write(library)));
+		return new BookmarkExportOutcome(Path.GetFileName(path), BookmarkExport.CountLinks(library));
 	}
 
 	/// <summary>

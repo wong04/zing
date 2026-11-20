@@ -1,4 +1,4 @@
-import type { BookmarkImportOutcome, ImportSourceView } from '@shared/ipc'
+import type { BookmarkExportOutcome, BookmarkImportOutcome, ImportSourceView } from '@shared/ipc'
 
 const bookmarks = (n: number): string => `${n} ${n === 1 ? 'bookmark' : 'bookmarks'}`
 
@@ -11,6 +11,11 @@ export function outcomeLine(o: BookmarkImportOutcome): string {
 			? [`Added ${bookmarks(o.addedToFolder)} to ${o.folderTitle}`, ...(o.addedToBar > 0 ? [`${o.addedToBar} to the favourites bar`] : [])]
 			: [`Added ${bookmarks(o.addedToBar)} to the favourites bar`]
 	return `${parts.join(', ')}${skipped > 0 ? `; skipped ${skipped}` : ''}.`
+}
+
+/** One sentence on what a bookmark export wrote. */
+export function exportLine(o: BookmarkExportOutcome): string {
+	return `Saved ${bookmarks(o.bookmarks)} to ${o.name}.`
 }
 
 /** How to get a bookmarks file out of a browser Zing can't read from this PC and that has no row of its own. */

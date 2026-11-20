@@ -159,12 +159,40 @@ function mergeChildren(existing: BookmarkNode[], incoming: readonly ImportedNode
 	return { children: changed ? children : existing, added }
 }
 
+// Rewrites marks equal to `from` as `to`, copying only the folders on the way
+// down to a change.
+function remark(nodes: BookmarkNode[], from: string, to: string): BookmarkNode[] {
+	let result = nodes
+	nodes.forEach((node, index) => {
+		let next: BookmarkNode = node
+		if (isFolder(node)) {
+			const children = remark(node.children, from, to)
+			if (children !== node.children || node.importedFrom === from) next = { ...node, children, importedFrom: node.importedFrom === from ? to : node.importedFrom }
+		} else if (node.importedFrom === from) next = { ...node, importedFrom: to }
+		if (next === node) return
+		if (result === nodes) result = [...nodes]
+		result[index] = next
+	})
+	return result
+}
+
+function adoptMarks(library: BrowserLibrary, from: string, to: string): BrowserLibrary {
+	if (from === to) return library
+	const bookmarks = remark(library.bookmarks, from, to)
+	return bookmarks === library.bookmarks ? library : { ...library, bookmarks }
+}
+
 // Bar items join the Favourites bar; everything else lands in one
-// "Imported from <source>" folder, found again by its importedFrom mark even if
+// "Imported from <label>" folder, found again by its importedFrom mark even if
 // renamed or moved. Re-importing only adds: nothing is ever removed, renamed or
 // reordered, and nothing the source imported before is added again.
-export function mergeImport(library: BrowserLibrary, result: BookmarkImport, source: string, now: number, newId: () => string): MergeOutcome {
-	const folderTitle = `Imported from ${source}`
+// `source` is the mark, a key that outlives renames ("chrome:Default", "arc",
+// "file:bookmarks.html"); `label` is what the person calls it now, for the
+// folder title. Imports from before marks were keys were marked with the
+// label, so those marks are adopted first.
+export function mergeImport(library: BrowserLibrary, result: BookmarkImport, source: string, label: string, now: number, newId: () => string): MergeOutcome {
+	const folderTitle = `Imported from ${label}`
+	library = adoptMarks(library, label, source)
 	const imported = importedUrls(library.bookmarks, source)
 	const bar = favourites(library)
 	const barMerge = mergeChildren(bar, result.bar, (existing, incoming) => existing.title === incoming.title && existing.importedFrom === source, imported, source, now, newId)

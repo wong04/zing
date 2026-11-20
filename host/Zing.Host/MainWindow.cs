@@ -590,6 +590,19 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		return [.. picked.Select(file => file.Path)];
 	}
 
+	public async Task<string?> PickSaveFileAsync(string suggestedName, string extension, string kind)
+	{
+		if (TestHooks.IsEndToEndRun) return TestHooks.TakePickedFiles() is [var path] ? path : null;
+		var picker = new Microsoft.Windows.Storage.Pickers.FileSavePicker(_window.AppWindow.Id)
+		{
+			SuggestedFileName = Path.GetFileNameWithoutExtension(suggestedName),
+			DefaultFileExtension = "." + extension,
+		};
+		picker.FileTypeChoices.Add(kind, ["." + extension]);
+		var picked = await picker.PickSaveFileAsync();
+		return picked?.Path;
+	}
+
 	private SecretClipboard? _secretClipboard;
 
 	public Zing.Core.Vault.ISecretClipboard SecretClipboard => _secretClipboard ??= new SecretClipboard(_window.Hwnd);

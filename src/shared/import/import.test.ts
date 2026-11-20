@@ -176,10 +176,10 @@ describe('Arc StorableSidebar.json', () => {
 })
 
 describe('merging an import into the library', () => {
-	it.each(mergeVectors.merge)('$name', ({ library, result, source, now, expected }) => {
+	it.each(mergeVectors.merge)('$name', ({ library, result, source, label, now, expected }) => {
 		const before = structuredClone(library)
 		let counter = 0
-		const outcome = mergeImport(library as BrowserLibrary, result as BookmarkImport, source, now, () => `n${++counter}`)
+		const outcome = mergeImport(library as BrowserLibrary, result as BookmarkImport, source, label, now, () => `n${++counter}`)
 		expect(outcome).toEqual(expected)
 		expect(library).toEqual(before)
 		if (JSON.stringify(expected.library) === JSON.stringify(before)) expect(outcome.library).toBe(library)

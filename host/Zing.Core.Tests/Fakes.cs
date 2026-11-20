@@ -152,6 +152,16 @@ public sealed class FakeWindowHost : IWindowHost
 		return Task.FromResult(PickedPaths);
 	}
 
+	/// <summary>What the Save dialog "returns"; null is a cancel. The name it suggested is kept.</summary>
+	public string? SavePath { get; set; }
+	public string? SuggestedSaveName { get; private set; }
+
+	public Task<string?> PickSaveFileAsync(string suggestedName, string extension, string kind)
+	{
+		SuggestedSaveName = suggestedName;
+		return Task.FromResult(SavePath);
+	}
+
 	/// <summary>The paths of each copy to the clipboard.</summary>
 	public List<IReadOnlyList<string>> CopiedFiles { get; } = [];
 	public Exception? ClipboardFailure { get; set; }
