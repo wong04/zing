@@ -202,8 +202,64 @@
 	color: var(--muted);
 }
 
+/* The address bar's suggestions, placed by the host under the address field. */
+.suggest {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 0 2px 4px;
+}
+
+.suggest-list {
+	gap: 2px;
+	padding: 6px;
+	list-style: none;
+	margin: 0;
+}
+
+.suggest-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	column-gap: 12px;
+	padding: 6px 8px;
+	border-radius: var(--control-radius);
+	cursor: pointer;
+}
+
+.suggest-row:hover,
+.suggest-row.active {
+	background: var(--selection);
+}
+
+/* The field's highlight, from the arrow keys: outlined, since the view itself never has focus. */
+.suggest-row.active {
+	outline: 2px solid var(--outline);
+	outline-offset: -2px;
+}
+
+.suggest-title,
+.suggest-url {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.suggest-url {
+	grid-column: 1;
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.suggest-kind {
+	grid-column: 2;
+	grid-row: 1 / span 2;
+	align-self: center;
+	color: var(--muted);
+	font-size: 12px;
+}
+
 @media (forced-colors: active) {
-	.picker-entry.active {
+	.picker-entry.active,
+	.suggest-row.active {
 		outline: 1px solid Highlight;
 	}
 

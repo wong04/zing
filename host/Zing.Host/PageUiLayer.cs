@@ -9,6 +9,7 @@ namespace Zing.Host;
 /// reports and hidden when empty, so it never takes clicks meant for the page.
 /// Its view closes with the window's scope, even one still loading.
 /// The vault's account picker is its second view (#picker), placed under the sign-in field it is for.
+/// The address bar's suggestions are its third (#suggest), hanging under the address field.
 /// </summary>
 public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebView2Environment environment, Bridge bridge, Func<Rect> content, Func<double> top, Action<RendererView> created, OverlayHost overlays)
 {
@@ -16,6 +17,7 @@ public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebVie
 	private const double PanelMargin = 8;
 	private const double PickerMinWidth = 240;
 	private const double PickerGap = 2;
+	private const double SuggestionsMinWidth = 360;
 
 	private Task<RendererView>? _ready;
 	private PageUiState _state = PageUiState.Empty;
@@ -24,6 +26,9 @@ public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebVie
 	private Task<RendererView>? _pickerReady;
 	private Zing.Core.Vault.AccountPicker? _picker;
 	private double _pickerHeight;
+	private Task<RendererView>? _suggestionsReady;
+	private AddressSuggestionsState? _suggestions;
+	private double _suggestionsHeight;
 
 	public void Changed(PageUiState state)
 	{
@@ -49,6 +54,7 @@ public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebVie
 	public void Layout()
 	{
 		LayoutPicker();
+		LayoutSuggestions();
 		if (Ready() is not { } view) return;
 		// Shown even before its height is known: a hidden view never lays out, so it could never report one.
 		var shown = _state.HasVisiblePageUi;
@@ -146,6 +152,62 @@ public sealed class PageUiLayer(HostWindow window, WindowScope scope, CoreWebVie
 		var y = below + height <= bottom ? below : above >= page.Y ? above : below;
 		y = Math.Clamp(y, page.Y, Math.Max(page.Y, bottom - height));
 		return new Rect(x, y, width, height);
+	}
+
+	public void SuggestionsChanged(AddressSuggestionsState? state)
+	{
+		_suggestions = state;
+		// Never opened and nothing to show: don't pay for a renderer.
+		if (_suggestionsReady is null && state is null) return;
+		TestHooks.Background(ShowSuggestionsAsync(), "address suggestions");
+	}
+
+	public void SetSuggestionsHeight(int height)
+	{
+		_suggestionsHeight = Math.Max(0, height);
+		LayoutSuggestions();
+	}
+
+	private async Task ShowSuggestionsAsync()
+	{
+		await (_suggestionsReady ??= CreateSuggestionsAsync());
+		scope.Checkpoint("address suggestions");
+		LayoutSuggestions();
+	}
+
+	private async Task<RendererView> CreateSuggestionsAsync()
+	{
+		var view = await RendererView.CreateAsync(window, scope, environment, bridge, "suggest", overlay: true);
+		scope.ThrowIfClosed("address suggestions");
+		overlays.Add(OverlayLevel.AddressSuggestions, view.View);
+		created(view);
+		return view;
+	}
+
+	private void LayoutSuggestions()
+	{
+		if (_suggestionsReady is not { IsCompletedSuccessfully: true } ready) return;
+		var view = ready.Result;
+		if (_suggestions is not { } suggestions)
+		{
+			view.Visible = false;
+			return;
+		}
+		// Shown even before its height is known: a hidden view never lays out, so it could never report one.
+		// It never takes the keyboard: the address field keeps it, and sends the arrows' choice here.
+		view.Place(SuggestionsBounds(suggestions.Field));
+		overlays.Show(OverlayLevel.AddressSuggestions);
+		view.Visible = true;
+	}
+
+	/// <summary>Just under the address field, at least as wide as it, and inside the window's content.</summary>
+	private Rect SuggestionsBounds(Rect field)
+	{
+		var area = content();
+		var width = Math.Max(1, Math.Min(Math.Max(field.Width, SuggestionsMinWidth), area.Width));
+		var x = Math.Clamp(field.X, 0, Math.Max(0, area.Width - width));
+		var y = Math.Clamp(field.Y + field.Height + PickerGap, 0, Math.Max(0, area.Height - 1));
+		return new Rect(x, y, width, Math.Max(1, Math.Min(Math.Max(1, _suggestionsHeight), area.Height - y)));
 	}
 
 	private Rect Bounds()

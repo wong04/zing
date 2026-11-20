@@ -235,6 +235,9 @@ public sealed class FakeWindowHost : IWindowHost
 	public List<Zing.Core.Vault.AccountPicker?> Pickers { get; } = [];
 	public void AccountPickerChanged(Zing.Core.Vault.AccountPicker? picker) => Pickers.Add(picker);
 	public void SetAccountPickerHeight(int height) { }
+	public List<AddressSuggestionsState?> Suggestions { get; } = [];
+	public void AddressSuggestionsChanged(AddressSuggestionsState? state) => Suggestions.Add(state);
+	public void SetAddressSuggestionsHeight(int height) { }
 
 	public string DownloadsDirectory { get; set; } = Path.GetTempPath();
 	public IDownloadHost DownloadHost { get; } = new FakeDownloads();
