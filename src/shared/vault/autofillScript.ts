@@ -144,6 +144,7 @@ export const detectionScript = `(() => {
       if (lastKey) { lastKey = ''; window.${target} = null; report({ kind: 'none' }); }
       return;
     }
+    seen(el);
     const r = el.getBoundingClientRect();
     const m = { kind: k, x: x + r.left, y: y + r.top, w: r.width, h: r.height };
     window.${target} = el;
@@ -160,19 +161,94 @@ export const detectionScript = `(() => {
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0;
   };
-  const passwordBoxes = scope => Array.prototype.filter.call(scope.querySelectorAll('input'),
-    el => (el.type || '').toLowerCase() === 'password' && !el.disabled && visible(el));
+  // Open shadow roots (web components), per document: querySelectorAll never looks inside one, and a closed one can't be
+  // read, so its form is never seen. Finding them visits every element (about 13 ms on a 100,000-element page), so it is done
+  // again only after the DOM changed (a MutationObserver marks it), or once the user has used a field in a shadow root not
+  // yet found (an element that attaches its root when it upgrades, after it was inserted, changes nothing the observer sees).
+  const shadows = new WeakMap();
+  const watched = { childList: true, subtree: true };
+  const shadowState = doc => {
+    let state = shadows.get(doc);
+    if (!state) {
+      state = { roots: [], known: new WeakSet(), dirty: true, scannedAt: 0 };
+      const mark = state;
+      state.observer = new MutationObserver(() => { mark.dirty = true; });
+      state.observer.observe(doc, watched);
+      shadows.set(doc, state);
+    }
+    return state;
+  };
+  const rescan = (doc, state) => {
+    state.dirty = false;
+    state.scannedAt = Date.now();
+    state.roots = [];
+    const scan = root => {
+      const walker = doc.createTreeWalker(root, 1);
+      for (let el = walker.nextNode(); el; el = walker.nextNode()) {
+        const shadow = el.shadowRoot;
+        if (!shadow) continue;
+        state.roots.push(shadow);
+        if (!state.known.has(shadow)) { state.known.add(shadow); state.observer.observe(shadow, watched); }
+        scan(shadow);
+      }
+    };
+    scan(doc);
+  };
+  const shadowRootsOf = doc => {
+    const state = shadowState(doc);
+    if (state.dirty) rescan(doc, state);
+    return state.roots;
+  };
+  // For the landing watch, which asks every 400 ms: on a page that keeps changing, looking again each time would be the
+  // whole walk every tick, so it looks again at most every 2 s.
+  const shadowRootsLately = doc => {
+    const state = shadowState(doc);
+    if (state.dirty && Date.now() - state.scannedAt >= 2000) rescan(doc, state);
+    return state.roots;
+  };
+  // The user is using this element: if it is in a shadow root not found yet, look again.
+  const seen = el => {
+    const root = el && el.getRootNode ? el.getRootNode() : null;
+    if (!root || root.nodeType !== 11 || !root.host) return;
+    const doc = el.ownerDocument;
+    if (doc && !shadowState(doc).known.has(root)) shadowState(doc).dirty = true;
+  };
+  const docOf = scope => scope.nodeType === 9 ? scope : scope.ownerDocument;
+  // Whether a shadow root is inside a form or document, across shadow boundaries.
+  const within = (scope, root) => {
+    if (scope.nodeType === 9) return true;
+    for (let n = root.host; n; n = n.parentNode || (n.nodeType === 11 ? n.host : null)) if (n === scope) return true;
+    return false;
+  };
+  const own = scope => Array.prototype.slice.call(scope.querySelectorAll('input'));
+  // Every input in a form or document, in document order, through open shadow roots. Only a scope with a shadow root in it
+  // is walked element by element.
+  const inputsOf = scope => {
+    if (!shadowRootsOf(docOf(scope)).some(root => within(scope, root))) return own(scope);
+    const found = [];
+    const walk = root => root.querySelectorAll('*').forEach(el => {
+      if (el.tagName === 'INPUT') found.push(el);
+      if (el.shadowRoot) walk(el.shadowRoot);
+    });
+    walk(scope);
+    return found;
+  };
+  const isPasswordBox = el => (el.type || '').toLowerCase() === 'password' && !el.disabled && visible(el);
+  // Whether any password box is in the scope, in no particular order, so without the walk.
+  const hasPasswordBoxAmong = (scope, roots) => own(scope).some(isPasswordBox)
+    || roots.some(root => within(scope, root) && own(root).some(isPasswordBox));
+  const passwordBoxes = scope => inputsOf(scope).filter(isPasswordBox);
+  const hasPasswordBoxIn = scope => hasPasswordBoxAmong(scope, shadowRootsOf(docOf(scope)));
   const documents = () => {
     const docs = [document];
     document.querySelectorAll('iframe, frame').forEach(f => { const d = sameOrigin(f); if (d) docs.push(d); });
     return docs;
   };
-  const hasPasswordBox = () => documents().some(d => passwordBoxes(d).length > 0);
+  const hasPasswordBox = () => documents().some(d => hasPasswordBoxAmong(d, shadowRootsLately(d)));
   // Banks often ask for a one-time code in a password box after the password; paired with a remembered username,
   // it would be offered as the password.
   const looksLikeCode = el => (el.autocomplete || '').toLowerCase().includes('one-time-code')
     || /otp|one.?time|code|pin|token|mfa|2fa|verif/i.test((el.name || '') + ' ' + (el.id || '') + ' ' + (el.getAttribute('aria-label') || ''));
-  const inputsOf = scope => Array.prototype.slice.call(scope.querySelectorAll('input'));
   const usernameLike = el => kind(el) === 'username' && el.value && el.value.length <= ${signInLimits.usernameMax};
   // The username and password typed into a form (or document), or null when it isn't a plain sign-in. With no visible
   // username, the username is empty (the host may have one from the page before) and a hidden field marked as the
@@ -198,7 +274,7 @@ export const detectionScript = `(() => {
   };
   // The first page of a two-step sign-in: a username and no password box.
   const usernameStep = scope => {
-    if (passwordBoxes(scope).length > 0) return null;
+    if (hasPasswordBoxIn(scope)) return null;
     const filled = inputsOf(scope).filter(el => usernameLike(el) && visible(el));
     return filled.length ? filled[filled.length - 1].value : null;
   };
@@ -251,18 +327,28 @@ export const detectionScript = `(() => {
     report(m);
     watchLanding(c.boxes);
   };
-  const onSubmit = e => { if (e.target && e.target.tagName === 'FORM') submitted(e.target); };
+  // An event from inside a shadow root reaches this document retargeted to its host element; the first node of its composed
+  // path is the element itself.
+  const realTarget = e => e.composedPath()[0];
+  const onSubmit = e => { const form = realTarget(e); if (form && form.tagName === 'FORM') submitted(form); };
   const onEnter = e => {
-    const el = e.target;
+    const el = realTarget(e);
     if (e.key !== 'Enter' || !el || el.tagName !== 'INPUT') return;
-    if ((el.type || '').toLowerCase() === 'password') { submitted(el.form || el.ownerDocument); return; }
+    seen(el);
+    const scope = el.form || el.ownerDocument;
+    if ((el.type || '').toLowerCase() === 'password') { submitted(scope); return; }
+    if (!usernameLike(el) || !visible(el)) return;
     // Enter in the box just typed in: that box is the username, whatever else the page holds.
-    if (usernameLike(el) && visible(el) && passwordBoxes(el.form || el.ownerDocument).length === 0) steppedUsername(el.value);
+    if (!hasPasswordBoxIn(scope)) steppedUsername(el.value);
+    // A submit event never leaves a shadow root, so Enter in a shadow form's username box is its submit.
+    else if (el.getRootNode() !== el.ownerDocument) submitted(scope);
   };
   const signInLabel = /sign.?in|log.?in|continue|submit|next/i;
+  const buttonSelector = 'button, input[type=submit], input[type=button], [role=button]';
   const onClick = e => {
-    const button = e.target && e.target.closest ? e.target.closest('button, input[type=submit], input[type=button], [role=button]') : null;
+    const button = e.composedPath().find(n => n.matches && n.matches(buttonSelector));
     if (!button) return;
+    seen(button);
     const label = button.textContent || button.value || button.getAttribute('aria-label') || '';
     if (signInLabel.test(label)) submitted(button.form || button.ownerDocument);
   };
@@ -308,14 +394,14 @@ export const detectionScript = `(() => {
     const proto = (el.ownerDocument.defaultView || window).HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
     setter.call(el, value);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
+    // Composed, so a listener outside the field's shadow root sees the fill too.
+    el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
   };
   // The other half of the credential: the first password box after a username
   // box, or the last username box before a password box, in its form (or document).
   const partner = (el, wanted) => {
-    const scope = el.form || el.ownerDocument;
-    const inputs = Array.prototype.slice.call(scope.querySelectorAll('input'));
+    const inputs = inputsOf(el.form || el.ownerDocument);
     const at = inputs.indexOf(el);
     if (at < 0) return null;
     const candidates = wanted === 'password' ? inputs.slice(at + 1) : inputs.slice(0, at).reverse();
