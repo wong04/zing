@@ -125,7 +125,8 @@ public sealed record PageProbe(double ScrollY, bool Dirty, bool LiveStream, bool
 	/// <summary>
 	/// Runs in <see cref="World"/> as each document is created, in every frame. It notes the text fields and
 	/// rich-text editors the person types into, with what they held before the first keystroke. They are held weakly
-	/// and dropped once they leave the page, and submitting their form forgets them.
+	/// and dropped once they leave the page, and submitting their form forgets them. A typed field counts even while
+	/// hidden (a collapsed reply box, another wizard step): losing a draft is worse than a tab kept awake.
 	/// </summary>
 	public const string WorldSource = """
 		(() => {
@@ -140,7 +141,7 @@ public sealed record PageProbe(double ScrollY, bool Dirty, bool LiveStream, bool
 			const prune = () => {
 				for (const ref of edited) if (!ref.deref()?.isConnected) edited.delete(ref)
 			}
-			addEventListener('beforeinput', (e) => {
+			const typing = (e) => {
 				if (!e.isTrusted) return
 				prune()
 				const el = e.composedPath().find((node) => node instanceof Element)
@@ -149,8 +150,8 @@ public sealed record PageProbe(double ScrollY, bool Dirty, bool LiveStream, bool
 				if (text === null) return
 				before.set(el, text)
 				edited.add(new WeakRef(el))
-			}, true)
-			addEventListener('submit', (e) => {
+			}
+			const submitted = (e) => {
 				for (const ref of edited) {
 					const el = ref.deref()
 					if (el && (el.form === e.target || e.target.contains(el))) {
@@ -158,7 +159,15 @@ public sealed record PageProbe(double ScrollY, bool Dirty, bool LiveStream, bool
 						before.delete(el)
 					}
 				}
-			}, true)
+			}
+			const listen = () => {
+				addEventListener('beforeinput', typing, true)
+				addEventListener('submit', submitted, true)
+			}
+			listen()
+			// document.open() (editors that write their frame, e.g. CKEditor 4, TinyMCE) erases the window's listeners and
+			// replaces the document's children; adding the same listeners again is a no-op when they are still there.
+			new MutationObserver(listen).observe(document, { childList: true })
 			globalThis.zingSleep = {
 				textOf,
 				typed: () => {
@@ -166,7 +175,7 @@ public sealed record PageProbe(double ScrollY, bool Dirty, bool LiveStream, bool
 					return [...edited].some((ref) => {
 						const el = ref.deref()
 						const text = textOf(el)
-						return text !== null && text.trim() !== '' && text !== before.get(el) && el.checkVisibility()
+						return text !== null && text.trim() !== '' && text !== before.get(el)
 					})
 				},
 			}
@@ -175,8 +184,8 @@ public sealed record PageProbe(double ScrollY, bool Dirty, bool LiveStream, bool
 
 	/// <summary>
 	/// Runs in <see cref="World"/> of the page and of each same-origin frame just before the tab sleeps. A draft is
-	/// unsaved while a visible text field or editor holds text that differs from what the markup gave it, or from what
-	/// it held before the person typed. Typing is the only sign in a React form, which keeps value and defaultValue
+	/// unsaved while a field or editor the person typed into holds text that differs from what it held before, or a
+	/// visible text field holds text that differs from what the markup gave it. Typing is the only sign in a React form, which keeps value and defaultValue
 	/// equal. Checkboxes, radio buttons, selects, sliders and pickers never count. A live stream is a video or audio
 	/// element playing a live camera, mic, screen or call track; picture-in-picture includes Document PiP.
 	/// </summary>
@@ -345,6 +354,12 @@ public sealed class TabSleeper
 	{
 		var before = Find(id);
 		if (before is null || !_tabs.HasPage(id)) return;
+		// A dialog waits for the person, and a stuck page can't be read: dropping either could lose what it holds.
+		if (_tabs.IsBlocked(id))
+		{
+			_held.Add(id);
+			return;
+		}
 		PageProbe probe;
 		try
 		{
@@ -512,6 +527,7 @@ public sealed class TabSuspender
 	{
 		var before = Find(id);
 		if (before is null || !_tabs.HasPage(id)) return true;
+		if (_tabs.IsBlocked(id)) return false;
 		PageProbe probe;
 		try
 		{

@@ -275,7 +275,7 @@ public sealed class ChromeApi : IDisposable
 			host.Push("account:state", state);
 			Shell.AccountChanged(state.SignedIn);
 		}));
-		Lifecycle = new TabLifecycle(new LifecycleTabs(Tabs, Overview), app.Settings, app.Clock, host.Scheduler, error => host.Report("tab lifecycle", error));
+		Lifecycle = new TabLifecycle(new LifecycleTabs(Tabs, Overview, LifecycleTabs.ProbeTimeout), app.Settings, app.Clock, host.Scheduler, error => host.Report("tab lifecycle", error));
 		Tabs.Woke += (id, page) =>
 		{
 			if (Lifecycle.Woke(id) is { } y) page.RunWhenLoaded($"window.scrollTo(0, {y.ToString(System.Globalization.CultureInfo.InvariantCulture)})");
@@ -1948,20 +1948,27 @@ public sealed class ChromeApi : IDisposable
 }
 
 /// <summary>What sleeping tabs and auto-close need from a window's tabs.</summary>
-internal sealed class LifecycleTabs(TabService tabs, TabOverview overview) : ILifecycleTabs
+internal sealed class LifecycleTabs(TabService tabs, TabOverview overview, TimeSpan probeTimeout) : ILifecycleTabs
 {
+	/// <summary>
+	/// A page on a dialog (alert, confirm) or with a hung renderer never answers. Without a limit one such tab would stop
+	/// every sweep; with it the tab is held and looked at again later, and the sweep goes on to the others.
+	/// </summary>
+	public static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(5);
+
 	public string? ActiveId => tabs.ActiveId;
 	public bool IsShown(string id) => tabs.IsShown(id);
 	public IReadOnlyList<TabRecord> Records => tabs.Records;
 	public bool HasPage(string id) => tabs.HasPage(id);
 	public bool IsAudible(string id) => tabs.PageOf(id)?.IsAudible ?? false;
+	public bool IsBlocked(string id) => tabs.PageOf(id)?.HasOpenDialog == true || tabs.FaultOf(id) is not null;
 
 	public async Task<PageProbe> ProbeAsync(string id)
 	{
 		var page = tabs.PageOf(id) ?? throw new PageUnavailableException(id);
 		try
 		{
-			return PageProbe.Combine([.. (await page.EvaluateInFramesAsync(PageProbe.Source)).Select(PageProbe.Parse)]);
+			return PageProbe.Combine([.. (await page.EvaluateInFramesAsync(PageProbe.Source).WaitAsync(probeTimeout)).Select(PageProbe.Parse)]);
 		}
 		catch (Exception error) when (error is not PageProbeException)
 		{

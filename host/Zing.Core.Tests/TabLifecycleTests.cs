@@ -59,6 +59,8 @@ public sealed class PageSim
 	public bool RefusesSuspend { get; set; }
 	public bool Dirty { get; set; }
 	public bool LiveStream { get; set; }
+	/// <summary>A dialog is open, or the renderer is stuck: probing it would never answer.</summary>
+	public bool Blocked { get; set; }
 	public bool PictureInPicture { get; set; }
 	public double ScrollY { get; set; }
 	public bool ProbeFails { get; set; }
@@ -95,9 +97,12 @@ public sealed class FakeLifecycleTabs : ILifecycleTabs
 
 	public bool IsAudible(string id) => Pages[id].Audible;
 
+	public bool IsBlocked(string id) => Pages[id].Blocked;
+
 	public Task<PageProbe> ProbeAsync(string id)
 	{
 		var page = Pages[id];
+		if (page.Blocked) throw new InvalidOperationException($"Tab {id} was probed while blocked");
 		page.OnProbe?.Invoke();
 		if (page.ProbeFails) return Task.FromException<PageProbe>(new PageUnavailableException(id));
 		return Task.FromResult(new PageProbe(page.ScrollY, page.Dirty, page.LiveStream, page.PictureInPicture));
@@ -392,6 +397,21 @@ public class TabLifecycleTests
 	}
 
 	[Fact]
+	public async Task A_page_that_never_answers_the_probe_is_unavailable_after_the_timeout()
+	{
+		var host = new FakePageHost();
+		var tabs = new TabService(new TabStore(Deterministic.Clock(), Deterministic.Ids()), host, "about:blank", () => { }, (_, _) => { });
+		var stuck = tabs.Open("https://stuck.test/");
+		tabs.Open("https://other.test/");
+		// As a page on alert() or with a hung renderer: the engine never answers.
+		host.PageFor(tabs, stuck.Id).Evaluating = () => new TaskCompletionSource<JsonElement>().Task;
+		var overview = new TabOverview(tabs, () => tabs.State("", false), _ => { }, (_, _) => { });
+		var lifecycle = new LifecycleTabs(tabs, overview, TimeSpan.FromMilliseconds(50));
+		var error = await Assert.ThrowsAsync<PageUnavailableException>(() => lifecycle.ProbeAsync(stuck.Id));
+		Assert.IsType<TimeoutException>(error.InnerException);
+	}
+
+	[Fact]
 	public void PageProbeRefusesAnythingElse()
 	{
 		foreach (var v in ProbeVectors.GetProperty("rejected").EnumerateArray()) Assert.Throws<PageProbeException>(() => PageProbe.Parse(v));
@@ -515,6 +535,7 @@ public class TabLifecycleTests
 				Dirty = Flag(t, "dirty"),
 				PictureInPicture = Flag(t, "pictureInPicture"),
 				LiveStream = Flag(t, "liveStream"),
+				Blocked = Flag(t, "blocked"),
 				ProbeFails = Flag(t, "probeFails"),
 				ScrollY = t.TryGetProperty("scrollY", out var y) ? y.GetDouble() : 0,
 			};
@@ -682,6 +703,7 @@ public class TabLifecycleTests
 			("audible", new PageSim { Audible = true }, false),
 			("dirty", new PageSim { Dirty = true }, false),
 			("call", new PageSim { LiveStream = true }, false),
+			("dialog", new PageSim { Blocked = true }, false),
 			("pip", new PageSim { PictureInPicture = true }, false),
 			("pinned", new PageSim(), true),
 			("plain", new PageSim(), false));
