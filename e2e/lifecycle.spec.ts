@@ -22,6 +22,8 @@ test.beforeAll(async () => {
 		// As React does for a controlled input: the value attribute follows what was typed, so value equals defaultValue.
 		if (req.url === '/react') return void res.end('<!doctype html><title>react</title><input name="draft"><script>const i = document.querySelector("input"); i.addEventListener("input", () => (i.defaultValue = i.value))</script>')
 		if (req.url === '/framed') return void res.end('<!doctype html><title>framed</title><iframe src="/react"></iframe>')
+		// An editor that writes its own frame, as CKEditor 4 and TinyMCE do: document.open() replaces the frame's document.
+		if (req.url === '/written') return void res.end('<!doctype html><title>written</title><iframe src="/other"></iframe><script>const f = document.querySelector("iframe"); f.onload = () => { const d = f.contentDocument; d.open(); d.write("<textarea name=draft></textarea>"); d.close(); const t = d.querySelector("textarea"); t.addEventListener("input", () => (t.defaultValue = t.value)); document.title = "written ready" }</script>')
 		if (req.url === '/controls') return void res.end('<!doctype html><title>controls</title><input type="checkbox"><input type="range"><select><option>a</option><option>b</option></select>')
 		res.end('<!doctype html><title>other</title>')
 	})
@@ -108,6 +110,8 @@ test('a tab with a draft typed into a React-style input stays awake, in the page
 	const top = await openTab(zing.chrome, '/react')
 	const react = await pageWhere(zing.browser, (p) => p.url() === `${base}/react`)
 	await react.locator('input[name=draft]').fill('half a thought')
+	// A draft the page has hidden (a collapsed reply box, another step of a wizard) is still the person's.
+	await react.evaluate(() => ((globalThis as unknown as { document: { querySelector(s: string): { style: { display: string } } } }).document.querySelector('input')!.style.display = 'none'))
 	// The watch runs in an isolated world: the page sees no trace of it, and its natives are untouched.
 	expect(await react.evaluate(() => Object.getOwnPropertyNames(globalThis).includes('zingSleep'))).toBe(false)
 	expect(await react.evaluate(() => [fetch, XMLHttpRequest.prototype.send].every((f) => f.toString().includes('[native code]')))).toBe(true)
@@ -166,5 +170,32 @@ test('a tab showing a live camera stays awake, and sleeps once the camera stops'
 	// A held tab is looked at again after TabSleeper.RetryMs.
 	await advanceClock(zing.chrome, 6 * MINUTE)
 	await expect.poll(async () => (await tab(zing.chrome, call)).sleeping).toBe(true)
+	await zing.close()
+})
+
+test('a draft typed into a frame the page wrote with document.open() keeps the tab awake', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const editor = await openTab(zing.chrome, '/written')
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/written`)
+	await expect(page).toHaveTitle('written ready')
+	await page.frameLocator('iframe').locator('textarea[name=draft]').fill('a long reply')
+	await leaveIdle(zing.chrome)
+	expect((await tab(zing.chrome, editor)).sleeping).toBe(false)
+	await zing.close()
+})
+
+test('a tab stuck on a dialog is held, and the other idle tabs still sleep', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const stuck = await openTab(zing.chrome, '/form')
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/form`)
+	// Left open: a handled dialog that is never answered keeps the page's script blocked, so it can't answer the probe.
+	page.on('dialog', () => {})
+	await page.evaluate(() => void setTimeout(() => (globalThis as unknown as { alert(m: string): void }).alert('still here?'), 0))
+	const idle = await openTab(zing.chrome, '/tall')
+	await leaveIdle(zing.chrome)
+	await expect.poll(async () => (await tab(zing.chrome, idle)).sleeping).toBe(true)
+	expect((await tab(zing.chrome, stuck)).sleeping).toBe(false)
 	await zing.close()
 })
