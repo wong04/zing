@@ -438,6 +438,58 @@ test('a fullscreen page shows an Exit full screen button while the cursor is at 
 	await zing.close()
 })
 
+test('F11 gives the page the whole window without the chrome, and F11 or Esc puts the chrome back', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)
+	await page.waitForLoadState('load')
+	const shown = async () => (await layers(zing.chrome)).find((l) => l.url === `${base}/find` && l.visible)
+	// CDP input never reaches the host's key handler, so the keys go in as pressed on the page (page-key).
+	const press = (code: string) => zing.chrome.evaluate((c) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'page-key', code: c }), code)
+	const inChrome = (await shown())!
+	expect(inChrome.y).toBeGreaterThan(0)
+	await press('F11')
+	await expect.poll(async () => (await shown())?.y).toBe(0)
+	expect((await shown())!.x).toBe(0)
+	expect((await shown())!.height).toBeGreaterThan(inChrome.height)
+	// The page's own document is not fullscreen: only the window is.
+	expect(await page.evaluate(() => (globalThis as unknown as { document: { fullscreenElement: unknown } }).document.fullscreenElement)).toBeNull()
+	const overlay = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay'))
+	await expect(overlay.getByRole('status')).toHaveText('Full screen · Press F11 or Esc to exit')
+	await press('F11')
+	await expect.poll(async () => (await shown())?.y).toBe(inChrome.y)
+	expect((await shown())!.height).toBe(inChrome.height)
+	await expect(overlay.getByRole('status')).toHaveCount(0)
+	// The View menu's item does the same, and Esc leaves.
+	expect(await zing.chrome.evaluate(() => window.zing.runCommand('view.fullScreen'))).toMatchObject({ status: 'done' })
+	await expect.poll(async () => (await shown())?.y).toBe(0)
+	await press('Escape')
+	await expect.poll(async () => (await shown())?.y).toBe(inChrome.y)
+	await zing.close()
+})
+
+test('a fullscreen element inside F11 fullscreen takes Esc first, and the window stays fullscreen', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)
+	await page.waitForLoadState('load')
+	const shown = async () => (await layers(zing.chrome)).find((l) => l.url === `${base}/find` && l.visible)
+	const fullscreen = () => page.evaluate(() => (globalThis as unknown as { document: { fullscreenElement: unknown } }).document.fullscreenElement !== null)
+	const inChrome = (await shown())!
+	await zing.chrome.evaluate(() => window.zing.runCommand('view.fullScreen'))
+	await expect.poll(async () => (await shown())?.y).toBe(0)
+	// Playwright's evaluate counts as a user gesture, which requestFullscreen needs.
+	await page.evaluate(() => (globalThis as unknown as { document: { documentElement: { requestFullscreen(): Promise<void> } } }).document.documentElement.requestFullscreen())
+	await expect.poll(fullscreen).toBe(true)
+	await page.evaluate(() => (globalThis as unknown as { document: { exitFullscreen(): Promise<void> } }).document.exitFullscreen())
+	await expect.poll(fullscreen).toBe(false)
+	expect((await shown())!.y).toBe(0)
+	// At the top edge Zing's Exit full screen button shows, and it leaves F11 fullscreen too.
+	await setCursor(zing.chrome, { x: (await shown())!.width / 2, y: 0 })
+	await (await exitFullScreenButton(zing.browser)).click()
+	await expect.poll(async () => (await shown())?.y).toBe(inChrome.y)
+	await setCursor(zing.chrome, null)
+	await zing.close()
+})
+
 test('closing a window while its page is fullscreen closes cleanly', async () => {
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/find` } })
 	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/find`)

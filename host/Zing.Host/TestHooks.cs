@@ -171,6 +171,7 @@ public static class TestHooks
 	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers, reset makes it forget the key it sealed with, and missing deletes that key;
 	/// "picker-key" with <c>vk</c> enters the account picker's key handler as a real key press on its page would;
 	/// "preview-key" with <c>code</c> enters the window's key handler as that key pressed on the link preview's top page would;
+	/// "page-key" with <c>code</c> enters the window's key handler as that key pressed on the shown page would;
 	/// "fullscreen-key" with <c>vk</c> enters the PDF viewer's fullscreen key handler as a real key press on the fullscreen page would;
 	/// "page-messages" writes how many page messages were dropped to <c>file</c>;
 	/// "set-modifiers" with <c>shift</c>, <c>ctrl</c> and <c>middle</c> sets the keys the next new-window request is taken to have been made with, once;
@@ -318,6 +319,12 @@ public static class TestHooks
 		{
 			var handler = FullScreenKeyHandlers.TryGetValue(window, out var keys) ? keys : throw new InvalidOperationException("fullscreen-key needs a window with its chrome started");
 			handler(root.GetProperty("vk").GetInt32());
+			return true;
+		}
+		if (action == "page-key")
+		{
+			var handler = PageKeyHandlers.TryGetValue(window, out var keys) ? keys : throw new InvalidOperationException("page-key needs a window with its chrome started");
+			handler(new Zing.Core.KeyInput(root.GetProperty("code").GetString()!, Ctrl: false, Shift: false, Alt: false));
 			return true;
 		}
 		if (action == "preview-key")
@@ -498,6 +505,16 @@ public static class TestHooks
 		if (!IsEndToEndRun) return;
 		FullScreenKeyHandlers[window] = handler;
 		window.Destroyed += () => FullScreenKeyHandlers.Remove(window);
+	}
+
+	/// <summary>Each window's key handler for its shown page (MainWindow.KeyOnPage), for page-key; e2e runs only.</summary>
+	private static readonly Dictionary<HostWindow, Func<Zing.Core.KeyInput, bool>> PageKeyHandlers = [];
+
+	public static void RegisterPageKeys(HostWindow window, Func<Zing.Core.KeyInput, bool> handler)
+	{
+		if (!IsEndToEndRun) return;
+		PageKeyHandlers[window] = handler;
+		window.Destroyed += () => PageKeyHandlers.Remove(window);
 	}
 
 	/// <summary>Each window's key handler for its link preview's top page (MainWindow.PreviewKeyOnPage), for preview-key; e2e runs only.</summary>

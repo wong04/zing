@@ -8,6 +8,9 @@ namespace Zing.Core;
 /// </summary>
 public static class FullScreenHint
 {
+	/// <summary>The window went fullscreen by F11: no site took it, so the hint only says how to leave.</summary>
+	public const string Browser = "Full screen · Press F11 or Esc to exit";
+
 	public static string Text(string url) => $"{SiteOf(url)} is now full screen · Press Esc to exit";
 
 	private static string SiteOf(string url)

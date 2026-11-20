@@ -50,7 +50,10 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private Rect? _surfaceRegion;
 	private Task? _surfaceReady;
 	private bool _surfaceWantsFocus;
+	// The window is fullscreen: the page in front took it (_pageFullScreen), or the person pressed F11 (_browserFullScreen).
 	private bool _fullScreen;
+	private bool _pageFullScreen;
+	private bool _browserFullScreen;
 	// Set as OnClosed starts: the HWND (and with it the AppWindow) is already gone while the tabs close.
 	private bool _destroyed;
 	private Microsoft.UI.Windowing.AppWindowPresenter? _windowed;
@@ -86,6 +89,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		TestHooks.RegisterScrim(_window, () => _scrim);
 		TestHooks.RegisterPickerKeys(_window, PickerKeyOnPage);
 		TestHooks.RegisterPreviewKeys(_window, PreviewKeyOnPage);
+		TestHooks.RegisterPageKeys(_window, KeyOnPage);
 		TestHooks.RegisterFullScreenKeys(_window, ViewerEscapeOnPage);
 		_app.Services.Vaults.Changed += FollowAutofill;
 	}
@@ -359,7 +363,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	}
 
 	/// <summary>The preview's top page has the screen: the scrim and the buttons step aside until it leaves.</summary>
-	private bool PreviewFullScreen => _fullScreen && _preview.Count > 0;
+	private bool PreviewFullScreen => _pageFullScreen && _preview.Count > 0;
 
 	/// <summary>
 	/// The preview works without its dim, so a scrim that can't be made is recorded (an e2e run fails on it), never thrown
@@ -683,32 +687,49 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	/// <summary>
 	/// The window follows the page in front (ScreenOwner): fullscreen while one of its elements is (the page then covers the
-	/// chrome), back to a normal window when it leaves. Test windows stay off-screen, so they only change the layout (AGENTS.md).
+	/// chrome), back to a normal window when it leaves. F11 makes it fullscreen too, with the chrome's insets gone
+	/// (ChromeApi.Insets), until F11 or Esc again. Test windows stay off-screen, so they only change the layout (AGENTS.md).
 	/// </summary>
 	private void FollowFullScreen()
 	{
 		// A fullscreen page closing with its window has no window left to lay out.
 		if (_destroyed) return;
 		var owner = ScreenOwner;
-		var wanted = owner?.IsFullScreen == true;
-		if (wanted == _fullScreen) return;
-		_fullScreen = wanted;
-		if (!TestHooks.KeepsOutOfTheWay)
-		{
-			// The window's own presenter goes back as it was, maximised or not.
-			if (wanted)
-			{
-				_windowed = AppWindow.Presenter;
-				AppWindow.SetPresenter(Microsoft.UI.Windowing.AppWindowPresenterKind.FullScreen);
-			}
-			else AppWindow.SetPresenter(_windowed ?? throw new InvalidOperationException("Left fullscreen without having entered it"));
-		}
+		var page = owner?.IsFullScreen == true;
+		var wanted = page || _browserFullScreen;
+		if (wanted == _fullScreen && page == _pageFullScreen) return;
+		var entered = wanted && !_fullScreen;
+		var pageEntered = page && !_pageFullScreen;
+		_pageFullScreen = page;
+		if (wanted != _fullScreen) SetWindowFullScreen(wanted);
 		Relayout();
 		if (wanted) _fullScreenExit?.Prepare();
 		_exitReveal?.SetEnabled(wanted);
 		if (_notices is null || _scope.IsClosed) return;
-		if (wanted) TestHooks.Background(_notices.ShowFullScreenHintAsync(owner!.Url), "fullscreen hint");
-		else _notices.HideFullScreenHint();
+		if (pageEntered) TestHooks.Background(_notices.ShowFullScreenHintAsync(FullScreenHint.Text(owner!.Url)), "fullscreen hint");
+		else if (entered) TestHooks.Background(_notices.ShowFullScreenHintAsync(FullScreenHint.Browser), "fullscreen hint");
+		else if (!wanted) _notices.HideFullScreenHint();
+	}
+
+	private void SetWindowFullScreen(bool wanted)
+	{
+		_fullScreen = wanted;
+		if (TestHooks.KeepsOutOfTheWay) return;
+		// The window's own presenter goes back as it was, maximised or not.
+		if (wanted)
+		{
+			_windowed = AppWindow.Presenter;
+			AppWindow.SetPresenter(Microsoft.UI.Windowing.AppWindowPresenterKind.FullScreen);
+		}
+		else AppWindow.SetPresenter(_windowed ?? throw new InvalidOperationException("Left fullscreen without having entered it"));
+	}
+
+	public bool BrowserFullScreen => _browserFullScreen;
+
+	public void ToggleBrowserFullScreen()
+	{
+		_browserFullScreen = !_browserFullScreen;
+		FollowFullScreen();
 	}
 
 	/// <summary>The cursor reached the top of a fullscreen page, or left it. The button takes the hint's place at the top.</summary>
@@ -719,9 +740,10 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_fullScreenExit?.Changed(shown);
 	}
 
-	/// <summary>The Exit full screen button: the page in front leaves fullscreen as Esc would make it, and the window follows.</summary>
+	/// <summary>The Exit full screen button: the page in front leaves fullscreen as Esc would make it, F11's fullscreen ends, and the window follows.</summary>
 	public void ExitFullScreen()
 	{
+		_browserFullScreen = false;
 		ScreenOwner?.ExitFullScreen();
 		FollowFullScreen();
 	}
@@ -730,7 +752,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private void PlaceShown()
 	{
 		if (_shown is null) return;
-		if (_fullScreen && _shown == ScreenOwner)
+		if (_pageFullScreen && _shown == ScreenOwner)
 		{
 			_shown.Place(_layout.ContentRect());
 			_shown.BringToFront();
@@ -853,6 +875,13 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	{
 		if (IsPreviewView(view)) return Api!.HandlePreviewKey(input);
 		return IsPageView(view) ? Api!.HandleKey(input) : Api!.HandleChromeKey(input);
+	}
+
+	/// <summary>The e2e seam (page-key): CDP input never reaches AcceleratorKeyPressed, so a test enters Key as a key press on the shown page would.</summary>
+	private bool KeyOnPage(KeyInput input)
+	{
+		if (Api is null || _shown?.View is not { } view) throw new InvalidOperationException("page-key needs a window with a page showing");
+		return Key(view, input);
 	}
 
 	/// <summary>
