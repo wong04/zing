@@ -92,6 +92,10 @@ public interface IWindowHost
 	void SetUpdatePillSize(int width, int height);
 	/// <summary>The page in front leaves fullscreen and the window gets its chrome back (the Exit full screen button).</summary>
 	void ExitFullScreen();
+	/// <summary>Whether the window is fullscreen by F11 (view.fullScreen): the page has the whole window and the chrome is hidden.</summary>
+	bool BrowserFullScreen { get; }
+	/// <summary>F11: the window goes fullscreen without its chrome, or comes back.</summary>
+	void ToggleBrowserFullScreen();
 	/// <summary>Whether Zing is installed and the default browser, asked anew each time (the person may have changed it in Windows' Settings).</summary>
 	DefaultBrowserState DefaultBrowserState { get; }
 	/// <summary>The generated third-party notices file, shown by About's Credits.</summary>
@@ -590,6 +594,8 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 	/// <summary>Where the chrome ends and the page begins. With tabs on the left the app sidebar folds into the rail.</summary>
 	public ChromeInsets Insets()
 	{
+		// F11: the chrome is hidden and the page has the whole window.
+		if (_host.BrowserFullScreen) return new ChromeInsets(0, 0, 0);
 		var position = Setting("tabBarPosition");
 		var pinned = Flag("sidebarPinned");
 		// On the left the rail is the sidebar: Ctrl+S hides it like the app sidebar, and it slides out from the edge.
@@ -670,6 +676,7 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 	/// </summary>
 	public bool HandleKey(KeyInput input)
 	{
+		if (LeftBrowserFullScreen(input)) return true;
 		if (Commands.ForInput(input) is not { } command) return false;
 		return RunForKey(command.Id);
 	}
@@ -680,8 +687,21 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 	/// </summary>
 	public bool HandleChromeKey(KeyInput input)
 	{
+		if (LeftBrowserFullScreen(input)) return true;
 		if (Commands.ForInput(input) is not { } command || command.Id == "page.stop") return false;
 		return RunForKey(command.Id);
+	}
+
+	/// <summary>
+	/// Esc leaves F11 fullscreen, before it would stop the page loading. While one of the page's elements is fullscreen
+	/// (a video) Esc is the page's, to leave that first.
+	/// </summary>
+	private bool LeftBrowserFullScreen(KeyInput input)
+	{
+		if (input is not { Code: "Escape", Ctrl: false, Shift: false, Alt: false } || !_host.BrowserFullScreen) return false;
+		if ((Tabs.Preview?.Top.Page ?? Tabs.ActivePage)?.IsFullScreen == true) return false;
+		_host.ToggleBrowserFullScreen();
+		return true;
 	}
 
 	private bool RunForKey(string command) => Run(command) is not Outcome { Status: "not-applicable" };
@@ -768,6 +788,7 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 		{
 			"app.settings" => Act(true, () => Shell.OpenSettings()),
 			"view.sidebar" => Act(true, Shell.ToggleSidebar),
+			"view.fullScreen" => Act(true, _host.ToggleBrowserFullScreen),
 			"view.favouritesBar" => Act(true, () => _app.Settings.Set("showFavouritesBar", !Flag("showFavouritesBar"))),
 			"library.addFavourite" => SaveActive(favourite: true),
 			"library.addReadingList" => SaveActive(favourite: false),
