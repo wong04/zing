@@ -235,6 +235,12 @@ export const ToolIcon = (p: GlyphProps) => (
 	</Glyph>
 )
 
+export const PuzzleIcon = (p: GlyphProps) => (
+	<Glyph {...p}>
+		<path d="M2.5 5.5h2.6a1.6 1.6 0 1 1 3.2 0h2.7v2.7a1.6 1.6 0 1 1 0 3.2v2.1H2.5z" />
+	</Glyph>
+)
+
 export const FolderOpenIcon = FolderIcon
 
 export const CopyIcon = (p: GlyphProps) => (

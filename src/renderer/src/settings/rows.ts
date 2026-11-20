@@ -53,6 +53,8 @@ export type CustomId =
 	| 'account'
 	| 'about'
 	| 'import'
+	| 'extensions-gate'
+	| 'extensions'
 
 export interface CustomRow {
 	readonly type: 'custom'
@@ -78,6 +80,7 @@ export const CATEGORIES: readonly Category[] = [
 	{ id: 'privacy', title: 'Privacy' },
 	{ id: 'security', title: 'Security' },
 	{ id: 'advanced', title: 'Advanced' },
+	{ id: 'extensions', title: 'Extensions' },
 	{ id: 'account', title: 'Account' },
 	{ id: 'about', title: 'About' },
 	{ id: 'import', title: 'Import' },
@@ -315,6 +318,19 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 	],
 	advanced: [
 		toggle('acceleratedCanvas', 'Draw canvas on the GPU', { detail: 'Faster on canvas-heavy pages. Relaunch to apply.' }),
+	],
+	// Extensions run only in the kept profile (ExtensionService), so without Stay signed in the pane says so and offers it.
+	extensions: [
+		{ type: 'custom', id: 'extensions-gate', keys: ['persistentProfile'], visible: (s) => !s.persistentProfile },
+		toggle('extensions', 'Allow extensions', {
+			visible: (s) => s.persistentProfile,
+			detail: (s) =>
+				s.extensions
+					? 'Unpacked extensions you load run in every tab, with your sign-ins. There is no store, and extensions that talk to a desktop app (native messaging) can’t. Relaunch to apply.'
+					: 'Off: no extension runs. Relaunch to apply.',
+			warning: (s) => s.extensions,
+		}),
+		{ type: 'custom', id: 'extensions', keys: [] },
 	],
 	account: [{ type: 'custom', id: 'account', keys: [] }],
 	about: [{ type: 'custom', id: 'about', keys: [] }],

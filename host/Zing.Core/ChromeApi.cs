@@ -69,6 +69,10 @@ public interface IWindowHost
 	IDownloadHost DownloadHost { get; }
 	/// <summary>Shows the native open dialog for these extensions (none means every file) and returns what the person picked; empty if they cancelled. An e2e run shows no dialog.</summary>
 	Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions);
+	/// <summary>Shows the native folder picker and returns the folder picked; null if they cancelled. An e2e run shows no dialog: it takes the next queued pick, one path or none.</summary>
+	Task<string?> PickFolderAsync();
+	/// <summary>Opens an extension's action popup (a chrome-extension:// page) beside the toolbar, in the browsing profile.</summary>
+	void OpenExtensionPopup(string url);
 	/// <summary>Shows the native Save dialog with this name and type; null if they cancelled. An e2e run shows no dialog: it takes the next queued pick, one path or none.</summary>
 	Task<string?> PickSaveFileAsync(string suggestedName, string extension, string kind);
 	/// <summary>Puts these files on the clipboard as files (CF_HDROP), so Explorer can paste them. Called on the UI thread; throws if the clipboard can't be written. An e2e run leaves the real clipboard alone.</summary>
@@ -110,8 +114,9 @@ public interface IWindowHost
 /// <param name="LocalAppData">Where browser profiles live (the import channels read it when called); null where the host has none, and then those channels throw.</param>
 /// <param name="BrowserLauncher">Starts another browser at its password export page; null where the host can't, and then <c>import:watch-passwords</c> throws.</param>
 /// <param name="FileTrash">Sends a found export to the Recycle Bin; null where the host can't, and then <c>import:recycle</c> throws.</param>
+/// <param name="Extensions">Settings' Extensions and the toolbar's popups; null where the host has none, and then the extensions channels throw.</param>
 /// <param name="BookmarkIcons">The icons kept for bookmarked sites once visited; null where the host keeps none, and bookmarks show their letter.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null)
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null, Zing.Core.Extensions.ExtensionService? Extensions = null)
 {
 	public long Now() => Clock.Now();
 
@@ -370,6 +375,12 @@ public sealed class ChromeApi : IDisposable
 		// Not "engines:cancel": that one stops a download by engine id.
 		bridge.Register("engines:cancel-job", args => Do(() => Runner().Cancel(Text(args, 0), _windowId)));
 		bridge.Register("files:pick", args => PickFilesAsync(Arg(args, 0)));
+		bridge.Register("extensions:get", _ => Extensions().State());
+		bridge.Register("extensions:load-unpacked", _ => LoadUnpackedAsync());
+		bridge.Register("extensions:set-enabled", args => SetExtensionEnabledAsync(Text(args, 0), Bool(args, 1)));
+		bridge.Register("extensions:remove", args => RemoveExtensionAsync(Text(args, 0)));
+		bridge.Register("extensions:open-popup", args => OpenExtensionPopupAsync(Text(args, 0)));
+		bridge.Register("extensions:menu", args => Do(() => Menu(ExtensionsMenu(), args, 0)));
 		bridge.Register("convert:html-to-pdf", args => HtmlToPdfAsync(Text(args, 0), Text(args, 1)));
 		bridge.Register("files:open-dropped", _ => Drops.Take());
 		bridge.Register("files:open-dropped-image", args => OpenDroppedImageAsync(Text(args, 0)));
@@ -801,6 +812,48 @@ public sealed class ChromeApi : IDisposable
 		var images = _pageImages ?? throw new InvalidOperationException("This host has no temporary folder for a dropped picture");
 		var path = await images.FetchAsync(address, DateTimeOffset.FromUnixTimeMilliseconds(_app.Clock.Now()), _closing.Token);
 		return Grants.Issue(path);
+	}
+
+	private Zing.Core.Extensions.ExtensionService Extensions() => _app.Extensions ?? throw new InvalidOperationException("This host has no extensions");
+
+	/// <summary>Load unpacked: the person picks a folder, which is copied in; the state after, or null if they cancelled.</summary>
+	private async Task<object?> LoadUnpackedAsync()
+	{
+		var extensions = Extensions();
+		if (await _host.PickFolderAsync() is not { } folder) return null;
+		var row = await extensions.InstallAsync(folder);
+		_host.Notify(extensions.Running ? $"{row.Name} added" : $"{row.Name} added. It runs once extensions are on and Zing relaunches.");
+		return extensions.State();
+	}
+
+	private async Task<object?> SetExtensionEnabledAsync(string key, bool enabled)
+	{
+		await Extensions().SetEnabledAsync(key, enabled);
+		return Extensions().State();
+	}
+
+	private async Task<object?> RemoveExtensionAsync(string key)
+	{
+		await Extensions().RemoveAsync(key);
+		return Extensions().State();
+	}
+
+	/// <summary>The toolbar's extensions button: each running extension with a popup, then the way to Settings' Extensions.</summary>
+	private List<MenuItem> ExtensionsMenu()
+	{
+		var state = Extensions().State();
+		var items = state.Running
+			? state.Items.Where(e => e.Enabled && e.HasPopup && e.Problem is null).Select(e => new MenuItem(e.Name, () => _host.Background(OpenExtensionPopupAsync(e.Key), "extension popup"))).ToList()
+			: [];
+		if (items.Count > 0) items.Add(MenuItem.Separator);
+		items.Add(new MenuItem("Manage Extensions", () => Shell.OpenSettings("extensions")));
+		return items;
+	}
+
+	private async Task<object?> OpenExtensionPopupAsync(string key)
+	{
+		_host.OpenExtensionPopup(await Extensions().PopupUrlAsync(key));
+		return null;
 	}
 
 	private async Task<object?> PickFilesAsync(JsonElement kinds)

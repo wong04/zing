@@ -108,6 +108,8 @@ export const SETTINGS_SCHEMA = {
 	autoCloseMinute: integerIn(0, 59, 0),
 	/** Trades the keeps-nothing guarantee for a profile on disk; flips the privacy banner. */
 	persistentProfile: flag(false),
+	/** Unpacked extensions (Settings' Extensions). They run only in the persistent profile, so only with persistentProfile on too. Read at launch. */
+	extensions: flag(false),
 	defaultUserAgent: flag(false),
 	acceleratedCanvas: flag(true),
 	/** Off by default: remembering open tabs means writing visited URLs to disk. */

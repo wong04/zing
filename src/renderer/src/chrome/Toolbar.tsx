@@ -1,9 +1,10 @@
-import type { MouseEvent, ReactNode } from 'react'
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import type { CommandId } from '@shared/commands'
 import type { TabView } from '@shared/ipc'
 import { zing } from '../api'
 import { AddressBar } from './AddressBar'
 import { BackIcon, ForwardIcon, MoreIcon, ReloadIcon, StopIcon } from './icons'
+import { PuzzleIcon } from '../components/icons'
 import { HistoryButton } from './HistoryButton'
 import { commandTooltip } from './tooltip'
 import { pageFaultText } from './display'
@@ -44,7 +45,26 @@ function openMenu(e: MouseEvent<HTMLButtonElement>): void {
 	void zing.openAppMenu({ x: rect.left, y: rect.bottom })
 }
 
+function openExtensionsMenu(e: MouseEvent<HTMLButtonElement>): void {
+	const rect = e.currentTarget.getBoundingClientRect()
+	void zing.openExtensionsMenu({ x: rect.left, y: rect.bottom })
+}
+
+/** Whether extensions run this launch; fixed at launch, so asked once. */
+function useExtensionsRunning(): boolean {
+	const [running, setRunning] = useState(false)
+	useEffect(() => {
+		let live = true
+		void zing.getExtensions().then((state) => live && setRunning(state.running))
+		return () => {
+			live = false
+		}
+	}, [])
+	return running
+}
+
 export function Toolbar({ tab }: { tab: TabView | undefined }) {
+	const extensions = useExtensionsRunning()
 	// A crashed page can be left mid-load; Stop would do nothing for it, Reload brings it back.
 	const loading = (tab?.loading ?? false) && tab?.pageState === undefined
 	return (
@@ -66,6 +86,11 @@ export function Toolbar({ tab }: { tab: TabView | undefined }) {
 			)}
 			<AddressBar tab={tab} />
 			<PageFault tab={tab} />
+			{extensions ? (
+				<button type="button" className="icon-button" aria-label="Extensions" title="Extensions" onClick={openExtensionsMenu}>
+					<PuzzleIcon size={16} />
+				</button>
+			) : null}
 			<button type="button" className="icon-button" aria-label="Menu" title="Menu" onClick={openMenu}>
 				<MoreIcon />
 			</button>

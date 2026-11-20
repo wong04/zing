@@ -18,6 +18,7 @@
 	"autoCloseHour": 3,
 	"autoCloseMinute": 0,
 	"persistentProfile": false,
+	"extensions": false,
 	"defaultUserAgent": false,
 	"acceleratedCanvas": true,
 	"restoreTabs": true,

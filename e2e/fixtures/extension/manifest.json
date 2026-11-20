@@ -1,0 +1,12 @@
+{
+	"manifest_version": 3,
+	"name": "Zing Test Extension",
+	"version": "1.0",
+	"description": "e2e/extensions.spec.ts: marks every page, blocks blocked.example, and has an action popup.",
+	"background": { "service_worker": "background.js" },
+	"content_scripts": [{ "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_start" }],
+	"permissions": ["declarativeNetRequest"],
+	"host_permissions": ["<all_urls>"],
+	"declarative_net_request": { "rule_resources": [{ "id": "block", "enabled": true, "path": "rules.json" }] },
+	"action": { "default_popup": "popup.html", "default_title": "Zing Test Extension" }
+}

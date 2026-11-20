@@ -169,6 +169,30 @@
 			"args": 0
 		},
 		{
+			"channel": "extensions:get",
+			"args": 0
+		},
+		{
+			"channel": "extensions:load-unpacked",
+			"args": 0
+		},
+		{
+			"channel": "extensions:menu",
+			"args": 1
+		},
+		{
+			"channel": "extensions:open-popup",
+			"args": 1
+		},
+		{
+			"channel": "extensions:remove",
+			"args": 1
+		},
+		{
+			"channel": "extensions:set-enabled",
+			"args": 2
+		},
+		{
 			"channel": "files:copy-to-clipboard",
 			"args": 1
 		},

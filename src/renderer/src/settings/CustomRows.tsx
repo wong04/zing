@@ -16,6 +16,7 @@ import { useUpdateState } from '../update/useUpdateState'
 import { privacyStatus } from './privacy'
 import { VaultSection } from './VaultSection'
 import { ImportSection } from './ImportSection'
+import { ExtensionsGate, ExtensionsList } from './ExtensionsSection'
 import type { CustomId } from './rows'
 import { CHECK_FOR_UPDATES_ROW, detailOf } from './rows'
 import { DefaultBrowserRow } from './DefaultBrowserRow'
@@ -326,5 +327,9 @@ export function CustomRow({ id, handle, version }: { id: CustomId; handle: Setti
 			return <About version={version} />
 		case 'import':
 			return <ImportSection />
+		case 'extensions-gate':
+			return <ExtensionsGate handle={handle} />
+		case 'extensions':
+			return <ExtensionsList handle={handle} />
 	}
 }

@@ -81,7 +81,8 @@ If you forget the password, the recovery key restores your vault. Without both, 
 
 - **Sync covers passwords only.** Bookmarks, Favourites, Pinned and settings stay on this PC.
 - **Mica.** Solid tab cards cover the window, so Windows' Mica material isn't visible behind Zing's sidebar.
-- **Ad blocking is by server, not by element.** Zing refuses requests to the servers EasyList and EasyPrivacy name, but doesn't read their path, per-site or element-hiding rules. An ad a site serves from its own address still shows, and a refused ad can leave an empty box. Extensions such as uBlock Origin Lite load in WebView2 but don't block in the in-memory profile Zing browses with.
+- **Ad blocking is by server, not by element.** Zing refuses requests to the servers EasyList and EasyPrivacy name, but doesn't read their path, per-site or element-hiding rules. An ad a site serves from its own address still shows, and a refused ad can leave an empty box. Extensions such as uBlock Origin Lite block only with Stay signed in on (see the next line).
+- **Extensions need Stay signed in.** Settings, Extensions loads an unpacked extension from a folder. Extensions run only while Stay signed in to sites is on: in the in-memory profile Zing browses with by default, WebView2 installs them but their page scripts and blocking rules do nothing. There's no extension store, so updates mean loading the folder again. There's no native messaging, so password managers can't unlock through their desktop app (Bitwarden, 1Password). Only Manifest V3 extensions load. Popups open from the toolbar's extensions button, but there are no extension badges or pinned icons.
 
 ## Building from source
 
