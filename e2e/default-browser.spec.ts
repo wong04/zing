@@ -1,6 +1,7 @@
 // Phase 8 task 7: the offer to make Zing the default browser, and Settings' Default browser row. An e2e run is never installed, so the
 // offer shows only through "show-default-browser-offer", which skips the installed/default checks but keeps the person's own:
-// never on a profile's first launch, never once they said don't ask again. Make default is recorded (ZING_DIALOGS_FILE), never launched.
+// never on a profile's first launch, and only once: showing it ends it for good, whatever the answer. Make default is recorded
+// (ZING_DIALOGS_FILE), never launched.
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
 import { launchZing, layers, pageWhere, pages, test, type Launched } from './zing'
@@ -41,8 +42,8 @@ async function showOffer(zing: Launched): Promise<Page> {
 	return overlay
 }
 
-test('the default-browser offer waits for a second launch, opens Default apps, and stops after Don’t ask again', async () => {
-	test.setTimeout(240_000)
+test('the default-browser offer waits for a second launch and asks once, whatever the answer', async () => {
+	test.setTimeout(300_000)
 	// A fresh profile's first launch: nothing at startup, nor when asked.
 	const first = await launched()
 	expect(await noticeShown(first.chrome)).toBe(false)
@@ -52,7 +53,9 @@ test('the default-browser offer waits for a second launch, opens Default apps, a
 	// Its second launch: still nothing at startup (not installed), and the offer when asked.
 	const second = await launched(first.userDataDir)
 	expect(await noticeShown(second.chrome)).toBe(false)
-	let overlay = await showOffer(second)
+	const overlay = await showOffer(second)
+	// Shown is asked: the offer won't come back even if it is never answered.
+	expect((await second.chrome.evaluate(() => window.zing.getSettings())).defaultBrowserDismissed).toBe(true)
 	// One line of question and buttons: a plain notice's height (56), not the three-line failed-load offer's (132).
 	const layer = (await layers(second.chrome)).find((l) => l.url.endsWith('#overlay') && l.visible)
 	expect(layer?.height).toBe(56)
@@ -61,20 +64,30 @@ test('the default-browser offer waits for a second launch, opens Default apps, a
 	await overlay.getByRole('button', { name: 'Make default' }).click()
 	await expect.poll(() => second.dialogs()).toEqual([{ kind: 'default-apps', url: SETTINGS_URI }])
 	await expect.poll(() => noticeShown(second.chrome)).toBe(false)
-	// Make default is not a dismissal.
-	expect((await second.chrome.evaluate(() => window.zing.getSettings())).defaultBrowserDismissed).toBe(false)
-
-	overlay = await showOffer(second)
-	await overlay.getByRole('button', { name: "Don't ask again" }).click()
-	await expect.poll(() => second.chrome.evaluate(async () => (await window.zing.getSettings()).defaultBrowserDismissed)).toBe(true)
-	await expect.poll(() => noticeShown(second.chrome)).toBe(false)
 	await askForNothing(second)
 	await second.close()
 
-	// The same profile again: dismissed for good.
+	// The same profile again: asked already.
 	const third = await launched(first.userDataDir)
 	await askForNothing(third)
 	expect(third.dialogs()).toEqual([])
+	await third.close()
+})
+
+test('Not now on the default-browser offer ends it for good', async () => {
+	test.setTimeout(240_000)
+	const first = await launched()
+	await first.close()
+	const second = await launched(first.userDataDir)
+	const overlay = await showOffer(second)
+	await overlay.getByRole('button', { name: 'Not now' }).click()
+	await expect.poll(() => noticeShown(second.chrome)).toBe(false)
+	expect(second.dialogs()).toEqual([])
+	await askForNothing(second)
+	await second.close()
+
+	const third = await launched(first.userDataDir)
+	await askForNothing(third)
 	await third.close()
 })
 
