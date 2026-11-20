@@ -94,6 +94,13 @@ internal static class Native
 	[DllImport("user32.dll")]
 	public static extern nint DefWindowProcW(nint hwnd, uint msg, nint wParam, nint lParam);
 
+	public const uint MB_OKCANCEL = 0x1;
+	public const uint MB_ICONWARNING = 0x30;
+	public const int IDOK = 1;
+
+	[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+	public static extern int MessageBoxW(nint owner, string text, string caption, uint type);
+
 	[DllImport("user32.dll", SetLastError = true)]
 	[return: MarshalAs(UnmanagedType.Bool)]
 	public static extern bool DestroyWindow(nint hwnd);
@@ -202,6 +209,10 @@ internal static class Native
 
 	[DllImport("user32.dll")]
 	public static extern nint SendMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
+
+	[DllImport("user32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool PostMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
 
 	[DllImport("user32.dll")]
 	public static extern short GetKeyState(int virtualKey);

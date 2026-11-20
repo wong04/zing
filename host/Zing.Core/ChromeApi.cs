@@ -24,7 +24,12 @@ public interface IWindowHost
 	/// <summary>The offer left the screen on its own: it timed out, or another notice replaced it.</summary>
 	event Action OfferEnded;
 	void NewWindow();
+	/// <summary>The person closing the window (Ctrl+Shift+W): it may ask first.</summary>
 	void CloseWindow();
+	/// <summary>Opens the last window the person closed, app-wide; false when none is left.</summary>
+	bool ReopenClosedWindow();
+	/// <summary>Quits Zing (Ctrl+Shift+Q): every window closes together and all of them are saved, asking once at most.</summary>
+	void Quit();
 	/// <summary>The chrome insets or the surface changed; put the page and layers where they now go.</summary>
 	void Relayout();
 	void FocusChrome();
@@ -705,12 +710,14 @@ public sealed class ChromeApi : IDisposable
 			"library.readingList" => Act(true, () => SetLibraryPanel(_libraryPanel == "readingList" ? null : "readingList")),
 			"tab.new" => Act(true, NewTab),
 			"tab.close" => Tabs.Preview is not null ? Act(true, Tabs.ClosePreview) : Act(Tabs.ActiveId is not null, () => Tabs.Close(Tabs.ActiveId!)),
-			"tab.reopenClosed" => Tabs.ReopenClosed() is null ? NotApplicable : Done,
+			// The window's own closed tabs first, then the windows closed app-wide.
+			"tab.reopenClosed" => Tabs.ReopenClosed() is not null || _host.ReopenClosedWindow() ? Done : NotApplicable,
 			"tab.split" => Act(Tabs.ActiveId is { } splitting && Tabs.Splits.Of(splitting) is not { TabIds.Count: >= Split.MaxPanes }, SplitWithNewTab),
 			"tab.next" => ActivateIfAny(Tabs.NextId()),
 			"tab.previous" => ActivateIfAny(Tabs.PreviousId()),
 			"window.new" => Act(true, _host.NewWindow),
 			"window.close" => Act(true, _host.CloseWindow),
+			"app.quit" => Act(true, _host.Quit),
 			"location.open" => Act(true, FocusAddress),
 			"history.back" => Act(page is { CanGoBack: true }, () => page!.GoBack()),
 			"history.forward" => Act(page is { CanGoForward: true }, () => page!.GoForward()),

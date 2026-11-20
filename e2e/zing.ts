@@ -257,6 +257,10 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		// Quit as a person would, by closing every window, so pending writes are flushed.
 		const exited = exit.then(() => undefined)
 		const chromes = pages(browser).filter((p) => p.url() === CHROME_URL)
+		// A test that told the close confirm to cancel (close-window-answer) and failed before undoing it would keep every window open.
+		await chromes[0]
+			?.evaluate(() => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'close-window-answer', close: true }))
+			.catch(() => undefined)
 		// One window at a time, as a person closes them. A window that closes takes its renderer
 		// with it, so the evaluate may never answer; the page's close event is the answer.
 		for (const page of chromes) {
@@ -352,8 +356,11 @@ export async function launchBare(userDataDir: string, env: Readonly<Record<strin
 	const overridden = Object.keys(env).filter((key) => PROTECTED.includes(key.toUpperCase()))
 	if (overridden.length > 0) throw new HostProcessError(`launchBare sets ${overridden.join(', ')} itself; a test can't override it`)
 	const port = await freePort()
-	const errors = join(scratchDir('zing-host-e2e-'), 'errors.log')
-	const host = spawn(HOST_EXE, [], { env: { ...hostEnvironment(port, errors, userDataDir), ...env }, stdio: 'ignore' })
+	const scratch = scratchDir('zing-host-e2e-')
+	const errors = join(scratch, 'errors.log')
+	// Closing a window of tabs records its confirm as a dialog (it never shows one in a test run).
+	const dialogs = join(scratch, 'dialogs.jsonl')
+	const host = spawn(HOST_EXE, [], { env: { ...hostEnvironment(port, errors, userDataDir), ZING_DIALOGS_FILE: dialogs, ...env }, stdio: 'ignore' })
 	const self: Running = { host, exit: exitOf(host), errors, userData: userDataDir }
 	running.add(self)
 	const targets = async () => {
