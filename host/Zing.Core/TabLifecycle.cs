@@ -292,6 +292,9 @@ public interface ILifecycleTabs
 
 	bool IsAudible(string id);
 
+	/// <summary>Whether the page's script can't answer now: a JavaScript dialog waits for the person, or the renderer crashed or stopped answering.</summary>
+	bool IsBlocked(string id);
+
 	/// <summary>
 	/// Runs <see cref="PageProbe.Source"/> in the page and parses it with <see cref="PageProbe.Parse"/>.
 	/// Throws <see cref="PageUnavailableException"/> if the page navigated or crashed mid-probe.

@@ -19,6 +19,12 @@ test.beforeAll(async () => {
 		res.setHeader('content-type', 'text/html')
 		if (req.url === '/tall') return void res.end('<!doctype html><title>tall</title><div style="height:5000px">tall</div>')
 		if (req.url === '/form') return void res.end('<!doctype html><title>form</title><input name="draft">')
+		// As React does for a controlled input: the value attribute follows what was typed, so value equals defaultValue.
+		if (req.url === '/react') return void res.end('<!doctype html><title>react</title><input name="draft"><script>const i = document.querySelector("input"); i.addEventListener("input", () => (i.defaultValue = i.value))</script>')
+		if (req.url === '/framed') return void res.end('<!doctype html><title>framed</title><iframe src="/react"></iframe>')
+		// An editor that writes its own frame, as CKEditor 4 and TinyMCE do: document.open() replaces the frame's document.
+		if (req.url === '/written') return void res.end('<!doctype html><title>written</title><iframe src="/other"></iframe><script>const f = document.querySelector("iframe"); f.onload = () => { const d = f.contentDocument; d.open(); d.write("<textarea name=draft></textarea>"); d.close(); const t = d.querySelector("textarea"); t.addEventListener("input", () => (t.defaultValue = t.value)); document.title = "written ready" }</script>')
+		if (req.url === '/controls') return void res.end('<!doctype html><title>controls</title><input type="checkbox"><input type="range"><select><option>a</option><option>b</option></select>')
 		res.end('<!doctype html><title>other</title>')
 	})
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -88,5 +94,108 @@ test('a tab with unsaved form input stays awake', async () => {
 	// Give the sweep time to run, then check it left the tab alone.
 	await new Promise((resolve) => setTimeout(resolve, 2000))
 	expect((await tab(zing.chrome, form)).sleeping).toBe(false)
+	await zing.close()
+})
+
+/** Opens another tab, moves the clock past the sleep time and gives the sweep time to run. */
+async function leaveIdle(chrome: Page): Promise<void> {
+	await openTab(chrome, '/other')
+	await advanceClock(chrome, 3 * MINUTE)
+	await new Promise((resolve) => setTimeout(resolve, 2000))
+}
+
+test('a tab with a draft typed into a React-style input stays awake, in the page or a same-origin frame', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const top = await openTab(zing.chrome, '/react')
+	const react = await pageWhere(zing.browser, (p) => p.url() === `${base}/react`)
+	await react.locator('input[name=draft]').fill('half a thought')
+	// A draft the page has hidden (a collapsed reply box, another step of a wizard) is still the person's.
+	await react.evaluate(() => ((globalThis as unknown as { document: { querySelector(s: string): { style: { display: string } } } }).document.querySelector('input')!.style.display = 'none'))
+	// The watch runs in an isolated world: the page sees no trace of it, and its natives are untouched.
+	expect(await react.evaluate(() => Object.getOwnPropertyNames(globalThis).includes('zingSleep'))).toBe(false)
+	expect(await react.evaluate(() => [fetch, XMLHttpRequest.prototype.send].every((f) => f.toString().includes('[native code]')))).toBe(true)
+	const framed = await openTab(zing.chrome, '/framed')
+	await (await pageWhere(zing.browser, (p) => p.url() === `${base}/framed`)).frameLocator('iframe').locator('input[name=draft]').fill('another')
+	await leaveIdle(zing.chrome)
+	expect((await tab(zing.chrome, top)).sleeping).toBe(false)
+	expect((await tab(zing.chrome, framed)).sleeping).toBe(false)
+	await zing.close()
+})
+
+test('checking a box, moving a slider or picking an option does not keep a tab awake', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const controls = await openTab(zing.chrome, '/controls')
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/controls`)
+	await page.locator('input[type=checkbox]').click()
+	await page.locator('input[type=range]').focus()
+	await page.keyboard.press('ArrowRight')
+	await page.locator('select').selectOption('b')
+	await leaveIdle(zing.chrome)
+	await expect.poll(async () => (await tab(zing.chrome, controls)).sleeping).toBe(true)
+	await zing.close()
+})
+
+test('a tab showing a live camera stays awake, and sleeps once the camera stops', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const call = await openTab(zing.chrome, '/tall')
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/tall`)
+	type Track = { stop(): void }
+	type Camera = { result?: string; stream?: { getTracks(): Track[] }; document: { body: { append(el: unknown): void }; createElement(tag: string): { srcObject: unknown } }; navigator: { mediaDevices: { getUserMedia(c: object): Promise<{ getTracks(): Track[] }> } } }
+	const result = () => page.evaluate(() => (globalThis as unknown as Camera).result)
+	await page.evaluate(() => {
+		const g = globalThis as unknown as Camera
+		g.result = 'pending'
+		g.navigator.mediaDevices.getUserMedia({ video: true }).then(
+			(stream) => {
+				// A self view, as a call shows.
+				const video = g.document.createElement('video')
+				video.srcObject = stream
+				g.document.body.append(video)
+				g.stream = stream
+				g.result = 'granted'
+			},
+			(error: Error) => (g.result = error.name),
+		)
+	})
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await ui.getByRole('button', { name: 'Allow' }).click()
+	await expect.poll(result).toBe('granted')
+	await leaveIdle(zing.chrome)
+	expect((await tab(zing.chrome, call)).sleeping).toBe(false)
+
+	await page.evaluate(() => (globalThis as unknown as Camera).stream!.getTracks().forEach((track) => track.stop()))
+	// A held tab is looked at again after TabSleeper.RetryMs.
+	await advanceClock(zing.chrome, 6 * MINUTE)
+	await expect.poll(async () => (await tab(zing.chrome, call)).sleeping).toBe(true)
+	await zing.close()
+})
+
+test('a draft typed into a frame the page wrote with document.open() keeps the tab awake', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const editor = await openTab(zing.chrome, '/written')
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/written`)
+	await expect(page).toHaveTitle('written ready')
+	await page.frameLocator('iframe').locator('textarea[name=draft]').fill('a long reply')
+	await leaveIdle(zing.chrome)
+	expect((await tab(zing.chrome, editor)).sleeping).toBe(false)
+	await zing.close()
+})
+
+test('a tab stuck on a dialog is held, and the other idle tabs still sleep', async () => {
+	const zing = await launchZing({ env: TEST_CLOCK })
+	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
+	const stuck = await openTab(zing.chrome, '/form')
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/form`)
+	// Left open: a handled dialog that is never answered keeps the page's script blocked, so it can't answer the probe.
+	page.on('dialog', () => {})
+	await page.evaluate(() => void setTimeout(() => (globalThis as unknown as { alert(m: string): void }).alert('still here?'), 0))
+	const idle = await openTab(zing.chrome, '/tall')
+	await leaveIdle(zing.chrome)
+	await expect.poll(async () => (await tab(zing.chrome, idle)).sleeping).toBe(true)
+	expect((await tab(zing.chrome, stuck)).sleeping).toBe(false)
 	await zing.close()
 })

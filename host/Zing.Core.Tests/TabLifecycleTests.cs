@@ -58,6 +58,10 @@ public sealed class PageSim
 	/// <summary>The engine refuses to suspend the page (a WebRTC call, say).</summary>
 	public bool RefusesSuspend { get; set; }
 	public bool Dirty { get; set; }
+	public bool LiveStream { get; set; }
+	/// <summary>A dialog is open, or the renderer is stuck: probing it would never answer.</summary>
+	public bool Blocked { get; set; }
+	public bool PictureInPicture { get; set; }
 	public double ScrollY { get; set; }
 	public bool ProbeFails { get; set; }
 	public Action? OnProbe { get; set; }
@@ -93,12 +97,15 @@ public sealed class FakeLifecycleTabs : ILifecycleTabs
 
 	public bool IsAudible(string id) => Pages[id].Audible;
 
+	public bool IsBlocked(string id) => Pages[id].Blocked;
+
 	public Task<PageProbe> ProbeAsync(string id)
 	{
 		var page = Pages[id];
+		if (page.Blocked) throw new InvalidOperationException($"Tab {id} was probed while blocked");
 		page.OnProbe?.Invoke();
 		if (page.ProbeFails) return Task.FromException<PageProbe>(new PageUnavailableException(id));
-		return Task.FromResult(new PageProbe(page.ScrollY, page.Dirty));
+		return Task.FromResult(new PageProbe(page.ScrollY, page.Dirty, page.LiveStream, page.PictureInPicture));
 	}
 
 	public Task<string?> CaptureThumbnailAsync(string id) => Task.FromResult<string?>(null);
@@ -377,8 +384,31 @@ public class TabLifecycleTests
 		{
 			var probe = PageProbe.Parse(c.GetProperty("input"));
 			var want = c.GetProperty("expect");
-			Assert.Equal(new PageProbe(want.GetProperty("scrollY").GetDouble(), want.GetProperty("dirty").GetBoolean()), probe);
+			Assert.Equal(new PageProbe(want.GetProperty("scrollY").GetDouble(), want.GetProperty("dirty").GetBoolean(), want.GetProperty("liveStream").GetBoolean(), want.GetProperty("pictureInPicture").GetBoolean()), probe);
 		}
+	}
+
+	[Fact]
+	public void PageProbeCombinesFramesTopFirst()
+	{
+		var probe = PageProbe.Combine([new PageProbe(40, false, false, false), new PageProbe(900, true, false, false), new PageProbe(0, false, true, true)]);
+		Assert.Equal(new PageProbe(40, true, true, true), probe);
+		Assert.Throws<ArgumentException>(() => PageProbe.Combine([]));
+	}
+
+	[Fact]
+	public async Task A_page_that_never_answers_the_probe_is_unavailable_after_the_timeout()
+	{
+		var host = new FakePageHost();
+		var tabs = new TabService(new TabStore(Deterministic.Clock(), Deterministic.Ids()), host, "about:blank", () => { }, (_, _) => { });
+		var stuck = tabs.Open("https://stuck.test/");
+		tabs.Open("https://other.test/");
+		// As a page on alert() or with a hung renderer: the engine never answers.
+		host.PageFor(tabs, stuck.Id).Evaluating = () => new TaskCompletionSource<JsonElement>().Task;
+		var overview = new TabOverview(tabs, () => tabs.State("", false), _ => { }, (_, _) => { });
+		var lifecycle = new LifecycleTabs(tabs, overview, TimeSpan.FromMilliseconds(50));
+		var error = await Assert.ThrowsAsync<PageUnavailableException>(() => lifecycle.ProbeAsync(stuck.Id));
+		Assert.IsType<TimeoutException>(error.InnerException);
 	}
 
 	[Fact]
@@ -503,6 +533,9 @@ public class TabLifecycleTests
 			{
 				Audible = Flag(t, "audible"),
 				Dirty = Flag(t, "dirty"),
+				PictureInPicture = Flag(t, "pictureInPicture"),
+				LiveStream = Flag(t, "liveStream"),
+				Blocked = Flag(t, "blocked"),
 				ProbeFails = Flag(t, "probeFails"),
 				ScrollY = t.TryGetProperty("scrollY", out var y) ? y.GetDouble() : 0,
 			};
@@ -521,6 +554,7 @@ public class TabLifecycleTests
 			else if (Is(step, "reschedule", out var times)) for (var i = 0; i < times.GetInt32(); i++) sleeper.Reschedule();
 			else if (Is(step, "setAudible", out var audible)) tabs.Pages[audible.GetString()!].Audible = step.GetProperty("value").GetBoolean();
 			else if (Is(step, "setDirty", out var dirty)) tabs.Pages[dirty.GetString()!].Dirty = step.GetProperty("value").GetBoolean();
+			else if (Is(step, "setLiveStream", out var live)) tabs.Pages[live.GetString()!].LiveStream = step.GetProperty("value").GetBoolean();
 			else if (Is(step, "setProbeFails", out var fails)) tabs.Pages[fails.GetString()!].ProbeFails = step.GetProperty("value").GetBoolean();
 			else if (Is(step, "expectSlept", out var slept)) Assert.Equal(Strings(slept), tabs.Slept);
 			else if (Is(step, "expectTimers", out var timers)) Assert.Equal(timers.GetInt32(), time.Scheduler.PendingCount);
@@ -668,6 +702,9 @@ public class TabLifecycleTests
 		var s = new Suspending(
 			("audible", new PageSim { Audible = true }, false),
 			("dirty", new PageSim { Dirty = true }, false),
+			("call", new PageSim { LiveStream = true }, false),
+			("dialog", new PageSim { Blocked = true }, false),
+			("pip", new PageSim { PictureInPicture = true }, false),
 			("pinned", new PageSim(), true),
 			("plain", new PageSim(), false));
 		s.Time.Advance(6 * Minute);

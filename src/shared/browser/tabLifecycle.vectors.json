@@ -210,6 +210,24 @@
 			]
 		},
 		{
+			"name": "leaves a tab with a live stream (a call, a capture) or in picture-in-picture awake, and sleeps the call once it ends",
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "call", "liveStream": true }, { "id": "pip", "pictureInPicture": true }],
+			"steps": [
+				{ "advanceMinutes": 31 },
+				{ "expectSlept": [] },
+				{ "setLiveStream": "call", "value": false },
+				{ "advanceMinutes": 6 },
+				{ "expectSlept": ["call"] }
+			]
+		},
+		{
+			"name": "holds a tab on a dialog without probing it, and still sleeps the others",
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "dialog", "blocked": true }, { "id": "idle" }],
+			"steps": [{ "advanceMinutes": 31 }, { "expectSlept": ["idle"] }]
+		},
+		{
 			"name": "does not sleep a tab the user returned to while it was being inspected",
 			"active": "active",
 			"tabs": [{ "id": "active" }, { "id": "back", "touchOnProbe": true }],

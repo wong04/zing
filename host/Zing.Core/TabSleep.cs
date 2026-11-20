@@ -51,6 +51,8 @@ public enum KeepAwakeReason
 	Active,
 	VisibleInSplit,
 	PlayingAudio,
+	LiveStream,
+	PictureInPicture,
 	UnsavedForm,
 	Pinned,
 	RecentlyUsed,
@@ -111,43 +113,130 @@ public static class SleepRules
 /// <summary>When a sweep is next due (null: never), and the retry time for held tabs it carries forward.</summary>
 public readonly record struct SweepTarget(long? At, long? RetryAt);
 
-/// <summary>What the page reports just before it sleeps (src/shared/session/pageProbe.ts).</summary>
-public sealed record PageProbe(double ScrollY, bool Dirty)
+/// <summary>What the page reports just before it sleeps or is suspended (src/shared/session/pageProbe.ts).</summary>
+public sealed record PageProbe(double ScrollY, bool Dirty, bool LiveStream, bool PictureInPicture)
 {
 	/// <summary>
-	/// Runs inside a page just before it sleeps. A form counts as unsaved when any
-	/// field differs from what the markup gave it, because discarding the page
-	/// would throw away what was typed.
+	/// The isolated world the probe and <see cref="WorldSource"/> run in: they share the page's DOM but none of its
+	/// scripts, so the page can neither see them nor change what they report.
 	/// </summary>
-	public const string Source = """
+	public const string World = "zing-sleep";
+
+	/// <summary>
+	/// Runs in <see cref="World"/> as each document is created, in every frame. It notes the text fields and
+	/// rich-text editors the person types into, with what they held before the first keystroke. They are held weakly
+	/// and dropped once they leave the page, and submitting their form forgets them. A typed field counts even while
+	/// hidden (a collapsed reply box, another wizard step): losing a draft is worse than a tab kept awake.
+	/// </summary>
+	public const string WorldSource = """
 		(() => {
-			const edited = (el) => {
-				if (el instanceof HTMLTextAreaElement) return el.value !== el.defaultValue
-				if (el instanceof HTMLSelectElement) {
-					if (el.multiple) return [...el.options].some((o) => o.selected !== o.defaultSelected)
-					const expected = Math.max(0, [...el.options].findIndex((o) => o.defaultSelected))
-					return el.selectedIndex !== expected
-				}
-				if (!(el instanceof HTMLInputElement)) return false
-				if (['hidden', 'submit', 'button', 'reset', 'image', 'file'].includes(el.type)) return false
-				if (el.type === 'checkbox' || el.type === 'radio') return el.checked !== el.defaultChecked
-				return el.value !== el.defaultValue
+			const textTypes = ['text', 'search', 'email', 'url', 'tel', 'password', 'number']
+			const textOf = (el) => {
+				if (el instanceof HTMLTextAreaElement) return el.value
+				if (el instanceof HTMLInputElement) return textTypes.includes(el.type) ? el.value : null
+				return el instanceof HTMLElement && el.isContentEditable ? el.textContent : null
 			}
-			const richText = [...document.querySelectorAll('[contenteditable=""], [contenteditable="true"]')]
-				.some((el) => (el.textContent || '').trim() !== '')
-			const dirty = richText || [...document.querySelectorAll('input, textarea, select')].some(edited)
-			return { scrollY: Math.round(window.scrollY), dirty }
+			const before = new WeakMap()
+			const edited = new Set()
+			const prune = () => {
+				for (const ref of edited) if (!ref.deref()?.isConnected) edited.delete(ref)
+			}
+			const typing = (e) => {
+				if (!e.isTrusted) return
+				prune()
+				const el = e.composedPath().find((node) => node instanceof Element)
+				if (!el || before.has(el)) return
+				const text = textOf(el)
+				if (text === null) return
+				before.set(el, text)
+				edited.add(new WeakRef(el))
+			}
+			const submitted = (e) => {
+				for (const ref of edited) {
+					const el = ref.deref()
+					if (el && (el.form === e.target || e.target.contains(el))) {
+						edited.delete(ref)
+						before.delete(el)
+					}
+				}
+			}
+			const listen = () => {
+				addEventListener('beforeinput', typing, true)
+				addEventListener('submit', submitted, true)
+			}
+			listen()
+			// document.open() (editors that write their frame, e.g. CKEditor 4, TinyMCE) erases the window's listeners and
+			// replaces the document's children; adding the same listeners again is a no-op when they are still there.
+			new MutationObserver(listen).observe(document, { childList: true })
+			globalThis.zingSleep = {
+				textOf,
+				typed: () => {
+					prune()
+					return [...edited].some((ref) => {
+						const el = ref.deref()
+						const text = textOf(el)
+						return text !== null && text.trim() !== '' && text !== before.get(el)
+					})
+				},
+			}
 		})()
 		""";
 
-	/// <summary>Reads the script's JSON result; anything but {scrollY: finite number, dirty: bool} is refused.</summary>
+	/// <summary>
+	/// Runs in <see cref="World"/> of the page and of each same-origin frame just before the tab sleeps. A draft is
+	/// unsaved while a field or editor the person typed into holds text that differs from what it held before, or a
+	/// visible text field holds text that differs from what the markup gave it. Typing is the only sign in a React form, which keeps value and defaultValue
+	/// equal. Checkboxes, radio buttons, selects, sliders and pickers never count. A live stream is a video or audio
+	/// element playing a live camera, mic, screen or call track; picture-in-picture includes Document PiP.
+	/// </summary>
+	public const string Source = """
+		(() => {
+			const watch = globalThis.zingSleep
+			const fromMarkup = !!watch && [...document.querySelectorAll('input, textarea')].some((el) => {
+				const text = watch.textOf(el)
+				return text !== null && text.trim() !== '' && text !== el.defaultValue && el.checkVisibility()
+			})
+			const live = (media) => media.srcObject instanceof MediaStream && media.srcObject.getTracks().some((track) => track.readyState === 'live')
+			return {
+				scrollY: Math.round(scrollY),
+				dirty: fromMarkup || !!watch?.typed(),
+				liveStream: [...document.querySelectorAll('video, audio')].some(live),
+				pictureInPicture: document.pictureInPictureElement !== null || !!globalThis.documentPictureInPicture?.window,
+			}
+		})()
+		""";
+
+	/// <summary>Reads one frame's answer; anything but {scrollY: finite number, and dirty, liveStream, pictureInPicture as bools} is refused.</summary>
 	public static PageProbe Parse(JsonElement value)
 	{
 		if (value.ValueKind != JsonValueKind.Object) throw new PageProbeException(value);
 		if (!value.TryGetProperty("scrollY", out var scroll) || scroll.ValueKind != JsonValueKind.Number) throw new PageProbeException(value);
-		if (!value.TryGetProperty("dirty", out var dirty) || dirty.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new PageProbeException(value);
 		if (!scroll.TryGetDouble(out var y) || !double.IsFinite(y)) throw new PageProbeException(value);
-		return new PageProbe(Math.Max(0, y), dirty.GetBoolean());
+		return new PageProbe(Math.Max(0, y), Flag(value, "dirty"), Flag(value, "liveStream"), Flag(value, "pictureInPicture"));
+	}
+
+	/// <summary>The page's answer from its frames' (the top frame first): its scroll position, and what any frame reported.</summary>
+	public static PageProbe Combine(IReadOnlyList<PageProbe> frames)
+	{
+		if (frames.Count == 0) throw new ArgumentException("A page has at least its top frame", nameof(frames));
+		return new PageProbe(frames[0].ScrollY, frames.Any(f => f.Dirty), frames.Any(f => f.LiveStream), frames.Any(f => f.PictureInPicture));
+	}
+
+	/// <summary>Why the page must stay running, or null if nothing it reported holds it.</summary>
+	public KeepAwakeReason? KeepAwake()
+	{
+		// Dropping the page would end the call or capture, or close the floating video.
+		if (LiveStream) return KeepAwakeReason.LiveStream;
+		if (PictureInPicture) return KeepAwakeReason.PictureInPicture;
+		// Discarding would throw away what the user typed.
+		if (Dirty) return KeepAwakeReason.UnsavedForm;
+		return null;
+	}
+
+	private static bool Flag(JsonElement value, string name)
+	{
+		if (!value.TryGetProperty(name, out var flag) || flag.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new PageProbeException(value);
+		return flag.GetBoolean();
 	}
 }
 
@@ -170,7 +259,7 @@ public sealed class PageUnavailableException(string tabId, Exception? inner = nu
 /// </summary>
 public sealed class TabSleeper
 {
-	/// <summary>Audio and unsaved input have no event that says "now safe", so blocked tabs are looked at again after this.</summary>
+	/// <summary>Audio, live streams and unsaved input have no event that says "now safe", so blocked tabs are looked at again after this.</summary>
 	public const long RetryMs = 5 * 60_000;
 	private const int MaxThumbnails = 64;
 
@@ -181,7 +270,7 @@ public sealed class TabSleeper
 	private readonly Action<Exception> _onError;
 	private readonly Dictionary<string, double> _scroll = [];
 	private readonly OrderedDictionary<string, string> _thumbnails = [];
-	/// <summary>Tabs held awake last sweep by unsaved input or a page that couldn't be inspected.</summary>
+	/// <summary>Tabs held awake last sweep by what their page reported (<see cref="PageProbe.KeepAwake"/>) or a page that couldn't be inspected.</summary>
 	private readonly HashSet<string> _held = [];
 	private long? _retryAt;
 	private bool _sweeping;
@@ -265,6 +354,12 @@ public sealed class TabSleeper
 	{
 		var before = Find(id);
 		if (before is null || !_tabs.HasPage(id)) return;
+		// A dialog waits for the person, and a stuck page can't be read: dropping either could lose what it holds.
+		if (_tabs.IsBlocked(id))
+		{
+			_held.Add(id);
+			return;
+		}
 		PageProbe probe;
 		try
 		{
@@ -282,7 +377,7 @@ public sealed class TabSleeper
 			_onError(error);
 			return;
 		}
-		if (probe.Dirty)
+		if (probe.KeepAwake() is not null)
 		{
 			_held.Add(id);
 			return;
@@ -354,7 +449,7 @@ public sealed class TabSuspender
 	private readonly IClock _clock;
 	private readonly OneShotTimer _timer;
 	private readonly Action<Exception> _onError;
-	/// <summary>Tabs held awake last sweep by unsaved input, a page that couldn't be inspected, or the engine's refusal.</summary>
+	/// <summary>Tabs held awake last sweep by what their page reported, a page that couldn't be inspected, or the engine's refusal.</summary>
 	private readonly HashSet<string> _held = [];
 	private long? _retryAt;
 	private bool _sweeping;
@@ -432,6 +527,7 @@ public sealed class TabSuspender
 	{
 		var before = Find(id);
 		if (before is null || !_tabs.HasPage(id)) return true;
+		if (_tabs.IsBlocked(id)) return false;
 		PageProbe probe;
 		try
 		{
@@ -446,7 +542,7 @@ public sealed class TabSuspender
 			_onError(error);
 			return false;
 		}
-		if (probe.Dirty) return false;
+		if (probe.KeepAwake() is not null) return false;
 		// The await let the person come back to the tab, or the page go; the reschedule after the sweep looks again.
 		var after = Find(id);
 		if (after is null || after.LastActiveAt != before.LastActiveAt) return true;

@@ -34,6 +34,8 @@ public interface IPage
 	Task<bool> TrySuspendAsync();
 	/// <summary>Runs a script and hands back its JSON result.</summary>
 	Task<System.Text.Json.JsonElement> EvaluateAsync(string script);
+	/// <summary>Runs a script in <see cref="PageProbe.World"/> of the page and of each frame of its origin; the top frame's result comes first.</summary>
+	Task<IReadOnlyList<System.Text.Json.JsonElement>> EvaluateInFramesAsync(string script);
 	/// <summary>Runs a script once the current navigation has loaded, e.g. to put back a woken tab's scroll.</summary>
 	void RunWhenLoaded(string script);
 	/// <summary>The tab's text size in percent; the page keeps it across its own navigations.</summary>
