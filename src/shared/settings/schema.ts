@@ -114,6 +114,8 @@ export const SETTINGS_SCHEMA = {
 	acceleratedCanvas: flag(true),
 	/** Off by default: remembering open tabs means writing visited URLs to disk. */
 	restoreTabs: flag(true),
+	/** Asks before closing a window of tabs or quitting with tabs to lose; the confirm's "Don't ask again" turns it off. */
+	confirmWindowClose: flag(true),
 	securityRealtime: flag(true),
 	sidebarPinned: flag(true),
 	/** Feature names only, never what was done with them. */

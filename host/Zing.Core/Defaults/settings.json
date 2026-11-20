@@ -22,6 +22,7 @@
 	"defaultUserAgent": false,
 	"acceleratedCanvas": true,
 	"restoreTabs": true,
+	"confirmWindowClose": true,
 	"securityRealtime": true,
 	"sidebarPinned": true,
 	"recentFeatures": [],

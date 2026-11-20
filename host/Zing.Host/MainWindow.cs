@@ -507,26 +507,54 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public void Quit() => Faults.Enqueue(_dispatcher, () => _app.Quit(this), "quitting");
 
-	/// <summary>The person closing the window (its close button, Alt+F4, Ctrl+Shift+W): with tabs to lose, they confirm first (WindowClose).</summary>
+	public void RelaunchToUpdate() => Faults.Enqueue(_dispatcher, _app.RelaunchToUpdate, "relaunching to update");
+
+	// A close whose pages are still answering (LeaveCheck): another close request meanwhile asks nothing twice.
+	private bool _leaving;
+
+	/// <summary>
+	/// The person closing the window (its close button, Alt+F4, Ctrl+Shift+W): with tabs to lose, they confirm first
+	/// (WindowClose), then each page's beforeunload may ask "Leave site?", and Stay keeps the window.
+	/// </summary>
 	public void CloseIfConfirmed()
 	{
-		if (_window.IsClosed) return;
-		var question = WindowClose.Question(_app.SessionOf(this), _app.IsLastWindow(this), _app.TabsReopen);
+		if (_window.IsClosed || _leaving) return;
+		var question = _app.CloseConfirm.Question(_app.SessionOf(this), _app.IsLastWindow(this), _app.TabsReopen);
 		if (question is not null && !Confirmed(question)) return;
+		TestHooks.Background(CloseOnceLeftAsync(), "closing the window");
+	}
+
+	private async Task CloseOnceLeftAsync()
+	{
+		_leaving = true;
+		try
+		{
+			if (Api is { } api && !await api.MayCloseAsync(CancellationToken.None)) return;
+		}
+		finally
+		{
+			_leaving = false;
+		}
 		// The window can go while the question is up (its engine died, Zing quit into an update).
 		if (_window.IsClosed) return;
 		_window.Close();
 	}
 
-	/// <summary>e2e runs never open a dialog (AGENTS.md): the question is recorded, and answered as the test said (TestHooks).</summary>
+	/// <summary>
+	/// Asks <paramref name="question"/> with "Don't ask again", which, ticked on OK, stops these questions (CloseConfirm).
+	/// e2e runs never open a dialog (AGENTS.md): the question is recorded, and answered as the test said (TestHooks).
+	/// </summary>
 	public bool Confirmed(string question)
 	{
-		if (TestHooks.IsEndToEndRun)
-		{
-			TestHooks.RecordDialog("close-window", question);
-			return TestHooks.CloseWindowAnswer;
-		}
-		return Native.MessageBoxW(_window.Hwnd, question, "Zing", Native.MB_OKCANCEL | Native.MB_ICONWARNING) == Native.IDOK;
+		var (ok, dontAsk) = TestHooks.IsEndToEndRun ? RecordedAnswer(question) : Native.ConfirmWithDontAsk(_window.Hwnd, question);
+		if (ok && dontAsk) _app.CloseConfirm.StopAsking();
+		return ok;
+	}
+
+	private static (bool Ok, bool DontAsk) RecordedAnswer(string question)
+	{
+		TestHooks.RecordDialog("close-window", question);
+		return (TestHooks.CloseWindowAnswer, TestHooks.CloseWindowDontAsk);
 	}
 
 	public void Relayout()
@@ -675,7 +703,25 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public void PopupBlocked(WebView2Page page, string url) => _permissions.PopupBlocked(page, url);
 
-	public void Left(WebView2Page page) => _permissions.Left(page);
+	public void Left(WebView2Page page)
+	{
+		_permissions.Left(page);
+		Api?.Dialogs.DropFor(page);
+	}
+
+	public void DialogsGone(WebView2Page page) => Api?.Dialogs.DropFor(page);
+
+	public void ScriptDialog(WebView2Page page, string kind, string frameUrl, string message, string defaultText, IScriptDialogAnswer answer)
+	{
+		if (Api is not { } api)
+		{
+			// No window API yet, so no one to ask: Cancel, never left to the engine.
+			answer.Dismiss();
+			TestHooks.Record("script dialog", new InvalidOperationException($"A {kind} dialog came before the window's API"));
+			return;
+		}
+		api.Dialogs.Open(page, kind, frameUrl, message, defaultText, answer);
+	}
 
 	public bool InPreview(WebView2Page page) => _preview.Contains(page);
 

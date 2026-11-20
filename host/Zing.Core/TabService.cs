@@ -16,18 +16,30 @@ public interface IPage
 	/// <summary>Whether a frame of the page shows a JavaScript dialog (alert, confirm, prompt, beforeunload): Esc is then the dialog's.</summary>
 	bool HasOpenDialog { get; }
 	void Navigate(string url);
+	/// <summary>Goes to <paramref name="url"/> in place of the entry the page is on (location.replace), so its history keeps its length.</summary>
+	void Replace(string url);
 	void GoBack();
 	void GoForward();
 	void Reload();
 	void Stop();
 	void Focus();
 	void Close();
+	/// <summary>
+	/// Runs the page's beforeunload as closing it would, without leaving the page: true when it may close (it asked nothing,
+	/// or the person chose Leave in its "Leave site?" prompt, which the host opens through <see cref="ScriptDialogs"/>),
+	/// false when the person chose Stay. <paramref name="abandon"/> calls the close off: a prompt still to come is answered Stay.
+	/// </summary>
+	Task<bool> RunBeforeUnloadAsync(CancellationToken abandon);
+	/// <summary>Runs the page's beforeunload with no one asked: true when the page would have asked "Leave site?". The page stays either way.</summary>
+	Task<bool> AsksBeforeLeavingAsync(CancellationToken abandon);
 	/// <summary>Runs a script of Zing's own in the page, e.g. restyling the start page.</summary>
 	void Run(string script);
 	/// <summary>Finds in the page; results come back through <see cref="IPageEvents.FindResult"/>.</summary>
 	void Find(string query, FindDirection direction, FindMode mode);
 	/// <summary>Whether the page is playing sound; a playing tab never sleeps.</summary>
 	bool IsAudible { get; }
+	/// <summary>Whether the page is still sending a large request body (<see cref="UploadTracker"/>); an uploading tab never sleeps.</summary>
+	bool IsUploading { get; }
 	/// <summary>Whether the engine has frozen the page's renderer (<see cref="TrySuspendAsync"/>); showing the page resumes it.</summary>
 	bool IsSuspended { get; }
 	/// <summary>Freezes a hidden page's renderer but keeps the page; false when the page is on screen or the engine refused.</summary>
@@ -50,6 +62,8 @@ public interface IPage
 	bool InReader { get; }
 	/// <summary>The tab's session history, oldest first.</summary>
 	Task<PageHistory> HistoryAsync();
+	/// <summary>The session history as the engine last reported it, kept up to date as it changes; empty until it has reported.</summary>
+	PageHistory History { get; }
 	void GoToHistoryEntry(int entryId);
 	void StopFind();
 	/// <summary>Sends the page's events somewhere else from now on, e.g. when an expanded link preview becomes a tab.</summary>
@@ -169,6 +183,8 @@ public sealed class TabService
 	private readonly HashSet<string> _sleeping = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, string> _icons = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, PageFault> _faults = new(StringComparer.Ordinal);
+	/// <summary>History a slept or restored tab's page doesn't have, since a new page starts with one entry.</summary>
+	private readonly Dictionary<string, CarriedHistory> _carried = new(StringComparer.Ordinal);
 
 	/// <summary>A sleeping tab just got a fresh page, so its saved scroll can be put back.</summary>
 	public event Action<string, IPage>? Woke;
@@ -241,9 +257,75 @@ public sealed class TabService
 		_store.Get(id);
 		if (IsShown(id) || Preview?.SourceTabId == id) throw new ActiveTabSleepException(id);
 		if (!_pages.ContainsKey(id)) return;
+		// Zing's own pages (the start page) are left out: a web document can't be replaced with one, and the session leaves them out too.
+		Carry(id, HistoryOf(id)?.Kept(u => Session.IsRestorableUrl(u) || RelayedContent.IsRelayUrl(u), u => u));
 		DestroyPage(id);
 		_sleeping.Add(id);
 		_changed();
+	}
+
+	/// <summary>Whether the tab's page can go back, on its own or into the history it had before it slept or was restored.</summary>
+	public bool CanGoBack(string id)
+	{
+		if (!_pages.TryGetValue(id, out var page)) return false;
+		return _carried.TryGetValue(id, out var carried) ? carried.CanGoBack(page.CanGoBack) : page.CanGoBack;
+	}
+
+	public bool CanGoForward(string id)
+	{
+		if (!_pages.TryGetValue(id, out var page)) return false;
+		return _carried.TryGetValue(id, out var carried) ? carried.CanGoForward(page.CanGoBack, page.CanGoForward) : page.CanGoForward;
+	}
+
+	public void GoBack(string id)
+	{
+		var page = _pages[id];
+		if (_carried.TryGetValue(id, out var carried) && carried.Back(page.CanGoBack, CurrentEntry(id)) is { } target) ReplaceWith(id, page, target);
+		else page.GoBack();
+	}
+
+	public void GoForward(string id)
+	{
+		var page = _pages[id];
+		if (_carried.TryGetValue(id, out var carried) && carried.Forward(page.CanGoBack, CurrentEntry(id)) is { } target) ReplaceWith(id, page, target);
+		else page.GoForward();
+	}
+
+	/// <summary>The tab's whole back/forward history: its page's, around what it had before it slept or was restored. Null for a tab with neither.</summary>
+	public TabHistory? HistoryOf(string id)
+	{
+		var current = CurrentEntry(id);
+		var page = _pages.GetValueOrDefault(id)?.History ?? new PageHistory([], 0);
+		if (_carried.TryGetValue(id, out var carried)) return carried.Around(page, current);
+		return page.Entries.Count == 0 ? null : TabHistory.Of(page, current);
+	}
+
+	private TabHistoryEntry CurrentEntry(string id)
+	{
+		var record = _store.Get(id);
+		return new TabHistoryEntry(record.Url, record.Title);
+	}
+
+	private void Carry(string id, TabHistory? history)
+	{
+		if (history is { IsValid: true, Entries.Count: > 1 }) _carried[id] = new CarriedHistory(history);
+		else _carried.Remove(id);
+	}
+
+	/// <summary>Walks the carried history: the page's one entry becomes <paramref name="target"/>, and the tab shows it as it loads.</summary>
+	private void ReplaceWith(string id, IPage page, TabHistoryEntry target)
+	{
+		_store.Update(id, new TabContentPatch(Url: target.Url, Title: string.IsNullOrEmpty(target.Title) ? null : target.Title));
+		page.Replace(target.Url);
+		_changed();
+	}
+
+	/// <summary>The page's history changed: past its first entry it went on to a new document, which drops the carried history ahead.</summary>
+	private void PageMoved(string id)
+	{
+		if (!_carried.TryGetValue(id, out var carried) || !_pages.TryGetValue(id, out var page)) return;
+		carried.PageMoved(page.CanGoBack);
+		if (carried.IsEmpty) _carried.Remove(id);
 	}
 
 	public bool Has(string id) => _store.Has(id);
@@ -308,6 +390,7 @@ public sealed class TabService
 	{
 		var records = tabs.Select(t => _store.AddRestored(t.Url, string.IsNullOrEmpty(t.Title) ? TabStore.NewTabTitle : t.Title, t.Pinned, t.ItemId)).ToList();
 		if (records.Count == 0) return;
+		for (var i = 0; i < records.Count; i++) Carry(records[i].Id, tabs[i].History);
 		foreach (var split in Session.SplitsOf(tabs, [.. records.Select(r => r.Id)])) Splits.Put(split);
 		var front = tabs.ToList().FindIndex(t => t.Active);
 		Activate(records[Math.Max(0, front)].Id);
@@ -427,6 +510,7 @@ public sealed class TabService
 		var result = _store.Close(id);
 		DestroyPage(id);
 		_sleeping.Remove(id);
+		_carried.Remove(id);
 		_icons.Remove(id);
 		Closed?.Invoke(id);
 		// After the page is gone, so nothing can write to the storage again as it is cleared.
@@ -455,12 +539,15 @@ public sealed class TabService
 		_changed();
 	}
 
-	public void CloseOthers(string keep)
+	public void CloseOthers(string keep) => CloseOthers(keep, [.. _store.Records.Where(r => r.Id != keep && !r.Pinned).Select(r => r.Id)]);
+
+	/// <summary>Closes <paramref name="others"/> that are still open, leaving <paramref name="keep"/> in front.</summary>
+	public void CloseOthers(string keep, IReadOnlyList<string> others)
 	{
 		_store.Get(keep);
 		// Kept tab first, so closing the others doesn't give each neighbour a page in turn.
 		if (_store.ActiveId != keep) Activate(keep);
-		foreach (var record in _store.Records.Where(r => r.Id != keep && !r.Pinned).ToList()) Close(record.Id);
+		foreach (var id in others.Where(id => id != keep && _store.Has(id))) Close(id);
 		if (_store.ActiveId != keep) Activate(keep);
 	}
 
@@ -476,6 +563,8 @@ public sealed class TabService
 		Navigating?.Invoke(id);
 		if (Preview?.SourceTabId == id) ClosePreview();
 		var clean = CleanLink(url);
+		// A tab with a page records the step in the engine; one without does it here.
+		if (!_pages.ContainsKey(id) && _carried.TryGetValue(id, out var carried)) carried.Left(CurrentEntry(id));
 		_store.Update(id, new TabContentPatch(Url: clean));
 		if (_pages.TryGetValue(id, out var page)) page.Navigate(clean);
 		_changed();
@@ -571,7 +660,7 @@ public sealed class TabService
 	}
 
 	private PageState? PageStateOf(string id) =>
-		_pages.TryGetValue(id, out var page) ? new PageState(page.IsLoading, page.CanGoBack, page.CanGoForward) : null;
+		_pages.TryGetValue(id, out var page) ? new PageState(page.IsLoading, CanGoBack(id), CanGoForward(id)) : null;
 
 	private IPage EnsurePage(TabRecord record)
 	{
@@ -910,7 +999,11 @@ public sealed class TabService
 			service.Update(id, new TabContentPatch(Title: string.IsNullOrEmpty(title) || startPage ? TabStore.NewTabTitle : title));
 		}
 
-		public void StateChanged() => service._changed();
+		public void StateChanged()
+		{
+			service.PageMoved(id);
+			service._changed();
+		}
 
 		public void IconChanged(string? dataUrl, string? pageUrl)
 		{

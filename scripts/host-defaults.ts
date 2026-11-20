@@ -70,6 +70,7 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	defaultUserAgent: flag,
 	acceleratedCanvas: flag,
 	restoreTabs: flag,
+	confirmWindowClose: flag,
 	securityRealtime: flag,
 	sidebarPinned: flag,
 	recentFeatures: { type: 'textList' },

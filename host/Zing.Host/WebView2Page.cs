@@ -57,6 +57,8 @@ public sealed class WebView2Page : IPage
 	private bool _dialogOpen;
 	/// <summary>The renderer was reported unresponsive and hasn't answered since.</summary>
 	private bool _hung;
+	/// <summary>Large request bodies still going out, from DevTools' Network events: nothing runs in the page for it.</summary>
+	private readonly UploadTracker _uploads = new();
 	private ViewerGuests? _viewers;
 	private readonly FrameNavigations _frames = new(() => DateTime.UtcNow);
 
@@ -197,6 +199,13 @@ public sealed class WebView2Page : IPage
 	/// </summary>
 	private string TopOf(CoreWebView2 core) =>
 		_bornRelayed && core.Source is "" or "about:blank" ? RelayedContent.Scheme + "://popup.invalid/" : core.Source;
+	/// <summary>Like the warning page's Replace decision: the engine has no navigation that replaces, but the document's location does.</summary>
+	public void Replace(string url)
+	{
+		_zingNavigation = url;
+		Run(core => Background(core.ExecuteScriptAsync($"location.replace({System.Text.Json.JsonSerializer.Serialize(url)})").AsTask(), "history step"));
+	}
+
 	public void GoBack() => Run(core => core.GoBack());
 	public void GoForward() => Run(core => core.GoForward());
 	public void Reload() => Run(core => core.Reload());
@@ -383,6 +392,41 @@ public sealed class WebView2Page : IPage
 
 	public bool IsAudible => _core?.IsDocumentPlayingAudio ?? false;
 
+	public bool IsUploading => _uploads.IsUploading;
+
+	public PageHistory History { get; private set; } = new([], 0);
+
+	/// <summary>
+	/// Keeps <see cref="History"/> current for the session and a tab that sleeps, then says so, so the session is saved with it.
+	/// DevTools can refuse while the main frame changes hosts (an error result, which WebView2 raises as ArgumentException): the
+	/// last answer stands until the next change, and the tab's own address and title stand for the entry it is on.
+	/// </summary>
+	private async Task FollowHistoryAsync()
+	{
+		try
+		{
+			History = await HistoryAsync();
+		}
+		catch (ArgumentException error)
+		{
+			Faults.Warning("history snapshot", error);
+			return;
+		}
+		if (IsOpen) _events.StateChanged();
+	}
+
+	/// <summary>
+	/// Network.enable with no bodies kept: only the events are wanted (<see cref="UploadTracker"/>). They come from the engine, so
+	/// the page sees nothing, unlike wrapping XMLHttpRequest or fetch.
+	/// </summary>
+	private async Task FollowUploadsAsync(CoreWebView2 core)
+	{
+		core.GetDevToolsProtocolEventReceiver("Network.requestWillBeSentExtraInfo").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => _uploads.HeadersSent(e.ParameterObjectAsJson), "upload start");
+		core.GetDevToolsProtocolEventReceiver("Network.loadingFinished").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => _uploads.Ended(e.ParameterObjectAsJson), "upload end");
+		core.GetDevToolsProtocolEventReceiver("Network.loadingFailed").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => _uploads.Ended(e.ParameterObjectAsJson), "upload end");
+		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Network.enable", System.Text.Json.JsonSerializer.Serialize(new { maxTotalBufferSize = 0, maxResourceBufferSize = 0, maxPostDataSize = 0 })).AsTask());
+	}
+
 	public async Task<System.Text.Json.JsonElement> EvaluateAsync(string script)
 	{
 		if (!IsOpen || _core is null) throw new InvalidOperationException("The page is not running");
@@ -445,6 +489,8 @@ public sealed class WebView2Page : IPage
 	{
 		if (!IsOpen) return;
 		IsOpen = false;
+		// Before its dialogs go (Left), which would answer a leave check's prompt Stay: a page that closes has left.
+		EndLeave(true);
 		_features.Left(this);
 		_queued.Clear();
 		_relayRuns.Dispose();
@@ -457,6 +503,111 @@ public sealed class WebView2Page : IPage
 			return;
 		}
 		_view?.Close();
+	}
+
+	/// <summary>
+	/// Where a leave check navigates: Chromium runs the document's beforeunload first, raising its "Leave site?" prompt
+	/// (OnScriptDialog) when the page asks and the person has used it, as Chrome requires. The navigation starting means
+	/// the page may go, and it is always cancelled, so the page stays as it was and loses nothing if the close is called off.
+	/// </summary>
+	internal const string LeaveProbe = "about:blank?zing-leave-check";
+
+	/// <summary>A leave check under way: whether the person is asked (a close) or not (the sleep probe), and how it ended.</summary>
+	private sealed class LeaveRun
+	{
+		/// <summary>True when the page may go: it asked nothing, or the person chose Leave.</summary>
+		public TaskCompletionSource<bool> Left { get; } = new();
+		public bool AsksPerson { get; set; }
+		/// <summary>The close was called off; a prompt that still comes is answered Stay without a word.</summary>
+		public bool Abandoned { get; set; }
+	}
+
+	private LeaveRun? _leave;
+
+	public Task<bool> RunBeforeUnloadAsync(CancellationToken abandon)
+	{
+		if (BeginLeave(abandon) is not { } run) return Task.FromResult(true);
+		run.AsksPerson = true;
+		return run.Left.Task;
+	}
+
+	public async Task<bool> AsksBeforeLeavingAsync(CancellationToken abandon) => BeginLeave(abandon) is { } run && !await run.Left.Task;
+
+	/// <summary>
+	/// The leave check under way (a second close waits on its prompt), or a new one; null when the page has nothing
+	/// beforeunload could keep: no web document, a renderer that stopped answering, or a dialog of its own already up (its
+	/// script is blocked, so it can't ask).
+	/// </summary>
+	private LeaveRun? BeginLeave(CancellationToken abandon)
+	{
+		if (!IsOpen || _core is not { } core || !_drained) return null;
+		if (_leave is not { Abandoned: false } run)
+		{
+			if (_hung || _dialogOpen) return null;
+			if (!core.Source.StartsWith("http:", StringComparison.OrdinalIgnoreCase) && !core.Source.StartsWith("https:", StringComparison.OrdinalIgnoreCase)) return null;
+			run = new LeaveRun();
+			_leave = run;
+			core.Navigate(LeaveProbe);
+		}
+		// Back on the UI thread, where the page's state lives, whichever thread cancels.
+		abandon.Register(() =>
+		{
+			run.Abandoned = true;
+			run.Left.TrySetResult(false);
+		}, useSynchronizationContext: true);
+		return run;
+	}
+
+	/// <summary>The leave check under way is over: the page may go (<paramref name="left"/>), or stays.</summary>
+	private void EndLeave(bool left)
+	{
+		if (_leave is not { } run) return;
+		_leave = null;
+		run.Left.TrySetResult(left);
+	}
+
+	/// <summary>
+	/// A dialog of any frame of the page. A "Leave site?" the sleep probe raised, or one for a close that was called off, is
+	/// answered Stay at once; everything else goes to the window's dialogs, and the page waits on the deferral.
+	/// </summary>
+	private void OnScriptDialog(CoreWebView2ScriptDialogOpeningEventArgs e)
+	{
+		var leaving = e.Kind == CoreWebView2ScriptDialogKind.Beforeunload ? _leave : null;
+		if (leaving is { AsksPerson: false } or { Abandoned: true })
+		{
+			// Not accepted: the navigation is cancelled and the page stays.
+			EndLeave(false);
+			return;
+		}
+		var kind = e.Kind switch
+		{
+			CoreWebView2ScriptDialogKind.Alert => ScriptDialogKinds.Alert,
+			CoreWebView2ScriptDialogKind.Confirm => ScriptDialogKinds.Confirm,
+			CoreWebView2ScriptDialogKind.Prompt => ScriptDialogKinds.Prompt,
+			CoreWebView2ScriptDialogKind.Beforeunload => ScriptDialogKinds.BeforeUnload,
+			_ => throw new ArgumentOutOfRangeException(nameof(e), e.Kind, "Not a script dialog kind"),
+		};
+		_features.ScriptDialog(this, kind, e.Uri, e.Message, e.DefaultText, new DialogAnswer(this, e, e.GetDeferral(), leaving));
+	}
+
+	/// <summary>The person's answer, given to the engine's waiting dialog; a page that has closed meanwhile is past answering.</summary>
+	private sealed class DialogAnswer(WebView2Page page, CoreWebView2ScriptDialogOpeningEventArgs e, Windows.Foundation.Deferral deferral, LeaveRun? leaving) : IScriptDialogAnswer
+	{
+		public void Accept(string? text)
+		{
+			if (!page.IsOpen) return;
+			if (text is not null) e.ResultText = text;
+			e.Accept();
+			// Leave: the leave check's navigation now starts, which ends it (NavigationStarting).
+			deferral.Complete();
+		}
+
+		public void Dismiss()
+		{
+			if (leaving is not null && page._leave == leaving) page.EndLeave(false);
+			if (!page.IsOpen) return;
+			deferral.Complete();
+		}
 	}
 
 	/// <summary>A download this page started is under way: the engine view stays until <see cref="DownloadEnded"/>.</summary>
@@ -511,6 +662,9 @@ public sealed class WebView2Page : IPage
 		// (FollowAutofillAsync). chrome.webview itself stays on the page (the engine injects it) and postMessage still returns
 		// without error, as the relayed-page e2e observes.
 		_core.Settings.AreHostObjectsAllowed = false;
+		// Alert, confirm, prompt and "Leave site?" are drawn by Zing in the page UI (ScriptDialogs), never by the engine, so a
+		// close can run the page's beforeunload and hear its answer (RunBeforeUnloadAsync). Read as each document loads.
+		_core.Settings.AreDefaultScriptDialogsEnabled = false;
 		FollowTrackerBlocking();
 		_core.Profile.DefaultDownloadFolderPath = _features.DownloadsDirectory;
 		_core.AddWebResourceRequestedFilter(StartPage.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
@@ -663,8 +817,16 @@ public sealed class WebView2Page : IPage
 		core.GetDevToolsProtocolEventReceiver("Page.javascriptDialogOpening").DevToolsProtocolEventReceived += (_, _) => _dialogOpen = true;
 		core.GetDevToolsProtocolEventReceiver("Page.javascriptDialogClosed").DevToolsProtocolEventReceived += (_, _) => _dialogOpen = false;
 		Background(ReadNavigationReasonsAsync(core), "navigation reasons");
+		Background(FollowUploadsAsync(core), "upload watch");
 		core.NavigationStarting += (_, e) =>
 		{
+			// The leave check's own navigation: beforeunload let the page go. It never happens; the page stays as it was.
+			if (e.Uri == LeaveProbe)
+			{
+				e.Cancel = true;
+				EndLeave(true);
+				return;
+			}
 			// Decided here and now: NavigationStarting has no deferral, and the reason has already arrived.
 			var cause = _lastReason is { Url: var url, Reason: var reason } && url == e.Uri && !e.IsRedirected
 				? reason switch
@@ -726,7 +888,9 @@ public sealed class WebView2Page : IPage
 			var toRelay = RelayedContent.IsRelayUrl(e.Uri);
 			if (!e.IsRedirected) _chainIsRelay = toRelay;
 			_approvedDocument = e.Uri;
-			// NavigationStarting is only raised for new documents; in-page navigations keep their grants.
+			// The document a leave check was asking about is going anyway; before Left, which would answer its prompt Stay.
+			EndLeave(true);
+			// NavigationStarting is only raised for new documents; in-page navigations keep their grants and dialogs.
 			_features.Left(this);
 			// The new document clears the tab's mark (TabService), and a renderer that starts one is answering.
 			_hung = false;
@@ -757,7 +921,11 @@ public sealed class WebView2Page : IPage
 		};
 		core.DocumentTitleChanged += (_, _) => _events.TitleChanged(core.DocumentTitle);
 		core.FaviconChanged += (_, _) => Background(IconChangedAsync(core), "favicon");
-		core.HistoryChanged += (_, _) => _events.StateChanged();
+		core.HistoryChanged += (_, _) =>
+		{
+			_events.StateChanged();
+			Background(FollowHistoryAsync(), "history");
+		};
 		core.WindowCloseRequested += (_, _) => _events.Closed();
 		core.NewWindowRequested += OnNewWindowRequested;
 		core.ProcessFailed += OnProcessFailed;
@@ -781,6 +949,7 @@ public sealed class WebView2Page : IPage
 			}, "preview download");
 		};
 		core.PermissionRequested += (_, e) => _features.PermissionRequested(this, e);
+		core.ScriptDialogOpening += (_, e) => TestHooks.Guard(() => OnScriptDialog(e), "script dialog");
 		core.ContainsFullScreenElementChanged += (_, _) => _features.FullScreenChanged(this);
 		_viewers = new ViewerGuests(core, () => _features.FullScreenChanged(this), Background);
 		_viewers.Start();
@@ -1098,7 +1267,12 @@ public sealed class WebView2Page : IPage
 				IsLoading = false;
 				// The dialog went with its renderer, which may never say so.
 				_dialogOpen = false;
+				// So did its requests.
+				_uploads.Clear();
 				_hung = false;
+				// Nothing is left that beforeunload could keep; the window's dialogs of the dead document go.
+				EndLeave(true);
+				_features.DialogsGone(this);
 				_events.Crashed(PageFault.Crashed);
 				break;
 			case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:

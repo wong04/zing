@@ -15,8 +15,12 @@ public interface IPageFeatureHost
 	bool PopupsAllowed(WebView2Page page);
 	/// <summary>The page opened a pop-up to <paramref name="url"/> without a click, and the engine was told no: the person is offered it.</summary>
 	void PopupBlocked(WebView2Page page, string url);
-	/// <summary>The page went to a new document or closed: its session-only grants and queued prompts go.</summary>
+	/// <summary>The page went to a new document or closed: its session-only grants, queued prompts and dialogs go.</summary>
 	void Left(WebView2Page page);
+	/// <summary>The page's renderer died: its dialogs went with it, and the window's prompts for them go too.</summary>
+	void DialogsGone(WebView2Page page);
+	/// <summary>A frame of the page opened a JavaScript dialog (a <see cref="ScriptDialogKinds"/> kind), which waits for <paramref name="answer"/>.</summary>
+	void ScriptDialog(WebView2Page page, string kind, string frameUrl, string message, string defaultText, IScriptDialogAnswer answer);
 	/// <summary>An element of the page entered or left fullscreen (a video's fullscreen button, requestFullscreen).</summary>
 	void FullScreenChanged(WebView2Page page);
 	/// <summary>The password vault is on, so pages get the autofill script and may post its messages.</summary>

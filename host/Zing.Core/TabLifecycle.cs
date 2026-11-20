@@ -292,6 +292,9 @@ public interface ILifecycleTabs
 
 	bool IsAudible(string id);
 
+	/// <summary>Whether the tab's page is still sending a large request body, as the host sees it (<see cref="UploadTracker"/>).</summary>
+	bool IsUploading(string id);
+
 	/// <summary>Whether the page's script can't answer now: a JavaScript dialog waits for the person, or the renderer crashed or stopped answering.</summary>
 	bool IsBlocked(string id);
 

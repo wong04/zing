@@ -60,11 +60,11 @@ public sealed class CommandsTests : IDisposable
 	public void The_tab_menu_copies_and_pins_a_tab_as_a_saved_tab_that_still_closes()
 	{
 		var id = _api.Tabs.ActiveId!;
-		var menu = Menus.Tab(_api.Tabs, _api.Saved, id, _host.Shell);
+		var menu = Menus.Tab(_api.Tabs, _api.Saved, id, _host.Shell, _api);
 		menu.Single(m => m.Label == "Copy Address").Click!();
 		Assert.Equal(["https://example.com/"], _host.FakeShell.Copied);
 		menu.Single(m => m.Label == "Pin Tab").Click!();
-		var pinned = Menus.Tab(_api.Tabs, _api.Saved, id, _host.Shell);
+		var pinned = Menus.Tab(_api.Tabs, _api.Saved, id, _host.Shell, _api);
 		Assert.Contains(pinned, m => m.Label == "Unpin Tab");
 		// Closing a saved tab keeps its item, so it isn't disabled; it is still on its saved page.
 		Assert.True(pinned.Single(m => m.Label == "Close Tab").Enabled);
@@ -118,7 +118,7 @@ public sealed class CommandsTests : IDisposable
 	public void A_tab_menu_item_chosen_after_its_tab_closed_does_nothing()
 	{
 		var other = _api.Tabs.Open("https://b.example/");
-		var menu = Menus.Tab(_api.Tabs, _api.Saved, other.Id, _host.Shell);
+		var menu = Menus.Tab(_api.Tabs, _api.Saved, other.Id, _host.Shell, _api);
 		_api.Tabs.Close(other.Id);
 		var count = _api.Tabs.Records.Count;
 		foreach (var item in menu.Where(m => m.Click is not null)) item.Click!();
@@ -130,9 +130,9 @@ public sealed class CommandsTests : IDisposable
 	public void Copy_Address_on_a_relayed_tab_or_a_warning_copies_the_web_address_they_stand_for()
 	{
 		var relayed = _api.Tabs.OpenRelayed("https://example.com/a?b=1");
-		Menus.Tab(_api.Tabs, _api.Saved, relayed.Id, _host.Shell).Single(m => m.Label == "Copy Address").Click!();
+		Menus.Tab(_api.Tabs, _api.Saved, relayed.Id, _host.Shell, _api).Single(m => m.Label == "Copy Address").Click!();
 		var warning = _api.Tabs.Open("zing://warning?to=" + Uri.EscapeDataString("https://apple.com.secure-login.tk/verify") + "&w=abc");
-		Menus.Tab(_api.Tabs, _api.Saved, warning.Id, _host.Shell).Single(m => m.Label == "Copy Address").Click!();
+		Menus.Tab(_api.Tabs, _api.Saved, warning.Id, _host.Shell, _api).Single(m => m.Label == "Copy Address").Click!();
 		Assert.Equal(["https://example.com/a?b=1", "https://apple.com.secure-login.tk/verify"], _host.FakeShell.Copied);
 	}
 }
