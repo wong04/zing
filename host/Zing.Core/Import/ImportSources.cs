@@ -4,9 +4,9 @@ namespace Zing.Core.Import;
 
 public enum ImportBrowser { Chrome, Edge, Brave, Dia, Arc }
 
-/// <param name="Id">"chrome:Default", "edge:Profile 1", "dia:Default", "arc".</param>
+/// <param name="Id">"chrome:Default", "edge:Profile 1", "dia:Default", "arc"; also the merge source key, since it outlives a profile rename.</param>
 /// <param name="Profile">The profile folder name; null for Arc.</param>
-/// <param name="Display">"Chrome (Personal)", "Arc"; also the merge source key.</param>
+/// <param name="Display">"Chrome (Personal)", "Arc"; the import folder's title.</param>
 /// <param name="Path">The Bookmarks file or StorableSidebar.json. Host-only: never sent to the renderer.</param>
 /// <param name="Bookmarks">The link count; null when the file couldn't be read or parsed, and then <paramref name="Error"/> says why.</param>
 public sealed record ImportSource(string Id, ImportBrowser Browser, string? Profile, string Display, string Path, int? Bookmarks, string? Error, bool LastUsed);

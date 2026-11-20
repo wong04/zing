@@ -28,7 +28,7 @@ public sealed class MergeTests
 		var result = c.GetProperty("result").Deserialize<BookmarkImport>(ZingJson.Options)!;
 		var expected = c.GetProperty("expected");
 
-		var outcome = ImportMerge.Merge(library, result, c.GetProperty("source").GetString()!, c.GetProperty("now").GetInt64(), Counter());
+		var outcome = ImportMerge.Merge(library, result, c.GetProperty("source").GetString()!, c.GetProperty("label").GetString()!, c.GetProperty("now").GetInt64(), Counter());
 
 		LibraryTests.AssertSame(expected.GetProperty("library"), outcome.Library, name);
 		Assert.Equal(expected.GetProperty("addedToBar").GetInt32(), outcome.AddedToBar);
@@ -45,7 +45,7 @@ public sealed class MergeTests
 		var library = Library.WithFavourites(Library.EmptyLibrary(1), [dev], 1);
 		var result = new BookmarkImport([new ImportedFolder("Dev", [new ImportedLink("MDN", "https://mdn.example/")])], [], []);
 
-		var outcome = ImportMerge.Merge(library, result, "Chrome", 7, Counter());
+		var outcome = ImportMerge.Merge(library, result, "Chrome", "Chrome", 7, Counter());
 
 		Assert.Same(dev, Library.Favourites(outcome.Library).Single());
 		Assert.Equal(0, outcome.AddedToBar);
@@ -58,12 +58,12 @@ public sealed class MergeTests
 		var heard = new List<BrowserLibrary>();
 		var store = new LibraryStore(Library.EmptyLibrary(1), saved.Add, () => 7, Counter());
 		var result = new BookmarkImport([new ImportedLink("GitHub", "https://github.com/")], [new ImportedLink("News", "https://news.example/")], []);
-		store.Import(result, "Chrome");
+		store.Import(result, "Chrome", "Chrome");
 		var before = store.Snapshot;
 		saved.Clear();
 		store.Subscribe(heard.Add);
 
-		var outcome = store.Import(result, "Chrome");
+		var outcome = store.Import(result, "Chrome", "Chrome");
 
 		Assert.Equal(0, outcome.AddedToBar + outcome.AddedToFolder);
 		Assert.Same(before, store.Snapshot);
@@ -80,7 +80,7 @@ public sealed class MergeTests
 		store.Subscribe(heard.Add);
 		var result = new BookmarkImport([new ImportedLink("GitHub", "https://github.com/")], [new ImportedLink("News", "https://news.example/")], []);
 
-		var outcome = store.Import(result, "Chrome");
+		var outcome = store.Import(result, "Chrome", "Chrome");
 
 		Assert.Equal(1, outcome.AddedToBar);
 		Assert.Equal(1, outcome.AddedToFolder);

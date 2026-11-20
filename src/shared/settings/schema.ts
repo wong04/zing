@@ -94,6 +94,8 @@ export const SETTINGS_SCHEMA = {
 	startShortcuts: startShortcuts(),
 	searchEngine: oneOf(SEARCH_ENGINES, 'google'),
 	blockTrackers: flag(true),
+	/** Microsoft Defender SmartScreen in the browsing profile (CoreWebView2Settings.IsReputationCheckingRequired); it sends the addresses it checks to Microsoft. Read at launch. */
+	smartScreen: flag(true),
 	defaultQuality: integerIn(10, 100, 80),
 	preserveOriginals: flag(true),
 	dohProvider: oneOf(DOH_PROVIDERS, 'cloudflare'),
@@ -138,7 +140,7 @@ export const SETTINGS_SCHEMA = {
 	sleepingTabs: { default: DEFAULT_SLEEPING_TABS, accepts: isSleepSettings },
 	/** Zing: asks GitHub for the latest release every few hours; sends nothing about the person. */
 	checkForUpdates: flag(true),
-	/** Zing: set once the "Make Zing your default browser?" offer is dismissed or accepted. */
+	/** Zing: set once the "Make Zing your default browser?" offer has been shown; it asks once, whatever the answer. */
 	defaultBrowserDismissed: flag(false),
 	/** Zing: set true after a profile's first launch; the default-browser offer waits for it. */
 	launchedBefore: flag(false),

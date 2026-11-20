@@ -57,6 +57,9 @@ public sealed class HostedView
 	/// <summary>Views whose controller the engine is still creating, in every window.</summary>
 	internal static int Pending { get; private set; }
 
+	/// <summary>The smartScreen setting, read at launch. The engine turns SmartScreen on for every view of a data folder if any one view asks for it, so every view is given it.</summary>
+	public static bool SmartScreen { get; set; } = true;
+
 	/// <summary>How many sibling windows are stacked above the view's window; 0 is the top.</summary>
 	public int Depth => Native.Depth(_hwnd);
 
@@ -126,6 +129,7 @@ public sealed class HostedView
 		// Zing's vault is the only password manager: WebView2's own saving and form autofill stay off in every view and profile, Zing's own UI included (Ruling 5).
 		controller.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
 		controller.CoreWebView2.Settings.IsGeneralAutofillEnabled = false;
+		controller.CoreWebView2.Settings.IsReputationCheckingRequired = SmartScreen;
 		if (overlay) controller.DefaultBackgroundColor = Windows.UI.Color.FromArgb(0, 255, 255, 255);
 		view = new HostedView(window, hwnd, overlay, controller, tracked);
 		window.Adopt(view);

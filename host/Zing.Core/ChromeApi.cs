@@ -24,7 +24,12 @@ public interface IWindowHost
 	/// <summary>The offer left the screen on its own: it timed out, or another notice replaced it.</summary>
 	event Action OfferEnded;
 	void NewWindow();
+	/// <summary>The person closing the window (Ctrl+Shift+W): it may ask first.</summary>
 	void CloseWindow();
+	/// <summary>Opens the last window the person closed, app-wide; false when none is left.</summary>
+	bool ReopenClosedWindow();
+	/// <summary>Quits Zing (Ctrl+Shift+Q): every window closes together and all of them are saved, asking once at most.</summary>
+	void Quit();
 	/// <summary>The chrome insets or the surface changed; put the page and layers where they now go.</summary>
 	void Relayout();
 	void FocusChrome();
@@ -64,6 +69,8 @@ public interface IWindowHost
 	IDownloadHost DownloadHost { get; }
 	/// <summary>Shows the native open dialog for these extensions (none means every file) and returns what the person picked; empty if they cancelled. An e2e run shows no dialog.</summary>
 	Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions);
+	/// <summary>Shows the native Save dialog with this name and type; null if they cancelled. An e2e run shows no dialog: it takes the next queued pick, one path or none.</summary>
+	Task<string?> PickSaveFileAsync(string suggestedName, string extension, string kind);
 	/// <summary>Puts these files on the clipboard as files (CF_HDROP), so Explorer can paste them. Called on the UI thread; throws if the clipboard can't be written. An e2e run leaves the real clipboard alone.</summary>
 	void CopyFilesToClipboard(IReadOnlyList<string> paths);
 	/// <summary>Where a copied password goes (Ruling 41). An e2e run never touches the real clipboard.</summary>
@@ -484,6 +491,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("import:cancel-watch", _ => Do(importApi.CancelWatch));
 		bridge.Register("import:recycle", args => Do(() => importApi.Recycle(Text(args, 0))));
 		bridge.Register("import:take-pending", _ => importApi.TakePending());
+		bridge.Register("import:export-bookmarks", async _ => await ExportBookmarksAsync());
 		_watchedVault = app.Vaults.Current;
 		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;
@@ -702,12 +710,14 @@ public sealed class ChromeApi : IDisposable
 			"library.readingList" => Act(true, () => SetLibraryPanel(_libraryPanel == "readingList" ? null : "readingList")),
 			"tab.new" => Act(true, NewTab),
 			"tab.close" => Tabs.Preview is not null ? Act(true, Tabs.ClosePreview) : Act(Tabs.ActiveId is not null, () => Tabs.Close(Tabs.ActiveId!)),
-			"tab.reopenClosed" => Tabs.ReopenClosed() is null ? NotApplicable : Done,
+			// The window's own closed tabs first, then the windows closed app-wide.
+			"tab.reopenClosed" => Tabs.ReopenClosed() is not null || _host.ReopenClosedWindow() ? Done : NotApplicable,
 			"tab.split" => Act(Tabs.ActiveId is { } splitting && Tabs.Splits.Of(splitting) is not { TabIds.Count: >= Split.MaxPanes }, SplitWithNewTab),
 			"tab.next" => ActivateIfAny(Tabs.NextId()),
 			"tab.previous" => ActivateIfAny(Tabs.PreviousId()),
 			"window.new" => Act(true, _host.NewWindow),
 			"window.close" => Act(true, _host.CloseWindow),
+			"app.quit" => Act(true, _host.Quit),
 			"location.open" => Act(true, FocusAddress),
 			"history.back" => Act(page is { CanGoBack: true }, () => page!.GoBack()),
 			"history.forward" => Act(page is { CanGoForward: true }, () => page!.GoForward()),
@@ -1142,6 +1152,15 @@ public sealed class ChromeApi : IDisposable
 	{
 		var logins = await Vault().ExportAsync();
 		return Grants.Issue(VaultCsv.SaveExport(_placement, _host.DownloadsDirectory, logins));
+	}
+
+	private async Task<BookmarkExportOutcome?> ExportBookmarksAsync()
+	{
+		var path = await _host.PickSaveFileAsync(BookmarkExport.SuggestedFileName, "html", "Bookmarks HTML");
+		if (path is null) return null;
+		var library = _app.Library.Snapshot;
+		JsonFiles.WriteAllBytesAtomic(path, System.Text.Encoding.UTF8.GetBytes(BookmarkExport.Write(library)));
+		return new BookmarkExportOutcome(Path.GetFileName(path), BookmarkExport.CountLinks(library));
 	}
 
 	/// <summary>

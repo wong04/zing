@@ -125,7 +125,7 @@ export interface Notice {
 	readonly text: string
 	/** Present for the offer after a page failed like a block: it stays until chosen or dismissed and carries the buttons. */
 	readonly offer?: { readonly address: string }
-	/** Present for the offer to make Zing the default browser: "Make default" and "Don't ask again". Left alone, it times out and comes back next launch. */
+	/** Present for the offer to make Zing the default browser: "Make default" and "Not now". It asks once: left alone, it times out and never comes back. */
 	readonly defaultBrowser?: true
 }
 
@@ -230,6 +230,12 @@ export interface BookmarkImportOutcome {
 	addedToFolder: number
 	/** Why each item that couldn't be imported was left out. */
 	skipped: string[]
+}
+
+export interface BookmarkExportOutcome {
+	/** The saved file's name, never its path. */
+	name: string
+	bookmarks: number
 }
 
 /**
@@ -595,7 +601,7 @@ export interface InvokeContract {
 	/** The pill view measured what it shows, in CSS pixels. */
 	'update:pill-size': { args: [width: number, height: number]; result: void }
 	'default-browser:get': { args: []; result: DefaultBrowserState }
-	/** "Don't ask again": sets defaultBrowserDismissed and takes the offer down. */
+	/** "Not now": sets defaultBrowserDismissed (already set once the offer shows) and takes the offer down. */
 	'default-browser:dismiss': { args: []; result: void }
 	/** The third-party notices the build generated (THIRD-PARTY-NOTICES.txt). Rejects if the file is missing. */
 	'about:credits': { args: []; result: string }
@@ -603,8 +609,10 @@ export interface InvokeContract {
 	'import:sources': { args: []; result: ImportSourceView[] }
 	/** Merges a source's bookmarks into the library (it only adds). Rejects with UnknownImportSourceException, or with a path-free message when the file can't be read or is damaged. */
 	'import:bookmarks': { args: [sourceId: string]; result: BookmarkImportOutcome }
-	/** The same for a bookmarks file picked with `pickFiles(['bookmarks'])` (token from `files:pick`); the file's name is the source. */
+	/** The same for a bookmarks file picked with `pickFiles(['bookmarks'])` (token from `files:pick`); marked with `file:<name>` and titled with the name. */
 	'import:bookmarks-file': { args: [token: string]; result: BookmarkImportOutcome }
+	/** Writes every bookmark (Favourites as the bar, Pinned and every folder) as a Netscape bookmarks HTML file where the Save dialog says; null when it was cancelled. */
+	'import:export-bookmarks': { args: []; result: BookmarkExportOutcome | null }
 	/**
 	 * Opens the source browser's password export page in that browser and watches the downloads folder for the CSV; the file comes back as
 	 * `import:password-export`, or `import:watch-timed-out` after 10 minutes. A new watch ends the old. Rejects with UnknownImportSourceException,
@@ -848,6 +856,7 @@ export interface ZingApi {
 	importSources(): Promise<ImportSourceView[]>
 	importBookmarks(sourceId: string): Promise<BookmarkImportOutcome>
 	importBookmarksFile(token: string): Promise<BookmarkImportOutcome>
+	exportBookmarks(): Promise<BookmarkExportOutcome | null>
 	watchPasswords(sourceId: string): Promise<void>
 	cancelPasswordWatch(): Promise<void>
 	recycleFile(token: string): Promise<void>

@@ -38,6 +38,8 @@ describe('UpdatePill', () => {
 
 		const ready = <UpdatePillButton state={state('ready')} />
 		expect(renderToStaticMarkup(ready)).toContain('Relaunch to update')
+		// The relaunch brings every tab back whatever Reopen tabs says, and the pill says so.
+		expect(renderToStaticMarkup(ready)).toContain('Your tabs will reopen')
 		const [button, ...rest] = buttons(ready)
 		expect(rest).toEqual([])
 		button!.onClick!()

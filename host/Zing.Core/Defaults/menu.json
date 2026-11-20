@@ -14,7 +14,9 @@
 			"separator",
 			"page.print",
 			"separator",
-			"app.settings"
+			"app.settings",
+			"separator",
+			"app.quit"
 		]
 	},
 	{

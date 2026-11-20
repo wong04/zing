@@ -21,6 +21,21 @@ describe('settings rows', () => {
 		expect(detailOf(row, DEFAULT_SETTINGS)).toBe('Asks GitHub for the latest version every few hours. Sends nothing about you.')
 	})
 
+	it('puts the SmartScreen switch in Privacy, on by default, saying what it sends', () => {
+		const row = PANES.privacy.find((i) => i.type === 'setting' && i.key === 'smartScreen') as SettingRow
+		expect(row.control.kind).toBe('toggle')
+		expect(DEFAULT_SETTINGS.smartScreen).toBe(true)
+		expect(detailOf(row, DEFAULT_SETTINGS)).toBe('Microsoft Defender SmartScreen checks the sites you visit and the files you download against Microsoft’s list of known threats, so the addresses go to Microsoft. Relaunch to apply.')
+		expect(detailOf(row, { ...DEFAULT_SETTINGS, smartScreen: false })).toBe('Off: nothing is sent to Microsoft for checking, and dangerous sites and downloads aren’t warned about. Relaunch to apply.')
+	})
+
+	it('says what Stay signed in to sites keeps on disk', () => {
+		const row = PANES.privacy.find((i) => i.type === 'setting' && i.key === 'persistentProfile') as SettingRow
+		expect(detailOf(row, { ...DEFAULT_SETTINGS, persistentProfile: true })).toBe(
+			'Cookies, site storage, the cache, site permissions and the engine’s browsing and download history are saved to disk. Turning this off signs you out of every site and deletes them. Relaunch to apply.',
+		)
+	})
+
 	it('has a pane for every category and no extras', () => {
 		expect(CATEGORIES.map((c) => c.id)).toEqual([...SETTINGS_CATEGORIES])
 		expect(Object.keys(PANES).sort()).toEqual([...SETTINGS_CATEGORIES].sort())

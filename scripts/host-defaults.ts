@@ -54,6 +54,7 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	startShortcuts: { type: 'startShortcuts' },
 	searchEngine: oneOf(SEARCH_ENGINES),
 	blockTrackers: flag,
+	smartScreen: flag,
 	defaultQuality: range('integer', 10, 100),
 	preserveOriginals: flag,
 	dohProvider: oneOf(DOH_PROVIDERS),
