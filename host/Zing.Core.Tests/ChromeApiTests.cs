@@ -288,6 +288,26 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
+	public async Task Quit_goes_to_the_host()
+	{
+		Assert.Equal("done", Value(await Invoke("command:run", "app.quit")).GetProperty("status").GetString());
+		Assert.Equal(1, _host.Quits);
+	}
+
+	[Fact]
+	public async Task Reopen_closed_brings_back_the_windows_closed_tabs_first_then_a_closed_window()
+	{
+		_host.ClosedWindows = 1;
+		Value(await Invoke("tabs:open-link", "https://example.com/"));
+		Value(await Invoke("tabs:close", _api.Tabs.Records.Single(t => t.Url == "https://example.com/").Id));
+		Assert.Equal("done", Value(await Invoke("command:run", "tab.reopenClosed")).GetProperty("status").GetString());
+		Assert.Equal(0, _host.WindowReopens);
+		Assert.Equal("done", Value(await Invoke("command:run", "tab.reopenClosed")).GetProperty("status").GetString());
+		Assert.Equal(1, _host.WindowReopens);
+		Assert.Equal("not-applicable", Value(await Invoke("command:run", "tab.reopenClosed")).GetProperty("status").GetString());
+	}
+
+	[Fact]
 	public void Insets_follow_the_tab_bar_position_and_the_rail_width()
 	{
 		_settings.Set("showFavouritesBar", false);

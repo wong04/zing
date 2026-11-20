@@ -86,6 +86,19 @@
 		]
 	},
 	{
+		"id": "app.quit",
+		"label": "Quit Zing",
+		"shortcuts": [
+			{
+				"code": "KeyQ",
+				"ctrl": true,
+				"shift": true,
+				"alt": false,
+				"label": "Ctrl+Shift+Q"
+			}
+		]
+	},
+	{
 		"id": "tab.reopenClosed",
 		"label": "Reopen Last Closed Tab",
 		"shortcuts": [

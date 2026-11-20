@@ -45,7 +45,11 @@ public static class Installation
 	/// </summary>
 	public static IUpdateSource? UpdateSource(Action quit)
 	{
-		if (TestHooks.UpdateSource() is { } fake) return fake;
+		if (TestHooks.UpdateSource() is { } fake)
+		{
+			fake.Quit = quit;
+			return fake;
+		}
 		if (!Manager.IsInstalled) return null;
 		return new VelopackUpdateSource(Manager, quit);
 	}

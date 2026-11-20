@@ -25,7 +25,14 @@ public sealed class VelopackUpdateSource(UpdateManager manager, Action quit) : I
 	public void RestartIntoUpdate()
 	{
 		manager.WaitExitThenApplyUpdates(Found().TargetFullRelease, silent: false, restart: true);
-		quit();
+		try
+		{
+			quit();
+		}
+		catch (Exception error)
+		{
+			throw new RestartArmedException(error);
+		}
 	}
 
 	/// <summary>The updater waits for Zing to exit, applies the update silently, and doesn't start Zing again.</summary>

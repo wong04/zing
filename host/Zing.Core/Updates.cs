@@ -18,6 +18,13 @@ public interface IUpdateSource
 	void ApplyOnExit();
 }
 
+/// <summary>
+/// The updater was started and waits for Zing to exit (it then applies the update and starts Zing again), but quitting failed.
+/// Not a failed restart: whenever Zing does exit, the restart still happens.
+/// </summary>
+public sealed class RestartArmedException(Exception cause)
+	: Exception($"The updater is waiting for Zing to exit, but quitting failed: {cause.Message}", cause);
+
 [JsonConverter(typeof(UpdateStatusConverter))]
 public enum UpdateStatus { Idle, Checking, Downloading, Ready, UpToDate, Failed, Unavailable }
 
@@ -91,18 +98,40 @@ public sealed class Updater(IUpdateSource? source, IScheduler scheduler, Func<bo
 		return State;
 	}
 
+	/// <summary>Raised before restarting into the update, to save the tabs that come back after it; a handler that throws stops the relaunch.</summary>
+	public event Action? Relaunching;
+
+	/// <summary>The restart failed after <see cref="Relaunching"/>: what it saved must go. Handlers must not throw.</summary>
+	public event Action? RelaunchAbandoned;
+
 	public void Relaunch()
 	{
 		if (source is null || State.Status != UpdateStatus.Ready || _restarting) return;
 		_restarting = true;
+		// Still Ready on a failure: the pill can try again, and quitting applies the update.
+		try
+		{
+			Relaunching?.Invoke();
+		}
+		catch (Exception error)
+		{
+			_restarting = false;
+			Failed?.Invoke(error);
+			return;
+		}
 		try
 		{
 			source.RestartIntoUpdate();
 		}
-		// Still Ready: the pill can try again, and quitting applies the update.
+		// The updater is already waiting for Zing to exit and will start it again: what was saved is what that start needs.
+		catch (RestartArmedException error)
+		{
+			Failed?.Invoke(error);
+		}
 		catch (Exception error)
 		{
 			_restarting = false;
+			RelaunchAbandoned?.Invoke();
 			Failed?.Invoke(error);
 		}
 	}

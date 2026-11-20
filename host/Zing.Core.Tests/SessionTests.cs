@@ -130,12 +130,97 @@ public sealed class SessionTests : IDisposable
 	}
 
 	[Fact]
-	public void A_saved_file_loads_back()
+	public void A_saved_file_loads_back_with_every_window_in_order()
+	{
+		var path = Path.Combine(_dir, "s.json");
+		List<SessionTab> first = [new("https://a.test/", "a", true, false), new("https://b.test/", "b", false, true)];
+		List<SessionTab> second = [new("https://c.test/", "c", false, true, Split: new SessionSplit("s", "row", 0, 1))];
+		File.WriteAllText(path, Session.EncodeWindows([first, second]));
+		var loaded = Session.Load(path);
+		Assert.Equal(2, loaded.Count);
+		Assert.Equal(first, loaded[0]);
+		Assert.Equal(second, loaded[1]);
+	}
+
+	[Fact]
+	public void The_file_is_versioned_with_a_list_of_windows()
+	{
+		using var doc = JsonDocument.Parse(Session.EncodeWindows([[new SessionTab("https://a.test/", "a", false, true)]]));
+		Assert.Equal(2, doc.RootElement.GetProperty("version").GetInt32());
+		Assert.Equal("https://a.test/", doc.RootElement.GetProperty("windows")[0].GetProperty("tabs")[0].GetProperty("url").GetString());
+	}
+
+	[Fact]
+	public void An_old_single_window_file_loads_as_one_window()
 	{
 		var path = Path.Combine(_dir, "s.json");
 		var tabs = new List<SessionTab> { new("https://a.test/", "a", true, false), new("https://b.test/", "b", false, true) };
 		File.WriteAllText(path, Session.Encode(tabs));
-		Assert.Equal(tabs, Session.Load(path));
+		Assert.Equal(tabs, Assert.Single(Session.Load(path)));
+	}
+
+	[Fact]
+	public void An_old_file_with_no_web_page_is_no_window()
+	{
+		Assert.Empty(Session.DecodeWindows("[]"));
+		Assert.Empty(Session.DecodeWindows("""[{"url": "zing://home", "title": "t", "pinned": false, "active": true}]"""));
+	}
+
+	[Fact]
+	public void A_window_with_nothing_to_restore_is_left_out()
+	{
+		var text = Session.EncodeWindows([[new SessionTab("zing://home", "t", false, true)], [new SessionTab("https://a.test/", "a", false, true)]]);
+		Assert.Equal("https://a.test/", Assert.Single(Assert.Single(Session.DecodeWindows(text))).Url);
+	}
+
+	[Theory]
+	[InlineData("""{"version": 3, "windows": []}""")]
+	[InlineData("""{"windows": []}""")]
+	[InlineData("""{"version": 2}""")]
+	[InlineData("""{"version": 2, "windows": [[]]}""")]
+	[InlineData("""{"version": 2, "windows": [{"tabs": [{"url": "https://a.test/"}]}]}""")]
+	[InlineData("\"tabs\"")]
+	public void A_file_that_is_not_a_session_of_a_known_version_is_corrupt(string text)
+	{
+		Assert.Throws<InvalidDataException>(() => Session.DecodeWindows(text));
+	}
+
+	[Fact]
+	public void The_relaunch_file_comes_back_once_and_is_deleted()
+	{
+		var path = Path.Combine(_dir, "relaunch.json");
+		File.WriteAllText(path, Session.EncodeWindows([[new SessionTab("https://a.test/", "a", false, true)], [new SessionTab("https://b.test/", "b", false, true)]]));
+		Assert.Equal(2, Session.TakeOnce(path, e => throw e).Count);
+		Assert.False(File.Exists(path));
+		Assert.Empty(Session.TakeOnce(path, e => throw e));
+	}
+
+	[Fact]
+	public void A_relaunch_file_that_could_not_be_deleted_is_never_restored_again()
+	{
+		var path = Path.Combine(_dir, "relaunch.json");
+		File.WriteAllText(Session.Taken(path), Session.EncodeWindows([[new SessionTab("https://a.test/", "a", false, true)]]));
+		Assert.Empty(Session.TakeOnce(path, e => throw e));
+		Assert.False(File.Exists(Session.Taken(path)));
+	}
+
+	[Fact]
+	public void A_relaunch_file_that_cannot_be_moved_aside_is_not_restored()
+	{
+		var path = Path.Combine(_dir, "relaunch.json");
+		File.WriteAllText(path, Session.EncodeWindows([[new SessionTab("https://a.test/", "a", false, true)]]));
+		using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+			Assert.Throws<SessionFileException>(() => Session.TakeOnce(path, _ => { }));
+	}
+
+	[Fact]
+	public void A_corrupt_relaunch_file_is_an_error_and_is_still_deleted()
+	{
+		var path = Path.Combine(_dir, "relaunch.json");
+		File.WriteAllText(path, "{{{not json");
+		Assert.Throws<SessionFileException>(() => Session.TakeOnce(path, e => throw e));
+		Assert.False(File.Exists(path));
+		Assert.False(File.Exists(Session.Taken(path)));
 	}
 
 	[Fact]

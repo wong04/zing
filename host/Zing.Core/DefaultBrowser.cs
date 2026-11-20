@@ -99,7 +99,7 @@ public static class DefaultBrowserOffer
 	public const string Text = "Make Zing your default browser?";
 	public const string SettingsUri = "ms-settings:defaultapps?registeredAppUser=Zing";
 
-	/// <summary>The person's side of it: never on a profile's first launch (Phase 6c's import nudge has that one), never once they said don't ask again.</summary>
+	/// <summary>The person's side of it: never on a profile's first launch (Phase 6c's import nudge has that one), never once it has been shown: it asks once, whatever the answer.</summary>
 	public static bool Allowed(bool dismissed, bool launchedBefore) => launchedBefore && !dismissed;
 
 	/// <summary>Zing's side: only an installed Zing can be chosen in Default apps, and a default needs no offer.</summary>

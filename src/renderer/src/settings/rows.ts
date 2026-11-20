@@ -290,9 +290,15 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 		toggle('persistentProfile', 'Stay signed in to sites', {
 			detail: (s) =>
 				s.persistentProfile
-					? 'Cookies and cache are saved to disk. Turning this off signs you out of every site and deletes them. Relaunch to apply.'
+					? 'Cookies, site storage, the cache, site permissions and the engine’s browsing and download history are saved to disk. Turning this off signs you out of every site and deletes them. Relaunch to apply.'
 					: 'Off: every sign-in ends when Zing quits.',
 			warning: (s) => s.persistentProfile,
+		}),
+		toggle('smartScreen', 'Check sites and downloads with SmartScreen', {
+			detail: (s) =>
+				s.smartScreen
+					? 'Microsoft Defender SmartScreen checks the sites you visit and the files you download against Microsoft’s list of known threats, so the addresses go to Microsoft. Relaunch to apply.'
+					: 'Off: nothing is sent to Microsoft for checking, and dangerous sites and downloads aren’t warned about. Relaunch to apply.',
 		}),
 		{
 			type: 'setting',

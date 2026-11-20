@@ -221,6 +221,10 @@
 			"args": 0
 		},
 		{
+			"channel": "import:export-bookmarks",
+			"args": 0
+		},
+		{
 			"channel": "import:recycle",
 			"args": 1
 		},

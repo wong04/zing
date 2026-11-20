@@ -44,6 +44,9 @@
 	"blockTrackers": {
 		"type": "flag"
 	},
+	"smartScreen": {
+		"type": "flag"
+	},
 	"defaultQuality": {
 		"type": "integer",
 		"min": 10,

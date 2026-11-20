@@ -83,6 +83,53 @@ public sealed class ImportApiTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ReimportingAfterTheProfileIsRenamedAddsNothing()
+	{
+		WriteChrome("Default", "Personal");
+		Value(await Invoke(_bridge, "import:bookmarks", "chrome:Default"));
+		var before = _library.Snapshot;
+		WriteChrome("Default", "Work");
+
+		var outcome = Value(await Invoke(_bridge, "import:bookmarks", "chrome:Default"));
+
+		Assert.Equal(0, outcome.GetProperty("addedToBar").GetInt32() + outcome.GetProperty("addedToFolder").GetInt32());
+		Assert.Same(before, _library.Snapshot);
+		Assert.Single(_library.Snapshot.Bookmarks, n => n.Title == "Imported from Chrome (Personal)");
+	}
+
+	[Fact]
+	public async Task AnImportMarkedWithTheOldDisplayNameIsAdoptedNotDoubled()
+	{
+		WriteChrome("Default", "Personal");
+		Value(await Invoke(_bridge, "import:bookmarks", "chrome:Default"));
+		// What the library held after an import by a version that marked with the display name.
+		var legacy = new LibraryStore(Relabel(_library.Snapshot, "chrome:Default", "Chrome (Personal)"), _ => { }, Deterministic.Clock(), Deterministic.Ids("old-"));
+		var count = Library.Urls(new BookmarkFolder("all", "", legacy.Snapshot.Bookmarks, 0)).Count;
+		var bridge = new Bridge();
+		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), legacy, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), LocalAppData: () => _root), new FakeWindowHost(), "test");
+
+		var outcome = Value(await Invoke(bridge, "import:bookmarks", "chrome:Default"));
+
+		Assert.Equal(0, outcome.GetProperty("addedToBar").GetInt32() + outcome.GetProperty("addedToFolder").GetInt32());
+		Assert.Equal(count, Library.Urls(new BookmarkFolder("all", "", legacy.Snapshot.Bookmarks, 0)).Count);
+		Assert.DoesNotContain(Marks(legacy.Snapshot.Bookmarks), m => m == "Chrome (Personal)");
+	}
+
+	private static BrowserLibrary Relabel(BrowserLibrary library, string from, string to)
+	{
+		BookmarkNode Walk(BookmarkNode node) => node switch
+		{
+			BookmarkLink link => link.ImportedFrom == from ? link with { ImportedFrom = to } : link,
+			BookmarkFolder folder => folder with { Children = folder.Children.Select(Walk).ToList(), ImportedFrom = folder.ImportedFrom == from ? to : folder.ImportedFrom },
+			_ => node,
+		};
+		return library with { Bookmarks = library.Bookmarks.Select(Walk).ToList() };
+	}
+
+	private static IEnumerable<string?> Marks(IEnumerable<BookmarkNode> nodes) =>
+		nodes.SelectMany(n => n is BookmarkFolder f ? Marks(f.Children).Prepend(f.ImportedFrom) : [Library.ImportedFromOf(n)]);
+
+	[Fact]
 	public async Task ImportingAPickedFileUsesItsNameAsTheSource()
 	{
 		var path = Path.Combine(_root, "my-export.json");
@@ -95,6 +142,7 @@ public sealed class ImportApiTests : IDisposable
 		Assert.Equal(["html", "htm", "json"], _host.PickedExtensions);
 		Assert.Contains("my-export.json", outcome.GetProperty("folderTitle").GetString());
 		Assert.DoesNotContain(_root, outcome.GetRawText());
+		Assert.Contains("file:my-export.json", Marks(_library.Snapshot.Bookmarks));
 	}
 
 	[Fact]
