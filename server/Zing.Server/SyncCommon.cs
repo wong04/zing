@@ -28,6 +28,7 @@ public static class SyncEndpoints
 		group.MapKeys();
 		group.MapManifest();
 		group.MapChanges();
+		group.MapLibraryAndSettings();
 	}
 
 	public static string UserId(HttpContext context) => (string)context.Items[UserKey]!;
