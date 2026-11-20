@@ -96,6 +96,10 @@ public interface IWindowHost
 	void SetUpdatePillSize(int width, int height);
 	/// <summary>The page in front leaves fullscreen and the window gets its chrome back (the Exit full screen button).</summary>
 	void ExitFullScreen();
+	/// <summary>Whether the window is fullscreen by F11 (view.fullScreen): the page has the whole window and the chrome is hidden.</summary>
+	bool BrowserFullScreen { get; }
+	/// <summary>F11: the window goes fullscreen without its chrome, or comes back.</summary>
+	void ToggleBrowserFullScreen();
 	/// <summary>Whether Zing is installed and the default browser, asked anew each time (the person may have changed it in Windows' Settings).</summary>
 	DefaultBrowserState DefaultBrowserState { get; }
 	/// <summary>The generated third-party notices file, shown by About's Credits.</summary>
@@ -124,7 +128,8 @@ public interface IWindowHost
 /// <param name="Extensions">Settings' Extensions and the toolbar's popups; null where the host has none, and then the extensions channels throw.</param>
 /// <param name="BookmarkIcons">The icons kept for bookmarked sites once visited; null where the host keeps none, and bookmarks show their letter.</param>
 /// <param name="CrashLog">The local log of renderer and engine crashes; null where the host keeps none, and the about:*crash-log channels throw.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null, Func<string>? AppData = null, CrashLog? CrashLog = null, Zing.Core.Extensions.ExtensionService? Extensions = null)
+/// <param name="RememberedSites">The sites remembered as allowed to show notifications; null keeps them in memory only.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null, Func<string>? AppData = null, CrashLog? CrashLog = null, SiteGrants? RememberedSites = null, Zing.Core.Extensions.ExtensionService? Extensions = null)
 {
 	public long Now() => Clock.Now();
 
@@ -136,6 +141,9 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 
 	/// <summary>The sites allowed pop-ups this session, in every window.</summary>
 	public PopupSites PopupSites { get; } = new();
+
+	/// <summary>The sites remembered as allowed to show notifications, in every window.</summary>
+	public SiteGrants SiteGrants { get; } = RememberedSites ?? SiteGrants.InMemory();
 }
 
 /// <summary>
@@ -163,6 +171,7 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 	private readonly List<IDisposable> _subscriptions = [];
 	private readonly Action _unsubscribeLibrary;
 	private readonly Action _unsubscribeIcons;
+	private readonly Action _unsubscribeSites;
 	private string? _libraryPanel;
 	// Cancelled when the window closes, so a download it started doesn't outlive it.
 	private readonly CancellationTokenSource _closing = new();
@@ -240,7 +249,7 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
-		Permissions = new PermissionBroker(PageUi, HiddenTabOf, app.PopupSites);
+		Permissions = new PermissionBroker(PageUi, HiddenTabOf, app.PopupSites, app.SiteGrants);
 		Dialogs = new ScriptDialogs(PageUi, HiddenTabOf);
 		Dialogs.Showing += DialogShowing;
 		Leave = new LeaveCheck(host.Scheduler, Dialogs);
@@ -470,6 +479,9 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 		bridge.Register("permission:allow", args => Do(() => Permissions.Answer(Int(args, 0), true)));
 		bridge.Register("permission:deny", args => Do(() => Permissions.Answer(Int(args, 0), false)));
 		bridge.Register("permission:allow-site", args => Do(() => Permissions.AllowForSite(Int(args, 0))));
+		bridge.Register("permission:remember", args => Do(() => Permissions.RememberForSite(Int(args, 0))));
+		bridge.Register("sites:get", _ => app.SiteGrants.State);
+		bridge.Register("sites:forget-notifications", args => Do(() => app.SiteGrants.ForgetNotifications(Text(args, 0))));
 		bridge.Register("dialog:answer", args => Do(() => Dialogs.Answer(Int(args, 0), Bool(args, 1), OptionalText(args, 2))));
 
 		bridge.Register("vault:get", async _ => await CheckedVaultStateAsync());
@@ -554,6 +566,7 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
 		_unsubscribeLibrary = app.Library.Subscribe(_ => host.Push("library:state", LibraryState()));
+		_unsubscribeSites = app.SiteGrants.Subscribe(() => host.Push("sites:state", app.SiteGrants.State));
 		_unsubscribeIcons = app.BookmarkIcons?.Subscribe(() => host.Push("library:state", LibraryState())) ?? (() => { });
 	}
 
@@ -592,6 +605,8 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 	/// <summary>Where the chrome ends and the page begins. With tabs on the left the app sidebar folds into the rail.</summary>
 	public ChromeInsets Insets()
 	{
+		// F11: the chrome is hidden and the page has the whole window.
+		if (_host.BrowserFullScreen) return new ChromeInsets(0, 0, 0);
 		var position = Setting("tabBarPosition");
 		var pinned = Flag("sidebarPinned");
 		// On the left the rail is the sidebar: Ctrl+S hides it like the app sidebar, and it slides out from the edge.
@@ -672,6 +687,7 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 	/// </summary>
 	public bool HandleKey(KeyInput input)
 	{
+		if (LeftBrowserFullScreen(input)) return true;
 		if (Commands.ForInput(input) is not { } command) return false;
 		return RunForKey(command.Id);
 	}
@@ -682,8 +698,21 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 	/// </summary>
 	public bool HandleChromeKey(KeyInput input)
 	{
+		if (LeftBrowserFullScreen(input)) return true;
 		if (Commands.ForInput(input) is not { } command || command.Id == "page.stop") return false;
 		return RunForKey(command.Id);
+	}
+
+	/// <summary>
+	/// Esc leaves F11 fullscreen, before it would stop the page loading. While one of the page's elements is fullscreen
+	/// (a video) Esc is the page's, to leave that first.
+	/// </summary>
+	private bool LeftBrowserFullScreen(KeyInput input)
+	{
+		if (input is not { Code: "Escape", Ctrl: false, Shift: false, Alt: false } || !_host.BrowserFullScreen) return false;
+		if ((Tabs.Preview?.Top.Page ?? Tabs.ActivePage)?.IsFullScreen == true) return false;
+		_host.ToggleBrowserFullScreen();
+		return true;
 	}
 
 	private bool RunForKey(string command) => Run(command) is not Outcome { Status: "not-applicable" };
@@ -734,6 +763,7 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 		Lifecycle.Dispose();
 		_unsubscribeLibrary();
 		_unsubscribeIcons();
+		_unsubscribeSites();
 		Saved.Dispose();
 		Tabs.Destroy();
 	}
@@ -769,6 +799,7 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 		{
 			"app.settings" => Act(true, () => Shell.OpenSettings()),
 			"view.sidebar" => Act(true, Shell.ToggleSidebar),
+			"view.fullScreen" => Act(true, _host.ToggleBrowserFullScreen),
 			"view.favouritesBar" => Act(true, () => _app.Settings.Set("showFavouritesBar", !Flag("showFavouritesBar"))),
 			"library.addFavourite" => SaveActive(favourite: true),
 			"library.addReadingList" => SaveActive(favourite: false),

@@ -25,6 +25,7 @@ import { CrashLogRow } from './CrashLogRow'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
 import { useSettings } from './useSettings'
+import { useSiteGrants } from './useSiteGrants'
 
 function AccentSwatch({ label, hex, selected, onSelect }: { label: string; hex: string; selected: boolean; onSelect: () => void }) {
 	return (
@@ -222,6 +223,33 @@ function PrivacyBanner({ handle }: { handle: SettingsHandle }) {
 	)
 }
 
+/** The sites remembered as allowed to show notifications ("Remember for this site" on the prompt), each with Remove. */
+function SiteNotificationsRow() {
+	const sites = useSiteGrants()
+	return (
+		<>
+			<SettingRowShell
+				title="Notifications"
+				detail={sites.length === 0 ? 'No site is remembered. Every allowed site is asked again on its next page.' : 'These sites may show notifications without asking.'}
+			/>
+			{sites.length > 0 && (
+				<ul className="shortcut-list" aria-label="Sites allowed to show notifications">
+					{sites.map((origin) => (
+						<li key={origin} className="shortcut-row">
+							<span className="shortcut-text">
+								<strong>{origin}</strong>
+							</span>
+							<PillButton variant="ghost" size="small" aria-label={`Remove ${origin}`} onClick={() => void zing.forgetNotifications(origin)}>
+								Remove
+							</PillButton>
+						</li>
+					))}
+				</ul>
+			)}
+		</>
+	)
+}
+
 function ClearSessionRow() {
 	const [cleared, setCleared] = useState(false)
 	return (
@@ -319,6 +347,8 @@ export function CustomRow({ id, handle, version }: { id: CustomId; handle: Setti
 			return <VaultSection />
 		case 'privacy-banner':
 			return <PrivacyBanner handle={handle} />
+		case 'site-notifications':
+			return <SiteNotificationsRow />
 		case 'clear-session':
 			return <ClearSessionRow />
 		case 'recent-tools':

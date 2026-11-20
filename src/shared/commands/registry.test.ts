@@ -35,6 +35,7 @@ const MENU_LABELS = [
 	'Show Reading List',
 	'Show Previous Tab',
 	'Show Next Tab',
+	'Full Screen',
 ]
 
 const key = (code: string, mods: Partial<KeyInput> = {}): KeyInput => ({
@@ -91,6 +92,7 @@ describe('command registry', () => {
 		expect(commandForInput(key('ArrowLeft', { alt: true }))?.id).toBe('history.back')
 		expect(commandForInput(key('KeyT', { control: true, shift: true }))?.id).toBe('tab.reopenClosed')
 		expect(commandForInput(key('Equal', { control: true }))?.id).toBe('page.zoomIn')
+		expect(commandForInput(key('F11'))?.id).toBe('view.fullScreen')
 	})
 
 	it('ignores the Windows key and plain typing', () => {

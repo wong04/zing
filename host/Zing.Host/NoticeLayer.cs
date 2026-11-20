@@ -40,13 +40,13 @@ public sealed class NoticeLayer(HostWindow window, WindowScope scope, CoreWebVie
 		return ShowAsync(new { id = _nextId++, text }, NoticeHeight, NoticeMs);
 	}
 
-	/// <summary>A page took the whole screen: which site has it, and that Esc gives it back (FullScreenHint).</summary>
-	public Task ShowFullScreenHintAsync(string url)
+	/// <summary>The window went fullscreen: which site has it, or that F11 did it, and how to leave (FullScreenHint).</summary>
+	public Task ShowFullScreenHintAsync(string text)
 	{
 		EndOffer();
 		_atTop = true;
 		_hintWithdrawn = false;
-		return ShowAsync(new { id = _nextId++, text = FullScreenHint.Text(url) }, NoticeHeight, NoticeMs);
+		return ShowAsync(new { id = _nextId++, text }, NoticeHeight, NoticeMs);
 	}
 
 	/// <summary>The page left fullscreen, or the Exit full screen button took the hint's place: the hint goes, while any other notice stays.</summary>

@@ -48,6 +48,7 @@ export type CustomId =
 	| 'sleeping-tabs'
 	| 'vault'
 	| 'privacy-banner'
+	| 'site-notifications'
 	| 'clear-session'
 	| 'recent-tools'
 	| 'account'
@@ -321,6 +322,7 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 			detail: "For Zing's own lookups. System-wide is in Network & VPN.",
 			control: { kind: 'menu', options: options(DOH_PROVIDERS, DOH_LABELS) },
 		},
+		{ type: 'custom', id: 'site-notifications', keys: [] },
 		{ type: 'custom', id: 'recent-tools', keys: ['recentFeatures'] },
 		{ type: 'custom', id: 'clear-session', keys: [] },
 	],

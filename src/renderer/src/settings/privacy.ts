@@ -42,6 +42,14 @@ export function setLibraryKeepsIcons(keeps: boolean): void {
 	libraryKeepsIcons = keeps
 }
 
+// Notification grants the person asked to remember are kept in a file the host deletes with the last one; the Settings sheet watches them.
+let siteGrantsKept = false
+
+/** Whether any site is remembered as allowed to show notifications. */
+export function setSiteGrantsKept(kept: boolean): void {
+	siteGrantsKept = kept
+}
+
 // The crash log (renderer and engine crashes) holds no browsing, only when Zing crashed, how, and its version, but it is a file Zing
 // wrote, so it counts while it is on disk. The Settings sheet asks the host when it opens, and About's Clear crash log sets it back.
 let crashLogKept = false
@@ -58,6 +66,7 @@ const conditions: StoresDataCondition[] = [
 	{ id: 'imported', active: () => libraryHoldsImports, what: 'imported bookmarks', plural: true },
 	{ id: 'bookmarkIcons', active: () => libraryKeepsIcons, what: 'icons of bookmarked sites you visited', plural: true },
 	{ id: 'crashLog', active: () => crashLogKept, what: 'a crash log (times and exit codes only)' },
+	{ id: 'siteGrants', active: () => siteGrantsKept, what: 'sites allowed to show notifications', plural: true },
 ]
 
 export class DuplicateConditionError extends Error {
