@@ -6,6 +6,7 @@
 	"startShortcuts": null,
 	"searchEngine": "google",
 	"blockTrackers": true,
+	"smartScreen": true,
 	"defaultQuality": 80,
 	"preserveOriginals": true,
 	"dohProvider": "cloudflare",
