@@ -42,12 +42,22 @@ export function setLibraryKeepsIcons(keeps: boolean): void {
 	libraryKeepsIcons = keeps
 }
 
+// The crash log (renderer and engine crashes) holds no browsing, only when Zing crashed, how, and its version, but it is a file Zing
+// wrote, so it counts while it is on disk. The Settings sheet asks the host when it opens, and About's Clear crash log sets it back.
+let crashLogKept = false
+
+/** Whether the local crash log is on disk. */
+export function setCrashLogKept(kept: boolean): void {
+	crashLogKept = kept
+}
+
 const conditions: StoresDataCondition[] = [
 	{ id: 'persistentProfile', active: (s) => s.persistentProfile, what: 'cookies and cache', plural: true },
 	{ id: 'restoreTabs', active: (s) => s.restoreTabs, what: 'your open tabs', plural: true },
 	{ id: 'vault', active: () => vaultKeepsData, what: 'saved passwords', plural: true },
 	{ id: 'imported', active: () => libraryHoldsImports, what: 'imported bookmarks', plural: true },
 	{ id: 'bookmarkIcons', active: () => libraryKeepsIcons, what: 'icons of bookmarked sites you visited', plural: true },
+	{ id: 'crashLog', active: () => crashLogKept, what: 'a crash log (times and exit codes only)' },
 ]
 
 export class DuplicateConditionError extends Error {
