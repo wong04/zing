@@ -8,16 +8,42 @@ public interface IPermissionResolver
 
 public sealed record PermissionDetails(string? RequestingUrl = null, IReadOnlyList<string>? MediaTypes = null);
 
+public sealed class NotAWebSiteException(string origin) : Exception($"Only a web site can be allowed pop-ups for the session, not {origin}");
+
+public sealed class NotAPopupPromptException(string kind) : Exception($"Only a blocked pop-up can be allowed for the site, not a {kind} prompt");
+
+/// <summary>The sites allowed to open pop-ups without a click, for this run of Zing only: nothing is saved. Shared by every window.</summary>
+public sealed class PopupSites
+{
+	private readonly HashSet<string> _origins = [];
+	private readonly Lock _lock = new();
+
+	public bool Allows(string origin)
+	{
+		lock (_lock) return _origins.Contains(origin);
+	}
+
+	public void Allow(string origin)
+	{
+		lock (_lock) _origins.Add(origin);
+	}
+}
+
 /// <summary>
-/// Port of src/main/permissions.ts. Camera, microphone, location and notifications are asked
-/// for in the page UI; other permissions are refused except the few ordinary pages need. A
-/// grant lasts as long as the page (tab), never longer. Permission names are Electron's
+/// Port of src/main/permissions.ts. Camera, microphone, location, notifications, clipboard reads,
+/// multiple automatic downloads and file edits (File System Access) are asked for in the page UI;
+/// other permissions (local fonts, window management, MIDI, sensors, local network access, ...) are
+/// refused without asking, except the few ordinary pages need. A grant lasts as long as the page
+/// (tab), never longer. A pop-up opened without a click is blocked and offered here too. Permission names are Electron's
 /// ('media' with <c>MediaTypes</c> 'video'/'audio', 'geolocation', 'notifications', ...); the
 /// host maps WebView2's kinds onto them.
 /// </summary>
 /// <param name="hiddenTabOf">The title of the tab a page belongs to when that tab isn't on screen; null when it is shown.</param>
-public sealed class PermissionBroker(PageUiStore ui, Func<object, string?> hiddenTabOf)
+/// <param name="popupSites">The session's sites allowed pop-ups, shared by the app's windows.</param>
+public sealed class PermissionBroker(PageUiStore ui, Func<object, string?> hiddenTabOf, PopupSites? popupSites = null)
 {
+	private readonly PopupSites _popupSites = popupSites ?? new PopupSites();
+
 	private static readonly IReadOnlySet<string> AlwaysAllowed = new HashSet<string> { "fullscreen", "clipboard-sanitized-write", "pointerLock" };
 
 	private sealed record Pending(int Id, object Page, string Origin, string Kind, IReadOnlyList<string> Grants, IPermissionResolver Resolver);
@@ -68,6 +94,36 @@ public sealed class PermissionBroker(PageUiStore ui, Func<object, string?> hidde
 		}
 		_queue.Add(new Pending(_nextId++, page, origin, kind, grants, resolver));
 		ShowNext();
+	}
+
+	/// <summary>Whether the page's site was allowed pop-ups for this session, so one it opens without a click isn't blocked.</summary>
+	public bool PopupsAllowed(string pageUrl) => _popupSites.Allows(OriginOf(pageUrl));
+
+	/// <summary>
+	/// The page opened a pop-up without a click and it was refused. The prompt offers to open it; <paramref name="open"/> is
+	/// resolved true to open it, false if it stays blocked. A page has one on offer at a time, so a flood of them asks once.
+	/// </summary>
+	public void PopupBlocked(object page, string pageUrl, IPermissionResolver open)
+	{
+		if (_queue.Any(p => ReferenceEquals(p.Page, page) && p.Kind == PermissionKinds.Popups))
+		{
+			open.Resolve(false);
+			return;
+		}
+		_queue.Add(new Pending(_nextId++, page, OriginOf(pageUrl), PermissionKinds.Popups, [], open));
+		ShowNext();
+	}
+
+	/// <summary>`permission:allow-site`: opens the blocked pop-up, and the site's later ones open too until Zing quits.</summary>
+	public void AllowForSite(int id)
+	{
+		var at = _queue.FindIndex(p => p.Id == id);
+		if (at == -1) return;
+		var pending = _queue[at];
+		if (pending.Kind != PermissionKinds.Popups) throw new NotAPopupPromptException(pending.Kind);
+		if (!pending.Origin.StartsWith("http", StringComparison.Ordinal)) throw new NotAWebSiteException(pending.Origin);
+		_popupSites.Allow(pending.Origin);
+		Answer(id, true);
 	}
 
 	public bool Check(object? page, string permission, string origin, string? mediaType)
@@ -129,6 +185,9 @@ public sealed class PermissionBroker(PageUiStore ui, Func<object, string?> hidde
 		"media" => MediaKind(types),
 		"geolocation" => PermissionKinds.Location,
 		"notifications" => PermissionKinds.Notifications,
+		"clipboard-read" => PermissionKinds.Clipboard,
+		"multiple-automatic-downloads" => PermissionKinds.MultipleDownloads,
+		"file-read-write" => PermissionKinds.Files,
 		_ => null,
 	};
 

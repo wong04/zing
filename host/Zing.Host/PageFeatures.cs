@@ -11,6 +11,10 @@ public interface IPageFeatureHost
 	/// <summary>Where downloads go; also the engine's own default, so it never looks in the user's real Downloads folder for names.</summary>
 	string DownloadsDirectory { get; }
 	void PermissionRequested(WebView2Page page, CoreWebView2PermissionRequestedEventArgs e);
+	/// <summary>Whether the page's site was allowed pop-ups this session, so one opened without a click opens.</summary>
+	bool PopupsAllowed(WebView2Page page);
+	/// <summary>The page opened a pop-up to <paramref name="url"/> without a click, and the engine was told no: the person is offered it.</summary>
+	void PopupBlocked(WebView2Page page, string url);
 	/// <summary>The page went to a new document or closed: its session-only grants and queued prompts go.</summary>
 	void Left(WebView2Page page);
 	/// <summary>An element of the page entered or left fullscreen (a video's fullscreen button, requestFullscreen).</summary>
@@ -96,7 +100,7 @@ public sealed class PermissionDeferral(CoreWebView2PermissionRequestedEventArgs 
 		deferral.Complete();
 	}
 
-	/// <summary>WebView2's kinds in Electron's names, which the broker and its prompts use; anything else is refused.</summary>
+	/// <summary>WebView2's kinds in Electron's names, which the broker and its prompts use; the broker refuses anything it doesn't name.</summary>
 	public static (string Permission, PermissionDetails Details) Describe(CoreWebView2PermissionRequestedEventArgs e) => e.PermissionKind switch
 	{
 		CoreWebView2PermissionKind.Camera => ("media", new PermissionDetails(e.Uri, ["video"])),
@@ -104,6 +108,8 @@ public sealed class PermissionDeferral(CoreWebView2PermissionRequestedEventArgs 
 		CoreWebView2PermissionKind.Geolocation => ("geolocation", new PermissionDetails(e.Uri)),
 		CoreWebView2PermissionKind.Notifications => ("notifications", new PermissionDetails(e.Uri)),
 		CoreWebView2PermissionKind.ClipboardRead => ("clipboard-read", new PermissionDetails(e.Uri)),
+		CoreWebView2PermissionKind.MultipleAutomaticDownloads => ("multiple-automatic-downloads", new PermissionDetails(e.Uri)),
+		CoreWebView2PermissionKind.FileReadWrite => ("file-read-write", new PermissionDetails(e.Uri)),
 		var other => (other.ToString(), new PermissionDetails(e.Uri)),
 	};
 }

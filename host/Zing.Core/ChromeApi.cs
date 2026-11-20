@@ -24,7 +24,12 @@ public interface IWindowHost
 	/// <summary>The offer left the screen on its own: it timed out, or another notice replaced it.</summary>
 	event Action OfferEnded;
 	void NewWindow();
+	/// <summary>The person closing the window (Ctrl+Shift+W): it may ask first.</summary>
 	void CloseWindow();
+	/// <summary>Opens the last window the person closed, app-wide; false when none is left.</summary>
+	bool ReopenClosedWindow();
+	/// <summary>Quits Zing (Ctrl+Shift+Q): every window closes together and all of them are saved, asking once at most.</summary>
+	void Quit();
 	/// <summary>The chrome insets or the surface changed; put the page and layers where they now go.</summary>
 	void Relayout();
 	void FocusChrome();
@@ -64,6 +69,8 @@ public interface IWindowHost
 	IDownloadHost DownloadHost { get; }
 	/// <summary>Shows the native open dialog for these extensions (none means every file) and returns what the person picked; empty if they cancelled. An e2e run shows no dialog.</summary>
 	Task<IReadOnlyList<string>> PickFilesAsync(IReadOnlyList<string> extensions);
+	/// <summary>Shows the native Save dialog with this name and type; null if they cancelled. An e2e run shows no dialog: it takes the next queued pick, one path or none.</summary>
+	Task<string?> PickSaveFileAsync(string suggestedName, string extension, string kind);
 	/// <summary>Puts these files on the clipboard as files (CF_HDROP), so Explorer can paste them. Called on the UI thread; throws if the clipboard can't be written. An e2e run leaves the real clipboard alone.</summary>
 	void CopyFilesToClipboard(IReadOnlyList<string> paths);
 	/// <summary>Where a copied password goes (Ruling 41). An e2e run never touches the real clipboard.</summary>
@@ -113,6 +120,9 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 
 	/// <summary>The open vault's one sync client, for every window; null without <see cref="Sync"/>.</summary>
 	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync, Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable), SyncScheduler, Clock);
+
+	/// <summary>The sites allowed pop-ups this session, in every window.</summary>
+	public PopupSites PopupSites { get; } = new();
 }
 
 /// <summary>
@@ -208,7 +218,7 @@ public sealed class ChromeApi : IDisposable
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
-		Permissions = new PermissionBroker(PageUi, HiddenTabOf);
+		Permissions = new PermissionBroker(PageUi, HiddenTabOf, app.PopupSites);
 		_secretCopy = new TimedSecretCopy(host.SecretClipboard, host.Scheduler, error => host.Report("clearing a copied password", error));
 		SignIn = new SignInWatch(() => app.Vaults.Current, id => Tabs.IsShown(id), host.Scheduler, prompt => PageUi.Update(s => s with { SaveLogin = prompt }), host.Background);
 		Autofill = new Autofill(() => app.Vaults.Current, id => Tabs.IsShown(id) ? Tabs.PageOf(id) : null, picker =>
@@ -418,6 +428,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("downloads:dismiss", _ => Do(Downloads.Dismiss));
 		bridge.Register("permission:allow", args => Do(() => Permissions.Answer(Int(args, 0), true)));
 		bridge.Register("permission:deny", args => Do(() => Permissions.Answer(Int(args, 0), false)));
+		bridge.Register("permission:allow-site", args => Do(() => Permissions.AllowForSite(Int(args, 0))));
 
 		bridge.Register("vault:get", async _ => await CheckedVaultStateAsync());
 		bridge.Register("vault:summaries", _ => Vault().Summaries());
@@ -434,7 +445,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("vault:never-saves", _ => Vault().NeverSaves());
 		bridge.Register("vault:remove-never-save", args => Do(() => Vault().RemoveNeverSave(Text(args, 0))));
 		bridge.Register("vault:fill", async args => await TellingSetUpAgainAsync("Couldn't fill the password", () => Autofill.FillAsync(Text(args, 0), Text(args, 1))));
-		bridge.Register("vault:answer-save", async args => await TellingSetUpAgainAsync("Couldn't save the password", () => SignIn.AnswerAsync(Text(args, 0), Text(args, 1))));
+		bridge.Register("vault:answer-save", async args => await TellingSetUpAgainAsync("Couldn't save the password", () => SavingWithHelloAsync(Text(args, 0), Text(args, 1))));
 		bridge.Register("sync:get", _ => CurrentSyncState());
 		bridge.Register("sync:sign-in", async _ => await SignInToSyncAsync());
 		bridge.Register("sync:sign-out", async _ => await SignOutOfSyncAsync());
@@ -484,6 +495,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("import:cancel-watch", _ => Do(importApi.CancelWatch));
 		bridge.Register("import:recycle", args => Do(() => importApi.Recycle(Text(args, 0))));
 		bridge.Register("import:take-pending", _ => importApi.TakePending());
+		bridge.Register("import:export-bookmarks", async _ => await ExportBookmarksAsync());
 		_watchedVault = app.Vaults.Current;
 		if (_watchedVault is { } vault) Watch(vault);
 		app.Vaults.Changed += VaultSwitched;
@@ -702,12 +714,14 @@ public sealed class ChromeApi : IDisposable
 			"library.readingList" => Act(true, () => SetLibraryPanel(_libraryPanel == "readingList" ? null : "readingList")),
 			"tab.new" => Act(true, NewTab),
 			"tab.close" => Tabs.Preview is not null ? Act(true, Tabs.ClosePreview) : Act(Tabs.ActiveId is not null, () => Tabs.Close(Tabs.ActiveId!)),
-			"tab.reopenClosed" => Tabs.ReopenClosed() is null ? NotApplicable : Done,
+			// The window's own closed tabs first, then the windows closed app-wide.
+			"tab.reopenClosed" => Tabs.ReopenClosed() is not null || _host.ReopenClosedWindow() ? Done : NotApplicable,
 			"tab.split" => Act(Tabs.ActiveId is { } splitting && Tabs.Splits.Of(splitting) is not { TabIds.Count: >= Split.MaxPanes }, SplitWithNewTab),
 			"tab.next" => ActivateIfAny(Tabs.NextId()),
 			"tab.previous" => ActivateIfAny(Tabs.PreviousId()),
 			"window.new" => Act(true, _host.NewWindow),
 			"window.close" => Act(true, _host.CloseWindow),
+			"app.quit" => Act(true, _host.Quit),
 			"location.open" => Act(true, FocusAddress),
 			"history.back" => Act(page is { CanGoBack: true }, () => page!.GoBack()),
 			"history.forward" => Act(page is { CanGoForward: true }, () => page!.GoForward()),
@@ -1035,6 +1049,20 @@ public sealed class ChromeApi : IDisposable
 		}
 	}
 
+	/// <summary>The prompt only opens with Hello set up, but Hello may have gone since: the person is told why nothing was saved.</summary>
+	private async Task<string> SavingWithHelloAsync(string pageId, string answer)
+	{
+		try
+		{
+			return await SignIn.AnswerAsync(pageId, answer);
+		}
+		catch (HelloUnavailableException error)
+		{
+			_host.Notify($"Couldn't save the password. {error.Message.TrimEnd('.')}.");
+			return SaveOutcomes.Unavailable;
+		}
+	}
+
 	/// <summary>A summary edit needs no Hello prompt, but is refused without Hello: Hello set up since it was last checked counts.</summary>
 	private async Task<object?> WithHelloCheckedAsync(Action<VaultStore> edit)
 	{
@@ -1128,6 +1156,15 @@ public sealed class ChromeApi : IDisposable
 	{
 		var logins = await Vault().ExportAsync();
 		return Grants.Issue(VaultCsv.SaveExport(_placement, _host.DownloadsDirectory, logins));
+	}
+
+	private async Task<BookmarkExportOutcome?> ExportBookmarksAsync()
+	{
+		var path = await _host.PickSaveFileAsync(BookmarkExport.SuggestedFileName, "html", "Bookmarks HTML");
+		if (path is null) return null;
+		var library = _app.Library.Snapshot;
+		JsonFiles.WriteAllBytesAtomic(path, System.Text.Encoding.UTF8.GetBytes(BookmarkExport.Write(library)));
+		return new BookmarkExportOutcome(Path.GetFileName(path), BookmarkExport.CountLinks(library));
 	}
 
 	/// <summary>
@@ -1876,8 +1913,27 @@ public sealed class ChromeApi : IDisposable
 	/// <summary>The title of the tab whose page this is, when that tab isn't on screen.</summary>
 	private string? HiddenTabOf(object page)
 	{
-		var tab = Tabs.Records.FirstOrDefault(r => ReferenceEquals(Tabs.PageOf(r.Id), page));
+		var tab = TabOf(page);
 		return tab is null || Tabs.IsShown(tab.Id) ? null : tab.Title;
+	}
+
+	private TabRecord? TabOf(object page) => Tabs.Records.FirstOrDefault(r => ReferenceEquals(Tabs.PageOf(r.Id), page));
+
+	/// <summary>
+	/// The page opened a pop-up without a click, which the engine was told not to open. If the person opens it from the
+	/// prompt it becomes a tab beside the page's (a preview's page has none, so at the end); it has no window.opener then.
+	/// </summary>
+	public void PopupBlocked(object page, string pageUrl, string popupUrl) =>
+		Permissions.PopupBlocked(page, pageUrl, new BlockedPopup(this, page, popupUrl));
+
+	private sealed class BlockedPopup(ChromeApi api, object page, string url) : IPermissionResolver
+	{
+		public void Resolve(bool granted)
+		{
+			if (!granted) return;
+			if (api.TabOf(page) is { } opener) api.Tabs.OpenBeside(opener.Id, url);
+			else api.Tabs.Open(url);
+		}
 	}
 
 	private void OnTabsChanged()

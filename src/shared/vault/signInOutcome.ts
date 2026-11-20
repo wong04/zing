@@ -5,10 +5,11 @@
 export const signInLimits = { usernameMax: 512, passwordMax: 1024, holdMs: 10_000, settleChecks: 5, watchMs: 120_000, usernameStepMs: 300_000 } as const
 
 /**
- * `success`: the page the browser landed on, in the origin the form was submitted from, has no visible password box.
- * `failed`: that page shows a password box again, so the sign-in page came back. `pending`: it landed in another origin
- * (a redirect on the way, or somewhere Zing was never asked about), which says nothing either way; the held sign-in waits
- * for the next landing or for its time to run out.
+ * `success`: the page the browser landed on, in the origin the form was submitted from, has no visible password box; or it
+ * is another origin of the same site with none (an SSO sign-in, auth.x.com to app.x.com). `failed`: the form's own origin
+ * shows a password box again, so the sign-in page came back. `pending`: any other landing (a redirect on the way, or
+ * somewhere Zing was never asked about), which says nothing either way; the held sign-in waits for the next landing or for
+ * its time to run out.
  */
 export type SignInOutcome = 'success' | 'failed' | 'pending'
 
@@ -21,7 +22,8 @@ export function promptWithdrawn(promptOrigin: string, landedOrigin: string, hasV
 	return landedOrigin === promptOrigin && hasVisiblePasswordBox
 }
 
-export function signInOutcome(submittedOrigin: string, landedOrigin: string, hasVisiblePasswordBox: boolean): SignInOutcome {
-	if (landedOrigin !== submittedOrigin) return 'pending'
-	return hasVisiblePasswordBox ? 'failed' : 'success'
+/** `sameSite`: whether the two origins are one site by the full Public Suffix List, which only the host has (SignInOutcomes.SameSite). */
+export function signInOutcome(submittedOrigin: string, landedOrigin: string, sameSite: boolean, hasVisiblePasswordBox: boolean): SignInOutcome {
+	if (landedOrigin === submittedOrigin) return hasVisiblePasswordBox ? 'failed' : 'success'
+	return sameSite && !hasVisiblePasswordBox ? 'success' : 'pending'
 }

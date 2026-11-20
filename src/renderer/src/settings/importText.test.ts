@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { exportMenuPath, fileHelp, InvalidPasswordImportEventError, macBrowsers, outcomeLine, PASSWORDS_FILE_VAULT_OFF, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, type PasswordImportEvent, type PasswordImportState } from './importText'
+import { exportLine, exportMenuPath, fileHelp, InvalidPasswordImportEventError, macBrowsers, outcomeLine, PASSWORDS_FILE_VAULT_OFF, passwordImportAccepts, passwordImportFailureApplies, passwordImportStep, type PasswordImportEvent, type PasswordImportState } from './importText'
 
 const outcome = (patch: Partial<Parameters<typeof outcomeLine>[0]> = {}) => ({
 	folderTitle: 'Imported from Chrome (Personal)',
@@ -7,6 +7,13 @@ const outcome = (patch: Partial<Parameters<typeof outcomeLine>[0]> = {}) => ({
 	addedToFolder: 0,
 	skipped: [],
 	...patch,
+})
+
+describe('exportLine', () => {
+	it('names the file and counts the bookmarks', () => {
+		expect(exportLine({ name: 'Zing bookmarks.html', bookmarks: 12 })).toBe('Saved 12 bookmarks to Zing bookmarks.html.')
+		expect(exportLine({ name: 'b.html', bookmarks: 1 })).toBe('Saved 1 bookmark to b.html.')
+	})
 })
 
 describe('outcomeLine', () => {

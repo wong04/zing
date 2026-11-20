@@ -51,6 +51,21 @@ On Windows 10, Zing needs Microsoft's WebView2 runtime, which most PCs already h
 
 Zing stores nothing until you turn something on. The password vault and its sync are both off by default, and the Settings privacy banner turns to a warning once the vault holds a login. The banner follows what is on this PC only, so turning on sync doesn't change it; this section is where sync's data leaving the PC is described.
 
+### What goes over the network on its own
+
+Besides the sites you visit, these are the requests Zing and its engine make without you asking:
+
+- **SmartScreen, to Microsoft.** Microsoft Defender SmartScreen is on by default in WebView2. It checks the addresses of the pages you visit and the files you download against Microsoft's list of known threats, which sends them to Microsoft ([WebView2 data and privacy](https://learn.microsoft.com/microsoft-edge/webview2/concepts/data-privacy)). Turn it off in Settings > Privacy > **Check sites and downloads with SmartScreen**; it applies from the next launch. Windows' own "SmartScreen for Microsoft Edge" setting can turn it off too.
+- **WebView2 diagnostic data, to Microsoft.** The engine always sends Microsoft the diagnostic data it calls required, and crash reports when one of its processes crashes. It sends optional diagnostic data only when Windows' **Settings > Privacy & security > Diagnostics & feedback > Diagnostic data** is on. Zing can't turn the required data off.
+- **WebView2 runtime updates, from Microsoft.** The Evergreen runtime Zing runs on keeps itself up to date through Microsoft Edge's updater, as Edge does.
+- **The update check, to GitHub.** An installed Zing asks GitHub for its latest release 30 seconds after launch and then every 4 hours, and downloads an update from there when one is out. It sends nothing about you. Turn it off in Settings > About.
+- **The New Tab page.** It warms up a connection to your search engine and looks up the addresses of your shortcut sites in DNS, so they open faster. Nothing is sent to those sites until you search or click.
+- **Sync, to the Zing server, only if you turn it on.** It syncs every 5 minutes and when the vault changes. What it sends is below.
+
+Everything else, such as Encrypted DNS lookups in Open a Link and Diagnose, happens only when you use that tool.
+
+### Password sync
+
 If you turn on sync, your passwords go to a small Zing server (`server/`, run on Railway). You sign in to it with Google only, and the server accepts just the Google accounts on its allow-list.
 
 - **What the server stores:** your Google account ID (the `sub`, not your email), a random ID of its own for you, your keys wrapped by your Zing password and your recovery key, your account name and email as ciphertext, and a sealed list of your logins. Per login it keeps an ID, a version number, a revision number, whether it is deleted, the encrypted data, and the time the server received the write. It also keeps a hash of each sign-in refresh token.
@@ -64,6 +79,7 @@ If you forget the password, the recovery key restores your vault. Without both, 
 
 ## Known limits
 
+- **Sync covers passwords only.** Bookmarks, Favourites, Pinned and settings stay on this PC.
 - **Mica.** Solid tab cards cover the window, so Windows' Mica material isn't visible behind Zing's sidebar.
 - **Ad blocking is by server, not by element.** Zing refuses requests to the servers EasyList and EasyPrivacy name, but doesn't read their path, per-site or element-hiding rules. An ad a site serves from its own address still shows, and a refused ad can leave an empty box. Extensions such as uBlock Origin Lite load in WebView2 but don't block in the in-memory profile Zing browses with.
 

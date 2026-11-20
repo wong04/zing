@@ -153,6 +153,16 @@ public sealed class FakeWindowHost : IWindowHost
 		return Task.FromResult(PickedPaths);
 	}
 
+	/// <summary>What the Save dialog "returns"; null is a cancel. The name it suggested is kept.</summary>
+	public string? SavePath { get; set; }
+	public string? SuggestedSaveName { get; private set; }
+
+	public Task<string?> PickSaveFileAsync(string suggestedName, string extension, string kind)
+	{
+		SuggestedSaveName = suggestedName;
+		return Task.FromResult(SavePath);
+	}
+
 	/// <summary>The paths of each copy to the clipboard.</summary>
 	public List<IReadOnlyList<string>> CopiedFiles { get; } = [];
 	public Exception? ClipboardFailure { get; set; }
@@ -180,6 +190,18 @@ public sealed class FakeWindowHost : IWindowHost
 	public void EndOffer() => OfferEnded?.Invoke();
 	public void NewWindow() => NewWindows++;
 	public void CloseWindow() => Closes++;
+	/// <summary>How many closed windows ReopenClosedWindow has left to open.</summary>
+	public int ClosedWindows { get; set; }
+	public int WindowReopens { get; private set; }
+	public int Quits { get; private set; }
+	public void Quit() => Quits++;
+	public bool ReopenClosedWindow()
+	{
+		if (ClosedWindows == 0) return false;
+		ClosedWindows--;
+		WindowReopens++;
+		return true;
+	}
 	public void Relayout() => Relayouts++;
 	public void FocusChrome() { }
 	public void FocusSurface() { }

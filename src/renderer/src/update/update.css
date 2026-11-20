@@ -8,3 +8,13 @@
 .update-pill .pill-button {
 	box-shadow: var(--elevation-strong);
 }
+
+.update-pill-note {
+	opacity: 0.8;
+	font-weight: normal;
+}
+
+.update-pill-note::before {
+	content: '·';
+	margin-inline-end: 6px;
+}

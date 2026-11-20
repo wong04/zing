@@ -23,6 +23,19 @@ public sealed class PermissionHost(Func<ChromeApi?> api)
 		chrome.Permissions.Request(page, page.Url, permission, details, new PermissionDeferral(e, e.GetDeferral()));
 	}
 
+	/// <summary>Without the window's API no site has been allowed pop-ups yet.</summary>
+	public bool PopupsAllowed(WebView2Page page) => api()?.Permissions.PopupsAllowed(page.Url) ?? false;
+
+	public void PopupBlocked(WebView2Page page, string url)
+	{
+		if (api() is not { } chrome)
+		{
+			TestHooks.Record("popup", new InvalidOperationException($"A pop-up was blocked before the window's API ({url})"));
+			return;
+		}
+		chrome.PopupBlocked(page, page.Url, url);
+	}
+
 	/// <summary>The page went to a new document or closed: its session-only grants and queued prompts go.</summary>
 	public void Left(WebView2Page page) => api()?.Permissions.DropFor(page);
 }

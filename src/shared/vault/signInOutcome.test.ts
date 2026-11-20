@@ -3,8 +3,8 @@ import { promptWithdrawn, signInLimits, signInOutcome } from './signInOutcome'
 import vectors from './signInOutcome.vectors.json'
 
 describe('whether a sign-in worked', () => {
-	it.each(vectors.outcomes)('$name', ({ submitted, landed, hasVisiblePasswordBox, expected }) => {
-		expect(signInOutcome(submitted, landed, hasVisiblePasswordBox)).toBe(expected)
+	it.each(vectors.outcomes)('$name', ({ submitted, landed, sameSite, hasVisiblePasswordBox, expected }) => {
+		expect(signInOutcome(submitted, landed, sameSite, hasVisiblePasswordBox)).toBe(expected)
 	})
 })
 

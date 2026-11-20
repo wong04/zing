@@ -288,6 +288,26 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
+	public async Task Quit_goes_to_the_host()
+	{
+		Assert.Equal("done", Value(await Invoke("command:run", "app.quit")).GetProperty("status").GetString());
+		Assert.Equal(1, _host.Quits);
+	}
+
+	[Fact]
+	public async Task Reopen_closed_brings_back_the_windows_closed_tabs_first_then_a_closed_window()
+	{
+		_host.ClosedWindows = 1;
+		Value(await Invoke("tabs:open-link", "https://example.com/"));
+		Value(await Invoke("tabs:close", _api.Tabs.Records.Single(t => t.Url == "https://example.com/").Id));
+		Assert.Equal("done", Value(await Invoke("command:run", "tab.reopenClosed")).GetProperty("status").GetString());
+		Assert.Equal(0, _host.WindowReopens);
+		Assert.Equal("done", Value(await Invoke("command:run", "tab.reopenClosed")).GetProperty("status").GetString());
+		Assert.Equal(1, _host.WindowReopens);
+		Assert.Equal("not-applicable", Value(await Invoke("command:run", "tab.reopenClosed")).GetProperty("status").GetString());
+	}
+
+	[Fact]
 	public void Insets_follow_the_tab_bar_position_and_the_rail_width()
 	{
 		_settings.Set("showFavouritesBar", false);
@@ -536,6 +556,36 @@ public sealed class ChromeApiTests : IDisposable
 
 		Assert.Equal([false], answers.Given);
 		Assert.Equal(pushedBefore, host.Pushed.Count);
+	}
+
+	[Fact]
+	public async Task A_blocked_popup_opened_from_its_prompt_is_a_tab_beside_the_page_and_allowing_the_site_lasts_the_session()
+	{
+		var openerId = ActiveId;
+		var page = _api.Tabs.ActivePage!;
+		_api.Tabs.Open("https://other.test/");
+		_api.Tabs.Activate(openerId);
+		_api.PopupBlocked(page, "https://a.test/", "https://a.test/popup");
+		Assert.Equal("pop-ups", _api.PageUi.State.Permission?.Kind);
+		Value(await Invoke("permission:allow", _api.PageUi.State.Permission!.Id));
+		Assert.Equal("https://a.test/popup", _api.Tabs.Get(ActiveId).Url);
+		Assert.Equal(_api.Tabs.Records.ToList().FindIndex(r => r.Id == openerId) + 1, _api.Tabs.Records.ToList().FindIndex(r => r.Id == ActiveId));
+		Assert.False(_api.Permissions.PopupsAllowed("https://a.test/"));
+
+		_api.PopupBlocked(page, "https://a.test/", "https://a.test/again");
+		Value(await Invoke("permission:allow-site", _api.PageUi.State.Permission!.Id));
+		Assert.Equal("https://a.test/again", _api.Tabs.Get(ActiveId).Url);
+		Assert.True(_api.Permissions.PopupsAllowed("https://a.test/x"));
+	}
+
+	[Fact]
+	public void A_blocked_popup_kept_blocked_opens_no_tab()
+	{
+		var before = _api.Tabs.Records.Count;
+		_api.PopupBlocked(_api.Tabs.ActivePage!, "https://a.test/", "https://a.test/popup");
+		_api.Permissions.Answer(_api.PageUi.State.Permission!.Id, false);
+		Assert.Equal(before, _api.Tabs.Records.Count);
+		Assert.Null(_api.PageUi.State.Permission);
 	}
 
 	[Fact]

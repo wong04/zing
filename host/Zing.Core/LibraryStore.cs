@@ -151,9 +151,9 @@ public sealed class LibraryStore
 		Library.Find(id, Snapshot.Bookmarks) is { } node ? Library.Urls(node) : [];
 
 	/// <summary>Merges what a parser read into the library: it only adds (see <see cref="ImportMerge.Merge"/>).</summary>
-	public MergeOutcome Import(BookmarkImport result, string source)
+	public MergeOutcome Import(BookmarkImport result, string source, string label)
 	{
-		var outcome = ImportMerge.Merge(Snapshot, result, source, _now(), _newId);
+		var outcome = ImportMerge.Merge(Snapshot, result, source, label, _now(), _newId);
 		if (!ReferenceEquals(outcome.Library, Snapshot)) Set(outcome.Library);
 		return outcome;
 	}

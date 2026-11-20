@@ -152,6 +152,7 @@ public sealed class SignInPopup : ISignInPopup
 			// As in every view (HostedView): Zing's vault is the only password manager (Ruling 5). The page is Google's, not Zing's UI.
 			core.Settings.IsPasswordAutosaveEnabled = false;
 			core.Settings.IsGeneralAutofillEnabled = false;
+			core.Settings.IsReputationCheckingRequired = HostedView.SmartScreen;
 			core.Settings.AreHostObjectsAllowed = false;
 			core.Settings.IsWebMessageEnabled = false;
 			core.Settings.AreDevToolsEnabled = TestHooks.IsEndToEndRun;

@@ -94,6 +94,49 @@ test('importing the same profile twice adds nothing the second time', async () =
 	await zing.close()
 })
 
+test('after the Chrome profile is renamed, importing it again adds nothing', async () => {
+	const root = localAppData([['Default', 'Personal', fixture('chromium-bookmarks.json')]])
+	const zing = await launch(root)
+	const sheet = await openImport(zing)
+	await importFrom(sheet, 'Chrome (Personal)')
+	await expect(row(sheet, 'Chrome (Personal)').getByRole('status')).toContainText('Added')
+	const first = await library(zing)
+	write(join(root, 'Google', 'Chrome', 'User Data', 'Local State'), JSON.stringify({ profile: { info_cache: { Default: { name: 'Work' } } } }))
+
+	await importFrom(sheet, 'Chrome (Personal)')
+	await expect(row(sheet, 'Chrome (Personal)').getByRole('status')).toContainText('Nothing new to import')
+	expect((await library(zing)).bookmarks).toEqual(first.bookmarks)
+	await zing.close()
+})
+
+const pickFile = (zing: Launched, file: string) =>
+	zing.chrome.evaluate((f) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'pick-files', files: [f] }), file)
+
+test('Export bookmarks saves the library as a bookmarks HTML file that imports back', async () => {
+	const zing = await launch(localAppData([['Default', 'Personal', fixture('chromium-bookmarks.json')]]))
+	const sheet = await openImport(zing)
+	await importFrom(sheet, 'Chrome (Personal)')
+	await expect(row(sheet, 'Chrome (Personal)').getByRole('status')).toContainText('Added')
+	const { bookmarks } = await library(zing)
+	const file = join(scratchDir('zing-bookmarks-export-'), 'export.html')
+	await pickFile(zing, file)
+
+	await section(sheet).getByRole('button', { name: 'Export…' }).click()
+	await expect(section(sheet).getByRole('status')).toContainText(`Saved ${links(bookmarks).length} bookmarks to export.html`)
+	const html = readFileSync(file, 'utf8')
+	expect(html).toMatch(/^<!DOCTYPE NETSCAPE-Bookmark-file-1>/)
+	expect(html).toContain('PERSONAL_TOOLBAR_FOLDER="true"')
+
+	await pickFile(zing, file)
+	await section(sheet).getByRole('button', { name: 'Bookmarks file…' }).last().click()
+	await expect(section(sheet).getByRole('status')).toContainText('export.html')
+	const after = (await library(zing)).bookmarks
+	const back = topFolder(after, 'Imported from export.html')
+	const rest = (nodes: readonly BookmarkNode[]): BookmarkNode[] => nodes.filter((n) => n.title !== 'Favourites')
+	expect(back && 'children' in back ? links(back.children) : []).toEqual(links(rest(bookmarks)))
+	await zing.close()
+})
+
 const macRow = (sheet: Page, app: string) => section(sheet).getByRole('group', { name: `${app} on a Mac`, exact: true })
 
 test('a bookmarks file from Safari imports into a folder named after the file', async () => {

@@ -19,7 +19,7 @@ export interface DownloadEntry {
 	readonly error?: string
 }
 
-export type PermissionKind = 'camera' | 'microphone' | 'camera and microphone' | 'location' | 'notifications'
+export type PermissionKind = 'camera' | 'microphone' | 'camera and microphone' | 'location' | 'notifications' | 'clipboard' | 'multiple downloads' | 'files' | 'pop-ups'
 
 export interface PermissionPrompt {
 	readonly id: number
@@ -42,8 +42,8 @@ export interface SaveLoginPrompt {
 
 export type SaveAnswer = 'save' | 'not-now' | 'never'
 
-/** `cancelled`: Windows Hello was cancelled or unavailable, so nothing was stored. `gone`: the prompt had already closed. */
-export type SaveOutcome = 'saved' | 'updated' | 'dismissed' | 'cancelled' | 'gone'
+/** `cancelled`: Windows Hello was cancelled, so nothing was stored. `unavailable`: Hello can't be used, nothing was stored and the host told the person why. `gone`: the prompt had already closed. */
+export type SaveOutcome = 'saved' | 'updated' | 'dismissed' | 'cancelled' | 'unavailable' | 'gone'
 
 export interface PageUiState {
 	readonly find: FindState | undefined

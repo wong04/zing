@@ -449,6 +449,18 @@ document.addEventListener('submit', (e) => {
 })
 </script>`
 
+// The sign-in form inside a web component's open shadow root: its submit event never leaves the shadow root, and the
+// document sees its clicks and keys retargeted to the component.
+const SHADOW = `<!doctype html><title>Sign in</title><zing-login></zing-login>
+<script>
+customElements.define('zing-login', class extends HTMLElement {
+	constructor() {
+		super()
+		this.attachShadow({ mode: 'open' }).innerHTML = ${JSON.stringify(SIGN_IN_FORM)}
+	}
+})
+</script>`
+
 let signInSite: Server
 let signInBase = ''
 
@@ -477,6 +489,7 @@ test.beforeAll(async () => {
 		if (url === '/spa') return void res.end(SPA)
 		if (url === '/spa-spinner') return void res.end(slowPage('spinner'))
 		if (url === '/spa-disabled') return void res.end(slowPage('disabled'))
+		if (url === '/shadow') return void res.end(SHADOW)
 		res.end(`<!doctype html><title>Sign in</title>${SIGN_IN_FORM}`)
 	})
 	await new Promise<void>((resolve) => signInSite.listen(0, '127.0.0.1', () => resolve()))
@@ -539,6 +552,25 @@ test('a successful sign-in to a new site prompts Save, and Save stores the login
 	expect(saved).toHaveLength(1)
 	expect(saved[0]).toMatchObject({ origin: signInBase, username: USERNAME })
 	expect(await zing.chrome.evaluate((id) => window.zing.revealPassword(id), saved[0]!.id)).toBe(PASSWORD)
+	await zing.close()
+})
+
+test('a sign-in form inside a shadow root prompts Save, and the saved login fills both of its boxes', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile(true) })
+	let page = await open(zing, `${signInBase}/shadow`)
+
+	// Playwright's CSS locators reach into open shadow roots.
+	await signIn(page, USERNAME, PASSWORD)
+
+	await expect.poll(() => savePrompt(zing)).toMatchObject({ kind: 'save', origin: signInBase, username: USERNAME })
+	await answer(zing, 'Save')
+	await expect.poll(async () => (await logins(zing)).length).toBe(1)
+
+	page = await open(zing, `${signInBase}/shadow`)
+	await page.click('#user')
+	await choose(await picker(zing), USERNAME)
+	await expect(page.locator('#user')).toHaveValue(USERNAME)
+	await expect(page.locator('#pass')).toHaveValue(PASSWORD)
 	await zing.close()
 })
 

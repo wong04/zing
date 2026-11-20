@@ -1,6 +1,6 @@
 import { zing } from '../api'
 
-/** Make default only opens Windows' Default apps page, so it isn't a dismissal: if Zing still isn't the default, the offer comes back next launch. */
+/** The host records the offer as asked when it shows, so either button, or none, ends it for good. */
 export function DefaultBrowserOffer() {
 	const makeDefault = async (): Promise<void> => {
 		await zing.openDefaultAppsSettings()
@@ -16,7 +16,7 @@ export function DefaultBrowserOffer() {
 					Make default
 				</button>
 				<button type="button" className="pill-button outlined small" onClick={() => void zing.dismissDefaultBrowserOffer()}>
-					Don't ask again
+					Not now
 				</button>
 			</div>
 		</div>

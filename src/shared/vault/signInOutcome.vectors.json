@@ -21,11 +21,14 @@
 		{ "name": "a host that is itself a suffix pairs only with itself", "a": "https://github.io", "b": "https://alice.github.io", "expected": false }
 	],
 	"outcomes": [
-		{ "name": "the same origin with no password box any more is a success", "submitted": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": false, "expected": "success" },
-		{ "name": "the same origin with the password box back is a failure", "submitted": "https://a.example", "landed": "https://a.example", "hasVisiblePasswordBox": true, "expected": "failed" },
-		{ "name": "another origin with no password box is not a verdict", "submitted": "https://a.example", "landed": "https://b.example", "hasVisiblePasswordBox": false, "expected": "pending" },
-		{ "name": "another origin with a password box is not a verdict either", "submitted": "https://a.example", "landed": "https://sso.example", "hasVisiblePasswordBox": true, "expected": "pending" },
-		{ "name": "a different port is another origin", "submitted": "http://127.0.0.1:3000", "landed": "http://127.0.0.1:3001", "hasVisiblePasswordBox": false, "expected": "pending" },
-		{ "name": "http and https are different origins", "submitted": "https://a.example", "landed": "http://a.example", "hasVisiblePasswordBox": false, "expected": "pending" }
+		{ "name": "the same origin with no password box any more is a success", "submitted": "https://a.example", "landed": "https://a.example", "sameSite": true, "hasVisiblePasswordBox": false, "expected": "success" },
+		{ "name": "the same origin with the password box back is a failure", "submitted": "https://a.example", "landed": "https://a.example", "sameSite": true, "hasVisiblePasswordBox": true, "expected": "failed" },
+		{ "name": "another origin with no password box is not a verdict", "submitted": "https://a.example", "landed": "https://b.example", "sameSite": false, "hasVisiblePasswordBox": false, "expected": "pending" },
+		{ "name": "another origin with a password box is not a verdict either", "submitted": "https://a.example", "landed": "https://sso.example", "sameSite": false, "hasVisiblePasswordBox": true, "expected": "pending" },
+		{ "name": "a different port is another origin", "submitted": "http://127.0.0.1:3000", "landed": "http://127.0.0.1:3001", "sameSite": false, "hasVisiblePasswordBox": false, "expected": "pending" },
+		{ "name": "http and https are different origins", "submitted": "https://a.example", "landed": "http://a.example", "sameSite": false, "hasVisiblePasswordBox": false, "expected": "pending" },
+		{ "name": "another origin of the same site with no password box is a success (SSO)", "submitted": "https://auth.example.com", "landed": "https://app.example.com", "sameSite": true, "hasVisiblePasswordBox": false, "expected": "success" },
+		{ "name": "another origin of the same site with a password box is not a verdict", "submitted": "https://auth.example.com", "landed": "https://app.example.com", "sameSite": true, "hasVisiblePasswordBox": true, "expected": "pending" },
+		{ "name": "another site under a shared suffix is not a verdict", "submitted": "https://alice.github.io", "landed": "https://bob.github.io", "sameSite": false, "hasVisiblePasswordBox": false, "expected": "pending" }
 	]
 }

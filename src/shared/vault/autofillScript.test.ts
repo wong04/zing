@@ -18,26 +18,37 @@ class FakeEl {
 	aria = ''
 	isConnected = true
 	value = ''
-	shadowRoot: { activeElement: FakeEl | null } | null = null
+	shadowRoot: FakeShadowRoot | null = null
+	/** The shadow root it is in, if any: what getRootNode answers in place of the document. */
+	root: FakeShadowRoot | null = null
+	textContent = ''
 	contentDocument: FakeDoc | null = null
 	clientLeft = 0
 	clientTop = 0
 	rect = { left: 0, top: 0, width: 100, height: 20 }
 	events: string[] = []
-	ownerDocument: { defaultView: unknown; querySelectorAll?: () => FakeEl[] } = { defaultView: null }
-	form: { querySelectorAll: () => FakeEl[] } | null = null
+	ownerDocument: { defaultView: unknown; nodeType?: number; querySelectorAll?: (selector: string) => FakeEl[]; createTreeWalker?: unknown } = { defaultView: null }
+	form: { querySelectorAll: () => FakeEl[]; ownerDocument?: unknown } | null = null
 	constructor(init: Partial<FakeEl> = {}) {
 		Object.assign(this, init)
 	}
 	getAttribute(name: string): string | null {
 		return name === 'aria-label' ? this.aria : null
 	}
+	getRootNode(): unknown {
+		return this.root ?? this.ownerDocument
+	}
+	matches(selector: string): boolean {
+		return selector.split(',').some((s) => s.trim().toUpperCase() === this.tagName)
+	}
 	getBoundingClientRect() {
 		return this.rect
 	}
 	focus(): void {}
-	dispatchEvent(event: { type: string }): boolean {
+	dispatched: FakeEvent[] = []
+	dispatchEvent(event: FakeEvent): boolean {
 		this.events.push(event.type)
+		this.dispatched.push(event)
 		return true
 	}
 	describe(): InputDescription {
@@ -55,17 +66,33 @@ class FakeEl {
 	}
 }
 
+interface FakeShadowRoot {
+	nodeType: number
+	host: FakeEl | null
+	activeElement: FakeEl | null
+	querySelectorAll(): FakeEl[]
+}
+
 class FakeDoc {
+	nodeType = 9
 	activeElement: FakeEl | null = null
 	frames: FakeEl[] = []
 	listeners = new Map<string, Listener[]>()
 	focused = true
 	location = { origin: 'https://example.com' }
+	queried: string[] = []
 	addEventListener(type: string, fn: Listener): void {
 		this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn])
 	}
-	querySelectorAll(): FakeEl[] {
+	querySelectorAll(selector: string): FakeEl[] {
+		this.queried.push(selector)
 		return this.frames
+	}
+	/** Over what the root's querySelectorAll('*') gives, as the script's scan reads it. */
+	createTreeWalker(root: { querySelectorAll(selector: string): FakeEl[] }): { nextNode(): FakeEl | null } {
+		const all = root.querySelectorAll('*')
+		let at = 0
+		return { nextNode: () => all[at++] ?? null }
 	}
 	hasFocus(): boolean {
 		return this.focused
@@ -73,7 +100,25 @@ class FakeDoc {
 }
 
 class FakeEvent {
-	constructor(public type: string) {}
+	constructor(
+		public type: string,
+		public init: Record<string, unknown> = {},
+	) {}
+}
+
+/** Records what the script observes; a test calls `mutate()` for a DOM change. */
+class FakeMutationObserver {
+	static all: FakeMutationObserver[] = []
+	observed: unknown[] = []
+	constructor(private readonly callback: () => void) {
+		FakeMutationObserver.all.push(this)
+	}
+	observe(target: unknown): void {
+		this.observed.push(target)
+	}
+	static mutate(): void {
+		for (const o of FakeMutationObserver.all) o.callback()
+	}
 }
 
 const setterCalls: Array<[FakeEl, string]> = []
@@ -106,10 +151,11 @@ function makeWindow(): Record<string, unknown> {
 }
 
 function run(target: Record<string, unknown> = win): void {
-	new Function('window', 'document', 'WeakSet', 'Event', detectionScript)(target, doc, WeakSet, FakeEvent)
+	new Function('window', 'document', 'WeakSet', 'WeakMap', 'Event', 'MutationObserver', detectionScript)(target, doc, WeakSet, WeakMap, FakeEvent, FakeMutationObserver)
 }
 
 function install(): void {
+	FakeMutationObserver.all = []
 	doc = new FakeDoc()
 	messages = []
 	windowListeners = new Map()
@@ -131,11 +177,25 @@ function evalFill(username: string, password: string, origin = 'https://example.
 /** A username box and a password box in one form, in that order. */
 function signInForm(): { user: FakeEl; pass: FakeEl } {
 	const inputs: FakeEl[] = []
-	const form = { querySelectorAll: () => inputs }
+	const form = { querySelectorAll: () => inputs, ownerDocument: doc }
 	const user = new FakeEl({ type: 'email', form, ownerDocument: { defaultView: win } })
 	const pass = new FakeEl({ type: 'password', form, ownerDocument: { defaultView: win } })
 	inputs.push(new FakeEl({ type: 'checkbox', name: 'remember', form }), user, pass)
 	return { user, pass }
+}
+
+/** A form-less sign-in inside a web component's open shadow root, the component the document's only element. */
+function shadowSignIn(): { root: FakeShadowRoot; host: FakeEl; user: FakeEl; pass: FakeEl } {
+	const owner = Object.assign(doc, { defaultView: win })
+	const inner: FakeEl[] = []
+	const root: FakeShadowRoot = { nodeType: 11, host: null, activeElement: null, querySelectorAll: () => inner }
+	const host = new FakeEl({ tagName: 'MY-LOGIN', shadowRoot: root, ownerDocument: owner })
+	root.host = host
+	const user = new FakeEl({ type: 'email', root, ownerDocument: owner })
+	const pass = new FakeEl({ type: 'password', root, ownerDocument: owner })
+	inner.push(user, pass)
+	doc.frames = [host]
+	return { root, host, user, pass }
 }
 
 beforeEach(() => {
@@ -220,7 +280,7 @@ describe('detection', () => {
 	it('looks through shadow roots', () => {
 		install()
 		const inner = new FakeEl({ type: 'password' })
-		focus(new FakeEl({ tagName: 'MY-FIELD', shadowRoot: { activeElement: inner } }))
+		focus(new FakeEl({ tagName: 'MY-FIELD', shadowRoot: { nodeType: 11, host: null, activeElement: inner, querySelectorAll: () => [] } }))
 		expect(parseFieldMessage(messages[0])?.kind).toBe('password')
 	})
 	it('looks into a same-origin frame and adds its offset', () => {
@@ -300,7 +360,7 @@ describe('detection', () => {
 		focus(new FakeEl({ type: 'password' }))
 		// It listens for Enter in a password box to see a submit, but never posts a key.
 		const other = new FakeEl({ type: 'text' })
-		for (const fn of doc.listeners.get('keydown') ?? []) (fn as (e: unknown) => void)({ key: 'ArrowDown', target: other })
+		fire('keydown', other, { key: 'ArrowDown' })
 		vi.advanceTimersByTime(0)
 		expect(detectionScript).not.toContain("kind: 'key'")
 		expect(messages).toHaveLength(1)
@@ -342,9 +402,31 @@ describe('filling', () => {
 			[pass, 'hunter2'],
 		])
 	})
+	it('fills both halves of a sign-in inside a shadow root', () => {
+		install()
+		const { host, user, pass } = shadowSignIn()
+		host.shadowRoot!.activeElement = user
+		focus(host)
+		expect(evalFill('ada', 'hunter2')).toBe(true)
+		expect(setterCalls).toEqual([
+			[pass, 'hunter2'],
+			[user, 'ada'],
+		])
+	})
+	it("the fill's input and change events bubble and are composed, so listeners outside a shadow root see them", () => {
+		install()
+		const { host, user, pass } = shadowSignIn()
+		host.shadowRoot!.activeElement = user
+		focus(host)
+		evalFill('ada', 'hunter2')
+		for (const el of [user, pass]) expect(el.dispatched.map((e) => [e.type, e.init])).toEqual([
+			['input', { bubbles: true, composed: true }],
+			['change', { bubbles: true, composed: true }],
+		])
+	})
 	it('fills just the field when it has no other half', () => {
 		install()
-		const el = new FakeEl({ type: 'password', ownerDocument: { defaultView: win, querySelectorAll: () => [] } })
+		const el = new FakeEl({ type: 'password', ownerDocument: { nodeType: 9, defaultView: win, querySelectorAll: () => [], createTreeWalker: () => ({ nextNode: () => null }) } })
 		focus(el)
 		expect(evalFill('ada', 'hunter2')).toBe(true)
 		expect(setterCalls).toEqual([[el, 'hunter2']])
@@ -378,7 +460,7 @@ describe('filling', () => {
 /** A sign-in form with the user's typed values, as a submit event's target. */
 function filledForm(username: string, password: string): { form: { tagName: string; querySelectorAll: () => FakeEl[] }; inputs: FakeEl[] } {
 	const inputs: FakeEl[] = []
-	const form = { tagName: 'FORM', querySelectorAll: () => inputs }
+	const form = { tagName: 'FORM', querySelectorAll: () => inputs, ownerDocument: doc }
 	const owner = { defaultView: win }
 	inputs.push(new FakeEl({ type: 'email', value: username, form, ownerDocument: owner }), new FakeEl({ type: 'password', value: password, form, ownerDocument: owner }))
 	return { form, inputs }
@@ -387,7 +469,7 @@ function filledForm(username: string, password: string): { form: { tagName: stri
 /** A form of the given inputs, each owned by the window, as a submit event's target. */
 function formOf(...init: Array<Partial<FakeEl>>): { form: { tagName: string; querySelectorAll: () => FakeEl[] }; inputs: FakeEl[] } {
 	const inputs: FakeEl[] = []
-	const form = { tagName: 'FORM', querySelectorAll: () => inputs }
+	const form = { tagName: 'FORM', querySelectorAll: () => inputs, ownerDocument: doc }
 	const owner = { defaultView: win }
 	for (const i of init) inputs.push(new FakeEl({ ...i, form, ownerDocument: owner }))
 	return { form, inputs }
@@ -400,9 +482,14 @@ const hide = (hidden: FakeEl): void => {
 	win['getComputedStyle'] = (el: FakeEl) => ({ display: el === hidden ? 'none' : 'block', visibility: 'visible' })
 }
 
-const submit = (target: unknown): void => {
-	for (const fn of doc.listeners.get('submit') ?? []) (fn as (e: unknown) => void)({ target })
+/** An event as the document's capture listener sees it: retargeted to the outermost shadow host, with the real path. */
+function fire(type: string, target: unknown, init: Record<string, unknown> = {}, path: unknown[] = [target]): void {
+	const host = [...path].reverse().find((n) => n instanceof FakeEl && n.root === null && n !== path[0]) ?? target
+	const retargeted = path.some((n) => n instanceof FakeEl && n.root !== null) ? host : target
+	for (const fn of doc.listeners.get(type) ?? []) (fn as (e: unknown) => void)({ ...init, target: retargeted, composedPath: () => [...path, doc, win] })
 }
+
+const submit = (target: unknown): void => fire('submit', target)
 
 const kindsOf = (kind: string): unknown[] => messages.filter((m) => (m as { kind: string }).kind === kind)
 
@@ -520,7 +607,7 @@ describe('sign-in reports', () => {
 		const user = new FakeEl({ type: 'email', value: 'ada', ownerDocument: owner })
 		const other = new FakeEl({ type: 'email', value: 'newsletter@example.test', ownerDocument: owner })
 		doc.frames = [user, other]
-		for (const fn of doc.listeners.get('keydown') ?? []) (fn as (e: unknown) => void)({ key: 'Enter', target: user })
+		fire('keydown', user, { key: 'Enter' })
 		expect(messages).toEqual([{ kind: 'username-step', username: 'ada' }])
 	})
 	it('Enter in a form-less password box reports a submit; Enter in a text box does not', () => {
@@ -534,12 +621,100 @@ describe('sign-in reports', () => {
 		user.ownerDocument = owner
 		pass.ownerDocument = owner
 		const press = (target: FakeEl): void => {
-			for (const fn of doc.listeners.get('keydown') ?? []) (fn as (e: unknown) => void)({ key: 'Enter', target })
+			fire('keydown', target, { key: 'Enter' })
 		}
 		press(user)
 		expect(messages).toEqual([])
 		press(pass)
 		expect(messages).toEqual([{ kind: 'submit', username: 'ada', password: 'hunter2' }])
+	})
+	it('a sign-in button clicked inside a shadow root reports the submit', () => {
+		install()
+		const { root, host, user, pass } = shadowSignIn()
+		const button = new FakeEl({ tagName: 'BUTTON', textContent: 'Sign in', root, ownerDocument: user.ownerDocument })
+		const label = new FakeEl({ tagName: 'SPAN', root, ownerDocument: user.ownerDocument })
+		user.value = 'ada'
+		pass.value = 'hunter2'
+		fire('click', label, {}, [label, button, host])
+		expect(messages).toEqual([{ kind: 'submit', username: 'ada', password: 'hunter2' }])
+	})
+	it("Enter in a shadow root's password or username box reports the submit: its submit event never reaches the document", () => {
+		install()
+		const { host, user, pass } = shadowSignIn()
+		user.value = 'ada'
+		pass.value = 'hunter2'
+		fire('keydown', pass, { key: 'Enter' }, [pass, host])
+		vi.advanceTimersByTime(1100)
+		fire('keydown', user, { key: 'Enter' }, [user, host])
+		expect(messages).toEqual([
+			{ kind: 'submit', username: 'ada', password: 'hunter2' },
+			{ kind: 'submit', username: 'ada', password: 'hunter2' },
+		])
+	})
+	it("Enter in a light-DOM username box is left to the form's own submit event", () => {
+		install()
+		const { inputs } = filledForm('ada', 'hunter2')
+		const user = inputs[0] as FakeEl
+		user.ownerDocument = Object.assign(doc, { defaultView: win })
+		fire('keydown', user, { key: 'Enter' })
+		expect(messages).toEqual([])
+	})
+	it('Enter in a search-like box inside a shadow root is not a submit', () => {
+		install()
+		const { root, host, pass } = shadowSignIn()
+		pass.value = 'hunter2'
+		const search = new FakeEl({ name: 'q', placeholder: 'Search', value: 'shoes', root, ownerDocument: pass.ownerDocument })
+		fire('keydown', search, { key: 'Enter' }, [search, host])
+		expect(messages).toEqual([])
+	})
+	it('a page without shadow roots is looked through element by element once, and again only after the DOM changed', () => {
+		install()
+		const { form } = filledForm('ada', 'hunter2')
+		const walks = (): number => doc.queried.filter((q) => q === '*').length
+		submit(form)
+		vi.advanceTimersByTime(1100)
+		submit(form)
+		expect(walks()).toBe(1)
+		FakeMutationObserver.mutate()
+		vi.advanceTimersByTime(1100)
+		submit(form)
+		expect(walks()).toBe(2)
+	})
+	it('the landing report looks for new shadow roots at most every 2 s on a page that keeps changing', () => {
+		install()
+		const walks = (): number => doc.queried.filter((q) => q === '*').length
+		const land = (): void => {
+			for (const fn of windowListeners.get('load') ?? []) fn()
+			vi.advanceTimersByTime(300)
+		}
+		land()
+		expect(walks()).toBe(1)
+		FakeMutationObserver.mutate()
+		land()
+		expect(walks()).toBe(1)
+		vi.advanceTimersByTime(2000)
+		land()
+		expect(walks()).toBe(2)
+	})
+	it('a shadow root added after the page was looked through is found once the DOM changes', () => {
+		install()
+		for (const fn of windowListeners.get('load') ?? []) fn()
+		vi.advanceTimersByTime(300)
+		expect(messages).toEqual([{ kind: 'landed', password: false }])
+		const { user, pass } = shadowSignIn()
+		user.value = 'ada'
+		pass.value = 'hunter2'
+		FakeMutationObserver.mutate()
+		// A form-less sign-in button outside the component: nothing the user touched is in the shadow root.
+		fire('click', new FakeEl({ tagName: 'BUTTON', textContent: 'Sign in', ownerDocument: user.ownerDocument }))
+		expect(messages.slice(1)).toEqual([{ kind: 'submit', username: 'ada', password: 'hunter2' }])
+	})
+	it('a landing counts a password box inside a shadow root', () => {
+		install()
+		shadowSignIn()
+		for (const fn of windowListeners.get('load') ?? []) fn()
+		vi.advanceTimersByTime(300)
+		expect(messages).toEqual([{ kind: 'landed', password: true }])
 	})
 	it('reports a landing for each new document, with whether a password box is on it', () => {
 		install()

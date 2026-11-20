@@ -11,6 +11,7 @@ export const COMMAND_IDS = [
 	'location.open',
 	'tab.close',
 	'window.close',
+	'app.quit',
 	'tab.reopenClosed',
 	'tab.split',
 	'page.find',
@@ -80,6 +81,8 @@ export const COMMANDS: readonly CommandDefinition[] = [
 	{ id: 'location.open', label: 'Open Location…', shortcuts: [ctrl('KeyL'), alt('KeyD'), bare('F6')] },
 	{ id: 'tab.close', label: 'Close Tab', shortcuts: [ctrl('KeyW'), ctrl('F4')] },
 	{ id: 'window.close', label: 'Close Window', shortcuts: [ctrlShift('KeyW')] },
+	// As Chrome: every window closes together and all of them are saved, unlike closing them one by one.
+	{ id: 'app.quit', label: 'Quit Zing', shortcuts: [ctrlShift('KeyQ')] },
 	{ id: 'tab.reopenClosed', label: 'Reopen Last Closed Tab', shortcuts: [ctrlShift('KeyT')] },
 	// Split view (docs/phase-4.md); Ctrl+Shift+\ was taken by the tab overview.
 	{ id: 'tab.split', label: 'Split with New Tab', shortcuts: [ctrlShift('KeyE')] },
@@ -169,6 +172,8 @@ export const MENU_LAYOUT: readonly MenuSection[] = [
 			'page.print',
 			'separator',
 			'app.settings',
+			'separator',
+			'app.quit',
 		],
 	},
 	{ label: 'Edit', items: ['page.find', 'page.findNext', 'page.findPrevious'] },

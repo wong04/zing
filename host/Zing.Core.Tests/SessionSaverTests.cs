@@ -8,12 +8,19 @@ public sealed class SessionSaverTests : IDisposable
 	private readonly ManualScheduler _scheduler = new();
 	private readonly SettingsStore _settings = new();
 	private readonly TabStore _tabs = new(Deterministic.Clock(), Deterministic.Ids());
+	private readonly TabStore _second = new(Deterministic.Clock(), Deterministic.Ids());
+	private bool _twoWindows;
 
 	private string File => Path.Combine(_dir, "session.json");
 
 	public void Dispose() => Directory.Delete(_dir, recursive: true);
 
-	private SessionSaver Saver() => new(File, _settings, () => Session.ToSessionTabs(_tabs.Records, _tabs.ActiveId), _scheduler, error => throw new InvalidOperationException("unexpected session write failure", error));
+	private SessionSaver Saver() => new(File, _settings, Windows, _scheduler, error => throw new InvalidOperationException("unexpected session write failure", error));
+
+	private IReadOnlyList<IReadOnlyList<SessionTab>> Windows() =>
+		_twoWindows
+			? [Session.ToSessionTabs(_tabs.Records, _tabs.ActiveId), Session.ToSessionTabs(_second.Records, _second.ActiveId)]
+			: [Session.ToSessionTabs(_tabs.Records, _tabs.ActiveId)];
 
 	[Fact]
 	public void Nothing_is_written_while_restore_is_off()
@@ -33,7 +40,7 @@ public sealed class SessionSaverTests : IDisposable
 		_tabs.Activate(_tabs.Add("https://example.com/").Id);
 		saver.Changed();
 		_scheduler.Advance(TimeSpan.FromSeconds(1));
-		var tab = Assert.Single(Session.Load(File));
+		var tab = Assert.Single(Assert.Single(Session.Load(File)));
 		Assert.Equal(new SessionTab("https://example.com/", TabStore.NewTabTitle, false, true), tab);
 	}
 
@@ -73,6 +80,32 @@ public sealed class SessionSaverTests : IDisposable
 		_tabs.Activate(_tabs.Add("https://example.com/").Id);
 		saver.Changed();
 		_scheduler.Advance(TimeSpan.FromSeconds(1));
-		Assert.Equal("https://example.com/", Assert.Single(Session.Load(File)).Url);
+		Assert.Equal("https://example.com/", Assert.Single(Assert.Single(Session.Load(File))).Url);
+	}
+
+	[Fact]
+	public void Every_window_is_saved_oldest_first()
+	{
+		using var saver = Saver();
+		_settings.Set("restoreTabs", true);
+		_twoWindows = true;
+		_tabs.Activate(_tabs.Add("https://one.test/").Id);
+		_second.Activate(_second.Add("https://two.test/").Id);
+		saver.Changed();
+		_scheduler.Advance(TimeSpan.FromSeconds(1));
+		Assert.Equal(new[] { "https://one.test/", "https://two.test/" }, Session.Load(File).Select(w => Assert.Single(w).Url));
+	}
+
+	[Fact]
+	public void The_relaunch_file_is_written_now_with_restore_off_and_session_json_stays_away()
+	{
+		using var saver = Saver();
+		_twoWindows = true;
+		_tabs.Activate(_tabs.Add("https://one.test/").Id);
+		_second.Activate(_second.Add("https://two.test/").Id);
+		var relaunch = Path.Combine(_dir, "relaunch-session.json");
+		saver.SaveOnce(relaunch);
+		Assert.Equal(2, Session.TakeOnce(relaunch, e => throw e).Count);
+		Assert.False(System.IO.File.Exists(File));
 	}
 }

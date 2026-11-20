@@ -1126,6 +1126,14 @@ public sealed class WebView2Page : IPage
 			if (RelayedNavigation.PlainHttpNotice(TopOf(sender), e.Uri) is { } refused) _events.Notice(refused);
 			return;
 		}
+		// WebView2 has no pop-up blocker of its own. A click counts for a few seconds (Chromium's transient activation), so a
+		// sign-in pop-up opened after a short await still opens.
+		if (!e.IsUserInitiated && !_features.PopupsAllowed(this))
+		{
+			e.Handled = true;
+			_features.PopupBlocked(this, target);
+			return;
+		}
 		var request = new PopupRequest(target, modifiers, IsPopup(e.WindowFeatures));
 		Background(OpenPopupAsync(e, request), "popup");
 	}

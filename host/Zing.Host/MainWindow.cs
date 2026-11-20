@@ -74,6 +74,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		// Keys from every view of the window, web pages included, before the page sees them.
 		_window.KeyPressed += OnKey;
 		_window.Destroyed += OnClosed;
+		// Through the app: the taskbar's "Close all windows" sends one to every window, which is quitting (CloseBurst).
+		_window.CloseRequested = () => _app.CloseRequested(this);
 		_window.Activated += () => _app.Focused(this);
 		ReadHighContrast();
 		_window.SettingChanged += ReadHighContrast;
@@ -494,7 +496,36 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public void NewWindow() => _app.NewWindow();
 
 	// Not inside the bridge call that asked: the window takes its renderer views with it.
-	public void CloseWindow() => Faults.Enqueue(_dispatcher, _window.Close, "closing the window");
+	public void CloseWindow() => Faults.Enqueue(_dispatcher, CloseIfConfirmed, "closing the window");
+
+	/// <summary>Closes without asking: Zing quitting into an update, or its engine gone.</summary>
+	public void CloseNow() => Faults.Enqueue(_dispatcher, _window.Close, "closing the window");
+
+	public bool ReopenClosedWindow() => _app.ReopenClosedWindow();
+
+	public void Quit() => Faults.Enqueue(_dispatcher, () => _app.Quit(this), "quitting");
+
+	/// <summary>The person closing the window (its close button, Alt+F4, Ctrl+Shift+W): with tabs to lose, they confirm first (WindowClose).</summary>
+	public void CloseIfConfirmed()
+	{
+		if (_window.IsClosed) return;
+		var question = WindowClose.Question(_app.SessionOf(this), _app.IsLastWindow(this), _app.TabsReopen);
+		if (question is not null && !Confirmed(question)) return;
+		// The window can go while the question is up (its engine died, Zing quit into an update).
+		if (_window.IsClosed) return;
+		_window.Close();
+	}
+
+	/// <summary>e2e runs never open a dialog (AGENTS.md): the question is recorded, and answered as the test said (TestHooks).</summary>
+	public bool Confirmed(string question)
+	{
+		if (TestHooks.IsEndToEndRun)
+		{
+			TestHooks.RecordDialog("close-window", question);
+			return TestHooks.CloseWindowAnswer;
+		}
+		return Native.MessageBoxW(_window.Hwnd, question, "Zing", Native.MB_OKCANCEL | Native.MB_ICONWARNING) == Native.IDOK;
+	}
 
 	public void Relayout()
 	{
@@ -590,6 +621,19 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		return [.. picked.Select(file => file.Path)];
 	}
 
+	public async Task<string?> PickSaveFileAsync(string suggestedName, string extension, string kind)
+	{
+		if (TestHooks.IsEndToEndRun) return TestHooks.TakePickedFiles() is [var path] ? path : null;
+		var picker = new Microsoft.Windows.Storage.Pickers.FileSavePicker(_window.AppWindow.Id)
+		{
+			SuggestedFileName = Path.GetFileNameWithoutExtension(suggestedName),
+			DefaultFileExtension = "." + extension,
+		};
+		picker.FileTypeChoices.Add(kind, ["." + extension]);
+		var picked = await picker.PickSaveFileAsync();
+		return picked?.Path;
+	}
+
 	private SecretClipboard? _secretClipboard;
 
 	public Zing.Core.Vault.ISecretClipboard SecretClipboard => _secretClipboard ??= new SecretClipboard(_window.Hwnd);
@@ -607,6 +651,10 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	public void DownloadStarting(WebView2Page page, CoreWebView2DownloadStartingEventArgs e) => _downloads.Starting(page, e);
 
 	public void PermissionRequested(WebView2Page page, CoreWebView2PermissionRequestedEventArgs e) => _permissions.Requested(page, e);
+
+	public bool PopupsAllowed(WebView2Page page) => _permissions.PopupsAllowed(page);
+
+	public void PopupBlocked(WebView2Page page, string url) => _permissions.PopupBlocked(page, url);
 
 	public void Left(WebView2Page page) => _permissions.Left(page);
 
@@ -882,6 +930,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		// the window started: renderer views, those still loading included, and the theme subscription.
 		_destroyed = true;
 		_app.Services.Vaults.Changed -= FollowAutofill;
+		_app.Closing(this);
 		_app.Quitting(this);
 		Api?.Dispose();
 		_scope.Close();

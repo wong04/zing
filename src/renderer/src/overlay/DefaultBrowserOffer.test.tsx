@@ -31,13 +31,13 @@ const label = (button: ButtonProps): string => renderToStaticMarkup(<>{button.ch
 describe('the default-browser offer', () => {
 	beforeEach(() => Object.values(api).forEach((fn) => fn.mockClear()))
 
-	it('asks the question with Make default and Don’t ask again', () => {
+	it('asks the question with Make default and Not now', () => {
 		const offer = <DefaultBrowserOffer />
 		expect(renderToStaticMarkup(offer)).toContain('Make Zing your default browser?')
-		expect(buttons(offer).map(label)).toEqual(['Make default', 'Don&#x27;t ask again'])
+		expect(buttons(offer).map(label)).toEqual(['Make default', 'Not now'])
 	})
 
-	it('Make default opens Windows Settings and takes the offer down without dismissing it for good', async () => {
+	it('Make default opens Windows Settings and takes the offer down', async () => {
 		const [make] = buttons(<DefaultBrowserOffer />)
 		make!.onClick!()
 		await vi.waitFor(() => expect(api.dismissOffer).toHaveBeenCalledTimes(1))
@@ -45,7 +45,7 @@ describe('the default-browser offer', () => {
 		expect(api.dismissDefaultBrowserOffer).not.toHaveBeenCalled()
 	})
 
-	it('Don’t ask again dismisses it for good', () => {
+	it('Not now takes the offer down', () => {
 		const [, never] = buttons(<DefaultBrowserOffer />)
 		never!.onClick!()
 		expect(api.dismissDefaultBrowserOffer).toHaveBeenCalledTimes(1)
