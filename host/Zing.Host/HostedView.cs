@@ -76,10 +76,23 @@ public sealed class HostedView
 		{
 			if (IsClosed) return;
 			_visible = value;
-			Controller.IsVisible = value;
+			Controller.IsVisible = value && !_window.IsMinimised;
 			Native.ShowWindow(_hwnd, value ? Native.SW_SHOWNOACTIVATE : Native.SW_HIDE);
 		}
 	}
+
+	/// <summary>
+	/// The window was minimised or restored. A minimised window's views are not visible to the engine, as a hidden tab's
+	/// aren't, so nothing is drawn and timers are throttled; audio and picture-in-picture play on, as for a hidden tab.
+	/// </summary>
+	internal void FollowWindow()
+	{
+		if (IsClosed) return;
+		Controller.IsVisible = _visible && !_window.IsMinimised;
+	}
+
+	/// <summary>Whether the engine is told the view is visible: <see cref="Visible"/>, unless the window is minimised.</summary>
+	public bool Rendering => !IsClosed && Controller.IsVisible;
 
 	/// <summary>Creates a view in <paramref name="window"/>; <paramref name="overlay"/> views are transparent and float above it.</summary>
 	/// <remarks>The view is tracked by <paramref name="scope"/> from the start, so a window that closes while the engine starts it closes it exactly once.</remarks>

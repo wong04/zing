@@ -266,6 +266,7 @@ public sealed class WebView2Page : IPage
 	{
 		if (!IsOpen || _core is null) return null;
 		using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+		CapturesTaken++;
 		CapturesInFlight++;
 		try
 		{
@@ -520,15 +521,6 @@ public sealed class WebView2Page : IPage
 		// A cancelled navigation has already sent its request by the time it is cancelled, so documents are held back here, before the network.
 		_core.AddWebResourceRequestedFilter("http://*", CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.All);
 		_core.AddWebResourceRequestedFilter("https://*", CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.All);
-		// The kinds of request ads and trackers make, which OnWebResourceRequested refuses while blockTrackers is on. The
-		// lists name about 100,000 hosts, too many for a filter each, so every such request comes here. Only these kinds, and
-		// only from pages: with every kind from every source (CoreWebView2WebResourceContext.All), one run saw the engine's
-		// browser process fail an assertion (0x80000003) as a tab with a camera request closed (guards.spec.ts).
-		foreach (var context in BlockableContexts)
-		{
-			_core.AddWebResourceRequestedFilter("http://*", context, CoreWebView2WebResourceRequestSourceKinds.Document);
-			_core.AddWebResourceRequestedFilter("https://*", context, CoreWebView2WebResourceRequestSourceKinds.Document);
-		}
 		// Every page request runs this on the UI thread; an exception out of an engine event would end the process.
 		_core.WebResourceRequested += (sender, e) => TestHooks.Guard(() => OnWebResourceRequested(sender, e), "resource request");
 		Wire(_core);
@@ -562,8 +554,33 @@ public sealed class WebView2Page : IPage
 	public void FollowTrackerBlocking()
 	{
 		if (!IsOpen || _core is not { } core) return;
-		core.Profile.PreferredTrackingPreventionLevel = _features.BlockTrackers ? CoreWebView2TrackingPreventionLevel.Balanced : CoreWebView2TrackingPreventionLevel.None;
+		var blocking = _features.BlockTrackers;
+		core.Profile.PreferredTrackingPreventionLevel = blocking ? CoreWebView2TrackingPreventionLevel.Balanced : CoreWebView2TrackingPreventionLevel.None;
+		if (blocking == _blockableFiltered) return;
+		_blockableFiltered = blocking;
+		// The kinds of request ads and trackers make, which OnWebResourceRequested refuses while blockTrackers is on. The
+		// lists name about 100,000 hosts, too many for a filter each, so every such request comes here, on the UI thread;
+		// with blocking off nothing would be refused, so they don't come at all. Only these kinds, and only from pages: with
+		// every kind from every source (CoreWebView2WebResourceContext.All), one run saw the engine's browser process fail
+		// an assertion (0x80000003) as a tab with a camera request closed (guards.spec.ts).
+		foreach (var context in BlockableContexts)
+		{
+			foreach (var pattern in (string[])["http://*", "https://*"])
+			{
+				if (blocking) core.AddWebResourceRequestedFilter(pattern, context, CoreWebView2WebResourceRequestSourceKinds.Document);
+				else core.RemoveWebResourceRequestedFilter(pattern, context, CoreWebView2WebResourceRequestSourceKinds.Document);
+			}
+		}
 	}
+
+	/// <summary>Whether the blockable kinds of request are sent to OnWebResourceRequested (FollowTrackerBlocking).</summary>
+	private bool _blockableFiltered;
+
+	/// <summary>Requests of the blockable kinds that reached OnWebResourceRequested, in every window (TestHooks "work-counts").</summary>
+	public static int BlockableRequests { get; private set; }
+
+	/// <summary>Pictures asked of the engine, in every window (TestHooks "work-counts").</summary>
+	public static int CapturesTaken { get; private set; }
 
 	/// <summary>Whether the autofill channel is on for this page: web messages, the script, and OnPageMessage reading them.</summary>
 	private bool _autofill;
@@ -957,6 +974,7 @@ public sealed class WebView2Page : IPage
 			return;
 		}
 		var isDocument = e.ResourceContext == CoreWebView2WebResourceContext.Document;
+		if (!isDocument) BlockableRequests++;
 		var host = address.IdnHost;
 		var listed = _features.BlockTrackers && (TrackerRules.IsTrackerHost(host) || FilterRules.Bundled.Names(host));
 		if (!isDocument && !listed) return;

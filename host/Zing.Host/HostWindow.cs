@@ -73,6 +73,16 @@ public sealed class HostWindow
 
 	public bool IsClosed { get; private set; }
 
+	/// <summary>Whether the window is minimised: its views tell the engine they are not visible, so pages stop drawing and their timers slow down.</summary>
+	public bool IsMinimised { get; private set; }
+
+	private void FollowMinimised(bool minimised)
+	{
+		if (minimised == IsMinimised) return;
+		IsMinimised = minimised;
+		foreach (var view in _views) view.FollowWindow();
+	}
+
 	/// <summary>The window's pixels per DIP.</summary>
 	public double Scale => Native.GetDpiForWindow(Hwnd) / 96.0;
 
@@ -180,6 +190,7 @@ public sealed class HostWindow
 		{
 			case Native.WM_SIZE:
 				const int SIZE_MINIMIZED = 1;
+				window.FollowMinimised(wParam == SIZE_MINIMIZED);
 				if (wParam == SIZE_MINIMIZED) break;
 				window.PassThroughTitleBar();
 				TestHooks.Guard(() => window.Resized?.Invoke(), "window resized");

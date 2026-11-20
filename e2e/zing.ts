@@ -479,6 +479,8 @@ export interface Layer {
 	readonly suspended: boolean
 	/** Whether the view's memory target is Low, as for a hidden tab. */
 	readonly lowMemory: boolean
+	/** Whether the engine is told the view is visible: visible, unless the window is minimised. */
+	readonly rendering: boolean
 }
 
 /** What the window really shows, bottom to top (TestHooks "layers"); page-side visibility doesn't follow a hidden view. */
@@ -624,6 +626,18 @@ export interface LiveCounts {
 /** What is still alive in the host (TestHooks "live-counts"), for teardown tests. */
 export function liveCounts(chrome: Page): Promise<LiveCounts> {
 	return askHost<LiveCounts>(chrome, 'live-counts')
+}
+
+/** Work the host has done since launch, in every window (TestHooks "work-counts"). */
+export interface WorkCounts {
+	/** Subresource requests (scripts, images, fetches...) that reached the ad and tracker filter on the UI thread. */
+	readonly blockableRequests: number
+	/** Pictures of pages asked of the engine (CapturePreviewAsync), for the tab overview. */
+	readonly captures: number
+}
+
+export function workCounts(chrome: Page): Promise<WorkCounts> {
+	return askHost<WorkCounts>(chrome, 'work-counts')
 }
 
 /** The preferred app mode the host last gave the native menus (TestHooks "menu-theme", uxtheme's PreferredAppMode name). */
