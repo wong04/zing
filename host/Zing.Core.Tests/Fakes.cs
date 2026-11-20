@@ -295,6 +295,8 @@ public sealed class FakeWindowHost : IWindowHost
 	public void SetUpdatePillSize(int width, int height) => UpdatePillSizes.Add((width, height));
 	public int FullScreenExits { get; private set; }
 	public void ExitFullScreen() => FullScreenExits++;
+	public bool BrowserFullScreen { get; private set; }
+	public void ToggleBrowserFullScreen() => BrowserFullScreen = !BrowserFullScreen;
 	/// <summary>Not installed, so not the default, unless a test sets it.</summary>
 	public DefaultBrowserState DefaultBrowserState { get; set; } = new(false, false);
 	public string ThirdPartyNoticesPath { get; set; } = "";

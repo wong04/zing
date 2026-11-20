@@ -624,6 +624,19 @@
 		]
 	},
 	{
+		"id": "view.fullScreen",
+		"label": "Full Screen",
+		"shortcuts": [
+			{
+				"code": "F11",
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"label": "F11"
+			}
+		]
+	},
+	{
 		"id": "app.settings",
 		"label": "Settings…",
 		"shortcuts": [

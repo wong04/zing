@@ -47,6 +47,7 @@ export const COMMAND_IDS = [
 	'library.addReadingList',
 	'view.favouritesBar',
 	'view.sidebar',
+	'view.fullScreen',
 	'app.settings',
 	'preview.close',
 	'preview.expand',
@@ -117,6 +118,8 @@ export const COMMANDS: readonly CommandDefinition[] = [
 	{ id: 'library.addReadingList', label: 'Add to Reading List', shortcuts: [ctrlShift('KeyD')] },
 	{ id: 'view.favouritesBar', label: 'Toggle Favourites Bar', shortcuts: [ctrlShift('KeyB')] },
 	{ id: 'view.sidebar', label: 'Toggle Sidebar', shortcuts: [ctrl('KeyS'), ctrlShift('KeyS')] },
+	// The whole window to the page, without the chrome; F11 again or Esc gives it back (the host routes Esc while it is on).
+	{ id: 'view.fullScreen', label: 'Full Screen', shortcuts: [bare('F11')] },
 	{ id: 'app.settings', label: 'Settings…', shortcuts: [ctrl('Comma')] },
 	// Closing a link preview takes its top layer (Esc does too, routed by the host while a preview has the keyboard).
 	{ id: 'preview.close', label: 'Close Preview', shortcuts: [] },
@@ -182,6 +185,7 @@ export const MENU_LAYOUT: readonly MenuSection[] = [
 		items: [
 			'view.sidebar',
 			'view.favouritesBar',
+			'view.fullScreen',
 			'separator',
 			'tabs.overview',
 			'page.reader',
