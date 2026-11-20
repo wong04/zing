@@ -29,6 +29,21 @@ export interface PermissionPrompt {
 	readonly tab?: string
 }
 
+export type ScriptDialogKind = 'alert' | 'confirm' | 'prompt' | 'beforeunload'
+
+/** A page's JavaScript dialog, drawn by Zing rather than the engine: one at a time, the oldest first. */
+export interface ScriptDialogPrompt {
+	readonly id: number
+	readonly kind: ScriptDialogKind
+	/** The asking page's origin; 'null' when it has no web origin. */
+	readonly origin: string
+	readonly message: string
+	/** A prompt's starting text; absent for the other kinds. */
+	readonly defaultText?: string
+	/** The asking tab's title when it isn't the tab on screen. */
+	readonly tab?: string
+}
+
 /** The vault's offer to save a sign-in, or to update a saved one. Names the origin and username only; the host holds the password. */
 export interface SaveLoginPrompt {
 	/** The tab it is for. */
@@ -53,6 +68,7 @@ export interface PageUiState {
 	readonly downloadsOpen: boolean
 	readonly permission: PermissionPrompt | undefined
 	readonly saveLogin?: SaveLoginPrompt | undefined
+	readonly dialog?: ScriptDialogPrompt | undefined
 }
 
 export const EMPTY_PAGE_UI: PageUiState = {
@@ -62,10 +78,11 @@ export const EMPTY_PAGE_UI: PageUiState = {
 	downloadsOpen: false,
 	permission: undefined,
 	saveLogin: undefined,
+	dialog: undefined,
 }
 
 export function hasVisiblePageUi(state: PageUiState): boolean {
-	return state.find !== undefined || state.permission !== undefined || state.saveLogin !== undefined || (state.downloadsOpen && state.downloads.length > 0)
+	return state.find !== undefined || state.permission !== undefined || state.dialog !== undefined || state.saveLogin !== undefined || (state.downloadsOpen && state.downloads.length > 0)
 }
 
 export type HistoryDirection = 'back' | 'forward'

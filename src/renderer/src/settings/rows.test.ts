@@ -29,6 +29,14 @@ describe('settings rows', () => {
 		expect(detailOf(row, { ...DEFAULT_SETTINGS, smartScreen: false })).toBe('Off: nothing is sent to Microsoft for checking, and dangerous sites and downloads aren’t warned about. Relaunch to apply.')
 	})
 
+	it('lets the close confirm be turned back on in Tabs, on by default', () => {
+		const row = PANES.tabs.find((i) => i.type === 'setting' && i.key === 'confirmWindowClose') as SettingRow
+		expect(row.control.kind).toBe('toggle')
+		expect(DEFAULT_SETTINGS.confirmWindowClose).toBe(true)
+		expect(detailOf(row, DEFAULT_SETTINGS)).toBeUndefined()
+		expect(detailOf(row, { ...DEFAULT_SETTINGS, confirmWindowClose: false })).toBe('Off: a window, or Zing, closes without asking. Pages with unsaved changes still ask.')
+	})
+
 	it('says what Stay signed in to sites keeps on disk', () => {
 		const row = PANES.privacy.find((i) => i.type === 'setting' && i.key === 'persistentProfile') as SettingRow
 		expect(detailOf(row, { ...DEFAULT_SETTINGS, persistentProfile: true })).toBe(

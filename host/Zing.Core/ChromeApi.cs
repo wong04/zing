@@ -30,6 +30,8 @@ public interface IWindowHost
 	bool ReopenClosedWindow();
 	/// <summary>Quits Zing (Ctrl+Shift+Q): every window closes together and all of them are saved, asking once at most.</summary>
 	void Quit();
+	/// <summary>Relaunch to update: every window's pages may ask "Leave site?" first, as quitting does, and Stay calls it off.</summary>
+	void RelaunchToUpdate();
 	/// <summary>The chrome insets or the surface changed; put the page and layers where they now go.</summary>
 	void Relayout();
 	void FocusChrome();
@@ -137,7 +139,7 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 /// ported yet answer NotImplementedError from the bridge; commands not ported
 /// yet say so out loud.
 /// </summary>
-public sealed class ChromeApi : IDisposable
+public sealed class ChromeApi : IDisposable, ITabClosing
 {
 	public const string BlankUrl = StartPage.Url;
 
@@ -195,6 +197,12 @@ public sealed class ChromeApi : IDisposable
 
 	public PermissionBroker Permissions { get; }
 
+	/// <summary>The pages' alert, confirm, prompt and "Leave site?" dialogs, drawn in the page UI.</summary>
+	public ScriptDialogs Dialogs { get; }
+
+	/// <summary>Runs pages' beforeunload before the person's closes take them.</summary>
+	public LeaveCheck Leave { get; }
+
 	/// <summary>The vault's account picker and fill for this window's pages.</summary>
 	public Autofill Autofill { get; }
 
@@ -228,6 +236,9 @@ public sealed class ChromeApi : IDisposable
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
 		Permissions = new PermissionBroker(PageUi, HiddenTabOf, app.PopupSites);
+		Dialogs = new ScriptDialogs(PageUi, HiddenTabOf);
+		Dialogs.Showing += DialogShowing;
+		Leave = new LeaveCheck(host.Scheduler, Dialogs);
 		_secretCopy = new TimedSecretCopy(host.SecretClipboard, host.Scheduler, error => host.Report("clearing a copied password", error));
 		SignIn = new SignInWatch(() => app.Vaults.Current, id => Tabs.IsShown(id), host.Scheduler, prompt => PageUi.Update(s => s with { SaveLogin = prompt }), host.Background);
 		Autofill = new Autofill(() => app.Vaults.Current, id => Tabs.IsShown(id) ? Tabs.PageOf(id) : null, picker =>
@@ -321,7 +332,11 @@ public sealed class ChromeApi : IDisposable
 
 		bridge.Register("tabs:get", _ => State());
 		bridge.Register("tabs:activate", args => Do(() => Tabs.Activate(Text(args, 0))));
-		bridge.Register("tabs:close", args => Do(() => Tabs.Close(Text(args, 0))));
+		bridge.Register("tabs:close", async args =>
+		{
+			await ClosingTabsAsync([Text(args, 0)]);
+			return null;
+		});
 		bridge.Register("tabs:navigate", args => Do(() => Navigate(Text(args, 0), Text(args, 1))));
 		bridge.Register("tabs:open-link", args => Do(() => OpenLinkInNewTab(Text(args, 0))));
 		bridge.Register("tabs:move", args => Do(() => Ordering.Move(Text(args, 0), Int(args, 1))));
@@ -336,7 +351,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("stack:drag-presence", args => Do(() => Stacks.DragPresence(Text(args, 0), Bool(args, 1))));
 		bridge.Register("chrome:history-menu", args => HistoryMenuAsync(Text(args, 0), args));
 		bridge.Register("chrome:strip-menu", args => Do(() => Menu(Menus.Strip(Ordering), args, 0)));
-		bridge.Register("chrome:stack-menu", args => Do(() => Menu(Menus.Stack(Tabs, Saved, Ordering, Text(args, 0), host.Shell), args, 1)));
+		bridge.Register("chrome:stack-menu", args => Do(() => Menu(Menus.Stack(Tabs, Saved, Ordering, Text(args, 0), host.Shell, this), args, 1)));
 		bridge.Register("tabs:pin", args => Do(() => Saved.Pin(Text(args, 0))));
 		bridge.Register("tabs:unpin", args => Do(() => Saved.Unpin(Text(args, 0))));
 		bridge.Register("tabs:open-item", args => Do(() => Saved.Open(Text(args, 0))));
@@ -346,7 +361,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("split:drop-zone", args => Do(() => Shell.SetDropZone(Arg(args, 0) is { ValueKind: System.Text.Json.JsonValueKind.Object } zone ? new Rect(zone.GetProperty("x").GetDouble(), zone.GetProperty("y").GetDouble(), zone.GetProperty("width").GetDouble(), zone.GetProperty("height").GetDouble()) : null)));
 		bridge.Register("split:ratios", args => Do(() => Tabs.SetSplitRatios(Text(args, 0), [.. Arg(args, 1).EnumerateArray().Select(r => r.GetDouble())], Arg(args, 2).GetDouble())));
 		bridge.Register("tabs:save", args => Do(() => Saved.Save(Text(args, 0), Text(args, 1), Int(args, 2))));
-		bridge.Register("tabs:close-others", args => Do(() => Tabs.CloseOthers(Text(args, 0))));
+		bridge.Register("tabs:close-others", args => Do(() => CloseOtherTabs(Text(args, 0))));
 		bridge.Register("command:run", args => Run(Text(args, 0)));
 		bridge.Register("settings:get", _ => app.Settings.Snapshot());
 		bridge.Register("settings:set", args => Do(() => SetSetting(Text(args, 0), Arg(args, 1))));
@@ -427,7 +442,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("account:start-over", async _ => await StartOverAsync());
 		bridge.Register("account:start-over-deleting-sync", async _ => await StartOverDeletingSyncAsync());
 		bridge.Register("chrome:app-menu", args => Do(() => Menu(Menus.App(id => Run(id)), args, 0)));
-		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Saved, Text(args, 0), host.Shell), args, 1)));
+		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Saved, Text(args, 0), host.Shell, this), args, 1)));
 		bridge.Register("library:folder-menu", args => Do(() => Menu(Menus.LibraryFolder(app.Library, Text(args, 0), id => OpenLibraryItem(id, "current"), OpenAll), args, 1)));
 		bridge.Register("library:item-menu", args => Do(() => Menu(Menus.LibraryItem(app.Library, Text(args, 0), OpenLibraryItem, OpenAll, Saved), args, 1)));
 		bridge.Register("pageui:get", _ => PageUi.State);
@@ -444,6 +459,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("permission:allow", args => Do(() => Permissions.Answer(Int(args, 0), true)));
 		bridge.Register("permission:deny", args => Do(() => Permissions.Answer(Int(args, 0), false)));
 		bridge.Register("permission:allow-site", args => Do(() => Permissions.AllowForSite(Int(args, 0))));
+		bridge.Register("dialog:answer", args => Do(() => Dialogs.Answer(Int(args, 0), Bool(args, 1), OptionalText(args, 2))));
 
 		bridge.Register("vault:get", async _ => await CheckedVaultStateAsync());
 		bridge.Register("vault:summaries", _ => Vault().Summaries());
@@ -497,7 +513,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("peek:get", _ => Peek());
 		bridge.Register("update:get", _ => host.Updates.State);
 		bridge.Register("update:check", async _ => await host.Updates.CheckNowAsync());
-		bridge.Register("update:relaunch", _ => Do(host.Updates.Relaunch));
+		bridge.Register("update:relaunch", _ => Do(host.RelaunchToUpdate));
 		// CSS pixels, fractional on a scaled display; the view takes whole DIPs, rounded up.
 		bridge.Register("update:pill-size", args => Do(() => host.SetUpdatePillSize((int)Math.Ceiling(Number(args, 0)), (int)Math.Ceiling(Number(args, 1)))));
 		bridge.Register("default-browser:get", _ => host.DefaultBrowserState);
@@ -748,7 +764,7 @@ public sealed class ChromeApi : IDisposable
 			"library.bookmarks" => Act(true, () => SetLibraryPanel(_libraryPanel == "bookmarks" ? null : "bookmarks")),
 			"library.readingList" => Act(true, () => SetLibraryPanel(_libraryPanel == "readingList" ? null : "readingList")),
 			"tab.new" => Act(true, NewTab),
-			"tab.close" => Tabs.Preview is not null ? Act(true, Tabs.ClosePreview) : Act(Tabs.ActiveId is not null, () => Tabs.Close(Tabs.ActiveId!)),
+			"tab.close" => Tabs.Preview is not null ? Act(true, Tabs.ClosePreview) : Act(Tabs.ActiveId is not null, () => CloseTabs([Tabs.ActiveId!])),
 			// The window's own closed tabs first, then the windows closed app-wide.
 			"tab.reopenClosed" => Tabs.ReopenClosed() is not null || _host.ReopenClosedWindow() ? Done : NotApplicable,
 			"tab.split" => Act(Tabs.ActiveId is { } splitting && Tabs.Splits.Of(splitting) is not { TabIds.Count: >= Split.MaxPanes }, SplitWithNewTab),
@@ -1973,6 +1989,57 @@ public sealed class ChromeApi : IDisposable
 		return tab is null || Tabs.IsShown(tab.Id) ? null : tab.Title;
 	}
 
+	/// <summary>
+	/// The person closing tabs (the close button, Ctrl+W, the tab menu): each page's beforeunload may ask "Leave site?"
+	/// first, and Stay on any keeps them all. Pages that ask nothing close at once.
+	/// </summary>
+	public void CloseTabs(IReadOnlyList<string> ids) => _host.Background(ClosingTabsAsync(ids), "closing tabs");
+
+	/// <summary>Closes these tabs once their pages let them go: it ends after the close, or after Stay, so the renderer can read the tabs again.</summary>
+	private Task ClosingTabsAsync(IReadOnlyList<string> ids)
+	{
+		// An unknown tab throws here, to the caller, as closing it did.
+		foreach (var id in ids) Tabs.Get(id);
+		return CloseTabsAsync(ids);
+	}
+
+	private async Task CloseTabsAsync(IReadOnlyList<string> ids)
+	{
+		if (!await Leave.MayAllLeaveAsync(PagesOf(ids), _closing.Token)) return;
+		// Any of them may have gone while the pages answered (the page closed itself, a second close).
+		foreach (var id in ids.Where(Tabs.Has)) Tabs.Close(id);
+	}
+
+	/// <summary>Close Other Tabs: the unpinned others, once their pages have had their say.</summary>
+	public void CloseOtherTabs(string keep)
+	{
+		Tabs.Get(keep);
+		_host.Background(CloseOtherTabsAsync(keep, [.. Tabs.Records.Where(r => r.Id != keep && !r.Pinned).Select(r => r.Id)]), "closing other tabs");
+	}
+
+	private async Task CloseOtherTabsAsync(string keep, IReadOnlyList<string> others)
+	{
+		if (!await Leave.MayAllLeaveAsync(PagesOf(others), _closing.Token) || !Tabs.Has(keep)) return;
+		Tabs.CloseOthers(keep, others);
+	}
+
+	/// <summary>Whether every page of this window may close (the window closing, Quit, Relaunch to update); <paramref name="stay"/> calls it off.</summary>
+	public Task<bool> MayCloseAsync(CancellationToken stay) => Leave.MayAllLeaveAsync(PagesOf([.. Tabs.Records.Select(r => r.Id)]), stay);
+
+	/// <summary>The live pages of these tabs: a sleeping tab, or one never shown, has nothing to ask.</summary>
+	private List<IPage> PagesOf(IReadOnlyList<string> ids) => [.. ids.Where(Tabs.Has).Select(Tabs.PageOf).OfType<IPage>()];
+
+	/// <summary>
+	/// A "Leave site?" prompt for a tab that isn't on screen brings the tab forward, as Chrome does, so the person sees what
+	/// they would lose; a dialog for the tab on screen takes the keyboard. Another kind from a hidden tab waits, named.
+	/// </summary>
+	private void DialogShowing(object page, string kind)
+	{
+		if (TabOf(page) is not { } tab) return;
+		if (kind == ScriptDialogKinds.BeforeUnload && !Tabs.IsShown(tab.Id)) Tabs.Activate(tab.Id);
+		if (Tabs.IsShown(tab.Id)) _host.FocusPageUi();
+	}
+
 	private TabRecord? TabOf(object page) => Tabs.Records.FirstOrDefault(r => ReferenceEquals(Tabs.PageOf(r.Id), page));
 
 	/// <summary>
@@ -1996,6 +2063,7 @@ public sealed class ChromeApi : IDisposable
 	{
 		Ordering?.ScheduleReorganize();
 		Permissions?.Refresh();
+		Dialogs?.Refresh();
 		Find?.ActiveChanged();
 		Autofill?.PagesChanged();
 		SignIn?.PagesChanged();
@@ -2087,7 +2155,11 @@ internal sealed class LifecycleTabs(TabService tabs, TabOverview overview, TimeS
 		var page = tabs.PageOf(id) ?? throw new PageUnavailableException(id);
 		try
 		{
-			return PageProbe.Combine([.. (await page.EvaluateInFramesAsync(PageProbe.Source).WaitAsync(probeTimeout)).Select(PageProbe.Parse)]);
+			var probe = PageProbe.Combine([.. (await page.EvaluateInFramesAsync(PageProbe.Source).WaitAsync(probeTimeout)).Select(PageProbe.Parse)]);
+			if (probe.KeepAwake() is not null) return probe;
+			// Work a page keeps outside any text field (an editor's canvas, an upload) only shows in its beforeunload asking to stay.
+			using var abandon = new CancellationTokenSource(probeTimeout);
+			return await page.AsksBeforeLeavingAsync(abandon.Token).WaitAsync(probeTimeout) ? probe with { Dirty = true } : probe;
 		}
 		catch (Exception error) when (error is not PageProbeException)
 		{

@@ -38,12 +38,13 @@ public sealed record PageUiState(
 	IReadOnlyList<DownloadEntry> Downloads,
 	bool DownloadsOpen,
 	PermissionPrompt? Permission,
-	Vault.SaveLoginPrompt? SaveLogin = null)
+	Vault.SaveLoginPrompt? SaveLogin = null,
+	ScriptDialogPrompt? Dialog = null)
 {
 	public static readonly PageUiState Empty = new(null, 0, [], false, null);
 
 	[System.Text.Json.Serialization.JsonIgnore]
-	public bool HasVisiblePageUi => Find is not null || Permission is not null || SaveLogin is not null || (DownloadsOpen && Downloads.Count > 0);
+	public bool HasVisiblePageUi => Find is not null || Permission is not null || Dialog is not null || SaveLogin is not null || (DownloadsOpen && Downloads.Count > 0);
 }
 
 public enum FindDirection { Next, Previous }

@@ -94,12 +94,71 @@ internal static class Native
 	[DllImport("user32.dll")]
 	public static extern nint DefWindowProcW(nint hwnd, uint msg, nint wParam, nint lParam);
 
-	public const uint MB_OKCANCEL = 0x1;
-	public const uint MB_ICONWARNING = 0x30;
-	public const int IDOK = 1;
+	/// <summary>TASKDIALOGCONFIG; commctrl.h packs it, and its fields are all 4 or 8 bytes, so Pack = 4 lays it out the same.</summary>
+	[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 4)]
+	private struct TASKDIALOGCONFIG
+	{
+		public uint Size;
+		public nint Parent;
+		public nint Instance;
+		public uint Flags;
+		public uint CommonButtons;
+		public string? WindowTitle;
+		public nint MainIcon;
+		public string? MainInstruction;
+		public string? Content;
+		public uint ButtonCount;
+		public nint Buttons;
+		public int DefaultButton;
+		public uint RadioButtonCount;
+		public nint RadioButtons;
+		public int DefaultRadioButton;
+		public string? VerificationText;
+		public string? ExpandedInformation;
+		public string? ExpandedControlText;
+		public string? CollapsedControlText;
+		public nint FooterIcon;
+		public string? Footer;
+		public nint Callback;
+		public nint CallbackData;
+		public uint Width;
+	}
 
-	[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-	public static extern int MessageBoxW(nint owner, string text, string caption, uint type);
+	private const uint TDF_ALLOW_DIALOG_CANCELLATION = 0x8;
+	private const uint TDF_POSITION_RELATIVE_TO_WINDOW = 0x1000;
+	private const uint TDCBF_OK_BUTTON = 0x1;
+	private const uint TDCBF_CANCEL_BUTTON = 0x8;
+	// MAKEINTRESOURCEW(-1)
+	private const nint TD_WARNING_ICON = 0xFFFF;
+	private const int IDOK = 1;
+
+	// Common Controls 6 (app.manifest).
+	[DllImport("comctl32.dll", CharSet = CharSet.Unicode)]
+	private static extern int TaskDialogIndirect(ref TASKDIALOGCONFIG config, out int button, nint radioButton, [MarshalAs(UnmanagedType.Bool)] out bool verificationChecked);
+
+	/// <summary>
+	/// An OK/Cancel warning with a "Don't ask again" box, modal to <paramref name="owner"/>. The question's first paragraph
+	/// is its heading, the rest its text. Whether OK was chosen, and whether the box was ticked.
+	/// </summary>
+	public static (bool Ok, bool DontAsk) ConfirmWithDontAsk(nint owner, string question)
+	{
+		var split = question.IndexOf("\n\n", StringComparison.Ordinal);
+		var config = new TASKDIALOGCONFIG
+		{
+			Size = (uint)Marshal.SizeOf<TASKDIALOGCONFIG>(),
+			Parent = owner,
+			Flags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW,
+			CommonButtons = TDCBF_OK_BUTTON | TDCBF_CANCEL_BUTTON,
+			WindowTitle = "Zing",
+			MainIcon = TD_WARNING_ICON,
+			MainInstruction = split == -1 ? question : question[..split],
+			Content = split == -1 ? null : question[(split + 2)..],
+			VerificationText = "Don't ask again",
+		};
+		var result = TaskDialogIndirect(ref config, out var button, 0, out var dontAsk);
+		if (result != 0) throw new NativeCallException($"TaskDialogIndirect (0x{result:X8})");
+		return (button == IDOK, dontAsk);
+	}
 
 	[DllImport("user32.dll", SetLastError = true)]
 	[return: MarshalAs(UnmanagedType.Bool)]
