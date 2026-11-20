@@ -121,6 +121,10 @@ export const SETTINGS_SCHEMA = {
 	favouritesHint: flag(true),
 	/** The password vault's switch. Off by default: on, Zing keeps logins in vault/ in the profile, behind Windows Hello. */
 	passwordAutofill: flag(false),
+	/** With sync on, this PC also syncs its bookmarks and Reading List (end to end encrypted). Each PC chooses for itself. */
+	syncLibrary: flag(true),
+	/** With sync on, this PC also syncs its settings, except the ones that belong to this PC (SettingsSync.LocalOnly). Each PC chooses for itself. */
+	syncSettings: flag(true),
 	tabDropdowns: flag(false),
 	/** Zing: links to another host open as a preview. */
 	linkPreviews: flag(true),

@@ -80,6 +80,8 @@ public sealed class SyncEngine : IDisposable
 
 	private readonly VaultStore _vault;
 	private readonly SyncClient _client;
+	private readonly LibrarySync? _library;
+	private readonly SettingsSync? _settings;
 	private readonly IScheduler _scheduler;
 	private readonly IClock _clock;
 	private readonly CancellationTokenSource _stopping = new();
@@ -101,16 +103,22 @@ public sealed class SyncEngine : IDisposable
 	private TimeSpan? _rateLimitedWait;
 	/// <summary>What the last sync that worked warned of (<see cref="SyncTooLarge"/>), beside its error, which is then null.</summary>
 	private string? _warning;
+	/// <summary>Why the last sync left the library and settings alone: a server from before they synced. Null otherwise.</summary>
+	private string? _collectionsWarning;
 	private (string Code, string Message)? _error;
 	private TaskCompletionSource _ran = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
 	/// <param name="client">The vault's one client (N6), shared with sign-in, sign-out and the key operations.</param>
-	public SyncEngine(VaultStore vault, SyncClient client, IScheduler scheduler, IClock clock)
+	/// <param name="library">Syncs bookmarks and the Reading List after the logins; null syncs logins only. Disposed with the engine.</param>
+	/// <param name="settings">Syncs settings after the library; null leaves them alone. Disposed with the engine.</param>
+	public SyncEngine(VaultStore vault, SyncClient client, IScheduler scheduler, IClock clock, LibrarySync? library = null, SettingsSync? settings = null)
 	{
 		_vault = vault;
 		_client = client;
 		_scheduler = scheduler;
 		_clock = clock;
+		_library = library;
+		_settings = settings;
 	}
 
 	/// <summary>Fires after each sync, and after each change here that is waiting to upload.</summary>
@@ -148,6 +156,8 @@ public sealed class SyncEngine : IDisposable
 		_vault.Edited += OnEdited;
 		_vault.SyncChanged += OnSyncChanged;
 		_client.RefreshLost += OnRefreshLost;
+		if (_library is not null) _library.Edited += OnEdited;
+		if (_settings is not null) _settings.Edited += OnEdited;
 		Soon(TimeSpan.Zero);
 	}
 
@@ -163,6 +173,10 @@ public sealed class SyncEngine : IDisposable
 		_vault.Edited -= OnEdited;
 		_vault.SyncChanged -= OnSyncChanged;
 		_client.RefreshLost -= OnRefreshLost;
+		if (_library is not null) _library.Edited -= OnEdited;
+		if (_settings is not null) _settings.Edited -= OnEdited;
+		_library?.Dispose();
+		_settings?.Dispose();
 		// Not disposed: a sync still running reads its token until it notices.
 		_stopping.Cancel();
 	}
@@ -399,9 +413,33 @@ public sealed class SyncEngine : IDisposable
 		{
 			if (!await RoundAsync(user, cancellation)) continue;
 			_vault.DequeueSent();
-			return TooLarge();
+			var tooLarge = TooLarge();
+			await SyncCollectionsAsync(user, cancellation);
+			return tooLarge;
 		}
 		throw new SyncManifestBusyException();
+	}
+
+	/// <summary>
+	/// The library, then settings, each if this PC syncs it, once the logins are done. A server from before them (404) isn't an error:
+	/// nothing of them is sent, and Settings says why. A library edit made while it ran has another sync follow.
+	/// </summary>
+	private async Task SyncCollectionsAsync(string user, CancellationToken cancellation)
+	{
+		string? missing = null;
+		try
+		{
+			if (_library is { On: true } && await _library.SyncAsync(_client, user, cancellation))
+			{
+				lock (_lock) _again = true;
+			}
+			if (_settings is { On: true }) await _settings.SyncAsync(_client, user, cancellation);
+		}
+		catch (SyncFeatureMissingException notYet)
+		{
+			missing = notYet.Message;
+		}
+		lock (_lock) _collectionsWarning = missing;
 	}
 
 	/// <summary>The logins left behind once everything else is synced, for Settings' warning.</summary>
@@ -610,7 +648,8 @@ public sealed class SyncEngine : IDisposable
 		lock (_lock)
 		{
 			_error = null;
-			_warning = tooLarge > 0 ? SyncTooLarge.Warning(tooLarge) : null;
+			var warnings = new[] { tooLarge > 0 ? SyncTooLarge.Warning(tooLarge) : null, _collectionsWarning }.OfType<string>().ToList();
+			_warning = warnings.Count == 0 ? null : string.Join(" ", warnings);
 		}
 		StatusChanged?.Invoke();
 	}
@@ -640,6 +679,8 @@ public sealed class SyncEngine : IDisposable
 		OperationCanceledException when _stopping.IsCancellationRequested => null,
 		HttpRequestException or OperationCanceledException => ("unreachable", "Zing couldn't reach the sync server. It tries again in 5 minutes."),
 		SyncAccountChangedException => ("account-changed", error.Message),
+		LibrarySyncStoppedException or LibraryTooLargeException or SettingsSyncStoppedException => ("collections-stopped", error.Message),
+		InvalidSettingException => ("collections-stopped", $"Another PC synced a setting this version of Zing can't use, so settings stopped syncing. Update Zing. {error.Message}"),
 		SyncRateLimitedException => ("rate-limited", $"The sync server asked Zing to slow down, so it syncs again in {Words(_rateLimitedWait ?? RateLimitedRetry)}."),
 		SyncHttpException => ("server-error", error.Message),
 		_ => ("failed", error.Message),

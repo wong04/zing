@@ -75,6 +75,8 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	showFavouritesBar: flag,
 	favouritesHint: flag,
 	passwordAutofill: flag,
+	syncLibrary: flag,
+	syncSettings: flag,
 	tabDropdowns: flag,
 	linkPreviews: flag,
 	linkPreviewsShiftClick: flag,
