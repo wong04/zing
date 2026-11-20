@@ -10,6 +10,15 @@ public sealed record SessionTab(string Url, string Title, bool Pinned, bool Acti
 /// <summary>A tab's place in a split: which split, its orientation, the pane's position and its share of the space.</summary>
 public sealed record SessionSplit(string Id, string Orientation, int Pane, double Ratio);
 
+/// <summary>One window's tabs in the session file.</summary>
+public sealed record SessionWindow(IReadOnlyList<SessionTab> Tabs);
+
+/// <summary>What session.json holds: every window, oldest first. Version 1 was a bare list of one window's tabs, and still loads.</summary>
+public sealed record SessionFile(int Version, IReadOnlyList<SessionWindow> Windows)
+{
+	public const int CurrentVersion = 2;
+}
+
 public sealed class SessionFileException(string path, Exception cause)
 	: Exception($"Could not read the saved session at {path}: {cause.Message}", cause)
 {
@@ -27,19 +36,47 @@ public static class Session
 
 	public static string Encode(IEnumerable<SessionTab> tabs) => JsonSerializer.Serialize(Prepare(tabs), ZingJson.Options);
 
-	/// <summary>A corrupt file throws (JsonException or InvalidDataException), never decodes to no tabs: the caller keeps it aside and says so.</summary>
+	/// <summary>The file for these windows, oldest first: each keeps what <see cref="Prepare"/> keeps, and a window left with nothing is left out.</summary>
+	public static SessionFile ToFile(IEnumerable<IReadOnlyList<SessionTab>> windows) =>
+		new(SessionFile.CurrentVersion, [.. windows.Select(w => new SessionWindow(Prepare(w))).Where(w => w.Tabs.Count > 0)]);
+
+	public static string EncodeWindows(IEnumerable<IReadOnlyList<SessionTab>> windows) => JsonSerializer.Serialize(ToFile(windows), ZingJson.Options);
+
+	/// <summary>One window's tabs (the version 1 file). A corrupt file throws (JsonException or InvalidDataException), never decodes to no tabs: the caller keeps it aside and says so.</summary>
 	public static List<SessionTab> Decode(string text)
 	{
 		using var document = JsonDocument.Parse(text);
-		if (document.RootElement.ValueKind != JsonValueKind.Array) throw new InvalidDataException("The session file is not a list of tabs");
-		return document.RootElement.EnumerateArray()
+		return TabsOf(document.RootElement);
+	}
+
+	/// <summary>Every window, oldest first, from either version; a window left with no restorable tab is left out. Corrupt, or a version this Zing doesn't know, throws as <see cref="Decode"/> does.</summary>
+	public static List<List<SessionTab>> DecodeWindows(string text)
+	{
+		using var document = JsonDocument.Parse(text);
+		var root = document.RootElement;
+		// Version 1: the one window that was saved.
+		if (root.ValueKind == JsonValueKind.Array) return [.. new[] { TabsOf(root) }.Where(w => w.Count > 0)];
+		if (root.ValueKind != JsonValueKind.Object) throw new InvalidDataException("The session file is not a session");
+		if (!root.TryGetProperty("version", out var version) || !version.TryGetInt32(out var number)) throw new InvalidDataException("The session file has no version");
+		if (number != SessionFile.CurrentVersion) throw new InvalidDataException($"The session file is version {number}, which this Zing doesn't read");
+		if (!root.TryGetProperty("windows", out var windows) || windows.ValueKind != JsonValueKind.Array) throw new InvalidDataException("The session file has no list of windows");
+		return windows.EnumerateArray()
+			.Select(w => w.ValueKind == JsonValueKind.Object && w.TryGetProperty("tabs", out var tabs) ? TabsOf(tabs) : throw new InvalidDataException("The session file has a window that is not a window"))
+			.Where(w => w.Count > 0)
+			.ToList();
+	}
+
+	private static List<SessionTab> TabsOf(JsonElement array)
+	{
+		if (array.ValueKind != JsonValueKind.Array) throw new InvalidDataException("The session file is not a list of tabs");
+		return array.EnumerateArray()
 			.Select(e => ToTab(e) ?? throw new InvalidDataException("The session file has an entry that is not a tab"))
 			.Where(t => IsRestorableUrl(t.Url))
 			.ToList();
 	}
 
-	/// <summary>No file is a first run. One that can't be read, or isn't a session, is a <see cref="SessionFileException"/>.</summary>
-	public static List<SessionTab> Load(string path)
+	/// <summary>Every window, oldest first. No file is a first run. One that can't be read, or isn't a session, is a <see cref="SessionFileException"/>.</summary>
+	public static List<List<SessionTab>> Load(string path)
 	{
 		string text;
 		try
@@ -56,7 +93,7 @@ public static class Session
 		}
 		try
 		{
-			return Decode(text);
+			return DecodeWindows(text);
 		}
 		catch (Exception error) when (error is JsonException or InvalidDataException)
 		{
@@ -65,10 +102,33 @@ public static class Session
 	}
 
 	/// <summary>
+	/// The tabs saved for one relaunch (an update): read once and deleted whether or not they could be read, so they come back
+	/// exactly once and, with restore off, nothing stays on disk. A file that won't go is <paramref name="onDiscardFailed"/>'s, and its tabs still come back.
+	/// </summary>
+	public static List<List<SessionTab>> TakeOnce(string path, Action<Exception> onDiscardFailed)
+	{
+		try
+		{
+			return Load(path);
+		}
+		finally
+		{
+			try
+			{
+				Discard(path);
+			}
+			catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+			{
+				onDiscardFailed(error);
+			}
+		}
+	}
+
+	/// <summary>
 	/// For startup: a corrupt file is kept aside as <c>session.json.corrupt-…</c> (as settings is), and one that can't be read
 	/// is left where it is; either way no tabs plus the problem, so the browser still opens and the person is told.
 	/// </summary>
-	public static Loaded<List<SessionTab>> LoadOrRecover(string path, DateTime now) => UserData.Load(path, () => Load(path), () => [], now);
+	public static Loaded<List<List<SessionTab>>> LoadOrRecover(string path, DateTime now) => UserData.Load(path, () => Load(path), () => [], now);
 
 	/// <summary>With restore off nothing may stay on disk, including a file left by an earlier run.</summary>
 	public static void Discard(string path)
