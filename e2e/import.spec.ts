@@ -59,6 +59,7 @@ const topFolder = (bookmarks: readonly BookmarkNode[], title: string) => bookmar
 test('Settings Import lists Chrome profiles and Arc found on this PC, and importing one adds its bar and an Imported folder', async () => {
 	const root = localAppData([['Default', 'Personal', fixture('chromium-bookmarks.json')]], true)
 	const zing = await launch(root)
+	await zing.chrome.evaluate(() => window.zing.setSetting('restoreTabs', false))
 	const sheet = await openImport(zing)
 	await expect(row(sheet, 'Chrome (Personal)')).toBeVisible()
 	await expect(row(sheet, 'Arc')).toBeVisible()

@@ -59,7 +59,7 @@ async function windowsOf(zing: Zing): Promise<string[][]> {
 /** Two windows, one page each. */
 async function twoWindows(restoreTabs: boolean): Promise<Zing> {
 	const zing = await launchZing()
-	if (restoreTabs) await zing.chrome.evaluate(() => window.zing.setSetting('restoreTabs', true))
+	await zing.chrome.evaluate((on) => window.zing.setSetting('restoreTabs', on), restoreTabs)
 	await visit(zing.chrome, 'one')
 	const other = await secondWindow(zing)
 	await visit(other, 'two')

@@ -25,6 +25,7 @@ public sealed class SessionSaverTests : IDisposable
 	[Fact]
 	public void Nothing_is_written_while_restore_is_off()
 	{
+		_settings.Set("restoreTabs", false);
 		using var saver = Saver();
 		_tabs.Activate(_tabs.Add("https://example.com/").Id);
 		saver.Changed();

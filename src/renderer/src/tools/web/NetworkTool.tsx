@@ -121,7 +121,7 @@ export function NetworkTool() {
 						)}
 						<TextArea label="Script that runs as administrator" value={preview.scriptShown} readOnly rows={Math.min(14, preview.scriptShown.split('\n').length)} />
 						<p className="diagnose-detail" data-testid="dns-keeps-note">
-							Zing keeps nothing by default, but undoing a change to Windows needs your previous DNS settings, so they are kept in {preview.backupPath} until you Undo. Windows asks for permission first. If your network blocks {preview.providerName}'s servers, sites won't load until you Undo.
+							Zing keeps as little as it can, but undoing a change to Windows needs your previous DNS settings, so they are kept in {preview.backupPath} until you Undo. Windows asks for permission first. If your network blocks {preview.providerName}'s servers, sites won't load until you Undo.
 						</p>
 						<div>
 							{preview.applied ? (

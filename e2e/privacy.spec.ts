@@ -74,6 +74,8 @@ test('a site keeps nothing once its last tab closes', async () => {
 test('the browsing profile is in memory unless persistentProfile is on, which keeps sign-ins across a relaunch', async () => {
 	const keptAfterRelaunch = async (persistent: boolean): Promise<string | null> => {
 		const first = await launchZing()
+		// Reopen tabs would bring back the tab, and with it what the page showed.
+		await first.chrome.evaluate(() => window.zing.setSetting('restoreTabs', false))
 		await first.chrome.evaluate((on) => window.zing.setSetting('persistentProfile', on), persistent)
 		await first.close()
 		// The profile is chosen at launch.
@@ -104,6 +106,7 @@ function storageHolds(profile: string, origin: string): boolean {
 
 test('turning persistentProfile off deletes the kept profile at the next launch, so sites are signed out', async () => {
 	const first = await launchZing()
+	await first.chrome.evaluate(() => window.zing.setSetting('restoreTabs', false))
 	await first.chrome.evaluate(() => window.zing.setSetting('persistentProfile', true))
 	await first.close()
 	const kept = join(first.userDataDir, 'WebView2', 'EBWebView', 'WV2Profile_zing')

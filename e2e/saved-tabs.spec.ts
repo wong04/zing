@@ -72,6 +72,7 @@ test('Ctrl+D makes the tab a favourite ribbon, and clicking the ribbon again swi
 
 test('saved items survive a relaunch, but their pages do not', async () => {
 	const first = await launchZing()
+	await first.chrome.evaluate(() => window.zing.setSetting('restoreTabs', false))
 	const id = await openPage(first.chrome, 'Mail')
 	await first.chrome.evaluate((tab) => window.zing.pinTab(tab), id)
 	await expect(pinnedSection(first.chrome).getByRole('button', { name: 'Mail', exact: true })).toBeVisible()

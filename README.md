@@ -7,7 +7,7 @@ A private browser for Windows, with your tabs down the side and the small tools 
 	<img alt="Zing with its tab rail on the left and two pages side by side in split view" src="docs/screenshots/phase4-split-2-light.png">
 </picture>
 
-Zing runs on Chromium through Microsoft Edge's WebView2, so sites work as they do in Edge and Chrome, Google sign-in included. Out of the box it keeps nothing: close Zing and the sites you signed in to forget you. Anything that stores data, from restoring your tabs to the password vault, is a switch you turn on, and the privacy banner in Settings turns to a warning when one is on.
+Zing runs on Chromium through Microsoft Edge's WebView2, so sites work as they do in Edge and Chrome, Google sign-in included. Out of the box it keeps only your open tabs, so they come back next time; turn off **Reopen tabs from last time** in Settings and it keeps nothing. Either way, close Zing and the sites you signed in to forget you. Anything else that stores data, such as the password vault, is a switch you turn on, and the privacy banner in Settings turns to a warning while anything is kept.
 
 ## What you get
 
@@ -49,7 +49,7 @@ On Windows 10, Zing needs Microsoft's WebView2 runtime, which most PCs already h
 
 ## Privacy
 
-Zing stores nothing until you turn something on. The password vault and its sync are both off by default, and the Settings privacy banner turns to a warning once the vault holds a login. The banner follows what is on this PC only, so turning on sync doesn't change it; this section is where sync's data leaving the PC is described.
+Apart from your open tabs (Reopen tabs from last time, on by default), Zing stores nothing until you turn something on. The password vault and its sync are both off by default, and the Settings privacy banner turns to a warning once the vault holds a login. The banner follows what is on this PC only, so turning on sync doesn't change it; this section is where sync's data leaving the PC is described.
 
 ### What goes over the network on its own
 

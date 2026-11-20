@@ -20,7 +20,7 @@
 	"persistentProfile": false,
 	"defaultUserAgent": false,
 	"acceleratedCanvas": true,
-	"restoreTabs": false,
+	"restoreTabs": true,
 	"securityRealtime": true,
 	"sidebarPinned": true,
 	"recentFeatures": [],
