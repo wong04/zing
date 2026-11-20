@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings'
-import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setLibraryHoldsImports, setLibraryKeepsIcons, setVaultKeepsData } from './privacy'
+import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setLibraryHoldsImports, setLibraryKeepsIcons, setSiteGrantsKept, setVaultKeepsData } from './privacy'
 
 // Reopen tabs is on by default; turning it off is the state where Zing keeps nothing.
 const NOTHING_KEPT: Settings = { ...DEFAULT_SETTINGS, restoreTabs: false }
@@ -99,6 +99,17 @@ describe('bookmark icons', () => {
 		setLibraryKeepsIcons(true)
 		expect(privacyStatus(NOTHING_KEPT)).toMatchObject({ traceless: false, detail: 'Icons of bookmarked sites you visited are written to disk.' })
 		setLibraryKeepsIcons(false)
+		expect(privacyStatus(NOTHING_KEPT).traceless).toBe(true)
+	})
+})
+
+describe('remembered notification grants', () => {
+	afterEach(() => setSiteGrantsKept(false))
+
+	it('a remembered site flips the banner and names it, and none left restores it', () => {
+		setSiteGrantsKept(true)
+		expect(privacyStatus(NOTHING_KEPT)).toMatchObject({ traceless: false, detail: 'Sites allowed to show notifications are written to disk.' })
+		setSiteGrantsKept(false)
 		expect(privacyStatus(NOTHING_KEPT).traceless).toBe(true)
 	})
 })

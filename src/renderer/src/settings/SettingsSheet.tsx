@@ -24,6 +24,7 @@ import { CATEGORIES, PANES, detailOf, isVisible, type SettingRow } from './rows'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
 import { setLibraryHoldsImports, setLibraryKeepsIcons } from './privacy'
+import { useSiteGrants } from './useSiteGrants'
 import { useVaultData, VaultDataProvider } from './useVaultData'
 import './settings.css'
 
@@ -122,6 +123,8 @@ export function SettingsSheet({ handle, initialCategory, version }: SettingsShee
 	const [shown, setShown] = useState(false)
 	const sheet = useRef<HTMLDivElement>(null)
 	const vault = useVaultData()
+	// Only to redraw the privacy banner as remembered sites come and go.
+	useSiteGrants()
 	const current = CATEGORIES.find((c) => c.id === category)
 	// Only to redraw the privacy banner: the flag itself lives in privacy.ts, set before the render that reads it.
 	const [, setHoldsImports] = useState(false)

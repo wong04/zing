@@ -43,6 +43,18 @@
 	white-space: nowrap;
 }
 
+.pageui-remember {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	cursor: default;
+}
+
+.pageui-remember input {
+	margin: 0;
+	accent-color: var(--accent);
+}
+
 .pageui-input {
 	flex: 1;
 	min-width: 0;

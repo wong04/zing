@@ -34,15 +34,17 @@ public sealed class PopupSites
 /// multiple automatic downloads and file edits (File System Access) are asked for in the page UI;
 /// other permissions (local fonts, window management, MIDI, sensors, local network access, ...) are
 /// refused without asking, except the few ordinary pages need. A grant lasts as long as the page
-/// (tab), never longer. A pop-up opened without a click is blocked and offered here too. Permission names are Electron's
+/// (tab), never longer, unless the person asked to remember a site's notifications (<see cref="SiteGrants"/>). A pop-up opened without a click is blocked and offered here too. Permission names are Electron's
 /// ('media' with <c>MediaTypes</c> 'video'/'audio', 'geolocation', 'notifications', ...); the
 /// host maps WebView2's kinds onto them.
 /// </summary>
 /// <param name="hiddenTabOf">The title of the tab a page belongs to when that tab isn't on screen; null when it is shown.</param>
 /// <param name="popupSites">The session's sites allowed pop-ups, shared by the app's windows.</param>
-public sealed class PermissionBroker(PageUiStore ui, Func<object, string?> hiddenTabOf, PopupSites? popupSites = null)
+/// <param name="sites">The sites remembered as allowed to show notifications, shared by the app's windows.</param>
+public sealed class PermissionBroker(PageUiStore ui, Func<object, string?> hiddenTabOf, PopupSites? popupSites = null, SiteGrants? sites = null)
 {
 	private readonly PopupSites _popupSites = popupSites ?? new PopupSites();
+	private readonly SiteGrants _sites = sites ?? SiteGrants.InMemory();
 
 	private static readonly IReadOnlySet<string> AlwaysAllowed = new HashSet<string> { "fullscreen", "clipboard-sanitized-write", "pointerLock" };
 
@@ -86,6 +88,11 @@ public sealed class PermissionBroker(PageUiStore ui, Func<object, string?> hidde
 			resolver.Resolve(false);
 			return;
 		}
+		if (permission == "notifications" && _sites.AllowsNotifications(origin))
+		{
+			resolver.Resolve(true);
+			return;
+		}
 		var grants = GrantKeys(origin, permission, types);
 		if (_granted.TryGetValue(page, out var held) && grants.All(held.Contains))
 		{
@@ -123,6 +130,17 @@ public sealed class PermissionBroker(PageUiStore ui, Func<object, string?> hidde
 		if (pending.Kind != PermissionKinds.Popups) throw new NotAPopupPromptException(pending.Kind);
 		if (!pending.Origin.StartsWith("http", StringComparison.Ordinal)) throw new NotAWebSiteException(pending.Origin);
 		_popupSites.Allow(pending.Origin);
+		Answer(id, true);
+	}
+
+	/// <summary>`permission:remember`: allows a site's notifications and keeps that on disk, so its pages aren't asked again until Settings removes it.</summary>
+	public void RememberForSite(int id)
+	{
+		var at = _queue.FindIndex(p => p.Id == id);
+		if (at == -1) return;
+		var pending = _queue[at];
+		if (pending.Kind != PermissionKinds.Notifications) throw new NotANotificationPromptException(pending.Kind);
+		_sites.RememberNotifications(pending.Origin);
 		Answer(id, true);
 	}
 

@@ -13,6 +13,9 @@ public static class AppPaths
 	public static string Library => Path.Combine(UserData, "library.json");
 	public static string Session => Path.Combine(UserData, "session.json");
 
+	/// <summary>The sites the person asked to remember as allowed to show notifications; there only while one is remembered.</summary>
+	public static string SitePermissions => Path.Combine(UserData, Zing.Core.SiteGrants.FileName);
+
 	/// <summary>Every window's tabs, saved as Zing relaunches into an update and read once by the next launch, whatever restoreTabs says.</summary>
 	public static string RelaunchSession => Path.Combine(UserData, "relaunch-session.json");
 

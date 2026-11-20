@@ -115,7 +115,8 @@ public interface IWindowHost
 /// <param name="BrowserLauncher">Starts another browser at its password export page; null where the host can't, and then <c>import:watch-passwords</c> throws.</param>
 /// <param name="FileTrash">Sends a found export to the Recycle Bin; null where the host can't, and then <c>import:recycle</c> throws.</param>
 /// <param name="BookmarkIcons">The icons kept for bookmarked sites once visited; null where the host keeps none, and bookmarks show their letter.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null)
+/// <param name="RememberedSites">The sites remembered as allowed to show notifications; null keeps them in memory only.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null, SiteGrants? RememberedSites = null)
 {
 	public long Now() => Clock.Now();
 
@@ -127,6 +128,9 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 
 	/// <summary>The sites allowed pop-ups this session, in every window.</summary>
 	public PopupSites PopupSites { get; } = new();
+
+	/// <summary>The sites remembered as allowed to show notifications, in every window.</summary>
+	public SiteGrants SiteGrants { get; } = RememberedSites ?? SiteGrants.InMemory();
 }
 
 /// <summary>
@@ -154,6 +158,7 @@ public sealed class ChromeApi : IDisposable
 	private readonly List<IDisposable> _subscriptions = [];
 	private readonly Action _unsubscribeLibrary;
 	private readonly Action _unsubscribeIcons;
+	private readonly Action _unsubscribeSites;
 	private string? _libraryPanel;
 	// Cancelled when the window closes, so a download it started doesn't outlive it.
 	private readonly CancellationTokenSource _closing = new();
@@ -225,7 +230,7 @@ public sealed class ChromeApi : IDisposable
 		Ordering = new TabOrdering(Tabs, app.Settings, host.Notify, host.Scheduler);
 		Find = new FindController(PageUi, new FindHost(this));
 		Downloads = new DownloadList(host.DownloadsDirectory, host.DownloadHost, PageUi, host.Notify);
-		Permissions = new PermissionBroker(PageUi, HiddenTabOf, app.PopupSites);
+		Permissions = new PermissionBroker(PageUi, HiddenTabOf, app.PopupSites, app.SiteGrants);
 		_secretCopy = new TimedSecretCopy(host.SecretClipboard, host.Scheduler, error => host.Report("clearing a copied password", error));
 		SignIn = new SignInWatch(() => app.Vaults.Current, id => Tabs.IsShown(id), host.Scheduler, prompt => PageUi.Update(s => s with { SaveLogin = prompt }), host.Background);
 		Autofill = new Autofill(() => app.Vaults.Current, id => Tabs.IsShown(id) ? Tabs.PageOf(id) : null, picker =>
@@ -442,6 +447,9 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("permission:allow", args => Do(() => Permissions.Answer(Int(args, 0), true)));
 		bridge.Register("permission:deny", args => Do(() => Permissions.Answer(Int(args, 0), false)));
 		bridge.Register("permission:allow-site", args => Do(() => Permissions.AllowForSite(Int(args, 0))));
+		bridge.Register("permission:remember", args => Do(() => Permissions.RememberForSite(Int(args, 0))));
+		bridge.Register("sites:get", _ => app.SiteGrants.State);
+		bridge.Register("sites:forget-notifications", args => Do(() => app.SiteGrants.ForgetNotifications(Text(args, 0))));
 
 		bridge.Register("vault:get", async _ => await CheckedVaultStateAsync());
 		bridge.Register("vault:summaries", _ => Vault().Summaries());
@@ -522,6 +530,7 @@ public sealed class ChromeApi : IDisposable
 
 		_subscriptions.Add(app.Settings.Subscribe(OnSettingChanged));
 		_unsubscribeLibrary = app.Library.Subscribe(_ => host.Push("library:state", LibraryState()));
+		_unsubscribeSites = app.SiteGrants.Subscribe(() => host.Push("sites:state", app.SiteGrants.State));
 		_unsubscribeIcons = app.BookmarkIcons?.Subscribe(() => host.Push("library:state", LibraryState())) ?? (() => { });
 	}
 
@@ -691,6 +700,7 @@ public sealed class ChromeApi : IDisposable
 		Lifecycle.Dispose();
 		_unsubscribeLibrary();
 		_unsubscribeIcons();
+		_unsubscribeSites();
 		Saved.Dispose();
 		Tabs.Destroy();
 	}

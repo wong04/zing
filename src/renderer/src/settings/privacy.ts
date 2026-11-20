@@ -42,12 +42,21 @@ export function setLibraryKeepsIcons(keeps: boolean): void {
 	libraryKeepsIcons = keeps
 }
 
+// Notification grants the person asked to remember are kept in a file the host deletes with the last one; the Settings sheet watches them.
+let siteGrantsKept = false
+
+/** Whether any site is remembered as allowed to show notifications. */
+export function setSiteGrantsKept(kept: boolean): void {
+	siteGrantsKept = kept
+}
+
 const conditions: StoresDataCondition[] = [
 	{ id: 'persistentProfile', active: (s) => s.persistentProfile, what: 'cookies and cache', plural: true },
 	{ id: 'restoreTabs', active: (s) => s.restoreTabs, what: 'your open tabs', plural: true },
 	{ id: 'vault', active: () => vaultKeepsData, what: 'saved passwords', plural: true },
 	{ id: 'imported', active: () => libraryHoldsImports, what: 'imported bookmarks', plural: true },
 	{ id: 'bookmarkIcons', active: () => libraryKeepsIcons, what: 'icons of bookmarked sites you visited', plural: true },
+	{ id: 'siteGrants', active: () => siteGrantsKept, what: 'sites allowed to show notifications', plural: true },
 ]
 
 export class DuplicateConditionError extends Error {

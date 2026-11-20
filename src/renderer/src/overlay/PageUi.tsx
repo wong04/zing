@@ -165,14 +165,24 @@ function useArmed(): boolean {
 
 function PermissionCard({ prompt }: { prompt: NonNullable<PageUiState['permission']> }) {
 	const armed = useArmed()
+	// Only a web site's notifications can be remembered; everything else lasts as long as the page.
+	const rememberable = prompt.kind === 'notifications' && prompt.origin.startsWith('http')
+	const [remember, setRemember] = useState(false)
+	const allow = (): void => void (remember && rememberable ? zing.rememberPermission(prompt.id) : zing.allowPermission(prompt.id))
 	return (
 		<div className="pageui-card" role="alertdialog" aria-label="Permission request">
 			<span>
 				<strong>{prompt.origin}</strong> wants to {PERMISSION_VERB[prompt.kind]}
 			</span>
 			{prompt.tab !== undefined && <span className="pageui-detail">From the tab “{prompt.tab}”</span>}
+			{rememberable && (
+				<label className="pageui-detail pageui-remember">
+					<input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+					Remember for this site
+				</label>
+			)}
 			<div className="pageui-row">
-				<button type="button" className="pageui-button primary" disabled={!armed} onClick={() => void zing.allowPermission(prompt.id)}>
+				<button type="button" className="pageui-button primary" disabled={!armed} onClick={allow}>
 					Allow
 				</button>
 				<button type="button" className="pageui-button" onClick={() => void zing.denyPermission(prompt.id)}>
