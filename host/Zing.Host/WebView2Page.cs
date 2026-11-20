@@ -57,6 +57,8 @@ public sealed class WebView2Page : IPage
 	private bool _dialogOpen;
 	/// <summary>The renderer was reported unresponsive and hasn't answered since.</summary>
 	private bool _hung;
+	/// <summary>Large request bodies still going out, from DevTools' Network events: nothing runs in the page for it.</summary>
+	private readonly UploadTracker _uploads = new();
 	private ViewerGuests? _viewers;
 	private readonly FrameNavigations _frames = new(() => DateTime.UtcNow);
 
@@ -197,6 +199,13 @@ public sealed class WebView2Page : IPage
 	/// </summary>
 	private string TopOf(CoreWebView2 core) =>
 		_bornRelayed && core.Source is "" or "about:blank" ? RelayedContent.Scheme + "://popup.invalid/" : core.Source;
+	/// <summary>Like the warning page's Replace decision: the engine has no navigation that replaces, but the document's location does.</summary>
+	public void Replace(string url)
+	{
+		_zingNavigation = url;
+		Run(core => Background(core.ExecuteScriptAsync($"location.replace({System.Text.Json.JsonSerializer.Serialize(url)})").AsTask(), "history step"));
+	}
+
 	public void GoBack() => Run(core => core.GoBack());
 	public void GoForward() => Run(core => core.GoForward());
 	public void Reload() => Run(core => core.Reload());
@@ -382,6 +391,41 @@ public sealed class WebView2Page : IPage
 		Run(core => Background(core.CallDevToolsProtocolMethodAsync("Page.navigateToHistoryEntry", System.Text.Json.JsonSerializer.Serialize(new { entryId })).AsTask(), "history"));
 
 	public bool IsAudible => _core?.IsDocumentPlayingAudio ?? false;
+
+	public bool IsUploading => _uploads.IsUploading;
+
+	public PageHistory History { get; private set; } = new([], 0);
+
+	/// <summary>
+	/// Keeps <see cref="History"/> current for the session and a tab that sleeps, then says so, so the session is saved with it.
+	/// DevTools can refuse while the main frame changes hosts (an error result, which WebView2 raises as ArgumentException): the
+	/// last answer stands until the next change, and the tab's own address and title stand for the entry it is on.
+	/// </summary>
+	private async Task FollowHistoryAsync()
+	{
+		try
+		{
+			History = await HistoryAsync();
+		}
+		catch (ArgumentException error)
+		{
+			Faults.Warning("history snapshot", error);
+			return;
+		}
+		if (IsOpen) _events.StateChanged();
+	}
+
+	/// <summary>
+	/// Network.enable with no bodies kept: only the events are wanted (<see cref="UploadTracker"/>). They come from the engine, so
+	/// the page sees nothing, unlike wrapping XMLHttpRequest or fetch.
+	/// </summary>
+	private async Task FollowUploadsAsync(CoreWebView2 core)
+	{
+		core.GetDevToolsProtocolEventReceiver("Network.requestWillBeSentExtraInfo").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => _uploads.HeadersSent(e.ParameterObjectAsJson), "upload start");
+		core.GetDevToolsProtocolEventReceiver("Network.loadingFinished").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => _uploads.Ended(e.ParameterObjectAsJson), "upload end");
+		core.GetDevToolsProtocolEventReceiver("Network.loadingFailed").DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => _uploads.Ended(e.ParameterObjectAsJson), "upload end");
+		await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync("Network.enable", System.Text.Json.JsonSerializer.Serialize(new { maxTotalBufferSize = 0, maxResourceBufferSize = 0, maxPostDataSize = 0 })).AsTask());
+	}
 
 	public async Task<System.Text.Json.JsonElement> EvaluateAsync(string script)
 	{
@@ -658,6 +702,7 @@ public sealed class WebView2Page : IPage
 		core.GetDevToolsProtocolEventReceiver("Page.javascriptDialogOpening").DevToolsProtocolEventReceived += (_, _) => _dialogOpen = true;
 		core.GetDevToolsProtocolEventReceiver("Page.javascriptDialogClosed").DevToolsProtocolEventReceived += (_, _) => _dialogOpen = false;
 		Background(ReadNavigationReasonsAsync(core), "navigation reasons");
+		Background(FollowUploadsAsync(core), "upload watch");
 		core.NavigationStarting += (_, e) =>
 		{
 			// Decided here and now: NavigationStarting has no deferral, and the reason has already arrived.
@@ -752,7 +797,11 @@ public sealed class WebView2Page : IPage
 		};
 		core.DocumentTitleChanged += (_, _) => _events.TitleChanged(core.DocumentTitle);
 		core.FaviconChanged += (_, _) => Background(IconChangedAsync(core), "favicon");
-		core.HistoryChanged += (_, _) => _events.StateChanged();
+		core.HistoryChanged += (_, _) =>
+		{
+			_events.StateChanged();
+			Background(FollowHistoryAsync(), "history");
+		};
 		core.WindowCloseRequested += (_, _) => _events.Closed();
 		core.NewWindowRequested += OnNewWindowRequested;
 		core.ProcessFailed += OnProcessFailed;
@@ -1093,6 +1142,8 @@ public sealed class WebView2Page : IPage
 				IsLoading = false;
 				// The dialog went with its renderer, which may never say so.
 				_dialogOpen = false;
+				// So did its requests.
+				_uploads.Clear();
 				_hung = false;
 				_events.Crashed(PageFault.Crashed);
 				break;
@@ -1103,7 +1154,7 @@ public sealed class WebView2Page : IPage
 				Background(WatchForAnswerAsync(sender), "hung page check");
 				break;
 			case CoreWebView2ProcessFailedKind.BrowserProcessExited:
-				EngineFailures.ReportBrowserLost();
+				EngineFailures.ReportBrowserLost(e.ExitCode);
 				break;
 		}
 	}

@@ -120,7 +120,8 @@ public interface IWindowHost
 /// <param name="BrowserLauncher">Starts another browser at its password export page; null where the host can't, and then <c>import:watch-passwords</c> throws.</param>
 /// <param name="FileTrash">Sends a found export to the Recycle Bin; null where the host can't, and then <c>import:recycle</c> throws.</param>
 /// <param name="BookmarkIcons">The icons kept for bookmarked sites once visited; null where the host keeps none, and bookmarks show their letter.</param>
-public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null, Func<string>? AppData = null)
+/// <param name="CrashLog">The local log of renderer and engine crashes; null where the host keeps none, and the about:*crash-log channels throw.</param>
+public sealed record AppServices(SettingsStore Settings, LibraryStore Library, Address Address, IClock Clock, AccountStore Account, RelayConsent Consent, SiteDataKeeper? SiteData = null, IBrowsingData? BrowsingData = null, NetServices? Net = null, DnsService? Dns = null, ThreatGate? Threats = null, EngineStore? Engines = null, EngineRunner? Runner = null, string? ViewerRoot = null, VaultStore? Vault = null, bool VaultUnreadable = false, VaultSwitch? Switch = null, SyncSetup? Sync = null, IScheduler? SyncScheduler = null, Func<string>? LocalAppData = null, IBrowserLauncher? BrowserLauncher = null, IFileTrash? FileTrash = null, IDefaultBrowserReader? DefaultBrowser = null, BookmarkIcons? BookmarkIcons = null, Func<string>? AppData = null, CrashLog? CrashLog = null)
 {
 	public long Now() => Clock.Now();
 
@@ -128,7 +129,7 @@ public sealed record AppServices(SettingsStore Settings, LibraryStore Library, A
 	public VaultSwitch Vaults { get; } = Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable);
 
 	/// <summary>The open vault's one sync client, for every window; null without <see cref="Sync"/>.</summary>
-	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync, Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable), SyncScheduler, Clock);
+	public SyncClients? SyncClients { get; } = Sync is null ? null : new SyncClients(Sync, Switch ?? VaultSwitch.Fixed(Vault, VaultUnreadable), SyncScheduler, Clock, Library, Settings);
 
 	/// <summary>The sites allowed pop-ups this session, in every window.</summary>
 	public PopupSites PopupSites { get; } = new();
@@ -505,6 +506,9 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("update:pill-size", args => Do(() => host.SetUpdatePillSize((int)Math.Ceiling(Number(args, 0)), (int)Math.Ceiling(Number(args, 1)))));
 		bridge.Register("default-browser:get", _ => host.DefaultBrowserState);
 		bridge.Register("about:credits", _ => File.ReadAllText(host.ThirdPartyNoticesPath));
+		bridge.Register("about:crash-log", _ => new { exists = RequireCrashLog().Exists });
+		bridge.Register("about:open-crash-log", _ => Do(OpenCrashLog));
+		bridge.Register("about:clear-crash-log", _ => Do(RequireCrashLog().Clear));
 		bridge.Register("default-browser:dismiss", _ => Do(() =>
 		{
 			app.Settings.Set("defaultBrowserDismissed", true);
@@ -620,6 +624,17 @@ public sealed class ChromeApi : IDisposable
 	{
 		var file = LaunchArgs.Files([path], File.Exists).SingleOrDefault() ?? throw new UnsupportedLaunchFileException(path);
 		OpenLink(file.Address);
+	}
+
+	private CrashLog RequireCrashLog() => _app.CrashLog ?? throw new InvalidOperationException("This host keeps no crash log");
+
+	/// <summary>The log in a new tab, as plain text at its file: address.</summary>
+	/// <exception cref="NoCrashLogException"/>
+	private void OpenCrashLog()
+	{
+		var log = RequireCrashLog();
+		if (!log.Exists) throw new NoCrashLogException();
+		OpenLinkInNewTab(log.Address);
 	}
 
 	/// <summary>A link tile: one new tab at the address, so there is no blank page behind it in Back and the keyboard stays with the page.</summary>
@@ -764,8 +779,13 @@ public sealed class ChromeApi : IDisposable
 			"window.close" => Act(true, _host.CloseWindow),
 			"app.quit" => Act(true, _host.Quit),
 			"location.open" => Act(true, FocusAddress),
-			"history.back" => Act(page is { CanGoBack: true }, () => page!.GoBack()),
-			"history.forward" => Act(page is { CanGoForward: true }, () => page!.GoForward()),
+			// A tab's Back and Forward include the history it had before it slept or was restored (TabService.GoBack).
+			"history.back" => Tabs.Preview is null
+				? Act(Tabs.ActiveId is { } back && Tabs.CanGoBack(back), () => Tabs.GoBack(Tabs.ActiveId!))
+				: Act(page is { CanGoBack: true }, () => page!.GoBack()),
+			"history.forward" => Tabs.Preview is null
+				? Act(Tabs.ActiveId is { } forward && Tabs.CanGoForward(forward), () => Tabs.GoForward(Tabs.ActiveId!))
+				: Act(page is { CanGoForward: true }, () => page!.GoForward()),
 			"history.home" => Act(Tabs.ActiveId is not null, () => Tabs.Navigate(Tabs.ActiveId!, HomepageUrl())),
 			"page.reload" => Act(page is not null, () => page!.Reload()),
 			"page.find" => Act(findable, Find.Open),
@@ -2080,6 +2100,7 @@ internal sealed class LifecycleTabs(TabService tabs, TabOverview overview, TimeS
 	public IReadOnlyList<TabRecord> Records => tabs.Records;
 	public bool HasPage(string id) => tabs.HasPage(id);
 	public bool IsAudible(string id) => tabs.PageOf(id)?.IsAudible ?? false;
+	public bool IsUploading(string id) => tabs.PageOf(id)?.IsUploading ?? false;
 	public bool IsBlocked(string id) => tabs.PageOf(id)?.HasOpenDialog == true || tabs.FaultOf(id) is not null;
 
 	public async Task<PageProbe> ProbeAsync(string id)

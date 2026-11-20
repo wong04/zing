@@ -25,6 +25,13 @@ public sealed class FakePage(IPageEvents events) : IPage
 		Url = url;
 	}
 
+	/// <summary>Goes to <paramref name="url"/> in place of the entry the page is on, as location.replace does.</summary>
+	public void Replace(string url)
+	{
+		Calls.Add($"replace {url}");
+		Url = url;
+	}
+
 	public void GoBack() => Calls.Add("back");
 	public void GoForward() => Calls.Add("forward");
 	public void Reload() => Calls.Add("reload");
@@ -40,6 +47,7 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public void Find(string query, FindDirection direction, FindMode mode) => Calls.Add($"find {query} {direction} {mode}");
 	public void StopFind() => Calls.Add("stop find");
 	public bool IsAudible { get; set; }
+	public bool IsUploading { get; set; }
 	public bool IsSuspended { get; set; }
 	public Task<bool> TrySuspendAsync()
 	{

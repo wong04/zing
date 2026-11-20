@@ -158,6 +158,9 @@ public sealed class LibraryStore
 		return outcome;
 	}
 
+	/// <summary>The library as sync merged it with other PCs' changes: saved and sent to every window like an edit.</summary>
+	public void ReplaceFromSync(BrowserLibrary merged) => Set(merged);
+
 	private string NewFolder(IReadOnlyList<string> ids)
 	{
 		var id = _newId();
