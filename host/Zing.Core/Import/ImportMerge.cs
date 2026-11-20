@@ -11,13 +11,17 @@ public static class ImportMerge
 	private delegate bool FolderMatch(BookmarkFolder existing, ImportedFolder incoming);
 
 	/// <summary>
-	/// Bar items join the Favourites bar; everything else lands in one "Imported from &lt;source&gt;" folder, found again by its importedFrom mark
+	/// Bar items join the Favourites bar; everything else lands in one "Imported from &lt;label&gt;" folder, found again by its importedFrom mark
 	/// even if renamed or moved. Re-importing only adds: nothing is ever removed, renamed or reordered, and nothing the source imported before is
-	/// added again. When nothing is added, <paramref name="library"/> itself comes back.
+	/// added again. When nothing is added and no mark is adopted, <paramref name="library"/> itself comes back.
 	/// </summary>
-	public static MergeOutcome Merge(BrowserLibrary library, BookmarkImport result, string source, long now, Func<string> newId)
+	/// <param name="source">The mark: a key that outlives renames ("chrome:Default", "arc", "file:bookmarks.html").</param>
+	/// <param name="label">What the person calls the source now ("Chrome (Personal)"), for the folder title. Imports before marks were keys
+	/// were marked with it, so those marks are adopted first: a re-import after the upgrade finds them.</param>
+	public static MergeOutcome Merge(BrowserLibrary library, BookmarkImport result, string source, string label, long now, Func<string> newId)
 	{
-		var folderTitle = $"Imported from {source}";
+		var folderTitle = $"Imported from {label}";
+		library = AdoptMarks(library, label, source);
 		var imported = ImportedUrls(library.Bookmarks, source, []);
 		var bar = Library.Favourites(library);
 		var barMerge = MergeChildren(bar, result.Bar, (existing, incoming) => existing.Title == incoming.Title && existing.ImportedFrom == source, imported, source, now, newId);
@@ -39,6 +43,40 @@ public static class ImportMerge
 		if (ReferenceEquals(inner.Children, existing.Children)) return unchanged;
 		var bookmarks = ReplaceFolder(merged.Bookmarks, existing with { Children = inner.Children, UpdatedAt = now });
 		return unchanged with { Library = merged with { Bookmarks = bookmarks }, AddedToFolder = inner.Added };
+	}
+
+	// Rewrites marks equal to `from` as `to`, copying only the folders on the way down to a change.
+	private static BrowserLibrary AdoptMarks(BrowserLibrary library, string from, string to)
+	{
+		if (from == to) return library;
+		var bookmarks = Remark(library.Bookmarks, from, to);
+		return ReferenceEquals(bookmarks, library.Bookmarks) ? library : library with { Bookmarks = bookmarks };
+	}
+
+	private static IReadOnlyList<BookmarkNode> Remark(IReadOnlyList<BookmarkNode> nodes, string from, string to)
+	{
+		List<BookmarkNode>? result = null;
+		for (var i = 0; i < nodes.Count; i++)
+		{
+			var node = nodes[i];
+			BookmarkNode next = node switch
+			{
+				BookmarkLink link => link.ImportedFrom == from ? link with { ImportedFrom = to } : link,
+				BookmarkFolder folder => Remarked(folder, from, to),
+				_ => throw new NotSupportedException($"Unknown bookmark node {node.GetType().Name}"),
+			};
+			if (ReferenceEquals(next, node)) continue;
+			result ??= [.. nodes];
+			result[i] = next;
+		}
+		return result ?? nodes;
+	}
+
+	private static BookmarkFolder Remarked(BookmarkFolder folder, string from, string to)
+	{
+		var children = Remark(folder.Children, from, to);
+		if (ReferenceEquals(children, folder.Children) && folder.ImportedFrom != from) return folder;
+		return folder with { Children = children, ImportedFrom = folder.ImportedFrom == from ? to : folder.ImportedFrom };
 	}
 
 	// Ids are handed out parent first, so the order is the same on every port.

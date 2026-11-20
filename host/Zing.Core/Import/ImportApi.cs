@@ -58,7 +58,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	private BookmarkImportOutcome ImportSourceCore(string id)
 	{
 		var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
-		return Merge(Guarded(() => ImportSources.Read(source), "this browser's bookmarks"), source.Display);
+		return Merge(Guarded(() => ImportSources.Read(source), "this browser's bookmarks"), source.Id, source.Display);
 	}
 
 	/// <exception cref="UnknownFileGrantException"/>
@@ -72,10 +72,17 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	public BookmarkImportOutcome ImportPicked(string token)
 	{
 		var path = grants.Resolve(token);
-		var outcome = Merge(Guarded(() => ImportFile.ParseBookmarks(path), "this file"), Path.GetFileName(path));
+		var name = Path.GetFileName(path);
+		var outcome = Merge(Guarded(() => ImportFile.ParseBookmarks(path), "this file"), FileKey(name), name);
 		EndNudge();
 		return outcome;
 	}
+
+	/// <summary>
+	/// A file's mark is its name: a re-import of the same export finds what it brought before, wherever the file now lives. Not its path, which the
+	/// renderer must never see (marks are in the library it is sent), and not its contents, which change with every export. Windows names ignore case.
+	/// </summary>
+	public static string FileKey(string name) => $"file:{name.ToLowerInvariant()}";
 
 	/// <summary>An import from Settings answers the card too: it stays away from now on.</summary>
 	private void EndNudge()
@@ -262,9 +269,9 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 		push("import:watch-timed-out", new WatchTimedOut());
 	}
 
-	private BookmarkImportOutcome Merge(BookmarkImport import, string source)
+	private BookmarkImportOutcome Merge(BookmarkImport import, string source, string label)
 	{
-		var outcome = library.Import(import, source);
+		var outcome = library.Import(import, source, label);
 		return new BookmarkImportOutcome(outcome.FolderTitle, outcome.AddedToBar, outcome.AddedToFolder, import.Skipped);
 	}
 

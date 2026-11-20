@@ -1,5 +1,5 @@
 {
-	"note": "Ids come from a counter newId: \"n1\", \"n2\", ... assigned in creation order: bar before other, depth first, a folder before its children (so the \"Imported from\" folder takes its id before the nodes inside it). Nodes in the input library use other ids. The URLs already imported are every link anywhere in the library marked with the source, taken before the merge; an incoming link with one of those URLs is never added again, wherever the user moved or renamed it, and a link the user deleted comes back. The import folder is the first folder in depth-first order, outside Favourites, marked with the source whose parent is not; with none, a new top-level one is made. Bar folders match on title and mark, folders under the import folder on title; an incoming folder that matches nothing is added without its already-imported links, and not at all if it had links and none are left. Merged folders that gain something get updatedAt = now; Favourites and the folders above the import folder are left as is. When nothing is added the library comes back unchanged (the same object in C#).",
+	"note": "Ids come from a counter newId: \"n1\", \"n2\", ... assigned in creation order: bar before other, depth first, a folder before its children (so the \"Imported from\" folder takes its id before the nodes inside it). Nodes in the input library use other ids. The URLs already imported are every link anywhere in the library marked with the source, taken before the merge; an incoming link with one of those URLs is never added again, wherever the user moved or renamed it, and a link the user deleted comes back. The import folder is the first folder in depth-first order, outside Favourites, marked with the source whose parent is not; with none, a new top-level one is made. Bar folders match on title and mark, folders under the import folder on title; an incoming folder that matches nothing is added without its already-imported links, and not at all if it had links and none are left. Merged folders that gain something get updatedAt = now; Favourites and the folders above the import folder are left as is. When nothing is added the library comes back unchanged (the same object in C#). The mark is `source`, a key that outlives renames; `label` is only the folder title. Before the merge, marks equal to `label` (how imports were marked before keys) become `source`, without touching updatedAt; when that changes something the library comes back changed even if nothing is added.",
 	"merge": [
 		{
 			"name": "first import",
@@ -60,6 +60,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -249,6 +250,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -384,6 +386,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -543,6 +546,7 @@
 				"skipped": []
 			},
 			"source": "Chrome (Work)",
+			"label": "Chrome (Work)",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -716,6 +720,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -814,6 +819,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -911,6 +917,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -993,6 +1000,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -1081,6 +1089,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -1184,6 +1193,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -1285,6 +1295,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -1397,6 +1408,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -1498,6 +1510,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -1636,6 +1649,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -1770,6 +1784,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -1890,6 +1905,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -1998,6 +2014,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -2096,6 +2113,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -2221,6 +2239,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -2326,6 +2345,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -2475,6 +2495,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -2593,6 +2614,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -2677,6 +2699,7 @@
 				"skipped": []
 			},
 			"source": "Chrome",
+			"label": "Chrome",
 			"now": 7,
 			"expected": {
 				"library": {
@@ -2714,6 +2737,320 @@
 				"addedToBar": 0,
 				"addedToFolder": 0,
 				"folderTitle": "Imported from Chrome"
+			}
+		},
+		{
+			"name": "a renamed profile finds its earlier import by key and adds nothing",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "a1",
+								"title": "GitHub",
+								"url": "https://github.com/",
+								"updatedAt": 3,
+								"importedFrom": "chrome:Default"
+							}
+						],
+						"updatedAt": 1
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "a2",
+						"title": "Imported from Chrome (Personal)",
+						"children": [
+							{
+								"id": "a3",
+								"title": "Mobile",
+								"children": [
+									{
+										"id": "a4",
+										"title": "Phone",
+										"url": "https://phone.example/",
+										"updatedAt": 3,
+										"importedFrom": "chrome:Default"
+									}
+								],
+								"updatedAt": 3,
+								"importedFrom": "chrome:Default"
+							},
+							{
+								"id": "a5",
+								"title": "Mine",
+								"url": "https://mine.example/",
+								"updatedAt": 4
+							}
+						],
+						"updatedAt": 3,
+						"importedFrom": "chrome:Default"
+					}
+				],
+				"readingList": []
+			},
+			"result": {
+				"bar": [
+					{
+						"kind": "link",
+						"title": "GitHub",
+						"url": "https://github.com/"
+					}
+				],
+				"other": [
+					{
+						"kind": "folder",
+						"title": "Mobile",
+						"children": [
+							{
+								"kind": "link",
+								"title": "Phone",
+								"url": "https://phone.example/"
+							}
+						]
+					}
+				],
+				"skipped": []
+			},
+			"source": "chrome:Default",
+			"label": "Chrome (Work)",
+			"now": 9,
+			"expected": {
+				"library": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [
+								{
+									"id": "a1",
+									"title": "GitHub",
+									"url": "https://github.com/",
+									"updatedAt": 3,
+									"importedFrom": "chrome:Default"
+								}
+							],
+							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "a2",
+							"title": "Imported from Chrome (Personal)",
+							"children": [
+								{
+									"id": "a3",
+									"title": "Mobile",
+									"children": [
+										{
+											"id": "a4",
+											"title": "Phone",
+											"url": "https://phone.example/",
+											"updatedAt": 3,
+											"importedFrom": "chrome:Default"
+										}
+									],
+									"updatedAt": 3,
+									"importedFrom": "chrome:Default"
+								},
+								{
+									"id": "a5",
+									"title": "Mine",
+									"url": "https://mine.example/",
+									"updatedAt": 4
+								}
+							],
+							"updatedAt": 3,
+							"importedFrom": "chrome:Default"
+						}
+					],
+					"readingList": []
+				},
+				"addedToBar": 0,
+				"addedToFolder": 0,
+				"folderTitle": "Imported from Chrome (Work)"
+			}
+		},
+		{
+			"name": "marks from before keys, equal to the label, are adopted and nothing is added again; other sources' marks stay",
+			"library": {
+				"bookmarks": [
+					{
+						"id": "fab00000-0000-4000-8000-000000000001",
+						"title": "Favourites",
+						"children": [
+							{
+								"id": "a1",
+								"title": "GitHub",
+								"url": "https://github.com/",
+								"updatedAt": 3,
+								"importedFrom": "Chrome (Personal)"
+							}
+						],
+						"updatedAt": 1
+					},
+					{
+						"id": "fab00000-0000-4000-8000-000000000002",
+						"title": "Pinned",
+						"children": [],
+						"updatedAt": 1
+					},
+					{
+						"id": "a2",
+						"title": "Imported from Chrome (Personal)",
+						"children": [
+							{
+								"id": "a3",
+								"title": "Mobile",
+								"children": [
+									{
+										"id": "a4",
+										"title": "Phone",
+										"url": "https://phone.example/",
+										"updatedAt": 3,
+										"importedFrom": "Chrome (Personal)"
+									}
+								],
+								"updatedAt": 3,
+								"importedFrom": "Chrome (Personal)"
+							},
+							{
+								"id": "a5",
+								"title": "Mine",
+								"url": "https://mine.example/",
+								"updatedAt": 4
+							}
+						],
+						"updatedAt": 3,
+						"importedFrom": "Chrome (Personal)"
+					},
+					{
+						"id": "e1",
+						"title": "Imported from Edge (Personal)",
+						"children": [
+							{
+								"id": "e2",
+								"title": "Bing",
+								"url": "https://bing.example/",
+								"updatedAt": 2,
+								"importedFrom": "Edge (Personal)"
+							}
+						],
+						"updatedAt": 2,
+						"importedFrom": "Edge (Personal)"
+					}
+				],
+				"readingList": []
+			},
+			"result": {
+				"bar": [
+					{
+						"kind": "link",
+						"title": "GitHub",
+						"url": "https://github.com/"
+					}
+				],
+				"other": [
+					{
+						"kind": "folder",
+						"title": "Mobile",
+						"children": [
+							{
+								"kind": "link",
+								"title": "Phone",
+								"url": "https://phone.example/"
+							}
+						]
+					}
+				],
+				"skipped": []
+			},
+			"source": "chrome:Default",
+			"label": "Chrome (Personal)",
+			"now": 9,
+			"expected": {
+				"library": {
+					"bookmarks": [
+						{
+							"id": "fab00000-0000-4000-8000-000000000001",
+							"title": "Favourites",
+							"children": [
+								{
+									"id": "a1",
+									"title": "GitHub",
+									"url": "https://github.com/",
+									"updatedAt": 3,
+									"importedFrom": "chrome:Default"
+								}
+							],
+							"updatedAt": 1
+						},
+						{
+							"id": "fab00000-0000-4000-8000-000000000002",
+							"title": "Pinned",
+							"children": [],
+							"updatedAt": 1
+						},
+						{
+							"id": "a2",
+							"title": "Imported from Chrome (Personal)",
+							"children": [
+								{
+									"id": "a3",
+									"title": "Mobile",
+									"children": [
+										{
+											"id": "a4",
+											"title": "Phone",
+											"url": "https://phone.example/",
+											"updatedAt": 3,
+											"importedFrom": "chrome:Default"
+										}
+									],
+									"updatedAt": 3,
+									"importedFrom": "chrome:Default"
+								},
+								{
+									"id": "a5",
+									"title": "Mine",
+									"url": "https://mine.example/",
+									"updatedAt": 4
+								}
+							],
+							"updatedAt": 3,
+							"importedFrom": "chrome:Default"
+						},
+						{
+							"id": "e1",
+							"title": "Imported from Edge (Personal)",
+							"children": [
+								{
+									"id": "e2",
+									"title": "Bing",
+									"url": "https://bing.example/",
+									"updatedAt": 2,
+									"importedFrom": "Edge (Personal)"
+								}
+							],
+							"updatedAt": 2,
+							"importedFrom": "Edge (Personal)"
+						}
+					],
+					"readingList": []
+				},
+				"addedToBar": 0,
+				"addedToFolder": 0,
+				"folderTitle": "Imported from Chrome (Personal)"
 			}
 		}
 	]

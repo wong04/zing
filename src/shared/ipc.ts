@@ -603,7 +603,7 @@ export interface InvokeContract {
 	'import:sources': { args: []; result: ImportSourceView[] }
 	/** Merges a source's bookmarks into the library (it only adds). Rejects with UnknownImportSourceException, or with a path-free message when the file can't be read or is damaged. */
 	'import:bookmarks': { args: [sourceId: string]; result: BookmarkImportOutcome }
-	/** The same for a bookmarks file picked with `pickFiles(['bookmarks'])` (token from `files:pick`); the file's name is the source. */
+	/** The same for a bookmarks file picked with `pickFiles(['bookmarks'])` (token from `files:pick`); marked with `file:<name>` and titled with the name. */
 	'import:bookmarks-file': { args: [token: string]; result: BookmarkImportOutcome }
 	/**
 	 * Opens the source browser's password export page in that browser and watches the downloads folder for the CSV; the file comes back as
