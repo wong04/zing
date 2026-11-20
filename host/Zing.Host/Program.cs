@@ -106,6 +106,7 @@ public sealed class ZingApp
 		// Its continuation runs after Launch returns, by which time the services exist.
 		// A persistent profile exists so sign-ins survive closing a tab and quitting; purging would undo exactly that.
 		PersistentProfile = Flag(settings, "persistentProfile");
+		HostedView.SmartScreen = Flag(settings, "smartScreen");
 		_environment = OpenEnvironmentAsync(Flag(settings, "acceleratedCanvas"));
 		StartupMarks.Mark("engine requested");
 		// Pages ask the filter lists about every request on the UI thread; reading them takes about 100 ms, so it happens
