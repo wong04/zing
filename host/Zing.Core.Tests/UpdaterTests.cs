@@ -256,6 +256,23 @@ public sealed class UpdaterTests
 	}
 
 	[Fact]
+	public async Task A_quit_that_fails_after_the_updater_started_keeps_the_saved_tabs_and_applies_nothing_more()
+	{
+		_source.Newer = "0.9.1";
+		_source.RestartError = new RestartArmedException(new InvalidOperationException("a window would not close"));
+		var updater = Make();
+		await updater.CheckNowAsync();
+		var abandoned = 0;
+		updater.RelaunchAbandoned += () => abandoned++;
+		updater.Relaunch();
+		Assert.Equal(0, abandoned);
+		Assert.IsType<RestartArmedException>(Assert.Single(_failures));
+		updater.Relaunch();
+		updater.Quitting();
+		Assert.Equal((1, 0), (_source.Restarts, _source.AppliedOnExit));
+	}
+
+	[Fact]
 	public async Task A_restart_that_fails_takes_back_the_saved_tabs()
 	{
 		_source.Newer = "0.9.1";

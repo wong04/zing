@@ -18,6 +18,13 @@ public interface IUpdateSource
 	void ApplyOnExit();
 }
 
+/// <summary>
+/// The updater was started and waits for Zing to exit (it then applies the update and starts Zing again), but quitting failed.
+/// Not a failed restart: whenever Zing does exit, the restart still happens.
+/// </summary>
+public sealed class RestartArmedException(Exception cause)
+	: Exception($"The updater is waiting for Zing to exit, but quitting failed: {cause.Message}", cause);
+
 [JsonConverter(typeof(UpdateStatusConverter))]
 public enum UpdateStatus { Idle, Checking, Downloading, Ready, UpToDate, Failed, Unavailable }
 
@@ -115,6 +122,11 @@ public sealed class Updater(IUpdateSource? source, IScheduler scheduler, Func<bo
 		try
 		{
 			source.RestartIntoUpdate();
+		}
+		// The updater is already waiting for Zing to exit and will start it again: what was saved is what that start needs.
+		catch (RestartArmedException error)
+		{
+			Failed?.Invoke(error);
 		}
 		catch (Exception error)
 		{
