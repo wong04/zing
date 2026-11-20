@@ -178,8 +178,9 @@ public static class TestHooks
 	/// "sign-in-window" writes the Google sign-in window's state to <c>file</c>, and with <c>close</c> closes it as the person would;
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption", "live-counts" and "startup-marks" (StartupMarks) write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
-	/// "update-ready" with <c>version</c> makes the next update check find that version (with <c>quits</c>, a restart into it then quits Zing as Velopack's does), and "update-restarts" writes how many restarts into an update were asked for to <c>file</c>.
+	/// "update-ready" with <c>version</c> makes the next update check find that version (with <c>restart</c> "quits", a restart into it then quits Zing as Velopack's does; with "fails", it throws), and "update-restarts" writes how many restarts into an update were asked for to <c>file</c>.
 	/// "close-window-answer" with <c>close</c> sets how the confirm on closing a window of tabs is answered (recorded as a "close-window" dialog); it closes until told otherwise.
+	/// "close-all-as-taskbar" posts WM_CLOSE to every window back to back, as the taskbar's "Close all windows" does.
 	/// "set-cursor" with <c>x</c> and <c>y</c> puts the cursor there over the window's content (WindowLayout.Cursor), and without them takes it off the window.
 	/// "window-at" with <c>x</c> and <c>y</c> writes to <c>file</c> the address of the view Windows gives a click at that point of the content (WindowFromPoint), null for none, and the class of the window hit.
 	/// "menu-theme" writes the preferred app mode the native menus were last given (DarkMenus) to <c>file</c>.
@@ -347,7 +348,12 @@ public static class TestHooks
 		}
 		if (action == "update-ready")
 		{
-			Updates.Offer(root.GetProperty("version").GetString()!, root.TryGetProperty("quits", out var quits) && quits.GetBoolean());
+			Updates.Offer(root.GetProperty("version").GetString()!, root.TryGetProperty("restart", out var restart) ? restart.GetString() : null);
+			return true;
+		}
+		if (action == "close-all-as-taskbar")
+		{
+			HostWindow.PostCloseToAll();
 			return true;
 		}
 		if (action == "close-window-answer")

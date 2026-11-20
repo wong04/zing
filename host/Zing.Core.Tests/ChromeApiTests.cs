@@ -288,6 +288,13 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
+	public async Task Quit_goes_to_the_host()
+	{
+		Assert.Equal("done", Value(await Invoke("command:run", "app.quit")).GetProperty("status").GetString());
+		Assert.Equal(1, _host.Quits);
+	}
+
+	[Fact]
 	public async Task Reopen_closed_brings_back_the_windows_closed_tabs_first_then_a_closed_window()
 	{
 		_host.ClosedWindows = 1;

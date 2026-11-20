@@ -182,6 +182,8 @@ public sealed class FakeWindowHost : IWindowHost
 	/// <summary>How many closed windows ReopenClosedWindow has left to open.</summary>
 	public int ClosedWindows { get; set; }
 	public int WindowReopens { get; private set; }
+	public int Quits { get; private set; }
+	public void Quit() => Quits++;
 	public bool ReopenClosedWindow()
 	{
 		if (ClosedWindows == 0) return false;

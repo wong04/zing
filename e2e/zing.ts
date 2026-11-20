@@ -257,6 +257,10 @@ export async function launchZing({ env = {}, userDataDir, args = [] }: LaunchOpt
 		// Quit as a person would, by closing every window, so pending writes are flushed.
 		const exited = exit.then(() => undefined)
 		const chromes = pages(browser).filter((p) => p.url() === CHROME_URL)
+		// A test that told the close confirm to cancel (close-window-answer) and failed before undoing it would keep every window open.
+		await chromes[0]
+			?.evaluate(() => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'close-window-answer', close: true }))
+			.catch(() => undefined)
 		// One window at a time, as a person closes them. A window that closes takes its renderer
 		// with it, so the evaluate may never answer; the page's close event is the answer.
 		for (const page of chromes) {

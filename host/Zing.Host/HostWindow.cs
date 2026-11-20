@@ -56,6 +56,16 @@ public sealed class HostWindow
 	/// <summary>The caller is on the thread that owns this window.</summary>
 	public bool OnUiThread => _dispatcher.HasThreadAccess;
 
+	/// <summary>
+	/// Posts WM_CLOSE to every open window back to back, as the taskbar's "Close all windows" does (the e2e
+	/// "close-all-as-taskbar" hook).
+	/// </summary>
+	internal static void PostCloseToAll()
+	{
+		foreach (var hwnd in Open.Keys.ToList())
+			if (!Native.PostMessageW(hwnd, Native.WM_CLOSE, 0, 0)) throw new NativeCallException("PostMessage");
+	}
+
 	/// <summary>Windows created and not yet destroyed (the e2e live-counts hook).</summary>
 	internal static int OpenCount => Open.Count;
 

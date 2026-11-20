@@ -210,6 +210,10 @@ internal static class Native
 	[DllImport("user32.dll")]
 	public static extern nint SendMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
 
+	[DllImport("user32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	public static extern bool PostMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
+
 	[DllImport("user32.dll")]
 	public static extern short GetKeyState(int virtualKey);
 

@@ -74,7 +74,8 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		// Keys from every view of the window, web pages included, before the page sees them.
 		_window.KeyPressed += OnKey;
 		_window.Destroyed += OnClosed;
-		_window.CloseRequested = CloseIfConfirmed;
+		// Through the app: the taskbar's "Close all windows" sends one to every window, which is quitting (CloseBurst).
+		_window.CloseRequested = () => _app.CloseRequested(this);
 		_window.Activated += () => _app.Focused(this);
 		ReadHighContrast();
 		_window.SettingChanged += ReadHighContrast;
@@ -502,18 +503,21 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public bool ReopenClosedWindow() => _app.ReopenClosedWindow();
 
+	public void Quit() => Faults.Enqueue(_dispatcher, () => _app.Quit(this), "quitting");
+
 	/// <summary>The person closing the window (its close button, Alt+F4, Ctrl+Shift+W): with tabs to lose, they confirm first (WindowClose).</summary>
-	private void CloseIfConfirmed()
+	public void CloseIfConfirmed()
 	{
 		if (_window.IsClosed) return;
-		var tabsReopen = _app.Services.Settings.Get("restoreTabs")?.GetValue<bool>() ?? throw new InvalidDataException("Setting restoreTabs is missing");
-		var question = WindowClose.Question(Api?.Tabs.Records.Count ?? 0, _app.IsLastWindow(this), tabsReopen);
+		var question = WindowClose.Question(_app.SessionOf(this), _app.IsLastWindow(this), _app.TabsReopen);
 		if (question is not null && !Confirmed(question)) return;
+		// The window can go while the question is up (its engine died, Zing quit into an update).
+		if (_window.IsClosed) return;
 		_window.Close();
 	}
 
 	/// <summary>e2e runs never open a dialog (AGENTS.md): the question is recorded, and answered as the test said (TestHooks).</summary>
-	private bool Confirmed(string question)
+	public bool Confirmed(string question)
 	{
 		if (TestHooks.IsEndToEndRun)
 		{

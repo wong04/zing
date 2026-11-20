@@ -28,6 +28,8 @@ public interface IWindowHost
 	void CloseWindow();
 	/// <summary>Opens the last window the person closed, app-wide; false when none is left.</summary>
 	bool ReopenClosedWindow();
+	/// <summary>Quits Zing (Ctrl+Shift+Q): every window closes together and all of them are saved, asking once at most.</summary>
+	void Quit();
 	/// <summary>The chrome insets or the surface changed; put the page and layers where they now go.</summary>
 	void Relayout();
 	void FocusChrome();
@@ -712,6 +714,7 @@ public sealed class ChromeApi : IDisposable
 			"tab.previous" => ActivateIfAny(Tabs.PreviousId()),
 			"window.new" => Act(true, _host.NewWindow),
 			"window.close" => Act(true, _host.CloseWindow),
+			"app.quit" => Act(true, _host.Quit),
 			"location.open" => Act(true, FocusAddress),
 			"history.back" => Act(page is { CanGoBack: true }, () => page!.GoBack()),
 			"history.forward" => Act(page is { CanGoForward: true }, () => page!.GoForward()),

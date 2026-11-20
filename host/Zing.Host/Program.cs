@@ -74,6 +74,7 @@ public sealed class ZingApp
 	// write the session, so the file keeps every window as it stood, never a partial set, and none goes on the closed list.
 	private readonly HashSet<MainWindow> _closingTogether = [];
 	private readonly ClosedWindows _closedWindows = new();
+	private CloseBurst<MainWindow>? _closeBurst;
 	private readonly List<string> _startupNotices = [];
 	private IScheduler? _scheduler;
 	private Microsoft.UI.Dispatching.DispatcherQueue? _dispatcher;
@@ -100,6 +101,7 @@ public sealed class ZingApp
 		_dispatcher = dispatcher;
 		// Debounced saves run on the UI thread, where the stores they read are edited; none of them lock.
 		_scheduler = new DispatcherScheduler(dispatcher);
+		_closeBurst = new CloseBurst<MainWindow>(_scheduler, CloseTogether);
 		var settings = OpenSettings();
 		StartupMarks.Mark("settings read");
 		// Any view can be the first to learn the engine's browser process died; the rebuild runs after its event returns.
@@ -323,6 +325,42 @@ public sealed class ZingApp
 	/// <summary>Whether closing this window quits Zing.</summary>
 	public bool IsLastWindow(MainWindow window) => _windows.Count == 1 && _windows[0] == window;
 
+	/// <summary>The restoreTabs setting: whether the tabs open now come back on the next launch.</summary>
+	public bool TabsReopen => Flag("restoreTabs");
+
+	/// <summary>
+	/// Windows asked this window to close (WM_CLOSE). With other windows open it waits a moment for more: the taskbar's
+	/// "Close all windows" asks every window at once, and that is quitting (<see cref="CloseTogether"/>).
+	/// </summary>
+	public void CloseRequested(MainWindow window)
+	{
+		if (_windows.Count == 1) window.CloseIfConfirmed();
+		else (_closeBurst ?? throw new InvalidOperationException("Launch creates the close burst first")).Request(window);
+	}
+
+	/// <summary>Every open window asked at once is a quit, which saves them all; otherwise each closes on its own, as the person asked.</summary>
+	private void CloseTogether(IReadOnlyList<MainWindow> asked)
+	{
+		var open = asked.Where(_windows.Contains).ToList();
+		if (open.Count == 0) return;
+		if (open.Count > 1 && open.Count == _windows.Count)
+		{
+			Quit(open[0]);
+			return;
+		}
+		foreach (var window in open) window.CloseIfConfirmed();
+	}
+
+	/// <summary>Quit Zing (Ctrl+Shift+Q): asks once at most (WindowClose.QuitQuestion), then every window closes together and all are saved.</summary>
+	public void Quit(MainWindow asking)
+	{
+		var question = WindowClose.QuitQuestion([.. _windows.Select(SessionOf)], TabsReopen);
+		if (question is not null && !asking.Confirmed(question)) return;
+		// Windows can go while the question is up.
+		if (_windows.Count == 0 || _closingTogether.IsSupersetOf(_windows)) return;
+		QuitAll();
+	}
+
 	/// <summary>
 	/// Called as a window starts closing, before its pages go. When it is the last one and Zing is quitting (not rebuilding
 	/// its engine), what must reach disk is written now and the profile is given up: a launch from here on starts a new
@@ -384,7 +422,7 @@ public sealed class ZingApp
 		}
 	}
 
-	/// <summary>Closes every window together, without asking: the session on disk keeps them all, as they stand now.</summary>
+	/// <summary>Closes every window together, without asking: the session on disk keeps them all, as they stand now (Quit, and quitting into an update).</summary>
 	private void QuitAll()
 	{
 		_session?.Changed();
@@ -605,7 +643,7 @@ public sealed class ZingApp
 	}
 
 	/// <summary>A window's tabs as a session, or, for one that hadn't started yet, the tabs it is to bring back.</summary>
-	private IReadOnlyList<SessionTab> SessionOf(MainWindow window) =>
+	public IReadOnlyList<SessionTab> SessionOf(MainWindow window) =>
 		window.Api?.Tabs is { } tabs ? Session.ToSessionTabs(tabs.Records, tabs.ActiveId, tabs.Splits.All) : _pendingRestores.GetValueOrDefault(window) ?? [];
 
 	/// <summary>A new engine and a window for each that was open, oldest first, each with its own tabs, through the same path as session restore.</summary>
