@@ -159,6 +159,8 @@ public static class TestHooks
 
 	/// <summary>"exit-code-on-quit": the code Zing ends with once its last window is gone, as a crash during quit would; e2e/harness.spec.ts.</summary>
 	public static int? QuitExitCode { get; private set; }
+	/// <summary>"close-window-answer": what the confirm on closing a window of tabs answers in an e2e run, which shows no dialog.</summary>
+	public static bool CloseWindowAnswer { get; private set; } = true;
 	private static WindowScope? _newest;
 	private static int _windows;
 	private static bool _newestStarted;
@@ -176,7 +178,8 @@ public static class TestHooks
 	/// "sign-in-window" writes the Google sign-in window's state to <c>file</c>, and with <c>close</c> closes it as the person would;
 	/// "dns-stub" sets what the stub DNS lists and how its runs end; "layers", "autofill-settings", "caption", "live-counts" and "startup-marks" (StartupMarks) write JSON to <c>file</c>; "close-at" with <c>n</c> makes the next
 	/// window close itself at its n-th scope checkpoint (WindowScope.Checkpoint), the teardown guard.
-	/// "update-ready" with <c>version</c> makes the next update check find that version, and "update-restarts" writes how many restarts into an update were asked for to <c>file</c>.
+	/// "update-ready" with <c>version</c> makes the next update check find that version (with <c>quits</c>, a restart into it then quits Zing as Velopack's does), and "update-restarts" writes how many restarts into an update were asked for to <c>file</c>.
+	/// "close-window-answer" with <c>close</c> sets how the confirm on closing a window of tabs is answered (recorded as a "close-window" dialog); it closes until told otherwise.
 	/// "set-cursor" with <c>x</c> and <c>y</c> puts the cursor there over the window's content (WindowLayout.Cursor), and without them takes it off the window.
 	/// "window-at" with <c>x</c> and <c>y</c> writes to <c>file</c> the address of the view Windows gives a click at that point of the content (WindowFromPoint), null for none, and the class of the window hit.
 	/// "menu-theme" writes the preferred app mode the native menus were last given (DarkMenus) to <c>file</c>.
@@ -344,7 +347,12 @@ public static class TestHooks
 		}
 		if (action == "update-ready")
 		{
-			Updates.Offer(root.GetProperty("version").GetString()!);
+			Updates.Offer(root.GetProperty("version").GetString()!, root.TryGetProperty("quits", out var quits) && quits.GetBoolean());
+			return true;
+		}
+		if (action == "close-window-answer")
+		{
+			CloseWindowAnswer = root.GetProperty("close").GetBoolean();
 			return true;
 		}
 		if (action == "show-default-browser-offer")

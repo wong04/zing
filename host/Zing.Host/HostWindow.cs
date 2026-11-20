@@ -77,6 +77,8 @@ public sealed class HostWindow
 	public event Action? SettingChanged;
 	public event Action<HostedView, CoreWebView2AcceleratorKeyPressedEventArgs>? KeyPressed;
 	public event Action? Destroyed;
+	/// <summary>The person asked Windows to close the window (WM_CLOSE); a handler closes it with <see cref="Close"/>, or doesn't.</summary>
+	public Action? CloseRequested { get; set; }
 
 	/// <summary>The view that takes the keyboard when the window has it and no view did before (the shown page, else the chrome).</summary>
 	public Func<HostedView?> DefaultFocus { get; set; } = () => null;
@@ -205,6 +207,12 @@ public sealed class HostWindow
 				// Then DefWindowProc, which WM_INPUT needs to free the input.
 				TestHooks.Guard(() => RawMouse(lParam), "middle button");
 				break;
+			case Native.WM_CLOSE:
+				// The person closing it (the close button, Alt+F4, the taskbar): the window decides, and may ask first.
+				// Without a handler DefWindowProc destroys it, as before.
+				if (window.CloseRequested is not { } closing) break;
+				TestHooks.Guard(closing, "window close requested");
+				return 0;
 			case Native.WM_DESTROY:
 				if (window._watchingSession && !Native.WTSUnRegisterSessionNotification(hwnd)) Faults.Warning("session notification", new NativeCallException("WTSUnRegisterSessionNotification"));
 				window.IsClosed = true;

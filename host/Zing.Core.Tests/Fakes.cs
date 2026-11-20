@@ -179,6 +179,16 @@ public sealed class FakeWindowHost : IWindowHost
 	public void EndOffer() => OfferEnded?.Invoke();
 	public void NewWindow() => NewWindows++;
 	public void CloseWindow() => Closes++;
+	/// <summary>How many closed windows ReopenClosedWindow has left to open.</summary>
+	public int ClosedWindows { get; set; }
+	public int WindowReopens { get; private set; }
+	public bool ReopenClosedWindow()
+	{
+		if (ClosedWindows == 0) return false;
+		ClosedWindows--;
+		WindowReopens++;
+		return true;
+	}
 	public void Relayout() => Relayouts++;
 	public void FocusChrome() { }
 	public void FocusSurface() { }
