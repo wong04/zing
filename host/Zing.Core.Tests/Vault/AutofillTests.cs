@@ -612,6 +612,22 @@ public sealed class AutofillTests : IDisposable
 	}
 
 	[Fact]
+	public async Task HelloGoneByTheTimeSaveIsClickedStoresNothingAndTellsThePersonWhy()
+	{
+		OnPage($"{Site}/login");
+		_api.SignIn.Submitted(TabId, Site, "ada", "s3cret");
+		_api.SignIn.Landed(TabId, Site, hasVisiblePasswordBox: false);
+		Assert.NotNull(_api.SignIn.Prompt);
+		_sealer.Result = HelloResult.Unavailable;
+
+		var result = await Invoke("vault:answer-save", TabId, "save");
+
+		Assert.Equal(SaveOutcomes.Unavailable, Value(result).GetString());
+		Assert.Empty(Vault.Summaries());
+		Assert.Contains(_host.Notices, n => n.StartsWith("Couldn't save the password.") && n.Contains("Set up Windows Hello"));
+	}
+
+	[Fact]
 	public async Task CanFillRefusesAFrameSourceThatDiffersFromTheOriginTheEntriesWereChosenFor()
 	{
 		var id = await Save(Site, "ada");

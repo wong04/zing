@@ -434,7 +434,7 @@ public sealed class ChromeApi : IDisposable
 		bridge.Register("vault:never-saves", _ => Vault().NeverSaves());
 		bridge.Register("vault:remove-never-save", args => Do(() => Vault().RemoveNeverSave(Text(args, 0))));
 		bridge.Register("vault:fill", async args => await TellingSetUpAgainAsync("Couldn't fill the password", () => Autofill.FillAsync(Text(args, 0), Text(args, 1))));
-		bridge.Register("vault:answer-save", async args => await TellingSetUpAgainAsync("Couldn't save the password", () => SignIn.AnswerAsync(Text(args, 0), Text(args, 1))));
+		bridge.Register("vault:answer-save", async args => await TellingSetUpAgainAsync("Couldn't save the password", () => SavingWithHelloAsync(Text(args, 0), Text(args, 1))));
 		bridge.Register("sync:get", _ => CurrentSyncState());
 		bridge.Register("sync:sign-in", async _ => await SignInToSyncAsync());
 		bridge.Register("sync:sign-out", async _ => await SignOutOfSyncAsync());
@@ -1032,6 +1032,20 @@ public sealed class ChromeApi : IDisposable
 		{
 			_host.Notify($"{what}. {error.Message}.");
 			throw;
+		}
+	}
+
+	/// <summary>The prompt only opens with Hello set up, but Hello may have gone since: the person is told why nothing was saved.</summary>
+	private async Task<string> SavingWithHelloAsync(string pageId, string answer)
+	{
+		try
+		{
+			return await SignIn.AnswerAsync(pageId, answer);
+		}
+		catch (HelloUnavailableException error)
+		{
+			_host.Notify($"Couldn't save the password. {error.Message.TrimEnd('.')}.");
+			return SaveOutcomes.Unavailable;
 		}
 	}
 

@@ -75,7 +75,9 @@ public sealed class SignInWatchTests : IDisposable
 			"pending" => SignInOutcome.Pending,
 			var other => throw new InvalidDataException($"unknown outcome {other}"),
 		};
-		Assert.Equal(expected, SignInOutcomes.Of(v.GetProperty("submitted").GetString()!, v.GetProperty("landed").GetString()!, v.GetProperty("hasVisiblePasswordBox").GetBoolean()));
+		var (submitted, landed) = (v.GetProperty("submitted").GetString()!, v.GetProperty("landed").GetString()!);
+		Assert.Equal(v.GetProperty("sameSite").GetBoolean(), SignInOutcomes.SameSite(submitted, landed));
+		Assert.Equal(expected, SignInOutcomes.Of(submitted, landed, v.GetProperty("hasVisiblePasswordBox").GetBoolean()));
 	}
 
 	[Fact]
@@ -265,6 +267,80 @@ public sealed class SignInWatchTests : IDisposable
 		Assert.NotNull(Shown);
 		_watch.Message(Page, new Uri("https://b.example/"), new AutofillMessage.Left());
 		Assert.Null(Shown);
+	}
+
+	[Fact]
+	public async Task A_sign_in_that_lands_on_another_origin_of_its_site_offers_to_save_for_the_forms_origin()
+	{
+		_watch.Submitted(Page, "https://auth.example.com", "ada@example.test", "s3cret");
+		_watch.Landed(Page, "https://app.example.com", hasVisiblePasswordBox: false);
+		await Settle();
+
+		Assert.Equal(new SaveLoginPrompt(Page, "save", "https://auth.example.com", "ada@example.test", null), Shown);
+	}
+
+	[Fact]
+	public async Task A_landing_on_another_origin_of_the_site_with_a_password_box_waits_for_the_next()
+	{
+		_watch.Submitted(Page, "https://auth.example.com", "ada@example.test", "s3cret");
+		_watch.Landed(Page, "https://app.example.com", hasVisiblePasswordBox: true);
+		await Settle();
+
+		Assert.Null(Shown);
+		Assert.Equal(1, _watch.HeldCount);
+	}
+
+	[Fact]
+	public async Task A_prompt_stays_while_the_page_moves_within_its_site()
+	{
+		_watch.Submitted(Page, "https://auth.example.com", "ada@example.test", "s3cret");
+		_watch.Landed(Page, "https://app.example.com", hasVisiblePasswordBox: false);
+		await Settle();
+
+		_watch.Message(Page, new Uri("https://app.example.com/home"), new AutofillMessage.Left());
+		Assert.NotNull(Shown);
+		_watch.Message(Page, new Uri("https://b.example/"), new AutofillMessage.Left());
+		Assert.Null(Shown);
+	}
+
+	[Fact]
+	public async Task Without_Hello_a_sign_in_offers_neither_save_nor_update()
+	{
+		await Save("ada@example.test", "old password");
+		_sealer.Result = HelloResult.Unavailable;
+
+		await SignIn("grace@example.test", "s3cret");
+		Assert.Null(Shown);
+		await SignIn("ada@example.test", "new password");
+		Assert.Null(Shown);
+
+		Assert.Empty(_prompts);
+		Assert.Equal(0, _watch.HeldCount);
+	}
+
+	[Fact]
+	public async Task Hello_set_up_since_it_was_last_checked_offers_to_save()
+	{
+		_sealer.Result = HelloResult.Unavailable;
+		_sealer.SetUpSinceLastCheck = true;
+
+		await SignIn("ada@example.test", "s3cret");
+
+		Assert.Equal("save", Shown?.Kind);
+	}
+
+	[Fact]
+	public async Task Hello_gone_by_the_time_Save_is_clicked_raises_unavailable_and_stores_nothing()
+	{
+		await Save("other@example.test");
+		await SignIn("ada@example.test", "s3cret");
+		_sealer.Result = HelloResult.Unavailable;
+
+		await Assert.ThrowsAsync<HelloUnavailableException>(() => _watch.AnswerAsync(Page, "save"));
+
+		Assert.Null(Shown);
+		_sealer.Result = HelloResult.Pass;
+		Assert.Single(Store.Summaries());
 	}
 
 	[Fact]
