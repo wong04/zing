@@ -20,6 +20,7 @@ import type { CustomId } from './rows'
 import { CHECK_FOR_UPDATES_ROW, detailOf } from './rows'
 import { DefaultBrowserRow } from './DefaultBrowserRow'
 import { CreditsRow } from './CreditsRow'
+import { CrashLogRow } from './CrashLogRow'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
 import { useSettings } from './useSettings'
@@ -322,6 +323,7 @@ function About({ version }: { version: string }) {
 				<span className="row-value">{allItems().length}</span>
 			</SettingRowShell>
 			<CreditsRow />
+			<CrashLogRow />
 		</>
 	)
 }

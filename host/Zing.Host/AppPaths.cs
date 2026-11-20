@@ -13,6 +13,9 @@ public static class AppPaths
 	public static string Library => Path.Combine(UserData, "library.json");
 	public static string Session => Path.Combine(UserData, "session.json");
 
+	/// <summary>The local crash log (Zing.Core.CrashLog), plain text so a tab shows it. Not created until the first crash.</summary>
+	public static string CrashLog => Path.Combine(UserData, "crash-log.txt");
+
 	/// <summary>The sites the person asked to remember as allowed to show notifications; there only while one is remembered.</summary>
 	public static string SitePermissions => Path.Combine(UserData, Zing.Core.SiteGrants.FileName);
 

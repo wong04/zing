@@ -215,3 +215,27 @@ test('closing a window of tabs asks first; Cancel keeps it, and Ctrl+Shift+T in 
 	expect(await run(zing.chrome, 'tab.reopenClosed')).toMatchObject({ status: 'not-applicable' })
 	await zing.close()
 })
+
+test('a restored tab goes back and forward through the history saved with it, and saves it again', async () => {
+	const userDataDir = scratchDir('zing-host-data-')
+	writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({ restoreTabs: true }))
+	const history = { entries: ['a', 'b', 'c'].map((name) => ({ url: `${base}/${name}`, title: `Page ${name}` })), index: 1 }
+	writeFileSync(join(userDataDir, 'session.json'), JSON.stringify({ version: 2, windows: [{ tabs: [{ url: `${base}/b`, title: 'Page b', pinned: false, active: true, history }] }] }))
+	const zing = await launchZing({ userDataDir })
+	await expect.poll(() => windowsOf(zing)).toEqual([[`${base}/b`]])
+	const front = async () => (await tabsOf(zing.chrome)).tabs.find((t) => t.url.startsWith(base))!
+	await expect.poll(async () => (await front()).title).toBe('Page b')
+	expect(await front()).toMatchObject({ canGoBack: true, canGoForward: true })
+
+	await run(zing.chrome, 'history.back')
+	await expect.poll(async () => (await front()).title).toBe('Page a')
+	expect((await front()).url).toBe(`${base}/a`)
+	await run(zing.chrome, 'history.forward')
+	await run(zing.chrome, 'history.forward')
+	await expect.poll(async () => (await front()).title).toBe('Page c')
+	await expect.poll(async () => (await front()).canGoForward).toBe(false)
+
+	// Saved again with the tab where it is now.
+	await expect.poll(() => sessionOf(userDataDir)?.windows[0]?.tabs[0]).toMatchObject({ url: `${base}/c`, history: { index: 2, entries: [{ url: `${base}/a` }, { url: `${base}/b` }, { url: `${base}/c` }] } })
+	await zing.close()
+})

@@ -139,6 +139,18 @@ public sealed class ChromeApiTests : IDisposable
 	}
 
 	[Fact]
+	public async Task Back_and_Forward_walk_a_restored_tabs_saved_history()
+	{
+		var history = new TabHistory([new("https://x.test/a", "A"), new("https://x.test/b", "B"), new("https://x.test/c", "C")], 1);
+		_api.Tabs.Restore([new SessionTab("https://x.test/b", "B", false, true, History: history)]);
+		Assert.Equal("done", Value(await Invoke("command:run", "history.back")).GetProperty("status").GetString());
+		Assert.Equal("replace https://x.test/a", ActivePage.Calls[^1]);
+		Assert.Equal("not-applicable", Value(await Invoke("command:run", "history.back")).GetProperty("status").GetString());
+		Assert.Equal("done", Value(await Invoke("command:run", "history.forward")).GetProperty("status").GetString());
+		Assert.Equal("replace https://x.test/b", ActivePage.Calls[^1]);
+	}
+
+	[Fact]
 	public async Task Back_is_done_only_when_there_is_history()
 	{
 		Assert.Equal("not-applicable", Value(await Invoke("command:run", "history.back")).GetProperty("status").GetString());

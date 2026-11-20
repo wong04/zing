@@ -5,7 +5,8 @@ namespace Zing.Core;
 /// <summary>One tab as it survives a quit (src/shared/session/session.ts).</summary>
 /// <param name="ItemId">The saved item (Favourites or Pinned) the tab belongs to, so it stays tied after a restore.</param>
 /// <param name="Split">The split view the tab is a pane of, so the split comes back with the tabs.</param>
-public sealed record SessionTab(string Url, string Title, bool Pinned, bool Active, string? ItemId = null, SessionSplit? Split = null);
+/// <param name="History">The tab's back/forward history, when it has somewhere to go back or forward to.</param>
+public sealed record SessionTab(string Url, string Title, bool Pinned, bool Active, string? ItemId = null, SessionSplit? Split = null, TabHistory? History = null);
 
 /// <summary>A tab's place in a split: which split, its orientation, the pane's position and its share of the space.</summary>
 public sealed record SessionSplit(string Id, string Orientation, int Pane, double Ratio);
@@ -32,7 +33,12 @@ public static class Session
 		Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
 	/// <summary>What is worth persisting: every web page, in order. Restored tabs other than the front one get no page, so their number costs little.</summary>
-	public static List<SessionTab> Prepare(IEnumerable<SessionTab> tabs) => tabs.Where(t => IsRestorableUrl(t.Url)).ToList();
+	public static List<SessionTab> Prepare(IEnumerable<SessionTab> tabs) =>
+		tabs.Where(t => IsRestorableUrl(t.Url)).Select(t => t with { History = KeptHistory(t.History, t.Url) }).ToList();
+
+	/// <summary>A tab's history as it is saved: its web pages, at most <see cref="TabHistory.MaxEntries"/>, on the tab's own address; null when nothing is left to go back or forward to.</summary>
+	private static TabHistory? KeptHistory(TabHistory? history, string url) =>
+		history?.Kept(IsRestorableUrl, u => u) is { } kept && kept.Current.Url == url ? kept : null;
 
 	public static string Encode(IEnumerable<SessionTab> tabs) => JsonSerializer.Serialize(Prepare(tabs), ZingJson.Options);
 
@@ -165,8 +171,10 @@ public static class Session
 	}
 
 	/// <summary>A relayed tab is saved under its real address: the relay scheme only loads when Zing started it, and the consent for a relay is not kept, so a restored tab loads as an ordinary page.</summary>
-	public static List<SessionTab> ToSessionTabs(IEnumerable<TabRecord> records, string? activeId, IReadOnlyList<SplitLayout>? splits = null) =>
-		records.Select(t => new SessionTab(Net.RelayedContent.ToWebAddress(t.Url), t.Title, t.Pinned, t.Id == activeId, t.ItemId, SplitOf(t.Id, splits ?? []))).ToList();
+	public static List<SessionTab> ToSessionTabs(IEnumerable<TabRecord> records, string? activeId, IReadOnlyList<SplitLayout>? splits = null, Func<string, TabHistory?>? historyOf = null) =>
+		records.Select(t => new SessionTab(
+			Net.RelayedContent.ToWebAddress(t.Url), t.Title, t.Pinned, t.Id == activeId, t.ItemId, SplitOf(t.Id, splits ?? []),
+			historyOf?.Invoke(t.Id)?.Kept(_ => true, Net.RelayedContent.ToWebAddress))).ToList();
 
 	private static SessionSplit? SplitOf(string tabId, IReadOnlyList<SplitLayout> splits)
 	{
@@ -203,7 +211,23 @@ public static class Session
 		if (!TryBool(value, "pinned", out var pinned) || !TryBool(value, "active", out var active)) return null;
 		// Optional: sessions saved before saved tabs or split view have none.
 		var itemId = value.TryGetProperty("itemId", out var item) && item.ValueKind == JsonValueKind.String ? item.GetString() : null;
-		return new SessionTab(url, title, pinned, active, itemId, ToSplit(value));
+		return new SessionTab(url, title, pinned, active, itemId, ToSplit(value), KeptHistory(ToHistory(value), url));
+	}
+
+	/// <summary>A malformed history is dropped, never the tab, as a split is. Sessions saved before histories have none.</summary>
+	private static TabHistory? ToHistory(JsonElement tab)
+	{
+		if (!tab.TryGetProperty("history", out var history) || history.ValueKind != JsonValueKind.Object) return null;
+		if (!history.TryGetProperty("index", out var index) || !index.TryGetInt32(out var at)) return null;
+		if (!history.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array) return null;
+		var steps = new List<TabHistoryEntry>();
+		foreach (var entry in entries.EnumerateArray())
+		{
+			if (entry.ValueKind != JsonValueKind.Object || !TryString(entry, "url", out var url) || !TryString(entry, "title", out var title)) return null;
+			steps.Add(new TabHistoryEntry(url, title));
+		}
+		var parsed = new TabHistory(steps, at);
+		return parsed.IsValid ? parsed : null;
 	}
 
 	/// <summary>A malformed split is dropped, never the tab: a session file must never stop the browser opening.</summary>

@@ -213,5 +213,8 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		getDefaultBrowserState: () => invoke('default-browser:get'),
 		dismissDefaultBrowserOffer: () => invoke('default-browser:dismiss'),
 		getCredits: () => invoke('about:credits'),
+		getCrashLog: () => invoke('about:crash-log'),
+		openCrashLog: () => invoke('about:open-crash-log'),
+		clearCrashLog: () => invoke('about:clear-crash-log'),
 	}
 }

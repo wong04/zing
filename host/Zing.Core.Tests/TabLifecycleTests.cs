@@ -62,6 +62,8 @@ public sealed class PageSim
 	/// <summary>A dialog is open, or the renderer is stuck: probing it would never answer.</summary>
 	public bool Blocked { get; set; }
 	public bool PictureInPicture { get; set; }
+	/// <summary>The host sees a large request body still going out (UploadTracker).</summary>
+	public bool Uploading { get; set; }
 	public double ScrollY { get; set; }
 	public bool ProbeFails { get; set; }
 	public Action? OnProbe { get; set; }
@@ -98,6 +100,8 @@ public sealed class FakeLifecycleTabs : ILifecycleTabs
 	public bool IsAudible(string id) => Pages[id].Audible;
 
 	public bool IsBlocked(string id) => Pages[id].Blocked;
+
+	public bool IsUploading(string id) => Pages[id].Uploading;
 
 	public Task<PageProbe> ProbeAsync(string id)
 	{
@@ -740,6 +744,55 @@ public class TabLifecycleTests
 		s.Time.Advance(60 * Minute);
 		Assert.Empty(s.Tabs.Suspended);
 		Assert.Equal(0, s.Time.Scheduler.PendingCount);
+	}
+
+	[Fact]
+	public void A_tab_sending_an_upload_is_not_suspended_until_the_upload_ends()
+	{
+		var page = new PageSim { Uploading = true };
+		var s = new Suspending(("upload", page, false));
+		s.Time.Advance(6 * Minute);
+		Assert.Empty(s.Tabs.Suspended);
+		page.Uploading = false;
+		s.Time.Advance(TabSleeper.RetryMs);
+		Assert.Equal(["upload"], s.Tabs.Suspended);
+		Assert.Empty(s.Errors);
+	}
+
+	[Fact]
+	public void A_tab_sending_an_upload_stays_awake_and_sleeps_once_the_upload_ends()
+	{
+		var time = new TestTime(ScenarioStart);
+		var tabs = new FakeLifecycleTabs { ActiveId = "active" };
+		tabs.Add("active", ScenarioStart, page: new PageSim());
+		var page = new PageSim { Uploading = true };
+		tabs.Add("upload", ScenarioStart, page: page);
+		tabs.Add("idle", ScenarioStart, page: new PageSim());
+		var errors = new List<Exception>();
+		var sleeper = new TabSleeper(tabs, () => SleepSettings.Default with { AfterMinutes = 1 }, time.Clock, time.Scheduler, errors.Add);
+		tabs.Changed = sleeper.Reschedule;
+		sleeper.Reschedule();
+		time.Advance(2 * Minute);
+		Assert.Equal(["idle"], tabs.Slept);
+		page.Uploading = false;
+		time.Advance(TabSleeper.RetryMs);
+		Assert.Equal(["idle", "upload"], tabs.Slept);
+		Assert.Empty(errors);
+	}
+
+	[Fact]
+	public void An_upload_that_starts_while_the_page_is_checked_keeps_the_tab_awake()
+	{
+		var time = new TestTime(ScenarioStart);
+		var tabs = new FakeLifecycleTabs { ActiveId = "active" };
+		tabs.Add("active", ScenarioStart, page: new PageSim());
+		var page = new PageSim();
+		page.OnProbe = () => page.Uploading = true;
+		tabs.Add("upload", ScenarioStart, page: page);
+		var sleeper = new TabSleeper(tabs, () => SleepSettings.Default with { AfterMinutes = 1 }, time.Clock, time.Scheduler, _ => { });
+		sleeper.Reschedule();
+		time.Advance(2 * Minute);
+		Assert.Empty(tabs.Slept);
 	}
 
 	[Fact]

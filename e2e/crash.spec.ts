@@ -1,10 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { expect, type CDPSession, type Page } from '@playwright/test'
 import type { TabView, ZingApi } from '../src/shared/ipc'
-import { launchZing, test, liveCounts, pageWhere } from './zing'
+import { launchZing, test, liveCounts, pageWhere, scratchDir } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -141,8 +141,35 @@ test('Zing’s own chrome view comes back after its renderer dies', async () => 
 
 	// A fresh document (the marker is gone) that drew the tabs from the host's state.
 	await expect.poll(() => probe('window.__beforeCrash !== true && document.querySelectorAll(\'[role="tab"]\').length'), { timeout: 20_000 }).toBe(1)
+	// The local crash log has a line for it: the time, the kind, the exit code and Zing's version, nothing else.
+	const log = join(zing.userDataDir, 'crash-log.txt')
+	await expect.poll(() => (existsSync(log) ? readFileSync(log, 'utf8') : '')).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\trenderer\texit -?\d+ \(0x[0-9A-F]{8}\)\tZing \d+\.\d+\.\d+\r?\n$/)
 	// Playwright gave up on the crashed page, so close() can't reach the window through it: close it over the session as close() starts.
 	const closing = zing.close()
 	await probe('window.zing.runCommand("window.close")')
 	await closing
+})
+
+test('Settings About opens the crash log in a tab and clears it, and the privacy banner counts it while it is there', async () => {
+	const userDataDir = scratchDir('zing-host-data-')
+	writeFileSync(join(userDataDir, 'crash-log.txt'), '2026-11-20T09:30:00Z\trenderer\texit 1 (0x00000001)\tZing 0.0.1\n')
+	const zing = await launchZing({ userDataDir })
+	await zing.chrome.evaluate(() => window.zing.setSetting('restoreTabs', false))
+	await zing.chrome.evaluate(() => window.zing.openSettings('privacy'))
+	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	await expect(sheet.locator('.privacy-banner')).toHaveAttribute('data-traceless', 'false')
+	await expect(sheet.locator('.privacy-banner')).toContainText('A crash log (times and exit codes only) is written to disk.')
+
+	await sheet.getByRole('button', { name: 'About', exact: true }).click()
+	await sheet.getByRole('button', { name: 'Open crash log' }).click()
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.some((t) => t.url.endsWith('/crash-log.txt'))).toBe(true)
+
+	await zing.chrome.evaluate(() => window.zing.openSettings('about'))
+	await sheet.getByRole('button', { name: 'Clear crash log' }).click()
+	await expect(sheet.getByRole('button', { name: 'Open crash log' })).toHaveCount(0)
+	await expect(sheet.getByText('No crashes logged.')).toBeVisible()
+	expect(existsSync(join(userDataDir, 'crash-log.txt'))).toBe(false)
+	await sheet.getByRole('button', { name: 'Privacy', exact: true }).click()
+	await expect(sheet.locator('.privacy-banner')).toHaveAttribute('data-traceless', 'true')
+	await zing.close()
 })

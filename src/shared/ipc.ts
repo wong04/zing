@@ -623,6 +623,12 @@ export interface InvokeContract {
 	'default-browser:dismiss': { args: []; result: void }
 	/** The third-party notices the build generated (THIRD-PARTY-NOTICES.txt). Rejects if the file is missing. */
 	'about:credits': { args: []; result: string }
+	/** Whether the local crash log (renderer and engine crashes: time, kind, exit code, version) is on disk. */
+	'about:crash-log': { args: []; result: { exists: boolean } }
+	/** Opens the crash log in a new tab. Rejects with NoCrashLogException while there is none. */
+	'about:open-crash-log': { args: []; result: void }
+	/** Deletes the crash log; nothing to delete is fine. */
+	'about:clear-crash-log': { args: []; result: void }
 	/** The browsers on this PC whose bookmarks can be imported, one row per profile. A broken profile is a row with `error`, not a rejection. No paths. */
 	'import:sources': { args: []; result: ImportSourceView[] }
 	/** Merges a source's bookmarks into the library (it only adds). Rejects with UnknownImportSourceException, or with a path-free message when the file can't be read or is damaged. */
@@ -890,6 +896,9 @@ export interface ZingApi {
 	getDefaultBrowserState(): Promise<DefaultBrowserState>
 	dismissDefaultBrowserOffer(): Promise<void>
 	getCredits(): Promise<string>
+	getCrashLog(): Promise<{ exists: boolean }>
+	openCrashLog(): Promise<void>
+	clearCrashLog(): Promise<void>
 	importSources(): Promise<ImportSourceView[]>
 	importBookmarks(sourceId: string): Promise<BookmarkImportOutcome>
 	importBookmarksFile(token: string): Promise<BookmarkImportOutcome>

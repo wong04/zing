@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings'
-import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setLibraryHoldsImports, setLibraryKeepsIcons, setSiteGrantsKept, setVaultKeepsData } from './privacy'
+import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setCrashLogKept, setLibraryHoldsImports, setLibraryKeepsIcons, setSiteGrantsKept, setVaultKeepsData } from './privacy'
 
 // Reopen tabs is on by default; turning it off is the state where Zing keeps nothing.
 const NOTHING_KEPT: Settings = { ...DEFAULT_SETTINGS, restoreTabs: false }
@@ -99,6 +99,17 @@ describe('bookmark icons', () => {
 		setLibraryKeepsIcons(true)
 		expect(privacyStatus(NOTHING_KEPT)).toMatchObject({ traceless: false, detail: 'Icons of bookmarked sites you visited are written to disk.' })
 		setLibraryKeepsIcons(false)
+		expect(privacyStatus(NOTHING_KEPT).traceless).toBe(true)
+	})
+})
+
+describe('crash log', () => {
+	afterEach(() => setCrashLogKept(false))
+
+	it('a crash log on disk flips the banner and says it holds only times and exit codes, and clearing it restores the banner', () => {
+		setCrashLogKept(true)
+		expect(privacyStatus(NOTHING_KEPT)).toMatchObject({ traceless: false, detail: 'A crash log (times and exit codes only) is written to disk.' })
+		setCrashLogKept(false)
 		expect(privacyStatus(NOTHING_KEPT).traceless).toBe(true)
 	})
 })
