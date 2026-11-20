@@ -304,6 +304,54 @@ public sealed class SignInWatchTests : IDisposable
 	}
 
 	[Fact]
+	public async Task A_landing_on_another_origin_of_the_site_never_offers_an_update()
+	{
+		await Save("ada@example.test", "old password", origin: "https://auth.example.com");
+
+		_watch.Submitted(Page, "https://auth.example.com", "ada@example.test", "typo");
+		_watch.Landed(Page, "https://help.example.com", hasVisiblePasswordBox: false);
+		await Settle();
+
+		Assert.Null(Shown);
+		Assert.Equal(0, _watch.HeldCount);
+	}
+
+	[Fact]
+	public async Task A_password_box_on_the_sibling_origin_the_prompt_opened_over_withdraws_it()
+	{
+		_watch.Submitted(Page, "https://auth.example.com", "ada@example.test", "s3cret");
+		_watch.Landed(Page, "https://app.example.com", hasVisiblePasswordBox: false);
+		await Settle();
+		Assert.NotNull(Shown);
+
+		_watch.Landed(Page, "https://other.example.com", hasVisiblePasswordBox: true);
+		Assert.NotNull(Shown);
+		_watch.Landed(Page, "https://app.example.com", hasVisiblePasswordBox: true);
+
+		Assert.Null(Shown);
+		Assert.Equal(SaveOutcomes.Gone, await _watch.AnswerAsync(Page, "save"));
+	}
+
+	[Fact]
+	public async Task The_form_coming_back_while_Hello_is_checked_again_drops_the_sign_in()
+	{
+		_sealer.Result = HelloResult.Unavailable;
+		_sealer.SetUpSinceLastCheck = true;
+		var checking = new TaskCompletionSource();
+		_sealer.Checking = () => checking.Task;
+
+		_watch.Submitted(Page, Site, "ada@example.test", "wrong");
+		_watch.Landed(Page, Site, hasVisiblePasswordBox: false);
+		_watch.Landed(Page, Site, hasVisiblePasswordBox: true);
+		checking.SetResult();
+		await Settle();
+
+		Assert.Null(Shown);
+		Assert.Empty(_prompts);
+		Assert.Equal(0, _watch.HeldCount);
+	}
+
+	[Fact]
 	public async Task Without_Hello_a_sign_in_offers_neither_save_nor_update()
 	{
 		await Save("ada@example.test", "old password");

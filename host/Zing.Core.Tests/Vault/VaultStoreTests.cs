@@ -33,16 +33,20 @@ internal sealed class FakeSealer : IHelloSealer
 	/// <summary>How many times Windows was asked again whether Hello is set up.</summary>
 	public int Rechecks { get; private set; }
 
-	public Task<bool> CheckAgainAsync()
+	/// <summary>Awaited while Windows is being asked again: a test holds the check here to land the page meanwhile.</summary>
+	public Func<Task>? Checking { get; set; }
+
+	public async Task<bool> CheckAgainAsync()
 	{
 		Rechecks++;
+		if (Checking is { } checking) await checking();
 		if (SetUpSinceLastCheck && Result == HelloResult.Unavailable)
 		{
 			SetUpSinceLastCheck = false;
 			Result = HelloResult.Pass;
 			Announce();
 		}
-		return Task.FromResult(Available);
+		return Available;
 	}
 
 	/// <summary>How many stores listen for availability: one per store not yet disposed.</summary>

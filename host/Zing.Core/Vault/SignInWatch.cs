@@ -111,15 +111,17 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		/// <summary>The password is the one Zing itself filled for this login, so it matches the saved one.</summary>
 		public bool FromVault { get; } = fromVault;
 		public IDisposable? Timer { get; set; }
-		/// <summary>The page landed: this submit has had its one prompt.</summary>
-		public bool Landed { get; set; }
+		/// <summary>Where the page landed (the form's origin, or another of its site): this submit has had its one prompt.</summary>
+		public string? LandedOn { get; set; }
 
 	}
 
 	/// <summary>A class, not a record: a record's ToString would print the password.</summary>
-	private sealed class Shown(SaveLoginPrompt prompt, string password, string? savedId, IDisposable timer)
+	private sealed class Shown(SaveLoginPrompt prompt, string password, string? savedId, string landedOn, IDisposable timer)
 	{
 		public SaveLoginPrompt Prompt { get; } = prompt;
+		/// <summary>The origin the prompt opened over: the form's, or another of its site.</summary>
+		public string LandedOn { get; } = landedOn;
 		public string Password { get; } = password;
 		public string? SavedId { get; } = savedId;
 		public IDisposable Timer { get; } = timer;
@@ -195,7 +197,12 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 			Withdraw(pageId, origin, hasVisiblePasswordBox);
 			return;
 		}
-		if (held.Landed) return;
+		if (held.LandedOn is { } landedOn)
+		{
+			// The form came back while Hello was checked again: the sign-in failed after all.
+			if (Withdrawn(held.Origin, landedOn, origin, hasVisiblePasswordBox)) Drop(pageId);
+			return;
+		}
 		switch (SignInOutcomes.Of(held.Origin, origin, hasVisiblePasswordBox))
 		{
 			case SignInOutcome.Pending:
@@ -204,7 +211,7 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 				Drop(pageId);
 				return;
 		}
-		held.Landed = true;
+		held.LandedOn = origin;
 		held.Timer?.Dispose();
 		// The sign-in worked, so the username step that may have led to it is done with (Chrome clears it too).
 		ForgetStep(pageId);
@@ -233,11 +240,17 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		if (_steps.Remove(pageId, out var step)) step.Timer.Dispose();
 	}
 
-	/// <summary>Ruling 37: the sign-in page is back in the origin a prompt is open for, so that sign-in failed after all.</summary>
+	/// <summary>
+	/// Ruling 37: the sign-in page is back in the origin a prompt is open for, or in the other origin of its site it opened over
+	/// (a wrong password sent on to a sibling's sign-in page), so that sign-in failed after all.
+	/// </summary>
 	private void Withdraw(string pageId, string origin, bool hasVisiblePasswordBox)
 	{
-		if (_shown is { } open && open.Prompt.PageId == pageId && SignInOutcomes.PromptWithdrawn(open.Prompt.Origin, origin, hasVisiblePasswordBox)) CloseShown();
+		if (_shown is { } open && open.Prompt.PageId == pageId && Withdrawn(open.Prompt.Origin, open.LandedOn, origin, hasVisiblePasswordBox)) CloseShown();
 	}
+
+	private static bool Withdrawn(string formOrigin, string landedOn, string origin, bool hasVisiblePasswordBox) =>
+		SignInOutcomes.PromptWithdrawn(formOrigin, origin, hasVisiblePasswordBox) || SignInOutcomes.PromptWithdrawn(landedOn, origin, hasVisiblePasswordBox);
 
 	/// <summary>Zing filled this login into the page, so signing in with it again isn't a changed password.</summary>
 	public void Filled(string pageId, string origin, string username, string password)
@@ -291,22 +304,24 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 		string? savedId = null;
 		if (choice == SaveChoice.Update)
 		{
-			if (held.FromVault) return;
+			// Only the form's own origin landing without the form is evidence enough to replace a saved password: a sibling
+			// of the site may be where a wrong one is sent (help.x.com/locked), and an update would store the typo.
+			if (held.FromVault || held.LandedOn != held.Origin) return;
 			savedId = summaries.First(s => s.DeletedAt is null && s.Origin == held.Origin && s.Username == held.Username).Id;
 		}
 		_held.Remove(pageId);
 		held.Timer?.Dispose();
-		Show(new SaveLoginPrompt(pageId, choice == SaveChoice.Update ? "update" : "save", held.Origin, held.Username, choice == SaveChoice.Update ? held.Username : null), held.Password, savedId);
+		Show(new SaveLoginPrompt(pageId, choice == SaveChoice.Update ? "update" : "save", held.Origin, held.Username, choice == SaveChoice.Update ? held.Username : null), held.Password, savedId, held.LandedOn!);
 	}
 
-	private void Show(SaveLoginPrompt prompt, string password, string? savedId)
+	private void Show(SaveLoginPrompt prompt, string password, string? savedId, string landedOn)
 	{
 		CloseShown();
 		var timer = scheduler.Schedule(PromptFor, () =>
 		{
 			if (_shown is { } shown && shown.Prompt == prompt) CloseShown();
 		});
-		_shown = new Shown(prompt, password, savedId, timer);
+		_shown = new Shown(prompt, password, savedId, landedOn, timer);
 		changed(prompt);
 	}
 
@@ -383,7 +398,7 @@ public sealed class SignInWatch(Func<VaultStore?> vault, Func<string, bool> isSh
 
 	private void Expire(string pageId, Held held)
 	{
-		if (_held.TryGetValue(pageId, out var current) && ReferenceEquals(current, held) && !held.Landed) Drop(pageId);
+		if (_held.TryGetValue(pageId, out var current) && ReferenceEquals(current, held) && held.LandedOn is null) Drop(pageId);
 	}
 
 	private void Drop(string pageId, Held? only = null)
