@@ -63,6 +63,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		allowPermission: (id) => invoke('permission:allow', id),
 		denyPermission: (id) => invoke('permission:deny', id),
 		allowPopupsForSite: (id) => invoke('permission:allow-site', id),
+		answerDialog: (id, accept, text) => (text === undefined ? invoke('dialog:answer', id, accept) : invoke('dialog:answer', id, accept, text)),
 		getLibrary: () => invoke('library:get'),
 		applyLibrary: (action) => invoke('library:apply', action),
 		openLibraryItem: (id, target) => invoke('library:open', id, target),

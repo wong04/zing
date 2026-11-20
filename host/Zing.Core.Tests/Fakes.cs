@@ -74,6 +74,18 @@ public sealed class FakePage(IPageEvents events) : IPage
 		return Task.FromResult(ReaderRefusal);
 	}
 	public void Close() => Closed = true;
+	/// <summary>How many times closing ran the page's beforeunload.</summary>
+	public int BeforeUnloads { get; private set; }
+	/// <summary>What the page's beforeunload does as it closes; null: it asks nothing, and the page may close.</summary>
+	public Func<CancellationToken, Task<bool>>? Leaving { get; set; }
+	public Task<bool> RunBeforeUnloadAsync(CancellationToken abandon)
+	{
+		BeforeUnloads++;
+		return Leaving?.Invoke(abandon) ?? Task.FromResult(true);
+	}
+	/// <summary>Whether the page's beforeunload would ask, as the sleep probe finds out.</summary>
+	public bool AsksBeforeLeaving { get; set; }
+	public Task<bool> AsksBeforeLeavingAsync(CancellationToken abandon) => Task.FromResult(AsksBeforeLeaving);
 }
 
 public sealed class FakePageHost : IPageHost
@@ -195,6 +207,13 @@ public sealed class FakeWindowHost : IWindowHost
 	public int WindowReopens { get; private set; }
 	public int Quits { get; private set; }
 	public void Quit() => Quits++;
+	public int Relaunches { get; private set; }
+	/// <summary>As the host does once every page may leave (a fake page asks nothing): the updater relaunches.</summary>
+	public void RelaunchToUpdate()
+	{
+		Relaunches++;
+		Updates.Relaunch();
+	}
 	public bool ReopenClosedWindow()
 	{
 		if (ClosedWindows == 0) return false;
@@ -222,7 +241,18 @@ public sealed class FakeWindowHost : IWindowHost
 	public List<OverviewState?> Overviews { get; } = [];
 	public void OverviewChanged(OverviewState? state) => Overviews.Add(state);
 	public void Warn(string what, Exception error) { }
-	public void Background(Task task, string what) => task.GetAwaiter().GetResult();
+	/// <summary>Leaves background work that hasn't finished running (in <see cref="Backgrounded"/>), where it would otherwise be waited for.</summary>
+	public bool HoldsBackground { get; init; }
+	public List<Task> Backgrounded { get; } = [];
+	public void Background(Task task, string what)
+	{
+		if (HoldsBackground && !task.IsCompleted)
+		{
+			Backgrounded.Add(task);
+			return;
+		}
+		task.GetAwaiter().GetResult();
+	}
 
 	public List<Exception> Reported { get; } = [];
 	public void Report(string what, Exception error) => Reported.Add(error);

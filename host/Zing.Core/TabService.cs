@@ -22,6 +22,14 @@ public interface IPage
 	void Stop();
 	void Focus();
 	void Close();
+	/// <summary>
+	/// Runs the page's beforeunload as closing it would, without leaving the page: true when it may close (it asked nothing,
+	/// or the person chose Leave in its "Leave site?" prompt, which the host opens through <see cref="ScriptDialogs"/>),
+	/// false when the person chose Stay. <paramref name="abandon"/> calls the close off: a prompt still to come is answered Stay.
+	/// </summary>
+	Task<bool> RunBeforeUnloadAsync(CancellationToken abandon);
+	/// <summary>Runs the page's beforeunload with no one asked: true when the page would have asked "Leave site?". The page stays either way.</summary>
+	Task<bool> AsksBeforeLeavingAsync(CancellationToken abandon);
 	/// <summary>Runs a script of Zing's own in the page, e.g. restyling the start page.</summary>
 	void Run(string script);
 	/// <summary>Finds in the page; results come back through <see cref="IPageEvents.FindResult"/>.</summary>
@@ -455,12 +463,15 @@ public sealed class TabService
 		_changed();
 	}
 
-	public void CloseOthers(string keep)
+	public void CloseOthers(string keep) => CloseOthers(keep, [.. _store.Records.Where(r => r.Id != keep && !r.Pinned).Select(r => r.Id)]);
+
+	/// <summary>Closes <paramref name="others"/> that are still open, leaving <paramref name="keep"/> in front.</summary>
+	public void CloseOthers(string keep, IReadOnlyList<string> others)
 	{
 		_store.Get(keep);
 		// Kept tab first, so closing the others doesn't give each neighbour a page in turn.
 		if (_store.ActiveId != keep) Activate(keep);
-		foreach (var record in _store.Records.Where(r => r.Id != keep && !r.Pinned).ToList()) Close(record.Id);
+		foreach (var id in others.Where(id => id != keep && _store.Has(id))) Close(id);
 		if (_store.ActiveId != keep) Activate(keep);
 	}
 

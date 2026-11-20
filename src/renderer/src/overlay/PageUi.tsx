@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { EMPTY_PAGE_UI, hasVisiblePageUi, type DownloadEntry, type PageUiState, type PermissionKind, type SaveAnswer } from '@shared/browser/pageUi'
+import { EMPTY_PAGE_UI, hasVisiblePageUi, type DownloadEntry, type PageUiState, type PermissionKind, type SaveAnswer, type ScriptDialogPrompt } from '@shared/browser/pageUi'
 import { formatBytes } from '@shared/format/formatBytes'
 import { followHostState } from '../hostState'
 import { zing } from '../api'
@@ -209,6 +209,58 @@ function PopupCard({ prompt }: { prompt: NonNullable<PageUiState['permission']> 
 	)
 }
 
+/** Who a page dialog names: its origin, or "This page" for one with no web origin. */
+function dialogSource(prompt: ScriptDialogPrompt): string {
+	return prompt.origin === 'null' || prompt.origin === 'this page' ? 'This page' : prompt.origin
+}
+
+/** A page's alert, confirm or prompt, or its "Leave site?" as a tab or window closes. Enter answers OK, Esc Cancel. */
+function ScriptDialog({ state }: { state: PageUiState }) {
+	const prompt = state.dialog
+	if (!prompt) return null
+	// Keyed by id, so each new dialog starts with its own text and takes the focus.
+	return <ScriptDialogCard key={prompt.id} prompt={prompt} />
+}
+
+export function ScriptDialogCard({ prompt }: { prompt: ScriptDialogPrompt }) {
+	const [text, setText] = useState(prompt.defaultText ?? '')
+	const leaving = prompt.kind === 'beforeunload'
+	const accept = (): void => void zing.answerDialog(prompt.id, true, prompt.kind === 'prompt' ? text : undefined)
+	const dismiss = (): void => void zing.answerDialog(prompt.id, false)
+	const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+		if (e.key === 'Escape') dismiss()
+		if (e.key === 'Enter' && prompt.kind === 'prompt') accept()
+	}
+	return (
+		<div className="pageui-card" role="alertdialog" aria-label={leaving ? 'Leave site?' : `${dialogSource(prompt)} says`} onKeyDown={onKeyDown}>
+			{leaving ? (
+				<span>
+					<strong>Leave site?</strong> Changes you made on <strong>{dialogSource(prompt)}</strong> may not be saved.
+				</span>
+			) : (
+				<>
+					<span className="pageui-title">{dialogSource(prompt)} says</span>
+					{prompt.message !== '' && <span className="pageui-message">{prompt.message}</span>}
+				</>
+			)}
+			{prompt.tab !== undefined && <span className="pageui-detail">From the tab “{prompt.tab}”</span>}
+			{prompt.kind === 'prompt' && (
+				<input className="pageui-input" type="text" aria-label="Answer" value={text} autoFocus onChange={(e) => setText(e.target.value)} />
+			)}
+			<div className="pageui-row">
+				<button type="button" className="pageui-button primary" autoFocus={prompt.kind !== 'prompt'} onClick={accept}>
+					{leaving ? 'Leave' : 'OK'}
+				</button>
+				{prompt.kind !== 'alert' && (
+					<button type="button" className="pageui-button" onClick={dismiss}>
+						{leaving ? 'Stay' : 'Cancel'}
+					</button>
+				)}
+			</div>
+		</div>
+	)
+}
+
 /** The vault's offer to save a sign-in or update a saved login: the origin and username only, never the password. */
 function SaveLoginPrompt({ state }: { state: PageUiState }) {
 	const prompt = state.saveLogin
@@ -257,6 +309,7 @@ export function PageUi() {
 	if (!visible) return null
 	return (
 		<div ref={root} className="pageui">
+			<ScriptDialog state={state} />
 			<PermissionPrompt state={state} />
 			<SaveLoginPrompt state={state} />
 			<FindBar state={state} />

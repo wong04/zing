@@ -333,6 +333,9 @@ public sealed class ZingApp
 	/// <summary>Whether closing this window quits Zing.</summary>
 	public bool IsLastWindow(MainWindow window) => _windows.Count == 1 && _windows[0] == window;
 
+	/// <summary>The confirm before closing a window of tabs or quitting, and its "Don't ask again".</summary>
+	public CloseConfirm CloseConfirm => new(Services.Settings);
+
 	/// <summary>The restoreTabs setting: whether the tabs open now come back on the next launch.</summary>
 	public bool TabsReopen => Flag("restoreTabs");
 
@@ -362,11 +365,41 @@ public sealed class ZingApp
 	/// <summary>Quit Zing (Ctrl+Shift+Q): asks once at most (WindowClose.QuitQuestion), then every window closes together and all are saved.</summary>
 	public void Quit(MainWindow asking)
 	{
-		var question = WindowClose.QuitQuestion([.. _windows.Select(SessionOf)], TabsReopen);
+		var question = CloseConfirm.QuitQuestion([.. _windows.Select(SessionOf)], TabsReopen);
 		if (question is not null && !asking.Confirmed(question)) return;
+		TestHooks.Background(QuitOnceLeftAsync(), "quitting");
+	}
+
+	private async Task QuitOnceLeftAsync()
+	{
+		if (!await EveryPageMayLeaveAsync()) return;
 		// Windows can go while the question is up.
 		if (_windows.Count == 0 || _closingTogether.IsSupersetOf(_windows)) return;
 		QuitAll();
+	}
+
+	/// <summary>
+	/// Relaunch to update closes every page as quitting does, so pages with unsaved work ask "Leave site?" first and Stay
+	/// calls the relaunch off (the pill stays, and quitting later still applies the update). The tabs come back after the
+	/// update, but what a page held in memory (a draft it hadn't saved) would not.
+	/// </summary>
+	public void RelaunchToUpdate() => TestHooks.Background(RelaunchOnceLeftAsync(), "relaunching to update");
+
+	private async Task RelaunchOnceLeftAsync()
+	{
+		if (!await EveryPageMayLeaveAsync()) return;
+		Updates.Relaunch();
+	}
+
+	// One question at a time: a second quit or relaunch while the pages answer waits on the same one.
+	private Task<bool>? _everyPageLeaving;
+
+	/// <summary>Every window's pages, at once (LeaveCheck): Stay on any page, in any window, calls the others off.</summary>
+	private Task<bool> EveryPageMayLeaveAsync()
+	{
+		if (_everyPageLeaving is { IsCompleted: false } asking) return asking;
+		var checks = _windows.Select(w => w.Api).OfType<ChromeApi>().Select(api => (Func<CancellationToken, Task<bool>>)api.MayCloseAsync).ToList();
+		return _everyPageLeaving = LeaveCheck.AllAsync(checks, CancellationToken.None);
 	}
 
 	/// <summary>

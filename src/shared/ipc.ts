@@ -308,6 +308,8 @@ export interface InvokeContract {
 	'permission:deny': { args: [id: number]; result: void }
 	/** A blocked pop-up: opens it, and lets the site open pop-ups until Zing quits. */
 	'permission:allow-site': { args: [id: number]; result: void }
+	/** OK or Leave (accept) / Cancel or Stay; `text` is what a prompt hands back. */
+	'dialog:answer': { args: [id: number, accept: boolean, text?: string]; result: void }
 	'library:get': { args: []; result: LibraryViewState }
 	'library:apply': { args: [action: LibraryAction]; result: string | undefined }
 	'library:open': { args: [id: string, target: LibraryOpenTarget]; result: void }
@@ -720,6 +722,7 @@ export interface ZingApi {
 	allowPermission(id: number): Promise<void>
 	denyPermission(id: number): Promise<void>
 	allowPopupsForSite(id: number): Promise<void>
+	answerDialog(id: number, accept: boolean, text?: string): Promise<void>
 	getLibrary(): Promise<LibraryViewState>
 	applyLibrary(action: LibraryAction): Promise<string | undefined>
 	openLibraryItem(id: string, target: LibraryOpenTarget): Promise<void>
