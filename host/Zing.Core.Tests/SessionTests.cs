@@ -196,12 +196,31 @@ public sealed class SessionTests : IDisposable
 	}
 
 	[Fact]
+	public void A_relaunch_file_that_could_not_be_deleted_is_never_restored_again()
+	{
+		var path = Path.Combine(_dir, "relaunch.json");
+		File.WriteAllText(Session.Taken(path), Session.EncodeWindows([[new SessionTab("https://a.test/", "a", false, true)]]));
+		Assert.Empty(Session.TakeOnce(path, e => throw e));
+		Assert.False(File.Exists(Session.Taken(path)));
+	}
+
+	[Fact]
+	public void A_relaunch_file_that_cannot_be_moved_aside_is_not_restored()
+	{
+		var path = Path.Combine(_dir, "relaunch.json");
+		File.WriteAllText(path, Session.EncodeWindows([[new SessionTab("https://a.test/", "a", false, true)]]));
+		using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+			Assert.Throws<SessionFileException>(() => Session.TakeOnce(path, _ => { }));
+	}
+
+	[Fact]
 	public void A_corrupt_relaunch_file_is_an_error_and_is_still_deleted()
 	{
 		var path = Path.Combine(_dir, "relaunch.json");
 		File.WriteAllText(path, "{{{not json");
 		Assert.Throws<SessionFileException>(() => Session.TakeOnce(path, e => throw e));
 		Assert.False(File.Exists(path));
+		Assert.False(File.Exists(Session.Taken(path)));
 	}
 
 	[Fact]

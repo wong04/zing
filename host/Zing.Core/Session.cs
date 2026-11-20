@@ -103,24 +103,52 @@ public static class Session
 
 	/// <summary>
 	/// The tabs saved for one relaunch (an update): read once and deleted whether or not they could be read, so they come back
-	/// exactly once and, with restore off, nothing stays on disk. A file that won't go is <paramref name="onDiscardFailed"/>'s, and its tabs still come back.
+	/// exactly once and, with restore off, nothing stays on disk past the next launch.
+	/// <para>
+	/// The file is renamed to <see cref="Taken"/> before it is read, so one that then can't be deleted is never restored again:
+	/// a later launch only deletes it. A file that can't even be renamed isn't restored at all (a <see cref="SessionFileException"/>),
+	/// since nothing would stop every launch restoring it. A delete that fails is <paramref name="onDiscardFailed"/>'s, and its tabs still come back.
+	/// </para>
 	/// </summary>
 	public static List<List<SessionTab>> TakeOnce(string path, Action<Exception> onDiscardFailed)
 	{
+		var taken = Taken(path);
+		// Left by a launch that restored it and couldn't delete it: already restored once.
+		DiscardReporting(taken, onDiscardFailed);
 		try
 		{
-			return Load(path);
+			File.Move(path, taken);
+		}
+		catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException)
+		{
+			return [];
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+		{
+			throw new SessionFileException(path, error);
+		}
+		try
+		{
+			return Load(taken);
 		}
 		finally
 		{
-			try
-			{
-				Discard(path);
-			}
-			catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-			{
-				onDiscardFailed(error);
-			}
+			DiscardReporting(taken, onDiscardFailed);
+		}
+	}
+
+	/// <summary>Where <see cref="TakeOnce"/> moves the file while it reads it.</summary>
+	public static string Taken(string path) => path + ".taken";
+
+	private static void DiscardReporting(string path, Action<Exception> onDiscardFailed)
+	{
+		try
+		{
+			Discard(path);
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+		{
+			onDiscardFailed(error);
 		}
 	}
 
