@@ -107,6 +107,9 @@
 	"persistentProfile": {
 		"type": "flag"
 	},
+	"extensions": {
+		"type": "flag"
+	},
 	"defaultUserAgent": {
 		"type": "flag"
 	},

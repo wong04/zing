@@ -30,6 +30,25 @@ export type TabPageState = 'crashed' | 'unresponsive'
 /** Where updating stands (Zing.Core Updates.cs). 'unavailable' is a build that isn't installed: it never checks. */
 export type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'ready' | 'upToDate' | 'failed' | 'unavailable'
 
+/** One installed unpacked extension (Settings' Extensions). */
+export interface ExtensionRow {
+	/** Names it in the other extensions calls. */
+	readonly key: string
+	readonly name: string
+	readonly version: string
+	readonly enabled: boolean
+	/** Its action has a popup the toolbar can open. */
+	readonly hasPopup: boolean
+	/** Why Zing's copy can't be read; null when fine. */
+	readonly problem: string | null
+}
+
+export interface ExtensionsState {
+	/** Allow extensions and Stay signed in to sites were both on when Zing started, so extensions run now. */
+	readonly running: boolean
+	readonly items: readonly ExtensionRow[]
+}
+
 export interface UpdateState {
 	readonly status: UpdateStatus
 	/** Empty in a build that isn't installed. */
@@ -343,6 +362,17 @@ export interface InvokeContract {
 	'shell:close-toolbox': { args: []; result: void }
 	'shell:menu': { args: [kind: ShellMenuKind, id: string, anchor: MenuAnchor]; result: void }
 	'shell:clear-session': { args: []; result: void }
+	/** Settings' Extensions: the installed unpacked extensions, and whether they run this launch. */
+	'extensions:get': { args: []; result: ExtensionsState }
+	/** Load unpacked: shows the folder picker, copies the folder into Zing's extensions folder; null when the picker was cancelled. */
+	'extensions:load-unpacked': { args: []; result: ExtensionsState | null }
+	'extensions:set-enabled': { args: [key: string, enabled: boolean]; result: ExtensionsState }
+	/** Unloads the extension and deletes Zing's copy of it; the folder it was loaded from is left alone. */
+	'extensions:remove': { args: [key: string]; result: ExtensionsState }
+	/** Opens the extension's action popup under the toolbar. Rejects when extensions aren't running or it has no popup. */
+	'extensions:open-popup': { args: [key: string]; result: void }
+	/** The toolbar's extensions button: a menu of the running extensions' popups and Manage Extensions. */
+	'extensions:menu': { args: [anchor: MenuAnchor]; result: void }
 	'toolpanel:get': { args: []; result: ToolPanelsState }
 	/** `at` is in screen coordinates (a pointer event's screenX/screenY). */
 	'toolpanel:open': { args: [content: string, at: Point]; result: OpenPanelOutcome }
@@ -789,6 +819,12 @@ export interface ZingApi {
 	closeToolbox(): Promise<void>
 	openShellMenu(kind: ShellMenuKind, id: string, anchor: MenuAnchor): Promise<void>
 	clearBrowsingSession(): Promise<void>
+	getExtensions(): Promise<ExtensionsState>
+	loadUnpackedExtension(): Promise<ExtensionsState | null>
+	setExtensionEnabled(key: string, enabled: boolean): Promise<ExtensionsState>
+	removeExtension(key: string): Promise<ExtensionsState>
+	openExtensionPopup(key: string): Promise<void>
+	openExtensionsMenu(anchor: MenuAnchor): Promise<void>
 	reportError(report: RendererErrorReport): Promise<void>
 	hashText(text: string, algorithm: string): Promise<string>
 	hashFile(token: string, algorithm: string): Promise<string>

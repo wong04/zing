@@ -2,6 +2,7 @@ using Microsoft.Web.WebView2.Core;
 using WinRT;
 using Zing.Core;
 using Zing.Core.Engines;
+using Zing.Core.Extensions;
 using Zing.Core.Vault;
 
 namespace Zing.Host;
@@ -95,6 +96,9 @@ public sealed class ZingApp
 	/// <summary>Browsing data on disk (opt-in) instead of in memory; chosen at launch, so a change applies on the next one.</summary>
 	public bool PersistentProfile { get; private set; }
 
+	/// <summary>Allow extensions and Stay signed in to sites were both on at launch; like both, a change applies on the next one.</summary>
+	public bool ExtensionsRunning { get; private set; }
+
 	public void Launch()
 	{
 		var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
@@ -112,7 +116,9 @@ public sealed class ZingApp
 		// A persistent profile exists so sign-ins survive closing a tab and quitting; purging would undo exactly that.
 		PersistentProfile = Flag(settings, "persistentProfile");
 		HostedView.SmartScreen = Flag(settings, "smartScreen");
-		_environment = OpenEnvironmentAsync(Flag(settings, "acceleratedCanvas"));
+		// Extensions do nothing in the in-memory profile (ExtensionService), so they run only with the persistent one.
+		ExtensionsRunning = PersistentProfile && Flag(settings, "extensions");
+		_environment = OpenEnvironmentAsync(Flag(settings, "acceleratedCanvas"), ExtensionsRunning);
 		StartupMarks.Mark("engine requested");
 		// Pages ask the filter lists about every request on the UI thread; reading them takes about 100 ms, so it happens
 		// here, off that thread, while the engine starts. A page that asks sooner waits for the read to finish.
@@ -517,6 +523,7 @@ public sealed class ZingApp
 		if (openedAccount.Problem is { } accountProblem) StartupProblem("account", "your Zing account", "without it", accountProblem);
 		var account = openedAccount.Value;
 		var engines = OpenEngines();
+		var extensions = OpenExtensions();
 		// Reached only by the Zing that owns this profile (the single-instance check came first), so what is in the folder is a dead Zing's, or a quitting one's, which gave the profile up first (Quitting); the pid check keeps the latter's.
 		Zing.Core.Viewer.ViewerFiles.SweepLeftovers(AppPaths.ViewerCopies, Zing.Core.Viewer.ViewerFiles.IsZingRunning, (what, error) => TestHooks.Record(what, error));
 		// HTML to PDF needs no engine, so its print folders are swept whether or not the engines folder opened.
@@ -527,7 +534,7 @@ public sealed class ZingApp
 		Zing.Core.Sync.SyncRestore.AskIfPasswordChangedElsewhere(account, vaults.Current);
 		// Zing closing wipes the secret key the vault holds (Ruling 44).
 		_onQuit.Add(vaults.Dispose);
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults, Sync: TestHooks.IsEndToEndRun ? TestHooks.Sync(this) : SyncBuild.Setup(this), SyncScheduler: _scheduler, LocalAppData: WindowsDownloads.LocalAppData, BrowserLauncher: new BrowserLauncher(), FileTrash: new FileTrash(), DefaultBrowser: new DefaultBrowserReader(), BookmarkIcons: bookmarkIcons, AppData: WindowsDownloads.AppData, CrashLog: EngineFailures.Log, RememberedSites: sites);
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults, Sync: TestHooks.IsEndToEndRun ? TestHooks.Sync(this) : SyncBuild.Setup(this), SyncScheduler: _scheduler, LocalAppData: WindowsDownloads.LocalAppData, BrowserLauncher: new BrowserLauncher(), FileTrash: new FileTrash(), DefaultBrowser: new DefaultBrowserReader(), BookmarkIcons: bookmarkIcons, AppData: WindowsDownloads.AppData, CrashLog: EngineFailures.Log, RememberedSites: sites, Extensions: extensions);
 	}
 
 	/// <summary>A file that can't be read is left as it is, and this launch remembers sites in memory only.</summary>
@@ -607,6 +614,21 @@ public sealed class ZingApp
 		}
 	}
 
+	/// <summary>An extensions folder that can't be read costs Settings' Extensions, not startup; the fault is recorded and said.</summary>
+	private ExtensionService? OpenExtensions()
+	{
+		try
+		{
+			return new ExtensionService(new ExtensionStore(AppPaths.Extensions), ExtensionsRunning);
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+		{
+			Faults.Warning("extensions load", error);
+			_startupNotices.Add($"Zing couldn't open your extensions folder, so it started without extensions. {error.Message}");
+			return null;
+		}
+	}
+
 	/// <summary>Nothing is fetched here: engines download only when a person asks. A folder that can't be tidied costs the engines feature, not startup.</summary>
 	private static EngineStore? OpenEngines()
 	{
@@ -624,14 +646,14 @@ public sealed class ZingApp
 	}
 
 	/// <summary>Opens the engine and listens to it: a browser process that dies, and a runtime update waiting for the next launch.</summary>
-	private async Task<CoreWebView2Environment> OpenEnvironmentAsync(bool acceleratedCanvas)
+	private async Task<CoreWebView2Environment> OpenEnvironmentAsync(bool acceleratedCanvas, bool extensions)
 	{
 		var userData = EngineUserData();
 		// A Zing that is still quitting gave up the profile before its engine went.
 		await EngineFolder.WaitUntilFreeAsync(userData, EngineFolder.Patience);
 		// Off means signed out: the profile kept while it was on goes before any page can use it.
 		if (!PersistentProfile) DiscardKeptProfile(userData);
-		var environment = await CreateEnvironmentAsync(userData, acceleratedCanvas);
+		var environment = await CreateEnvironmentAsync(userData, acceleratedCanvas, extensions);
 		StartupMarks.Mark("engine ready");
 		environment.BrowserProcessExited += OnBrowserProcessExited;
 		environment.NewBrowserVersionAvailable += OnNewBrowserVersionAvailable;
@@ -711,10 +733,36 @@ public sealed class ZingApp
 		if (_rebuild is not { } rebuild) return;
 		_rebuild = null;
 		rebuild.Deadline?.Dispose();
-		_environment = OpenEnvironmentAsync(Flag("acceleratedCanvas"));
+		_extensionsAttached = null;
+		_services?.Extensions?.Detach();
+		_environment = OpenEnvironmentAsync(Flag("acceleratedCanvas"), ExtensionsRunning);
 		_startupNotices.Add("Zing's web engine stopped unexpectedly, so Zing restarted it.");
 		if (rebuild.Windows.Count == 0) NewWindow();
 		foreach (var tabs in rebuild.Windows) NewWindow(tabs);
+	}
+
+	private Task? _extensionsAttached;
+
+	/// <summary>
+	/// The persistent profile's first page is starting: its extensions are loaded once, and every page waits for that. A
+	/// failure is recorded and said once, and pages go on without them rather than never loading.
+	/// </summary>
+	public Task AttachExtensionsAsync(CoreWebView2Profile profile) => _extensionsAttached ??= AttachOnceAsync(profile);
+
+	private async Task AttachOnceAsync(CoreWebView2Profile profile)
+	{
+		if (_services?.Extensions is not { Running: true } extensions) return;
+		try
+		{
+			await extensions.AttachAsync(new ProfileExtensions(profile));
+		}
+		catch (Exception error)
+		{
+			Faults.Warning("extensions attach", error);
+			var notice = $"Zing couldn't load your extensions. {error.Message}";
+			if (Primary is { Api: not null } primary) primary.Notify(notice);
+			else _startupNotices.Add(notice);
+		}
 	}
 
 	private CoreWebView2? AnyLivePage() => _windows.Select(w => w.AnyLivePage()).FirstOrDefault(core => core is not null);
@@ -728,9 +776,10 @@ public sealed class ZingApp
 	private static string EngineUserData() =>
 		TestHooks.IsEndToEndRun ? Path.Combine(AppPaths.UserData, "WebView2") : Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Zing", "WebView2");
 
-	private static async Task<CoreWebView2Environment> CreateEnvironmentAsync(string userData, bool acceleratedCanvas)
+	/// <param name="extensions">Lets the browsing profile load extensions (ExtensionsRunning); read at launch.</param>
+	private static async Task<CoreWebView2Environment> CreateEnvironmentAsync(string userData, bool acceleratedCanvas, bool extensions)
 	{
-		var options = new CoreWebView2EnvironmentOptions();
+		var options = new CoreWebView2EnvironmentOptions { AreBrowserExtensionsEnabled = extensions };
 		options.AdditionalBrowserArguments = string.Join(" ", new[] { TestHooks.BrowserArguments(), acceleratedCanvas ? "" : "--disable-accelerated-2d-canvas" }.Where(a => a.Length > 0));
 		// zing://home parses with a host, as Electron's standard scheme did. The getter hands back a copy, so assign the whole list.
 		options.CustomSchemeRegistrations = new List<CoreWebView2CustomSchemeRegistration> { new(StartPage.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true }, new(Zing.Core.Net.RelayedContent.Scheme) { TreatAsSecure = 1, HasAuthorityComponent = true } };

@@ -60,6 +60,12 @@ public static class AppPaths
 		}
 	}
 
+	/// <summary>
+	/// Settings' Extensions: a copy of each unpacked extension loaded, and state.json. Local, beside the engines: the
+	/// copies are per-machine files. A test run keeps them inside its scratch ZING_USER_DATA.
+	/// </summary>
+	public static string Extensions => Path.Combine(LocalData(), "Extensions");
+
 	/// <summary>Where each engine job gets its private working folder; emptied at every start, and a job removes its own when it ends.</summary>
 	public static string EngineJobs => Path.Combine(Path.GetDirectoryName(Engines)!, "engine-jobs");
 

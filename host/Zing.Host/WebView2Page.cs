@@ -701,6 +701,11 @@ public sealed class WebView2Page : IPage
 		// Before any queued navigation, so every document gets the script; it installs itself in the top frame only.
 		await FollowAutofillAsync();
 		if (!IsOpen) return;
+		if (_persistent)
+		{
+			await _features.AttachExtensionsAsync(_core.Profile);
+			if (!IsOpen) return;
+		}
 
 		// By index: an action can call back into Run (a focus that activates a tab), which queues behind it until the end.
 		for (var i = 0; i < _queued.Count; i++) _queued[i](_core);

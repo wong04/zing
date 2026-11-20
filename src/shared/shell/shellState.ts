@@ -28,6 +28,7 @@ export const SETTINGS_CATEGORIES = [
 	'privacy',
 	'security',
 	'advanced',
+	'extensions',
 	'account',
 	'about',
 	'import',

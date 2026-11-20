@@ -173,6 +173,16 @@ public sealed class FakeWindowHost : IWindowHost
 		return Task.FromResult(PickedPaths);
 	}
 
+	/// <summary>What the folder picker "returns"; null is a cancel.</summary>
+	public string? PickedFolder { get; set; }
+
+	public Task<string?> PickFolderAsync() => Task.FromResult(PickedFolder);
+
+	/// <summary>The extension popups asked for, oldest first.</summary>
+	public List<string> ExtensionPopups { get; } = [];
+
+	public void OpenExtensionPopup(string url) => ExtensionPopups.Add(url);
+
 	/// <summary>What the Save dialog "returns"; null is a cancel. The name it suggested is kept.</summary>
 	public string? SavePath { get; set; }
 	public string? SuggestedSaveName { get; private set; }

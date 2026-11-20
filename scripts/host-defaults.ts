@@ -66,6 +66,7 @@ export const SETTING_RULES: Record<SettingKey, SettingRule> = {
 	autoCloseHour: range('integer', 0, 23),
 	autoCloseMinute: range('integer', 0, 59),
 	persistentProfile: flag,
+	extensions: flag,
 	defaultUserAgent: flag,
 	acceleratedCanvas: flag,
 	restoreTabs: flag,

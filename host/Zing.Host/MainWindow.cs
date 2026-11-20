@@ -33,6 +33,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private PageUiLayer? _pageUi;
 	private PeekControlsLayer? _peekControls;
 	private UpdatePillLayer? _updatePill;
+	private ExtensionPopupLayer? _extensionPopup;
 	private FullScreenExitLayer? _fullScreenExit;
 	private FullScreenExitReveal? _exitReveal;
 	private CoveringLayer? _stacks;
@@ -145,6 +146,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_overview = new CoveringLayer(_window, _scope, _environment, _bridge, "overlay-overview", _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays, OverlayLevel.Overview);
 		_pageUi = new PageUiLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, () => Api?.Insets().Top ?? 0, _renderers.Add, _overlays);
 		_peekControls = new PeekControlsLayer(_window, _scope, _environment, _bridge, PreviewButtons, _renderers.Add, _overlays);
+		_extensionPopup = new ExtensionPopupLayer(_window, _scope, _environment, _layout.ContentRect, () => Api?.Insets().Top ?? 0, _overlays, url => Api?.OpenLink(url));
 		_updatePill = new UpdatePillLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, _renderers.Add, _overlays, _app.Updates.State);
 		_fullScreenExit = new FullScreenExitLayer(_window, _scope, _environment, _bridge, _layout.ContentRect, _renderers.Add, _overlays);
 		// The real cursor, not Cursor: that counts as away over a fullscreen page, and this button is the one thing that shows there.
@@ -568,6 +570,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		PlacePreview();
 		_notices?.Layout();
 		_pageUi?.Layout();
+		_extensionPopup?.Layout();
 		_stacks?.Layout();
 		_overview?.Layout();
 		_updatePill?.Layout();
@@ -652,6 +655,22 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		var picked = await picker.PickMultipleFilesAsync();
 		return [.. picked.Select(file => file.Path)];
 	}
+
+	public async Task<string?> PickFolderAsync()
+	{
+		if (TestHooks.IsEndToEndRun) return TestHooks.TakePickedFiles() is [var path] ? path : null;
+		var picker = new Microsoft.Windows.Storage.Pickers.FolderPicker(_window.AppWindow.Id);
+		var picked = await picker.PickSingleFolderAsync();
+		return picked?.Path;
+	}
+
+	public void OpenExtensionPopup(string url)
+	{
+		var layer = _extensionPopup ?? throw new InvalidOperationException("The window hasn't started");
+		TestHooks.Background(layer.OpenAsync(url), "extension popup");
+	}
+
+	public Task AttachExtensionsAsync(CoreWebView2Profile profile) => _app.AttachExtensionsAsync(profile);
 
 	public async Task<string?> PickSaveFileAsync(string suggestedName, string extension, string kind)
 	{
