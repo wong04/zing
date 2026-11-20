@@ -21,6 +21,11 @@ public static class PermissionKinds
 	public const string CameraAndMicrophone = "camera and microphone";
 	public const string Location = "location";
 	public const string Notifications = "notifications";
+	public const string Clipboard = "clipboard";
+	public const string MultipleDownloads = "multiple downloads";
+	public const string Files = "files";
+	/// <summary>Not asked for: a pop-up the page opened without a click, already blocked, offered to open.</summary>
+	public const string Popups = "pop-ups";
 }
 
 /// <param name="Tab">The asking tab's title when it isn't the tab on screen, so a background tab's prompt says whose it is.</param>
