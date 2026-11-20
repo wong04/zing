@@ -137,6 +137,12 @@
 	"passwordAutofill": {
 		"type": "flag"
 	},
+	"syncLibrary": {
+		"type": "flag"
+	},
+	"syncSettings": {
+		"type": "flag"
+	},
 	"tabDropdowns": {
 		"type": "flag"
 	},

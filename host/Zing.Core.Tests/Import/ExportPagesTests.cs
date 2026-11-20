@@ -22,6 +22,9 @@ public sealed class ExportPagesTests
 	[InlineData(ImportBrowser.Brave, true)]
 	[InlineData(ImportBrowser.Dia, false)]
 	[InlineData(ImportBrowser.Arc, false)]
+	[InlineData(ImportBrowser.Vivaldi, false)]
+	[InlineData(ImportBrowser.Opera, false)]
+	[InlineData(ImportBrowser.OperaGX, false)]
 	public void OnlyBrowsersWithAnExportPageOfferPasswords(ImportBrowser browser, bool offered) => Assert.Equal(offered, ExportPages.Has(browser));
 
 	[Fact]

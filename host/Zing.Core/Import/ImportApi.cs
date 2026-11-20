@@ -26,7 +26,7 @@ public sealed record NudgeHost(Func<bool> IsDone, Action MarkDone, Func<string?>
 public sealed record PendingImport(string Action, string SourceId);
 
 /// <summary>The import:* channels: the browsers Zing can import from, and the merge of one of their bookmark sets (or a picked file) into the library.</summary>
-public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<string> localAppData, Func<IBrowserLauncher> launcher, Func<IFileTrash> trash, IScheduler scheduler, string downloadsDir, Action<string, object?> push, NudgeHost? nudgeHost = null) : IDisposable
+public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<string> localAppData, Func<string> appData, Func<IBrowserLauncher> launcher, Func<IFileTrash> trash, IScheduler scheduler, string downloadsDir, Action<string, object?> push, NudgeHost? nudgeHost = null) : IDisposable
 {
 	private PasswordExportWatch? _watch;
 	// The card state lives here, in memory: Settings opens in the same window, and nothing about it may reach the disk.
@@ -39,7 +39,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 
 	public void Dispose() => CancelWatch();
 
-	public IReadOnlyList<ImportSourceView> Sources() => [.. ImportSources.Find(localAppData()).Select(View)];
+	public IReadOnlyList<ImportSourceView> Sources() => [.. ImportSources.Find(localAppData(), appData()).Select(View)];
 
 	/// <exception cref="UnknownImportSourceException"/>
 	/// <exception cref="ImportReadException">The source's file couldn't be read.</exception>
@@ -57,7 +57,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 
 	private BookmarkImportOutcome ImportSourceCore(string id)
 	{
-		var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
+		var source = ImportSources.Find(localAppData(), appData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
 		return Merge(Guarded(() => ImportSources.Read(source), "this browser's bookmarks"), source.Id, source.Display);
 	}
 
@@ -102,7 +102,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	/// <exception cref="NoProfileToOpenException"/>
 	public void WatchPasswords(string id)
 	{
-		var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
+		var source = ImportSources.Find(localAppData(), appData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
 		var url = ExportPages.Url(source.Browser);
 		var profile = source.Profile ?? throw new NoProfileToOpenException(source.Browser);
 		var openLauncher = launcher();
@@ -224,7 +224,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 	// Runs off the UI thread: it reads other browsers' profiles.
 	private ImportNudge Offer(string? progId)
 	{
-		if (DefaultBrowserSource.Pick(progId, ImportSources.Find(localAppData())) is not { } source) return new ImportNudge.Generic();
+		if (DefaultBrowserSource.Pick(progId, ImportSources.Find(localAppData(), appData())) is not { } source) return new ImportNudge.Generic();
 		return new ImportNudge.Offer(Label(source), ProfileOf(source), source.Bookmarks ?? 0, source.Id, ExportPages.Has(source.Browser));
 	}
 
@@ -234,7 +234,7 @@ public sealed class ImportApi(LibraryStore library, FileGrants grants, Func<stri
 		_cached = null;
 		try
 		{
-			var source = ImportSources.Find(localAppData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
+			var source = ImportSources.Find(localAppData(), appData()).FirstOrDefault(s => s.Id == id) ?? throw new UnknownImportSourceException(id);
 			var outcome = ImportSourceCore(id);
 			_result = new ImportNudge.Result(Label(source), outcome.AddedToBar + outcome.AddedToFolder, source.Id, ExportPages.Has(source.Browser));
 			host.MarkDone();

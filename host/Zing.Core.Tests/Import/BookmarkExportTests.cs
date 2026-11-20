@@ -27,7 +27,7 @@ public sealed class BookmarkExportTests : IDisposable
 		bookmarks.Add(new BookmarkFolder("u1", "Reading — café", [new BookmarkFolder("u2", "Empty", [], 1), new BookmarkLink("u3", "News", "https://news.example/", 1)], 1, "chrome:Default"));
 		bookmarks.Add(new BookmarkLink("u4", "Loose", "http://loose.example/", 1));
 		_library = new LibraryStore(library with { Bookmarks = bookmarks, ReadingList = [Library.Reading("r1", "Later", "https://later.example/", 1)] }, _ => { }, Deterministic.Clock(), Deterministic.Ids("id-"));
-		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), _library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), LocalAppData: () => _root), _host, "test");
+		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), _library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), LocalAppData: () => _root, AppData: () => _root), _host, "test");
 	}
 
 	public void Dispose()

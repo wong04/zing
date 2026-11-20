@@ -1,6 +1,6 @@
 # Zing sync server
 
-An ASP.NET minimal API (.NET 9) that stores Zing's encrypted password vault. It only ever sees ciphertext. This guide deploys it to Railway (Hobby plan).
+An ASP.NET minimal API (.NET 9) that stores Zing's encrypted password vault, library (bookmarks and the Reading List) and settings. It only ever sees ciphertext. This guide deploys it to Railway (Hobby plan).
 
 ## Variables
 
@@ -57,6 +57,14 @@ Separate several `sub` values with commas to allow more than one account.
 5. **Networking**: generate a public domain, then deploy.
 6. **Health check**: Railway calls `/health` (from `railway.json`) and only switches traffic when it returns 200. Check it yourself with `curl https://<your-domain>/health`.
 7. **Usage limit**: in Railway's billing settings, set a usage limit and a usage alert so a runaway bill cannot happen on the Hobby plan.
+
+## Collections: passwords, library and settings
+
+Every item has a `collection`. Logins are in `vault`, which `/changes` reads and writes; bookmarks and the Reading List are in `library`, under `/library/changes` and `/library/manifest`. Settings are one sealed blob at `/settings`, and the last writer wins. The revision counter is shared, so `/changes` can skip revisions that went to the library.
+
+A v1 Zing reads every item `/changes` sends as a login. So `/changes` never sends a library item, and an item ID stored in one collection can't be written through the other (400). The first start of this version adds the column (every existing item becomes `vault`) and the new slots, in one transaction that can run again.
+
+This server must be live before any Zing that syncs the library. Zing only sends library or settings data after `/library/changes` answers; a server from before this answers 404, and Zing then keeps them on the PC.
 
 ## Sessions and refresh tokens
 

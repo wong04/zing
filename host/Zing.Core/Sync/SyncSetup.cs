@@ -617,17 +617,23 @@ public sealed class SyncClients : IDisposable
 	private readonly VaultSwitch _vaults;
 	private readonly IScheduler? _scheduler;
 	private readonly IClock? _clock;
+	private readonly LibraryStore? _library;
+	private readonly SettingsStore? _settings;
 	private VaultStore? _vault;
 	private SyncClient? _client;
 	private SyncEngine? _engine;
 
 	/// <param name="scheduler">Runs the engine's syncs; null runs no engine (tests that drive the client themselves).</param>
-	public SyncClients(SyncSetup setup, VaultSwitch vaults, IScheduler? scheduler = null, IClock? clock = null)
+	/// <param name="library">The library the engine also syncs; null syncs logins only.</param>
+	/// <param name="settings">The settings the engine also syncs, and where syncLibrary and syncSettings are; null syncs neither.</param>
+	public SyncClients(SyncSetup setup, VaultSwitch vaults, IScheduler? scheduler = null, IClock? clock = null, LibraryStore? library = null, SettingsStore? settings = null)
 	{
 		_setup = setup;
 		_vaults = vaults;
 		_scheduler = scheduler;
 		_clock = clock;
+		_library = library;
+		_settings = settings;
 		vaults.Changed += Follow;
 		Follow();
 	}
@@ -666,7 +672,10 @@ public sealed class SyncClients : IDisposable
 			}
 			if (_scheduler is not null && _vaults.Current is { } vault)
 			{
-				_engine = new SyncEngine(vault, ClientFor(vault), _scheduler, _clock ?? new SystemClock());
+				var clock = _clock ?? new SystemClock();
+				var library = _library is not null && _settings is not null ? new LibrarySync(vault, _library, _settings, clock) : null;
+				var settings = _settings is not null ? new SettingsSync(vault, _settings, clock) : null;
+				_engine = new SyncEngine(vault, ClientFor(vault), _scheduler, clock, library, settings);
 				started = _engine;
 			}
 		}

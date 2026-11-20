@@ -15,7 +15,7 @@ public sealed class ImportApiTests : IDisposable
 
 	public ImportApiTests()
 	{
-		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), _library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), LocalAppData: () => _root), _host, "test");
+		_api = new ChromeApi(_bridge, new AppServices(new SettingsStore(), _library, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), LocalAppData: () => _root, AppData: () => _root), _host, "test");
 	}
 
 	public void Dispose()
@@ -69,6 +69,47 @@ public sealed class ImportApiTests : IDisposable
 		Assert.DoesNotContain(_root, result.GetRawText());
 	}
 
+	private void WriteVivaldi()
+	{
+		var userData = Path.Combine(_root, "Vivaldi", "User Data");
+		Directory.CreateDirectory(Path.Combine(userData, "Default"));
+		File.WriteAllText(Path.Combine(userData, "Local State"), JsonSerializer.Serialize(new { profile = new { info_cache = new Dictionary<string, object> { ["Default"] = new { name = "Home" } } } }));
+		File.WriteAllText(Path.Combine(userData, "Default", "Bookmarks"), Fixture("chromium-bookmarks.json"));
+	}
+
+	private void WriteOpera()
+	{
+		var dir = Path.Combine(_root, "Opera Software", "Opera Stable");
+		Directory.CreateDirectory(dir);
+		File.WriteAllText(Path.Combine(dir, "Bookmarks"), Fixture("chromium-bookmarks.json"));
+	}
+
+	[Fact]
+	public async Task VivaldiAndOperaRowsOfferBookmarksOnly()
+	{
+		WriteVivaldi();
+		WriteOpera();
+
+		var rows = Value(await Invoke(_bridge, "import:sources"));
+
+		Assert.Equal(["vivaldi:Default", "opera:stable"], rows.EnumerateArray().Select(r => r.GetProperty("id").GetString()));
+		Assert.Equal(["vivaldi", "opera"], rows.EnumerateArray().Select(r => r.GetProperty("browser").GetString()));
+		Assert.Equal([false, false], rows.EnumerateArray().Select(r => r.GetProperty("passwords").GetBoolean()));
+	}
+
+	[Fact]
+	public async Task ImportingOperaMarksItsBookmarksWithTheSourceId()
+	{
+		WriteOpera();
+
+		var outcome = Value(await Invoke(_bridge, "import:bookmarks", "opera:stable"));
+
+		Assert.Equal("Imported from Opera", outcome.GetProperty("folderTitle").GetString());
+		Assert.Contains("opera:stable", Marks(_library.Snapshot.Bookmarks));
+		var again = Value(await Invoke(_bridge, "import:bookmarks", "opera:stable"));
+		Assert.Equal(0, again.GetProperty("addedToBar").GetInt32() + again.GetProperty("addedToFolder").GetInt32());
+	}
+
 	[Fact]
 	public async Task ImportingASourceMergesIntoTheLibrary()
 	{
@@ -106,7 +147,7 @@ public sealed class ImportApiTests : IDisposable
 		var legacy = new LibraryStore(Relabel(_library.Snapshot, "chrome:Default", "Chrome (Personal)"), _ => { }, Deterministic.Clock(), Deterministic.Ids("old-"));
 		var count = Library.Urls(new BookmarkFolder("all", "", legacy.Snapshot.Bookmarks, 0)).Count;
 		var bridge = new Bridge();
-		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), legacy, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), LocalAppData: () => _root), new FakeWindowHost(), "test");
+		using var api = new ChromeApi(bridge, new AppServices(new SettingsStore(), legacy, Address.FromDefaults(), new TickingClock(), Accounts.Guest(), new RelayConsent(), LocalAppData: () => _root, AppData: () => _root), new FakeWindowHost(), "test");
 
 		var outcome = Value(await Invoke(bridge, "import:bookmarks", "chrome:Default"));
 
