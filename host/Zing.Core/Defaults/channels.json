@@ -374,6 +374,10 @@
 			"args": 1
 		},
 		{
+			"channel": "permission:remember",
+			"args": 1
+		},
+		{
 			"channel": "relay:allow-third-parties",
 			"args": 0
 		},
@@ -424,6 +428,14 @@
 		},
 		{
 			"channel": "shell:toolbox",
+			"args": 0
+		},
+		{
+			"channel": "sites:forget-notifications",
+			"args": 1
+		},
+		{
+			"channel": "sites:get",
 			"args": 0
 		},
 		{
@@ -737,6 +749,7 @@
 		"relay:attempt",
 		"settings:changed",
 		"shell:state",
+		"sites:state",
 		"stack:dropdown",
 		"sync:state",
 		"tabs:state",

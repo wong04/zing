@@ -246,6 +246,53 @@ test('a grant or a refusal lasts as long as the page: after a reload the site is
 	await zing.close()
 })
 
+test('Remember for this site keeps a notification grant on disk until Settings removes it', async () => {
+	const zing = await launchZing({ env: { ZING_START_URL: `${base}/perm` } })
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/perm`)
+	const result = () => page.evaluate(() => (globalThis as unknown as { result?: string }).result)
+	const ask = async () => {
+		await page.waitForLoadState('domcontentloaded')
+		await page.evaluate(() => {
+			const g = globalThis as unknown as { result?: string; Notification: { requestPermission(): Promise<string> } }
+			g.result = 'pending'
+			void g.Notification.requestPermission().then((r) => (g.result = r))
+		})
+	}
+	const file = join(zing.userDataDir, 'site-permissions.json')
+	await ask()
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(ui.getByText('wants to show notifications')).toBeVisible()
+	expect(existsSync(file)).toBe(false)
+	await ui.getByRole('checkbox', { name: 'Remember for this site' }).check()
+	await ui.getByRole('button', { name: 'Allow' }).click()
+	await expect.poll(result).toBe('granted')
+	expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ notifications: [base] })
+
+	// The next page of the site is granted without asking.
+	await page.reload()
+	await ask()
+	await expect.poll(result).toBe('granted')
+	await expect(ui.getByRole('alertdialog')).toHaveCount(0)
+
+	// Settings lists it, the banner says it is kept, and Remove forgets it and deletes the file.
+	await zing.chrome.evaluate(() => window.zing.openSettings('privacy'))
+	const sheet = await pageWhere(zing.browser, (p) => p.url().endsWith('#surface'))
+	await expect(sheet.locator('.privacy-detail')).toContainText('sites allowed to show notifications')
+	await sheet.getByRole('button', { name: `Remove ${base}` }).click()
+	await expect.poll(() => existsSync(file)).toBe(false)
+	await expect(sheet.locator('.privacy-detail')).not.toContainText('sites allowed to show notifications')
+	await expect(sheet.getByRole('button', { name: `Remove ${base}` })).toHaveCount(0)
+	await zing.chrome.evaluate(() => window.zing.closeSettings())
+
+	await page.reload()
+	await ask()
+	await expect(ui.getByText('wants to show notifications')).toBeVisible()
+	expect(await result()).toBe('pending')
+	await ui.getByRole('button', { name: 'Deny' }).click()
+	await expect.poll(result).toBe('denied')
+	await zing.close()
+})
+
 test('reading the clipboard is asked in the page UI, and Deny refuses it', async () => {
 	const zing = await launchZing({ env: { ZING_START_URL: `${base}/paste` } })
 	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/paste`)

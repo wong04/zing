@@ -522,11 +522,26 @@ public sealed class ZingApp
 		// HTML to PDF needs no engine, so its print folders are swept whether or not the engines folder opened.
 		HtmlPdfPrinter.SweepLeftovers();
 		var vaults = OpenVault(settings, clock);
+		var sites = OpenSiteGrants();
 		// Sync found the Zing password changed on another PC: this start asks for the new one (Task 14).
 		Zing.Core.Sync.SyncRestore.AskIfPasswordChangedElsewhere(account, vaults.Current);
 		// Zing closing wipes the secret key the vault holds (Ruling 44).
 		_onQuit.Add(vaults.Dispose);
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults, Sync: TestHooks.IsEndToEndRun ? TestHooks.Sync(this) : SyncBuild.Setup(this), SyncScheduler: _scheduler, LocalAppData: WindowsDownloads.LocalAppData, BrowserLauncher: new BrowserLauncher(), FileTrash: new FileTrash(), DefaultBrowser: new DefaultBrowserReader(), BookmarkIcons: bookmarkIcons, AppData: WindowsDownloads.AppData, CrashLog: EngineFailures.Log);
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults, Sync: TestHooks.IsEndToEndRun ? TestHooks.Sync(this) : SyncBuild.Setup(this), SyncScheduler: _scheduler, LocalAppData: WindowsDownloads.LocalAppData, BrowserLauncher: new BrowserLauncher(), FileTrash: new FileTrash(), DefaultBrowser: new DefaultBrowserReader(), BookmarkIcons: bookmarkIcons, AppData: WindowsDownloads.AppData, CrashLog: EngineFailures.Log, RememberedSites: sites);
+	}
+
+	/// <summary>A file that can't be read is left as it is, and this launch remembers sites in memory only.</summary>
+	private SiteGrants OpenSiteGrants()
+	{
+		try
+		{
+			return SiteGrants.Open(AppPaths.SitePermissions);
+		}
+		catch (SiteGrantsFileException error)
+		{
+			StartupProblem("site permissions", "the sites you let show notifications", "without them", new LoadProblem(error.Path, null, error));
+			return SiteGrants.InMemory();
+		}
 	}
 
 	/// <summary>

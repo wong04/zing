@@ -319,6 +319,11 @@ export interface InvokeContract {
 	'permission:deny': { args: [id: number]; result: void }
 	/** A blocked pop-up: opens it, and lets the site open pop-ups until Zing quits. */
 	'permission:allow-site': { args: [id: number]; result: void }
+	/** A notification prompt: allows it, and keeps the site allowed on disk until Settings removes it. */
+	'permission:remember': { args: [id: number]; result: void }
+	'sites:get': { args: []; result: SiteGrantsState }
+	/** Settings' Remove: the site is asked again next time, and the file goes with the last one. */
+	'sites:forget-notifications': { args: [origin: string]; result: void }
 	/** OK or Leave (accept) / Cancel or Stay; `text` is what a prompt hands back. */
 	'dialog:answer': { args: [id: number, accept: boolean, text?: string]; result: void }
 	'library:get': { args: []; result: LibraryViewState }
@@ -648,6 +653,11 @@ export interface InvokeContract {
 	'import:take-pending': { args: []; result: { action: 'passwords'; sourceId: string } | null }
 }
 
+/** The sites remembered as allowed to show notifications (SiteGrants in the host). */
+export interface SiteGrantsState {
+	readonly notifications: readonly string[]
+}
+
 /** Host → renderer pushes. The host sends one per change, uncoalesced. */
 export interface EventContract {
 	'tabs:state': TabsState
@@ -659,6 +669,7 @@ export interface EventContract {
 	'addressbar:suggestions': AddressSuggestionsState | null
 	'peek:state': PeekState | null
 	'library:state': LibraryViewState
+	'sites:state': SiteGrantsState
 	'overlay:overview': OverviewState | undefined
 	'settings:changed': Settings
 	'shell:state': ShellState
@@ -747,6 +758,10 @@ export interface ZingApi {
 	allowPermission(id: number): Promise<void>
 	denyPermission(id: number): Promise<void>
 	allowPopupsForSite(id: number): Promise<void>
+	rememberPermission(id: number): Promise<void>
+	getSiteGrants(): Promise<SiteGrantsState>
+	forgetNotifications(origin: string): Promise<void>
+	onSiteGrants(listener: (state: SiteGrantsState) => void): Unsubscribe
 	answerDialog(id: number, accept: boolean, text?: string): Promise<void>
 	getLibrary(): Promise<LibraryViewState>
 	applyLibrary(action: LibraryAction): Promise<string | undefined>

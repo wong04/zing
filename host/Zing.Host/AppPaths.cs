@@ -16,6 +16,9 @@ public static class AppPaths
 	/// <summary>The local crash log (Zing.Core.CrashLog), plain text so a tab shows it. Not created until the first crash.</summary>
 	public static string CrashLog => Path.Combine(UserData, "crash-log.txt");
 
+	/// <summary>The sites the person asked to remember as allowed to show notifications; there only while one is remembered.</summary>
+	public static string SitePermissions => Path.Combine(UserData, Zing.Core.SiteGrants.FileName);
+
 	/// <summary>Every window's tabs, saved as Zing relaunches into an update and read once by the next launch, whatever restoreTabs says.</summary>
 	public static string RelaunchSession => Path.Combine(UserData, "relaunch-session.json");
 
