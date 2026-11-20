@@ -249,7 +249,8 @@ public sealed class TabService
 		_store.Get(id);
 		if (IsShown(id) || Preview?.SourceTabId == id) throw new ActiveTabSleepException(id);
 		if (!_pages.ContainsKey(id)) return;
-		Carry(id, HistoryOf(id));
+		// Zing's own pages (the start page) are left out: a web document can't be replaced with one, and the session leaves them out too.
+		Carry(id, HistoryOf(id)?.Kept(u => Session.IsRestorableUrl(u) || RelayedContent.IsRelayUrl(u), u => u));
 		DestroyPage(id);
 		_sleeping.Add(id);
 		_changed();

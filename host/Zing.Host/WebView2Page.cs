@@ -396,10 +396,22 @@ public sealed class WebView2Page : IPage
 
 	public PageHistory History { get; private set; } = new([], 0);
 
-	/// <summary>Keeps <see cref="History"/> current for the session and a tab that sleeps, then says so, so the session is saved with it.</summary>
+	/// <summary>
+	/// Keeps <see cref="History"/> current for the session and a tab that sleeps, then says so, so the session is saved with it.
+	/// DevTools can refuse while the main frame changes hosts (an error result, which WebView2 raises as ArgumentException): the
+	/// last answer stands until the next change, and the tab's own address and title stand for the entry it is on.
+	/// </summary>
 	private async Task FollowHistoryAsync()
 	{
-		History = await HistoryAsync();
+		try
+		{
+			History = await HistoryAsync();
+		}
+		catch (ArgumentException error)
+		{
+			Faults.Warning("history snapshot", error);
+			return;
+		}
 		if (IsOpen) _events.StateChanged();
 	}
 
@@ -783,11 +795,7 @@ public sealed class WebView2Page : IPage
 		{
 			if (_textSize != Zing.Core.TextSize.Default) Background(core.ExecuteScriptAsync(Zing.Core.TextSize.Script(_textSize)).AsTask(), "text size");
 		};
-		core.DocumentTitleChanged += (_, _) =>
-		{
-			_events.TitleChanged(core.DocumentTitle);
-			Background(FollowHistoryAsync(), "history");
-		};
+		core.DocumentTitleChanged += (_, _) => _events.TitleChanged(core.DocumentTitle);
 		core.FaviconChanged += (_, _) => Background(IconChangedAsync(core), "favicon");
 		core.HistoryChanged += (_, _) =>
 		{

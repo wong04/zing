@@ -260,17 +260,23 @@ test('a tab sending an upload stays awake, and sleeps once the upload is done', 
 	await zing.chrome.evaluate(() => window.zing.setSetting('sleepingTabs', { enabled: true, afterMinutes: 1, sleepPinned: false }))
 	const sending = await openTab(zing.chrome, '/form')
 	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/form`)
-	type Uploader = { fetch(url: string, init: object): Promise<unknown>; Blob: new (parts: unknown[]) => unknown; Uint8Array: new (n: number) => unknown }
+	type Uploader = { sent?: boolean; fetch(url: string, init: object): Promise<{ text(): Promise<string> }>; Blob: new (parts: unknown[]) => unknown; Uint8Array: new (n: number) => unknown }
 	// A photo's worth of bytes, as a file picker would hand the page.
 	await page.evaluate(() => {
 		const g = globalThis as unknown as Uploader
-		void g.fetch('/sink', { method: 'POST', body: new g.Blob([new g.Uint8Array(2_000_000)]) })
+		void g
+			.fetch('/sink', { method: 'POST', body: new g.Blob([new g.Uint8Array(2_000_000)]) })
+			.then((response) => response.text())
+			.then(() => (g.sent = true))
 	})
 	await expect.poll(() => uploads.length).toBe(1)
 	await leaveIdle(zing.chrome)
 	expect((await tab(zing.chrome, sending)).sleeping).toBe(false)
 
 	uploads.splice(0).forEach((finish) => finish())
+	await expect.poll(() => page.evaluate(() => (globalThis as unknown as Uploader).sent)).toBe(true)
+	// The engine tells the host the request ended on its own channel, a moment after the page hears.
+	await new Promise((resolve) => setTimeout(resolve, 1000))
 	// A held tab is looked at again after TabSleeper.RetryMs.
 	await advanceClock(zing.chrome, 6 * MINUTE)
 	await expect.poll(async () => (await tab(zing.chrome, sending)).sleeping).toBe(true)

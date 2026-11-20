@@ -61,6 +61,19 @@ public sealed class TabHistoryTests
 	}
 
 	[Fact]
+	public void A_woken_tab_leaves_Zings_own_pages_out_of_its_history()
+	{
+		var tab = _tabs.Open("https://x.test/a");
+		var page = PageOf(tab.Id);
+		page.History = new([new(1, "zing-start://new-tab/", "New tab"), new(2, "https://x.test/a", "A")], 1);
+		page.CanGoBack = true;
+		_tabs.Open("https://y.test/");
+		_tabs.Sleep(tab.Id);
+		_tabs.Activate(tab.Id);
+		Assert.False(_tabs.CanGoBack(tab.Id));
+	}
+
+	[Fact]
 	public void The_tab_state_offers_back_and_forward_for_a_woken_tab()
 	{
 		var id = SleptAndWoken();
