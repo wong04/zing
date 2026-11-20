@@ -109,7 +109,8 @@ public sealed class ZingApp
 		var settings = OpenSettings();
 		StartupMarks.Mark("settings read");
 		// Any view can be the first to learn the engine's browser process died; the rebuild runs after its event returns.
-		EngineFailures.BrowserLost += () => Faults.Enqueue(dispatcher, LoseEngine, "engine rebuild");
+		EngineFailures.Log = new CrashLog(AppPaths.CrashLog, () => DateTimeOffset.UtcNow, typeof(ZingApp).Assembly.GetName().Version?.ToString(3) ?? "0");
+		EngineFailures.BrowserLost += exitCode => Faults.Enqueue(dispatcher, () => LoseEngine(exitCode), "engine rebuild");
 		// The engine needs only a setting, so its browser process starts now and the rest of the services open while it does.
 		// Its continuation runs after Launch returns, by which time the services exist.
 		// A persistent profile exists so sign-ins survive closing a tab and quitting; purging would undo exactly that.
@@ -499,7 +500,7 @@ public sealed class ZingApp
 		Zing.Core.Sync.SyncRestore.AskIfPasswordChangedElsewhere(account, vaults.Current);
 		// Zing closing wipes the secret key the vault holds (Ruling 44).
 		_onQuit.Add(vaults.Dispose);
-		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults, Sync: TestHooks.IsEndToEndRun ? TestHooks.Sync(this) : SyncBuild.Setup(this), SyncScheduler: _scheduler, LocalAppData: WindowsDownloads.LocalAppData, BrowserLauncher: new BrowserLauncher(), FileTrash: new FileTrash(), DefaultBrowser: new DefaultBrowserReader(), BookmarkIcons: bookmarkIcons, Extensions: extensions);
+		return new AppServices(settings, library, Address.FromDefaults(), clock, account, new Zing.Core.Net.RelayConsent(), siteData, purger, TestHooks.NetServices(), new Zing.Core.Net.DnsService(TestHooks.DnsSystem() ?? new DnsSetup(), AppPaths.DnsBackup, () => DateTimeOffset.FromUnixTimeMilliseconds(Now()), e => TestHooks.Record("dns run given up on", e)), ThreatGate.ForSettings(settings, TestHooks.InspectedAs()), Engines: engines, Runner: engines is null ? null : OpenRunner(engines, OutputPlacement.ForSettings(settings)), ViewerRoot: AppPaths.ViewerCopies, Switch: vaults, Sync: TestHooks.IsEndToEndRun ? TestHooks.Sync(this) : SyncBuild.Setup(this), SyncScheduler: _scheduler, LocalAppData: WindowsDownloads.LocalAppData, BrowserLauncher: new BrowserLauncher(), FileTrash: new FileTrash(), DefaultBrowser: new DefaultBrowserReader(), BookmarkIcons: bookmarkIcons, AppData: WindowsDownloads.AppData, CrashLog: EngineFailures.Log, Extensions: extensions);
 	}
 
 	/// <summary>
@@ -649,7 +650,7 @@ public sealed class ZingApp
 		if (e.BrowserProcessExitKind != CoreWebView2BrowserProcessExitKind.Failed) return;
 		// An engine Zing has already replaced has nothing left to rebuild.
 		if (_environment is not { IsCompletedSuccessfully: true } current || current.Result != sender) return;
-		LoseEngine();
+		LoseEngine(null);
 		if (_rebuild is not { } rebuild) return;
 		rebuild.Exited = true;
 		if (_windows.Count == 0) Rebuild();
@@ -659,10 +660,12 @@ public sealed class ZingApp
 	/// The first step of coming back from a dead engine: keep every window's tabs in memory (nothing
 	/// new goes to disk), save the session as it stood, and close every window, whose views are all dead.
 	/// </summary>
-	private void LoseEngine()
+	/// <param name="exitCode">The browser process's, from the view that heard it go; null when the engine said so with no view hearing it.</param>
+	private void LoseEngine(int? exitCode)
 	{
 		if (_rebuild is not null) return;
 		TestHooks.Record("engine", new EngineStoppedException());
+		EngineFailures.LogCrash(CrashKind.Engine, exitCode);
 		var rebuild = new EngineRebuild([.. _windows.Select(SessionOf)]);
 		_rebuild = rebuild;
 		_closingTogether.UnionWith(_windows);
@@ -757,10 +760,27 @@ internal sealed class EngineRebuild(IReadOnlyList<IReadOnlyList<SessionTab>> win
 /// </summary>
 public static class EngineFailures
 {
-	/// <summary>Some view saw the engine's browser process die; raised once per view, so the handler must be idempotent.</summary>
-	public static event Action? BrowserLost;
+	/// <summary>Some view saw the engine's browser process die, with its exit code; raised once per view, so the handler must be idempotent.</summary>
+	public static event Action<int>? BrowserLost;
 
-	public static void ReportBrowserLost() => BrowserLost?.Invoke();
+	public static void ReportBrowserLost(int exitCode) => BrowserLost?.Invoke(exitCode);
+
+	/// <summary>The local crash log; set at launch, before any view exists.</summary>
+	public static CrashLog? Log { get; set; }
+
+	/// <summary>A line in the crash log. Optional: a log that can't be written is a warning, and the recovery goes on.</summary>
+	public static void LogCrash(CrashKind kind, int? exitCode)
+	{
+		var log = Log ?? throw new InvalidOperationException("The crash log is opened at launch");
+		try
+		{
+			log.Append(kind, exitCode);
+		}
+		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+		{
+			Faults.Warning("crash log", error);
+		}
+	}
 
 	/// <summary>A warning line in the fault log naming the process and why it went (in the kind, which the log always keeps).</summary>
 	public static void Warn(string where, CoreWebView2ProcessFailedEventArgs e) =>

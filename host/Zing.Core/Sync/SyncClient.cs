@@ -40,6 +40,13 @@ public sealed class SyncDeleteWithAnotherGoogleAccountException()
 /// <summary>A replaced sign-in's refresh token couldn't be revoked: it stays unused until it expires.</summary>
 public sealed class SyncRevokeFailedException(string message) : Exception(message);
 
+/// <summary>
+/// The sync server has no route for the library or settings: it is from before they synced. Nothing of them was sent, and they stay on
+/// this PC until the server is updated.
+/// </summary>
+public sealed class SyncFeatureMissingException(string path)
+	: Exception($"The sync server doesn't have {path} yet, so bookmarks, the Reading List and settings stay on this PC.");
+
 /// <summary>The server's answer had no body, or not the one its endpoint documents.</summary>
 public sealed class SyncProtocolException(string message) : Exception(message);
 
@@ -346,21 +353,59 @@ public sealed class SyncClient : IDisposable
 	public Task<long> PutManifestAsync(byte[] blob, long baseVersion, CancellationToken cancellation = default, string? asUser = null) => PutBlobAsync("manifest", blob, baseVersion, asUser, cancellation);
 
 	/// <summary>Changes after <paramref name="since"/>. A 410 (a cursor older than the tombstone horizon) raises; the caller resyncs from 0.</summary>
-	public async Task<SyncChanges> GetChangesAsync(long since, int? limit = null, CancellationToken cancellation = default, string? asUser = null)
+	public Task<SyncChanges> GetChangesAsync(long since, int? limit = null, CancellationToken cancellation = default, string? asUser = null) =>
+		GetChangesAsync("changes", since, limit, asUser, cancellation);
+
+	public Task<SyncPushResult> PostChangesAsync(IReadOnlyList<SyncPush> items, CancellationToken cancellation = default, string? asUser = null) =>
+		PostChangesAsync("changes", items, asUser, cancellation);
+
+	// The library and settings calls: a 404 is a server from before them (SyncFeatureMissingException), never "nothing stored yet",
+	// so nothing of them is ever sent where a v1 client would read it as a login.
+
+	/// <summary>Library changes after <paramref name="since"/>, as <see cref="GetChangesAsync(long, int?, CancellationToken, string?)"/>.</summary>
+	public Task<SyncChanges> GetLibraryChangesAsync(long since, CancellationToken cancellation = default, string? asUser = null) =>
+		GetChangesAsync("library/changes", since, null, asUser, cancellation);
+
+	public Task<SyncPushResult> PostLibraryChangesAsync(IReadOnlyList<SyncPush> items, CancellationToken cancellation = default, string? asUser = null) =>
+		PostChangesAsync("library/changes", items, asUser, cancellation);
+
+	/// <summary>The library's manifest, or null before one was stored.</summary>
+	public Task<VersionedBlob?> GetLibraryManifestAsync(CancellationToken cancellation = default, string? asUser = null) => GetSlotAsync("library/manifest", asUser, cancellation);
+
+	public Task<long> PutLibraryManifestAsync(byte[] blob, long baseVersion, CancellationToken cancellation = default, string? asUser = null) => PutBlobAsync("library/manifest", blob, baseVersion, asUser, cancellation);
+
+	/// <summary>The sealed settings, or null before any were stored.</summary>
+	public Task<VersionedBlob?> GetSettingsAsync(CancellationToken cancellation = default, string? asUser = null) => GetSlotAsync("settings", asUser, cancellation);
+
+	public Task<long> PutSettingsAsync(byte[] blob, long baseVersion, CancellationToken cancellation = default, string? asUser = null) => PutBlobAsync("settings", blob, baseVersion, asUser, cancellation);
+
+	private async Task<SyncChanges> GetChangesAsync(string route, long since, int? limit, string? asUser, CancellationToken cancellation)
 	{
-		var path = limit is null ? $"changes?since={since}" : $"changes?since={since}&limit={limit}";
+		var path = limit is null ? $"{route}?since={since}" : $"{route}?since={since}&limit={limit}";
 		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, path), asUser, cancellation);
+		if (route != "changes" && response.StatusCode == HttpStatusCode.NotFound) throw new SyncFeatureMissingException(route);
 		await EnsureSuccess(response, path, cancellation);
 		var page = await Read<ChangesResponse>(response, cancellation);
 		return new SyncChanges([.. page.Items.Select(ToItem)], page.Revision, page.Horizon, page.More);
 	}
 
-	public async Task<SyncPushResult> PostChangesAsync(IReadOnlyList<SyncPush> items, CancellationToken cancellation = default, string? asUser = null)
+	private async Task<SyncPushResult> PostChangesAsync(string route, IReadOnlyList<SyncPush> items, string? asUser, CancellationToken cancellation)
 	{
-		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Post, "changes") { Content = JsonContent.Create(new { items }, options: SyncJson.Options) }, asUser, cancellation);
-		await EnsureSuccess(response, "changes", cancellation);
+		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Post, route) { Content = JsonContent.Create(new { items }, options: SyncJson.Options) }, asUser, cancellation);
+		if (route != "changes" && response.StatusCode == HttpStatusCode.NotFound) throw new SyncFeatureMissingException(route);
+		await EnsureSuccess(response, route, cancellation);
 		var pushed = await Read<PushResponse>(response, cancellation);
 		return new SyncPushResult([.. pushed.Accepted.Select(a => new SyncAccepted(a.ItemId, a.Revision))], [.. pushed.Conflicts.Select(ToItem)]);
+	}
+
+	/// <summary>A slot added after v1: version 0 is nothing stored yet, and a 404 is a server without the slot.</summary>
+	private async Task<VersionedBlob?> GetSlotAsync(string path, string? asUser, CancellationToken cancellation)
+	{
+		using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, path), asUser, cancellation);
+		if (response.StatusCode == HttpStatusCode.NotFound) throw new SyncFeatureMissingException(path);
+		await EnsureSuccess(response, path, cancellation);
+		var slot = await Read<BlobResponse>(response, cancellation);
+		return slot.Version == 0 ? null : ToBlob(slot);
 	}
 
 	private async Task<VersionedBlob?> GetBlobAsync(string path, string? asUser, CancellationToken cancellation)

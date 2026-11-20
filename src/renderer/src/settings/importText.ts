@@ -52,6 +52,27 @@ export const exportMenuPath: Readonly<Record<ImportSourceView['browser'], string
 	chrome: '⋮ menu > Passwords and autofill > Google Password Manager > Settings',
 	edge: '… menu > Settings > Profiles > Passwords',
 	brave: '≡ menu > Passwords and autofill > Password Manager > Settings',
+	vivaldi: undefined,
+	opera: undefined,
+	operagx: undefined,
+	dia: undefined,
+	arc: undefined,
+}
+
+const bookmarksOnly = (app: string): string =>
+	`Zing imports bookmarks only from ${app}. To bring passwords, export them from ${app} to a CSV file and use Passwords file below.`
+
+/**
+ * Under a row with no Import passwords button, for the browsers whose passwords Zing can't fetch: Zing reads no browser's
+ * encrypted password store, and opens an export page only for Chrome, Edge and Brave.
+ */
+export const bookmarksOnlyNote: Readonly<Record<ImportSourceView['browser'], string | undefined>> = {
+	chrome: undefined,
+	edge: undefined,
+	brave: undefined,
+	vivaldi: bookmarksOnly('Vivaldi'),
+	opera: bookmarksOnly('Opera'),
+	operagx: bookmarksOnly('Opera GX'),
 	dia: undefined,
 	arc: undefined,
 }

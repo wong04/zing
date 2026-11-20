@@ -38,18 +38,24 @@ public static class SyncSupport
 	public static Task<HttpResponseMessage> Push(this HttpClient client, params PushItem[] items) =>
 		client.PostAsJsonAsync("/changes", new { items }, ServerFactory.JsonOpts);
 
-	public static async Task<Pushed> PushOk(this HttpClient client, params PushItem[] items)
-	{
-		var response = await client.Push(items);
-		response.EnsureSuccessStatusCode();
-		return (await response.Content.ReadFromJsonAsync<Pushed>(ServerFactory.JsonOpts))!;
-	}
+	public static Task<HttpResponseMessage> PushLibrary(this HttpClient client, params PushItem[] items) =>
+		client.PostAsJsonAsync("/library/changes", new { items }, ServerFactory.JsonOpts);
 
-	public static async Task<Pulled> PullOk(this HttpClient client, long since = 0, int? limit = null)
+	public static Task<Pushed> PushOk(this HttpClient client, params PushItem[] items) => Ok<Pushed>(client.Push(items));
+
+	public static Task<Pushed> PushLibraryOk(this HttpClient client, params PushItem[] items) => Ok<Pushed>(client.PushLibrary(items));
+
+	public static Task<Pulled> PullOk(this HttpClient client, long since = 0, int? limit = null) =>
+		Ok<Pulled>(client.GetAsync($"/changes?since={since}" + (limit is null ? "" : $"&limit={limit}")));
+
+	public static Task<Pulled> PullLibraryOk(this HttpClient client, long since = 0) =>
+		Ok<Pulled>(client.GetAsync($"/library/changes?since={since}"));
+
+	private static async Task<T> Ok<T>(Task<HttpResponseMessage> sent)
 	{
-		var response = await client.GetAsync($"/changes?since={since}" + (limit is null ? "" : $"&limit={limit}"));
+		var response = await sent;
 		response.EnsureSuccessStatusCode();
-		return (await response.Content.ReadFromJsonAsync<Pulled>(ServerFactory.JsonOpts))!;
+		return (await response.Content.ReadFromJsonAsync<T>(ServerFactory.JsonOpts))!;
 	}
 
 	public static string Base64OfSize(int bytes) => Convert.ToBase64String(new byte[bytes]);

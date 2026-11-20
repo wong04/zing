@@ -184,6 +184,14 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 			detail: 'A key appears in sign-in fields. Passwords are kept in the vault on this PC, and with sync on, an encrypted copy is kept on the sync server.',
 		}),
 		{ type: 'custom', id: 'vault', keys: [], visible: (s) => s.passwordAutofill },
+		toggle('syncLibrary', 'Sync bookmarks and the Reading List', {
+			detail: 'With sync on, an encrypted copy is kept on the sync server, and edits from your other PCs are merged in.',
+			visible: (s) => s.passwordAutofill,
+		}),
+		toggle('syncSettings', 'Sync settings', {
+			detail: 'With sync on, the last PC to change a setting wins. Settings that need a relaunch or belong to this PC stay here.',
+			visible: (s) => s.passwordAutofill,
+		}),
 		toggle('linkPreviews', 'Open links to other sites as a preview', {
 			detail: 'It opens nearly full size over the page, so you can look without leaving it.',
 		}),

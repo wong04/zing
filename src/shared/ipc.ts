@@ -1,7 +1,7 @@
 import type { EngineInfo, EngineProgress, EnsureOutcome, YtDlpUpdate } from './engines/engineInfo'
 import type { SessionKindName, ViewerOpened } from './convert/viewable'
 import type { EngineExit, EngineJobSpec, EngineOutput, FileKind, PickedFile } from './engines/engineJob'
-import type { AccountPickerState, FillOutcome, FindDirection, HistoryDirection, PageUiState, SaveAnswer, SaveOutcome } from './browser/pageUi'
+import type { AccountPickerState, AddressSuggestion, AddressSuggestionsState, FieldRect, FillOutcome, FindDirection, HistoryDirection, PageUiState, SaveAnswer, SaveOutcome } from './browser/pageUi'
 import type { CommandId } from './commands/registry'
 import type { PeekState } from './browser/peek'
 import type { BrowserLibrary } from './library/library'
@@ -235,7 +235,7 @@ export interface RendererErrorReport {
 
 export interface ImportSourceView {
 	id: string
-	browser: 'chrome' | 'edge' | 'brave' | 'dia' | 'arc'
+	browser: 'chrome' | 'edge' | 'brave' | 'vivaldi' | 'opera' | 'operagx' | 'dia' | 'arc'
 	display: string
 	bookmarks?: number
 	error?: string
@@ -313,6 +313,17 @@ export interface InvokeContract {
 	'pageui:picker-height': { args: [height: number]; result: void }
 	/** Esc in the picker: closes it and gives the keyboard back to the page. */
 	'pageui:picker-close': { args: []; result: void }
+	/** Ranks open tabs, bookmarks and the Reading List against what's typed (never history) and shows the best 8 under the field; none closes the list. */
+	'addressbar:suggest': { args: [text: string, field: FieldRect]; result: readonly AddressSuggestion[] }
+	/** The suggestions on screen, or null. */
+	'addressbar:get': { args: []; result: AddressSuggestionsState | null }
+	/** The arrow keys moved the highlight; -1 is back to what was typed. */
+	'addressbar:highlight': { args: [index: number]; result: void }
+	'addressbar:close': { args: []; result: void }
+	/** A picked suggestion: an open tab comes to the front, anything else opens in the tab on screen. Closes the list. */
+	'addressbar:open': { args: [suggestion: AddressSuggestion]; result: void }
+	/** The suggestions view measured what it shows. */
+	'addressbar:height': { args: [height: number]; result: void }
 	/** The link preview's buttons, or null when no preview is open. */
 	'peek:get': { args: []; result: PeekState | null }
 	'find:update': { args: [text: string]; result: void }
@@ -637,6 +648,12 @@ export interface InvokeContract {
 	'default-browser:dismiss': { args: []; result: void }
 	/** The third-party notices the build generated (THIRD-PARTY-NOTICES.txt). Rejects if the file is missing. */
 	'about:credits': { args: []; result: string }
+	/** Whether the local crash log (renderer and engine crashes: time, kind, exit code, version) is on disk. */
+	'about:crash-log': { args: []; result: { exists: boolean } }
+	/** Opens the crash log in a new tab. Rejects with NoCrashLogException while there is none. */
+	'about:open-crash-log': { args: []; result: void }
+	/** Deletes the crash log; nothing to delete is fine. */
+	'about:clear-crash-log': { args: []; result: void }
 	/** The browsers on this PC whose bookmarks can be imported, one row per profile. A broken profile is a row with `error`, not a rejection. No paths. */
 	'import:sources': { args: []; result: ImportSourceView[] }
 	/** Merges a source's bookmarks into the library (it only adds). Rejects with UnknownImportSourceException, or with a path-free message when the file can't be read or is damaged. */
@@ -667,6 +684,7 @@ export interface EventContract {
 	'overlay:notice': Notice | undefined
 	'pageui:state': PageUiState
 	'pageui:account-picker': AccountPickerState | null
+	'addressbar:suggestions': AddressSuggestionsState | null
 	'peek:state': PeekState | null
 	'library:state': LibraryViewState
 	'overlay:overview': OverviewState | undefined
@@ -737,6 +755,13 @@ export interface ZingApi {
 	setAccountPickerHeight(height: number): Promise<void>
 	closeAccountPicker(): Promise<void>
 	onAccountPicker(listener: (state: AccountPickerState | null) => void): Unsubscribe
+	suggestAddresses(text: string, field: FieldRect): Promise<readonly AddressSuggestion[]>
+	getAddressSuggestions(): Promise<AddressSuggestionsState | null>
+	highlightAddressSuggestion(index: number): Promise<void>
+	closeAddressSuggestions(): Promise<void>
+	openAddressSuggestion(suggestion: AddressSuggestion): Promise<void>
+	setAddressSuggestionsHeight(height: number): Promise<void>
+	onAddressSuggestions(listener: (state: AddressSuggestionsState | null) => void): Unsubscribe
 	getPeek(): Promise<PeekState | null>
 	onPeek(listener: (state: PeekState | null) => void): Unsubscribe
 	updateFind(text: string): Promise<void>
@@ -892,6 +917,9 @@ export interface ZingApi {
 	getDefaultBrowserState(): Promise<DefaultBrowserState>
 	dismissDefaultBrowserOffer(): Promise<void>
 	getCredits(): Promise<string>
+	getCrashLog(): Promise<{ exists: boolean }>
+	openCrashLog(): Promise<void>
+	clearCrashLog(): Promise<void>
 	importSources(): Promise<ImportSourceView[]>
 	importBookmarks(sourceId: string): Promise<BookmarkImportOutcome>
 	importBookmarksFile(token: string): Promise<BookmarkImportOutcome>

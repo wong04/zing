@@ -1108,7 +1108,7 @@ public sealed class WebView2Page : IPage
 				Background(WatchForAnswerAsync(sender), "hung page check");
 				break;
 			case CoreWebView2ProcessFailedKind.BrowserProcessExited:
-				EngineFailures.ReportBrowserLost();
+				EngineFailures.ReportBrowserLost(e.ExitCode);
 				break;
 		}
 	}

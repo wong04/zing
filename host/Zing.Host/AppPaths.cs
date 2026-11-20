@@ -13,6 +13,9 @@ public static class AppPaths
 	public static string Library => Path.Combine(UserData, "library.json");
 	public static string Session => Path.Combine(UserData, "session.json");
 
+	/// <summary>The local crash log (Zing.Core.CrashLog), plain text so a tab shows it. Not created until the first crash.</summary>
+	public static string CrashLog => Path.Combine(UserData, "crash-log.txt");
+
 	/// <summary>Every window's tabs, saved as Zing relaunches into an update and read once by the next launch, whatever restoreTabs says.</summary>
 	public static string RelaunchSession => Path.Combine(UserData, "relaunch-session.json");
 

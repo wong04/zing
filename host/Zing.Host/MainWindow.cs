@@ -787,6 +787,10 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public void SetAccountPickerHeight(int height) => _pageUi?.SetPickerHeight(height);
 
+	public void AddressSuggestionsChanged(AddressSuggestionsState? state) => _pageUi?.SuggestionsChanged(state);
+
+	public void SetAddressSuggestionsHeight(int height) => _pageUi?.SetSuggestionsHeight(height);
+
 	public bool AutofillOn => _app.Services.Vaults.Current is not null;
 
 	/// <summary>passwordAutofill was turned on or off: every open page's channel and script follow it (Ruling 30).</summary>

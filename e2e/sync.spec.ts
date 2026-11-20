@@ -38,6 +38,8 @@ const JOIN_SUBS = ['sub-e2e-join', 'sub-e2e-join-account'] as const
 const JOIN_START_OVER_SUB = 'sub-e2e-join-start-over'
 // A second PC that doesn't know the sync password deletes only the sync account from the Join sync form.
 const JOIN_DELETE_SYNC_SUB = 'sub-e2e-join-delete-sync'
+// Bookmarks and settings syncing between two PCs.
+const LIBRARY_SUB = 'sub-e2e-library'
 
 let server: ChildProcess | undefined
 let serverUrl = ''
@@ -56,7 +58,7 @@ function serverEnvironment(): NodeJS.ProcessEnv {
 		ASPNETCORE_ENVIRONMENT: 'Staging',
 		ZING_SERVER_FAKE_GOOGLE: '1',
 		ZING_SESSION_KEY: randomBytes(32).toString('base64'),
-		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB, POPUP_SUB, START_OVER_SUB, ...JOIN_SUBS, JOIN_START_OVER_SUB, JOIN_DELETE_SYNC_SUB].join(','),
+		ZING_ALLOWED_SUBS: [SUB, ...TURN_ON_SUBS, TWO_PCS_SUB, ...RESTORE_SUBS, TURN_OFF_SUB, POPUP_SUB, START_OVER_SUB, ...JOIN_SUBS, JOIN_START_OVER_SUB, JOIN_DELETE_SYNC_SUB, LIBRARY_SUB].join(','),
 		ZING_DB_PATH: join(serverDir, 'zing.db'),
 		// Every PC of the run is 127.0.0.1, so one per-IP budget: the default 60 a minute is a production limit (its own tests cover it).
 		ZING_RATE_IP_PER_MINUTE: '1000',
@@ -443,6 +445,39 @@ test('a login saved on one PC reaches the other, and an edit made there comes ba
 	await expect.poll(() => titleOf(again, id), { timeout: 30_000, message: "A's sync at start didn't bring B's edit" }).toBe('Edited on B')
 	const sheet = await openSync(again)
 	await expect(syncGroup(sheet)).toContainText(`Sync is on. Signed in as ${TWO_PCS_SUB}@example.test.`)
+	await again.close()
+})
+
+/** What a PC's library sync last stored as the server's library, or settings sync as its settings: there once a sync of it ran. */
+const collectionState = (zing: Launched, file: 'library-sync.json' | 'settings-sync.json'): string => {
+	const path = join(zing.userDataDir, 'vault', file)
+	return existsSync(path) ? readFileSync(path, 'utf8') : ''
+}
+
+const folderTitled = async (zing: Launched, title: string): Promise<string | undefined> =>
+	(await zing.chrome.evaluate(() => window.zing.getLibrary())).library.bookmarks.find((n) => 'children' in n && n.title === title)?.id
+
+test('a bookmark folder and a setting made on one PC reach the other, and a rename made there comes back', async () => {
+	test.setTimeout(240_000)
+	const { zing: a } = await turnOnWithLogins(LIBRARY_SUB)
+	const folder = (await a.chrome.evaluate(() => window.zing.applyLibrary({ type: 'newFolder', ids: [] })))!
+	await a.chrome.evaluate((id) => window.zing.applyLibrary({ type: 'rename', id, title: 'From A' }), folder)
+	await a.chrome.evaluate(() => window.zing.setSetting('searchEngine', 'duckduckgo'))
+	await expect.poll(() => collectionState(a, 'library-sync.json'), { timeout: 60_000, message: "A's library didn't upload" }).toContain('From A')
+	await expect.poll(() => collectionState(a, 'settings-sync.json'), { timeout: 60_000, message: "A's settings didn't upload" }).toContain('duckduckgo')
+	await a.close()
+
+	const b = await launchZing({ env: syncEnv(LIBRARY_SUB) })
+	await restoreWithPassword(b, STRONG)
+	await expect.poll(() => folderTitled(b, 'From A'), { timeout: 60_000, message: "B's sync didn't bring A's folder" }).toBe(folder)
+	await expect.poll(async () => (await b.chrome.evaluate(() => window.zing.getSettings())).searchEngine, { timeout: 30_000 }).toBe('duckduckgo')
+	await b.chrome.evaluate((id) => window.zing.applyLibrary({ type: 'rename', id, title: 'Renamed on B' }), folder)
+	await expect.poll(() => collectionState(b, 'library-sync.json'), { timeout: 60_000, message: "B's rename didn't upload" }).toContain('Renamed on B')
+	expect(await b.chrome.evaluate(() => window.zing.getSyncState())).not.toHaveProperty('error')
+	await b.close()
+
+	const again = await launchZing({ userDataDir: a.userDataDir, env: syncEnv(LIBRARY_SUB) })
+	await expect.poll(() => folderTitled(again, 'Renamed on B'), { timeout: 60_000, message: "A's sync at start didn't bring B's rename" }).toBe(folder)
 	await again.close()
 })
 

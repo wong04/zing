@@ -28,6 +28,8 @@
 	"showFavouritesBar": true,
 	"favouritesHint": true,
 	"passwordAutofill": false,
+	"syncLibrary": true,
+	"syncSettings": true,
 	"tabDropdowns": false,
 	"linkPreviews": true,
 	"linkPreviewsShiftClick": true,

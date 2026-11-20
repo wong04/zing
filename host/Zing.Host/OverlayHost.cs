@@ -14,6 +14,8 @@ public enum OverlayLevel
 	PageUi,
 	/// <summary>The vault's account picker under a sign-in field (PageUiLayer, #picker).</summary>
 	AccountPicker,
+	/// <summary>The address bar's suggestions, hanging under it over the page (PageUiLayer, #suggest).</summary>
+	AddressSuggestions,
 	/// <summary>An extension's action popup under the toolbar (ExtensionPopupLayer).</summary>
 	ExtensionPopup,
 	/// <summary>The stack dropdown, #overlay-stack (CoveringLayer).</summary>

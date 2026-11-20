@@ -656,6 +656,7 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 		{
 			RequireOpen();
 			WriteSyncFile([], null, false, null);
+			DeleteCollectionStates();
 			_queued.Clear();
 			_syncAccount = null;
 			_syncSignedOut = false;
@@ -685,6 +686,7 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 			WipeHeldKey();
 			File.Delete(VaultFile);
 			File.Delete(SyncFile);
+			DeleteCollectionStates();
 			File.Delete(KeysFile);
 			_records.Clear();
 			_bases.Clear();

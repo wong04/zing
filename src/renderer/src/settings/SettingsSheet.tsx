@@ -24,7 +24,7 @@ import { CustomRow } from './CustomRows'
 import { CATEGORIES, PANES, detailOf, isVisible, type SettingRow } from './rows'
 import { SettingRowShell } from './SettingRowShell'
 import type { SettingsHandle } from './useSettings'
-import { setLibraryHoldsImports, setLibraryKeepsIcons } from './privacy'
+import { setCrashLogKept, setLibraryHoldsImports, setLibraryKeepsIcons } from './privacy'
 import { useVaultData, VaultDataProvider } from './useVaultData'
 import './settings.css'
 
@@ -128,6 +128,7 @@ export function SettingsSheet({ handle, initialCategory, version }: SettingsShee
 	// Only to redraw the privacy banner: the flag itself lives in privacy.ts, set before the render that reads it.
 	const [, setHoldsImports] = useState(false)
 	const [, setKeepsIcons] = useState(false)
+	const [, setKeepsCrashLog] = useState(false)
 
 	useEffect(
 		() =>
@@ -141,6 +142,18 @@ export function SettingsSheet({ handle, initialCategory, version }: SettingsShee
 			}),
 		[],
 	)
+
+	useEffect(() => {
+		let current = true
+		void zing.getCrashLog().then((log) => {
+			if (!current) return
+			setCrashLogKept(log.exists)
+			setKeepsCrashLog(log.exists)
+		})
+		return () => {
+			current = false
+		}
+	}, [])
 
 	useEffect(() => {
 		const frame = requestAnimationFrame(() => setShown(true))

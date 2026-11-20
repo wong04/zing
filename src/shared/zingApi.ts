@@ -50,6 +50,13 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		setAccountPickerHeight: (height) => invoke('pageui:picker-height', height),
 		closeAccountPicker: () => invoke('pageui:picker-close'),
 		onAccountPicker: (listener) => listen('pageui:account-picker', listener),
+		suggestAddresses: (text, field) => invoke('addressbar:suggest', text, field),
+		getAddressSuggestions: () => invoke('addressbar:get'),
+		highlightAddressSuggestion: (index) => invoke('addressbar:highlight', index),
+		closeAddressSuggestions: () => invoke('addressbar:close'),
+		openAddressSuggestion: (suggestion) => invoke('addressbar:open', suggestion),
+		setAddressSuggestionsHeight: (height) => invoke('addressbar:height', height),
+		onAddressSuggestions: (listener) => listen('addressbar:suggestions', listener),
 		getPeek: () => invoke('peek:get'),
 		onPeek: (listener) => listen('peek:state', listener),
 		updateFind: (text) => invoke('find:update', text),
@@ -208,5 +215,8 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		getDefaultBrowserState: () => invoke('default-browser:get'),
 		dismissDefaultBrowserOffer: () => invoke('default-browser:dismiss'),
 		getCredits: () => invoke('about:credits'),
+		getCrashLog: () => invoke('about:crash-log'),
+		openCrashLog: () => invoke('about:open-crash-log'),
+		clearCrashLog: () => invoke('about:clear-crash-log'),
 	}
 }

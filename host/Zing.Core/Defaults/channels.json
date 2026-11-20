@@ -1,7 +1,19 @@
 {
 	"invoke": [
 		{
+			"channel": "about:clear-crash-log",
+			"args": 0
+		},
+		{
+			"channel": "about:crash-log",
+			"args": 0
+		},
+		{
 			"channel": "about:credits",
+			"args": 0
+		},
+		{
+			"channel": "about:open-crash-log",
 			"args": 0
 		},
 		{
@@ -54,6 +66,30 @@
 		},
 		{
 			"channel": "account:update-profile",
+			"args": 2
+		},
+		{
+			"channel": "addressbar:close",
+			"args": 0
+		},
+		{
+			"channel": "addressbar:get",
+			"args": 0
+		},
+		{
+			"channel": "addressbar:height",
+			"args": 1
+		},
+		{
+			"channel": "addressbar:highlight",
+			"args": 1
+		},
+		{
+			"channel": "addressbar:open",
+			"args": 1
+		},
+		{
+			"channel": "addressbar:suggest",
 			"args": 2
 		},
 		{
@@ -704,6 +740,7 @@
 	],
 	"events": [
 		"account:state",
+		"addressbar:suggestions",
 		"chrome:focus-address",
 		"engines:exit",
 		"engines:output",
