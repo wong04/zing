@@ -36,6 +36,14 @@
 	white-space: nowrap;
 }
 
+/* A page dialog's own text, as the page wrote it: its line breaks kept, a long one scrolled rather than covering the page. */
+.pageui-message {
+	max-height: 40vh;
+	overflow-y: auto;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
 .pageui-detail {
 	color: var(--muted);
 	overflow: hidden;

@@ -183,7 +183,7 @@ public sealed class PermissionBroker(PageUiStore ui, Func<object, string?> hidde
 	}
 
 	// Like JS `URL.origin`: only http(s) pages have a usable one.
-	private static string OriginOf(string? url)
+	internal static string OriginOf(string? url)
 	{
 		if (string.IsNullOrEmpty(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri)) return "this page";
 		return uri.Scheme is "http" or "https" ? uri.GetLeftPart(UriPartial.Authority) : "null";

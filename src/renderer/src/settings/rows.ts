@@ -248,6 +248,9 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 			detail: (s) => (s.tabBarPosition === 'left' ? 'Point at the icons to slide the full sidebar out.' : undefined),
 			visible: (s) => s.tabBarPosition !== 'top',
 		}),
+		toggle('confirmWindowClose', 'Ask before closing a window of tabs', {
+			detail: (s) => (s.confirmWindowClose ? undefined : 'Off: a window, or Zing, closes without asking. Pages with unsaved changes still ask.'),
+		}),
 		toggle('autoCloseEnabled', 'Close inactive tabs', { detail: "Pinned tabs and the one you're on are always kept." }),
 		{
 			type: 'setting',

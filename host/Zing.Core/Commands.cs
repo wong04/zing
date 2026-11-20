@@ -81,6 +81,13 @@ public interface IShellActions
 	void OpenExternal(string url);
 }
 
+/// <summary>The person closing tabs from a menu: the window runs their pages' beforeunload first (ChromeApi).</summary>
+public interface ITabClosing
+{
+	void CloseTabs(IReadOnlyList<string> ids);
+	void CloseOtherTabs(string keep);
+}
+
 /// <summary>The menus of the chrome (menu.ts, tab-menus.ts, library-controller.ts).</summary>
 public static class Menus
 {
@@ -91,7 +98,7 @@ public static class Menus
 			Submenu: section["items"]!.AsArray().Select(entry => Entry(entry!.GetValue<string>(), run)).ToList())).ToList();
 
 	/// <summary>The right-click menu of a tab.</summary>
-	public static IReadOnlyList<MenuItem> Tab(TabService tabs, SavedTabs saved, string id, IShellActions shell)
+	public static IReadOnlyList<MenuItem> Tab(TabService tabs, SavedTabs saved, string id, IShellActions shell, ITabClosing closing)
 	{
 		var record = tabs.Get(id);
 		var loose = tabs.Records.Any(t => t.Id != id && !t.Pinned);
@@ -116,23 +123,21 @@ public static class Menus
 			new MenuItem("Copy Address", () => shell.CopyText(Net.RelayedContent.ToWebAddress(record.Url)), Enabled: record.Url != TabStore.NewTabUrl),
 			MenuItem.Separator,
 			// A saved tab closes and its item stays; a pinned tab without one isn't closed by accident.
-			new MenuItem("Close Tab", () => tabs.Close(id), Enabled: !record.Pinned || record.ItemId is not null),
-			new MenuItem("Close Other Tabs", () => tabs.CloseOthers(id), Enabled: loose),
+			new MenuItem("Close Tab", () => closing.CloseTabs([id]), Enabled: !record.Pinned || record.ItemId is not null),
+			new MenuItem("Close Other Tabs", () => closing.CloseOtherTabs(id), Enabled: loose),
 		];
 		// The native menu runs its own loop, and the page may close its tab (window.close) while it is open.
 		return [.. menu.Select(item => item.Click is { } click ? item with { Click = () => { if (tabs.Has(id)) click(); } } : item)];
 	}
 
 	/// <summary>A stack chip offers its lead page's menu plus closing the whole stack.</summary>
-	public static IReadOnlyList<MenuItem> Stack(TabService tabs, SavedTabs saved, TabOrdering ordering, string key, IShellActions shell)
+	public static IReadOnlyList<MenuItem> Stack(TabService tabs, SavedTabs saved, TabOrdering ordering, string key, IShellActions shell, ITabClosing closing)
 	{
 		var stack = ordering.Stacks().FirstOrDefault(s => s.Key == key && s.Ids.Count > 1);
 		if (stack is null) return [];
 		var lead = stack.Ids.FirstOrDefault(id => id == tabs.ActiveId) ?? stack.Ids[0];
-		return [.. Tab(tabs, saved, lead, shell), MenuItem.Separator, new MenuItem($"Close All {stack.Ids.Count} Tabs from {stack.Name}", () =>
-		{
-			foreach (var id in stack.Ids.Where(tabs.Has).ToList()) tabs.Close(id);
-		})];
+		return [.. Tab(tabs, saved, lead, shell, closing), MenuItem.Separator, new MenuItem($"Close All {stack.Ids.Count} Tabs from {stack.Name}", () =>
+			closing.CloseTabs([.. stack.Ids.Where(tabs.Has)]))];
 	}
 
 	/// <summary>Right-click on the empty strip: how tabs are arranged and drawn.</summary>

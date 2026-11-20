@@ -145,6 +145,11 @@
 			"args": 0
 		},
 		{
+			"channel": "dialog:answer",
+			"minArgs": 2,
+			"maxArgs": 3
+		},
+		{
 			"channel": "dns:apply",
 			"args": 1
 		},

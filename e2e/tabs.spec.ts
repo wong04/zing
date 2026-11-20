@@ -146,7 +146,10 @@ test('the tab overview shows a card per tab with pictures, and closes again', as
 test('a reopened tab shows its page in front of the chrome', async () => {
 	const zing = await launchZing()
 	await openPage(zing.chrome, 'one', 'Reopened')
+	const open = (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.length
 	await zing.chrome.evaluate(() => window.zing.runCommand('tab.close'))
+	// The page has its say (beforeunload) before the tab goes.
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).tabs.length).toBe(open - 1)
 	await zing.chrome.evaluate(() => window.zing.runCommand('tab.reopenClosed'))
 	// A page started after the chrome went under it, so the reopened tab showed blank.
 	await expect

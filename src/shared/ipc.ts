@@ -324,6 +324,8 @@ export interface InvokeContract {
 	'sites:get': { args: []; result: SiteGrantsState }
 	/** Settings' Remove: the site is asked again next time, and the file goes with the last one. */
 	'sites:forget-notifications': { args: [origin: string]; result: void }
+	/** OK or Leave (accept) / Cancel or Stay; `text` is what a prompt hands back. */
+	'dialog:answer': { args: [id: number, accept: boolean, text?: string]; result: void }
 	'library:get': { args: []; result: LibraryViewState }
 	'library:apply': { args: [action: LibraryAction]; result: string | undefined }
 	'library:open': { args: [id: string, target: LibraryOpenTarget]; result: void }
@@ -760,6 +762,7 @@ export interface ZingApi {
 	getSiteGrants(): Promise<SiteGrantsState>
 	forgetNotifications(origin: string): Promise<void>
 	onSiteGrants(listener: (state: SiteGrantsState) => void): Unsubscribe
+	answerDialog(id: number, accept: boolean, text?: string): Promise<void>
 	getLibrary(): Promise<LibraryViewState>
 	applyLibrary(action: LibraryAction): Promise<string | undefined>
 	openLibraryItem(id: string, target: LibraryOpenTarget): Promise<void>

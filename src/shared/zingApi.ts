@@ -73,6 +73,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		rememberPermission: (id) => invoke('permission:remember', id),
 		getSiteGrants: () => invoke('sites:get'),
 		forgetNotifications: (origin) => invoke('sites:forget-notifications', origin),
+		answerDialog: (id, accept, text) => (text === undefined ? invoke('dialog:answer', id, accept) : invoke('dialog:answer', id, accept, text)),
 		getLibrary: () => invoke('library:get'),
 		applyLibrary: (action) => invoke('library:apply', action),
 		openLibraryItem: (id, target) => invoke('library:open', id, target),
