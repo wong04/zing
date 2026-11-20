@@ -58,6 +58,9 @@ public sealed class PageSim
 	/// <summary>The engine refuses to suspend the page (a WebRTC call, say).</summary>
 	public bool RefusesSuspend { get; set; }
 	public bool Dirty { get; set; }
+	public bool Capturing { get; set; }
+	public bool PictureInPicture { get; set; }
+	public bool Uploading { get; set; }
 	public double ScrollY { get; set; }
 	public bool ProbeFails { get; set; }
 	public Action? OnProbe { get; set; }
@@ -98,7 +101,7 @@ public sealed class FakeLifecycleTabs : ILifecycleTabs
 		var page = Pages[id];
 		page.OnProbe?.Invoke();
 		if (page.ProbeFails) return Task.FromException<PageProbe>(new PageUnavailableException(id));
-		return Task.FromResult(new PageProbe(page.ScrollY, page.Dirty));
+		return Task.FromResult(new PageProbe(page.ScrollY, page.Dirty, page.Capturing, page.PictureInPicture, page.Uploading));
 	}
 
 	public Task<string?> CaptureThumbnailAsync(string id) => Task.FromResult<string?>(null);
@@ -377,7 +380,7 @@ public class TabLifecycleTests
 		{
 			var probe = PageProbe.Parse(c.GetProperty("input"));
 			var want = c.GetProperty("expect");
-			Assert.Equal(new PageProbe(want.GetProperty("scrollY").GetDouble(), want.GetProperty("dirty").GetBoolean()), probe);
+			Assert.Equal(new PageProbe(want.GetProperty("scrollY").GetDouble(), want.GetProperty("dirty").GetBoolean(), want.GetProperty("capturing").GetBoolean(), want.GetProperty("pictureInPicture").GetBoolean(), want.GetProperty("uploading").GetBoolean()), probe);
 		}
 	}
 
@@ -503,6 +506,9 @@ public class TabLifecycleTests
 			{
 				Audible = Flag(t, "audible"),
 				Dirty = Flag(t, "dirty"),
+				Capturing = Flag(t, "capturing"),
+				PictureInPicture = Flag(t, "pictureInPicture"),
+				Uploading = Flag(t, "uploading"),
 				ProbeFails = Flag(t, "probeFails"),
 				ScrollY = t.TryGetProperty("scrollY", out var y) ? y.GetDouble() : 0,
 			};
@@ -521,6 +527,7 @@ public class TabLifecycleTests
 			else if (Is(step, "reschedule", out var times)) for (var i = 0; i < times.GetInt32(); i++) sleeper.Reschedule();
 			else if (Is(step, "setAudible", out var audible)) tabs.Pages[audible.GetString()!].Audible = step.GetProperty("value").GetBoolean();
 			else if (Is(step, "setDirty", out var dirty)) tabs.Pages[dirty.GetString()!].Dirty = step.GetProperty("value").GetBoolean();
+			else if (Is(step, "setCapturing", out var capturing)) tabs.Pages[capturing.GetString()!].Capturing = step.GetProperty("value").GetBoolean();
 			else if (Is(step, "setProbeFails", out var fails)) tabs.Pages[fails.GetString()!].ProbeFails = step.GetProperty("value").GetBoolean();
 			else if (Is(step, "expectSlept", out var slept)) Assert.Equal(Strings(slept), tabs.Slept);
 			else if (Is(step, "expectTimers", out var timers)) Assert.Equal(timers.GetInt32(), time.Scheduler.PendingCount);
@@ -668,6 +675,9 @@ public class TabLifecycleTests
 		var s = new Suspending(
 			("audible", new PageSim { Audible = true }, false),
 			("dirty", new PageSim { Dirty = true }, false),
+			("call", new PageSim { Capturing = true }, false),
+			("pip", new PageSim { PictureInPicture = true }, false),
+			("upload", new PageSim { Uploading = true }, false),
 			("pinned", new PageSim(), true),
 			("plain", new PageSim(), false));
 		s.Time.Advance(6 * Minute);

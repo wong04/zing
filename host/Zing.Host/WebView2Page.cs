@@ -508,6 +508,9 @@ public sealed class WebView2Page : IPage
 			if (_view.HasKeyboard && Native.MouseButtonDown()) _events.Focused();
 		};
 
+		// Before any navigation, so every document notes typing, capture and uploads from its start (PageProbe).
+		await _core.AddScriptToExecuteOnDocumentCreatedAsync(SleepGuards.Source);
+		if (!IsOpen) return;
 		_core.WebMessageReceived += OnPageMessage;
 		// Before any queued navigation, so every document gets the script; it installs itself in the top frame only.
 		await FollowAutofillAsync();

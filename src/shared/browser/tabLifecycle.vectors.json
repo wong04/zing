@@ -210,6 +210,18 @@
 			]
 		},
 		{
+			"name": "leaves a tab capturing, in picture-in-picture or uploading awake, and sleeps the call once it ends",
+			"active": "active",
+			"tabs": [{ "id": "active" }, { "id": "call", "capturing": true }, { "id": "pip", "pictureInPicture": true }, { "id": "upload", "uploading": true }],
+			"steps": [
+				{ "advanceMinutes": 31 },
+				{ "expectSlept": [] },
+				{ "setCapturing": "call", "value": false },
+				{ "advanceMinutes": 6 },
+				{ "expectSlept": ["call"] }
+			]
+		},
+		{
 			"name": "does not sleep a tab the user returned to while it was being inspected",
 			"active": "active",
 			"tabs": [{ "id": "active" }, { "id": "back", "touchOnProbe": true }],
