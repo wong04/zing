@@ -517,19 +517,50 @@ test('a popup of a relayed page cannot be sent to the network before it has load
 	const stand = await standIn()
 	const zing = await launchRelayed(stand)
 	const page = await openRelayed(zing, 'https://site.test/a/page.html')
-	await page.evaluate(`(async () => {
-		const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+	// Playwright's evaluate counts as a click (a user gesture), so the pop-up blocker lets these windows open: the path is
+	// tried. A window takes the click it opened with, so each is opened by an evaluate of its own.
+	const first = await page.evaluate(`(() => {
 		const w = window.open('zing-relay://other.test/pop')
+		window.relayedPopup = w
 		try { w.location = ${JSON.stringify(stand.origin + '/loc')} } catch (e) {}
 		try { w.document.write('<p>x</p>') } catch (e) {}
 		try { w.location.href = ${JSON.stringify(stand.origin + '/href')} } catch (e) {}
+		return w !== null
+	})()`)
+	await page.evaluate(`(async () => {
+		const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 		const v = window.open('about:blank')
 		try { v.location = ${JSON.stringify(stand.origin + '/blank')} } catch (e) {}
 		await sleep(300)
-		try { w.location = ${JSON.stringify(stand.origin + '/late')} } catch (e) {}
+		try { window.relayedPopup.location = ${JSON.stringify(stand.origin + '/late')} } catch (e) {}
 		await sleep(1500)
 	})()`)
+	// The relayed window opened past the blocker; about:blank never opens from a relayed page (NewWindowTarget), click or not.
+	expect(first).toBe(true)
 	await settle()
+	expect(realRequests(stand)).toEqual([])
+	await zing.close()
+	await stand.close()
+})
+
+test('a relayed page opening a popup with no click is blocked, and nothing reaches the network', async () => {
+	const stand = await standIn()
+	const zing = await launchRelayed(stand)
+	const page = await openRelayed(zing, 'https://site.test/a/page.html')
+	const tabsBefore = (await tabsOf(zing)).tabs.length
+	// Long after the evaluate's own gesture has run out (Chromium's transient activation lasts 5 s), so no click asked for it.
+	await page.evaluate(`setTimeout(() => {
+		const w = window.open('zing-relay://other.test/pop')
+		window.opened = w !== null
+		try { w.location = ${JSON.stringify(stand.origin + '/loc')} } catch (e) {}
+	}, 6500)`)
+	const ui = await pageWhere(zing.browser, (p) => p.url().endsWith('#pageui'))
+	await expect(ui.getByText('Zing blocked a pop-up from')).toBeVisible({ timeout: 15_000 })
+	expect(await page.evaluate('window.opened')).toBe(false)
+	// Not a web site, so it can't be allowed for the session.
+	await expect(ui.getByRole('button', { name: 'Allow for this site, this session' })).toHaveCount(0)
+	await settle()
+	expect((await tabsOf(zing)).tabs.length).toBe(tabsBefore)
 	expect(realRequests(stand)).toEqual([])
 	await zing.close()
 	await stand.close()
