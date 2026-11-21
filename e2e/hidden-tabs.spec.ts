@@ -87,3 +87,35 @@ test('both panes of a split on screen keep their memory and are never suspended'
 	for (const pane of ['/pane-a', '/pane-b']) expect(await layerOf(zing, pane)).toMatchObject({ visible: true, lowMemory: false, suspended: false })
 	await zing.close()
 })
+
+/** How many times the page's 50 ms timer fired in about a second. */
+async function tickRate(zing: BareZing, path: string): Promise<number> {
+	const before = await ticks(zing, path)
+	await new Promise((resolve) => setTimeout(resolve, 1000))
+	return (await ticks(zing, path)) - before
+}
+
+test('a minimised window stops drawing its pages and slows their timers, and restored runs them again', async () => {
+	const zing = await launchBare(scratchDir('zing-host-data-'), { ZING_TEST_CLOCK: '1' })
+	const shown = await openTab(zing, '/shown')
+	await expect.poll(async () => (await layerOf(zing, '/shown'))?.rendering).toBe(true)
+	const running = await tickRate(zing, '/shown')
+
+	await hook(zing, { action: 'minimise-window', minimised: true })
+	await expect.poll(async () => (await layerOf(zing, '/shown'))?.rendering).toBe(false)
+	// The app still counts the tab as shown: it is the window's front tab, so it is not put to sleep or suspended.
+	expect(await layerOf(zing, '/shown')).toMatchObject({ visible: true, lowMemory: false, suspended: false })
+	await new Promise((resolve) => setTimeout(resolve, 1000))
+	const minimised = await tickRate(zing, '/shown')
+	console.log(`ticks per second of a 50 ms timer: ${running} shown, ${minimised} minimised`)
+	expect(minimised).toBeLessThan(running / 4)
+	await hook(zing, { action: 'advance-clock', ms: 6 * MINUTE })
+	await new Promise((resolve) => setTimeout(resolve, 1000))
+	expect(await layerOf(zing, '/shown')).toMatchObject({ suspended: false })
+	expect(await inChrome<boolean>(zing, `zing.getTabs().then((s) => s.tabs.find((t) => t.id === ${JSON.stringify(shown)}).sleeping === true)`)).toBe(false)
+
+	await hook(zing, { action: 'minimise-window', minimised: false })
+	await expect.poll(async () => (await layerOf(zing, '/shown'))?.rendering).toBe(true)
+	await expect.poll(() => tickRate(zing, '/shown')).toBeGreaterThan(running / 2)
+	await zing.close()
+})

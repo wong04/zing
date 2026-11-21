@@ -37,7 +37,8 @@ public sealed class ThumbnailCache(int capacity = 24)
 /// <summary>
 /// The grid of tab pictures (tab-overview.ts). Pictures are taken only when
 /// the overview opens and as a page leaves the screen (a page nobody can see
-/// produces no frames), never in the background.
+/// produces no frames), never in the background. Pages leaving the screen are
+/// pictured only once the overview has been opened: most people never open it.
 /// </summary>
 public sealed class TabOverview(TabService tabs, Func<TabsState> state, Action<OverviewState?> shown, Action<string, Exception> captureFailed)
 {
@@ -47,6 +48,9 @@ public sealed class TabOverview(TabService tabs, Func<TabsState> state, Action<O
 	private readonly HashSet<Task> _leaving = [];
 
 	public bool IsOpen { get; private set; }
+
+	/// <summary>Whether the overview has been opened in this window; until then no tab leaving the screen is pictured.</summary>
+	private bool _used;
 
 	/// <summary>Null while closed, so a renderer that loads late can still ask.</summary>
 	public OverviewState? Current => IsOpen ? State() : null;
@@ -69,6 +73,7 @@ public sealed class TabOverview(TabService tabs, Func<TabsState> state, Action<O
 	{
 		if (IsOpen) return;
 		IsOpen = true;
+		_used = true;
 		// Pictures of tabs that just left the screen may still be on their way.
 		await Task.WhenAll([.. _leaving, CaptureActiveAsync()]);
 		// Closed again while the pictures were being taken.
@@ -92,6 +97,7 @@ public sealed class TabOverview(TabService tabs, Func<TabsState> state, Action<O
 	/// <summary>Just before a tab's page leaves the screen: the last chance for its picture.</summary>
 	public void Leaving(string id, IPage page)
 	{
+		if (!_used) return;
 		Task pending = null!;
 		pending = CaptureAsync(id, page).ContinueWith(_ => _leaving.Remove(pending), SchedulerExtensions.FromCurrentSynchronizationContextOrDefault());
 		_leaving.Add(pending);

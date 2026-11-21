@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { expect, type Locator, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
 import { favourites, FAVOURITES_ID } from '../src/shared/library/library'
-import { launchZing, test, layers, liveCounts, pageWhere, scratchDir } from './zing'
+import { launchZing, test, layers, liveCounts, pageWhere, scratchDir, workCounts } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -115,6 +115,30 @@ test('Dropdown style stacks a site and lists its pages in the overlay', async ()
 	await row.dispatchEvent('pointerup', { button: 0, pointerId: 1, clientY: 10 })
 	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getTabs())).activeId).toBe(first)
 	await expect(zing.chrome.locator('.tab.stack.open')).toHaveCount(0)
+	await zing.close()
+})
+
+test('switching tabs takes no pictures until the overview has been opened once', async () => {
+	const zing = await launchZing()
+	const first = await openPage(zing.chrome, 'one', 'First')
+	const second = await openPage(zing.chrome, 'two', 'Second')
+	const before = (await workCounts(zing.chrome)).captures
+	for (let i = 0; i < 3; i++) {
+		await zing.chrome.evaluate((id) => window.zing.activateTab(id), first)
+		await zing.chrome.evaluate((id) => window.zing.activateTab(id), second)
+	}
+	await expect.poll(async () => (await liveCounts(zing.chrome)).captures).toBe(0)
+	expect((await workCounts(zing.chrome)).captures - before).toBe(0)
+
+	// Once it has been opened, a tab leaving the screen is pictured, so the next opening shows it at once.
+	await zing.chrome.evaluate(() => window.zing.runCommand('tabs.overview'))
+	const overview = await pageWhere(zing.browser, (p) => p.url().endsWith('#overlay-overview'))
+	await expect(overview.locator('.overview-card')).toHaveCount(3)
+	await zing.chrome.evaluate(() => window.zing.closeOverview())
+	await expect(overview.locator('.overview-card')).toHaveCount(0)
+	const opened = (await workCounts(zing.chrome)).captures
+	await zing.chrome.evaluate((id) => window.zing.activateTab(id), first)
+	await expect.poll(async () => (await workCounts(zing.chrome)).captures).toBe(opened + 1)
 	await zing.close()
 })
 

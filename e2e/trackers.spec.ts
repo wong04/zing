@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
-import { launchZing, test } from './zing'
+import { launchZing, test, workCounts } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -165,5 +165,30 @@ test('blockTrackers refuses ad servers and trackers from EasyList and EasyPrivac
 	await open(zing.chrome, id, `${base}/lists?off`)
 	await expect.poll(async () => (await tabOf(zing.chrome, id))?.title).toBe('loaded:answered/loaded:answered/loaded:answered')
 	expect([...pixelHosts].sort()).toEqual([...LIST_HOSTS, ...LIST_HOSTS].sort())
+	await zing.close()
+})
+
+test('with blockTrackers off no subresource request waits on the UI thread, and turned on again they are filtered', async () => {
+	const zing = await launchZing({ env: { ZING_E2E_MAP_HOSTS: 'MAP *.adform.net 127.0.0.1 , MAP *.statcounter.com 127.0.0.1 , MAP *.doubleclick.net 127.0.0.1' } })
+	const id = (await zing.chrome.evaluate(() => window.zing.getTabs())).activeId!
+	const base = `http://127.0.0.1:${port}`
+	const filtered = async () => (await workCounts(zing.chrome)).blockableRequests
+
+	// An open tab, and a tab opened while it is off.
+	await zing.chrome.evaluate(() => window.zing.setSetting('blockTrackers', false))
+	let before = await filtered()
+	await open(zing.chrome, id, `${base}/lists?open`)
+	await expect.poll(async () => (await tabOf(zing.chrome, id))?.title).toBe('loaded:answered/loaded:answered/loaded:answered')
+	await zing.chrome.evaluate(() => window.zing.runCommand('tab.new'))
+	const opened = (await zing.chrome.evaluate(() => window.zing.getTabs())).activeId!
+	await open(zing.chrome, opened, `${base}/lists?new`)
+	await expect.poll(async () => (await tabOf(zing.chrome, opened))?.title).toBe('loaded:answered/loaded:answered/loaded:answered')
+	expect((await filtered()) - before).toBe(0)
+
+	await zing.chrome.evaluate(() => window.zing.setSetting('blockTrackers', true))
+	before = await filtered()
+	await open(zing.chrome, opened, `${base}/lists?on`)
+	await expect.poll(async () => (await tabOf(zing.chrome, opened))?.title).toBe('refused:answered/refused:answered/refused:answered')
+	expect((await filtered()) - before).toBeGreaterThanOrEqual(LIST_HOSTS.length * 2)
 	await zing.close()
 })

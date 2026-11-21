@@ -70,7 +70,13 @@ public sealed class FakePage(IPageEvents events) : IPage
 	public double Zoom { get; set; } = Zing.Core.Zoom.Default;
 	public void Print() => Calls.Add("print");
 	public string? Picture { get; set; } = "data:image/jpeg;base64,AA==";
-	public Task<string?> CaptureAsync() => Task.FromResult(Picture);
+	/// <summary>How many pictures were taken of the page.</summary>
+	public int Captures { get; private set; }
+	public Task<string?> CaptureAsync()
+	{
+		Captures++;
+		return Task.FromResult(Picture);
+	}
 	public string? ReaderRefusal { get; set; }
 	public bool InReader { get; private set; }
 	public PageHistory History { get; set; } = new([], 0);

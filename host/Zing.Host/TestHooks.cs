@@ -186,6 +186,8 @@ public static class TestHooks
 	/// "close-all-as-taskbar" posts WM_CLOSE to every window back to back, as the taskbar's "Close all windows" does.
 	/// "set-cursor" with <c>x</c> and <c>y</c> puts the cursor there over the window's content (WindowLayout.Cursor), and without them takes it off the window.
 	/// "window-at" with <c>x</c> and <c>y</c> writes to <c>file</c> the address of the view Windows gives a click at that point of the content (WindowFromPoint), null for none, and the class of the window hit.
+	/// "work-counts" writes how many blockable requests reached the request filter and how many pictures were asked of the engine, in every window, to <c>file</c>.
+	/// "minimise-window" with <c>minimised</c> minimises the window or restores it, without activating it.
 	/// "menu-theme" writes the preferred app mode the native menus were last given (DarkMenus) to <c>file</c>.
 	/// "show-default-browser-offer" shows the default-browser offer as a launch would, skipping only whether Zing is installed and not the default.
 	/// </summary>
@@ -288,6 +290,17 @@ public static class TestHooks
 		if (action == "live-counts")
 		{
 			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(LiveCounts()));
+			return true;
+		}
+		if (action == "work-counts")
+		{
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { blockableRequests = WebView2Page.BlockableRequests, captures = WebView2Page.CapturesTaken }));
+			return true;
+		}
+		if (action == "minimise-window")
+		{
+			// Without activating, as every e2e window: SW_SHOWMINNOACTIVE minimises, SW_SHOWNOACTIVATE restores.
+			Native.ShowWindow(window.Hwnd, root.GetProperty("minimised").GetBoolean() ? Native.SW_SHOWMINNOACTIVE : Native.SW_SHOWNOACTIVATE);
 			return true;
 		}
 		if (action == "add-tabs")
@@ -421,6 +434,7 @@ public static class TestHooks
 		{
 			url = v.Core.Source,
 			visible = v.Visible,
+			rendering = v.Rendering,
 			x = v.Bounds.X,
 			y = v.Bounds.Y,
 			width = v.Bounds.Width,
@@ -433,7 +447,7 @@ public static class TestHooks
 		if (!Scrims.TryGetValue(window, out var scrimOf) || scrimOf() is not { } scrim) return layers;
 		var scale = window.Scale;
 		var area = scrim.PageArea;
-		layers.Add(new { url = "scrim", visible = scrim.Visible, x = area.X / scale, y = area.Y / scale, width = area.Width / scale, height = area.Height / scale, depth = scrim.Depth, keyboard = false });
+		layers.Add(new { url = "scrim", visible = scrim.Visible, rendering = scrim.Visible, x = area.X / scale, y = area.Y / scale, width = area.Width / scale, height = area.Height / scale, depth = scrim.Depth, keyboard = false });
 		return layers;
 	}
 
