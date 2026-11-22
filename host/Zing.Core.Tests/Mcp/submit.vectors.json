@@ -1,0 +1,24 @@
+{
+	"words": ["pay", "buy", "purchase", "order", "checkout", "send", "post", "publish", "submit", "transfer", "delete", "confirm"],
+	"cases": [
+		{ "action": "Click", "node": { "role": "button", "name": "Place order" }, "expected": true },
+		{ "action": "Click", "node": { "role": "button", "name": "PAY NOW" }, "expected": true },
+		{ "action": "Click", "node": { "role": "button", "name": "Confirm" }, "expected": true },
+		{ "action": "Click", "node": { "role": "button", "name": "Go to checkout" }, "expected": true },
+		{ "action": "Click", "node": { "role": "link", "name": "Order history" }, "expected": false },
+		{ "action": "Click", "node": { "role": "button", "name": "Reorder" }, "expected": false },
+		{ "action": "Click", "node": { "role": "button", "name": "Postal code help" }, "expected": false },
+		{ "action": "Click", "node": { "role": "button", "name": "Open menu" }, "expected": false },
+		{ "action": "Click", "node": { "role": "textbox", "name": "Send to", "editable": true }, "expected": false },
+		{ "action": "Click", "node": { "role": "button", "name": "Go", "inputType": "submit" }, "expected": true },
+		{ "action": "PressKey", "key": "Enter", "node": { "role": "textbox", "name": "Message", "editable": true }, "expected": true },
+		{ "action": "PressKey", "key": "enter", "node": { "role": "textbox", "name": "Message", "editable": true, "inForm": true }, "expected": true },
+		{ "action": "PressKey", "key": "Tab", "node": { "role": "textbox", "name": "Message", "editable": true }, "expected": false },
+		{ "action": "PressKey", "key": "Enter", "node": { "role": "link", "name": "Home" }, "expected": false },
+		{ "action": "TypeSubmit", "node": { "role": "textbox", "name": "Search", "editable": true }, "expected": true },
+		{ "action": "Type", "node": { "role": "textbox", "name": "Search", "editable": true }, "expected": false },
+		{ "action": "Scroll", "node": { "role": "button", "name": "Pay" }, "expected": false },
+		{ "action": "Select", "node": { "role": "combobox", "name": "Order by" }, "expected": false },
+		{ "action": "Navigate", "node": { "role": "document", "name": "Delete" }, "expected": false }
+	]
+}
