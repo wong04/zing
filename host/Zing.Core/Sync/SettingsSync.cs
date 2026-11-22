@@ -32,8 +32,10 @@ public sealed class SettingsSync : IDisposable
 		"restoreTabs",
 		"smartScreen",
 		"acceleratedCanvas",
-		// This PC's: its vault, its install, its screen.
+		// This PC's: its vault, its install, its screen, its local AI server.
 		"passwordAutofill",
+		"aiControlEnabled",
+		"aiControlPort",
 		"checkForUpdates",
 		"verticalTabWidth",
 		// This PC's first-run and usage history.

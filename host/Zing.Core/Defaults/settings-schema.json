@@ -110,6 +110,14 @@
 	"extensions": {
 		"type": "flag"
 	},
+	"aiControlEnabled": {
+		"type": "flag"
+	},
+	"aiControlPort": {
+		"type": "integer",
+		"min": 1024,
+		"max": 65535
+	},
 	"defaultUserAgent": {
 		"type": "flag"
 	},

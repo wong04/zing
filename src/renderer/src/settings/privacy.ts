@@ -66,6 +66,7 @@ const conditions: StoresDataCondition[] = [
 	{ id: 'imported', active: () => libraryHoldsImports, what: 'imported bookmarks', plural: true },
 	{ id: 'bookmarkIcons', active: () => libraryKeepsIcons, what: 'icons of bookmarked sites you visited', plural: true },
 	{ id: 'crashLog', active: () => crashLogKept, what: 'a crash log (times and exit codes only)' },
+	{ id: 'aiControl', active: (s) => s.aiControlEnabled, what: 'an access token for AI control' },
 	{ id: 'siteGrants', active: () => siteGrantsKept, what: 'sites allowed to show notifications', plural: true },
 ]
 

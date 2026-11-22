@@ -9,7 +9,8 @@ describe('settings rows', () => {
 		// Kept so older settings files still load; WebView2 always presents Edge's own user agent.
 		const retired = new Set(['defaultUserAgent'])
 		// Zing's own bookkeeping, set by the app rather than the person; none of these ever gets a row.
-		const internal = new Set(['launchedBefore', 'defaultBrowserDismissed', 'importNudgeDone'])
+		// AI control's switch and port get their pane with the MCP server (a later task).
+		const internal = new Set(['launchedBefore', 'defaultBrowserDismissed', 'importNudgeDone', 'aiControlEnabled', 'aiControlPort'])
 		expect(SETTING_KEYS.filter((k) => !bound.has(k) && !retired.has(k) && !internal.has(k))).toEqual([])
 	})
 

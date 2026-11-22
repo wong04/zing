@@ -110,6 +110,9 @@ export const SETTINGS_SCHEMA = {
 	persistentProfile: flag(false),
 	/** Unpacked extensions (Settings' Extensions). They run only in the persistent profile, so only with persistentProfile on too. Read at launch. */
 	extensions: flag(false),
+	/** Local AI over MCP: a loopback server a local AI client drives Zing through. Off by default; on, a token is kept on disk, so it flips the privacy banner. */
+	aiControlEnabled: flag(false),
+	aiControlPort: integerIn(1024, 65535, 47821),
 	defaultUserAgent: flag(false),
 	acceleratedCanvas: flag(true),
 	/** Off by default: remembering open tabs means writing visited URLs to disk. */

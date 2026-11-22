@@ -19,6 +19,8 @@
 	"autoCloseMinute": 0,
 	"persistentProfile": false,
 	"extensions": false,
+	"aiControlEnabled": false,
+	"aiControlPort": 47821,
 	"defaultUserAgent": false,
 	"acceleratedCanvas": true,
 	"restoreTabs": true,

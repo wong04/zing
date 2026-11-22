@@ -124,3 +124,13 @@ describe('remembered notification grants', () => {
 		expect(privacyStatus(NOTHING_KEPT).traceless).toBe(true)
 	})
 })
+
+describe('AI control', () => {
+	it('AI control on turns the banner to a warning', () => {
+		expect(privacyStatus(withSettings({ aiControlEnabled: true }))).toMatchObject({
+			traceless: false,
+			detail: 'An access token for AI control is written to disk.',
+		})
+		expect(privacyStatus(withSettings({ aiControlEnabled: false })).traceless).toBe(true)
+	})
+})
