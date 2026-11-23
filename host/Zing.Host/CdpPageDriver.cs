@@ -3,11 +3,9 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text.Json;
 using Zing.Core;
 using Zing.Core.Mcp;
+using Zing.Core.Vault;
 
 namespace Zing.Host;
-
-/// <summary>An AI action that arrives with Task 11 (download and fill_login).</summary>
-public sealed class AiActionNotBuiltException(string action) : NotSupportedException($"The AI action {action} isn't built yet.");
 
 /// <summary>
 /// The AI tools' way into a tab: DevTools calls on the tab's own CoreWebView2 only. It reads the main frame; other frames,
@@ -177,8 +175,83 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		TabsOf(tab).Close(tab.TabId);
 		return Task.CompletedTask;
 	}
-	public Task Download(TabRef tab, Uri url) => throw new AiActionNotBuiltException(nameof(Download));
-	public Task<(FillResult Result, IReadOnlySet<long> FilledNodes)> FillLogin(TabRef tab) => throw new AiActionNotBuiltException(nameof(FillLogin));
+
+	/// <summary>
+	/// Goes to <paramref name="url"/> in the tab's main frame, with the tab's own cookies, and turns the document response into a
+	/// download (Content-Disposition: attachment, in DevTools' Fetch domain), so a page the engine could show, a PDF say, is
+	/// saved instead. DownloadHost then saves it into Downloads under the server's name and lists it; the tab stays where it was.
+	/// </summary>
+	public async Task Download(TabRef tab, Uri url)
+	{
+		var page = await PageAsync(tab);
+		await HoldFormPostsAsync(tab, page);
+		if (_forcing.ContainsKey(page)) throw new AiToolException(AiErrors.Unsupported, "A download is already starting in this tab.");
+		var started = new TaskCompletionSource();
+		_forcing[page] = started;
+		try
+		{
+			using (await CallAsync(tab, page, "Fetch.enable", new { patterns = new[] { RequestPattern, ResponsePattern } })) { }
+			using (await CallAsync(tab, page, "Page.navigate", new { url = url.AbsoluteUri })) { }
+			await LimitAsync(tab, page, started.Task, "download");
+		}
+		finally
+		{
+			_forcing.Remove(page);
+			if (_holding.ContainsKey(page)) await ExpectingGoneAsync(tab, page, "Fetch.enable", new { patterns = new[] { RequestPattern } });
+		}
+	}
+
+	private const string FillGroup = "zing-ai-fill";
+
+	/// <summary>fill_login: the vault's AI fill (Autofill.FillForAi) on the page's sign-in fields, found and filled through DevTools.</summary>
+	public async Task<(FillResult Result, IReadOnlySet<long> FilledNodes)> FillLogin(TabRef tab)
+	{
+		var page = await PageAsync(tab);
+		var autofill = windowOf(tab.WindowId)?.Api?.Autofill ?? throw new TabGoneException(tab);
+		string? fields = null;
+		var nodes = new HashSet<long>();
+		try
+		{
+			return await autofill.FillForAi(tab.TabId, page, async () =>
+			{
+				using (var found = await CallAsync(tab, page, "Runtime.evaluate", new { expression = AutofillScripts.LoginFields, objectGroup = FillGroup }))
+				{
+					if (!found.RootElement.GetProperty("result").TryGetProperty("objectId", out var array)) throw new AiToolException(AiErrors.Unsupported, "There is no sign-in form on the page.");
+					fields = array.GetString()!;
+				}
+				var username = await ElementAsync(tab, page, fields, 0);
+				var password = await ElementAsync(tab, page, fields, 1);
+				if (username is { } u) nodes.Add(u);
+				if (password is { } p) nodes.Add(p);
+				var shown = (password ?? username)!.Value;
+				using (await CallAsync(tab, page, "DOM.scrollIntoViewIfNeeded", new { backendNodeId = shown })) { }
+				if (await BoxAsync(tab, page, shown) is not { } box) return null;
+				return page.FieldInWindow(new CredentialField(password is null ? CredentialFieldKind.Username : CredentialFieldKind.Password, new Rect(box.X, box.Y, box.Width, box.Height), default));
+			}, async (origin, username, password) =>
+			{
+				EnsureCurrent(tab, page);
+				using var done = await CallAsync(tab, page, "Runtime.callFunctionOn", new { objectId = fields, functionDeclaration = AutofillScripts.PutLogin, arguments = new[] { new { value = origin }, new { value = username }, new { value = password } }, returnByValue = true });
+				return done.RootElement.GetProperty("result").TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.True ? nodes : new HashSet<long>();
+			});
+		}
+		finally
+		{
+			await ExpectingGoneAsync(tab, page, "Runtime.releaseObjectGroup", new { objectGroup = FillGroup });
+		}
+	}
+
+	/// <summary>The backend node of item <paramref name="index"/> of the page array <paramref name="array"/>; null when it holds none.</summary>
+	private async Task<long?> ElementAsync(TabRef tab, WebView2Page page, string array, int index)
+	{
+		string element;
+		using (var item = await CallAsync(tab, page, "Runtime.callFunctionOn", new { objectId = array, functionDeclaration = "function (i) { return this[i] }", arguments = new[] { new { value = index } }, objectGroup = FillGroup }))
+		{
+			if (!item.RootElement.GetProperty("result").TryGetProperty("objectId", out var id)) return null;
+			element = id.GetString()!;
+		}
+		using var node = await CallAsync(tab, page, "DOM.describeNode", new { objectId = element });
+		return node.RootElement.GetProperty("node").GetProperty("backendNodeId").GetInt64();
+	}
 
 	private TabService TabsOf(TabRef tab) =>
 		windowOf(tab.WindowId)?.Api?.Tabs is { } tabs && tabs.Has(tab.TabId) ? tabs : throw new TabGoneException(tab);
@@ -397,6 +470,12 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 	/// <summary>Pages whose document requests pass through <see cref="FormPostBackstop"/>, and their tabs; a page is added before the AI first acts on it.</summary>
 	private readonly Dictionary<WebView2Page, TabRef> _holding = [];
 
+	/// <summary>Pages whose next main-frame document response becomes a download (<see cref="Download"/>), and what waits for it.</summary>
+	private readonly Dictionary<WebView2Page, TaskCompletionSource> _forcing = [];
+
+	private static readonly object RequestPattern = new { urlPattern = "*", resourceType = "Document", requestStage = "Request" };
+	private static readonly object ResponsePattern = new { urlPattern = "*", resourceType = "Document", requestStage = "Response" };
+
 	/// <summary>Pages already listening for Fetch.requestPaused, so a tab shared again doesn't listen twice.</summary>
 	private readonly HashSet<WebView2Page> _listening = [];
 
@@ -408,6 +487,7 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		foreach (var page in _holding.Where(p => p.Value == tab).Select(p => p.Key).ToList())
 		{
 			_holding.Remove(page);
+			if (_forcing.Remove(page, out var forcing)) forcing.TrySetException(new AiToolException(AiErrors.NotShared, "The tab was unshared."));
 			var asking = _asking.Remove(page, out var ids) ? ids.ToList() : [];
 			if (page.IsOpen) TestHooks.Background(StopHoldingAsync(tab, page, asking), "ai form post watch");
 		}
@@ -441,7 +521,7 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		EnsureCurrent(tab, page);
 		if (!_holding.TryAdd(page, tab)) return;
 		if (_listening.Add(page)) page.OnDevToolsEvent("Fetch.requestPaused", json => Paused(tab, page, mainFrame, json));
-		using (await CallAsync(tab, page, "Fetch.enable", new { patterns = new[] { new { urlPattern = "*", resourceType = "Document", requestStage = "Request" } } })) { }
+		using (await CallAsync(tab, page, "Fetch.enable", new { patterns = new[] { RequestPattern } })) { }
 	}
 
 	private void Paused(TabRef tab, WebView2Page page, string mainFrame, string json)
@@ -449,6 +529,11 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		using var paused = JsonDocument.Parse(json);
 		var root = paused.RootElement;
 		var requestId = root.GetProperty("requestId").GetString()!;
+		if (root.TryGetProperty("responseStatusCode", out _) || root.TryGetProperty("responseErrorReason", out _))
+		{
+			Responded(tab, page, mainFrame, requestId, root);
+			return;
+		}
 		var request = root.GetProperty("request");
 		// A closed tab is unshared first, so only a live tab's address is asked for.
 		var site = shares.IsShared(tab) ? UrlOf(tab) : null;
@@ -460,6 +545,47 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 			ids.Add(requestId);
 		}
 		TestHooks.Background(ReleaseAsync(tab, page, requestId, held ? () => gate.Ask(tab, site!, $"send a form to {to}") : null), "ai form post");
+	}
+
+	/// <summary>
+	/// A document response paused while <see cref="Download"/> waits: the main frame's first final one is let go marked as a
+	/// file; a redirect, another frame's, or any after it go on as they are.
+	/// </summary>
+	private void Responded(TabRef tab, WebView2Page page, string mainFrame, string requestId, JsonElement root)
+	{
+		var status = root.TryGetProperty("responseStatusCode", out var code) ? code.GetInt32() : 0;
+		if (root.GetProperty("frameId").GetString() != mainFrame || !_forcing.TryGetValue(page, out var started) || status is >= 300 and < 400)
+		{
+			TestHooks.Background(ExpectingGoneAsync(tab, page, "Fetch.continueRequest", new { requestId }), "ai download");
+			return;
+		}
+		_forcing.Remove(page);
+		if (root.TryGetProperty("responseErrorReason", out var error) || status >= 400)
+		{
+			started.TrySetException(new AiToolException(AiErrors.Unsupported, error.ValueKind == JsonValueKind.String ? $"The download failed: {error.GetString()}." : $"The server answered {status}."));
+			TestHooks.Background(ExpectingGoneAsync(tab, page, "Fetch.continueRequest", new { requestId }), "ai download");
+			return;
+		}
+		var headers = root.TryGetProperty("responseHeaders", out var list) ? list.EnumerateArray().Select(h => (Name: h.GetProperty("name").GetString()!, Value: h.GetProperty("value").GetString()!)).ToList() : [];
+		var disposition = headers.FirstOrDefault(h => h.Name.Equals("Content-Disposition", StringComparison.OrdinalIgnoreCase)).Value;
+		var marked = headers.Where(h => !h.Name.Equals("Content-Disposition", StringComparison.OrdinalIgnoreCase))
+			.Select(h => new { name = h.Name, value = h.Value })
+			.Append(new { name = "Content-Disposition", value = ForcedDownload.Disposition(disposition) })
+			.ToArray();
+		TestHooks.Background(ForceAsync(tab, page, started, new { requestId, responseCode = status, responseHeaders = marked }), "ai download");
+	}
+
+	private async Task ForceAsync(TabRef tab, WebView2Page page, TaskCompletionSource started, object args)
+	{
+		try
+		{
+			using (await CallAsync(tab, page, "Fetch.continueResponse", args)) { }
+			started.TrySetResult();
+		}
+		catch (Exception error)
+		{
+			started.TrySetException(error);
+		}
 	}
 
 	/// <summary>Lets a paused request go, after the owner's yes when <paramref name="ask"/> is given; a no aborts the navigation.</summary>

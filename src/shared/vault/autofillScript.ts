@@ -17,6 +17,8 @@ export const autofillBridgeName = 'zingCredentialField'
 /** Page globals the scripts share. */
 const target = '__zingAutofillTarget'
 const fill = '__zingAutofillFill'
+const loginFields = '__zingAutofillLoginFields'
+const putLogin = '__zingAutofillPutLogin'
 const installed = '__zingAutofillInstalled'
 const enterInstalled = '__zingPickerEnterInstalled'
 
@@ -29,6 +31,10 @@ export const autofillPickerEnterFlag = '__zingPickerEnter'
 
 /** The page function `fillScript` calls; the host builds the same call (Defaults/autofill.json). */
 export const autofillFillFunction = fill
+
+/** The page functions the AI's fill_login uses (Defaults/autofill.json): find the sign-in fields, then fill them. */
+export const autofillLoginFieldsFunction = loginFields
+export const autofillPutLoginFunction = putLogin
 
 /**
  * Reports which sign-in field has focus, and where it is.
@@ -416,6 +422,22 @@ export const detectionScript = `(() => {
     const other = partner(el, k === 'username' ? 'password' : 'username');
     if (other) put(other, k === 'username' ? password : username);
     put(el, k === 'username' ? username : password);
+    return true;
+  };
+  // fill_login (the AI's, with nothing focused): the top document's first visible password box that isn't a one-time
+  // code and the username box before it, or a lone visible username box (a two-step sign-in's first page), as
+  // [username or null, password or null]; null when the page has neither.
+  window.${loginFields} = () => {
+    const inputs = inputsOf(document);
+    const password = inputs.find(el => isPasswordBox(el) && kind(el) && !looksLikeCode(el)) || null;
+    const candidate = password ? partner(password, 'username') : inputs.find(el => kind(el) === 'username') || null;
+    const username = candidate && visible(candidate) ? candidate : null;
+    return username || password ? [username, password] : null;
+  };
+  // Fills what loginFields found, as if typed.
+  window.${putLogin} = (fields, username, password) => {
+    if (fields[0] && fields[0].isConnected) put(fields[0], username);
+    if (fields[1] && fields[1].isConnected) put(fields[1], password);
     return true;
   };
 

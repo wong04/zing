@@ -26,7 +26,7 @@ import {
 } from '../src/shared/settings/schema'
 import { MAX_SLEEP_MINUTES, MIN_SLEEP_MINUTES } from '../src/shared/session/sleepSettings'
 import { SIDEBAR_COLUMN_WIDTH } from '../src/shared/shell/shellState'
-import { autofillBridgeName, autofillFillFunction, autofillPickerEnterFlag, detectionScript } from '../src/shared/vault/autofillScript'
+import { autofillBridgeName, autofillFillFunction, autofillLoginFieldsFunction, autofillPickerEnterFlag, autofillPutLoginFunction, detectionScript } from '../src/shared/vault/autofillScript'
 
 export type SettingRule =
 	| { readonly type: 'enum'; readonly values: readonly string[] }
@@ -151,7 +151,7 @@ export function hostDefaults(): Record<string, unknown> {
 		'search-engines.json': SEARCH_URLS,
 		'tracker-domains.json': TRACKER_DOMAINS,
 		'viewable.json': { native: nativeTypes, ...viewableLists },
-		'autofill.json': { detectionScript, messageKey: autofillBridgeName, fillFunction: autofillFillFunction, pickerEnterFlag: autofillPickerEnterFlag },
+		'autofill.json': { detectionScript, messageKey: autofillBridgeName, fillFunction: autofillFillFunction, loginFieldsFunction: autofillLoginFieldsFunction, putLoginFunction: autofillPutLoginFunction, pickerEnterFlag: autofillPickerEnterFlag },
 		'layout.json': { ...CHROME_LAYOUT, sidebarColumnWidth: SIDEBAR_COLUMN_WIDTH, libraryPanelWidth: LIBRARY_PANEL_WIDTH, verticalTabs: VERTICAL_TABS },
 	}
 }
