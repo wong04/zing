@@ -188,6 +188,14 @@ public sealed class AiToolsTests : IDisposable
 	}
 
 	[Fact]
+	public async Task DisabledRefusesEveryTool()
+	{
+		_tools.Enabled = false;
+		foreach (var tool in _tools.List())
+			Assert.Equal(AiErrors.Disabled, CodeOf(await _tools.Call(tool.Name, Args(("tab", _aiId), ("ref", "e1"), ("url", "https://example.com/")))));
+	}
+
+	[Fact]
 	public async Task ListTabsShowsOnlyAiIds()
 	{
 		var result = await _tools.Call("list_tabs", []);

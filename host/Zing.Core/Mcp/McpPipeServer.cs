@@ -12,7 +12,7 @@ namespace Zing.Core.Mcp;
 /// message to the UI thread. <paramref name="report"/> gets bugs, <paramref name="warn"/> clients that went away.
 /// </summary>
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-public sealed class McpPipeServer(string name, Func<string, Task<string?>> handle, Action<Exception> report, Action<Exception> warn)
+public sealed class McpPipeServer(string name, Func<string, Task<string?>> handle, Action<Exception> report, Action<Exception> warn) : IMcpListener
 {
 	private readonly CancellationTokenSource _stop = new();
 	private readonly List<NamedPipeServerStream> _open = [];
@@ -99,14 +99,19 @@ public sealed class McpPipeServer(string name, Func<string, Task<string?>> handl
 	{
 		try
 		{
-			using var reader = new StreamReader(pipe, new UTF8Encoding(false), detectEncodingFromByteOrderMarks: false, leaveOpen: true);
 			using var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { NewLine = "\n" };
-			while (await reader.ReadLineAsync(_stop.Token).ConfigureAwait(false) is { } line)
+			var lines = new LineReader(pipe, McpHttpServer.MaxBody);
+			while (await lines.Next(_stop.Token).ConfigureAwait(false) is { } line)
 			{
 				if (line.Length == 0) continue;
 				var reply = await handle(line).ConfigureAwait(false);
 				if (reply is null) continue;
 				await writer.WriteLineAsync(reply.AsMemory(), _stop.Token).ConfigureAwait(false);
+				await writer.FlushAsync(_stop.Token).ConfigureAwait(false);
+			}
+			if (lines.TooLong)
+			{
+				await writer.WriteLineAsync(McpText.TooLong.AsMemory(), _stop.Token).ConfigureAwait(false);
 				await writer.FlushAsync(_stop.Token).ConfigureAwait(false);
 			}
 		}

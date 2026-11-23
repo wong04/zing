@@ -61,4 +61,15 @@ public sealed class McpHttpSessionsTests
 	[Fact]
 	public void BodyThatIsNotJsonNeedsASessionLikeAnyOther() =>
 		Assert.Equal(McpHttpSessions.Verdict.BadRequest, new McpHttpSessions().Admit("POST", null, "{not json").Verdict);
+
+	[Fact]
+	public void TooManySessionsEvictTheOldest()
+	{
+		var sessions = new McpHttpSessions();
+		var first = sessions.Admit("POST", null, Initialize).NewSession!;
+		var second = sessions.Admit("POST", null, Initialize).NewSession!;
+		for (var i = 0; i < McpHttpSessions.MaxSessions - 1; i++) sessions.Admit("POST", null, Initialize);
+		Assert.Equal(McpHttpSessions.Verdict.NotFound, sessions.Admit("POST", first, ToolsList).Verdict);
+		Assert.Equal(McpHttpSessions.Verdict.Handle, sessions.Admit("POST", second, ToolsList).Verdict);
+	}
 }

@@ -8,12 +8,12 @@ namespace Zing.Core.Mcp;
 /// <c>application/json</c> (no SSE). Requests are served on the listener's threads; <paramref name="handle"/> takes each
 /// message to the UI thread. <paramref name="report"/> gets bugs, <paramref name="warn"/> clients that went away mid-reply.
 /// </summary>
-public sealed class McpHttpServer(int port, Func<byte[]> token, McpHttpSessions sessions, Func<string, Task<string?>> handle, Action<Exception> report, Action<Exception> warn)
+public sealed class McpHttpServer(int port, Func<byte[]> token, McpHttpSessions sessions, Func<string, Task<string?>> handle, Action<Exception> report, Action<Exception> warn) : IMcpListener
 {
 	public const string SessionHeader = "Mcp-Session-Id";
 
 	/// <summary>Far more than any tool call's arguments; a bigger body is refused before it is read in full.</summary>
-	private const int MaxBody = 1024 * 1024;
+	public const int MaxBody = 1024 * 1024;
 
 	private readonly HttpListener _listener = new();
 	// Set before the listener closes: a pending accept can fail with "aborted" while Close is still under way.
@@ -23,7 +23,15 @@ public sealed class McpHttpServer(int port, Func<byte[]> token, McpHttpSessions 
 	public void Start()
 	{
 		_listener.Prefixes.Add($"http://127.0.0.1:{port}/mcp/");
-		_listener.Start();
+		try
+		{
+			_listener.Start();
+		}
+		catch (HttpListenerException)
+		{
+			_listener.Close();
+			throw;
+		}
 		_ = Task.Run(Accept);
 	}
 

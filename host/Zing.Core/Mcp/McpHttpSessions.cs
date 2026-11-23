@@ -17,7 +17,11 @@ public sealed class McpHttpSessions
 	/// <summary><see cref="NewSession"/> is set when the request is an <c>initialize</c>: the response carries it.</summary>
 	public readonly record struct Admission(Verdict Verdict, string? NewSession = null);
 
-	private readonly ConcurrentDictionary<string, byte> _live = new(StringComparer.Ordinal);
+	/// <summary>Beyond this an initialize evicts the oldest session, so repeated initializes can't grow the set without limit.</summary>
+	public const int MaxSessions = 32;
+
+	private readonly ConcurrentDictionary<string, long> _live = new(StringComparer.Ordinal);
+	private long _opened;
 
 	public Admission Admit(string httpMethod, string? sessionId, string body)
 	{
@@ -33,7 +37,8 @@ public sealed class McpHttpSessions
 		if (IsInitialize(body))
 		{
 			var id = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-			_live[id] = 0;
+			_live[id] = Interlocked.Increment(ref _opened);
+			while (_live.Count > MaxSessions) _live.TryRemove(_live.MinBy(p => p.Value).Key, out _);
 			return new(Verdict.Handle, id);
 		}
 		if (sessionId is null) return new(Verdict.BadRequest);

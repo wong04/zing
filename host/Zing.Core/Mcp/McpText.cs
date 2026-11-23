@@ -10,6 +10,9 @@ public static class McpText
 	private const int InvalidRequest = -32600;
 	private const int InternalError = -32603;
 
+	/// <summary>The reply to a message past the size limit; the connection then ends, since the rest of it can't be framed.</summary>
+	public static readonly string TooLong = Error(null, ParseError, "Message too long.");
+
 	/// <summary>
 	/// Null for a notification. An exception out of <paramref name="handle"/> is a bug: it goes to <paramref name="report"/>
 	/// and the client gets an internal error without its message, which may name what the person browsed.

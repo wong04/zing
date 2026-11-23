@@ -161,4 +161,47 @@ public sealed class McpServersTests : IDisposable
 	[Fact]
 	public void PipeNameFollowsTheProfileKey() =>
 		Assert.Matches(@"^zing-mcp-Zing-ABC-\d+$", McpPipeServer.Name("Zing-ABC"));
+
+	[Fact]
+	public async Task APipeLinePastTheLimitIsAParseErrorAndEndsTheConnection()
+	{
+		var name = "zing-mcp-test-" + Guid.NewGuid().ToString("N");
+		var pipe = new McpPipeServer(name, Echo, _reported.Add, _ => { });
+		pipe.Start();
+		try
+		{
+			await using var client = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+			await client.ConnectAsync(5000, Ct);
+			using var reader = new StreamReader(client, leaveOpen: true);
+			var huge = Encoding.UTF8.GetBytes(new string('x', McpHttpServer.MaxBody + 1) + "\n");
+			try
+			{
+				await client.WriteAsync(huge, Ct);
+			}
+			catch (IOException)
+			{
+				// The server may hang up before the whole line is written.
+			}
+			Assert.Contains("-32700", await reader.ReadLineAsync(Ct));
+			Assert.Null(await reader.ReadLineAsync(Ct));
+		}
+		finally
+		{
+			pipe.Stop();
+		}
+	}
+
+	[Fact]
+	public void ATakenPortThrowsFromStart() =>
+		Assert.Throws<HttpListenerException>(() => new McpHttpServer(_port, () => _token, _sessions, Echo, _reported.Add, _ => { }).Start());
+
+	[Fact]
+	public async Task LinesAreSplitAndCappedInBytes()
+	{
+		var lines = new LineReader(new MemoryStream(Encoding.UTF8.GetBytes("ab\r\ncd\n12345\n")), 4);
+		Assert.Equal("ab", await lines.Next(Ct));
+		Assert.Equal("cd", await lines.Next(Ct));
+		Assert.Null(await lines.Next(Ct));
+		Assert.True(lines.TooLong);
+	}
 }

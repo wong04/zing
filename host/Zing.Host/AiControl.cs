@@ -12,8 +12,6 @@ public sealed class AiControl
 {
 	private readonly AiEndpoint _endpoint;
 	private readonly McpJsonRpc _rpc;
-	private readonly string _pipeName;
-	private int? _port;
 
 	public AiControl(DispatcherQueue dispatcher, IScheduler scheduler, SitePolicy policy, AiToken token, string version, string pipeName)
 	{
@@ -23,8 +21,8 @@ public sealed class AiControl
 		Token = token;
 		Tools = new AiTools(new NoPageDriver(), Shares, policy, Gate, scheduler);
 		_rpc = new McpJsonRpc(Tools, version);
-		_endpoint = new AiEndpoint(dispatcher, token);
-		_pipeName = pipeName;
+		// Stop() turns Tools off first, so a request already queued to the UI thread answers Disabled and runs nothing.
+		_endpoint = new AiEndpoint(dispatcher, token, pipeName, message => McpText.Handle(_rpc.Handle, message, error => TestHooks.Record("ai request", error)));
 	}
 
 	public AiShares Shares { get; }
@@ -45,16 +43,13 @@ public sealed class AiControl
 			return;
 		}
 		Tools.Enabled = true;
-		if (_endpoint.Running && _port == port) return;
-		_port = port;
-		_endpoint.Start(port, _pipeName, message => McpText.Handle(_rpc.Handle, message, error => TestHooks.Record("ai request", error)));
+		_endpoint.Start(port);
 	}
 
 	public void Stop()
 	{
 		Tools.Enabled = false;
 		_endpoint.Stop();
-		_port = null;
 		Shares.UnshareAll();
 	}
 }

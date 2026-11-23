@@ -1,4 +1,3 @@
-using System.Net;
 using Microsoft.UI.Dispatching;
 using Zing.Core;
 using Zing.Core.Mcp;
@@ -12,74 +11,38 @@ namespace Zing.Host;
 public sealed class AiEndpoint
 {
 	private readonly DispatcherQueue _dispatcher;
-	private readonly AiToken _token;
 	private readonly McpHttpSessions _sessions = new();
-	private McpHttpServer? _http;
-	private McpPipeServer? _pipe;
-	// Read on the listener's threads; replaced on the UI thread when the token is regenerated.
+	private readonly McpEndpoint _listeners;
+	// Read on the listener's threads; replaced on the UI thread when HTTP starts or the token is regenerated.
 	private volatile byte[] _current = [];
 
-	public AiEndpoint(DispatcherQueue dispatcher, AiToken token)
+	public AiEndpoint(DispatcherQueue dispatcher, AiToken token, string pipeName, Func<string, Task<string?>> handleOnUiThread)
 	{
 		_dispatcher = dispatcher;
-		_token = token;
-		token.Regenerated += () =>
+		Task<string?> Handle(string message) => OnUiThread(handleOnUiThread, message);
+		_listeners = new McpEndpoint(port =>
 		{
 			_current = token.Current();
+			return new McpHttpServer(port, () => _current, _sessions, Handle, e => TestHooks.Record("ai http", e), e => Faults.Warning("ai http client", e));
+		}, () => new McpPipeServer(pipeName, Handle, e => TestHooks.Record("ai pipe", e), e => Faults.Warning("ai pipe client", e)), Faults.Warning);
+		token.Regenerated += () =>
+		{
 			_sessions.DropAll();
+			if (_listeners.HttpRunning) _current = token.Current();
+			else _listeners.TokenChanged();
 		};
 	}
 
-	/// <summary>Why the last start couldn't serve everything (a port in use, a pipe name taken), for Settings; null when it all started.</summary>
-	public string? LastError { get; private set; }
+	/// <summary>Why a listener couldn't start (a port in use, a pipe name taken), for Settings; null when both run.</summary>
+	public string? LastError => _listeners.LastError;
 
-	public bool Running => _http is not null || _pipe is not null;
-
-	/// <summary>On the UI thread. Never throws: what couldn't start is in <see cref="LastError"/> and the rest runs.</summary>
-	public void Start(int port, string pipeName, Func<string, Task<string?>> handleOnUiThread)
-	{
-		Stop();
-		var problems = new List<string>();
-		Task<string?> Handle(string message) => OnUiThread(handleOnUiThread, message);
-		try
-		{
-			_current = _token.Current();
-			var http = new McpHttpServer(port, () => _current, _sessions, Handle, e => TestHooks.Record("ai http", e), e => Faults.Warning("ai http client", e));
-			http.Start();
-			_http = http;
-		}
-		catch (HttpListenerException error)
-		{
-			Faults.Warning("ai http start", error);
-			problems.Add($"Port {port} is in use, so AI tools can't connect over HTTP. Choose another port.");
-		}
-		catch (System.Security.Cryptography.CryptographicException error)
-		{
-			Faults.Warning("ai token", error);
-			problems.Add("Zing couldn't open its AI token. Regenerate it to connect over HTTP.");
-		}
-		try
-		{
-			var pipe = new McpPipeServer(pipeName, Handle, e => TestHooks.Record("ai pipe", e), e => Faults.Warning("ai pipe client", e));
-			pipe.Start();
-			_pipe = pipe;
-		}
-		catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-		{
-			Faults.Warning("ai pipe start", error);
-			problems.Add("Another program holds Zing's AI pipe, so the Claude desktop app can't connect.");
-		}
-		LastError = problems.Count == 0 ? null : string.Join(" ", problems);
-	}
+	/// <summary>On the UI thread. Never throws; starts whichever listener isn't running, so it also retries a failed one.</summary>
+	public void Start(int port) => _listeners.Ensure(port);
 
 	public void Stop()
 	{
-		_http?.Stop();
-		_http = null;
-		_pipe?.Stop();
-		_pipe = null;
+		_listeners.Stop();
 		_sessions.DropAll();
-		LastError = null;
 	}
 
 	private Task<string?> OnUiThread(Func<string, Task<string?>> handle, string message)
