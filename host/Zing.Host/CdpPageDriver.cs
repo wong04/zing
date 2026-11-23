@@ -191,7 +191,12 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		try
 		{
 			using (await CallAsync(tab, page, "Fetch.enable", new { patterns = new[] { RequestPattern, ResponsePattern } })) { }
-			using (await CallAsync(tab, page, "Page.navigate", new { url = url.AbsoluteUri })) { }
+			using (var navigated = await CallAsync(tab, page, "Page.navigate", new { url = url.AbsoluteUri }))
+			{
+				// Cancelled before any response (ThreatGate, the relay, the owner's own navigation): nothing to download.
+				if (navigated.RootElement.TryGetProperty("errorText", out var error) && _forcing.TryGetValue(page, out var waiting) && ReferenceEquals(waiting, started))
+					started.TrySetException(new AiToolException(AiErrors.Unsupported, $"The download didn't start: {error.GetString()}."));
+			}
 			await LimitAsync(tab, page, started.Task, "download");
 		}
 		finally
@@ -201,50 +206,85 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		}
 	}
 
-	private const string FillGroup = "zing-ai-fill";
-
-	/// <summary>fill_login: the vault's AI fill (Autofill.FillForAi) on the page's sign-in fields, found and filled through DevTools.</summary>
+	/// <summary>
+	/// fill_login: the vault's AI fill (Autofill.FillForAi). The fields are found and filled in an isolated world of the top
+	/// document, so no page script can replace what finds or fills them; only the nodes found there are filled, and masked.
+	/// Before the values go in, the tab must still be shared and on the origin they were chosen for.
+	/// </summary>
 	public async Task<(FillResult Result, IReadOnlySet<long> FilledNodes)> FillLogin(TabRef tab)
 	{
 		var page = await PageAsync(tab);
 		var autofill = windowOf(tab.WindowId)?.Api?.Autofill ?? throw new TabGoneException(tab);
-		string? fields = null;
-		var nodes = new HashSet<long>();
-		try
+		long? username = null, password = null;
+		return await autofill.FillForAi(tab.TabId, page, async () =>
 		{
-			return await autofill.FillForAi(tab.TabId, page, async () =>
+			var world = await IsolatedWorldAsync(tab, page);
+			using (var found = await CallAsync(tab, page, "Runtime.evaluate", new { expression = AutofillScripts.AiLoginFields, contextId = world }))
 			{
-				using (var found = await CallAsync(tab, page, "Runtime.evaluate", new { expression = AutofillScripts.LoginFields, objectGroup = FillGroup }))
-				{
-					if (!found.RootElement.GetProperty("result").TryGetProperty("objectId", out var array)) throw new AiToolException(AiErrors.Unsupported, "There is no sign-in form on the page.");
-					fields = array.GetString()!;
-				}
-				var username = await ElementAsync(tab, page, fields, 0);
-				var password = await ElementAsync(tab, page, fields, 1);
-				if (username is { } u) nodes.Add(u);
-				if (password is { } p) nodes.Add(p);
-				var shown = (password ?? username)!.Value;
-				using (await CallAsync(tab, page, "DOM.scrollIntoViewIfNeeded", new { backendNodeId = shown })) { }
-				if (await BoxAsync(tab, page, shown) is not { } box) return null;
-				return page.FieldInWindow(new CredentialField(password is null ? CredentialFieldKind.Username : CredentialFieldKind.Password, new Rect(box.X, box.Y, box.Width, box.Height), default));
-			}, async (origin, username, password) =>
-			{
-				EnsureCurrent(tab, page);
-				using var done = await CallAsync(tab, page, "Runtime.callFunctionOn", new { objectId = fields, functionDeclaration = AutofillScripts.PutLogin, arguments = new[] { new { value = origin }, new { value = username }, new { value = password } }, returnByValue = true });
-				return done.RootElement.GetProperty("result").TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.True ? nodes : new HashSet<long>();
-			});
-		}
-		finally
+				if (!found.RootElement.GetProperty("result").TryGetProperty("objectId", out var array)) return null;
+				username = await ElementAsync(tab, page, array.GetString()!, 0);
+				password = await ElementAsync(tab, page, array.GetString()!, 1);
+			}
+			if ((password ?? username) is not { } shown) return null;
+			using (await CallAsync(tab, page, "DOM.scrollIntoViewIfNeeded", new { backendNodeId = shown })) { }
+			if (await BoxAsync(tab, page, shown) is not { } box) return new LoginForm(null);
+			return new LoginForm(page.FieldInWindow(new CredentialField(password is null ? CredentialFieldKind.Username : CredentialFieldKind.Password, new Rect(box.X, box.Y, box.Width, box.Height), default)));
+		}, async (origin, user, secret) =>
 		{
-			await ExpectingGoneAsync(tab, page, "Runtime.releaseObjectGroup", new { objectGroup = FillGroup });
-		}
+			var filled = new HashSet<long>();
+			if (!MayFill(tab, page, origin)) return filled;
+			var world = await IsolatedWorldAsync(tab, page);
+			foreach (var (node, value) in new[] { (username, user), (password, secret) })
+			{
+				if (node is not { } n) continue;
+				// Checked again before each value: the tab may have been unshared, or left, while the last one went in.
+				if (!MayFill(tab, page, origin)) return filled;
+				if (await PutAsync(tab, page, world, n, origin, value)) filled.Add(n);
+			}
+			return filled;
+		});
 	}
 
-	/// <summary>The backend node of item <paramref name="index"/> of the page array <paramref name="array"/>; null when it holds none.</summary>
+	/// <summary>The tab is still this page, shared with AI, and on <paramref name="origin"/>.</summary>
+	private bool MayFill(TabRef tab, WebView2Page page, string origin)
+	{
+		if (!page.IsOpen || !TabsOf(tab).Has(tab.TabId) || TabsOf(tab).PageOf(tab.TabId) != page || !shares.IsShared(tab)) return false;
+		return Uri.TryCreate(page.Url, UriKind.Absolute, out var now) && (now.Scheme == Uri.UriSchemeHttp || now.Scheme == Uri.UriSchemeHttps) && VaultModel.OriginOf(now.AbsoluteUri) == origin;
+	}
+
+	/// <summary>A new isolated world in the page's main frame: its globals are its own, never the page's.</summary>
+	private async Task<long> IsolatedWorldAsync(TabRef tab, WebView2Page page)
+	{
+		string frame;
+		using (var tree = await CallAsync(tab, page, "Page.getFrameTree", new { }))
+			frame = tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("id").GetString()!;
+		using var world = await CallAsync(tab, page, "Page.createIsolatedWorld", new { frameId = frame, worldName = "zing-ai-fill", grantUniveralAccess = false });
+		return world.RootElement.GetProperty("executionContextId").GetInt64();
+	}
+
+	/// <summary>Puts <paramref name="value"/> into the node from the isolated world <paramref name="world"/>; whether it went in.</summary>
+	private async Task<bool> PutAsync(TabRef tab, WebView2Page page, long world, long node, string origin, string value)
+	{
+		string element;
+		try
+		{
+			using var resolved = await CallAsync(tab, page, "DOM.resolveNode", new { backendNodeId = node, executionContextId = world });
+			element = resolved.RootElement.GetProperty("object").GetProperty("objectId").GetString()!;
+		}
+		catch (Exception error) when (error.HResult == InvalidArgument)
+		{
+			// The field left the page meanwhile.
+			return false;
+		}
+		using var done = await CallAsync(tab, page, "Runtime.callFunctionOn", new { objectId = element, functionDeclaration = AutofillScripts.AiPutValue, arguments = new[] { new { value = origin }, new { value } }, returnByValue = true });
+		return done.RootElement.GetProperty("result").TryGetProperty("value", out var put) && put.ValueKind == JsonValueKind.True;
+	}
+
+	/// <summary>The backend node of item <paramref name="index"/> of the isolated world's array <paramref name="array"/>; null when it holds none.</summary>
 	private async Task<long?> ElementAsync(TabRef tab, WebView2Page page, string array, int index)
 	{
 		string element;
-		using (var item = await CallAsync(tab, page, "Runtime.callFunctionOn", new { objectId = array, functionDeclaration = "function (i) { return this[i] }", arguments = new[] { new { value = index } }, objectGroup = FillGroup }))
+		using (var item = await CallAsync(tab, page, "Runtime.callFunctionOn", new { objectId = array, functionDeclaration = "function (i) { return this[i] }", arguments = new[] { new { value = index } } }))
 		{
 			if (!item.RootElement.GetProperty("result").TryGetProperty("objectId", out var id)) return null;
 			element = id.GetString()!;
@@ -562,8 +602,9 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		_forcing.Remove(page);
 		if (root.TryGetProperty("responseErrorReason", out var error) || status >= 400)
 		{
+			// Aborted, so the owner's tab stays on its page rather than showing the error.
 			started.TrySetException(new AiToolException(AiErrors.Unsupported, error.ValueKind == JsonValueKind.String ? $"The download failed: {error.GetString()}." : $"The server answered {status}."));
-			TestHooks.Background(ExpectingGoneAsync(tab, page, "Fetch.continueRequest", new { requestId }), "ai download");
+			TestHooks.Background(ExpectingGoneAsync(tab, page, "Fetch.failRequest", new { requestId, errorReason = "Aborted" }), "ai download");
 			return;
 		}
 		var headers = root.TryGetProperty("responseHeaders", out var list) ? list.EnumerateArray().Select(h => (Name: h.GetProperty("name").GetString()!, Value: h.GetProperty("value").GetString()!)).ToList() : [];

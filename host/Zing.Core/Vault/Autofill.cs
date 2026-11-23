@@ -176,17 +176,20 @@ public static class AutofillScripts
 	public static string Fill(string origin, string username, string password) =>
 		$"location.origin === {JsonSerializer.Serialize(origin)} && window.{Value("fillFunction")}({JsonSerializer.Serialize(username)}, {JsonSerializer.Serialize(password)})";
 
-	/// <summary>fill_login's: evaluates to the top document's [username, password] sign-in fields (either may be null), or null.</summary>
-	public static string LoginFields => $"typeof window.{Value("loginFieldsFunction")} === 'function' ? window.{Value("loginFieldsFunction")}() : null";
-
 	/// <summary>
-	/// fill_login's, called on what <see cref="LoginFields"/> gave with (origin, username, password): fills them only while the
-	/// document is still on the origin, and evaluates to whether it did.
+	/// fill_login's, for an isolated world of the top document (no page script can replace it): evaluates to the
+	/// [username, password] sign-in fields (either may be null), or null when there are none.
 	/// </summary>
-	public static string PutLogin => $"function (origin, username, password) {{ return location.origin === origin && window.{Value("putLoginFunction")}(this, username, password) }}";
+	public static string AiLoginFields => Value("aiLoginFields");
+
+	/// <summary>fill_login's, called in that world on one field with (origin, value): fills it only while the document is on the origin, and answers whether it did.</summary>
+	public static string AiPutValue => Value("aiPutValue");
 }
 
 public sealed record PickerEntry(string Id, string Username);
+
+/// <summary>A sign-in form fill_login found; <paramref name="PickerAt"/> is the field the picker goes under, null when it isn't on screen.</summary>
+public sealed record LoginForm(CredentialField? PickerAt);
 
 /// <summary>
 /// Pushed as pageui:account-picker. Usernames only: the picker never shows a password, and the page never sees any of it.
@@ -389,20 +392,21 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 
 	/// <summary>
 	/// fill_login: fills the login saved for the page's exact origin, after Windows Hello. One login is filled; with more,
-	/// the owner chooses in the picker, put at <paramref name="locate"/>'s field (closing it is Denied). The AI learns only the
-	/// result: never a username, a password, another origin or how many logins there are. <paramref name="locate"/> finds the
-	/// page's sign-in fields (the field the picker goes under; null when it isn't on screen) and <paramref name="fill"/> fills
-	/// them with (origin, username, password), giving the nodes it filled.
+	/// the owner chooses in the picker, put at the form's field (closing it, or a tab not on screen, is Denied). The AI learns
+	/// only Filled, Denied or NoSavedLogin: never a username, a password, another origin or how many logins there are; a page
+	/// with no sign-in form is Denied before any login is looked up. <paramref name="locate"/> finds the page's sign-in form
+	/// (null for none) and <paramref name="fill"/> fills it with (origin, username, password), giving the nodes it filled; it
+	/// checks once more that it may, and gives none when it may not.
 	/// </summary>
-	public async Task<(FillResult Result, IReadOnlySet<long> FilledNodes)> FillForAi(string pageId, IPage page, Func<Task<CredentialField?>> locate, Func<string, string, string, Task<IReadOnlySet<long>>> fill)
+	public async Task<(FillResult Result, IReadOnlySet<long> FilledNodes)> FillForAi(string pageId, IPage page, Func<Task<LoginForm?>> locate, Func<string, string, string, Task<IReadOnlySet<long>>> fill)
 	{
 		var denied = (FillResult.Denied, (IReadOnlySet<long>)new HashSet<long>());
 		if (vault() is not { } store || !Uri.TryCreate(page.Url, UriKind.Absolute, out var top) || !IsWeb(top)) return denied;
 		var origin = VaultModel.OriginOf(top.AbsoluteUri);
+		if (await locate() is not { } form) return denied;
 		var logins = VaultModel.EntriesFor(store.Summaries(), new FillContext(top.AbsoluteUri, top.AbsoluteUri));
 		if (logins.Count == 0) return (FillResult.NoSavedLogin, new HashSet<long>());
-		var field = await locate();
-		var id = logins.Count == 1 ? logins[0].Id : await AskOwnerAsync(pageId, page, origin, field, logins);
+		var id = logins.Count == 1 ? logins[0].Id : await AskOwnerAsync(pageId, page, origin, form.PickerAt, logins);
 		if (id is null) return denied;
 		string password;
 		try

@@ -775,12 +775,50 @@ public sealed class AutofillTests : IDisposable
 
 	private static readonly IReadOnlySet<long> AiFields = new HashSet<long> { 11, 12 };
 
-	private Task<(Zing.Core.Mcp.FillResult Result, IReadOnlySet<long> FilledNodes)> FillForAi(CredentialField? field = null) =>
-		_api.Autofill.FillForAi(TabId, Page, () => Task.FromResult<CredentialField?>(field ?? new CredentialField(CredentialFieldKind.Password, FieldRect, Viewport)), (origin, username, password) =>
+	private static readonly LoginForm AForm = new(new CredentialField(CredentialFieldKind.Password, FieldRect, Viewport));
+
+	/// <summary>What the host's fill says: false once the tab was unshared or left meanwhile.</summary>
+	private bool _mayFill = true;
+
+	private Task<(Zing.Core.Mcp.FillResult Result, IReadOnlySet<long> FilledNodes)> FillForAi(LoginForm? form = null, bool noForm = false) =>
+		_api.Autofill.FillForAi(TabId, Page, () => Task.FromResult(noForm ? null : form ?? AForm), (origin, username, password) =>
 		{
+			if (!_mayFill) return Task.FromResult<IReadOnlySet<long>>(new HashSet<long>());
 			_aiFills.Add((origin, username, password));
 			return Task.FromResult(AiFields);
 		});
+
+	[Fact]
+	public async Task FillLoginOnAPageWithNoSignInFormIsDeniedWhetherOrNotALoginIsSaved()
+	{
+		OnPage($"{Site}/login");
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, (await FillForAi(noForm: true)).Result);
+		await Save(Site, "ada");
+		var unseals = _sealer.Unseals;
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, (await FillForAi(noForm: true)).Result);
+		Assert.Equal(unseals, _sealer.Unseals);
+		Assert.Empty(_aiFills);
+	}
+
+	[Fact]
+	public async Task FillLoginWithTwoLoginsAndThePickerFieldOffScreenIsDenied()
+	{
+		await Save(Site, "ada");
+		await Save(Site, "bob");
+		OnPage($"{Site}/login");
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, (await FillForAi(new LoginForm(null))).Result);
+		Assert.Null(Picker);
+	}
+
+	[Fact]
+	public async Task FillLoginIsDeniedWhenTheHostsFillMayNoLongerFill()
+	{
+		await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		_mayFill = false;
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, (await FillForAi()).Result);
+		Assert.Empty(_aiFills);
+	}
 
 	[Fact]
 	public async Task FillLoginWithOneLoginFillsAfterHello()

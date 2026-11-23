@@ -40,6 +40,12 @@ test.beforeAll(async () => {
 			})
 			return
 		}
+		if (req.url === '/missing.pdf') {
+			res.statusCode = 404
+			res.setHeader('content-type', 'text/html')
+			res.end('<!doctype html><title>Not found</title><p>Not found')
+			return
+		}
 		if (req.url === '/doc.pdf') {
 			res.setHeader('content-type', 'application/pdf')
 			res.end(PDF)
@@ -256,16 +262,16 @@ function vaultProfile(): string {
 	return dir
 }
 
-const hello = (zing: Launched, result: 'pass' | 'cancel'): Promise<void> =>
+const hello = (zing: Launched, result: 'pass' | 'cancel' | 'hold'): Promise<void> =>
 	zing.chrome.evaluate((r) => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'vault-hello', result: r }), result)
 
 async function saveLogin(zing: Launched, username: string, password: string): Promise<void> {
 	await zing.chrome.evaluate((login) => window.zing.saveLogin(login), { origin: `${base}/login`, username, password, title: '', note: '' })
 }
 
-async function loginTab(zing: Launched, mcp: McpClient): Promise<{ id: string; tab: string; page: Page }> {
-	const shared = await sharedTab(zing.chrome, mcp, '/login')
-	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/login`)
+async function loginTab(zing: Launched, mcp: McpClient, path = '/login'): Promise<{ id: string; tab: string; page: Page }> {
+	const shared = await sharedTab(zing.chrome, mcp, path)
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}${path}`)
 	await page.waitForLoadState('load')
 	return { ...shared, page }
 }
@@ -398,5 +404,63 @@ test('a show-password toggle after fill still masks snapshot and screenshot', as
 	// The button beside it isn't masked: the check above would catch a shot that is black for another reason.
 	const button = await mcp.call('screenshot', { tab, ref: await refOf(mcp, tab, /button "Show password"/) })
 	expect(allBlack(Buffer.from(button.content[0]!.data!, 'base64'))).toBe(false)
+	await zing.close()
+})
+
+test('a download the server answers 404 fails and leaves the tab on its page', async () => {
+	const zing = await launchZing()
+	const mcp = await connectMcp(zing.chrome)
+	const { tab } = await sharedTab(zing.chrome, mcp, '/overlay')
+	const result = await mcp.call('download', { tab, url: `${base}/missing.pdf` })
+	expect(result.isError).toBe(true)
+	expect(result.content[0]?.text).toContain('404')
+	await settle()
+	const page = await pageWhere(zing.browser, (p) => p.url().startsWith(base))
+	expect(page.url()).toBe(`${base}/overlay`)
+	await expect(page).toHaveTitle('overlay')
+	expect(textOf(await mcp.call('list_tabs'))).toContain(`${base}/overlay`)
+	expect(existsSync(join(zing.userDataDir, 'downloads', 'missing.pdf'))).toBe(false)
+	await zing.close()
+})
+
+test('fill_login on a page with no sign-in form is Denied, with or without a saved login', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile() })
+	await hello(zing, 'pass')
+	const mcp = await connectMcp(zing.chrome)
+	const { tab } = await loginTab(zing, mcp, '/no-form')
+	expect((await mcp.call('fill_login', { tab })).structuredContent?.code).toBe('Denied')
+	await saveLogin(zing, USERNAME, PASSWORD)
+	expect((await mcp.call('fill_login', { tab })).structuredContent?.code).toBe('Denied')
+	await zing.close()
+})
+
+test('unsharing the tab while Hello is up fills nothing', async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile() })
+	await hello(zing, 'pass')
+	await saveLogin(zing, USERNAME, PASSWORD)
+	const mcp = await connectMcp(zing.chrome)
+	const { id, tab, page } = await loginTab(zing, mcp)
+	await hello(zing, 'hold')
+	const filling = mcp.call('fill_login', { tab })
+	await settle()
+	await zing.chrome.evaluate((t) => window.zing.stopAi(t), id)
+	await hello(zing, 'pass')
+	expect((await filling).isError).toBe(true)
+	await settle()
+	await expect(page.locator('#user')).toHaveValue('')
+	await expect(page.locator('#pass')).toHaveValue('')
+	await zing.close()
+})
+
+test("a page's own value setter never sees the filled login", async () => {
+	const zing = await launchZing({ userDataDir: vaultProfile() })
+	await hello(zing, 'pass')
+	await saveLogin(zing, USERNAME, PASSWORD)
+	const mcp = await connectMcp(zing.chrome)
+	const { tab, page } = await loginTab(zing, mcp, '/sneaky-login')
+	expect(textOf(await mcp.call('fill_login', { tab }))).toBe('Filled')
+	await expect(page.locator('#pass')).toHaveValue(PASSWORD)
+	await expect(page.locator('#leak')).toHaveText('')
+	expect(textOf(await mcp.call('snapshot', { tab }))).not.toContain(PASSWORD)
 	await zing.close()
 })

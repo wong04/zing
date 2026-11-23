@@ -462,7 +462,7 @@ public sealed class AiTools
 			Def("wait_for", "Waits until text appears on the page or a ref is in the page.", ["text", "ref", "timeout"], ("tab", tab), ("ref", reference),
 				("text", Prop("string", "Text to wait for.")), ("timeout", Prop("integer", $"Seconds, at most {MaxWaitSeconds}; default {DefaultWaitSeconds}."))),
 			Def("download", "Downloads a URL or a link's target into the owner's Downloads.", ["url", "ref"], ("tab", tab), ("url", url), ("ref", reference)),
-			Def("fill_login", "Asks Zing to fill the tab's login form from the owner's vault. Returns only Filled.", [], ("tab", tab)),
+			Def("fill_login", "Asks Zing to fill the tab's login form from the owner's vault, after Windows Hello. Answers only Filled, Denied or NoSavedLogin. With several saved logins the owner picks one in Zing, which needs the tab on screen: on a hidden tab the answer is Denied.", [], ("tab", tab)),
 		];
 	}
 

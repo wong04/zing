@@ -17,8 +17,6 @@ export const autofillBridgeName = 'zingCredentialField'
 /** Page globals the scripts share. */
 const target = '__zingAutofillTarget'
 const fill = '__zingAutofillFill'
-const loginFields = '__zingAutofillLoginFields'
-const putLogin = '__zingAutofillPutLogin'
 const installed = '__zingAutofillInstalled'
 const enterInstalled = '__zingPickerEnterInstalled'
 
@@ -32,9 +30,60 @@ export const autofillPickerEnterFlag = '__zingPickerEnter'
 /** The page function `fillScript` calls; the host builds the same call (Defaults/autofill.json). */
 export const autofillFillFunction = fill
 
-/** The page functions the AI's fill_login uses (Defaults/autofill.json): find the sign-in fields, then fill them. */
-export const autofillLoginFieldsFunction = loginFields
-export const autofillPutLoginFunction = putLogin
+/** Whether an input is a sign-in field, and which half; shared by the detection script and fill_login's. */
+const kindSource = `el => {
+    if (!el || el.tagName !== 'INPUT' || el.disabled || el.readOnly) return null;
+    const type = (el.type || '').toLowerCase();
+    const ac = (el.autocomplete || '').toLowerCase();
+    if (type === 'password') return 'password';
+    if (ac.includes('username') || ac === 'email' || type === 'email') return 'username';
+    const hint = ((el.name || '') + ' ' + (el.id || '') + ' ' + (el.getAttribute('aria-label') || '')
+                  + ' ' + (el.placeholder || '')).toLowerCase();
+    if ((type === 'text' || type === '' || type === 'tel') && /${usernameHint.source}/.test(hint)) return 'username';
+    return null;
+  }`
+
+/**
+ * fill_login's (the AI's): run by the host in an isolated world of the top document, where no page script can replace it or
+ * what it calls. Evaluates to [username or null, password or null], the first visible password box that isn't a one-time
+ * code and the username box before it in its form, or a lone visible username box (a two-step sign-in's first page); null
+ * when the page has neither.
+ */
+export const aiLoginFieldsScript = `(() => {
+  const kind = ${kindSource};
+  const visible = el => {
+    if (!el.isConnected) return false;
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  const looksLikeCode = el => (el.autocomplete || '').toLowerCase().includes('one-time-code')
+    || /otp|one.?time|code|pin|token|mfa|2fa|verif/i.test((el.name || '') + ' ' + (el.id || '') + ' ' + (el.getAttribute('aria-label') || ''));
+  const inputs = Array.prototype.slice.call(document.querySelectorAll('input'));
+  const password = inputs.find(el => kind(el) === 'password' && visible(el) && !looksLikeCode(el)) || null;
+  let username = null;
+  if (password) {
+    const scope = password.form ? Array.prototype.slice.call(password.form.querySelectorAll('input')) : inputs;
+    username = scope.slice(0, scope.indexOf(password)).reverse().find(el => kind(el) === 'username') || null;
+  } else {
+    username = inputs.find(el => kind(el) === 'username' && visible(el)) || null;
+  }
+  if (username && !visible(username)) username = null;
+  return username || password ? [username, password] : null;
+})()`
+
+/**
+ * fill_login's, called in the same isolated world on one field the host resolved by its node, with (origin, value): puts the
+ * value in as if typed, only while the document is still on the origin, and answers whether it did.
+ */
+export const aiPutValueFunction = `function (origin, value) {
+  if (location.origin !== origin || !this.isConnected || this.tagName !== 'INPUT') return false;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(this, value);
+  this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  this.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+  return true;
+}`
 
 /**
  * Reports which sign-in field has focus, and where it is.
@@ -106,17 +155,7 @@ export const detectionScript = `(() => {
   const report = m => post({ ${JSON.stringify(autofillBridgeName)}: m });
   window.${installed} = true;
 
-  const kind = el => {
-    if (!el || el.tagName !== 'INPUT' || el.disabled || el.readOnly) return null;
-    const type = (el.type || '').toLowerCase();
-    const ac = (el.autocomplete || '').toLowerCase();
-    if (type === 'password') return 'password';
-    if (ac.includes('username') || ac === 'email' || type === 'email') return 'username';
-    const hint = ((el.name || '') + ' ' + (el.id || '') + ' ' + (el.getAttribute('aria-label') || '')
-                  + ' ' + (el.placeholder || '')).toLowerCase();
-    if ((type === 'text' || type === '' || type === 'tel') && /${usernameHint.source}/.test(hint)) return 'username';
-    return null;
-  };
+  const kind = ${kindSource};
   // A frame's document, only when it is on this page's own origin.
   const sameOrigin = frame => {
     let doc = null;
@@ -422,22 +461,6 @@ export const detectionScript = `(() => {
     const other = partner(el, k === 'username' ? 'password' : 'username');
     if (other) put(other, k === 'username' ? password : username);
     put(el, k === 'username' ? username : password);
-    return true;
-  };
-  // fill_login (the AI's, with nothing focused): the top document's first visible password box that isn't a one-time
-  // code and the username box before it, or a lone visible username box (a two-step sign-in's first page), as
-  // [username or null, password or null]; null when the page has neither.
-  window.${loginFields} = () => {
-    const inputs = inputsOf(document);
-    const password = inputs.find(el => isPasswordBox(el) && kind(el) && !looksLikeCode(el)) || null;
-    const candidate = password ? partner(password, 'username') : inputs.find(el => kind(el) === 'username') || null;
-    const username = candidate && visible(candidate) ? candidate : null;
-    return username || password ? [username, password] : null;
-  };
-  // Fills what loginFields found, as if typed.
-  window.${putLogin} = (fields, username, password) => {
-    if (fields[0] && fields[0].isConnected) put(fields[0], username);
-    if (fields[1] && fields[1].isConnected) put(fields[1], password);
     return true;
   };
 
