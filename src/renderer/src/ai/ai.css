@@ -57,9 +57,20 @@
 .ai-confirm-text {
 	margin: 0;
 	font-weight: 600;
-	/* Page text can be one long word; it wraps rather than widening the bar. */
+	/* Page text can be one long word; it wraps rather than widening the bar. The host already caps it at one 200-character
+	   line (ConfirmText); three lines here keep the buttons in place whatever gets through. */
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	line-clamp: 3;
+	overflow: hidden;
 	overflow-wrap: anywhere;
-	white-space: pre-wrap;
+}
+
+/* The ghost Always allow has no resting chrome, so its keyboard focus must show. */
+.ai-bar .pill-button:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
 }
 
 .ai-confirm-actions {

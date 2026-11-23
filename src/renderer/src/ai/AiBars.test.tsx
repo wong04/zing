@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { masked, parsePort } from '../settings/AiControlSection'
+import { parsePort, TOKEN_PLACEHOLDER, withToken } from '../settings/AiControlSection'
 import { AiConfirmBar } from './AiBars'
 import { aiTabClasses } from './useAiTabs'
 
@@ -32,10 +32,10 @@ describe('the tab marks', () => {
 })
 
 describe('the Settings section', () => {
-	it('hides the token inside a snippet until shown', () => {
-		const text = 'claude mcp add --header "Authorization: Bearer abc123"'
-		expect(masked(text, 'abc123', false)).not.toContain('abc123')
-		expect(masked(text, 'abc123', true)).toBe(text)
+	it('shows the placeholder in a snippet until Show fetched the token', () => {
+		const text = `claude mcp add --header "Authorization: Bearer ${TOKEN_PLACEHOLDER}"`
+		expect(withToken(text, null)).toBe(text)
+		expect(withToken(text, 'abc123')).toBe('claude mcp add --header "Authorization: Bearer abc123"')
 	})
 
 	it('takes only a whole port Zing may listen on', () => {

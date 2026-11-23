@@ -303,7 +303,7 @@ public sealed class AiTools
 		var confirmed = _policy.NeedsConfirm(url, action, target?.Ax ?? NoTarget, key);
 		if (confirmed)
 		{
-			var allowed = await _gate.Ask(tab, url, Describe(tool, description, target, url));
+			var allowed = await _gate.Ask(tab, url, ConfirmText.Clamp(Describe(tool, description, target, url)));
 			EnsureShared(tab);
 			if (!allowed) throw new AiToolException(AiErrors.Denied, "The owner didn't allow it.");
 			EnsureUnchanged(tab, url);

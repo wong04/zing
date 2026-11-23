@@ -16,9 +16,12 @@ const MASK = '•'.repeat(16)
 const MIN_PORT = 1024
 const MAX_PORT = 65535
 
-/** The token in `text` hidden unless `shown`: the snippets carry it, and the sheet may be on a shared screen. */
-export function masked(text: string, token: string | undefined, shown: boolean): string {
-	return shown || !token ? text : text.split(token).join(MASK)
+/** Where the host's snippet holds the token's place (AiWindow.TokenPlaceholder). */
+export const TOKEN_PLACEHOLDER = '<click Show>'
+
+/** The snippet as shown: the token in its place once Show fetched it, the placeholder until then. */
+export function withToken(text: string, token: string | null): string {
+	return token === null ? text : text.split(TOKEN_PLACEHOLDER).join(token)
 }
 
 /** A port typed in, or null when it isn't a whole number Zing may listen on. */
@@ -71,12 +74,11 @@ interface SnippetProps {
 	readonly title: string
 	readonly detail: string
 	readonly text: string
-	readonly shown: boolean
-	readonly token: string | undefined
+	readonly token: string | null
 	readonly copy: 'claude-code' | 'claude-desktop'
 }
 
-function Snippet({ title, detail, text, shown, token, copy }: SnippetProps) {
+function Snippet({ title, detail, text, token, copy }: SnippetProps) {
 	return (
 		<>
 			<SettingRowShell title={title} detail={detail}>
@@ -85,7 +87,7 @@ function Snippet({ title, detail, text, shown, token, copy }: SnippetProps) {
 				</PillButton>
 			</SettingRowShell>
 			<pre className="ai-snippet" aria-label={`${title} setup`}>
-				{masked(text, token, shown)}
+				{withToken(text, token)}
 			</pre>
 		</>
 	)
@@ -95,7 +97,8 @@ function Snippet({ title, detail, text, shown, token, copy }: SnippetProps) {
 export function AiControlSection({ handle }: { handle: SettingsHandle }) {
 	const enabled = handle.settings.aiControlEnabled
 	const state = useAiSettings(enabled, handle.settings.aiControlPort)
-	const [shown, setShown] = useState(false)
+	// Fetched on Show and dropped on Hide: the settings state never carries it.
+	const [token, setToken] = useState<string | null>(null)
 	if (!state) return null
 	if (!state.available) return <SettingRowShell title="AI control is unavailable" detail="Zing couldn’t read your AI site settings this launch. The file was left as it is." warning />
 	return (
@@ -107,28 +110,30 @@ export function AiControlSection({ handle }: { handle: SettingsHandle }) {
 					{state.error ? <SettingRowShell title="AI control isn’t reachable" detail={state.error} warning /> : null}
 					<SettingRowShell title="Access token" detail="Clients that connect over HTTP need it. Regenerating it cuts off every client using the old one.">
 						<div className="ai-token-actions">
-							<PillButton variant="ghost" size="small" onClick={() => setShown(!shown)}>
-								{shown ? 'Hide' : 'Show'}
+							<PillButton variant="ghost" size="small" onClick={() => (token === null ? void zing.showAiToken().then(setToken) : setToken(null))}>
+								{token === null ? 'Show' : 'Hide'}
 							</PillButton>
 							<PillButton variant="outlined" size="small" aria-label="Copy the access token" onClick={() => void zing.copyAi('token')}>
 								Copy
 							</PillButton>
-							<PillButton variant="outlined" size="small" onClick={() => void zing.regenerateAiToken()}>
+							<PillButton variant="outlined" size="small" onClick={() => {
+									setToken(null)
+									void zing.regenerateAiToken()
+								}}>
 								Regenerate
 							</PillButton>
 						</div>
 					</SettingRowShell>
 					<code className="ai-token" aria-label="Access token">
-						{shown ? state.token : MASK}
+						{token ?? MASK}
 					</code>
-					{state.claudeCode ? <Snippet title="Connect Claude Code" detail="Run this once in a terminal." text={state.claudeCode} shown={shown} token={state.token} copy="claude-code" /> : null}
+					{state.claudeCode ? <Snippet title="Connect Claude Code" detail="Run this once in a terminal." text={state.claudeCode} token={token} copy="claude-code" /> : null}
 					{state.claudeDesktop ? (
 						<Snippet
 							title="Connect the Claude desktop app"
 							detail="Add this to claude_desktop_config.json. It runs zing-mcp.exe, next to Zing.exe, which needs no token."
 							text={state.claudeDesktop}
-							shown={shown}
-							token={state.token}
+							token={token}
 							copy="claude-desktop"
 						/>
 					) : null}

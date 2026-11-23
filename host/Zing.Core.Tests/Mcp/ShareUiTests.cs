@@ -86,3 +86,22 @@ public sealed class ShareUiTests : IDisposable
 	[InlineData("http://localhost/", false)]
 	public void Only_an_address_with_a_site_can_be_always_allowed(string url, bool hasSite) => Assert.Equal(hasSite, SitePolicy.HasSite(new Uri(url)));
 }
+
+public sealed class ConfirmTextTests
+{
+	[Fact]
+	public void A_long_description_is_one_line_of_at_most_200_characters_ending_in_an_ellipsis()
+	{
+		var text = ConfirmText.Clamp("click button \"" + new string('x', 500) + "\"\non example.com");
+		Assert.Equal(ConfirmText.MaxLength, text.Length);
+		Assert.EndsWith("\u2026", text);
+		Assert.DoesNotContain('\n', text);
+	}
+
+	[Fact]
+	public void Control_and_format_characters_go_and_spaces_collapse() =>
+		Assert.Equal("press key Enter\u2026 in textbox", ConfirmText.Clamp("press key\t\r\n Enter\u202e\u2026 in\u0000textbox"));
+
+	[Fact]
+	public void A_short_clean_description_is_unchanged() => Assert.Equal("click button \"Send\" on example.com", ConfirmText.Clamp("click button \"Send\" on example.com"));
+}

@@ -13,8 +13,8 @@ public sealed record AiTabsView(IReadOnlyList<string> Shared, IReadOnlyList<stri
 
 public sealed record AiSiteView(string Site, string Level);
 
-/// <summary>What Settings shows for AI control (AiSettingsState in ipc.ts).</summary>
-public sealed record AiSettingsView(bool Available, string? Token, bool TokenStored, string? ClaudeCode, string? ClaudeDesktop, IReadOnlyList<AiSiteView> Sites, int SharedCount, string? Error);
+/// <summary>What Settings shows for AI control (AiSettingsState in ipc.ts). Never the token: Show asks for it (ai:show-token).</summary>
+public sealed record AiSettingsView(bool Available, bool TokenStored, string? ClaudeCode, string? ClaudeDesktop, IReadOnlyList<AiSiteView> Sites, int SharedCount, string? Error);
 
 /// <summary>
 /// One window's share UI: the tab menu's share item, the outline and badge on its tabs (ai:state), the strip and the confirm
@@ -133,14 +133,20 @@ public sealed class AiWindow : ITabSharing
 		Refresh();
 	}
 
-	/// <summary>The Settings section. The token is read (made, on first use) only while AI control is on.</summary>
+	/// <summary>The Settings section. It never carries the token, which reaches the sheet only on Show.</summary>
 	public static AiSettingsView Settings(AiControl? ai, bool enabled, int port)
 	{
-		if (ai is null) return new AiSettingsView(false, null, File.Exists(AppPaths.AiToken), null, null, [], 0, null);
-		var token = enabled ? AiRequestCheck.Encode(ai.Token.Current()) : null;
+		if (ai is null) return new AiSettingsView(false, File.Exists(AppPaths.AiToken), null, null, [], 0, null);
 		var sites = ai.Policy.All().OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new AiSiteView(p.Key, p.Value.ToString())).ToList();
-		return new AiSettingsView(true, token, File.Exists(AppPaths.AiToken), token is null ? null : ClaudeCode(port, token), ClaudeDesktop(), sites, ai.Shares.List().Count, enabled ? ai.LastError : null);
+		return new AiSettingsView(true, File.Exists(AppPaths.AiToken), enabled ? ClaudeCode(port, TokenPlaceholder) : null, enabled ? ClaudeDesktop() : null, sites, ai.Shares.List().Count, enabled ? ai.LastError : null);
 	}
+
+	/// <summary>Stands for the token in the snippet Settings shows; Show and Copy put the real one in.</summary>
+	public const string TokenPlaceholder = "<click Show>";
+
+	/// <summary>The token, read (made, on first use) only while AI control is on.</summary>
+	public static string Token(AiControl ai, bool enabled) =>
+		enabled ? AiRequestCheck.Encode(ai.Token.Current()) : throw new InvalidOperationException("Turn on AI control to see its token");
 
 	// 127.0.0.1, not localhost: the listener turns away any other Host.
 	public static string ClaudeCode(int port, string token) => $"claude mcp add --transport http zing http://127.0.0.1:{port}/mcp/ --header \"Authorization: Bearer {token}\"";

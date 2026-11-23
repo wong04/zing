@@ -266,7 +266,9 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 			_ai?.ConfirmSize(Size(args, 0), Size(args, 1));
 			return (object?)null;
 		});
-		_bridge.Register("ai:settings", _ => (object?)AiWindow.Settings(_app.Ai, Flag("aiControlEnabled"), _app.Services.Settings.Get("aiControlPort")!.GetValue<int>()));
+		_bridge.Register("ai:settings", _ => (object?)AiWindow.Settings(_app.Ai, Flag("aiControlEnabled"), AiPort()));
+		// Only on the person's Show: the token is otherwise never in a view.
+		_bridge.Register("ai:show-token", _ => (object?)AiWindow.Token(Control(), Flag("aiControlEnabled")));
 		_bridge.Register("ai:regenerate-token", _ =>
 		{
 			Control().Token.Regenerate();
@@ -279,18 +281,21 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		});
 		_bridge.Register("ai:copy", args =>
 		{
-			var settings = AiWindow.Settings(Control(), Flag("aiControlEnabled"), _app.Services.Settings.Get("aiControlPort")!.GetValue<int>());
+			var enabled = Flag("aiControlEnabled");
+			// The token is filled in here, so a copy never sends it to the sheet.
 			var text = Text(args, 0) switch
 			{
-				"token" => settings.Token,
-				"claude-code" => settings.ClaudeCode,
-				"claude-desktop" => settings.ClaudeDesktop,
+				"token" => AiWindow.Token(Control(), enabled),
+				"claude-code" => AiWindow.ClaudeCode(AiPort(), AiWindow.Token(Control(), enabled)),
+				"claude-desktop" => AiWindow.ClaudeDesktop(),
 				var other => throw new ArgumentException($"AI control has nothing called '{other}' to copy"),
 			};
-			Shell.CopyText(text ?? throw new InvalidOperationException("Turn on AI control to copy its connection details"));
+			Shell.CopyText(text);
 			return (object?)null;
 		});
 	}
+
+	private int AiPort() => _app.Services.Settings.Get("aiControlPort")!.GetValue<int>();
 
 	private bool Flag(string key) => _app.Services.Settings.Get(key)!.GetValue<bool>();
 

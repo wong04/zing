@@ -220,6 +220,7 @@ export function createZingApi(invoke: Invoke, listen: Listen): ZingApi {
 		setAiStripSize: (width, height) => invoke('ai:strip-size', width, height),
 		setAiConfirmSize: (width, height) => invoke('ai:confirm-size', width, height),
 		getAiSettings: () => invoke('ai:settings'),
+		showAiToken: () => invoke('ai:show-token'),
 		regenerateAiToken: () => invoke('ai:regenerate-token'),
 		setAiSiteLevel: (site, level) => invoke('ai:set-site-level', site, level),
 		copyAi: (what) => invoke('ai:copy', what),

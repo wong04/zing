@@ -575,7 +575,9 @@
 	color: var(--text);
 	font-family: var(--mono, ui-monospace, monospace);
 	font-size: 12px;
+	overflow: visible;
 	overflow-wrap: anywhere;
+	word-break: break-all;
 	white-space: pre-wrap;
 	user-select: text;
 }

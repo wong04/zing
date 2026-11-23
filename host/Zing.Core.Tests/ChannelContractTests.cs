@@ -19,7 +19,7 @@ public sealed partial class ChannelContractTests : IDisposable
 	/// the error sink that e2e runs fail on, and AI control (AiControl lives in the host).
 	/// </summary>
 	private static readonly string[] HostRegistered = ["app:report-error", "chrome:titlebar-colors", "default-browser:open-settings",
-		"ai:get", "ai:stop", "ai:stop-all", "ai:answer", "ai:strip-size", "ai:confirm-size", "ai:settings", "ai:regenerate-token", "ai:set-site-level", "ai:copy"];
+		"ai:get", "ai:stop", "ai:stop-all", "ai:answer", "ai:strip-size", "ai:confirm-size", "ai:settings", "ai:show-token", "ai:regenerate-token", "ai:set-site-level", "ai:copy"];
 
 	private readonly Bridge _bridge = new();
 	private readonly ChromeApi _api;

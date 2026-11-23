@@ -88,6 +88,12 @@ test.describe('AI control screenshots', () => {
 			await expect(sheet.getByText('Connect Claude Code')).toBeVisible()
 			await sheet.waitForTimeout(400)
 			await sheet.getByRole('dialog', { name: 'Settings' }).screenshot({ path: join(OUT_DIR, `ai-settings-${mode}.png`) })
+
+			// The privacy banner warns while AI control is on: its token is kept on disk.
+			await sheet.getByRole('button', { name: 'Privacy', exact: true }).click()
+			await expect(sheet.getByText(/access token for AI control/)).toBeVisible()
+			await sheet.waitForTimeout(400)
+			await sheet.getByRole('dialog', { name: 'Settings' }).screenshot({ path: join(OUT_DIR, `ai-privacy-banner-${mode}.png`) })
 			await zing.close()
 		})
 	}

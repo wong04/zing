@@ -156,6 +156,11 @@ test('regenerating the token cuts off the old one', async () => {
 	const zing = await launchZing()
 	const mcp = await connectMcp(zing.chrome)
 	expect(await sharedTabs(mcp)).toEqual([])
+	// Settings' state never carries the token: the sheet gets it only on Show.
+	const token = await zing.chrome.evaluate(() => window.zing.showAiToken())
+	const settings = JSON.stringify(await zing.chrome.evaluate(() => window.zing.getAiSettings()))
+	expect(settings).not.toContain(token)
+	expect(settings).toContain('Bearer <click Show>')
 	await zing.chrome.evaluate(() => window.zing.openSettings('advanced'))
 	const sheet = await view(zing.browser, '#surface')
 	await sheet.getByRole('button', { name: 'Regenerate' }).click()

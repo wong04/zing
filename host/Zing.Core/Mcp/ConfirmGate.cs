@@ -38,7 +38,8 @@ public sealed class ConfirmGate
 		_pending[tab] = new Pending(result, url, timer);
 		try
 		{
-			Shown?.Invoke(tab, description);
+			// Every ask, the host's form-post backstop included, reaches the bar as one bounded line.
+			Shown?.Invoke(tab, ConfirmText.Clamp(description));
 		}
 		catch
 		{

@@ -76,10 +76,9 @@ export type AiCopyTarget = 'token' | 'claude-code' | 'claude-desktop'
 export interface AiSettingsState {
 	/** False when AI control couldn't start this launch (its site file couldn't be read). */
 	readonly available: boolean
-	/** The token, only while AI control is on (reading it makes it). */
-	readonly token?: string
 	/** Whether the sealed token file is on disk; the privacy banner follows it. */
 	readonly tokenStored: boolean
+	/** With `<click Show>` where the token goes: the token itself never comes with this state. */
 	readonly claudeCode?: string
 	readonly claudeDesktop?: string
 	readonly sites: readonly { readonly site: string; readonly level: AiSiteLevel }[]
@@ -691,6 +690,8 @@ export interface InvokeContract {
 	'ai:strip-size': { args: [width: number, height: number]; result: void }
 	'ai:confirm-size': { args: [width: number, height: number]; result: void }
 	'ai:settings': { args: []; result: AiSettingsState }
+	/** The token, for Show only; rejects while AI control is off. */
+	'ai:show-token': { args: []; result: string }
 	'ai:regenerate-token': { args: []; result: void }
 	/** Sets a site's level; the default level removes it from the list. */
 	'ai:set-site-level': { args: [site: string, level: AiSiteLevel]; result: void }
@@ -989,6 +990,7 @@ export interface ZingApi {
 	setAiStripSize(width: number, height: number): Promise<void>
 	setAiConfirmSize(width: number, height: number): Promise<void>
 	getAiSettings(): Promise<AiSettingsState>
+	showAiToken(): Promise<string>
 	regenerateAiToken(): Promise<void>
 	setAiSiteLevel(site: string, level: AiSiteLevel): Promise<void>
 	copyAi(what: AiCopyTarget): Promise<void>
