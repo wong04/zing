@@ -76,14 +76,22 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 	{
 		var page = await PageAsync(tab);
 		var (x, y) = await CentreAsync(tab, page, node);
+		return await HitAsync(tab, page, node, x, y);
+	}
+
+	/// <summary>
+	/// The node the page hit-tests at <paramref name="x"/>, <paramref name="y"/>, counted as <paramref name="node"/> when it is
+	/// inside it and <paramref name="node"/> is the nearest interactive element above it (a button's icon or label span).
+	/// </summary>
+	private async Task<long?> HitAsync(TabRef tab, WebView2Page page, long node, double x, double y)
+	{
 		long hit;
 		using (var found = await CallAsync(tab, page, "DOM.getNodeForLocation", new { x = (int)Math.Round(x), y = (int)Math.Round(y), includeUserAgentShadowDOM = false, ignorePointerEventsNone = true }))
 		{
 			if (!found.RootElement.TryGetProperty("backendNodeId", out var id)) return null;
 			hit = id.GetInt64();
 		}
-		// The hit test finds the deepest element, such as a button's icon or label span; that is still the button.
-		return hit == node || await ContainsAsync(tab, page, node, hit) ? node : hit;
+		return hit == node || await OwnsAsync(tab, page, node, hit) ? node : hit;
 	}
 
 	public async Task Click(TabRef tab, long node)
@@ -91,6 +99,8 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		var page = await PageAsync(tab);
 		await HoldFormPostsAsync(tab, page);
 		var (x, y) = await CentreAsync(tab, page, node);
+		// Checked again here, after every other await and at the very point clicked: AiTools' check ran before the page could move.
+		if (await HitAsync(tab, page, node, x, y) != node) throw new AiToolException(AiErrors.Covered, "Something else is on top of the element.");
 		await MouseAsync(tab, page, new { type = "mouseMoved", x, y });
 		await MouseAsync(tab, page, new { type = "mousePressed", x, y, button = "left", buttons = 1, clickCount = 1 });
 		await MouseAsync(tab, page, new { type = "mouseReleased", x, y, button = "left", buttons = 0, clickCount = 1 });
@@ -294,7 +304,18 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		}
 		""";
 
-	private const string Contains = "function (other) { return this.contains(other) }";
+	/// <summary>
+	/// Whether this element is interactive and the nearest interactive element at or above <c>hit</c>. A container ref (a card,
+	/// a section) never owns what is over it, so a transparent overlay inside one still counts as covering.
+	/// </summary>
+	private const string Owns = """
+		function (hit) {
+			const interactive = 'a[href], button, input, select, textarea, summary, [contenteditable=""], [contenteditable="true"], [role=button], [role=link], [role=checkbox], [role=radio], [role=menuitem], [role=menuitemcheckbox], [role=menuitemradio], [role=tab], [role=option], [role=switch], [role=textbox], [role=combobox], [role=searchbox], [role=slider], [role=spinbutton]'
+			if (!this.matches(interactive)) return false
+			const element = hit.nodeType === Node.ELEMENT_NODE ? hit : hit.parentElement
+			return element !== null && element.closest(interactive) === this
+		}
+		""";
 
 	/// <summary>The centre of the node's content box in viewport CSS pixels, once scrolled into view; StaleRef when the page no longer has it.</summary>
 	private async Task<(double X, double Y)> CentreAsync(TabRef tab, WebView2Page page, long backendNodeId)
@@ -365,16 +386,31 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		return answer.RootElement.GetProperty("result").TryGetProperty("value", out var value) ? value.GetString() : null;
 	}
 
-	private async Task<bool> ContainsAsync(TabRef tab, WebView2Page page, long outer, long inner)
+	private async Task<bool> OwnsAsync(TabRef tab, WebView2Page page, long target, long hit)
 	{
-		var outerId = await ObjectOfAsync(tab, page, outer);
-		var innerId = await ObjectOfAsync(tab, page, inner);
-		using var answer = await CallAsync(tab, page, "Runtime.callFunctionOn", new { objectId = outerId, functionDeclaration = Contains, arguments = new[] { new { objectId = innerId } }, returnByValue = true });
+		var targetId = await ObjectOfAsync(tab, page, target);
+		var hitId = await ObjectOfAsync(tab, page, hit);
+		using var answer = await CallAsync(tab, page, "Runtime.callFunctionOn", new { objectId = targetId, functionDeclaration = Owns, arguments = new[] { new { objectId = hitId } }, returnByValue = true });
 		return answer.RootElement.GetProperty("result").GetProperty("value").GetBoolean();
 	}
 
-	/// <summary>Pages whose document requests pass through <see cref="FormPostBackstop"/>; a page is added before the AI first acts on it.</summary>
-	private readonly HashSet<WebView2Page> _holding = [];
+	/// <summary>Pages whose document requests pass through <see cref="FormPostBackstop"/>, and their tabs; a page is added before the AI first acts on it.</summary>
+	private readonly Dictionary<WebView2Page, TabRef> _holding = [];
+
+	/// <summary>Pages already listening for Fetch.requestPaused, so a tab shared again doesn't listen twice.</summary>
+	private readonly HashSet<WebView2Page> _listening = [];
+
+	private const int InvalidArgument = unchecked((int)0x80070057);
+
+	/// <summary>An unshared tab's page stops pausing its requests; one still held is answered no by the gate, which the unshare resolves.</summary>
+	public void Unshared(TabRef tab)
+	{
+		foreach (var page in _holding.Where(p => p.Value == tab).Select(p => p.Key).ToList())
+		{
+			_holding.Remove(page);
+			if (page.IsOpen) TestHooks.Background(ExpectingGoneAsync(tab, page, "Fetch.disable", new { }), "ai form post watch");
+		}
+	}
 
 	/// <summary>
 	/// Pauses the page's document requests in DevTools' Fetch domain, so the backstop can hold a top-level form POST until the
@@ -382,14 +418,15 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 	/// </summary>
 	private async Task HoldFormPostsAsync(TabRef tab, WebView2Page page)
 	{
-		_holding.RemoveWhere(p => !p.IsOpen);
-		if (_holding.Contains(page)) return;
+		foreach (var closed in _holding.Keys.Where(p => !p.IsOpen).ToList()) _holding.Remove(closed);
+		_listening.RemoveWhere(p => !p.IsOpen);
+		if (_holding.ContainsKey(page)) return;
 		string mainFrame;
 		using (var tree = await CallAsync(tab, page, "Page.getFrameTree", new { }))
 			mainFrame = tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("id").GetString()!;
 		EnsureCurrent(tab, page);
-		if (!_holding.Add(page)) return;
-		page.OnDevToolsEvent("Fetch.requestPaused", json => Paused(tab, page, mainFrame, json));
+		if (!_holding.TryAdd(page, tab)) return;
+		if (_listening.Add(page)) page.OnDevToolsEvent("Fetch.requestPaused", json => Paused(tab, page, mainFrame, json));
 		using (await CallAsync(tab, page, "Fetch.enable", new { patterns = new[] { new { urlPattern = "*", resourceType = "Document", requestStage = "Request" } } })) { }
 	}
 
@@ -403,17 +440,37 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		var site = shares.IsShared(tab) ? UrlOf(tab) : null;
 		var held = site is not null && backstop.Holds(tab, site, request.GetProperty("method").GetString()!, root.GetProperty("frameId").GetString() == mainFrame);
 		var to = Uri.TryCreate(request.GetProperty("url").GetString(), UriKind.Absolute, out var target) ? target.IdnHost : "another page";
-		TestHooks.Background(ReleaseAsync(page, requestId, held ? () => gate.Ask(tab, site!, $"send a form to {to}") : null), "ai form post");
+		TestHooks.Background(ReleaseAsync(tab, page, requestId, held ? () => gate.Ask(tab, site!, $"send a form to {to}") : null), "ai form post");
 	}
 
 	/// <summary>Lets a paused request go, after the owner's yes when <paramref name="ask"/> is given; a no aborts the navigation.</summary>
-	private static async Task ReleaseAsync(WebView2Page page, string requestId, Func<Task<bool>>? ask)
+	private async Task ReleaseAsync(TabRef tab, WebView2Page page, string requestId, Func<Task<bool>>? ask)
 	{
 		var allowed = ask is null || await ask();
-		// A page that closed while the owner was asked took its paused request with it.
+		if (allowed) await ExpectingGoneAsync(tab, page, "Fetch.continueRequest", new { requestId });
+		else await ExpectingGoneAsync(tab, page, "Fetch.failRequest", new { requestId, errorReason = "Aborted" });
+	}
+
+	/// <summary>
+	/// A Fetch call that may find its subject gone: the page or tab closed, or the paused navigation was cancelled or replaced
+	/// while the owner decided. WebView2 hands every DevTools error back as E_INVALIDARG with no detail; the request id came from
+	/// the browser itself, so for these calls that can only mean the request is gone. Anything else is an error.
+	/// </summary>
+	private async Task ExpectingGoneAsync(TabRef tab, WebView2Page page, string method, object args)
+	{
 		if (!page.IsOpen) return;
-		if (allowed) await page.DevToolsAsync("Fetch.continueRequest", JsonSerializer.Serialize(new { requestId }));
-		else await page.DevToolsAsync("Fetch.failRequest", JsonSerializer.Serialize(new { requestId, errorReason = "Aborted" }));
+		try
+		{
+			using (await CallAsync(tab, page, method, args)) { }
+		}
+		catch (TabGoneException)
+		{
+			// The page went with its paused requests.
+		}
+		catch (Exception error) when (error.HResult == InvalidArgument)
+		{
+			// The request was cancelled or replaced meanwhile.
+		}
 	}
 
 	/// <summary>The node's border box in viewport CSS pixels, or null when the page no longer has it or it has no box.</summary>

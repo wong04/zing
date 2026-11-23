@@ -1,0 +1,7 @@
+<!doctype html>
+<title>container</title>
+<!-- A clickable card holding a button, with a transparent ad link inside it laid over both. -->
+<div role="button" aria-label="Offer" onclick="document.title = 'card clicked'" style="position: relative; padding: 40px">
+	<button onclick="event.stopPropagation(); document.title = 'clicked'">Open details</button>
+	<a href="#ad" aria-label="Ad" style="position: absolute; inset: 0"></a>
+</div>

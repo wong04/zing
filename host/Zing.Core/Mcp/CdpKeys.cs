@@ -29,7 +29,8 @@ public static class CdpKeys
 	public static CdpKey Of(string key)
 	{
 		if (Named.TryGetValue(key, out var named)) return named;
-		if (key.Length != 1) throw new UnknownKeyException(key);
+		// A control character would be a key by another name ("\r" is Enter) and slip past the submit check.
+		if (key.Length != 1 || char.IsControl(key[0])) throw new UnknownKeyException(key);
 		var c = key[0];
 		if (char.IsAsciiLetter(c)) return new CdpKey(key, $"Key{char.ToUpperInvariant(c)}", char.ToUpperInvariant(c), key);
 		if (char.IsAsciiDigit(c)) return new CdpKey(key, $"Digit{c}", c, key);

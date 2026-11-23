@@ -28,5 +28,10 @@ public sealed class CdpKeysTests
 	[InlineData("")]
 	[InlineData("Hyper")]
 	[InlineData("ab")]
+	[InlineData("\r")]
+	[InlineData("\n")]
+	[InlineData("\t")]
+	[InlineData("\u001b")]
+	[InlineData("\u007f")]
 	public void UnknownKeysThrow(string key) => Assert.Throws<UnknownKeyException>(() => CdpKeys.Of(key));
 }

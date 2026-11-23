@@ -24,6 +24,7 @@ public sealed class AiControl
 		Driver = new CdpPageDriver(windowOf, frontWindow, Shares, Gate, Backstop, scheduler, TestHooks.AiShowWait ?? CdpPageDriver.ShowWait);
 		Tools = new AiTools(Driver, Shares, policy, Gate, scheduler);
 		Tools.Acting += Backstop.Acted;
+		Shares.Unshared += Driver.Unshared;
 		_rpc = new McpJsonRpc(Tools, version);
 		// Stop() turns Tools off first, so a request already queued to the UI thread answers Disabled and runs nothing.
 		_endpoint = new AiEndpoint(dispatcher, token, pipeName, message => McpText.Handle(_rpc.Handle, message, error => TestHooks.Record("ai request", error)));

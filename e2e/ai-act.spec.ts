@@ -160,3 +160,43 @@ test("a Don't ask site submits without a bar", async () => {
 	expect(await confirmBar(zing.chrome, id)).toBeNull()
 	await zing.close()
 })
+
+test('a transparent overlay inside a container covers both the button under it and the container', async () => {
+	const zing = await launchZing()
+	const mcp = await connectMcp(zing.chrome)
+	const { tab } = await sharedTab(zing.chrome, mcp, '/container')
+	expect((await mcp.call('click', { tab, ref: await refOf(mcp, tab, /button "Open details"/) })).structuredContent?.code).toBe('Covered')
+	// The ad is inside the card, but it is a control of its own: a hit on it isn't a hit on the card.
+	expect((await mcp.call('click', { tab, ref: await refOf(mcp, tab, /button "Offer"/) })).structuredContent?.code).toBe('Covered')
+	const page = await pageWhere(zing.browser, (p) => p.url().startsWith(`${base}/container`))
+	await expect(page).toHaveTitle('container')
+	await zing.close()
+})
+
+test('a held form POST whose navigation is replaced while the owner decides records no error', async () => {
+	const zing = await launchZing()
+	const mcp = await connectMcp(zing.chrome)
+	const { id, tab } = await sharedTab(zing.chrome, mcp, '/mislabelled')
+	expect(textOf(await mcp.call('click', { tab, ref: await refOf(mcp, tab, /button "Close"/) }))).toBe('Done')
+	await expect.poll(() => confirmBar(zing.chrome, id), { timeout: 15_000 }).not.toBeNull()
+	// The owner goes elsewhere in the tab, which cancels the held navigation; then answers the bar.
+	await zing.chrome.evaluate(([tabId, url]) => window.zing.navigateTab(tabId!, url!), [id, `${base}/overlay`])
+	await expect.poll(async () => textOf(await mcp.call('list_tabs'))).toContain(`${base}/overlay`)
+	if (await confirmBar(zing.chrome, id)) await confirmBar(zing.chrome, id, 'allow')
+	await settle()
+	expect(posts).toEqual([])
+	await zing.close()
+})
+
+test('open_tab opens a shared tab behind the active one', async () => {
+	const zing = await launchZing()
+	const mcp = await connectMcp(zing.chrome)
+	const { id } = await sharedTab(zing.chrome, mcp, '/overlay')
+	const opened = textOf(await mcp.call('open_tab', { url: `${base}/react-form` }))
+	expect(opened).toMatch(/^[a-z0-9]{12}$/)
+	await expect.poll(async () => textOf(await mcp.call('read_text', { tab: opened }))).toContain('Send')
+	const { activeId, tabs } = await zing.chrome.evaluate(() => window.zing.getTabs())
+	expect(activeId).toBe(id)
+	expect(tabs.map((t) => t.url)).toContain(`${base}/react-form`)
+	await zing.close()
+})

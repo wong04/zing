@@ -114,6 +114,32 @@ public sealed class AiToolsTests : IDisposable
 		Assert.Empty(acting);
 	}
 
+	[Theory]
+	[InlineData("\r")]
+	[InlineData("\n")]
+	public async Task AControlCharacterKeyIsAnArgumentError(string key) =>
+		await Assert.ThrowsAsync<ToolArgumentException>(() => _tools.Call("press_key", Args(("tab", _aiId), ("key", key))));
+
+	[Theory]
+	[InlineData("Enter")]
+	[InlineData("enter")]
+	public async Task ARefLessEnterWaitsForConfirm(string key)
+	{
+		// Focus may still be in the field the AI typed into (Gmail, Slack), so Enter without a ref counts as a submit.
+		var press = _tools.Call("press_key", Args(("tab", _aiId), ("key", key)));
+		Assert.False(press.IsCompleted);
+		Assert.Equal([Tab], _gate.Waiting());
+		_gate.Answer(Tab, ConfirmAnswer.Deny);
+		Assert.Equal(AiErrors.Denied, CodeOf(await press));
+	}
+
+	[Fact]
+	public async Task ARefLessArrowKeyRunsWithoutConfirm()
+	{
+		Assert.Null(CodeOf(await _tools.Call("press_key", Args(("tab", _aiId), ("key", "ArrowDown")))));
+		Assert.Empty(_gate.Waiting());
+	}
+
 	[Fact]
 	public async Task AnUnknownKeyIsAnArgumentError() =>
 		await Assert.ThrowsAsync<ToolArgumentException>(() => _tools.Call("press_key", Args(("tab", _aiId), ("key", "Hyper"))));
