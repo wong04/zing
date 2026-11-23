@@ -90,6 +90,35 @@ public sealed class AiToolsTests : IDisposable
 	}
 
 	[Fact]
+	public async Task AnActionTellsTheBackstopWhetherTheOwnerAllowedIt()
+	{
+		var acting = new List<(TabRef, bool)>();
+		_tools.Acting += (tab, confirmed) => acting.Add((tab, confirmed));
+		await Snapshot();
+		await _tools.Call("click", Args(("tab", _aiId), ("ref", "e2")));
+		var click = _tools.Call("click", Args(("tab", _aiId), ("ref", "e1")));
+		_gate.Answer(Tab, ConfirmAnswer.Allow);
+		await click;
+		Assert.Equal([(Tab, false), (Tab, true)], acting);
+	}
+
+	[Fact]
+	public async Task ADeniedActionIsNotReportedAsActing()
+	{
+		var acting = new List<(TabRef, bool)>();
+		_tools.Acting += (tab, confirmed) => acting.Add((tab, confirmed));
+		await Snapshot();
+		var click = _tools.Call("click", Args(("tab", _aiId), ("ref", "e1")));
+		_gate.Answer(Tab, ConfirmAnswer.Deny);
+		await click;
+		Assert.Empty(acting);
+	}
+
+	[Fact]
+	public async Task AnUnknownKeyIsAnArgumentError() =>
+		await Assert.ThrowsAsync<ToolArgumentException>(() => _tools.Call("press_key", Args(("tab", _aiId), ("key", "Hyper"))));
+
+	[Fact]
 	public async Task CoveredClickFails()
 	{
 		await Snapshot();

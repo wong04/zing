@@ -791,7 +791,7 @@ public sealed class ZingApp
 			return null;
 		}
 		var version = typeof(ZingApp).Assembly.GetName().Version?.ToString(3) ?? "0";
-		var ai = new AiControl(dispatcher, scheduler, policy, new AiToken(new DpapiCipher(), AppPaths.AiToken), version, McpPipeServer.Name(SingleInstance.ProfileKey), id => _windows.FirstOrDefault(w => w.Id == id));
+		var ai = new AiControl(dispatcher, scheduler, policy, new AiToken(new DpapiCipher(), AppPaths.AiToken), version, McpPipeServer.Name(SingleInstance.ProfileKey), id => _windows.FirstOrDefault(w => w.Id == id), () => MostRecent);
 		ai.Follow(Flag(settings, "aiControlEnabled"), Port(settings));
 		settings.Subscribe((_, key) =>
 		{

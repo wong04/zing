@@ -157,8 +157,23 @@ public static class TestHooks
 	/// <summary>Set by ZingApp at launch: "show-default-browser-offer".</summary>
 	public static Action? OfferDefaultBrowser { get; set; }
 
-	/// <summary>The app's AI control, for ai-token; e2e runs only read it.</summary>
-	public static AiControl? Ai { get; set; }
+	/// <summary>The app's AI control, for ai-token and ai-confirm; e2e runs only read it.</summary>
+	public static AiControl? Ai
+	{
+		get => _ai;
+		set
+		{
+			_ai = value;
+			if (value is null || !IsEndToEndRun) return;
+			value.Gate.Shown += (tab, question) => AiAsked[tab] = question;
+			value.Gate.Closed += tab => AiAsked.Remove(tab);
+		}
+	}
+
+	private static AiControl? _ai;
+
+	/// <summary>What the confirm bar asks on each tab it is up on, for ai-confirm (the bar itself is Task 10).</summary>
+	private static readonly Dictionary<Zing.Core.Mcp.TabRef, string> AiAsked = [];
 
 	/// <summary>How long a hidden tab's screenshot waits to be shown, shortened by an e2e run (ZING_E2E_AI_SHOW_WAIT_MS); null in normal runs.</summary>
 	public static TimeSpan? AiShowWait =>
@@ -217,6 +232,24 @@ public static class TestHooks
 		{
 			var share = AiSharers.TryGetValue(window, out var sharer) ? sharer : throw new InvalidOperationException("ai-share needs a window with its chrome started and AI control available");
 			share(root.GetProperty("tab").GetString()!);
+			return true;
+		}
+		if (action == "ai-confirm")
+		{
+			var tab = new Zing.Core.Mcp.TabRef(AiWindowIds.TryGetValue(window, out var windowId) ? windowId : throw new InvalidOperationException("ai-confirm needs a window with its chrome started and AI control available"), root.GetProperty("tab").GetString()!);
+			var asked = AiAsked.GetValueOrDefault(tab);
+			if (asked is not null && root.TryGetProperty("answer", out var answer))
+			{
+				var reply = answer.GetString() switch
+				{
+					"allow" => Zing.Core.Mcp.ConfirmAnswer.Allow,
+					"deny" => Zing.Core.Mcp.ConfirmAnswer.Deny,
+					"always" => Zing.Core.Mcp.ConfirmAnswer.AlwaysAllowSite,
+					var other => throw new InvalidOperationException($"ai-confirm can't answer '{other}'"),
+				};
+				(Ai ?? throw new InvalidOperationException("ai-confirm needs AI control, which couldn't start")).Gate.Answer(tab, reply);
+			}
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { asked }));
 			return true;
 		}
 		if (action == "ai-token")
@@ -526,11 +559,19 @@ public static class TestHooks
 	/// <summary>Each window's way to share one of its tabs with AI by id, for ai-share; e2e runs only.</summary>
 	private static readonly Dictionary<HostWindow, Action<string>> AiSharers = [];
 
-	public static void RegisterAiShare(HostWindow window, Action<string> share)
+	/// <summary>Each window's id in TabRefs, for ai-confirm; e2e runs only.</summary>
+	private static readonly Dictionary<HostWindow, string> AiWindowIds = [];
+
+	public static void RegisterAiShare(HostWindow window, string windowId, Action<string> share)
 	{
 		if (!IsEndToEndRun) return;
 		AiSharers[window] = share;
-		window.Destroyed += () => AiSharers.Remove(window);
+		AiWindowIds[window] = windowId;
+		window.Destroyed += () =>
+		{
+			AiSharers.Remove(window);
+			AiWindowIds.Remove(window);
+		};
 	}
 
 	/// <summary>Each window's account-picker key handler (MainWindow.PickerKey), for picker-key; e2e runs only.</summary>

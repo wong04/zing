@@ -13,14 +13,17 @@ public sealed class AiControl
 	private readonly AiEndpoint _endpoint;
 	private readonly McpJsonRpc _rpc;
 
-	public AiControl(DispatcherQueue dispatcher, IScheduler scheduler, SitePolicy policy, AiToken token, string version, string pipeName, Func<string, MainWindow?> windowOf)
+	public AiControl(DispatcherQueue dispatcher, IScheduler scheduler, SitePolicy policy, AiToken token, string version, string pipeName, Func<string, MainWindow?> windowOf, Func<MainWindow?> frontWindow)
 	{
 		Shares = new AiShares();
 		Policy = policy;
 		Gate = new ConfirmGate(scheduler, Shares, policy);
 		Token = token;
-		Driver = new CdpPageDriver(windowOf, Shares, scheduler, TestHooks.AiShowWait ?? CdpPageDriver.ShowWait);
+		Backstop = new FormPostBackstop(policy, () => DateTime.UtcNow);
+		Shares.Unshared += Backstop.Forget;
+		Driver = new CdpPageDriver(windowOf, frontWindow, Shares, Gate, Backstop, scheduler, TestHooks.AiShowWait ?? CdpPageDriver.ShowWait);
 		Tools = new AiTools(Driver, Shares, policy, Gate, scheduler);
+		Tools.Acting += Backstop.Acted;
 		_rpc = new McpJsonRpc(Tools, version);
 		// Stop() turns Tools off first, so a request already queued to the UI thread answers Disabled and runs nothing.
 		_endpoint = new AiEndpoint(dispatcher, token, pipeName, message => McpText.Handle(_rpc.Handle, message, error => TestHooks.Record("ai request", error)));
@@ -32,6 +35,7 @@ public sealed class AiControl
 	public AiToken Token { get; }
 	public AiTools Tools { get; }
 	public CdpPageDriver Driver { get; }
+	public FormPostBackstop Backstop { get; }
 
 	/// <summary>
 	/// Follows a window's tabs: every navigation and popup goes to the shares (an unshareable address unshares, and vault

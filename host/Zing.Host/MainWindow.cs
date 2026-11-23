@@ -198,7 +198,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		{
 			ai.Watch(Id, Api.Tabs);
 			var tabs = Api.Tabs;
-			TestHooks.RegisterAiShare(_window, tabId => ai.Share(Id, tabs, tabId));
+			TestHooks.RegisterAiShare(_window, Id, tabId => ai.Share(Id, tabs, tabId));
 		}
 		var themeSubscription = _app.Services.Settings.Subscribe((_, key) =>
 		{

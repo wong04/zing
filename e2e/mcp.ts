@@ -43,6 +43,26 @@ export async function shareTab(chrome: Page, tab: string): Promise<void> {
 	await post(chrome, { action: 'ai-share', tab })
 }
 
+export type ConfirmReply = 'allow' | 'deny' | 'always'
+
+let confirms = 0
+
+/** The question the confirm bar asks on a tab, or null when none is up; answered with `reply` if one is (TestHooks ai-confirm). */
+export async function confirmBar(chrome: Page, tab: string, reply?: ConfirmReply): Promise<string | null> {
+	const file = join(scratchDir('zing-ai-confirm-'), `confirm-${++confirms}.json`)
+	await post(chrome, { action: 'ai-confirm', tab, file, ...(reply ? { answer: reply } : {}) })
+	await expect.poll(() => existsSync(file)).toBe(true)
+	return (JSON.parse(readFileSync(file, 'utf8')) as { asked: string | null }).asked
+}
+
+/** Waits for the confirm bar on a tab, then answers it; returns its question. */
+export async function answerBar(chrome: Page, tab: string, reply: ConfirmReply): Promise<string> {
+	await expect.poll(() => confirmBar(chrome, tab), { timeout: 15_000 }).not.toBeNull()
+	const asked = await confirmBar(chrome, tab, reply)
+	if (asked === null) throw new Error('The confirm bar went before it was answered')
+	return asked
+}
+
 /** The bearer token, as Settings shows it; e2e runs only (TestHooks ai-token). */
 async function token(chrome: Page): Promise<string> {
 	const file = join(scratchDir('zing-ai-token-'), 'token.json')

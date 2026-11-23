@@ -52,6 +52,9 @@ public sealed class AiTools
 		};
 	}
 
+	/// <summary>An action is about to run on a tab, and whether the owner allowed it on the confirm bar (the form POST backstop).</summary>
+	public event Action<TabRef, bool>? Acting;
+
 	/// <summary>Set by the host from <c>aiControl.enabled</c>.</summary>
 	public bool Enabled { get; set; }
 
@@ -228,6 +231,14 @@ public sealed class AiTools
 	private Task<JsonNode> PressKey(JsonObject args)
 	{
 		var key = RequiredString("press_key", args, "key");
+		try
+		{
+			CdpKeys.Of(key);
+		}
+		catch (UnknownKeyException)
+		{
+			throw new ToolArgumentException("press_key", "key", "isn't a KeyboardEvent.key value Zing knows, such as Enter, ArrowDown or one character");
+		}
 		var reference = OptionalString("press_key", args, "ref");
 		return Act("press_key", args, AiAction.PressKey, reference, key, $"press {key}", (tab, target, _) => _driver.PressKey(tab, target?.Node, key));
 	}
@@ -289,7 +300,8 @@ public sealed class AiTools
 		var target = reference is null ? null : TargetOf(tab, reference);
 		var generation = StateOf(tab).Generation;
 		var url = _driver.UrlOf(tab);
-		if (_policy.NeedsConfirm(url, action, target?.Ax ?? NoTarget, key))
+		var confirmed = _policy.NeedsConfirm(url, action, target?.Ax ?? NoTarget, key);
+		if (confirmed)
 		{
 			var allowed = await _gate.Ask(tab, url, Describe(tool, description, target, url));
 			EnsureShared(tab);
@@ -298,6 +310,7 @@ public sealed class AiTools
 			if (target is not null && StateOf(tab).Generation != generation) throw new AiToolException(AiErrors.StaleRef, "A newer snapshot was taken; take another and use its refs.");
 		}
 		EnsureUnchanged(tab, url);
+		Acting?.Invoke(tab, confirmed);
 		// Passed on so the action re-checks after each of its own awaits: a page that moved on mid-action must not get the rest.
 		await run(tab, target, () => EnsureUnchanged(tab, url));
 		return Text("Done");

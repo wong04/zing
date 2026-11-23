@@ -471,6 +471,13 @@ public sealed class WebView2Page : IPage
 		return await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync(method, json).AsTask());
 	}
 
+	/// <summary>Calls <paramref name="received"/> with each DevTools <paramref name="eventName"/> on the page's own session, for the page's life (CdpPageDriver).</summary>
+	public void OnDevToolsEvent(string eventName, Action<string> received)
+	{
+		if (!IsOpen || _core is not { } core) throw new ViewGoneException("page");
+		core.GetDevToolsProtocolEventReceiver(eventName).DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => received(e.ParameterObjectAsJson), eventName);
+	}
+
 	private static IEnumerable<System.Text.Json.JsonElement> FramesOf(System.Text.Json.JsonElement node)
 	{
 		yield return node.GetProperty("frame");
