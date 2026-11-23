@@ -22,8 +22,10 @@ public sealed class AiTools
 	{
 		public Snapshot? Latest;
 		public int Generation;
-		public readonly HashSet<long> Masked = [];
 	}
+
+	/// <summary>Vault-filled fields, kept across unshare and reshare and dropped once the tab leaves the origin they were filled on.</summary>
+	private sealed record Masks(string Origin, HashSet<long> Nodes);
 
 	private sealed record Target(long Node, AxNode Ax, string Ref);
 
@@ -33,6 +35,7 @@ public sealed class AiTools
 	private readonly ConfirmGate _gate;
 	private readonly IScheduler _scheduler;
 	private readonly Dictionary<TabRef, TabState> _state = [];
+	private readonly Dictionary<TabRef, Masks> _masks = [];
 	private readonly IReadOnlyList<ToolDef> _defs = Defs();
 
 	public AiTools(IPageDriver driver, AiShares shares, SitePolicy policy, ConfirmGate gate, IScheduler scheduler)
@@ -90,8 +93,8 @@ public sealed class AiTools
 		"open_tab" => OpenTab(args),
 		"close_tab" => CloseTab(args),
 		"navigate" => Navigate(args),
-		"back" => Act(name, args, AiAction.Navigate, null, null, "go back", (tab, _) => _driver.Back(tab)),
-		"forward" => Act(name, args, AiAction.Navigate, null, null, "go forward", (tab, _) => _driver.Forward(tab)),
+		"back" => Act(name, args, AiAction.Navigate, null, null, "go back", (tab, _, _) => _driver.Back(tab)),
+		"forward" => Act(name, args, AiAction.Navigate, null, null, "go forward", (tab, _, _) => _driver.Forward(tab)),
 		"click" => Click(args),
 		"type" => TypeText(args),
 		"select" => Select(args),
@@ -106,7 +109,21 @@ public sealed class AiTools
 	private JsonNode ListTabs()
 	{
 		var tabs = new JsonArray();
-		foreach (var (aiId, tab) in _shares.List()) tabs.Add(new JsonObject { ["tab"] = aiId, ["url"] = _driver.UrlOf(tab).ToString() });
+		foreach (var (aiId, tab) in _shares.List())
+		{
+			Uri url;
+			try
+			{
+				url = _driver.UrlOf(tab);
+			}
+			catch (TabGoneException)
+			{
+				_shares.Unshare(tab);
+				_masks.Remove(tab);
+				continue;
+			}
+			tabs.Add(new JsonObject { ["tab"] = aiId, ["url"] = url.ToString() });
+		}
 		return Text(tabs.ToJsonString());
 	}
 
@@ -114,9 +131,10 @@ public sealed class AiTools
 	{
 		var tab = Resolve(args);
 		var tree = await _driver.AxTree(tab);
+		EnsureShared(tab);
 		var state = StateOf(tab);
 		state.Generation++;
-		state.Latest = Snapshot.Build(tree, state.Generation, state.Masked);
+		state.Latest = Snapshot.Build(tree, state.Generation, MaskedFor(tab));
 		return Text(state.Latest.Text);
 	}
 
@@ -126,7 +144,7 @@ public sealed class AiTools
 	{
 		var tab = Resolve(args);
 		var node = OptionalString("screenshot", args, "ref") is { } reference ? TargetOf(tab, reference).Node : (long?)null;
-		var png = await _driver.Screenshot(tab, node, new HashSet<long>(StateOf(tab).Masked));
+		var png = await _driver.Screenshot(tab, node, new HashSet<long>(MaskedFor(tab)));
 		return new JsonObject
 		{
 			["content"] = new JsonArray(new JsonObject { ["type"] = "image", ["data"] = Convert.ToBase64String(png), ["mimeType"] = "image/png" }),
@@ -144,23 +162,25 @@ public sealed class AiTools
 	private async Task<JsonNode> CloseTab(JsonObject args)
 	{
 		var tab = Resolve(args);
-		var result = await Act("close_tab", args, AiAction.CloseTab, null, null, "close this tab", (t, _) => _driver.CloseTab(t));
+		var result = await Act("close_tab", args, AiAction.CloseTab, null, null, "close this tab", (t, _, _) => _driver.CloseTab(t));
 		_shares.Unshare(tab);
+		_masks.Remove(tab);
 		return result;
 	}
 
 	private Task<JsonNode> Navigate(JsonObject args)
 	{
 		var url = AllowedUrl("navigate", args);
-		return Act("navigate", args, AiAction.Navigate, null, null, $"go to {url}", (tab, _) => _driver.Navigate(tab, url));
+		return Act("navigate", args, AiAction.Navigate, null, null, $"go to {url}", (tab, _, _) => _driver.Navigate(tab, url));
 	}
 
 	private Task<JsonNode> Click(JsonObject args)
 	{
 		var reference = RequiredString("click", args, "ref");
-		return Act("click", args, AiAction.Click, reference, null, null, async (tab, target) =>
+		return Act("click", args, AiAction.Click, reference, null, null, async (tab, target, recheck) =>
 		{
 			var hit = await _driver.NodeAtCentre(tab, target!.Node);
+			recheck();
 			if (hit != target.Node) throw new AiToolException(AiErrors.Covered, $"Something else is on top of {target.Ref}.");
 			await _driver.Click(tab, target.Node);
 		});
@@ -172,14 +192,14 @@ public sealed class AiTools
 		var text = RequiredString("type", args, "text");
 		var submit = OptionalBool("type", args, "submit") ?? false;
 		var action = submit ? AiAction.TypeSubmit : AiAction.Type;
-		return Act("type", args, action, reference, null, null, (tab, target) => _driver.Type(tab, target!.Node, text, submit));
+		return Act("type", args, action, reference, null, null, (tab, target, _) => _driver.Type(tab, target!.Node, text, submit));
 	}
 
 	private Task<JsonNode> Select(JsonObject args)
 	{
 		var reference = RequiredString("select", args, "ref");
 		var value = RequiredString("select", args, "value");
-		return Act("select", args, AiAction.Select, reference, null, null, (tab, target) => _driver.Select(tab, target!.Node, value));
+		return Act("select", args, AiAction.Select, reference, null, null, (tab, target, _) => _driver.Select(tab, target!.Node, value));
 	}
 
 	private Task<JsonNode> Scroll(JsonObject args)
@@ -187,14 +207,14 @@ public sealed class AiTools
 		var reference = OptionalString("scroll", args, "ref");
 		var dx = OptionalInt("scroll", args, "deltaX") ?? 0;
 		var dy = OptionalInt("scroll", args, "deltaY") ?? 0;
-		return Act("scroll", args, AiAction.Scroll, reference, null, "scroll", (tab, target) => _driver.Scroll(tab, target?.Node, dx, dy));
+		return Act("scroll", args, AiAction.Scroll, reference, null, "scroll", (tab, target, _) => _driver.Scroll(tab, target?.Node, dx, dy));
 	}
 
 	private Task<JsonNode> PressKey(JsonObject args)
 	{
 		var key = RequiredString("press_key", args, "key");
 		var reference = OptionalString("press_key", args, "ref");
-		return Act("press_key", args, AiAction.PressKey, reference, key, $"press {key}", (tab, target) => _driver.PressKey(tab, target?.Node, key));
+		return Act("press_key", args, AiAction.PressKey, reference, key, $"press {key}", (tab, target, _) => _driver.PressKey(tab, target?.Node, key));
 	}
 
 	private async Task<JsonNode> Download(JsonObject args)
@@ -206,11 +226,11 @@ public sealed class AiTools
 		{
 			TargetOf(tab, reference);
 			if (!StateOf(tab).Latest!.Links.TryGetValue(reference, out var href)) throw new ToolArgumentException("download", "ref", "is not a link");
-			url = Parse(href) ?? throw new AiToolException(AiErrors.BlockedUrl, "Only http and https URLs can be downloaded.");
+			url = Uri.TryCreate(_driver.UrlOf(tab), href, out var resolved) ? resolved : throw new AiToolException(AiErrors.BlockedUrl, "Only http and https URLs can be downloaded.");
 		}
 		else url = AllowedUrl("download", args);
 		if (!AiUrls.Allowed(url)) throw new AiToolException(AiErrors.BlockedUrl, "Only http and https URLs can be downloaded.");
-		return await Act("download", args, AiAction.Download, reference, null, $"download {url}", (t, _) => _driver.Download(t, url));
+		return await Act("download", args, AiAction.Download, reference, null, $"download {url}", (t, _, _) => _driver.Download(t, url));
 	}
 
 	private async Task<JsonNode> FillLogin(JsonObject args)
@@ -220,7 +240,9 @@ public sealed class AiTools
 		EnsureShared(tab);
 		if (result == FillResult.Denied) throw new AiToolException(AiErrors.Denied, "The owner didn't allow the login to be filled.");
 		if (result == FillResult.NoSavedLogin) throw new AiToolException(AiErrors.NoSavedLogin, "There is no saved login for this site.");
-		StateOf(tab).Masked.UnionWith(filled);
+		var origin = OriginOf(_driver.UrlOf(tab));
+		if (!_masks.TryGetValue(tab, out var masks) || masks.Origin != origin) _masks[tab] = masks = new Masks(origin, []);
+		masks.Nodes.UnionWith(filled);
 		return Text(nameof(FillResult.Filled));
 	}
 
@@ -246,7 +268,7 @@ public sealed class AiTools
 	}
 
 	/// <summary>The common path for an action: resolve, confirm if the site asks, re-check after the confirm, then run.</summary>
-	private async Task<JsonNode> Act(string tool, JsonObject args, AiAction action, string? reference, string? key, string? description, Func<TabRef, Target?, Task> run)
+	private async Task<JsonNode> Act(string tool, JsonObject args, AiAction action, string? reference, string? key, string? description, Func<TabRef, Target?, Action, Task> run)
 	{
 		var tab = Resolve(args);
 		var target = reference is null ? null : TargetOf(tab, reference);
@@ -254,14 +276,15 @@ public sealed class AiTools
 		var url = _driver.UrlOf(tab);
 		if (_policy.NeedsConfirm(url, action, target?.Ax ?? NoTarget, key))
 		{
-			var what = description ?? $"{tool} \"{target!.Ax.Name}\"";
-			var allowed = await _gate.Ask(tab, url, what);
+			var allowed = await _gate.Ask(tab, url, Describe(tool, description, target, url));
 			EnsureShared(tab);
 			if (!allowed) throw new AiToolException(AiErrors.Denied, "The owner didn't allow it.");
-			if (_driver.UrlOf(tab) != url) throw new AiToolException(AiErrors.Denied, "The page changed while waiting for the owner.");
+			EnsureUnchanged(tab, url);
 			if (target is not null && StateOf(tab).Generation != generation) throw new AiToolException(AiErrors.StaleRef, "A newer snapshot was taken; take another and use its refs.");
 		}
-		await run(tab, target);
+		EnsureUnchanged(tab, url);
+		// Passed on so the action re-checks after each of its own awaits: a page that moved on mid-action must not get the rest.
+		await run(tab, target, () => EnsureUnchanged(tab, url));
 		return Text("Done");
 	}
 
@@ -275,6 +298,33 @@ public sealed class AiTools
 	private void EnsureShared(TabRef tab)
 	{
 		if (!_shares.IsShared(tab)) throw new AiToolException(AiErrors.NotShared, "The tab was unshared.");
+	}
+
+	private void EnsureUnchanged(TabRef tab, Uri url)
+	{
+		EnsureShared(tab);
+		if (_driver.UrlOf(tab) != url) throw new AiToolException(AiErrors.Denied, "The page changed before the action ran.");
+	}
+
+	private IReadOnlySet<long> MaskedFor(TabRef tab)
+	{
+		if (!_masks.TryGetValue(tab, out var masks)) return new HashSet<long>();
+		if (masks.Origin == OriginOf(_driver.UrlOf(tab))) return masks.Nodes;
+		_masks.Remove(tab);
+		return new HashSet<long>();
+	}
+
+	private static string OriginOf(Uri url) => url.GetLeftPart(UriPartial.Authority);
+
+	private const int MaxNameLength = 80;
+
+	// The accessible name is page-controlled: one line, no control characters, bounded, and shown next to the real host.
+	private static string Describe(string tool, string? description, Target? target, Uri url)
+	{
+		if (target is null) return $"{description ?? tool} on {url.IdnHost}";
+		var name = new string(target.Ax.Name.Select(c => char.IsControl(c) || c is '\u2028' or '\u2029' ? ' ' : c).ToArray()).Trim();
+		if (name.Length > MaxNameLength) name = name[..MaxNameLength] + "\u2026";
+		return $"{tool} {target.Ax.Role} \"{name}\" on {url.IdnHost}";
 	}
 
 	private TabState StateOf(TabRef tab)

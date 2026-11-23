@@ -11,10 +11,12 @@ public sealed class AiToolsTests : IDisposable
 
 	private const string CartTree = """
 		{ "nodes": [
-			{ "nodeId": "1", "ignored": false, "role": { "value": "RootWebArea" }, "name": { "value": "Cart" }, "childIds": ["2", "4"], "backendDOMNodeId": 1 },
+			{ "nodeId": "1", "ignored": false, "role": { "value": "RootWebArea" }, "name": { "value": "Cart" }, "childIds": ["2", "4", "5", "6"], "backendDOMNodeId": 1 },
 			{ "nodeId": "2", "ignored": false, "role": { "value": "form" }, "name": { "value": "" }, "childIds": ["3"], "backendDOMNodeId": 2 },
 			{ "nodeId": "3", "ignored": false, "role": { "value": "button" }, "name": { "value": "Place order" }, "childIds": [], "backendDOMNodeId": 20 },
-			{ "nodeId": "4", "ignored": false, "role": { "value": "link" }, "name": { "value": "Help" }, "childIds": [], "backendDOMNodeId": 21 }
+			{ "nodeId": "4", "ignored": false, "role": { "value": "link" }, "name": { "value": "Help" }, "childIds": [], "backendDOMNodeId": 21 },
+			{ "nodeId": "5", "ignored": false, "role": { "value": "textbox" }, "name": { "value": "Email" }, "value": { "value": "ada@example.com" }, "childIds": [], "backendDOMNodeId": 12 },
+			{ "nodeId": "6", "ignored": false, "role": { "value": "link" }, "name": { "value": "Invoice" }, "properties": [{ "name": "url", "value": { "type": "string", "value": "/files/invoice.pdf" } }], "childIds": [], "backendDOMNodeId": 22 }
 		] }
 		""";
 
@@ -197,6 +199,85 @@ public sealed class AiToolsTests : IDisposable
 	public async Task UnknownToolThrows()
 	{
 		await Assert.ThrowsAsync<UnknownToolException>(() => _tools.Call("evaluate", []));
+	}
+
+	[Fact]
+	public async Task MasksSurviveUnshareAndReshare()
+	{
+		_driver.Fill = (FillResult.Filled, new HashSet<long> { 12 });
+		Assert.Null(CodeOf(await _tools.Call("fill_login", Args(("tab", _aiId)))));
+		_shares.Unshare(Tab);
+		var aiId = _shares.Share(Tab, Shop);
+
+		var snapshot = await _tools.Call("snapshot", Args(("tab", aiId)));
+		await _tools.Call("screenshot", Args(("tab", aiId)));
+
+		Assert.DoesNotContain("ada@example.com", snapshot["content"]![0]!["text"]!.GetValue<string>());
+		Assert.Equal([12L], _driver.LastBlackOut!);
+	}
+
+	[Fact]
+	public async Task MasksGoWhenTheTabLeavesTheOrigin()
+	{
+		_driver.Fill = (FillResult.Filled, new HashSet<long> { 12 });
+		await _tools.Call("fill_login", Args(("tab", _aiId)));
+		_driver.Urls[Tab] = new Uri("https://other.example.org/");
+
+		await _tools.Call("screenshot", Args(("tab", _aiId)));
+
+		Assert.Empty(_driver.LastBlackOut!);
+	}
+
+	[Fact]
+	public async Task NavigationDuringHitTestStopsTheClick()
+	{
+		await Snapshot();
+		_driver.DuringHitTest = () => _driver.Urls[Tab] = new Uri("https://evil.example.net/");
+
+		var result = await _tools.Call("click", Args(("tab", _aiId), ("ref", "e2")));
+
+		Assert.Equal(AiErrors.Denied, CodeOf(result));
+		Assert.DoesNotContain("click 21", _driver.Calls);
+	}
+
+	[Fact]
+	public async Task ConfirmTextIsOneBoundedLineWithRoleAndHost()
+	{
+		var name = "Place order\n" + new string('x', 200);
+		_driver.Tree = JsonDocument.Parse(CartTree.Replace("\"Place order\"", JsonSerializer.Serialize(name))).RootElement;
+		var shown = new List<string>();
+		_gate.Shown += (_, text) => shown.Add(text);
+		await Snapshot();
+
+		_ = _tools.Call("click", Args(("tab", _aiId), ("ref", "e1")));
+
+		var text = Assert.Single(shown);
+		Assert.StartsWith("click button \"Place order x", text);
+		Assert.EndsWith("\" on shop.example.com", text);
+		Assert.DoesNotContain('\n', text);
+		Assert.True(text.Length < 130, text);
+	}
+
+	[Fact]
+	public async Task ListTabsSkipsAndUnsharesGoneTabs()
+	{
+		var gone = new TabRef("w1", "gone");
+		_shares.Share(gone, Shop);
+
+		var result = await _tools.Call("list_tabs", []);
+
+		Assert.Null(CodeOf(result));
+		Assert.Contains(_aiId, result["content"]![0]!["text"]!.GetValue<string>());
+		Assert.False(_shares.IsShared(gone));
+	}
+
+	[Fact]
+	public async Task RelativeLinkDownloadsResolveAgainstThePage()
+	{
+		await Snapshot();
+		var result = await _tools.Call("download", Args(("tab", _aiId), ("ref", "e4")));
+		Assert.Null(CodeOf(result));
+		Assert.Contains("download https://shop.example.com/files/invoice.pdf", _driver.Calls);
 	}
 
 	private async Task Snapshot() => Assert.Null(CodeOf(await _tools.Call("snapshot", Args(("tab", _aiId)))));

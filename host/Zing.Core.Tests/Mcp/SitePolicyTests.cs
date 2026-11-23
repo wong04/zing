@@ -101,4 +101,24 @@ public sealed class SitePolicyTests : IDisposable
 		var policy = new SitePolicy(PolicyPath);
 		Assert.Throws<NoSiteException>(() => policy.Set(new Uri("https://com/"), SiteLevel.Never));
 	}
+
+	[Fact]
+	public void NumericLevelIsAnError()
+	{
+		File.WriteAllText(PolicyPath, """{"example.com":"1"}""");
+		Assert.Throws<SitePolicyFileException>(() => new SitePolicy(PolicyPath));
+	}
+
+	[Fact]
+	public void FailedSaveLeavesTheLevelUnchanged()
+	{
+		var policy = new SitePolicy(PolicyPath);
+		var shop = new Uri("https://shop.example.com/");
+		Directory.CreateDirectory(PolicyPath);
+
+		Assert.ThrowsAny<Exception>(() => policy.Set(shop, SiteLevel.Never));
+
+		Assert.Equal(SiteLevel.AskSubmit, policy.LevelFor(shop));
+		Assert.False(policy.HasRules);
+	}
 }

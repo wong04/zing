@@ -35,7 +35,8 @@ public sealed class SitePolicy
 			foreach (var (site, node) in root)
 			{
 				var name = node?.GetValue<string>();
-				if (!Enum.TryParse<SiteLevel>(name, out var level) || !Enum.IsDefined(level)) throw new InvalidDataException($"Unknown level '{name}' for {site}");
+				// By name only: Enum.TryParse would also take "1".
+				if (name is null || !Enum.GetNames<SiteLevel>().Contains(name) || !Enum.TryParse<SiteLevel>(name, out var level)) throw new InvalidDataException($"Unknown level '{name}' for {site}");
 				_levels[site] = level;
 			}
 		}
@@ -59,9 +60,13 @@ public sealed class SitePolicy
 	public void Set(Uri url, SiteLevel level)
 	{
 		var site = SiteOf(url) ?? throw new NoSiteException(url);
+		var next = new SortedDictionary<string, SiteLevel>(_levels, StringComparer.Ordinal);
+		if (level == Default) next.Remove(site);
+		else next[site] = level;
+		// Saved first, so a failed write leaves memory matching the file.
+		Save(next);
 		if (level == Default) _levels.Remove(site);
 		else _levels[site] = level;
-		Save();
 	}
 
 	public bool NeedsConfirm(Uri url, AiAction action, AxNode target, string? key) => LevelFor(url) switch
@@ -73,13 +78,13 @@ public sealed class SitePolicy
 
 	private static string? SiteOf(Uri url) => PublicSuffix.RegistrableDomain(url.IdnHost);
 
-	private void Save()
+	private void Save(IReadOnlyDictionary<string, SiteLevel> levels)
 	{
-		if (_levels.Count == 0)
+		if (levels.Count == 0)
 		{
 			File.Delete(_path);
 			return;
 		}
-		JsonFiles.WriteJsonAtomic(_path, _levels.ToDictionary(l => l.Key, l => l.Value.ToString()));
+		JsonFiles.WriteJsonAtomic(_path, levels.ToDictionary(l => l.Key, l => l.Value.ToString()));
 	}
 }

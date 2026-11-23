@@ -447,7 +447,14 @@ public sealed class FakePageDriver : Zing.Core.Mcp.IPageDriver
 		return Task.FromResult(new byte[] { 0x89, 0x50, 0x4e, 0x47 });
 	}
 
-	public Task<long?> NodeAtCentre(Zing.Core.Mcp.TabRef tab, long node) => Task.FromResult<long?>(HitNode ?? node);
+	/// <summary>Runs inside NodeAtCentre, as a page navigating between hit test and click would.</summary>
+	public Action? DuringHitTest { get; set; }
+
+	public Task<long?> NodeAtCentre(Zing.Core.Mcp.TabRef tab, long node)
+	{
+		DuringHitTest?.Invoke();
+		return Task.FromResult<long?>(HitNode ?? node);
+	}
 	public Task Click(Zing.Core.Mcp.TabRef tab, long node) => Record($"click {node}");
 	public Task Type(Zing.Core.Mcp.TabRef tab, long node, string text, bool submit) => Record($"type {node} {text} {submit}");
 	public Task Select(Zing.Core.Mcp.TabRef tab, long node, string value) => Record($"select {node} {value}");
