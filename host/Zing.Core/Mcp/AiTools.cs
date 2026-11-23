@@ -46,6 +46,10 @@ public sealed class AiTools
 		_gate = gate;
 		_scheduler = scheduler;
 		shares.Unshared += tab => _state.Remove(tab);
+		shares.NavigatedTo += (tab, url) =>
+		{
+			if (_masks.TryGetValue(tab, out var masks) && masks.Origin != OriginOf(url)) _masks.Remove(tab);
+		};
 	}
 
 	/// <summary>Set by the host from <c>aiControl.enabled</c>.</summary>
@@ -321,10 +325,25 @@ public sealed class AiTools
 	// The accessible name is page-controlled: one line, no control characters, bounded, and shown next to the real host.
 	private static string Describe(string tool, string? description, Target? target, Uri url)
 	{
-		if (target is null) return $"{description ?? tool} on {url.IdnHost}";
-		var name = new string(target.Ax.Name.Select(c => char.IsControl(c) || c is '\u2028' or '\u2029' ? ' ' : c).ToArray()).Trim();
-		if (name.Length > MaxNameLength) name = name[..MaxNameLength] + "\u2026";
-		return $"{tool} {target.Ax.Role} \"{name}\" on {url.IdnHost}";
+		var action = description ?? tool;
+		if (target is null) return $"{action} on {url.IdnHost}";
+		var preposition = tool switch
+		{
+			"download" => " from",
+			"press_key" or "scroll" => " in",
+			_ => "",
+		};
+		return $"{action}{preposition} {target.Ax.Role} \"{Clean(target.Ax.Name)}\" on {url.IdnHost}";
+	}
+
+	// Format characters (bidi overrides such as U+202E) could make the name read as something else, so they go entirely.
+	private static string Clean(string name)
+	{
+		var kept = name
+			.Where(c => char.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.Format)
+			.Select(c => char.IsControl(c) || c is '\u2028' or '\u2029' ? ' ' : c);
+		var clean = new string(kept.ToArray()).Trim();
+		return clean.Length > MaxNameLength ? clean[..MaxNameLength] + "\u2026" : clean;
 	}
 
 	private TabState StateOf(TabRef tab)

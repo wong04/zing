@@ -44,8 +44,12 @@ public sealed class AiShares
 
 	public bool IsShared(TabRef tab) => _byTab.ContainsKey(tab);
 
+	/// <summary>Raised for every top-level navigation the host reports, shared tab or not, before any unshare it causes.</summary>
+	public event Action<TabRef, Uri>? NavigatedTo;
+
 	public void Navigated(TabRef tab, Uri url)
 	{
+		NavigatedTo?.Invoke(tab, url);
 		if (!AiUrls.Allowed(url)) Unshare(tab);
 	}
 

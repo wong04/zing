@@ -23,6 +23,7 @@ public sealed class AiToolsTests : IDisposable
 	private readonly string _dir = Directory.CreateTempSubdirectory("zing-aitools-").FullName;
 	private readonly ManualScheduler _scheduler = new();
 	private readonly AiShares _shares = new();
+	private readonly SitePolicy _policy;
 	private readonly ConfirmGate _gate;
 	private readonly FakePageDriver _driver = new();
 	private readonly AiTools _tools;
@@ -30,9 +31,9 @@ public sealed class AiToolsTests : IDisposable
 
 	public AiToolsTests()
 	{
-		var policy = new SitePolicy(Path.Combine(_dir, "ai-sites.json"));
-		_gate = new ConfirmGate(_scheduler, _shares, policy);
-		_tools = new AiTools(_driver, _shares, policy, _gate, _scheduler) { Enabled = true };
+		_policy = new SitePolicy(Path.Combine(_dir, "ai-sites.json"));
+		_gate = new ConfirmGate(_scheduler, _shares, _policy);
+		_tools = new AiTools(_driver, _shares, _policy, _gate, _scheduler) { Enabled = true };
 		_driver.Tree = JsonDocument.Parse(CartTree).RootElement;
 		_driver.Urls[Tab] = Shop;
 		_aiId = _shares.Share(Tab, Shop);
@@ -278,6 +279,61 @@ public sealed class AiToolsTests : IDisposable
 		var result = await _tools.Call("download", Args(("tab", _aiId), ("ref", "e4")));
 		Assert.Null(CodeOf(result));
 		Assert.Contains("download https://shop.example.com/files/invoice.pdf", _driver.Calls);
+	}
+
+	[Fact]
+	public async Task ConfirmTextForDownloadByRefShowsTheDestination()
+	{
+		_policy.Set(Shop, SiteLevel.AskAll);
+		var shown = ShownTexts();
+		await Snapshot();
+
+		_ = _tools.Call("download", Args(("tab", _aiId), ("ref", "e4")));
+
+		Assert.Equal(["download https://shop.example.com/files/invoice.pdf from link \"Invoice\" on shop.example.com"], shown);
+	}
+
+	[Fact]
+	public async Task ConfirmTextForKeyOnRefShowsTheKey()
+	{
+		var shown = ShownTexts();
+		await Snapshot();
+
+		_ = _tools.Call("press_key", Args(("tab", _aiId), ("ref", "e3"), ("key", "Enter")));
+
+		Assert.Equal(["press Enter in textbox \"Email\" on shop.example.com"], shown);
+	}
+
+	[Fact]
+	public async Task ConfirmTextDropsBidiOverrides()
+	{
+		_driver.Tree = JsonDocument.Parse(CartTree.Replace("\"Place order\"", "\"Place \\u202Eorder\"")).RootElement;
+		var shown = ShownTexts();
+		await Snapshot();
+
+		_ = _tools.Call("click", Args(("tab", _aiId), ("ref", "e1")));
+
+		Assert.Equal(["click button \"Place order\" on shop.example.com"], shown);
+	}
+
+	[Fact]
+	public async Task LeavingTheOriginClearsMasksForGood()
+	{
+		_driver.Fill = (FillResult.Filled, new HashSet<long> { 12 });
+		await _tools.Call("fill_login", Args(("tab", _aiId)));
+
+		_shares.Navigated(Tab, new Uri("https://other.example.org/"));
+		_shares.Navigated(Tab, Shop);
+		await _tools.Call("screenshot", Args(("tab", _aiId)));
+
+		Assert.Empty(_driver.LastBlackOut!);
+	}
+
+	private List<string> ShownTexts()
+	{
+		var shown = new List<string>();
+		_gate.Shown += (_, text) => shown.Add(text);
+		return shown;
 	}
 
 	private async Task Snapshot() => Assert.Null(CodeOf(await _tools.Call("snapshot", Args(("tab", _aiId)))));
