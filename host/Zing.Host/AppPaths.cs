@@ -22,6 +22,12 @@ public static class AppPaths
 	/// <summary>Every window's tabs, saved as Zing relaunches into an update and read once by the next launch, whatever restoreTabs says.</summary>
 	public static string RelaunchSession => Path.Combine(UserData, "relaunch-session.json");
 
+	/// <summary>The AI tools' per-site confirm levels.</summary>
+	public static string AiSites => Path.Combine(UserData, "ai-sites.json");
+
+	/// <summary>The DPAPI-sealed bearer token for the MCP endpoint.</summary>
+	public static string AiToken => Path.Combine(UserData, "ai-token.bin");
+
 	/// <summary>The password vault: vault.zing, keys.bin and sync.json (Zing.Core.Vault.VaultStore). Not created until the first save.</summary>
 	public static string Vault => Path.Combine(UserData, "vault");
 

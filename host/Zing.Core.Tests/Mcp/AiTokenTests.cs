@@ -48,4 +48,22 @@ public sealed class AiTokenTests : IDisposable
 		new AiToken(new FakeCipher(), TokenPath).Current();
 		Assert.ThrowsAny<CryptographicException>(() => new AiToken(new FakeCipher(foreign: true), TokenPath).Current());
 	}
+
+	[Fact]
+	public void CurrentIsACopy()
+	{
+		var store = new AiToken(new FakeCipher(), TokenPath);
+		var first = store.Current();
+		var kept = first.ToArray();
+		first[0] ^= 0xff;
+		Assert.Equal(kept, store.Current());
+	}
+
+	[Fact]
+	public void ATokenOfTheWrongLengthIsAnError()
+	{
+		var cipher = new FakeCipher();
+		File.WriteAllBytes(TokenPath, cipher.Encrypt(new byte[16]));
+		Assert.Throws<AiTokenLengthException>(() => new AiToken(cipher, TokenPath).Current());
+	}
 }
