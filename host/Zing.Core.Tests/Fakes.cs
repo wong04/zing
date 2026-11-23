@@ -438,10 +438,18 @@ public sealed class FakePageDriver : Zing.Core.Mcp.IPageDriver
 	public Zing.Core.Mcp.TabRef NextTab { get; set; } = new("w1", "opened");
 
 	public Task<System.Text.Json.JsonElement> AxTree(Zing.Core.Mcp.TabRef tab) => Task.FromResult(Tree);
-	public Task<string> MainText(Zing.Core.Mcp.TabRef tab) => Task.FromResult("main text");
+	/// <summary>Runs inside MainText and Screenshot, as an unshare or navigation during a long read would.</summary>
+	public Action? DuringRead { get; set; }
+
+	public Task<string> MainText(Zing.Core.Mcp.TabRef tab)
+	{
+		DuringRead?.Invoke();
+		return Task.FromResult("main text");
+	}
 
 	public Task<byte[]> Screenshot(Zing.Core.Mcp.TabRef tab, long? node, IReadOnlySet<long> blackOut)
 	{
+		DuringRead?.Invoke();
 		LastBlackOut = blackOut;
 		Calls.Add($"screenshot {node}");
 		return Task.FromResult(new byte[] { 0x89, 0x50, 0x4e, 0x47 });

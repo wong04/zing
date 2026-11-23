@@ -96,12 +96,42 @@ test('screenshot returns a PNG', async () => {
 	await zing.close()
 })
 
-test('read_text reads a fixture PDF', async () => {
+test('read_text of a PDF answers Unsupported and leaves nothing selected', async () => {
 	const zing = await launchZing()
 	const mcp = await connectMcp(zing.chrome)
 	await shareTab(zing.chrome, await openTab(zing.chrome, '/doc.pdf'))
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/doc.pdf`)
+	// The viewer's own scripting answer; null until it has loaded the file.
+	const selected = () => page.evaluate(() => new Promise<string | null>((resolve) => {
+		const embed = document.querySelector('embed') as unknown as { postMessage(m: unknown): void } | null
+		if (!embed) return resolve(null)
+		const heard = (event: MessageEvent) => {
+			if ((event.data as { type?: string } | null)?.type !== 'getSelectedTextReply') return
+			globalThis.removeEventListener('message', heard)
+			resolve(String((event.data as { selectedText: string }).selectedText))
+		}
+		globalThis.addEventListener('message', heard)
+		embed.postMessage({ type: 'getSelectedText' })
+		setTimeout(() => resolve(null), 2000)
+	}))
+	await expect.poll(selected).toBe('')
+	const result = await mcp.call('read_text', { tab: await onlyTab(mcp) })
+	expect(result.structuredContent?.code).toBe('Unsupported')
+	expect(await selected()).toBe('')
+	await zing.close()
+})
+
+test('a screenshot of the front tab of a minimised window returns NotVisible', async () => {
+	const zing = await launchZing({ env: { ZING_E2E_AI_SHOW_WAIT_MS: '1500' } })
+	const mcp = await connectMcp(zing.chrome)
+	await shareTab(zing.chrome, await openTab(zing.chrome, '/plain'))
 	const tab = await onlyTab(mcp)
-	await expect.poll(async () => textOf(await mcp.call('read_text', { tab })), { timeout: 30_000 }).toContain('Quarterly Zebra Report')
+	// Started first: a page that starts while its window is minimised fails to take focus (a separate host issue).
+	await expect(await pageWhere(zing.browser, (p) => p.url() === `${base}/plain`)).toHaveTitle('plain')
+	await zing.chrome.evaluate(() => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'minimise-window', minimised: true }))
+	// A call made before the window has gone down may still capture or time out, so it is asked again.
+	await expect.poll(async () => (await mcp.call('screenshot', { tab })).structuredContent?.code, { timeout: 45_000 }).toBe('NotVisible')
+	await zing.chrome.evaluate(() => (globalThis as unknown as { chrome: { webview: { postMessage(m: unknown): void } } }).chrome.webview.postMessage({ kind: 'test', action: 'minimise-window', minimised: false }))
 	await zing.close()
 })
 

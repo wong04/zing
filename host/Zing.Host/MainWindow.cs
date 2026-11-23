@@ -100,6 +100,9 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	/// <summary>The window's handle, which owns a Windows Hello prompt (HelloSealer).</summary>
 	public nint Hwnd => _window.Hwnd;
 
+	/// <summary>Minimised: none of its tabs is on screen.</summary>
+	public bool IsMinimised => _window.IsMinimised;
+
 	/// <summary>Shows the window; test runs never take focus (AGENTS.md).</summary>
 	public void Show() => _window.Show(activate: !TestHooks.KeepsOutOfTheWay);
 

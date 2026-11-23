@@ -166,6 +166,46 @@ public sealed class AiToolsTests : IDisposable
 		Assert.Equal("image/png", image["mimeType"]!.GetValue<string>());
 	}
 
+	[Theory]
+	[InlineData("read_text")]
+	[InlineData("screenshot")]
+	public async Task ATabUnsharedDuringAReadReturnsNothing(string tool)
+	{
+		_driver.DuringRead = () => _shares.Unshare(Tab);
+
+		var result = await _tools.Call(tool, Args(("tab", _aiId)));
+
+		Assert.Equal(AiErrors.NotShared, CodeOf(result));
+	}
+
+	[Theory]
+	[InlineData("read_text")]
+	[InlineData("screenshot")]
+	public async Task ATabThatGoesToAZingPageDuringAReadReturnsNothing(string tool)
+	{
+		_driver.DuringRead = () =>
+		{
+			_driver.Urls[Tab] = new Uri("zing://settings");
+			_shares.Navigated(Tab, _driver.Urls[Tab]);
+		};
+
+		Assert.Equal(AiErrors.NotShared, CodeOf(await _tools.Call(tool, Args(("tab", _aiId)))));
+	}
+
+	[Fact]
+	public async Task AScreenshotWhoseTabMovesToAnotherSiteIsDenied()
+	{
+		_driver.Fill = (FillResult.Filled, new HashSet<long> { 12 });
+		Assert.Null(CodeOf(await _tools.Call("fill_login", Args(("tab", _aiId)))));
+		_driver.DuringRead = () =>
+		{
+			_driver.Urls[Tab] = new Uri("https://elsewhere.example.org/");
+			_shares.Navigated(Tab, _driver.Urls[Tab]);
+		};
+
+		Assert.Equal(AiErrors.Denied, CodeOf(await _tools.Call("screenshot", Args(("tab", _aiId)))));
+	}
+
 	[Fact]
 	public async Task NoSavedLoginIsAnError()
 	{

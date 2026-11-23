@@ -142,13 +142,24 @@ public sealed class AiTools
 		return Text(state.Latest.Text);
 	}
 
-	private async Task<JsonNode> ReadText(JsonObject args) => Text(await _driver.MainText(Resolve(args)));
+	private async Task<JsonNode> ReadText(JsonObject args)
+	{
+		var tab = Resolve(args);
+		var text = await _driver.MainText(tab);
+		// A PDF read retries for seconds: the tab may have been unshared, or left for a page that can't be shared, meanwhile.
+		EnsureShared(tab);
+		return Text(text);
+	}
 
 	private async Task<JsonNode> Screenshot(JsonObject args)
 	{
 		var tab = Resolve(args);
 		var node = OptionalString("screenshot", args, "ref") is { } reference ? TargetOf(tab, reference).Node : (long?)null;
+		var origin = OriginOf(_driver.UrlOf(tab));
 		var png = await _driver.Screenshot(tab, node, new HashSet<long>(MaskedFor(tab)));
+		// A screenshot of a hidden tab can wait minutes; the masks it painted belong to the origin it started on.
+		EnsureShared(tab);
+		if (OriginOf(_driver.UrlOf(tab)) != origin) throw new AiToolException(AiErrors.Denied, "The page moved to another site while the screenshot was taken; take it again.");
 		return new JsonObject
 		{
 			["content"] = new JsonArray(new JsonObject { ["type"] = "image", ["data"] = Convert.ToBase64String(png), ["mimeType"] = "image/png" }),
@@ -420,7 +431,7 @@ public sealed class AiTools
 		[
 			Def("list_tabs", "Lists the tabs the owner has shared with AI.", []),
 			Def("snapshot", "An accessibility-tree outline of the tab; refs like e12 mark what can be acted on. Content inside frames is not included.", [], ("tab", tab)),
-			Def("read_text", "The main text of the tab, including PDFs in the viewer.", [], ("tab", tab)),
+			Def("read_text", "The main text of the tab. A PDF in the viewer answers Unsupported for now.", [], ("tab", tab)),
 			Def("screenshot", "A PNG of the visible page, or of one element.", ["ref"], ("tab", tab), ("ref", reference)),
 			Def("open_tab", "Opens a new tab at a URL; it starts out shared.", [], ("url", url)),
 			Def("close_tab", "Closes a shared tab.", [], ("tab", tab)),

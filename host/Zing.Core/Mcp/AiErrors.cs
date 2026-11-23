@@ -16,6 +16,8 @@ public static class AiErrors
 	public const string DialogOpen = nameof(DialogOpen);
 	public const string NotVisible = nameof(NotVisible);
 	public const string Timeout = nameof(Timeout);
+	/// <summary>The tool can't do this for this kind of page yet (read_text of a PDF).</summary>
+	public const string Unsupported = nameof(Unsupported);
 
 	public static JsonObject Result(string code, string message) => new()
 	{

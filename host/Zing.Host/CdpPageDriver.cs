@@ -10,8 +10,8 @@ namespace Zing.Host;
 public sealed class AiActionNotBuiltException(string action) : NotSupportedException($"The AI action {action} isn't built yet.");
 
 /// <summary>
-/// The AI tools' way into a tab: DevTools calls on the tab's own CoreWebView2 only. Milestone 1 reads the main frame and,
-/// for a PDF, the viewer's text; other frames, cross-origin ones included, are left out. Every call has <see cref="CallLimit"/>; a tab with no page gets one, unshown.
+/// The AI tools' way into a tab: DevTools calls on the tab's own CoreWebView2 only. Milestone 1 reads the main frame; other
+/// frames, cross-origin ones included, are left out, and a PDF's text can't be read yet. Every call has <see cref="CallLimit"/>; a tab with no page gets one, unshown.
 /// </summary>
 public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, AiShares shares, IScheduler scheduler, TimeSpan showWait) : IPageDriver
 {
@@ -39,7 +39,9 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, AiShares s
 	public async Task<string> MainText(TabRef tab)
 	{
 		var page = await PageAsync(tab);
-		if (await IsPdfAsync(tab, page)) return await PdfTextAsync(tab, page);
+		// The viewer's text never reaches the DevTools accessibility tree (its plugin builds one only for a screen reader), and
+		// its scripting messages read only a selection they leave behind in the owner's view, which no message clears.
+		if (await IsPdfAsync(tab, page)) throw new AiToolException(AiErrors.Unsupported, "Reading the text of a PDF isn't available yet.");
 		using var tree = await CallAsync(tab, page, "Accessibility.getFullAXTree", new { });
 		return AxText.From(tree.RootElement);
 	}
@@ -167,7 +169,7 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, AiShares s
 		return done.Task;
 	}
 
-	private bool IsShown(TabRef tab, WebView2Page page) => TabsOf(tab).IsShown(tab.TabId) && page.Visible;
+	private bool IsShown(TabRef tab, WebView2Page page) => TabsOf(tab).IsShown(tab.TabId) && page.Visible && windowOf(tab.WindowId)?.IsMinimised == false;
 
 	/// <summary>Never brings the tab forward: the owner does, within <c>showWait</c>, or the screenshot is NotVisible.</summary>
 	private async Task WaitToBeShownAsync(TabRef tab, WebView2Page page)
@@ -221,46 +223,6 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, AiShares s
 		using var tree = await CallAsync(tab, page, "Page.getFrameTree", new { });
 		return tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("mimeType").GetString() == "application/pdf";
 	}
-
-	/// <summary>
-	/// The PDF's text from the viewer's scripting messages (selectAll, then getSelectedText), sent to the embedder's &lt;embed&gt;.
-	/// The viewer's text never reaches the DevTools accessibility tree (its plugin builds one only for a screen reader), and
-	/// the scripting API can't read without selecting, so the text is left selected in the viewer. The viewer answers only
-	/// once it has loaded the file, so it is asked again until it does.
-	/// </summary>
-	private async Task<string> PdfTextAsync(TabRef tab, WebView2Page page)
-	{
-		var clock = Stopwatch.StartNew();
-		while (true)
-		{
-			using var answer = await CallAsync(tab, page, "Runtime.evaluate", new { expression = PdfTextScript, awaitPromise = true, returnByValue = true });
-			var result = answer.RootElement.GetProperty("result");
-			if (result.TryGetProperty("value", out var text) && text.ValueKind == JsonValueKind.String) return text.GetString()!;
-			if (clock.Elapsed >= CallLimit) throw new CdpTimeoutException("PDF text");
-			await DelayAsync(PollEvery);
-			EnsureCurrent(tab, page);
-		}
-	}
-
-	private const string PdfTextScript = """
-		new Promise((resolve) => {
-			const embed = document.querySelector('embed');
-			if (!embed) return resolve(null);
-			const heard = (event) => {
-				if (event.data?.type !== 'getSelectedTextReply') return;
-				done(String(event.data.selectedText ?? ''));
-			};
-			const done = (text) => {
-				clearTimeout(timer);
-				window.removeEventListener('message', heard);
-				resolve(text);
-			};
-			const timer = setTimeout(() => done(null), 2000);
-			window.addEventListener('message', heard);
-			embed.postMessage({ type: 'selectAll' });
-			embed.postMessage({ type: 'getSelectedText' });
-		})
-		""";
 
 	/// <summary>Paints <paramref name="boxes"/> (viewport CSS pixels) black on the PNG, whose left top is at <paramref name="x"/>, <paramref name="y"/>.</summary>
 	private static async Task<byte[]> PaintAsync(byte[] png, IReadOnlyList<PixelBox> boxes, double x, double y, double cssWidth)
