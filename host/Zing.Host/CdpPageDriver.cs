@@ -237,8 +237,6 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 			foreach (var (node, value) in new[] { (username, user), (password, secret) })
 			{
 				if (node is not { } n) continue;
-				// Checked again before each value: the tab may have been unshared, or left, while the last one went in.
-				if (!MayFill(tab, page, origin)) return filled;
 				if (await PutAsync(tab, page, world, n, origin, value)) filled.Add(n);
 			}
 			return filled;
@@ -276,6 +274,8 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 			// The field left the page meanwhile.
 			return false;
 		}
+		// No await between this check and the write: the tab may have been unshared, or left, while the node resolved.
+		if (!MayFill(tab, page, origin)) return false;
 		using var done = await CallAsync(tab, page, "Runtime.callFunctionOn", new { objectId = element, functionDeclaration = AutofillScripts.AiPutValue, arguments = new[] { new { value = origin }, new { value } }, returnByValue = true });
 		return done.RootElement.GetProperty("result").TryGetProperty("value", out var put) && put.ValueKind == JsonValueKind.True;
 	}
@@ -529,9 +529,15 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 			_holding.Remove(page);
 			if (_forcing.Remove(page, out var forcing)) forcing.TrySetException(new AiToolException(AiErrors.NotShared, "The tab was unshared."));
 			var asking = _asking.Remove(page, out var ids) ? ids.ToList() : [];
-			if (page.IsOpen) TestHooks.Background(StopHoldingAsync(tab, page, asking), "ai form post watch");
+			if (!page.IsOpen) continue;
+			var stop = StopHoldingAsync(tab, page, asking);
+			_stops.Stopping(page, stop);
+			TestHooks.Background(stop, "ai form post watch");
 		}
 	}
+
+	/// <summary>An unshare's Fetch.disable, which a reshare's Fetch.enable must follow, not precede.</summary>
+	private readonly StopsBeforeStarts<WebView2Page> _stops = new();
 
 	/// <summary>Requests paused for the owner's answer, by page; a request leaves when it is answered or failed.</summary>
 	private readonly Dictionary<WebView2Page, HashSet<string>> _asking = [];
@@ -554,6 +560,9 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 	{
 		foreach (var closed in _holding.Keys.Where(p => !p.IsOpen).ToList()) _holding.Remove(closed);
 		_listening.RemoveWhere(p => !p.IsOpen);
+		if (_holding.ContainsKey(page)) return;
+		await _stops.StoppedAsync(page);
+		EnsureCurrent(tab, page);
 		if (_holding.ContainsKey(page)) return;
 		string mainFrame;
 		using (var tree = await CallAsync(tab, page, "Page.getFrameTree", new { }))

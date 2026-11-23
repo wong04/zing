@@ -27,9 +27,10 @@ public sealed class AiEndpoint
 		}, () => new McpPipeServer(pipeName, Handle, e => TestHooks.Record("ai pipe", e), e => Faults.Warning("ai pipe client", e)), Faults.Warning);
 		token.Regenerated += () =>
 		{
-			_sessions.DropAll();
+			// The new token first, so no request can open a session with the old one after the drop.
 			if (_listeners.HttpRunning) _current = token.Current();
 			else _listeners.TokenChanged();
+			_sessions.DropAll();
 		};
 	}
 

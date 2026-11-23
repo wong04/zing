@@ -126,6 +126,7 @@ Zing never calls a model and needs no API key. It exposes MCP tools only. The ow
 - Only `http`/`https` URLs: never `file:`, `javascript:`, `edge:`, `view.zing` or `zing:`.
 - Fields Zing filled from the vault stay masked in snapshots and blacked out in screenshots, whatever their input type, so a show-password toggle cannot leak them.
 - Enter in any editable (a form or a `contenteditable` like Gmail or Slack) counts as a submit. As a backstop, a top-level form POST navigation that follows an AI action is paused for confirmation on sites set to ask (XHR/fetch is not paused: autosave and analytics would make it constant).
+  The backstop holds a top-level form POST only when it starts within 5 s of an AI action.
 
 ## Left to the builder
 
