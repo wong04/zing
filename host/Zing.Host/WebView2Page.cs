@@ -462,6 +462,15 @@ public sealed class WebView2Page : IPage
 		return results;
 	}
 
+	/// <summary>A DevTools call on the page's own session (CdpPageDriver); throws <see cref="ViewGoneException"/> if the page closes meanwhile.</summary>
+	public async Task<string> DevToolsAsync(string method, string json)
+	{
+		if (!IsOpen || _core is not { } core) throw new ViewGoneException("page");
+		// A suspended renderer would answer only once shown.
+		if (core.IsSuspended) core.Resume();
+		return await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync(method, json).AsTask());
+	}
+
 	private static IEnumerable<System.Text.Json.JsonElement> FramesOf(System.Text.Json.JsonElement node)
 	{
 		yield return node.GetProperty("frame");

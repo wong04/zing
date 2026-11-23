@@ -1,0 +1,287 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices.WindowsRuntime;
+using System.Text.Json;
+using Zing.Core;
+using Zing.Core.Mcp;
+
+namespace Zing.Host;
+
+/// <summary>An AI action that arrives with milestone 2 (Tasks 9 and 11); the reading tools are all milestone 1 has.</summary>
+public sealed class AiActionNotBuiltException(string action) : NotSupportedException($"The AI action {action} isn't built yet.");
+
+/// <summary>
+/// The AI tools' way into a tab: DevTools calls on the tab's own CoreWebView2 only. Milestone 1 reads the main frame and,
+/// for a PDF, the viewer's text; other frames, cross-origin ones included, are left out. Every call has <see cref="CallLimit"/>; a tab with no page gets one, unshown.
+/// </summary>
+public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, AiShares shares, IScheduler scheduler, TimeSpan showWait) : IPageDriver
+{
+	public static readonly TimeSpan CallLimit = TimeSpan.FromSeconds(15);
+
+	/// <summary>How long a screenshot of a hidden tab waits for the owner to switch to it (spec: background tabs).</summary>
+	public static readonly TimeSpan ShowWait = TimeSpan.FromMinutes(2);
+
+	private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(250);
+
+	private readonly HashSet<TabRef> _waitingToBeShown = [];
+
+	/// <summary>A screenshot started or stopped waiting for its hidden tab to be shown; the tab's badge (Task 10) follows it.</summary>
+	public event Action<TabRef>? ShowWaitChanged;
+
+	public bool IsWaitingToBeShown(TabRef tab) => _waitingToBeShown.Contains(tab);
+
+	public async Task<JsonElement> AxTree(TabRef tab)
+	{
+		var page = await PageAsync(tab);
+		using var tree = await CallAsync(tab, page, "Accessibility.getFullAXTree", new { });
+		return tree.RootElement.Clone();
+	}
+
+	public async Task<string> MainText(TabRef tab)
+	{
+		var page = await PageAsync(tab);
+		if (await IsPdfAsync(tab, page)) return await PdfTextAsync(tab, page);
+		using var tree = await CallAsync(tab, page, "Accessibility.getFullAXTree", new { });
+		return AxText.From(tree.RootElement);
+	}
+
+	public async Task<byte[]> Screenshot(TabRef tab, long? node, IReadOnlySet<long> blackOut)
+	{
+		var page = await PageAsync(tab);
+		if (!IsShown(tab, page)) await WaitToBeShownAsync(tab, page);
+		using var metrics = await CallAsync(tab, page, "Page.getLayoutMetrics", new { });
+		var layout = metrics.RootElement.GetProperty("cssLayoutViewport");
+		var visual = metrics.RootElement.GetProperty("cssVisualViewport");
+		// Clips are in document coordinates; box models in the viewport's.
+		PixelBox? origin = node is { } n ? await BoxAsync(tab, page, n) ?? throw new AiToolException(AiErrors.StaleRef, "The element is no longer on the page; take a new snapshot.") : null;
+		object args = origin is { } box
+			? new { format = "png", clip = new { x = box.X + layout.GetProperty("pageX").GetDouble(), y = box.Y + layout.GetProperty("pageY").GetDouble(), width = box.Width, height = box.Height, scale = 1 } }
+			: new { format = "png" };
+		using var shot = await CallAsync(tab, page, "Page.captureScreenshot", args);
+		var png = Convert.FromBase64String(shot.RootElement.GetProperty("data").GetString()!);
+		if (blackOut.Count == 0) return png;
+		var boxes = new List<PixelBox>();
+		foreach (var masked in blackOut)
+			if (await BoxAsync(tab, page, masked) is { } at) boxes.Add(at);
+		var width = origin?.Width ?? visual.GetProperty("clientWidth").GetDouble();
+		return await PaintAsync(png, boxes, origin?.X ?? 0, origin?.Y ?? 0, width);
+	}
+
+	public Uri UrlOf(TabRef tab) => new(TabsOf(tab).Get(tab.TabId).Url);
+
+	public Task<long?> NodeAtCentre(TabRef tab, long node) => throw new AiActionNotBuiltException(nameof(NodeAtCentre));
+	public Task Click(TabRef tab, long node) => throw new AiActionNotBuiltException(nameof(Click));
+	public Task Type(TabRef tab, long node, string text, bool submit) => throw new AiActionNotBuiltException(nameof(Type));
+	public Task Select(TabRef tab, long node, string value) => throw new AiActionNotBuiltException(nameof(Select));
+	public Task Scroll(TabRef tab, long? node, int deltaX, int deltaY) => throw new AiActionNotBuiltException(nameof(Scroll));
+	public Task PressKey(TabRef tab, long? node, string key) => throw new AiActionNotBuiltException(nameof(PressKey));
+	public Task Navigate(TabRef tab, Uri url) => throw new AiActionNotBuiltException(nameof(Navigate));
+	public Task Back(TabRef tab) => throw new AiActionNotBuiltException(nameof(Back));
+	public Task Forward(TabRef tab) => throw new AiActionNotBuiltException(nameof(Forward));
+	public Task<TabRef> OpenTab(Uri url) => throw new AiActionNotBuiltException(nameof(OpenTab));
+	public Task CloseTab(TabRef tab) => throw new AiActionNotBuiltException(nameof(CloseTab));
+	public Task Download(TabRef tab, Uri url) => throw new AiActionNotBuiltException(nameof(Download));
+	public Task<(FillResult Result, IReadOnlySet<long> FilledNodes)> FillLogin(TabRef tab) => throw new AiActionNotBuiltException(nameof(FillLogin));
+
+	private TabService TabsOf(TabRef tab) =>
+		windowOf(tab.WindowId)?.Api?.Tabs is { } tabs && tabs.Has(tab.TabId) ? tabs : throw new TabGoneException(tab);
+
+	/// <summary>The tab's page, started (unshown) if it had none and loaded; a page on a JavaScript dialog can't answer.</summary>
+	private async Task<WebView2Page> PageAsync(TabRef tab)
+	{
+		var tabs = TabsOf(tab);
+		var fresh = !tabs.HasPage(tab.TabId);
+		var page = (WebView2Page)tabs.PageFor(tab.TabId);
+		await LimitAsync(tab, page, page.Ready, "page start");
+		EnsureCurrent(tab, page);
+		if (fresh) await LoadedAsync(tab, page);
+		if (page.HasOpenDialog) throw new DialogOpenException(tab);
+		return page;
+	}
+
+	private async Task LoadedAsync(TabRef tab, WebView2Page page)
+	{
+		var clock = Stopwatch.StartNew();
+		while (page.IsLoading)
+		{
+			if (page.HasOpenDialog) throw new DialogOpenException(tab);
+			if (clock.Elapsed >= CallLimit) throw new CdpTimeoutException("page load");
+			await DelayAsync(PollEvery);
+			EnsureCurrent(tab, page);
+		}
+	}
+
+	/// <summary>The tab went (closed, or its page slept or was replaced) while the driver waited: TabGone.</summary>
+	private void EnsureCurrent(TabRef tab, WebView2Page page)
+	{
+		if (!page.IsOpen || TabsOf(tab).PageOf(tab.TabId) != page) throw new TabGoneException(tab);
+	}
+
+	private async Task<JsonDocument> CallAsync(TabRef tab, WebView2Page page, string method, object args)
+	{
+		var answer = await LimitAsync(tab, page, page.DevToolsAsync(method, JsonSerializer.Serialize(args)), method);
+		return JsonDocument.Parse(answer);
+	}
+
+	/// <summary>
+	/// <see cref="CallLimit"/> on one piece of DevTools work. A dialog that opens meanwhile stops the page answering until the
+	/// owner closes it, so the call ends DialogOpen at once rather than at the limit.
+	/// </summary>
+	private async Task LimitAsync(TabRef tab, WebView2Page page, Task work, string what)
+	{
+		var clock = Stopwatch.StartNew();
+		while (!work.IsCompleted)
+		{
+			if (!page.IsOpen) throw Abandon(work, new TabGoneException(tab));
+			if (page.HasOpenDialog) throw Abandon(work, new DialogOpenException(tab));
+			if (clock.Elapsed >= CallLimit) throw Abandon(work, new CdpTimeoutException(what));
+			await Task.WhenAny(work, DelayAsync(PollEvery));
+		}
+		try
+		{
+			await work;
+		}
+		catch (ViewGoneException)
+		{
+			throw new TabGoneException(tab);
+		}
+	}
+
+	private async Task<T> LimitAsync<T>(TabRef tab, WebView2Page page, Task<T> work, string what)
+	{
+		await LimitAsync(tab, page, (Task)work, what);
+		return await work;
+	}
+
+	/// <summary>Work given up on may still fail later; its failure is seen here, not left unobserved.</summary>
+	private static Exception Abandon(Task work, Exception reason)
+	{
+		work.ContinueWith(t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+		return reason;
+	}
+
+	private Task DelayAsync(TimeSpan delay)
+	{
+		// Not RunContinuationsAsynchronously: the wait resumes on the UI thread's synchronization context.
+		var done = new TaskCompletionSource();
+		scheduler.Schedule(delay, done.SetResult);
+		return done.Task;
+	}
+
+	private bool IsShown(TabRef tab, WebView2Page page) => TabsOf(tab).IsShown(tab.TabId) && page.Visible;
+
+	/// <summary>Never brings the tab forward: the owner does, within <c>showWait</c>, or the screenshot is NotVisible.</summary>
+	private async Task WaitToBeShownAsync(TabRef tab, WebView2Page page)
+	{
+		_waitingToBeShown.Add(tab);
+		ShowWaitChanged?.Invoke(tab);
+		try
+		{
+			var clock = Stopwatch.StartNew();
+			while (true)
+			{
+				await DelayAsync(PollEvery);
+				EnsureCurrent(tab, page);
+				if (!shares.IsShared(tab)) throw new AiToolException(AiErrors.NotShared, "The tab was unshared.");
+				if (IsShown(tab, page)) return;
+				if (clock.Elapsed >= showWait) throw new NotVisibleException(tab);
+			}
+		}
+		finally
+		{
+			_waitingToBeShown.Remove(tab);
+			ShowWaitChanged?.Invoke(tab);
+		}
+	}
+
+	/// <summary>The node's border box in viewport CSS pixels, or null when the page no longer has it or it has no box.</summary>
+	private async Task<PixelBox?> BoxAsync(TabRef tab, WebView2Page page, long backendNodeId)
+	{
+		JsonDocument model;
+		try
+		{
+			model = await CallAsync(tab, page, "DOM.getBoxModel", new { backendNodeId });
+		}
+		catch (Exception error) when (error is not (TabGoneException or DialogOpenException or CdpTimeoutException))
+		{
+			// DevTools answers an error for a node that went or isn't rendered.
+			return null;
+		}
+		using (model)
+		{
+			var quad = model.RootElement.GetProperty("model").GetProperty("border").EnumerateArray().Select(v => v.GetDouble()).ToArray();
+			var xs = new[] { quad[0], quad[2], quad[4], quad[6] };
+			var ys = new[] { quad[1], quad[3], quad[5], quad[7] };
+			return new PixelBox(xs.Min(), ys.Min(), xs.Max() - xs.Min(), ys.Max() - ys.Min());
+		}
+	}
+
+	/// <summary>The tab shows a PDF itself: its document is the viewer's embedder, not a page.</summary>
+	private async Task<bool> IsPdfAsync(TabRef tab, WebView2Page page)
+	{
+		using var tree = await CallAsync(tab, page, "Page.getFrameTree", new { });
+		return tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("mimeType").GetString() == "application/pdf";
+	}
+
+	/// <summary>
+	/// The PDF's text from the viewer's scripting messages (selectAll, then getSelectedText), sent to the embedder's &lt;embed&gt;.
+	/// The viewer's text never reaches the DevTools accessibility tree (its plugin builds one only for a screen reader), and
+	/// the scripting API can't read without selecting, so the text is left selected in the viewer. The viewer answers only
+	/// once it has loaded the file, so it is asked again until it does.
+	/// </summary>
+	private async Task<string> PdfTextAsync(TabRef tab, WebView2Page page)
+	{
+		var clock = Stopwatch.StartNew();
+		while (true)
+		{
+			using var answer = await CallAsync(tab, page, "Runtime.evaluate", new { expression = PdfTextScript, awaitPromise = true, returnByValue = true });
+			var result = answer.RootElement.GetProperty("result");
+			if (result.TryGetProperty("value", out var text) && text.ValueKind == JsonValueKind.String) return text.GetString()!;
+			if (clock.Elapsed >= CallLimit) throw new CdpTimeoutException("PDF text");
+			await DelayAsync(PollEvery);
+			EnsureCurrent(tab, page);
+		}
+	}
+
+	private const string PdfTextScript = """
+		new Promise((resolve) => {
+			const embed = document.querySelector('embed');
+			if (!embed) return resolve(null);
+			const heard = (event) => {
+				if (event.data?.type !== 'getSelectedTextReply') return;
+				done(String(event.data.selectedText ?? ''));
+			};
+			const done = (text) => {
+				clearTimeout(timer);
+				window.removeEventListener('message', heard);
+				resolve(text);
+			};
+			const timer = setTimeout(() => done(null), 2000);
+			window.addEventListener('message', heard);
+			embed.postMessage({ type: 'selectAll' });
+			embed.postMessage({ type: 'getSelectedText' });
+		})
+		""";
+
+	/// <summary>Paints <paramref name="boxes"/> (viewport CSS pixels) black on the PNG, whose left top is at <paramref name="x"/>, <paramref name="y"/>.</summary>
+	private static async Task<byte[]> PaintAsync(byte[] png, IReadOnlyList<PixelBox> boxes, double x, double y, double cssWidth)
+	{
+		using var input = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+		await input.WriteAsync(png.AsBuffer());
+		input.Seek(0);
+		var decoder = await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(input);
+		var pixels = await decoder.GetPixelDataAsync(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Straight, new Windows.Graphics.Imaging.BitmapTransform(), Windows.Graphics.Imaging.ExifOrientationMode.IgnoreExifOrientation, Windows.Graphics.Imaging.ColorManagementMode.DoNotColorManage);
+		var bgra = pixels.DetachPixelData();
+		var width = (int)decoder.PixelWidth;
+		var height = (int)decoder.PixelHeight;
+		var scale = width / cssWidth;
+		BlackOut.Paint(bgra, width, height, boxes.Select(b => new PixelBox((b.X - x) * scale, (b.Y - y) * scale, b.Width * scale, b.Height * scale)));
+		using var output = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+		var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, output);
+		encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Straight, (uint)width, (uint)height, decoder.DpiX, decoder.DpiY, bgra);
+		await encoder.FlushAsync();
+		using var memory = new MemoryStream();
+		output.Seek(0);
+		await output.AsStreamForRead().CopyToAsync(memory);
+		return memory.ToArray();
+	}
+}

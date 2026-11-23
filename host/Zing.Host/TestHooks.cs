@@ -157,6 +157,13 @@ public static class TestHooks
 	/// <summary>Set by ZingApp at launch: "show-default-browser-offer".</summary>
 	public static Action? OfferDefaultBrowser { get; set; }
 
+	/// <summary>The app's AI control, for ai-token; e2e runs only read it.</summary>
+	public static AiControl? Ai { get; set; }
+
+	/// <summary>How long a hidden tab's screenshot waits to be shown, shortened by an e2e run (ZING_E2E_AI_SHOW_WAIT_MS); null in normal runs.</summary>
+	public static TimeSpan? AiShowWait =>
+		IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_E2E_AI_SHOW_WAIT_MS") is { Length: > 0 } ms ? TimeSpan.FromMilliseconds(int.Parse(ms, System.Globalization.CultureInfo.InvariantCulture)) : null;
+
 	/// <summary>"exit-code-on-quit": the code Zing ends with once its last window is gone, as a crash during quit would; e2e/harness.spec.ts.</summary>
 	public static int? QuitExitCode { get; private set; }
 	/// <summary>"close-window-answer": what the confirm on closing a window of tabs answers in an e2e run, which shows no dialog.</summary>
@@ -206,6 +213,18 @@ public static class TestHooks
 		var root = message.RootElement;
 		if (!root.TryGetProperty("kind", out var kind) || kind.GetString() != "test") return false;
 		var action = root.GetProperty("action").GetString();
+		if (action == "ai-share")
+		{
+			var share = AiSharers.TryGetValue(window, out var sharer) ? sharer : throw new InvalidOperationException("ai-share needs a window with its chrome started and AI control available");
+			share(root.GetProperty("tab").GetString()!);
+			return true;
+		}
+		if (action == "ai-token")
+		{
+			var ai = Ai ?? throw new InvalidOperationException("ai-token needs AI control, which couldn't start");
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { token = Zing.Core.Mcp.AiRequestCheck.Encode(ai.Token.Current()) }));
+			return true;
+		}
 		if (action == "pick-files")
 		{
 			var files = root.GetProperty("files").EnumerateArray().Select(f => f.GetString()!).ToArray();
@@ -502,6 +521,16 @@ public static class TestHooks
 		if (!IsEndToEndRun) return;
 		Apis[window] = api;
 		window.Destroyed += () => Apis.Remove(window);
+	}
+
+	/// <summary>Each window's way to share one of its tabs with AI by id, for ai-share; e2e runs only.</summary>
+	private static readonly Dictionary<HostWindow, Action<string>> AiSharers = [];
+
+	public static void RegisterAiShare(HostWindow window, Action<string> share)
+	{
+		if (!IsEndToEndRun) return;
+		AiSharers[window] = share;
+		window.Destroyed += () => AiSharers.Remove(window);
 	}
 
 	/// <summary>Each window's account-picker key handler (MainWindow.PickerKey), for picker-key; e2e runs only.</summary>

@@ -198,6 +198,15 @@ public sealed class TabService
 	/// <summary>The user sent a tab to an address themselves (<see cref="Navigate"/>), not a link or a form in the page.</summary>
 	public event Action<string>? Navigating;
 
+	/// <summary>A tab's page committed a new address: the tab's id and the address. Every tab's, whatever the cause.</summary>
+	public event Action<string, string>? PageNavigated;
+
+	/// <summary>A page opened a window that became a tab: the opener's id, the new tab's id and its address.</summary>
+	public event Action<string, string, string>? PopupOpened;
+
+	/// <summary>Tabs the sleeper, suspender and auto-closer leave alone (tabs shared with AI); set by the host.</summary>
+	public Func<string, bool> KeptAwake { get; set; } = _ => false;
+
 	/// <summary>The link preview open over the active tab, or null.</summary>
 	public PeekSession? Preview { get; private set; }
 
@@ -334,6 +343,15 @@ public sealed class TabService
 
 	public IPage? PageOf(string id) => _pages.GetValueOrDefault(id);
 
+	/// <summary>The tab's page, started for it if it has none (never loaded, or asleep), without showing the tab.</summary>
+	public IPage PageFor(string id)
+	{
+		if (_pages.TryGetValue(id, out var page)) return page;
+		page = EnsurePage(_store.Get(id));
+		_changed();
+		return page;
+	}
+
 	public IPage? ActivePage => _store.ActiveId is { } id ? _pages.GetValueOrDefault(id) : null;
 
 	public TabRecord Get(string id) => _store.Get(id);
@@ -358,6 +376,7 @@ public sealed class TabService
 	{
 		var record = _store.AddAfter(openerId, url);
 		_openers[record.Id] = openerId;
+		PopupOpened?.Invoke(openerId, record.Id, url);
 		Activate(record.Id);
 		return record;
 	}
@@ -706,6 +725,7 @@ public sealed class TabService
 	{
 		_pages[record.Id] = page;
 		_openers[record.Id] = openerId;
+		PopupOpened?.Invoke(openerId, record.Id, record.Url);
 		if (background) _changed();
 		else Activate(record.Id);
 	}
@@ -990,6 +1010,7 @@ public sealed class TabService
 		{
 			service._siteData?.Visit(id, url);
 			service.Update(id, new TabContentPatch(Url: url));
+			if (service._store.Has(id)) service.PageNavigated?.Invoke(id, url);
 		}
 
 		public void TitleChanged(string title)

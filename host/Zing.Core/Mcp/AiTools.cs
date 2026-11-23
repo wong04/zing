@@ -419,7 +419,7 @@ public sealed class AiTools
 		return
 		[
 			Def("list_tabs", "Lists the tabs the owner has shared with AI.", []),
-			Def("snapshot", "An accessibility-tree outline of the tab; refs like e12 mark what can be acted on.", [], ("tab", tab)),
+			Def("snapshot", "An accessibility-tree outline of the tab; refs like e12 mark what can be acted on. Content inside frames is not included.", [], ("tab", tab)),
 			Def("read_text", "The main text of the tab, including PDFs in the viewer.", [], ("tab", tab)),
 			Def("screenshot", "A PNG of the visible page, or of one element.", ["ref"], ("tab", tab), ("ref", reference)),
 			Def("open_tab", "Opens a new tab at a URL; it starts out shared.", [], ("url", url)),

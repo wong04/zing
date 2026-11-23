@@ -71,27 +71,3 @@ public sealed class AiEndpoint
 		return done.Task;
 	}
 }
-
-/// <summary>Until the CDP driver lands (Task 8), every page is out of reach, so the tools answer TabGone.</summary>
-public sealed class NoPageDriver : IPageDriver
-{
-	private static T Gone<T>(TabRef tab) => throw new TabGoneException(tab);
-
-	public Task<System.Text.Json.JsonElement> AxTree(TabRef tab) => Gone<Task<System.Text.Json.JsonElement>>(tab);
-	public Task<string> MainText(TabRef tab) => Gone<Task<string>>(tab);
-	public Task<byte[]> Screenshot(TabRef tab, long? node, IReadOnlySet<long> blackOut) => Gone<Task<byte[]>>(tab);
-	public Task<long?> NodeAtCentre(TabRef tab, long node) => Gone<Task<long?>>(tab);
-	public Task Click(TabRef tab, long node) => Gone<Task>(tab);
-	public Task Type(TabRef tab, long node, string text, bool submit) => Gone<Task>(tab);
-	public Task Select(TabRef tab, long node, string value) => Gone<Task>(tab);
-	public Task Scroll(TabRef tab, long? node, int deltaX, int deltaY) => Gone<Task>(tab);
-	public Task PressKey(TabRef tab, long? node, string key) => Gone<Task>(tab);
-	public Task Navigate(TabRef tab, Uri url) => Gone<Task>(tab);
-	public Task Back(TabRef tab) => Gone<Task>(tab);
-	public Task Forward(TabRef tab) => Gone<Task>(tab);
-	public Task<TabRef> OpenTab(Uri url) => Gone<Task<TabRef>>(new TabRef("", ""));
-	public Task CloseTab(TabRef tab) => Gone<Task>(tab);
-	public Task Download(TabRef tab, Uri url) => Gone<Task>(tab);
-	public Task<(FillResult Result, IReadOnlySet<long> FilledNodes)> FillLogin(TabRef tab) => Gone<Task<(FillResult, IReadOnlySet<long>)>>(tab);
-	public Uri UrlOf(TabRef tab) => Gone<Uri>(tab);
-}

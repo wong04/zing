@@ -135,6 +135,7 @@ public sealed class ZingApp
 		_updates = OpenUpdates(_session);
 		_ai = OpenAi(dispatcher, _services.Settings);
 		TestHooks.OfferDefaultBrowser = OfferDefaultBrowserForTest;
+		TestHooks.Ai = _ai;
 		// The tabs saved by a relaunch into an update come back whatever restoreTabs says, and are newer than session.json.
 		IReadOnlyList<IReadOnlyList<SessionTab>> restore = TakeRelaunchSession();
 		if (!Flag("restoreTabs")) DiscardSession();
@@ -431,6 +432,7 @@ public sealed class ZingApp
 	{
 		var together = _closingTogether.Remove(window);
 		_windows.Remove(window);
+		_ai?.WindowClosed(window.Id);
 		_pendingRestores.Remove(window);
 		_taskbar?.Remove(window.AppWindow);
 		if (_windows.Count > 0)
@@ -789,7 +791,7 @@ public sealed class ZingApp
 			return null;
 		}
 		var version = typeof(ZingApp).Assembly.GetName().Version?.ToString(3) ?? "0";
-		var ai = new AiControl(dispatcher, scheduler, policy, new AiToken(new DpapiCipher(), AppPaths.AiToken), version, McpPipeServer.Name(SingleInstance.ProfileKey));
+		var ai = new AiControl(dispatcher, scheduler, policy, new AiToken(new DpapiCipher(), AppPaths.AiToken), version, McpPipeServer.Name(SingleInstance.ProfileKey), id => _windows.FirstOrDefault(w => w.Id == id));
 		ai.Follow(Flag(settings, "aiControlEnabled"), Port(settings));
 		settings.Subscribe((_, key) =>
 		{

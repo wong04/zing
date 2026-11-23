@@ -105,6 +105,9 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 
 	public ChromeApi? Api { get; private set; }
 
+	/// <summary>The window's half of an AI TabRef; never shown to an AI client.</summary>
+	public string Id { get; } = Guid.NewGuid().ToString("N");
+
 	/// <summary>
 	/// Called once the app has listed the window, so nothing it does on starting finds it missing. A window
 	/// closed while it started is gone, not broken (ViewGoneException); any other failure is recorded.
@@ -188,6 +191,12 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		});
 		Api = new ChromeApi(_bridge, _app.Services, this, typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "0");
 		Api.TabsChanged += () => _app.TabsChanged(this);
+		if (_app.Ai is { } ai)
+		{
+			ai.Watch(Id, Api.Tabs);
+			var tabs = Api.Tabs;
+			TestHooks.RegisterAiShare(_window, tabId => ai.Share(Id, tabs, tabId));
+		}
 		var themeSubscription = _app.Services.Settings.Subscribe((_, key) =>
 		{
 			if (key == "theme") _window.Theme = Theme();

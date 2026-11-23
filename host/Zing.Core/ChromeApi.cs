@@ -2228,7 +2228,8 @@ internal sealed class LifecycleTabs(TabService tabs, TabOverview overview, TimeS
 
 	public string? ActiveId => tabs.ActiveId;
 	public bool IsShown(string id) => tabs.IsShown(id);
-	public IReadOnlyList<TabRecord> Records => tabs.Records;
+	// Kept-awake tabs (shared with AI) are out of sight of every sweep: no sleeping, suspending or auto-closing.
+	public IReadOnlyList<TabRecord> Records => [.. tabs.Records.Where(r => !tabs.KeptAwake(r.Id))];
 	public bool HasPage(string id) => tabs.HasPage(id);
 	public bool IsAudible(string id) => tabs.PageOf(id)?.IsAudible ?? false;
 	public bool IsUploading(string id) => tabs.PageOf(id)?.IsUploading ?? false;

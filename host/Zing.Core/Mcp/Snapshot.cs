@@ -96,16 +96,16 @@ public sealed record Snapshot(
 		return escaped.ToString();
 	}
 
-	private static string StringOf(JsonElement node, string property) =>
+	internal static string StringOf(JsonElement node, string property) =>
 		node.TryGetProperty(property, out var p) && p.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
 
 	private static readonly HashSet<string> TextRoles = ["textbox", "searchbox", "combobox", "spinbutton"];
 
 	// contenteditable hosts (Gmail, Slack) carry editable=plaintext/richtext whatever their role.
-	private static bool IsEditable(JsonElement node, string role) =>
+	internal static bool IsEditable(JsonElement node, string role) =>
 		TextRoles.Contains(role) || PropertyOf(node, "editable") is { ValueKind: JsonValueKind.String } editable && editable.GetString() is not ("" or "false");
 
-	private static bool IsProtected(JsonElement node) => PropertyOf(node, "protected") is { ValueKind: JsonValueKind.True };
+	internal static bool IsProtected(JsonElement node) => PropertyOf(node, "protected") is { ValueKind: JsonValueKind.True };
 
 	private static JsonElement? PropertyOf(JsonElement node, string name)
 	{
