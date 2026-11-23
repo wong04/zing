@@ -121,4 +121,29 @@ public sealed class ConfirmGateTests : IDisposable
 		_gate.Answer(Tab, ConfirmAnswer.Allow);
 		Assert.Empty(_closed);
 	}
+
+	[Fact]
+	public async Task ThrowingClosedHandlerStillResolvesAsk()
+	{
+		var ask = _gate.Ask(Tab, Shop, "Click");
+		_gate.Closed += _ => throw new InvalidOperationException("handler");
+
+		Assert.Throws<InvalidOperationException>(() => _gate.Answer(Tab, ConfirmAnswer.Allow));
+
+		Assert.True(await ask);
+		Assert.Empty(_gate.Waiting());
+		Assert.Equal(0, _scheduler.PendingCount);
+	}
+
+	[Fact]
+	public void ThrowingShownHandlerLeavesNothingPending()
+	{
+		_gate.Shown += (_, _) => throw new InvalidOperationException("handler");
+
+		var error = Record.Exception((Action)(() => _ = _gate.Ask(Tab, Shop, "Click")));
+		Assert.IsType<InvalidOperationException>(error);
+
+		Assert.Empty(_gate.Waiting());
+		Assert.Equal(0, _scheduler.PendingCount);
+	}
 }

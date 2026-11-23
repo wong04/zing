@@ -36,7 +36,16 @@ public sealed class ConfirmGate
 		var result = new TaskCompletionSource<bool>();
 		var timer = _scheduler.Schedule(Timeout, () => Resolve(tab, false));
 		_pending[tab] = new Pending(result, url, timer);
-		Shown?.Invoke(tab, description);
+		try
+		{
+			Shown?.Invoke(tab, description);
+		}
+		catch
+		{
+			_pending.Remove(tab);
+			timer.Dispose();
+			throw;
+		}
 		return result.Task;
 	}
 
@@ -53,7 +62,14 @@ public sealed class ConfirmGate
 	{
 		if (!_pending.Remove(tab, out var pending)) return;
 		pending.Timer.Dispose();
-		Closed?.Invoke(tab);
-		pending.Result.SetResult(allowed);
+		// finally: a throwing Closed handler must not leave the awaiting AI call hanging.
+		try
+		{
+			Closed?.Invoke(tab);
+		}
+		finally
+		{
+			pending.Result.SetResult(allowed);
+		}
 	}
 }
