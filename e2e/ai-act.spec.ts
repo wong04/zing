@@ -200,3 +200,18 @@ test('open_tab opens a shared tab behind the active one', async () => {
 	expect(tabs.map((t) => t.url)).toContain(`${base}/react-form`)
 	await zing.close()
 })
+
+test('a held form POST is never sent when AI control is turned off while the bar is up', async () => {
+	const zing = await launchZing()
+	const mcp = await connectMcp(zing.chrome)
+	const { id, tab } = await sharedTab(zing.chrome, mcp, '/mislabelled')
+	expect(textOf(await mcp.call('click', { tab, ref: await refOf(mcp, tab, /button "Close"/) }))).toBe('Done')
+	await expect.poll(() => confirmBar(zing.chrome, id), { timeout: 15_000 }).not.toBeNull()
+	// Turning AI control off unshares every tab, which denies the held POST and stops pausing the page's requests.
+	await zing.chrome.evaluate(() => window.zing.setSetting('aiControlEnabled', false))
+	await expect.poll(() => confirmBar(zing.chrome, id)).toBeNull()
+	await settle()
+	await settle()
+	expect(posts).toEqual([])
+	await zing.close()
+})

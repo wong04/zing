@@ -408,8 +408,22 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		foreach (var page in _holding.Where(p => p.Value == tab).Select(p => p.Key).ToList())
 		{
 			_holding.Remove(page);
-			if (page.IsOpen) TestHooks.Background(ExpectingGoneAsync(tab, page, "Fetch.disable", new { }), "ai form post watch");
+			var asking = _asking.Remove(page, out var ids) ? ids.ToList() : [];
+			if (page.IsOpen) TestHooks.Background(StopHoldingAsync(tab, page, asking), "ai form post watch");
 		}
+	}
+
+	/// <summary>Requests paused for the owner's answer, by page; a request leaves when it is answered or failed.</summary>
+	private readonly Dictionary<WebView2Page, HashSet<string>> _asking = [];
+
+	/// <summary>
+	/// Fails every request still waiting for the owner before turning Fetch off: Chromium lets paused requests go when Fetch is
+	/// disabled, so a POST the unshare denied would otherwise be sent.
+	/// </summary>
+	private async Task StopHoldingAsync(TabRef tab, WebView2Page page, IReadOnlyList<string> asking)
+	{
+		foreach (var requestId in asking) await ExpectingGoneAsync(tab, page, "Fetch.failRequest", new { requestId, errorReason = "Aborted" });
+		await ExpectingGoneAsync(tab, page, "Fetch.disable", new { });
 	}
 
 	/// <summary>
@@ -440,6 +454,11 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		var site = shares.IsShared(tab) ? UrlOf(tab) : null;
 		var held = site is not null && backstop.Holds(tab, site, request.GetProperty("method").GetString()!, root.GetProperty("frameId").GetString() == mainFrame);
 		var to = Uri.TryCreate(request.GetProperty("url").GetString(), UriKind.Absolute, out var target) ? target.IdnHost : "another page";
+		if (held)
+		{
+			if (!_asking.TryGetValue(page, out var ids)) _asking[page] = ids = [];
+			ids.Add(requestId);
+		}
 		TestHooks.Background(ReleaseAsync(tab, page, requestId, held ? () => gate.Ask(tab, site!, $"send a form to {to}") : null), "ai form post");
 	}
 
@@ -447,6 +466,8 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 	private async Task ReleaseAsync(TabRef tab, WebView2Page page, string requestId, Func<Task<bool>>? ask)
 	{
 		var allowed = ask is null || await ask();
+		// An unshare meanwhile has already failed it (StopHoldingAsync).
+		if (ask is not null && !(_asking.TryGetValue(page, out var ids) && ids.Remove(requestId))) return;
 		if (allowed) await ExpectingGoneAsync(tab, page, "Fetch.continueRequest", new { requestId });
 		else await ExpectingGoneAsync(tab, page, "Fetch.failRequest", new { requestId, errorReason = "Aborted" });
 	}
