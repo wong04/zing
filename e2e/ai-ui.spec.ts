@@ -117,7 +117,11 @@ test('Stop unshares and denies a waiting confirm', async () => {
 	await expect(confirm.getByText('AI wants to click', { exact: false })).toBeVisible({ timeout: 15_000 })
 	await expect(confirm.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
 	const strip = await view(zing.browser, '#ai-strip')
-	await strip.getByRole('button', { name: 'Stop', exact: true }).click()
+	// A bar's view drops presses (moves go through) for a moment after the bars change: the click goes again until Stop lands.
+	await expect(async () => {
+		await strip.getByRole('button', { name: 'Stop', exact: true }).click({ timeout: 1_000 })
+		expect(await sharedTabs(mcp)).toEqual([])
+	}).toPass({ timeout: 15_000 })
 	expect((await click).isError).toBe(true)
 	expect(await sharedTabs(mcp)).toEqual([])
 	await expect(zing.chrome.locator(`[data-tab-id="${id}"]`).first()).not.toHaveClass(/ai-shared/)
@@ -144,10 +148,11 @@ test('a waiting confirm on a background tab badges it', async () => {
 	await zing.chrome.evaluate((tabId) => window.zing.activateTab(tabId), id)
 	await expect(chip).not.toHaveClass(/ai-waiting/)
 	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getAiState())).confirm?.tab).toBe(id)
-	// A view just shown again drops input until it draws: the click waits for its frames.
-	await expect.poll(() => confirm.evaluate(() => document.visibilityState)).toBe('visible')
-	await confirm.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-	await confirm.getByRole('button', { name: 'Deny' }).click({ timeout: 15_000 })
+	// A view just shown again drops presses (moves go through) for a moment, frames or not: the click goes again until Deny lands.
+	await expect(async () => {
+		await confirm.getByRole('button', { name: 'Deny' }).click({ timeout: 1_000 })
+		expect((await zing.chrome.evaluate(() => window.zing.getAiState())).confirm).toBeUndefined()
+	}).toPass({ timeout: 15_000 })
 	expect((await click).structuredContent?.code).toBe('Denied')
 	await zing.close()
 })
