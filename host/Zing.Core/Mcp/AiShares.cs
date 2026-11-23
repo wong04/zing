@@ -16,6 +16,7 @@ public sealed class AiShares
 	private readonly Dictionary<TabRef, string> _byTab = [];
 	private readonly Dictionary<string, TabRef> _byId = [];
 
+	public event Action<TabRef>? Shared;
 	public event Action<TabRef>? Unshared;
 
 	public string Share(TabRef tab, Uri url)
@@ -25,6 +26,7 @@ public sealed class AiShares
 		var aiId = NewId();
 		_byTab[tab] = aiId;
 		_byId[aiId] = tab;
+		Shared?.Invoke(tab);
 		return aiId;
 	}
 

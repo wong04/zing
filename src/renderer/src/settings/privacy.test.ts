@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings'
-import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setCrashLogKept, setLibraryHoldsImports, setLibraryKeepsIcons, setSiteGrantsKept, setVaultKeepsData } from './privacy'
+import { DuplicateConditionError, privacyStatus, registerStoresDataCondition, setAiSiteRulesKept, setAiTokenKept, setCrashLogKept, setLibraryHoldsImports, setLibraryKeepsIcons, setSiteGrantsKept, setVaultKeepsData } from './privacy'
 
 // Reopen tabs is on by default; turning it off is the state where Zing keeps nothing.
 const NOTHING_KEPT: Settings = { ...DEFAULT_SETTINGS, restoreTabs: false }
@@ -132,5 +132,24 @@ describe('AI control', () => {
 			detail: 'An access token for AI control is written to disk.',
 		})
 		expect(privacyStatus(withSettings({ aiControlEnabled: false })).traceless).toBe(true)
+	})
+
+	describe('after it is turned off', () => {
+		afterEach(() => {
+			setAiTokenKept(false)
+			setAiSiteRulesKept(false)
+		})
+
+		it('a token still on disk keeps the banner a warning', () => {
+			setAiTokenKept(true)
+			expect(privacyStatus(withSettings({ aiControlEnabled: false }))).toMatchObject({ traceless: false, detail: 'An access token for AI control is written to disk.' })
+		})
+
+		it('per-site levels on disk flip the banner and are named', () => {
+			setAiSiteRulesKept(true)
+			expect(privacyStatus(NOTHING_KEPT)).toMatchObject({ traceless: false, detail: 'Sites’ AI confirmation levels are written to disk.' })
+			setAiSiteRulesKept(false)
+			expect(privacyStatus(NOTHING_KEPT).traceless).toBe(true)
+		})
 	})
 })

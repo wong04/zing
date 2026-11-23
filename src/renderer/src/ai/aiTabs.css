@@ -1,0 +1,24 @@
+/* The chrome's tabs: a shared tab's outline, and the badge of one where something waits for the owner. */
+.tab.ai-shared,
+.rail-tab.ai-shared {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+
+.tab.ai-waiting,
+.rail-tab.ai-waiting {
+	position: relative;
+}
+
+.tab.ai-waiting::after,
+.rail-tab.ai-waiting::after {
+	content: '';
+	position: absolute;
+	top: 3px;
+	right: 3px;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--caution);
+	box-shadow: 0 0 0 2px var(--surface);
+}

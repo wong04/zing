@@ -49,6 +49,12 @@ public sealed class SitePolicy
 	/// <summary>Whether any level is stored; the privacy banner warns while it is.</summary>
 	public bool HasRules => _levels.Count > 0;
 
+	/// <summary>Raised after a level is stored or removed.</summary>
+	public event Action? Changed;
+
+	/// <summary>Whether a level can be kept for this address: a single-label host such as localhost has no site.</summary>
+	public static bool HasSite(Uri url) => SiteOf(url) is not null;
+
 	public IReadOnlyDictionary<string, SiteLevel> All() => new Dictionary<string, SiteLevel>(_levels);
 
 	public SiteLevel LevelFor(Uri url)
@@ -67,6 +73,7 @@ public sealed class SitePolicy
 		Save(next);
 		if (level == Default) _levels.Remove(site);
 		else _levels[site] = level;
+		Changed?.Invoke();
 	}
 
 	public bool NeedsConfirm(Uri url, AiAction action, AxNode target, string? key) => LevelFor(url) switch

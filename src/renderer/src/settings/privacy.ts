@@ -59,6 +59,21 @@ export function setCrashLogKept(kept: boolean): void {
 	crashLogKept = kept
 }
 
+// AI control's sealed token stays on disk once made, whether the switch is on or not, and so do sites' confirmation levels.
+// The Settings sheet asks the host (ai:settings) and sets both.
+let aiTokenKept = false
+let aiSiteRulesKept = false
+
+/** Whether AI control's token file is on disk. */
+export function setAiTokenKept(kept: boolean): void {
+	aiTokenKept = kept
+}
+
+/** Whether any site has an AI confirmation level other than the default stored. */
+export function setAiSiteRulesKept(kept: boolean): void {
+	aiSiteRulesKept = kept
+}
+
 const conditions: StoresDataCondition[] = [
 	{ id: 'persistentProfile', active: (s) => s.persistentProfile, what: 'cookies and cache', plural: true },
 	{ id: 'restoreTabs', active: (s) => s.restoreTabs, what: 'your open tabs', plural: true },
@@ -66,7 +81,8 @@ const conditions: StoresDataCondition[] = [
 	{ id: 'imported', active: () => libraryHoldsImports, what: 'imported bookmarks', plural: true },
 	{ id: 'bookmarkIcons', active: () => libraryKeepsIcons, what: 'icons of bookmarked sites you visited', plural: true },
 	{ id: 'crashLog', active: () => crashLogKept, what: 'a crash log (times and exit codes only)' },
-	{ id: 'aiControl', active: (s) => s.aiControlEnabled, what: 'an access token for AI control' },
+	{ id: 'aiControl', active: (s) => s.aiControlEnabled || aiTokenKept, what: 'an access token for AI control' },
+	{ id: 'aiSites', active: () => aiSiteRulesKept, what: 'sites’ AI confirmation levels', plural: true },
 	{ id: 'siteGrants', active: () => siteGrantsKept, what: 'sites allowed to show notifications', plural: true },
 ]
 

@@ -210,6 +210,7 @@ public static class TestHooks
 	/// "window-at" with <c>x</c> and <c>y</c> writes to <c>file</c> the address of the view Windows gives a click at that point of the content (WindowFromPoint), null for none, and the class of the window hit.
 	/// "work-counts" writes how many blockable requests reached the request filter and how many pictures were asked of the engine, in every window, to <c>file</c>.
 	/// "minimise-window" with <c>minimised</c> minimises the window or restores it, without activating it.
+	/// "menu-choose" with <c>label</c> chooses that item of the menu last recorded, as a click on it would.
 	/// "menu-theme" writes the preferred app mode the native menus were last given (DarkMenus) to <c>file</c>.
 	/// "show-default-browser-offer" shows the default-browser offer as a launch would, skipping only whether Zing is installed and not the default.
 	/// </summary>
@@ -250,6 +251,15 @@ public static class TestHooks
 				(Ai ?? throw new InvalidOperationException("ai-confirm needs AI control, which couldn't start")).Gate.Answer(tab, reply);
 			}
 			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { asked }));
+			return true;
+		}
+		if (action == "menu-choose")
+		{
+			var label = root.GetProperty("label").GetString();
+			var item = _lastMenu?.FirstOrDefault(i => i.Label == label) ?? throw new InvalidOperationException($"menu-choose: the last menu has no '{label}'");
+			if (!item.Enabled || item.Click is not { } click) throw new InvalidOperationException($"menu-choose: '{label}' can't be chosen");
+			_lastMenu = null;
+			click();
 			return true;
 		}
 		if (action == "ai-token")
@@ -646,7 +656,11 @@ public static class TestHooks
 		var file = Environment.GetEnvironmentVariable("ZING_MENUS_FILE");
 		if (string.IsNullOrEmpty(file)) throw new InvalidOperationException("e2e runs need ZING_MENUS_FILE to record menus");
 		File.AppendAllText(file, System.Text.Json.JsonSerializer.Serialize(items.Select(i => i.Label)) + "\n");
+		_lastMenu = items;
 	}
+
+	// The menu last recorded, for menu-choose: an e2e run picks from it as the person would from the menu on screen.
+	private static IReadOnlyList<Zing.Core.MenuItem>? _lastMenu;
 
 	/// <summary>
 	/// e2e runs never open a dialog (AGENTS.md), Edge's print preview included. What would have opened goes to

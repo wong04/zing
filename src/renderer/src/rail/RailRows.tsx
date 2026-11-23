@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type MouseEvent } from 'react'
 import type { TabView } from '@shared/ipc'
 import { zing } from '../api'
+import { aiTabClasses, useAiTabs } from '../ai/useAiTabs'
 import { tabTitle, tabTooltip } from '../chrome/display'
 import { CloseIcon } from '../chrome/icons'
 import { TabIconView } from '../chrome/tabs/SlotChips'
@@ -22,6 +23,7 @@ function rowStyle(frame: RowFrame): CSSProperties | undefined {
 }
 
 export function TabRow({ tab, active, frame, nested = false }: { tab: TabView; active: boolean; frame?: RowFrame; nested?: boolean }) {
+	const ai = aiTabClasses(useAiTabs(), tab.id)
 	const activate = (): void => void zing.activateTab(tab.id)
 	// A click activates the tab; a press that turns into a drag does not, so a tab dragged onto the page can split it.
 	const onClick = (): void => {
@@ -49,7 +51,8 @@ export function TabRow({ tab, active, frame, nested = false }: { tab: TabView; a
 			title={tabTooltip(tab)}
 			data-tab-id={tab.id}
 			data-page-state={tab.pageState}
-			className={['rail-row', 'rail-tab', active && 'active', nested && 'nested', frame?.dragging && 'dragging'].filter(Boolean).join(' ')}
+			data-ai={ai.join(' ') || undefined}
+			className={['rail-row', 'rail-tab', active && 'active', nested && 'nested', frame?.dragging && 'dragging', ...ai].filter(Boolean).join(' ')}
 			style={frame ? rowStyle(frame) : undefined}
 			onPointerDown={frame?.handlers.onPointerDown}
 			onClick={onClick}

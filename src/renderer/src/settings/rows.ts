@@ -56,6 +56,7 @@ export type CustomId =
 	| 'import'
 	| 'extensions-gate'
 	| 'extensions'
+	| 'ai-control'
 
 export interface CustomRow {
 	readonly type: 'custom'
@@ -331,6 +332,14 @@ export const PANES: Readonly<Record<SettingsCategoryId, readonly PaneItem[]>> = 
 	],
 	advanced: [
 		toggle('acceleratedCanvas', 'Draw canvas on the GPU', { detail: 'Faster on canvas-heavy pages. Relaunch to apply.' }),
+		toggle('aiControlEnabled', 'Let a local AI use tabs you share', {
+			detail: (s) =>
+				s.aiControlEnabled
+					? 'Claude and other MCP clients on this PC can read and act in the tabs you share from the tab menu, and nothing else. Its access token is kept on disk.'
+					: 'Off: no AI client can reach Zing, and every shared tab is unshared.',
+			warning: (s) => s.aiControlEnabled,
+		}),
+		{ type: 'custom', id: 'ai-control', keys: ['aiControlPort'] },
 	],
 	// Extensions run only in the kept profile (ExtensionService), so without Stay signed in the pane says so and offers it.
 	extensions: [

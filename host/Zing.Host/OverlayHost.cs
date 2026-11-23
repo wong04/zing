@@ -18,6 +18,10 @@ public enum OverlayLevel
 	AddressSuggestions,
 	/// <summary>An extension's action popup under the toolbar (ExtensionPopupLayer).</summary>
 	ExtensionPopup,
+	/// <summary>"AI is using this tab" over a shared tab's page (AiStripLayer), under the dropdowns and sheets that cover the page.</summary>
+	AiStrip,
+	/// <summary>AI control's confirm bar (AiConfirmLayer), over the strip it sits under.</summary>
+	AiConfirm,
 	/// <summary>The stack dropdown, #overlay-stack (CoveringLayer).</summary>
 	StackDropdown,
 	/// <summary>The tab overview, #overlay-overview (CoveringLayer).</summary>

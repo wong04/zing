@@ -59,7 +59,7 @@ public sealed class AiControl
 		foreach (var (_, tab) in Shares.List().Where(s => s.Tab.WindowId == windowId)) Shares.Unshare(tab);
 	}
 
-	/// <summary>Shares a tab as the tab menu will (Task 10); e2e shares through TestHooks' ai-share.</summary>
+	/// <summary>Shares a tab, as the tab menu does.</summary>
 	public string Share(string windowId, TabService tabs, string tabId) => Shares.Share(new TabRef(windowId, tabId), new Uri(tabs.Get(tabId).Url));
 
 	// An address that isn't one can't be checked as shareable, so a shared tab showing it is unshared.
