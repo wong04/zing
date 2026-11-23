@@ -42,6 +42,6 @@ public static class McpText
 		return response?.ToJsonString();
 	}
 
-	private static string Error(JsonNode? id, int code, string message) =>
+	internal static string Error(JsonNode? id, int code, string message) =>
 		new JsonObject { ["jsonrpc"] = "2.0", ["id"] = id, ["error"] = new JsonObject { ["code"] = code, ["message"] = message } }.ToJsonString();
 }
