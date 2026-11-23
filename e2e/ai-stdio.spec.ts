@@ -87,7 +87,9 @@ test('stdio list_tabs works through zing-mcp.exe', async () => {
 
 test('zing-mcp.exe says so and exits 1 when Zing has no pipe', async () => {
 	const stdio = relay('Zing-0000000000000000')
-	const error = JSON.parse(await stdio.next()) as { error: { message: string } }
+	stdio.send({ jsonrpc: '2.0', id: 9, method: 'initialize', params: {} })
+	const error = JSON.parse(await stdio.next()) as { id: number; error: { message: string } }
+	expect(error.id).toBe(9)
 	expect(error.error.message).toBe("Zing isn't running or AI control is off")
 	expect(await stdio.exited).toBe(1)
 })

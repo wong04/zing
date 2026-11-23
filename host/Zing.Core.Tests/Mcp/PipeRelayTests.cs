@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using System.Text;
+using System.Text.Json.Nodes;
 using Zing.Core.Mcp;
 
 namespace Zing.Core.Tests.Mcp;
@@ -56,7 +57,7 @@ public sealed class PipeRelayTests
 		var (clientOut, relayOut) = Connection();
 		var (zingEnd, relayPipe) = Connection();
 		using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-		var relay = PipeRelay.Run(clientSide, relayOut, () => relayPipe, cancel.Token);
+		var relay = PipeRelay.Run(clientSide, relayOut, () => relayPipe, TextWriter.Null, cancel.Token);
 
 		await Send(clientIn, """{"jsonrpc":"2.0","id":1,"method":"ping"}""");
 		Assert.Equal("""{"jsonrpc":"2.0","id":1,"method":"ping"}""", await ReadLine(zingEnd));
@@ -67,15 +68,58 @@ public sealed class PipeRelayTests
 		Assert.Equal(0, await relay);
 	}
 
+	private static MemoryStream Lines(string text) => new(Encoding.UTF8.GetBytes(text));
+
 	[Fact]
 	public async Task NoPipeWritesErrorAndExits1()
 	{
 		var (clientOut, relayOut) = Connection();
-		var code = await PipeRelay.Run(new MemoryStream(), relayOut, () => null, CancellationToken.None);
+		var stderr = new StringWriter();
+		var code = await PipeRelay.Run(Lines("""{"jsonrpc":"2.0","id":7,"method":"initialize"}""" + "\n"), relayOut,
+			() => throw new PipeRelay.PipeUnavailableException(PipeRelay.NotRunningMessage), stderr, CancellationToken.None);
 
 		Assert.Equal(1, code);
-		var line = await ReadLine(clientOut);
-		Assert.Equal("Zing isn't running or AI control is off", System.Text.Json.Nodes.JsonNode.Parse(line!)!["error"]!["message"]!.GetValue<string>());
+		var error = JsonNode.Parse((await ReadLine(clientOut))!)!;
+		Assert.Equal(7, error["id"]!.GetValue<int>());
+		Assert.Equal("Zing isn't running or AI control is off", error["error"]!["message"]!.GetValue<string>());
+		Assert.Contains("Zing isn't running or AI control is off", stderr.ToString());
+	}
+
+	[Fact]
+	public async Task NoPipeAnswersWithANullIdWhenNoRequestCame()
+	{
+		var (clientOut, relayOut) = Connection();
+		var code = await PipeRelay.Run(new MemoryStream(), relayOut, () => throw new PipeRelay.PipeUnavailableException("nope"), TextWriter.Null, CancellationToken.None);
+
+		Assert.Equal(1, code);
+		Assert.Null(JsonNode.Parse((await ReadLine(clientOut))!)!["id"]);
+	}
+
+	[Fact]
+	public async Task AnotherUsersPipeGivesItsOwnErrorAndExits1()
+	{
+		var (clientOut, relayOut) = Connection();
+		var stderr = new StringWriter();
+		var code = await PipeRelay.Run(Lines("""{"jsonrpc":"2.0","id":"a","method":"ping"}""" + "\n"), relayOut,
+			() => throw new PipeRelay.PipeUnavailableException("Zing's pipe belongs to another Windows user", new UnauthorizedAccessException()), stderr, CancellationToken.None);
+
+		Assert.Equal(1, code);
+		var error = JsonNode.Parse((await ReadLine(clientOut))!)!;
+		Assert.Equal("a", error["id"]!.GetValue<string>());
+		Assert.Equal("Zing's pipe belongs to another Windows user", error["error"]!["message"]!.GetValue<string>());
+		Assert.Contains("another Windows user", stderr.ToString());
+	}
+
+	[Fact]
+	public async Task AnOversizedLineGetsTooLongAndExits1()
+	{
+		var (clientOut, relayOut) = Connection();
+		var (_, relayPipe) = Connection();
+		var code = await PipeRelay.Run(new MemoryStream(new byte[McpHttpServer.MaxBody + 10].Select(_ => (byte)'x').ToArray()), relayOut, () => relayPipe,
+			TextWriter.Null, new CancellationTokenSource(TimeSpan.FromSeconds(20)).Token);
+
+		Assert.Equal(1, code);
+		Assert.Equal(McpText.TooLong, await ReadLine(clientOut));
 	}
 
 	[Fact]
@@ -84,7 +128,7 @@ public sealed class PipeRelayTests
 		var (clientIn, clientSide) = Connection();
 		var (_, relayOut) = Connection();
 		var (zingEnd, relayPipe) = Connection();
-		var relay = PipeRelay.Run(clientSide, relayOut, () => relayPipe, new CancellationTokenSource(TimeSpan.FromSeconds(20)).Token);
+		var relay = PipeRelay.Run(clientSide, relayOut, () => relayPipe, TextWriter.Null, new CancellationTokenSource(TimeSpan.FromSeconds(20)).Token);
 
 		zingEnd.Dispose();
 		Assert.Equal(1, await relay);

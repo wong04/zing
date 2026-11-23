@@ -9,10 +9,10 @@ if (profile is null)
 	return 2;
 }
 
-return await PipeRelay.Run(Console.OpenStandardInput(), Console.OpenStandardOutput(), () => Connect(profile), CancellationToken.None);
+return await PipeRelay.Run(Console.OpenStandardInput(), Console.OpenStandardOutput(), () => Connect(profile), Console.Error, CancellationToken.None);
 
 // CurrentUserOnly is what makes another user's server squatting on the name fail: the server's ACL can't carry it.
-static NamedPipeClientStream? Connect(string profile)
+static NamedPipeClientStream Connect(string profile)
 {
 	var pipe = new NamedPipeClientStream(".", McpPipeServer.Name(profile), PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 	try
@@ -20,9 +20,19 @@ static NamedPipeClientStream? Connect(string profile)
 		pipe.Connect(TimeSpan.FromSeconds(2));
 		return pipe;
 	}
-	catch (TimeoutException)
+	catch (TimeoutException timedOut)
 	{
 		pipe.Dispose();
-		return null;
+		throw new PipeRelay.PipeUnavailableException(PipeRelay.NotRunningMessage, timedOut);
+	}
+	catch (UnauthorizedAccessException notYours)
+	{
+		pipe.Dispose();
+		throw new PipeRelay.PipeUnavailableException("Zing's pipe belongs to another Windows user, so zing-mcp won't use it", notYours);
+	}
+	catch (IOException broken)
+	{
+		pipe.Dispose();
+		throw new PipeRelay.PipeUnavailableException($"Zing's pipe couldn't be opened: {broken.Message}", broken);
 	}
 }

@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Zing.Core.Mcp;
 
@@ -7,19 +9,26 @@ public static class PipeRelay
 {
 	public const string NotRunningMessage = "Zing isn't running or AI control is off";
 
-	/// <summary>The one line a client gets when there is no pipe to relay to.</summary>
-	public static readonly string NotRunning = McpText.Error(null, -32000, NotRunningMessage);
+	/// <summary>Thrown by the connect function when there is no pipe to relay to; its message is for the person.</summary>
+	public sealed class PipeUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
 
 	/// <summary>
-	/// 1 when <paramref name="connect"/> found no pipe (the error was written to <paramref name="output"/>) or Zing closed it first;
-	/// 0 when the client closed <paramref name="input"/>. A line past the pipe's own limit throws, since Zing would refuse it anyway.
+	/// 1 when <paramref name="connect"/> threw <see cref="PipeUnavailableException"/> (the client gets a JSON-RPC error for its first
+	/// request, and <paramref name="stderr"/> the message), when a line was past the pipe's size limit (the client gets
+	/// <see cref="McpText.TooLong"/>), or when the pipe broke or Zing closed it; 0 when the client closed <paramref name="input"/>.
 	/// </summary>
-	public static async Task<int> Run(Stream input, Stream output, Func<Stream?> connect, CancellationToken cancel)
+	public static async Task<int> Run(Stream input, Stream output, Func<Stream> connect, TextWriter stderr, CancellationToken cancel)
 	{
-		var pipe = connect();
-		if (pipe is null)
+		Stream pipe;
+		try
 		{
-			await WriteLine(output, NotRunning, cancel).ConfigureAwait(false);
+			pipe = connect();
+		}
+		catch (PipeUnavailableException unavailable)
+		{
+			await stderr.WriteLineAsync(unavailable.Message).ConfigureAwait(false);
+			var id = await FirstRequestId(input, cancel).ConfigureAwait(false);
+			await WriteLine(output, McpText.Error(id, -32000, unavailable.Message), cancel).ConfigureAwait(false);
 			return 1;
 		}
 		await using (pipe.ConfigureAwait(false))
@@ -32,8 +41,34 @@ public static class PipeRelay
 			// The loser may be blocked in a read that can't be cancelled (stdin), so it is left to end with the process.
 			var other = first == toZing ? fromZing : toZing;
 			_ = other.ContinueWith(static t => t.Exception, TaskContinuationOptions.OnlyOnFaulted);
-			await first.ConfigureAwait(false);
-			return first == toZing ? 0 : 1;
+			try
+			{
+				await first.ConfigureAwait(false);
+				return first == toZing ? 0 : 1;
+			}
+			catch (InvalidDataException)
+			{
+				await WriteLine(output, McpText.TooLong, CancellationToken.None).ConfigureAwait(false);
+				return 1;
+			}
+			catch (Exception broken) when (broken is IOException or ObjectDisposedException)
+			{
+				await stderr.WriteLineAsync($"The connection to Zing broke: {broken.Message}").ConfigureAwait(false);
+				return 1;
+			}
+		}
+	}
+
+	private static async Task<JsonNode?> FirstRequestId(Stream input, CancellationToken cancel)
+	{
+		var line = await new LineReader(input, McpHttpServer.MaxBody).Next(cancel).ConfigureAwait(false);
+		try
+		{
+			return line is null ? null : JsonNode.Parse(line)?["id"]?.DeepClone();
+		}
+		catch (JsonException)
+		{
+			return null;
 		}
 	}
 
