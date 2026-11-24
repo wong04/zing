@@ -1,0 +1,20 @@
+<!doctype html>
+<title>shadow</title>
+<zing-open><span style="font-size: 30px">Open details</span></zing-open>
+<zing-covered></zing-covered>
+<script>
+	customElements.define('zing-open', class extends HTMLElement {
+		connectedCallback() {
+			const root = this.attachShadow({ mode: 'open' })
+			root.innerHTML = '<button style="padding: 20px"><slot></slot></button>'
+			root.querySelector('button').onclick = () => { document.title = 'clicked' }
+		}
+	})
+	customElements.define('zing-covered', class extends HTMLElement {
+		connectedCallback() {
+			const root = this.attachShadow({ mode: 'open' })
+			root.innerHTML = '<div style="position: relative"><button>Show more</button><div style="position: absolute; inset: 0; background: rgba(0, 0, 0, 0.4)"></div></div>'
+			root.querySelector('button').onclick = () => { document.title = 'shown' }
+		}
+	})
+</script>

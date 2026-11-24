@@ -9,7 +9,7 @@ namespace Zing.Host;
 
 /// <summary>
 /// The AI tools' way into a tab: DevTools calls on the tab's own CoreWebView2 only. It reads the main frame; other frames,
-/// cross-origin ones included, are left out, and a PDF's text can't be read yet. Every call has <see cref="CallLimit"/>; a tab with no page gets one, unshown.
+/// cross-origin ones included, are left out; a PDF tab's text is read from the PDF's own bytes. Every call has <see cref="CallLimit"/>; a tab with no page gets one, unshown.
 /// Input goes to the page through DevTools' Input domain, never the host's key handling; navigation goes through TabService, so
 /// ThreatGate and the blocker see it. A page the AI has acted on passes its top-level form POSTs through <see cref="FormPostBackstop"/>.
 /// </summary>
@@ -41,7 +41,7 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		var page = await PageAsync(tab);
 		// The viewer's text never reaches the DevTools accessibility tree (its plugin builds one only for a screen reader), and
 		// its scripting messages read only a selection they leave behind in the owner's view, which no message clears.
-		if (await IsPdfAsync(tab, page)) throw new AiToolException(AiErrors.Unsupported, "Reading the text of a PDF isn't available yet.");
+		if (await PdfFrameAsync(tab, page) is { } frame) return PdfText.From(await ResourceAsync(tab, page, frame.Id, frame.Url));
 		using var tree = await CallAsync(tab, page, "Accessibility.getFullAXTree", new { });
 		return AxText.From(tree.RootElement);
 	}
@@ -419,14 +419,17 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 
 	/// <summary>
 	/// Whether this element is interactive and the nearest interactive element at or above <c>hit</c>. A container ref (a card,
-	/// a section) never owns what is over it, so a transparent overlay inside one still counts as covering.
+	/// a section) never owns what is over it, so a transparent overlay inside one still counts as covering. "Above" is the
+	/// flattened tree: a slotted node's slot, then a shadow root's host, so a button in a component's shadow root owns its label.
 	/// </summary>
 	private const string Owns = """
 		function (hit) {
 			const interactive = 'a[href], button, input, select, textarea, summary, [contenteditable=""], [contenteditable="true"], [role=button], [role=link], [role=checkbox], [role=radio], [role=menuitem], [role=menuitemcheckbox], [role=menuitemradio], [role=tab], [role=option], [role=switch], [role=textbox], [role=combobox], [role=searchbox], [role=slider], [role=spinbutton]'
 			if (!this.matches(interactive)) return false
-			const element = hit.nodeType === Node.ELEMENT_NODE ? hit : hit.parentElement
-			return element !== null && element.closest(interactive) === this
+			const above = (node) => node.assignedSlot ?? node.parentElement ?? (node.parentNode instanceof ShadowRoot ? node.parentNode.host : null)
+			for (let at = hit.nodeType === Node.ELEMENT_NODE ? hit : above(hit); at !== null; at = above(at))
+				if (at.matches(interactive)) return at === this
+			return false
 		}
 		""";
 
@@ -692,11 +695,21 @@ public sealed class CdpPageDriver(Func<string, MainWindow?> windowOf, Func<MainW
 		}
 	}
 
-	/// <summary>The tab shows a PDF itself: its document is the viewer's embedder, not a page.</summary>
-	private async Task<bool> IsPdfAsync(TabRef tab, WebView2Page page)
+	/// <summary>The main frame when the tab shows a PDF itself (its document is the viewer's embedder, not a page); null otherwise.</summary>
+	private async Task<(string Id, string Url)?> PdfFrameAsync(TabRef tab, WebView2Page page)
 	{
 		using var tree = await CallAsync(tab, page, "Page.getFrameTree", new { });
-		return tree.RootElement.GetProperty("frameTree").GetProperty("frame").GetProperty("mimeType").GetString() == "application/pdf";
+		var frame = tree.RootElement.GetProperty("frameTree").GetProperty("frame");
+		if (frame.GetProperty("mimeType").GetString() != "application/pdf") return null;
+		return (frame.GetProperty("id").GetString()!, frame.GetProperty("url").GetString()!);
+	}
+
+	/// <summary>The bytes the frame loaded <paramref name="url"/> with, from the page's own resources: never fetched again.</summary>
+	private async Task<byte[]> ResourceAsync(TabRef tab, WebView2Page page, string frameId, string url)
+	{
+		using var content = await CallAsync(tab, page, "Page.getResourceContent", new { frameId, url });
+		var body = content.RootElement.GetProperty("content").GetString()!;
+		return content.RootElement.GetProperty("base64Encoded").GetBoolean() ? Convert.FromBase64String(body) : System.Text.Encoding.UTF8.GetBytes(body);
 	}
 
 	/// <summary>Paints <paramref name="boxes"/> (viewport CSS pixels) black on the PNG, whose left top is at <paramref name="x"/>, <paramref name="y"/>.</summary>
