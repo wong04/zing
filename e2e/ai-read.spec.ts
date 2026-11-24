@@ -60,8 +60,11 @@ test('list_tabs shows only shared tabs', async () => {
 	const mcp = await connectMcp(zing.chrome)
 	const shared = await openTab(zing.chrome, '/plain')
 	await openTab(zing.chrome, '/other')
-	await shareTab(zing.chrome, shared)
-	await expect.poll(async () => JSON.parse(textOf(await mcp.call('list_tabs'))) as { url: string }[]).toEqual([{ tab: expect.stringMatching(/^[a-z0-9]{12}$/) as unknown, url: `${base}/plain` }])
+	// A navigation of the new tab that lands late can unshare it, so share again until the listing holds it.
+	await expect.poll(async () => {
+		await shareTab(zing.chrome, shared)
+		return JSON.parse(textOf(await mcp.call('list_tabs'))) as { url: string }[]
+	}).toEqual([{ tab: expect.stringMatching(/^[a-z0-9]{12}$/) as unknown, url: `${base}/plain` }])
 	await zing.close()
 })
 
