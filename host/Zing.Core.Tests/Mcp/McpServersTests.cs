@@ -159,6 +159,10 @@ public sealed class McpServersTests : IDisposable
 	}
 
 	[Fact]
+	public void PipeOwnerIsTheTokenOwnerSoAnElevatedClientAcceptsIt() =>
+		Assert.Equal(WindowsIdentity.GetCurrent().Owner, McpPipeServer.UserOnly().GetOwner(typeof(SecurityIdentifier)));
+
+	[Fact]
 	public void PipeNameFollowsTheProfileKey() =>
 		Assert.Matches(@"^zing-mcp-Zing-ABC-\d+$", McpPipeServer.Name("Zing-ABC"));
 

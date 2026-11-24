@@ -42,9 +42,12 @@ public sealed class McpPipeServer(string name, Func<string, Task<string?>> handl
 
 	public static PipeSecurity UserOnly()
 	{
-		var user = WindowsIdentity.GetCurrent().User ?? throw new InvalidOperationException("The current Windows identity has no user SID.");
+		var identity = WindowsIdentity.GetCurrent();
+		var user = identity.User ?? throw new InvalidOperationException("The current Windows identity has no user SID.");
 		var security = new PipeSecurity();
-		security.SetOwner(user);
+		// A CurrentUserOnly client compares the pipe's owner with its token's default owner, which is Administrators in an
+		// elevated process, not the user SID. Access stays the user's alone through the protected ACL below.
+		security.SetOwner(identity.Owner ?? user);
 		security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
 		security.AddAccessRule(new PipeAccessRule(user, PipeAccessRights.FullControl, AccessControlType.Allow));
 		return security;
