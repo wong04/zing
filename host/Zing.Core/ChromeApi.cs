@@ -237,6 +237,9 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 	/// <summary>Fires after any change to this window's tabs, e.g. so the primary window's session can be saved.</summary>
 	public event Action? TabsChanged;
 
+	/// <summary>Set by a host with AI control: the tab menu then offers sharing a tab.</summary>
+	public ITabSharing? AiSharing { get; set; }
+
 	public ChromeApi(Bridge bridge, AppServices app, IWindowHost host, string appVersion)
 	{
 		_app = app;
@@ -365,7 +368,7 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 		bridge.Register("stack:drag-presence", args => Do(() => Stacks.DragPresence(Text(args, 0), Bool(args, 1))));
 		bridge.Register("chrome:history-menu", args => HistoryMenuAsync(Text(args, 0), args));
 		bridge.Register("chrome:strip-menu", args => Do(() => Menu(Menus.Strip(Ordering), args, 0)));
-		bridge.Register("chrome:stack-menu", args => Do(() => Menu(Menus.Stack(Tabs, Saved, Ordering, Text(args, 0), host.Shell, this), args, 1)));
+		bridge.Register("chrome:stack-menu", args => Do(() => Menu(Menus.Stack(Tabs, Saved, Ordering, Text(args, 0), host.Shell, this, AiSharing), args, 1)));
 		bridge.Register("tabs:pin", args => Do(() => Saved.Pin(Text(args, 0))));
 		bridge.Register("tabs:unpin", args => Do(() => Saved.Unpin(Text(args, 0))));
 		bridge.Register("tabs:open-item", args => Do(() => Saved.Open(Text(args, 0))));
@@ -462,7 +465,7 @@ public sealed class ChromeApi : IDisposable, ITabClosing
 		bridge.Register("account:start-over", async _ => await StartOverAsync());
 		bridge.Register("account:start-over-deleting-sync", async _ => await StartOverDeletingSyncAsync());
 		bridge.Register("chrome:app-menu", args => Do(() => Menu(Menus.App(id => Run(id)), args, 0)));
-		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Saved, Text(args, 0), host.Shell, this), args, 1)));
+		bridge.Register("chrome:tab-menu", args => Do(() => Menu(Menus.Tab(Tabs, Saved, Text(args, 0), host.Shell, this, AiSharing), args, 1)));
 		bridge.Register("library:folder-menu", args => Do(() => Menu(Menus.LibraryFolder(app.Library, Text(args, 0), id => OpenLibraryItem(id, "current"), OpenAll), args, 1)));
 		bridge.Register("library:item-menu", args => Do(() => Menu(Menus.LibraryItem(app.Library, Text(args, 0), OpenLibraryItem, OpenAll, Saved), args, 1)));
 		bridge.Register("pageui:get", _ => PageUi.State);
@@ -2228,7 +2231,8 @@ internal sealed class LifecycleTabs(TabService tabs, TabOverview overview, TimeS
 
 	public string? ActiveId => tabs.ActiveId;
 	public bool IsShown(string id) => tabs.IsShown(id);
-	public IReadOnlyList<TabRecord> Records => tabs.Records;
+	// Kept-awake tabs (shared with AI) are out of sight of every sweep: no sleeping, suspending or auto-closing.
+	public IReadOnlyList<TabRecord> Records => [.. tabs.Records.Where(r => !tabs.KeptAwake(r.Id))];
 	public bool HasPage(string id) => tabs.HasPage(id);
 	public bool IsAudible(string id) => tabs.PageOf(id)?.IsAudible ?? false;
 	public bool IsUploading(string id) => tabs.PageOf(id)?.IsUploading ?? false;

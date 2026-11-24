@@ -157,6 +157,28 @@ public static class TestHooks
 	/// <summary>Set by ZingApp at launch: "show-default-browser-offer".</summary>
 	public static Action? OfferDefaultBrowser { get; set; }
 
+	/// <summary>The app's AI control, for ai-token and ai-confirm; e2e runs only read it.</summary>
+	public static AiControl? Ai
+	{
+		get => _ai;
+		set
+		{
+			_ai = value;
+			if (value is null || !IsEndToEndRun) return;
+			value.Gate.Shown += (tab, question) => AiAsked[tab] = question;
+			value.Gate.Closed += tab => AiAsked.Remove(tab);
+		}
+	}
+
+	private static AiControl? _ai;
+
+	/// <summary>What the confirm bar asks on each tab it is up on, for ai-confirm (the bar itself is Task 10).</summary>
+	private static readonly Dictionary<Zing.Core.Mcp.TabRef, string> AiAsked = [];
+
+	/// <summary>How long a hidden tab's screenshot waits to be shown, shortened by an e2e run (ZING_E2E_AI_SHOW_WAIT_MS); null in normal runs.</summary>
+	public static TimeSpan? AiShowWait =>
+		IsEndToEndRun && Environment.GetEnvironmentVariable("ZING_E2E_AI_SHOW_WAIT_MS") is { Length: > 0 } ms ? TimeSpan.FromMilliseconds(int.Parse(ms, System.Globalization.CultureInfo.InvariantCulture)) : null;
+
 	/// <summary>"exit-code-on-quit": the code Zing ends with once its last window is gone, as a crash during quit would; e2e/harness.spec.ts.</summary>
 	public static int? QuitExitCode { get; private set; }
 	/// <summary>"close-window-answer": what the confirm on closing a window of tabs answers in an e2e run, which shows no dialog.</summary>
@@ -170,7 +192,7 @@ public static class TestHooks
 	/// <summary>
 	/// Test-only messages from Zing's own pages in an e2e run, answered by doing it, never by a
 	/// reply the renderer's bridge would not expect: {kind: "test", action: "advance-clock", ms};
-	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers, reset makes it forget the key it sealed with, and missing deletes that key;
+	/// "vault-hello" with <c>result</c> pass, cancel or unavailable sets how the fake Windows Hello answers, hold keeps the next prompt waiting until the next answer, reset makes it forget the key it sealed with, and missing deletes that key;
 	/// "picker-key" with <c>vk</c> enters the account picker's key handler as a real key press on its page would;
 	/// "preview-key" with <c>code</c> enters the window's key handler as that key pressed on the link preview's top page would;
 	/// "page-key" with <c>code</c> enters the window's key handler as that key pressed on the shown page would;
@@ -188,6 +210,7 @@ public static class TestHooks
 	/// "window-at" with <c>x</c> and <c>y</c> writes to <c>file</c> the address of the view Windows gives a click at that point of the content (WindowFromPoint), null for none, and the class of the window hit.
 	/// "work-counts" writes how many blockable requests reached the request filter and how many pictures were asked of the engine, in every window, to <c>file</c>.
 	/// "minimise-window" with <c>minimised</c> minimises the window or restores it, without activating it.
+	/// "menu-choose" with <c>label</c> chooses that item of the menu last recorded, as a click on it would.
 	/// "menu-theme" writes the preferred app mode the native menus were last given (DarkMenus) to <c>file</c>.
 	/// "show-default-browser-offer" shows the default-browser offer as a launch would, skipping only whether Zing is installed and not the default.
 	/// </summary>
@@ -206,6 +229,45 @@ public static class TestHooks
 		var root = message.RootElement;
 		if (!root.TryGetProperty("kind", out var kind) || kind.GetString() != "test") return false;
 		var action = root.GetProperty("action").GetString();
+		if (action == "ai-share")
+		{
+			var share = AiSharers.TryGetValue(window, out var sharer) ? sharer : throw new InvalidOperationException("ai-share needs a window with its chrome started and AI control available");
+			share(root.GetProperty("tab").GetString()!);
+			return true;
+		}
+		if (action == "ai-confirm")
+		{
+			var tab = new Zing.Core.Mcp.TabRef(AiWindowIds.TryGetValue(window, out var windowId) ? windowId : throw new InvalidOperationException("ai-confirm needs a window with its chrome started and AI control available"), root.GetProperty("tab").GetString()!);
+			var asked = AiAsked.GetValueOrDefault(tab);
+			if (asked is not null && root.TryGetProperty("answer", out var answer))
+			{
+				var reply = answer.GetString() switch
+				{
+					"allow" => Zing.Core.Mcp.ConfirmAnswer.Allow,
+					"deny" => Zing.Core.Mcp.ConfirmAnswer.Deny,
+					"always" => Zing.Core.Mcp.ConfirmAnswer.AlwaysAllowSite,
+					var other => throw new InvalidOperationException($"ai-confirm can't answer '{other}'"),
+				};
+				(Ai ?? throw new InvalidOperationException("ai-confirm needs AI control, which couldn't start")).Gate.Answer(tab, reply);
+			}
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { asked }));
+			return true;
+		}
+		if (action == "menu-choose")
+		{
+			var label = root.GetProperty("label").GetString();
+			var item = _lastMenu?.FirstOrDefault(i => i.Label == label) ?? throw new InvalidOperationException($"menu-choose: the last menu has no '{label}'");
+			if (!item.Enabled || item.Click is not { } click) throw new InvalidOperationException($"menu-choose: '{label}' can't be chosen");
+			_lastMenu = null;
+			click();
+			return true;
+		}
+		if (action == "ai-token")
+		{
+			var ai = Ai ?? throw new InvalidOperationException("ai-token needs AI control, which couldn't start");
+			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { token = Zing.Core.Mcp.AiRequestCheck.Encode(ai.Token.Current()) }));
+			return true;
+		}
 		if (action == "pick-files")
 		{
 			var files = root.GetProperty("files").EnumerateArray().Select(f => f.GetString()!).ToArray();
@@ -504,6 +566,24 @@ public static class TestHooks
 		window.Destroyed += () => Apis.Remove(window);
 	}
 
+	/// <summary>Each window's way to share one of its tabs with AI by id, for ai-share; e2e runs only.</summary>
+	private static readonly Dictionary<HostWindow, Action<string>> AiSharers = [];
+
+	/// <summary>Each window's id in TabRefs, for ai-confirm; e2e runs only.</summary>
+	private static readonly Dictionary<HostWindow, string> AiWindowIds = [];
+
+	public static void RegisterAiShare(HostWindow window, string windowId, Action<string> share)
+	{
+		if (!IsEndToEndRun) return;
+		AiSharers[window] = share;
+		AiWindowIds[window] = windowId;
+		window.Destroyed += () =>
+		{
+			AiSharers.Remove(window);
+			AiWindowIds.Remove(window);
+		};
+	}
+
 	/// <summary>Each window's account-picker key handler (MainWindow.PickerKey), for picker-key; e2e runs only.</summary>
 	private static readonly Dictionary<HostWindow, Func<int, bool>> PickerKeyHandlers = [];
 
@@ -576,7 +656,11 @@ public static class TestHooks
 		var file = Environment.GetEnvironmentVariable("ZING_MENUS_FILE");
 		if (string.IsNullOrEmpty(file)) throw new InvalidOperationException("e2e runs need ZING_MENUS_FILE to record menus");
 		File.AppendAllText(file, System.Text.Json.JsonSerializer.Serialize(items.Select(i => i.Label)) + "\n");
+		_lastMenu = items;
 	}
+
+	// The menu last recorded, for menu-choose: an e2e run picks from it as the person would from the menu on screen.
+	private static IReadOnlyList<Zing.Core.MenuItem>? _lastMenu;
 
 	/// <summary>
 	/// e2e runs never open a dialog (AGENTS.md), Edge's print preview included. What would have opened goes to

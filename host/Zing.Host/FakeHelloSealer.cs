@@ -6,7 +6,7 @@ namespace Zing.Host;
 
 /// <summary>
 /// The Windows Hello stand-in for e2e runs, which must never show a prompt (AGENTS.md). Created only by <see cref="TestHooks.HelloSealer"/>,
-/// so a real launch can't get it. Each call answers as the test set it with {kind: "test", action: "vault-hello", result: "pass" | "cancel" | "unavailable" | "reset" | "missing"}; "reset" is Windows Hello's key being made again, so what was sealed before no longer opens, and "missing" is the key deleted (a PIN reset), so an unseal finds none until a seal makes a new one.
+/// so a real launch can't get it. Each call answers as the test set it with {kind: "test", action: "vault-hello", result: "pass" | "cancel" | "unavailable" | "reset" | "missing" | "hold"}; "hold" keeps the next unseal waiting, as a prompt the person hasn't answered, until the next answer; "reset" is Windows Hello's key being made again, so what was sealed before no longer opens, and "missing" is the key deleted (a PIN reset), so an unseal finds none until a seal makes a new one.
 /// It wraps the key under a fixed key: it stands in for Hello, and protects nothing.
 /// </summary>
 public sealed class FakeHelloSealer : IHelloSealer
@@ -16,6 +16,7 @@ public sealed class FakeHelloSealer : IHelloSealer
 	private string _result = "pass";
 	private int _generation;
 	private bool _missing;
+	private TaskCompletionSource? _held;
 
 	public event Action? AvailabilityChanged;
 
@@ -25,7 +26,12 @@ public sealed class FakeHelloSealer : IHelloSealer
 
 	public void Answer(string result)
 	{
-		if (result is not ("pass" or "cancel" or "unavailable" or "reset" or "missing")) throw new InvalidOperationException($"vault-hello takes pass, cancel, unavailable, reset or missing, not {result}");
+		if (result is not ("pass" or "cancel" or "unavailable" or "reset" or "missing" or "hold")) throw new InvalidOperationException($"vault-hello takes pass, cancel, unavailable, reset, missing or hold, not {result}");
+		if (result == "hold")
+		{
+			_held ??= new TaskCompletionSource();
+			return;
+		}
 		if (result == "reset")
 		{
 			_generation++;
@@ -39,6 +45,9 @@ public sealed class FakeHelloSealer : IHelloSealer
 		var wasAvailable = Available;
 		_result = result;
 		if (Available != wasAvailable) AvailabilityChanged?.Invoke();
+		var held = _held;
+		_held = null;
+		held?.TrySetResult();
 	}
 
 	public Task<byte[]> SealAsync(byte[] key)
@@ -53,12 +62,13 @@ public sealed class FakeHelloSealer : IHelloSealer
 		return Task.FromResult(KeyWrap.Wrap(CurrentKey(), key, WrapLabel));
 	}
 
-	public Task<byte[]> UnsealAsync(byte[] sealedBytes)
+	public async Task<byte[]> UnsealAsync(byte[] sealedBytes)
 	{
 		// HelloSealer finds the key gone before it would ask for a signature.
 		if (_missing && _result != "unavailable") throw new HelloKeyMissingException("The e2e test deleted the Windows Hello key (vault-hello: missing)");
+		if (_held is { } held) await held.Task;
 		Prompt();
-		return Task.FromResult(KeyWrap.Unwrap(CurrentKey(), sealedBytes, WrapLabel));
+		return KeyWrap.Unwrap(CurrentKey(), sealedBytes, WrapLabel);
 	}
 
 	private byte[] CurrentKey() => SHA256.HashData(Encoding.UTF8.GetBytes($"zing e2e fake hello {_generation}"));

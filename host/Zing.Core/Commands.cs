@@ -88,6 +88,14 @@ public interface ITabClosing
 	void CloseOtherTabs(string keep);
 }
 
+/// <summary>Sharing a window's tabs with a local AI client (AiShares), for the tab menu.</summary>
+public interface ITabSharing
+{
+	bool IsShared(string tabId);
+	void Share(string tabId);
+	void Unshare(string tabId);
+}
+
 /// <summary>The menus of the chrome (menu.ts, tab-menus.ts, library-controller.ts).</summary>
 public static class Menus
 {
@@ -98,7 +106,7 @@ public static class Menus
 			Submenu: section["items"]!.AsArray().Select(entry => Entry(entry!.GetValue<string>(), run)).ToList())).ToList();
 
 	/// <summary>The right-click menu of a tab.</summary>
-	public static IReadOnlyList<MenuItem> Tab(TabService tabs, SavedTabs saved, string id, IShellActions shell, ITabClosing closing)
+	public static IReadOnlyList<MenuItem> Tab(TabService tabs, SavedTabs saved, string id, IShellActions shell, ITabClosing closing, ITabSharing? sharing = null)
 	{
 		var record = tabs.Get(id);
 		var loose = tabs.Records.Any(t => t.Id != id && !t.Pinned);
@@ -121,6 +129,7 @@ public static class Menus
 			new MenuItem("Reload", () => tabs.PageOf(id)?.Reload()),
 			new MenuItem("Open in Default Browser", () => shell.OpenExternal(record.Url), Enabled: web),
 			new MenuItem("Copy Address", () => shell.CopyText(Net.RelayedContent.ToWebAddress(record.Url)), Enabled: record.Url != TabStore.NewTabUrl),
+			.. ShareItems(record.Url, id, sharing),
 			MenuItem.Separator,
 			// A saved tab closes and its item stays; a pinned tab without one isn't closed by accident.
 			new MenuItem("Close Tab", () => closing.CloseTabs([id]), Enabled: !record.Pinned || record.ItemId is not null),
@@ -130,13 +139,22 @@ public static class Menus
 		return [.. menu.Select(item => item.Click is { } click ? item with { Click = () => { if (tabs.Has(id)) click(); } } : item)];
 	}
 
+	// Only an http(s) page can be shared, so Zing's own pages have no share item at all.
+	private static IReadOnlyList<MenuItem> ShareItems(string url, string id, ITabSharing? sharing)
+	{
+		if (sharing is null) return [];
+		if (sharing.IsShared(id)) return [MenuItem.Separator, new MenuItem("Stop AI using this tab", () => sharing.Unshare(id))];
+		if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !Mcp.AiUrls.Allowed(uri)) return [];
+		return [MenuItem.Separator, new MenuItem("Let AI use this tab", () => sharing.Share(id))];
+	}
+
 	/// <summary>A stack chip offers its lead page's menu plus closing the whole stack.</summary>
-	public static IReadOnlyList<MenuItem> Stack(TabService tabs, SavedTabs saved, TabOrdering ordering, string key, IShellActions shell, ITabClosing closing)
+	public static IReadOnlyList<MenuItem> Stack(TabService tabs, SavedTabs saved, TabOrdering ordering, string key, IShellActions shell, ITabClosing closing, ITabSharing? sharing = null)
 	{
 		var stack = ordering.Stacks().FirstOrDefault(s => s.Key == key && s.Ids.Count > 1);
 		if (stack is null) return [];
 		var lead = stack.Ids.FirstOrDefault(id => id == tabs.ActiveId) ?? stack.Ids[0];
-		return [.. Tab(tabs, saved, lead, shell, closing), MenuItem.Separator, new MenuItem($"Close All {stack.Ids.Count} Tabs from {stack.Name}", () =>
+		return [.. Tab(tabs, saved, lead, shell, closing, sharing), MenuItem.Separator, new MenuItem($"Close All {stack.Ids.Count} Tabs from {stack.Name}", () =>
 			closing.CloseTabs([.. stack.Ids.Where(tabs.Has)]))];
 	}
 

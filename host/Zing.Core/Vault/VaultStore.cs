@@ -284,6 +284,32 @@ public sealed partial class VaultStore : IDisposable, ISyncAccountStore
 		return await OpenSecretAsync(record.ItemId, record.Password, summary.PasswordVersion);
 	}
 
+	/// <summary>
+	/// fill_login's: always asks Hello, even while the secret key is held (an AI asked, not the person at the PC), and holds
+	/// nothing: the key is wiped once the password is read.
+	/// </summary>
+	public async Task<string> PasswordAskingHelloAsync(string id)
+	{
+		Find(id);
+		await RequireHelloAsync();
+		var keys = Keys();
+		var secretKey = await keys.SecretKeyAsync(_cipher, _sealer);
+		try
+		{
+			lock (_gate)
+			{
+				// Read again: the vault may have been turned off, or the login changed, while Hello was asking.
+				RequireOpen();
+				var (record, summary) = Find(id);
+				return OpenPassword(secretKey, keys, record, summary);
+			}
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(secretKey);
+		}
+	}
+
 	/// <summary>Asks Hello unless the secret key is held. Index 0 is the password replaced most recently.</summary>
 	public async Task<string> HistoryPasswordAsync(string id, int index)
 	{

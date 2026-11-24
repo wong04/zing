@@ -425,3 +425,74 @@ public sealed class FakeSecretClipboard : Zing.Core.Vault.ISecretClipboard
 		SequenceNumber++;
 	}
 }
+
+public sealed class FakePageDriver : Zing.Core.Mcp.IPageDriver
+{
+	public List<string> Calls { get; } = [];
+	public System.Text.Json.JsonElement Tree { get; set; } = System.Text.Json.JsonDocument.Parse("""{"nodes":[]}""").RootElement;
+	public Dictionary<Zing.Core.Mcp.TabRef, Uri> Urls { get; } = [];
+	/// <summary>Null means the click point hits the node itself.</summary>
+	public long? HitNode { get; set; }
+	public (Zing.Core.Mcp.FillResult, IReadOnlySet<long>) Fill { get; set; } = (Zing.Core.Mcp.FillResult.NoSavedLogin, new HashSet<long>());
+	public IReadOnlySet<long>? LastBlackOut { get; private set; }
+	public Zing.Core.Mcp.TabRef NextTab { get; set; } = new("w1", "opened");
+
+	public Task<System.Text.Json.JsonElement> AxTree(Zing.Core.Mcp.TabRef tab) => Task.FromResult(Tree);
+	/// <summary>Runs inside MainText and Screenshot, as an unshare or navigation during a long read would.</summary>
+	public Action? DuringRead { get; set; }
+
+	public Task<string> MainText(Zing.Core.Mcp.TabRef tab)
+	{
+		DuringRead?.Invoke();
+		return Task.FromResult("main text");
+	}
+
+	public Task<byte[]> Screenshot(Zing.Core.Mcp.TabRef tab, long? node, IReadOnlySet<long> blackOut)
+	{
+		DuringRead?.Invoke();
+		LastBlackOut = blackOut;
+		Calls.Add($"screenshot {node}");
+		return Task.FromResult(new byte[] { 0x89, 0x50, 0x4e, 0x47 });
+	}
+
+	/// <summary>Runs inside NodeAtCentre, as a page navigating between hit test and click would.</summary>
+	public Action? DuringHitTest { get; set; }
+
+	public Task<long?> NodeAtCentre(Zing.Core.Mcp.TabRef tab, long node)
+	{
+		DuringHitTest?.Invoke();
+		return Task.FromResult<long?>(HitNode ?? node);
+	}
+	public Task Click(Zing.Core.Mcp.TabRef tab, long node) => Record($"click {node}");
+	public Task Type(Zing.Core.Mcp.TabRef tab, long node, string text, bool submit) => Record($"type {node} {text} {submit}");
+	public Task Select(Zing.Core.Mcp.TabRef tab, long node, string value) => Record($"select {node} {value}");
+	public Task Scroll(Zing.Core.Mcp.TabRef tab, long? node, int deltaX, int deltaY) => Record($"scroll {node} {deltaX} {deltaY}");
+	public Task PressKey(Zing.Core.Mcp.TabRef tab, long? node, string key) => Record($"key {node} {key}");
+	public Task Navigate(Zing.Core.Mcp.TabRef tab, Uri url) => Record($"navigate {url}");
+	public Task Back(Zing.Core.Mcp.TabRef tab) => Record("back");
+	public Task Forward(Zing.Core.Mcp.TabRef tab) => Record("forward");
+
+	public Task<Zing.Core.Mcp.TabRef> OpenTab(Uri url)
+	{
+		Calls.Add($"open {url}");
+		Urls[NextTab] = url;
+		return Task.FromResult(NextTab);
+	}
+
+	public Task CloseTab(Zing.Core.Mcp.TabRef tab) => Record("close");
+	public Task Download(Zing.Core.Mcp.TabRef tab, Uri url) => Record($"download {url}");
+
+	public Task<(Zing.Core.Mcp.FillResult Result, IReadOnlySet<long> FilledNodes)> FillLogin(Zing.Core.Mcp.TabRef tab)
+	{
+		Calls.Add("fill");
+		return Task.FromResult<(Zing.Core.Mcp.FillResult, IReadOnlySet<long>)>(Fill);
+	}
+
+	public Uri UrlOf(Zing.Core.Mcp.TabRef tab) => Urls.TryGetValue(tab, out var url) ? url : throw new Zing.Core.Mcp.TabGoneException(tab);
+
+	private Task Record(string call)
+	{
+		Calls.Add(call);
+		return Task.CompletedTask;
+	}
+}

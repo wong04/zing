@@ -45,7 +45,20 @@
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Zing.Core\Zing.Core.csproj" />
+		<!-- zing-mcp.exe, the Claude desktop app's stdio relay; built first, then shipped beside Zing.exe (below). -->
+		<ProjectReference Include="..\Zing.Mcp\Zing.Mcp.csproj" ReferenceOutputAssembly="false" />
 	</ItemGroup>
+	<!--
+		Its build output (built with this one's SelfContained, so a published Zing's runtime serves it too) joins Zing.exe's folder, in
+		a build and a publish. After the project reference has built, so the glob finds the files.
+	-->
+	<Target Name="ShipZingMcp" AfterTargets="ResolveProjectReferences" BeforeTargets="AssignTargetPaths">
+		<ItemGroup>
+			<_ZingMcpFile Include="..\Zing.Mcp\bin\$(Configuration)\net9.0-windows\win-x64\zing-mcp.*" />
+			<Content Include="@(_ZingMcpFile)" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="'%(Extension)' != '.exe'" />
+			<Content Include="@(_ZingMcpFile)" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" Condition="'%(Extension)' == '.exe'" />
+		</ItemGroup>
+	</Target>
 	<ItemGroup>
 		<AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
 			<_Parameter1>ZingSyncServerUrl</_Parameter1>

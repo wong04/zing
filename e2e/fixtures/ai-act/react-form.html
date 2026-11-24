@@ -1,0 +1,23 @@
+<!doctype html>
+<title>react form</title>
+<!-- Like a React controlled input: the field shows the component's state, which only real typing (trusted input events) changes. -->
+<form id="form" method="post" action="/sent">
+	<label>Name <input id="name"></label>
+	<input type="hidden" name="name" id="sent-name">
+	<button>Send</button>
+</form>
+<script>
+	let state = ''
+	const field = document.getElementById('name')
+	field.addEventListener('input', (event) => {
+		if (event.isTrusted) state = field.value
+		else field.value = state
+	})
+	// A value set by script without real typing is put back on the next render.
+	setInterval(() => {
+		if (field.value !== state) field.value = state
+	}, 50)
+	document.getElementById('form').addEventListener('submit', () => {
+		document.getElementById('sent-name').value = state
+	})
+</script>

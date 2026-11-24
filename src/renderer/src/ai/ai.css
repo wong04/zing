@@ -1,0 +1,80 @@
+/* The #ai-strip and #ai-confirm views are exactly the frame: its padding leaves room for the shadow and the focus ring. Tokens only. */
+
+.ai-bar-frame {
+	display: inline-flex;
+	padding: 6px;
+}
+
+.ai-bar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 6px 8px 6px 14px;
+	border: 2px solid var(--accent);
+	border-radius: var(--card-radius);
+	background: var(--raised);
+	color: var(--text);
+	box-shadow: var(--elevation-strong);
+	font: 13px/1.35 var(--font);
+	animation: ai-bar-in 120ms ease-out;
+}
+
+@keyframes ai-bar-in {
+	from {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ai-bar {
+		animation: none;
+	}
+}
+
+.ai-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--accent);
+	flex: none;
+}
+
+.ai-strip-text {
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.ai-confirm {
+	flex-direction: column;
+	align-items: stretch;
+	gap: 8px;
+	width: max-content;
+	max-width: 460px;
+	padding: 12px 14px;
+}
+
+.ai-confirm-text {
+	margin: 0;
+	font-weight: 600;
+	/* Page text can be one long word; it wraps rather than widening the bar. The host already caps it at one 200-character
+	   line (ConfirmText); three lines here keep the buttons in place whatever gets through. */
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	line-clamp: 3;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+}
+
+/* The ghost Always allow has no resting chrome, so its keyboard focus must show. */
+.ai-bar .pill-button:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.ai-confirm-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}

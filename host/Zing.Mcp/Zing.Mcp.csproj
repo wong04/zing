@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- zing-mcp.exe: relays an MCP client's stdio to the running Zing's pipe. Kept tiny (no WinUI, no WebView2); the relay itself is Zing.Core's PipeRelay. -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<AssemblyName>zing-mcp</AssemblyName>
+		<RootNamespace>Zing.Mcp</RootNamespace>
+		<TargetFramework>net9.0-windows</TargetFramework>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Zing.Core\Zing.Core.csproj" />
+	</ItemGroup>
+</Project>

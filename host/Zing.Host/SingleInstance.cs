@@ -15,7 +15,8 @@ public static class SingleInstance
 	/// <summary>Long enough for an owner to reach Listen, which comes after loading its profile, on a slow PC.</summary>
 	private static readonly TimeSpan OwnerPatience = TimeSpan.FromSeconds(30);
 
-	private static string Key => "Zing-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(AppPaths.UserData.ToLowerInvariant())))[..16];
+	/// <summary>Names this profile's pipes: the owner's, and the AI one zing-mcp.exe is told with --profile.</summary>
+	public static string ProfileKey => "Zing-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(AppPaths.UserData.ToLowerInvariant())))[..16];
 
 	// A static, so the collector can't close the mutex while this process runs.
 	private static ProfileOwner? _owner;
@@ -26,9 +27,9 @@ public static class SingleInstance
 	/// </summary>
 	public static bool RedirectedToRunningZing()
 	{
-		_owner = ProfileOwner.TryClaim(Key);
+		_owner = ProfileOwner.TryClaim(ProfileKey);
 		if (_owner is not null) return false;
-		ProfileOwner.HandOverOrTellStuck(Key, Environment.GetCommandLineArgs().Skip(1).ToList(), OwnerPatience, StartupFailure.TellAlreadyRunning);
+		ProfileOwner.HandOverOrTellStuck(ProfileKey, Environment.GetCommandLineArgs().Skip(1).ToList(), OwnerPatience, StartupFailure.TellAlreadyRunning);
 		return true;
 	}
 

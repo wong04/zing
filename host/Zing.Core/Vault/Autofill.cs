@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Zing.Core.Mcp;
 
 namespace Zing.Core.Vault;
 
@@ -174,9 +175,21 @@ public static class AutofillScripts
 	/// </summary>
 	public static string Fill(string origin, string username, string password) =>
 		$"location.origin === {JsonSerializer.Serialize(origin)} && window.{Value("fillFunction")}({JsonSerializer.Serialize(username)}, {JsonSerializer.Serialize(password)})";
+
+	/// <summary>
+	/// fill_login's, for an isolated world of the top document (no page script can replace it): evaluates to the
+	/// [username, password] sign-in fields (either may be null), or null when there are none.
+	/// </summary>
+	public static string AiLoginFields => Value("aiLoginFields");
+
+	/// <summary>fill_login's, called in that world on one field with (origin, value): fills it only while the document is on the origin, and answers whether it did.</summary>
+	public static string AiPutValue => Value("aiPutValue");
 }
 
 public sealed record PickerEntry(string Id, string Username);
+
+/// <summary>A sign-in form fill_login found; <paramref name="PickerAt"/> is the field the picker goes under, null when it isn't on screen.</summary>
+public sealed record LoginForm(CredentialField? PickerAt);
 
 /// <summary>
 /// Pushed as pageui:account-picker. Usernames only: the picker never shows a password, and the page never sees any of it.
@@ -216,7 +229,8 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 	/// <summary>A click counts only once the picker has been on screen, where it is, this long (Ruling 28).</summary>
 	public const long ClickGuardMs = 500;
 
-	private sealed record Open(AccountPicker Picker, IPage Page, string Origin, long ShownAt);
+	/// <param name="AiChoice">Set when fill_login asked the owner: gets the chosen login's ID, or null once the picker closes without one.</param>
+	private sealed record Open(AccountPicker Picker, IPage Page, string Origin, long ShownAt, TaskCompletionSource<string?>? AiChoice = null);
 
 	private sealed class Window
 	{
@@ -241,6 +255,8 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 	/// <summary>A message from a page's script; <paramref name="frameSource"/> is WebView2's Source for it.</summary>
 	public void Message(string pageId, Uri frameSource, AutofillMessage message)
 	{
+		// While fill_login asks the owner, the page's focus has no say over the picker: only the owner closes it.
+		if (_open?.AiChoice is not null) return;
 		switch (message)
 		{
 			case AutofillMessage.Focused focused:
@@ -335,6 +351,11 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 				// then it is still taken from the page (it was aimed at the picker's selection, and a page form submitting
 				// half-filled would surprise more), but does nothing.
 				if (!Settled(open)) return true;
+				if (open.AiChoice is not null)
+				{
+					ChooseForAi(open, open.Picker.Entries[open.Picker.Active].Id);
+					return true;
+				}
 				background(ChooseAsync(open, open.Picker.Entries[open.Picker.Active].Id), "autofill");
 				return true;
 			default:
@@ -356,7 +377,65 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 		if (_open is not { } open || open.Picker.PageId != pageId) return FillOutcomes.Refused;
 		if (!open.Picker.Entries.Any(e => e.Id == id)) throw new AutofillEntryException(id);
 		if (!Settled(open)) return FillOutcomes.Ignored;
-		return await ChooseAsync(open, id);
+		if (open.AiChoice is null) return await ChooseAsync(open, id);
+		ChooseForAi(open, id);
+		return FillOutcomes.Filled;
+	}
+
+	/// <summary>The owner chose a login for fill_login: the picker closes, and fill_login goes on with it.</summary>
+	private void ChooseForAi(Open open, string id)
+	{
+		_open = null;
+		Changed();
+		open.AiChoice!.TrySetResult(id);
+	}
+
+	/// <summary>
+	/// fill_login: fills the login saved for the page's exact origin, after Windows Hello. One login is filled; with more,
+	/// the owner chooses in the picker, put at the form's field (closing it, or a tab not on screen, is Denied). The AI learns
+	/// only Filled, Denied or NoSavedLogin: never a username, a password, another origin or how many logins there are; a page
+	/// with no sign-in form is Denied before any login is looked up. <paramref name="locate"/> finds the page's sign-in form
+	/// (null for none) and <paramref name="fill"/> fills it with (origin, username, password), giving the nodes it filled; it
+	/// checks once more that it may, and gives none when it may not.
+	/// </summary>
+	public async Task<(FillResult Result, IReadOnlySet<long> FilledNodes)> FillForAi(string pageId, IPage page, Func<Task<LoginForm?>> locate, Func<string, string, string, Task<IReadOnlySet<long>>> fill)
+	{
+		var denied = (FillResult.Denied, (IReadOnlySet<long>)new HashSet<long>());
+		if (vault() is not { } store || !Uri.TryCreate(page.Url, UriKind.Absolute, out var top) || !IsWeb(top)) return denied;
+		var origin = VaultModel.OriginOf(top.AbsoluteUri);
+		if (await locate() is not { } form) return denied;
+		var logins = VaultModel.EntriesFor(store.Summaries(), new FillContext(top.AbsoluteUri, top.AbsoluteUri));
+		if (logins.Count == 0) return (FillResult.NoSavedLogin, new HashSet<long>());
+		var id = logins.Count == 1 ? logins[0].Id : await AskOwnerAsync(pageId, page, origin, form.PickerAt, logins);
+		if (id is null) return denied;
+		string password;
+		try
+		{
+			password = await store.PasswordAskingHelloAsync(id);
+		}
+		catch (Exception e) when (e is HelloCancelledException or HelloUnavailableException or VaultSetUpAgainException)
+		{
+			return denied;
+		}
+		// The page may have gone elsewhere while the owner chose or Hello was up, or the vault been turned off.
+		if (!ReferenceEquals(vault(), store) || !Uri.TryCreate(page.Url, UriKind.Absolute, out var now) || !IsWeb(now) || VaultModel.OriginOf(now.AbsoluteUri) != origin) return denied;
+		var login = logins.First(l => l.Id == id);
+		var nodes = await fill(origin, login.Username, password);
+		if (nodes.Count == 0) return denied;
+		filled(pageId, origin, login.Username, password);
+		return (FillResult.Filled, nodes);
+	}
+
+	/// <summary>The picker, for the owner to choose fill_login's login; null when they close it, or it can't be shown.</summary>
+	private Task<string?> AskOwnerAsync(string pageId, IPage page, string origin, CredentialField? field, IReadOnlyList<LoginSummary> logins)
+	{
+		if (field is null || !ReferenceEquals(pageOf(pageId), page)) return Task.FromResult<string?>(null);
+		Close();
+		var choice = new TaskCompletionSource<string?>();
+		List<PickerEntry> entries = [.. logins.Select(l => new PickerEntry(l.Id, l.Username))];
+		_open = new Open(new AccountPicker(pageId, field.Rect, field.Viewport, entries, -1), page, origin, clock.Now(), choice);
+		Changed();
+		return choice.Task;
 	}
 
 	/// <summary>The picker has been on screen, where it is, for the guard: a page can't move it under a click or a quick Enter.</summary>
@@ -390,6 +469,7 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 
 	private void Show(string pageId, Uri frameSource, CredentialField field)
 	{
+		if (_open?.AiChoice is not null) return;
 		if (vault() is not { } store || pageOf(pageId) is not { } page || !IsWeb(frameSource) || !Uri.TryCreate(page.Url, UriKind.Absolute, out var top) || !IsWeb(top))
 		{
 			CloseFor(pageId);
@@ -426,9 +506,10 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 	/// <summary>Closes the picker, if one is open; the vault turning off does this.</summary>
 	public void Close()
 	{
-		if (_open is null) return;
+		if (_open is not { } open) return;
 		_open = null;
 		Changed();
+		open.AiChoice?.TrySetResult(null);
 	}
 
 	private void Changed()
@@ -449,6 +530,7 @@ public sealed class Autofill(Func<VaultStore?> vault, Func<string, IPage?> pageO
 
 	public void Dispose()
 	{
+		_open?.AiChoice?.TrySetResult(null);
 		foreach (var window in _windows.Values) window.Timer?.Dispose();
 		_windows.Clear();
 	}

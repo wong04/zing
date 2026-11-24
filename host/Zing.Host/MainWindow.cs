@@ -35,6 +35,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	private UpdatePillLayer? _updatePill;
 	private ExtensionPopupLayer? _extensionPopup;
 	private FullScreenExitLayer? _fullScreenExit;
+	private AiWindow? _ai;
 	private FullScreenExitReveal? _exitReveal;
 	private CoveringLayer? _stacks;
 	private CoveringLayer? _overview;
@@ -100,10 +101,16 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 	/// <summary>The window's handle, which owns a Windows Hello prompt (HelloSealer).</summary>
 	public nint Hwnd => _window.Hwnd;
 
+	/// <summary>Minimised: none of its tabs is on screen.</summary>
+	public bool IsMinimised => _window.IsMinimised;
+
 	/// <summary>Shows the window; test runs never take focus (AGENTS.md).</summary>
 	public void Show() => _window.Show(activate: !TestHooks.KeepsOutOfTheWay);
 
 	public ChromeApi? Api { get; private set; }
+
+	/// <summary>The window's half of an AI TabRef; never shown to an AI client.</summary>
+	public string Id { get; } = Guid.NewGuid().ToString("N");
 
 	/// <summary>
 	/// Called once the app has listed the window, so nothing it does on starting finds it missing. A window
@@ -188,6 +195,16 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		});
 		Api = new ChromeApi(_bridge, _app.Services, this, typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "0");
 		Api.TabsChanged += () => _app.TabsChanged(this);
+		if (_app.Ai is { } ai)
+		{
+			ai.Watch(Id, Api.Tabs);
+			var strip = new AiStripLayer(_window, _scope, _environment, _bridge, PageRect, _renderers.Add, _overlays);
+			var confirm = new AiConfirmLayer(_window, _scope, _environment, _bridge, PageRect, () => strip.Bottom ?? PageRect().Y, _renderers.Add, _overlays);
+			_ai = new AiWindow(ai, Id, Api, _scope, Push, strip, confirm, () => _destroyed || _scope.IsClosed);
+			Api.AiSharing = _ai;
+			TestHooks.RegisterAiShare(_window, Id, _ai.Share);
+		}
+		RegisterAi();
 		var themeSubscription = _app.Services.Settings.Subscribe((_, key) =>
 		{
 			if (key == "theme") _window.Theme = Theme();
@@ -207,6 +224,80 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_chrome.Crashed += view => view.View.Core.NavigationCompleted += CaptionsAfterReload;
 		TestHooks.Started(_scope);
 	}
+
+	/// <summary>Where the page goes in the content, from the chrome's insets: the AI bars centre over it.</summary>
+	private Rect PageRect()
+	{
+		var area = _layout.ContentRect();
+		var insets = Api?.Insets() ?? default;
+		return new Rect(insets.Left, insets.Top, Math.Max(0, area.Width - insets.Left - insets.Right), Math.Max(0, area.Height - insets.Top));
+	}
+
+	/// <summary>The strip, the confirm bar and Settings' AI section. Settings works without AI control too, saying it is unavailable.</summary>
+	private void RegisterAi()
+	{
+		AiWindow Window() => _ai ?? throw new InvalidOperationException("AI control couldn't start this launch");
+		AiControl Control() => _app.Ai ?? throw new InvalidOperationException("AI control couldn't start this launch");
+		static string Text(JsonElement[] args, int i) => args[i].GetString() ?? throw new BridgeProtocolException($"Argument {i} must be a string");
+		static int Size(JsonElement[] args, int i) => (int)Math.Ceiling(args[i].GetDouble());
+		_bridge.Register("ai:get", _ => (object?)(_ai?.State() ?? new AiTabsView([], [], null, null)));
+		_bridge.Register("ai:stop", args =>
+		{
+			Window().Unshare(Text(args, 0));
+			return (object?)null;
+		});
+		_bridge.Register("ai:stop-all", _ =>
+		{
+			Control().Shares.UnshareAll();
+			return (object?)null;
+		});
+		_bridge.Register("ai:answer", args =>
+		{
+			Window().Answer(Text(args, 0), Text(args, 1));
+			return (object?)null;
+		});
+		_bridge.Register("ai:strip-size", args =>
+		{
+			_ai?.StripSize(Size(args, 0), Size(args, 1));
+			return (object?)null;
+		});
+		_bridge.Register("ai:confirm-size", args =>
+		{
+			_ai?.ConfirmSize(Size(args, 0), Size(args, 1));
+			return (object?)null;
+		});
+		_bridge.Register("ai:settings", _ => (object?)AiWindow.Settings(_app.Ai, Flag("aiControlEnabled"), AiPort()));
+		// Only on the person's Show: the token is otherwise never in a view.
+		_bridge.Register("ai:show-token", _ => (object?)AiWindow.Token(Control(), Flag("aiControlEnabled")));
+		_bridge.Register("ai:regenerate-token", _ =>
+		{
+			Control().Token.Regenerate();
+			return (object?)null;
+		});
+		_bridge.Register("ai:set-site-level", args =>
+		{
+			AiWindow.SetSiteLevel(Control(), Text(args, 0), Text(args, 1));
+			return (object?)null;
+		});
+		_bridge.Register("ai:copy", args =>
+		{
+			var enabled = Flag("aiControlEnabled");
+			// The token is filled in here, so a copy never sends it to the sheet.
+			var text = Text(args, 0) switch
+			{
+				"token" => AiWindow.Token(Control(), enabled),
+				"claude-code" => AiWindow.ClaudeCode(AiPort(), AiWindow.Token(Control(), enabled)),
+				"claude-desktop" => AiWindow.ClaudeDesktop(),
+				var other => throw new ArgumentException($"AI control has nothing called '{other}' to copy"),
+			};
+			Shell.CopyText(text);
+			return (object?)null;
+		});
+	}
+
+	private int AiPort() => _app.Services.Settings.Get("aiControlPort")!.GetValue<int>();
+
+	private bool Flag(string key) => _app.Services.Settings.Get(key)!.GetValue<bool>();
 
 	/// <summary>
 	/// The minimise/maximise/close buttons sit over the chrome's top-right corner (the title bar is
@@ -575,6 +666,7 @@ public sealed class MainWindow : IWindowHost, IPageHost, IPageFeatureHost
 		_overview?.Layout();
 		_updatePill?.Layout();
 		_fullScreenExit?.Layout();
+		_ai?.Layout();
 		// The shell model works out where the surface goes and answers through SurfaceRegionChanged.
 		Api?.LayoutChanged();
 	}

@@ -28,6 +28,18 @@ public class SettingsTests
 		Assert.False(new SettingsStore().Get("passwordAutofill")!.GetValue<bool>());
 	}
 
+	[Fact]
+	public void AiControlDefaultsOff()
+	{
+		Assert.False(SettingsSchema.Defaults()["aiControlEnabled"]!.GetValue<bool>());
+		Assert.Equal(47821, SettingsSchema.Defaults()["aiControlPort"]!.GetValue<int>());
+		Assert.True(SettingsSchema.AcceptsValue("aiControlPort", JsonValue.Create(1024)));
+		Assert.True(SettingsSchema.AcceptsValue("aiControlPort", JsonValue.Create(65535)));
+		Assert.False(SettingsSchema.AcceptsValue("aiControlPort", JsonValue.Create(1023)));
+		Assert.False(SettingsSchema.AcceptsValue("aiControlPort", JsonValue.Create(65536)));
+		Assert.False(SettingsSchema.AcceptsValue("aiControlEnabled", JsonValue.Create("yes")));
+	}
+
 	[Theory]
 	[InlineData("linkPreviews")]
 	[InlineData("linkPreviewsShiftClick")]

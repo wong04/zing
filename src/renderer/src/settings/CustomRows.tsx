@@ -15,6 +15,7 @@ import { checkStatusText } from '../update/updateText'
 import { useUpdateState } from '../update/useUpdateState'
 import { privacyStatus } from './privacy'
 import { VaultSection } from './VaultSection'
+import { AiControlSection } from './AiControlSection'
 import { ImportSection } from './ImportSection'
 import { ExtensionsGate, ExtensionsList } from './ExtensionsSection'
 import type { CustomId } from './rows'
@@ -363,5 +364,7 @@ export function CustomRow({ id, handle, version }: { id: CustomId; handle: Setti
 			return <ExtensionsGate handle={handle} />
 		case 'extensions':
 			return <ExtensionsList handle={handle} />
+		case 'ai-control':
+			return <AiControlSection handle={handle} />
 	}
 }

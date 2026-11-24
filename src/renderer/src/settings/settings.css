@@ -558,3 +558,26 @@
 	align-items: center;
 	gap: 8px;
 }
+
+/* AI control: the token and the Connect Claude snippets, as they would be pasted. */
+.ai-token-actions {
+	display: flex;
+	gap: 4px;
+}
+
+.ai-token,
+.ai-snippet {
+	display: block;
+	margin: 0 0 8px;
+	padding: 8px 10px;
+	border-radius: 8px;
+	background: var(--well);
+	color: var(--text);
+	font-family: var(--mono, ui-monospace, monospace);
+	font-size: 12px;
+	overflow: visible;
+	overflow-wrap: anywhere;
+	word-break: break-all;
+	white-space: pre-wrap;
+	user-select: text;
+}

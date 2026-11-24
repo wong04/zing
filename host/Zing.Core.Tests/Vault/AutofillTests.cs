@@ -769,4 +769,173 @@ public sealed class AutofillTests : IDisposable
 		Assert.DoesNotContain("'key'", AutofillScripts.Detection, StringComparison.Ordinal);
 		Assert.Equal("zingCredentialField", AutofillScripts.MessageKey);
 	}
+	// fill_login (the AI's): exact origin, Hello, the picker for more than one login, and nothing about logins in the result.
+
+	private readonly List<(string Origin, string Username, string Password)> _aiFills = [];
+
+	private static readonly IReadOnlySet<long> AiFields = new HashSet<long> { 11, 12 };
+
+	private static readonly LoginForm AForm = new(new CredentialField(CredentialFieldKind.Password, FieldRect, Viewport));
+
+	/// <summary>What the host's fill says: false once the tab was unshared or left meanwhile.</summary>
+	private bool _mayFill = true;
+
+	private Task<(Zing.Core.Mcp.FillResult Result, IReadOnlySet<long> FilledNodes)> FillForAi(LoginForm? form = null, bool noForm = false) =>
+		_api.Autofill.FillForAi(TabId, Page, () => Task.FromResult(noForm ? null : form ?? AForm), (origin, username, password) =>
+		{
+			if (!_mayFill) return Task.FromResult<IReadOnlySet<long>>(new HashSet<long>());
+			_aiFills.Add((origin, username, password));
+			return Task.FromResult(AiFields);
+		});
+
+	[Fact]
+	public async Task FillLoginOnAPageWithNoSignInFormIsDeniedWhetherOrNotALoginIsSaved()
+	{
+		OnPage($"{Site}/login");
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, (await FillForAi(noForm: true)).Result);
+		await Save(Site, "ada");
+		var unseals = _sealer.Unseals;
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, (await FillForAi(noForm: true)).Result);
+		Assert.Equal(unseals, _sealer.Unseals);
+		Assert.Empty(_aiFills);
+	}
+
+	[Fact]
+	public async Task FillLoginWithTwoLoginsAndThePickerFieldOffScreenIsDenied()
+	{
+		await Save(Site, "ada");
+		await Save(Site, "bob");
+		OnPage($"{Site}/login");
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, (await FillForAi(new LoginForm(null))).Result);
+		Assert.Null(Picker);
+	}
+
+	[Fact]
+	public async Task FillLoginIsDeniedWhenTheHostsFillMayNoLongerFill()
+	{
+		await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		_mayFill = false;
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, (await FillForAi()).Result);
+		Assert.Empty(_aiFills);
+	}
+
+	[Fact]
+	public async Task FillLoginWithOneLoginFillsAfterHello()
+	{
+		await Save($"{Site}/login", "ada", "s3cret");
+		await Save("https://other.test", "eve");
+		OnPage($"{Site}/login");
+		var unseals = _sealer.Unseals;
+
+		var (result, nodes) = await FillForAi();
+
+		Assert.Equal(Zing.Core.Mcp.FillResult.Filled, result);
+		Assert.Equal(AiFields, nodes);
+		Assert.Equal(unseals + 1, _sealer.Unseals);
+		Assert.Equal([(Site, "ada", "s3cret")], _aiFills);
+		Assert.Null(Picker);
+	}
+
+	[Fact]
+	public async Task FillLoginWithNoLoginForTheExactOriginIsNoSavedLogin()
+	{
+		await Save("https://sub.example.com", "ada");
+		OnPage($"{Site}/login");
+
+		var (result, nodes) = await FillForAi();
+
+		Assert.Equal(Zing.Core.Mcp.FillResult.NoSavedLogin, result);
+		Assert.Empty(nodes);
+		Assert.Empty(_aiFills);
+	}
+
+	[Theory]
+	[InlineData(HelloResult.Cancel)]
+	[InlineData(HelloResult.Unavailable)]
+	public async Task FillLoginWithHelloCancelledIsDeniedAndFillsNothing(HelloResult hello)
+	{
+		await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		_sealer.Result = hello;
+
+		var (result, _) = await FillForAi();
+
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, result);
+		Assert.Empty(_aiFills);
+	}
+
+	[Fact]
+	public async Task FillLoginWithTheVaultOffIsDenied()
+	{
+		await Save(Site, "ada");
+		OnPage($"{Site}/login");
+		_settings.Set("passwordAutofill", false);
+
+		var (result, _) = await FillForAi();
+
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, result);
+		Assert.Empty(_aiFills);
+	}
+
+	[Fact]
+	public async Task FillLoginWithTwoLoginsAsksTheOwnerAndFillsTheirChoice()
+	{
+		await Save(Site, "ada");
+		var bob = await Save(Site, "bob", "bob's password");
+		OnPage($"{Site}/login");
+
+		var filling = FillForAi();
+
+		Assert.False(filling.IsCompleted);
+		Assert.Equal(["ada", "bob"], Picker!.Entries.Select(e => e.Username).Order());
+		// The page's own focus reports don't touch the owner's picker.
+		Page.Events.Autofill(new Uri($"{Site}/login"), new AutofillMessage.Left());
+		Assert.NotNull(Picker);
+		Wait();
+		Assert.Equal("filled", Value(await Invoke("vault:fill", TabId, bob)).GetString());
+		var (result, nodes) = await filling;
+
+		Assert.Equal(Zing.Core.Mcp.FillResult.Filled, result);
+		Assert.Equal(AiFields, nodes);
+		Assert.Equal([(Site, "bob", "bob's password")], _aiFills);
+		Assert.Empty(Page.Evaluated);
+		Assert.Null(Picker);
+	}
+
+	[Fact]
+	public async Task FillLoginWithTwoLoginsIsDeniedWhenTheOwnerClosesThePicker()
+	{
+		await Save(Site, "ada");
+		await Save(Site, "bob");
+		OnPage($"{Site}/login");
+		var unseals = _sealer.Unseals;
+
+		var filling = FillForAi();
+		_api.Autofill.Key(PickerKey.Escape);
+		var (result, _) = await filling;
+
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, result);
+		Assert.Empty(_aiFills);
+		Assert.Equal(unseals, _sealer.Unseals);
+	}
+
+	[Fact]
+	public async Task FillLoginIsDeniedWhenThePageLeftTheOriginDuringHello()
+	{
+		await Save(Site, "ada");
+		await Save(Site, "bob");
+		OnPage($"{Site}/login");
+
+		var filling = FillForAi();
+		OnPage("https://evil.test/");
+		_api.Autofill.Key(PickerKey.Down);
+		_api.Autofill.Key(PickerKey.Enter);
+		Wait();
+		_api.Autofill.Key(PickerKey.Enter);
+		var (result, _) = await filling;
+
+		Assert.Equal(Zing.Core.Mcp.FillResult.Denied, result);
+		Assert.Empty(_aiFills);
+	}
 }

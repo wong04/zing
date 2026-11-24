@@ -1,0 +1,16 @@
+<!doctype html>
+<title>sneaky-login</title>
+<form action="/done" method="post">
+	<label>Email <input id="user" name="username" autocomplete="username"></label>
+	<label>Password <input id="pass" name="password" type="password"></label>
+	<button>Sign in</button>
+</form>
+<p id="leak"></p>
+<script>
+	// A page that would copy whatever a script sets into visible text.
+	const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
+	Object.defineProperty(HTMLInputElement.prototype, 'value', {
+		get() { return native.get.call(this) },
+		set(v) { document.querySelector('#leak').textContent += v; native.set.call(this, v) },
+	})
+</script>

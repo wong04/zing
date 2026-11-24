@@ -3,6 +3,7 @@ using WinRT;
 using Zing.Core;
 using Zing.Core.Engines;
 using Zing.Core.Extensions;
+using Zing.Core.Mcp;
 using Zing.Core.Vault;
 
 namespace Zing.Host;
@@ -83,10 +84,14 @@ public sealed class ZingApp
 	private EngineRebuild? _rebuild;
 	private bool _updateNoticeGiven;
 	private Updater? _updates;
+	private AiControl? _ai;
 
 	public AppServices Services => _services ?? throw new InvalidOperationException("Zing has not started");
 
 	public Updater Updates => _updates ?? throw new InvalidOperationException("Zing has not started");
+
+	/// <summary>Local AI over MCP; null when its site levels couldn't be read, which was told at startup.</summary>
+	public AiControl? Ai => _ai;
 
 	public Task<CoreWebView2Environment> Environment => _environment ?? throw new InvalidOperationException("Zing has not started");
 
@@ -128,7 +133,9 @@ public sealed class ZingApp
 		_session = new SessionSaver(AppPaths.Session, _services.Settings, () => [.. _windows.Select(SessionOf)], _scheduler, e => TestHooks.Record("session write", e));
 		_onQuit.Add(_session.Flush);
 		_updates = OpenUpdates(_session);
+		_ai = OpenAi(dispatcher, _services.Settings);
 		TestHooks.OfferDefaultBrowser = OfferDefaultBrowserForTest;
+		TestHooks.Ai = _ai;
 		// The tabs saved by a relaunch into an update come back whatever restoreTabs says, and are newer than session.json.
 		IReadOnlyList<IReadOnlyList<SessionTab>> restore = TakeRelaunchSession();
 		if (!Flag("restoreTabs")) DiscardSession();
@@ -425,6 +432,7 @@ public sealed class ZingApp
 	{
 		var together = _closingTogether.Remove(window);
 		_windows.Remove(window);
+		_ai?.WindowClosed(window.Id);
 		_pendingRestores.Remove(window);
 		_taskbar?.Remove(window.AppWindow);
 		if (_windows.Count > 0)
@@ -766,6 +774,34 @@ public sealed class ZingApp
 	}
 
 	private CoreWebView2? AnyLivePage() => _windows.Select(w => w.AnyLivePage()).FirstOrDefault(core => core is not null);
+
+	/// <summary>Optional: site levels that can't be read leave it off for this launch, and Zing says so.</summary>
+	private AiControl? OpenAi(Microsoft.UI.Dispatching.DispatcherQueue dispatcher, SettingsStore settings)
+	{
+		var scheduler = _scheduler ?? throw new InvalidOperationException("Launch creates the scheduler first");
+		SitePolicy policy;
+		try
+		{
+			policy = new SitePolicy(AppPaths.AiSites);
+		}
+		catch (SitePolicyFileException error)
+		{
+			Faults.Warning("ai sites load", error);
+			_startupNotices.Add($"Zing couldn't read your AI site settings ({Path.GetFileName(error.Path)}), so AI control is off for now. The file was left as it is.");
+			return null;
+		}
+		var version = typeof(ZingApp).Assembly.GetName().Version?.ToString(3) ?? "0";
+		var ai = new AiControl(dispatcher, scheduler, policy, new AiToken(new DpapiCipher(), AppPaths.AiToken), version, McpPipeServer.Name(SingleInstance.ProfileKey), id => _windows.FirstOrDefault(w => w.Id == id), () => MostRecent);
+		ai.Follow(Flag(settings, "aiControlEnabled"), Port(settings));
+		settings.Subscribe((_, key) =>
+		{
+			if (key is "aiControlEnabled" or "aiControlPort") ai.Follow(Flag(settings, "aiControlEnabled"), Port(settings));
+		});
+		_onQuit.Add(ai.Stop);
+		return ai;
+	}
+
+	private static int Port(SettingsStore settings) => settings.Get("aiControlPort")?.GetValue<int>() ?? throw new InvalidDataException("Setting aiControlPort is missing");
 
 	private bool Flag(string key) => Flag(Services.Settings, key);
 

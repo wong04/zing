@@ -93,6 +93,50 @@
 			"args": 2
 		},
 		{
+			"channel": "ai:answer",
+			"args": 2
+		},
+		{
+			"channel": "ai:confirm-size",
+			"args": 2
+		},
+		{
+			"channel": "ai:copy",
+			"args": 1
+		},
+		{
+			"channel": "ai:get",
+			"args": 0
+		},
+		{
+			"channel": "ai:regenerate-token",
+			"args": 0
+		},
+		{
+			"channel": "ai:set-site-level",
+			"args": 2
+		},
+		{
+			"channel": "ai:settings",
+			"args": 0
+		},
+		{
+			"channel": "ai:show-token",
+			"args": 0
+		},
+		{
+			"channel": "ai:stop",
+			"args": 1
+		},
+		{
+			"channel": "ai:stop-all",
+			"args": 0
+		},
+		{
+			"channel": "ai:strip-size",
+			"args": 2
+		},
+		{
 			"channel": "app:report-error",
 			"args": 1
 		},
@@ -758,6 +802,7 @@
 	"events": [
 		"account:state",
 		"addressbar:suggestions",
+		"ai:state",
 		"chrome:focus-address",
 		"engines:exit",
 		"engines:output",

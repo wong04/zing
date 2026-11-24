@@ -462,6 +462,22 @@ public sealed class WebView2Page : IPage
 		return results;
 	}
 
+	/// <summary>A DevTools call on the page's own session (CdpPageDriver); throws <see cref="ViewGoneException"/> if the page closes meanwhile.</summary>
+	public async Task<string> DevToolsAsync(string method, string json)
+	{
+		if (!IsOpen || _core is not { } core) throw new ViewGoneException("page");
+		// A suspended renderer would answer only once shown.
+		if (core.IsSuspended) core.Resume();
+		return await WhileOpenAsync(core.CallDevToolsProtocolMethodAsync(method, json).AsTask());
+	}
+
+	/// <summary>Calls <paramref name="received"/> with each DevTools <paramref name="eventName"/> on the page's own session, for the page's life (CdpPageDriver).</summary>
+	public void OnDevToolsEvent(string eventName, Action<string> received)
+	{
+		if (!IsOpen || _core is not { } core) throw new ViewGoneException("page");
+		core.GetDevToolsProtocolEventReceiver(eventName).DevToolsProtocolEventReceived += (_, e) => TestHooks.Guard(() => received(e.ParameterObjectAsJson), eventName);
+	}
+
 	private static IEnumerable<System.Text.Json.JsonElement> FramesOf(System.Text.Json.JsonElement node)
 	{
 		yield return node.GetProperty("frame");
@@ -816,7 +832,11 @@ public sealed class WebView2Page : IPage
 	/// The field in DIPs of the window's content: the page's place plus the rect at its zoom, cut to the page's own bounds,
 	/// which go with it as the picker's limits. A field wholly outside the page (a forged rect) has no picker.
 	/// </summary>
-	private Zing.Core.Vault.AutofillMessage InWindow(Zing.Core.Vault.CredentialField field)
+	private Zing.Core.Vault.AutofillMessage InWindow(Zing.Core.Vault.CredentialField field) =>
+		FieldInWindow(field) is { } placed ? new Zing.Core.Vault.AutofillMessage.Focused(placed) : new Zing.Core.Vault.AutofillMessage.Left();
+
+	/// <summary>A field the page reported in its CSS pixels, placed in DIPs of the window's content; null when none of it is on the page.</summary>
+	public Zing.Core.Vault.CredentialField? FieldInWindow(Zing.Core.Vault.CredentialField field)
 	{
 		var zoom = Zoom;
 		var css = field.Rect;
@@ -824,8 +844,8 @@ public sealed class WebView2Page : IPage
 		var top = Math.Max(_bounds.Y, _bounds.Y + css.Y * zoom);
 		var right = Math.Min(_bounds.X + _bounds.Width, _bounds.X + (css.X + css.Width) * zoom);
 		var bottom = Math.Min(_bounds.Y + _bounds.Height, _bounds.Y + (css.Y + css.Height) * zoom);
-		if (right <= left || bottom <= top) return new Zing.Core.Vault.AutofillMessage.Left();
-		return new Zing.Core.Vault.AutofillMessage.Focused(field with { Rect = new Rect(left, top, right - left, bottom - top), Viewport = _bounds });
+		if (right <= left || bottom <= top) return null;
+		return field with { Rect = new Rect(left, top, right - left, bottom - top), Viewport = _bounds };
 	}
 
 	private void Wire(CoreWebView2 core)
