@@ -146,6 +146,17 @@ test('a button under an overlay fails Covered', async () => {
 	await zing.close()
 })
 
+test('a button in a shadow root takes the click on its label, and one under an overlay there fails Covered', async () => {
+	const zing = await launchZing()
+	const mcp = await connectMcp(zing.chrome)
+	const { tab } = await sharedTab(zing.chrome, mcp, '/shadow')
+	const page = await pageWhere(zing.browser, (p) => p.url() === `${base}/shadow`)
+	expect((await mcp.call('click', { tab, ref: await refOf(mcp, tab, /button "Show more"/) })).structuredContent?.code).toBe('Covered')
+	expect(textOf(await mcp.call('click', { tab, ref: await refOf(mcp, tab, /button "Open details"/) }))).toBe('Done')
+	await expect(page).toHaveTitle('clicked')
+	await zing.close()
+})
+
 test("a mislabelled buy button's form POST still asks", async () => {
 	const zing = await launchZing()
 	const mcp = await connectMcp(zing.chrome)

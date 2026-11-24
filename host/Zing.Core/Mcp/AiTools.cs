@@ -444,7 +444,7 @@ public sealed class AiTools
 		[
 			Def("list_tabs", "Lists the tabs the owner has shared with AI.", []),
 			Def("snapshot", "An accessibility-tree outline of the tab; refs like e12 mark what can be acted on. Content inside frames is not included.", [], ("tab", tab)),
-			Def("read_text", "The main text of the tab. A PDF in the viewer answers Unsupported for now.", [], ("tab", tab)),
+			Def("read_text", "The main text of the tab; for a PDF, the text of the PDF.", [], ("tab", tab)),
 			Def("screenshot", "A PNG of the visible page, or of one element.", ["ref"], ("tab", tab), ("ref", reference)),
 			Def("open_tab", "Opens a new tab at a URL; it starts out shared.", [], ("url", url)),
 			Def("close_tab", "Closes a shared tab.", [], ("tab", tab)),

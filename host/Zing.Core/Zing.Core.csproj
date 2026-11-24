@@ -11,6 +11,7 @@
 	</ItemGroup>
 	<ItemGroup>
 		<PackageReference Include="NSec.Cryptography" Version="26.4.0" />
+		<PackageReference Include="PdfPig" Version="0.1.16" />
 		<PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.23" />
 		<PackageReference Include="zxcvbn-core" Version="7.0.92" />
 	</ItemGroup>

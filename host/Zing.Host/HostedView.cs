@@ -213,7 +213,9 @@ public sealed class HostedView
 
 	public void Focus()
 	{
-		if (IsClosed) return;
+		// A minimised window's views aren't visible to the engine, which refuses them focus (E_INVALIDARG); restoring
+		// activates the window, and its PassFocus gives the keyboard to the view that should have it.
+		if (IsClosed || _window.IsMinimised) return;
 		// Keys only go to the active window, and an overlay is a window of its own: activate it, but only
 		// while Zing is in front, so a background window (or a test run) never takes focus from another app.
 		if (_overlay && _window.IsForeground) Native.SetForegroundWindow(_hwnd);

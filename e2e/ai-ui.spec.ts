@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { expect, type Browser, type Page } from '@playwright/test'
 import type { ZingApi } from '../src/shared/ipc'
 import { connectMcp, textOf, type McpClient } from './mcp'
-import { launchZing, pageWhere, test } from './zing'
+import { launchZing, layers, pageWhere, test, viewAt, type Layer } from './zing'
 
 declare const window: { readonly zing: ZingApi }
 
@@ -117,7 +117,7 @@ test('Stop unshares and denies a waiting confirm', async () => {
 	await expect(confirm.getByText('AI wants to click', { exact: false })).toBeVisible({ timeout: 15_000 })
 	await expect(confirm.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
 	const strip = await view(zing.browser, '#ai-strip')
-	// A bar's view drops presses (moves go through) for a moment after the bars change: the click goes again until Stop lands.
+	// A bar's view drops DevTools presses (moves go through) for a moment after the bars change; a person's click isn't dropped (the native-click test below). The click goes again until Stop lands.
 	await expect(async () => {
 		await strip.getByRole('button', { name: 'Stop', exact: true }).click({ timeout: 1_000 })
 		expect(await sharedTabs(mcp)).toEqual([])
@@ -148,11 +148,35 @@ test('a waiting confirm on a background tab badges it', async () => {
 	await zing.chrome.evaluate((tabId) => window.zing.activateTab(tabId), id)
 	await expect(chip).not.toHaveClass(/ai-waiting/)
 	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getAiState())).confirm?.tab).toBe(id)
-	// A view just shown again drops presses (moves go through) for a moment, frames or not: the click goes again until Deny lands.
+	// A view just shown again drops DevTools presses (moves go through) for a moment, frames or not; a person's click isn't dropped. The click goes again until Deny lands.
 	await expect(async () => {
 		await confirm.getByRole('button', { name: 'Deny' }).click({ timeout: 1_000 })
 		expect((await zing.chrome.evaluate(() => window.zing.getAiState())).confirm).toBeUndefined()
 	}).toPass({ timeout: 15_000 })
+	expect((await click).structuredContent?.code).toBe('Denied')
+	await zing.close()
+})
+
+test("the owner's first mouse click on a confirm bar just shown again lands", async () => {
+	const zing = await launchZing()
+	const mcp = await connectMcp(zing.chrome)
+	const id = await openTab(zing.chrome, '/react-form')
+	await shareFromMenu(zing, id)
+	let tab = ''
+	await expect.poll(async () => (tab = (await sharedTabs(mcp))[0]?.tab ?? '')).not.toBe('')
+	const click = mcp.call('click', { tab, ref: await refOf(mcp, tab, /button "Send"/) })
+	const confirm = await view(zing.browser, '#ai-confirm')
+	await expect(confirm.getByText('AI wants to click', { exact: false })).toBeVisible({ timeout: 15_000 })
+	await zing.chrome.evaluate(() => window.zing.runCommand('tab.new'))
+	await expect.poll(async () => (await zing.chrome.evaluate(() => window.zing.getAiState())).confirm).toBeUndefined()
+	await zing.chrome.evaluate((tabId) => window.zing.activateTab(tabId), id)
+	let bar: Layer | undefined
+	await expect.poll(async () => (bar = (await layers(zing.chrome)).find((l) => l.url.endsWith('#ai-confirm') && l.visible))).toBeDefined()
+	const button = (await confirm.getByRole('button', { name: 'Deny' }).boundingBox())!
+	const at = { x: bar!.x + button.x + button.width / 2, y: bar!.y + button.y + button.height / 2 }
+	await expect.poll(() => viewAt(zing.chrome, at)).toMatch(/#ai-confirm$/)
+	// One click, as a person makes it: Windows' mouse messages to the window under the pointer.
+	await post(zing.chrome, { action: 'native-click', ...at })
 	expect((await click).structuredContent?.code).toBe('Denied')
 	await zing.close()
 })

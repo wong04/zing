@@ -208,6 +208,7 @@ public static class TestHooks
 	/// "close-all-as-taskbar" posts WM_CLOSE to every window back to back, as the taskbar's "Close all windows" does.
 	/// "set-cursor" with <c>x</c> and <c>y</c> puts the cursor there over the window's content (WindowLayout.Cursor), and without them takes it off the window.
 	/// "window-at" with <c>x</c> and <c>y</c> writes to <c>file</c> the address of the view Windows gives a click at that point of the content (WindowFromPoint), null for none, and the class of the window hit.
+	/// "native-click" with <c>x</c> and <c>y</c> posts a left click's window messages to the window Windows gives a click at that point of the content, as the mouse would.
 	/// "work-counts" writes how many blockable requests reached the request filter and how many pictures were asked of the engine, in every window, to <c>file</c>.
 	/// "minimise-window" with <c>minimised</c> minimises the window or restores it, without activating it.
 	/// "menu-choose" with <c>label</c> chooses that item of the menu last recorded, as a click on it would.
@@ -321,6 +322,23 @@ public static class TestHooks
 			var name = new System.Text.StringBuilder(64);
 			Native.GetClassNameW(hit, name, name.Capacity);
 			WriteWhole(root.GetProperty("file").GetString()!, System.Text.Json.JsonSerializer.Serialize(new { url = window.Views.FirstOrDefault(v => v.Owns(hit))?.Core.Source, windowClass = name.ToString() }));
+			return true;
+		}
+		if (action == "native-click")
+		{
+			// The window Windows gives a click at that point, sent the button's messages as a real click would: not DevTools' Input domain.
+			var scale = window.Scale;
+			var origin = window.ClientOrigin;
+			var point = new Native.POINT { X = origin.X + (int)Math.Round(root.GetProperty("x").GetDouble() * scale), Y = origin.Y + (int)Math.Round(root.GetProperty("y").GetDouble() * scale) };
+			var hit = Native.WindowFromPoint(point);
+			if (hit == 0) throw new InvalidOperationException("native-click: no window at that point");
+			Native.ScreenToClient(hit, ref point);
+			var at = (nint)((point.Y << 16) | (point.X & 0xFFFF));
+			const uint WM_MOUSEMOVE = 0x0200, WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202;
+			const nint MK_LBUTTON = 1;
+			Native.PostMessageW(hit, WM_MOUSEMOVE, 0, at);
+			Native.PostMessageW(hit, WM_LBUTTONDOWN, MK_LBUTTON, at);
+			Native.PostMessageW(hit, WM_LBUTTONUP, 0, at);
 			return true;
 		}
 		if (action == "layers")

@@ -34,9 +34,13 @@ public static class PipeRelay
 		await using (pipe.ConfigureAwait(false))
 		{
 			using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-			var toZing = Copy(input, pipe, stop.Token);
-			var fromZing = Copy(pipe, output, stop.Token);
+			var pending = new Pending();
+			var toZing = Copy(input, pipe, pending.Asked, stop.Token);
+			var fromZing = Copy(pipe, output, pending.Answered, stop.Token);
 			var first = await Task.WhenAny(toZing, fromZing).ConfigureAwait(false);
+			// The client closed stdin with requests still out: their answers go to it before the relay ends, unless Zing closes first.
+			if (first == toZing && toZing.IsCompletedSuccessfully && await Task.WhenAny(pending.InputClosed(), fromZing).ConfigureAwait(false) == fromZing)
+				first = fromZing;
 			await stop.CancelAsync().ConfigureAwait(false);
 			// The loser may be blocked in a read that can't be cancelled (stdin), so it is left to end with the process.
 			var other = first == toZing ? fromZing : toZing;
@@ -72,12 +76,13 @@ public static class PipeRelay
 		}
 	}
 
-	private static async Task Copy(Stream from, Stream to, CancellationToken cancel)
+	private static async Task Copy(Stream from, Stream to, Action<string> seen, CancellationToken cancel)
 	{
 		var lines = new LineReader(from, McpHttpServer.MaxBody);
 		while (await lines.Next(cancel).ConfigureAwait(false) is { } line)
 		{
 			if (line.Length == 0) continue;
+			seen(line);
 			await WriteLine(to, line, cancel).ConfigureAwait(false);
 		}
 		if (lines.TooLong) throw new InvalidDataException("A message was longer than the MCP size limit.");
@@ -87,5 +92,57 @@ public static class PipeRelay
 	{
 		await to.WriteAsync(Encoding.UTF8.GetBytes(line + "\n"), cancel).ConfigureAwait(false);
 		await to.FlushAsync(cancel).ConfigureAwait(false);
+	}
+
+	/// <summary>The ids of requests sent to Zing and not yet answered; both copies report to it from their own threads.</summary>
+	private sealed class Pending
+	{
+		private readonly Lock _gate = new();
+		private readonly HashSet<string> _ids = [];
+		private readonly TaskCompletionSource _drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		private bool _inputClosed;
+
+		public void Asked(string line)
+		{
+			if (Id(line, request: true) is not { } id) return;
+			lock (_gate) _ids.Add(id);
+		}
+
+		public void Answered(string line)
+		{
+			if (Id(line, request: false) is not { } id) return;
+			lock (_gate)
+			{
+				_ids.Remove(id);
+				if (_inputClosed && _ids.Count == 0) _drained.TrySetResult();
+			}
+		}
+
+		/// <summary>Completes once every request sent has its answer.</summary>
+		public Task InputClosed()
+		{
+			lock (_gate)
+			{
+				_inputClosed = true;
+				if (_ids.Count == 0) _drained.TrySetResult();
+			}
+			return _drained.Task;
+		}
+
+		/// <summary>A request's id (it has a method) or a response's (it has none); null for a notification or a line that isn't JSON.</summary>
+		private static string? Id(string line, bool request)
+		{
+			try
+			{
+				var message = JsonNode.Parse(line) as JsonObject;
+				if (message is null || message.ContainsKey("method") != request || message["id"] is not { } id) return null;
+				return id.ToJsonString();
+			}
+			catch (JsonException)
+			{
+				// Zing answers a line that isn't JSON itself, with a null id, so it is never waited for.
+				return null;
+			}
+		}
 	}
 }

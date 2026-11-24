@@ -13,6 +13,7 @@ declare const window: { readonly zing: ZingApi }
 let server: Server
 let base = ''
 let pdf: Uint8Array
+let pdfFetches = 0
 
 const PAGES: Record<string, string> = {
 	'/plain': '<!doctype html><title>plain</title><h1>Plain page</h1><p>Nothing to see.</p>',
@@ -27,6 +28,7 @@ test.beforeAll(async () => {
 	pdf = await doc.save()
 	server = createServer((req, res) => {
 		if (req.url === '/doc.pdf') {
+			pdfFetches++
 			res.setHeader('content-type', 'application/pdf')
 			res.end(Buffer.from(pdf))
 			return
@@ -96,7 +98,7 @@ test('screenshot returns a PNG', async () => {
 	await zing.close()
 })
 
-test('read_text of a PDF answers Unsupported and leaves nothing selected', async () => {
+test('read_text of a PDF is its text and leaves nothing selected', async () => {
 	const zing = await launchZing()
 	const mcp = await connectMcp(zing.chrome)
 	await shareTab(zing.chrome, await openTab(zing.chrome, '/doc.pdf'))
@@ -115,8 +117,12 @@ test('read_text of a PDF answers Unsupported and leaves nothing selected', async
 		setTimeout(() => resolve(null), 2000)
 	}))
 	await expect.poll(selected).toBe('')
+	const fetched = pdfFetches
 	const result = await mcp.call('read_text', { tab: await onlyTab(mcp) })
-	expect(result.structuredContent?.code).toBe('Unsupported')
+	expect(result.isError).toBeFalsy()
+	expect(textOf(result)).toBe('Quarterly Zebra Report')
+	// Read from the tab's own response, never fetched again.
+	expect(pdfFetches).toBe(fetched)
 	expect(await selected()).toBe('')
 	await zing.close()
 })

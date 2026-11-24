@@ -134,4 +134,83 @@ public sealed class PipeRelayTests
 		Assert.Equal(1, await relay);
 		clientIn.Dispose();
 	}
+
+	[Fact]
+	public async Task AnAnswerStillOnItsWayWhenStdinClosesIsDelivered()
+	{
+		var (clientIn, clientSide) = Connection();
+		var (clientOut, relayOut) = Connection();
+		var (zingEnd, relayPipe) = Connection();
+		var relay = PipeRelay.Run(clientSide, relayOut, () => relayPipe, TextWriter.Null, new CancellationTokenSource(TimeSpan.FromSeconds(20)).Token);
+
+		await Send(clientIn, """{"jsonrpc":"2.0","id":5,"method":"tools/call"}""");
+		await Send(clientIn, """{"jsonrpc":"2.0","method":"notifications/initialized"}""");
+		Assert.NotNull(await ReadLine(zingEnd));
+		clientIn.Dispose();
+		await Task.Delay(300, TestContext.Current.CancellationToken);
+		Assert.False(relay.IsCompleted);
+		await Send(zingEnd, """{"jsonrpc":"2.0","id":5,"result":{}}""");
+
+		Assert.Equal("""{"jsonrpc":"2.0","id":5,"result":{}}""", await ReadLine(clientOut));
+		Assert.Equal(0, await relay);
+	}
+
+	[Fact]
+	public async Task ZingClosingThePipeBeforeAnsweringAfterStdinClosedEndsWith1()
+	{
+		var (clientIn, clientSide) = Connection();
+		var (_, relayOut) = Connection();
+		var (zingEnd, relayPipe) = Connection();
+		var relay = PipeRelay.Run(clientSide, relayOut, () => relayPipe, TextWriter.Null, new CancellationTokenSource(TimeSpan.FromSeconds(20)).Token);
+
+		await Send(clientIn, """{"jsonrpc":"2.0","id":"x","method":"ping"}""");
+		Assert.NotNull(await ReadLine(zingEnd));
+		clientIn.Dispose();
+		zingEnd.Dispose();
+
+		Assert.Equal(1, await relay);
+	}
+
+	/// <summary>A stream whose every read and write fails as a broken pipe does.</summary>
+	private sealed class Broken(Exception error) : Stream
+	{
+		public override bool CanRead => true;
+		public override bool CanWrite => true;
+		public override bool CanSeek => false;
+		public override long Length => throw new NotSupportedException();
+		public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+		public override void Flush() => throw error;
+		public override int Read(byte[] buffer, int offset, int count) => throw error;
+		public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancel = default) => ValueTask.FromException<int>(error);
+		public override void Write(byte[] buffer, int offset, int count) => throw error;
+		public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancel = default) => ValueTask.FromException(error);
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+		public override void SetLength(long value) => throw new NotSupportedException();
+	}
+
+	[Fact]
+	public async Task APipeThatFailsToReadSaysItBrokeAndExits1()
+	{
+		var (clientIn, clientSide) = Connection();
+		var (_, relayOut) = Connection();
+		var stderr = new StringWriter();
+		var code = await PipeRelay.Run(clientSide, relayOut, () => new Broken(new IOException("Pipe is broken.")), stderr, new CancellationTokenSource(TimeSpan.FromSeconds(20)).Token);
+
+		Assert.Equal(1, code);
+		Assert.Contains("The connection to Zing broke: Pipe is broken.", stderr.ToString());
+		clientIn.Dispose();
+	}
+
+	[Fact]
+	public async Task APipeThatFailsToTakeARequestSaysItBrokeAndExits1()
+	{
+		var (zingEnd, relayPipe) = Connection();
+		var pipe = new Duplex(relayPipe, new Broken(new ObjectDisposedException("pipe")));
+		var stderr = new StringWriter();
+		var code = await PipeRelay.Run(Lines("""{"jsonrpc":"2.0","id":1,"method":"ping"}""" + "\n"), Stream.Null, () => pipe, stderr, new CancellationTokenSource(TimeSpan.FromSeconds(20)).Token);
+
+		Assert.Equal(1, code);
+		Assert.Contains("The connection to Zing broke", stderr.ToString());
+		zingEnd.Dispose();
+	}
 }

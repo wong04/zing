@@ -119,3 +119,13 @@ test('a minimised window stops drawing its pages and slows their timers, and res
 	await expect.poll(() => tickRate(zing, '/shown')).toBeGreaterThan(running / 2)
 	await zing.close()
 })
+
+test('a page that starts in a minimised window starts without an error and draws once restored', async () => {
+	const zing = await launchBare(scratchDir('zing-host-data-'))
+	await hook(zing, { action: 'minimise-window', minimised: true })
+	await openTab(zing, '/minimised')
+	await expect.poll(async () => (await layerOf(zing, '/minimised'))?.visible).toBe(true)
+	await hook(zing, { action: 'minimise-window', minimised: false })
+	await expect.poll(async () => (await layerOf(zing, '/minimised'))?.rendering).toBe(true)
+	await zing.close()
+})
